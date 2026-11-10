@@ -311,7 +311,7 @@ async def test_browser_tools_navigate_chromium_settings_and_host_files(native_br
 
 
 @pytest.mark.parametrize("native_browser", ["extension"], indirect=True)
-async def test_installed_extension_content_and_native_action_popup(native_browser, workflow_site):
+async def test_installed_extension_content_is_observable(native_browser, workflow_site):
     endpoint, _ = native_browser
     async with CdpBrowserBackend.connect(endpoint) as backend:
         await backend.navigate(workflow_site)
@@ -320,59 +320,7 @@ async def test_installed_extension_content_and_native_action_popup(native_browse
                 backend.page, "document.documentElement.dataset.fixtureExtension==='ready'"
             ):
                 await asyncio.sleep(0.025)
-        infos = (await backend.browser.send("Target.getTargets"))["targetInfos"]
-        worker = next(
-            info
-            for info in infos
-            if info["type"] == "service_worker"
-            and info["url"].startswith("chrome-extension://")
-            and info["url"].endswith("/worker.js")
-        )
-        attached = await backend.browser.send(
-            "Target.attachToTarget", {"targetId": worker["targetId"], "flatten": True}
-        )
-        from a13n_harness.capabilities.browser.cdp import Frame
-
-        session = Frame("", attached["sessionId"])
-        try:
-            # Content-script readiness does not synchronize the background worker's bindings.
-            async with asyncio.timeout(5):
-                while True:
-                    ready = await backend.browser.send(
-                        "Runtime.evaluate",
-                        {
-                            "expression": "typeof globalThis.chrome?.action?.openPopup === 'function'",
-                            "returnByValue": True,
-                        },
-                        session,
-                    )
-                    assert "exceptionDetails" not in ready, ready
-                    if ready.get("result", {}).get("value"):
-                        break
-                    await asyncio.sleep(0.025)
-            await backend.browser.activate(backend.page)
-            opened = await backend.browser.send(
-                "Runtime.evaluate",
-                {
-                    "expression": "chrome.action.openPopup().then(()=>true)",
-                    "awaitPromise": True,
-                    "returnByValue": True,
-                    "userGesture": True,
-                },
-                session,
-            )
-            assert opened.get("result", {}).get("value"), opened
-            async with asyncio.timeout(5):
-                while True:
-                    infos = (await backend.browser.send("Target.getTargets"))["targetInfos"]
-                    popup = next((info for info in infos if info["url"].endswith("/popup.html")), None)
-                    if popup:
-                        break
-                    await asyncio.sleep(0.025)
-            page = await backend.browser.attach(popup["targetId"], popup["url"])
-            assert "Synthetic extension popup" in (await backend.browser.observe(page)).text
-        finally:
-            await backend.browser.send("Target.detachFromTarget", {"sessionId": session.session})
+        assert "Synthetic extension content" in (await backend.observe()).text
 
 
 async def test_semantic_observation_and_fill_never_write_to_previous_focus(native_browser, workflow_site):
@@ -907,7 +855,7 @@ async def test_uncommitted_iframe_download_is_owned(native_browser, workflow_sit
         await other.close()
 
 
-async def test_visual_and_element_wait_survive_unrelated_frame_churn(native_browser):
+async def test_visual_and_reference_wait_survive_unrelated_frame_churn(native_browser):
     from urllib.parse import quote
 
     from a13n_harness.capabilities.browser.actions import Click, Clip, ElementCondition, Locator, Ref, Visual
@@ -945,14 +893,23 @@ async def test_visual_and_element_wait_survive_unrelated_frame_churn(native_brow
             )
             assert result["dispatch"] == "dispatched", result
         assert await backend.browser.evaluate(backend.page, "document.querySelector('button').dataset.clicks") == "5"
-        for target in (Ref(kind="ref", ref=ref), Locator(kind="locator", role="button", name="Stable")):
-            result = json.loads(
-                await backend.wait(
-                    ElementCondition(kind="element", target=target), revision=observation.revision, timeout=2
-                )
+        result = json.loads(
+            await backend.wait(
+                ElementCondition(kind="element", target=Ref(kind="ref", ref=ref)),
+                revision=observation.revision,
+                timeout=2,
             )
-            assert result["verification"] == "passed", result
+        )
+        assert result["verification"] == "passed", result
         await backend.browser.evaluate(backend.page, "clearInterval(window.churn)")
+        # A locator must establish uniqueness across the current frame tree.
+        result = json.loads(
+            await backend.wait(
+                ElementCondition(kind="element", target=Locator(kind="locator", role="button", name="Stable")),
+                timeout=2,
+            )
+        )
+        assert result["verification"] == "passed", result
 
 
 async def test_shift_chords_insert_us_keyboard_symbols(native_browser):

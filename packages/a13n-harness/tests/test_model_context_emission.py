@@ -218,7 +218,10 @@ async def test_attention_summary_clears_real_terminal_executions_without_results
     assert not terminal["result_available"] and not terminal["delivery_acknowledged"]
     assert (await tool_execution_result(ctx, record.execution_id))["status"] == status
     empty = await capability.wrap_model_context(ctx, INPUT, handler)
-    assert empty.blocks[0].content.endswith(": []")
+    assert empty.blocks[0].content.splitlines()[0].endswith(": []")
+    assert "Finished executions without retained results are no longer listed" in empty.blocks[0].content
+    assert "tool_execution_info" in empty.blocks[0].content
+    assert "absence does not establish success" in empty.blocks[0].content
     history = append([], active.blocks[0])
     assert _drop_unchanged(history, empty).blocks
     assert not _drop_unchanged(append(history, empty.blocks[0]), empty).blocks
@@ -268,7 +271,7 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
         for record in stored:
             await runtime.acknowledge_delivery("thread-test", record.execution_id)
         empty = await capability.wrap_model_context(ctx, INPUT, handler)
-        assert empty.blocks[0].content.endswith(": []")
+        assert empty.blocks[0].content.splitlines()[0].endswith(": []")
         assert _drop_unchanged(append([], projection.blocks[0]), empty).blocks
     await runtime.close()
 

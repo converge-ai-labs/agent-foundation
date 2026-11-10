@@ -79,6 +79,11 @@ class ToolExecutionCapability(AbstractModelContextCapability):
         summary = json.dumps([record.model_dump(mode="json") for record in records[:20]], ensure_ascii=True)
         if len(records) > 20:
             summary += "\nMore executions require attention; use tool_execution_info to inspect the remaining records."
+        elif not records:
+            summary += (
+                "\nFinished executions without retained results are no longer listed. "
+                "Use tool_execution_info to inspect their final status; absence does not establish success."
+            )
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
