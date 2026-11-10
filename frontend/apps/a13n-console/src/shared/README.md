@@ -78,13 +78,14 @@ Overlays and the state behind them.
 
 Text files addressed by path, such as a skill package or a memory.
 
-- `FileBrowser` — the tree at the left, with the file count and optional actions beside its heading and an optional `marker` after a file's name, and the chosen file at the right.
-- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — the chosen file: its path and size, the Preview/Source switch for Markdown and the file's actions, then its text as rendered Markdown or as source, or a notice in its place.
+- `FileBrowser` — independently scrolling explorer/reader panes, a resizable/collapsible desktop explorer, and narrow list → file → Files navigation. Pass `fullHeight` when the enclosing page bounds the workspace, `initialFile` for a document deep link, and `marker`/`fileMenu` for domain annotations/actions. External changes to `selected` open the document on narrow screens.
+- `FileHeader`, `FileBody`, `FileText`, `FileNotice` — place `FileHeader` inside every workspace document; it composes the workspace navigation, path, optional byte size, Markdown preview/source toggle and file actions in one toolbar. `FileBody` bounds the document; Markdown scrolls there and source owns its virtualized scroll surface. `FileText` renders safe Markdown or full source through `TextReader`.
+- `TextReader` — lazy, read-only CodeMirror source or full-context comparison (`before` and `text` are complete raw strings). It owns line numbers, newline metadata, exact source copying, wrap, responsive split/inline diff, unchanged-context collapse and change navigation. Reading options preserve position. Use `Patch` below when only bounded unified hunks are available.
 - `fileTree`, `isMarkdown`, `markdownBody` — the tree built from paths, directories first; a preview renders Markdown without its frontmatter.
 
 ## `shared/diff`
 
-- `Patch` — unified diff hunks, read by tint and sign.
+- `Patch` — editor-style diff rows with line numbers, aligned before/after panes at reader widths of 680px or more, inline rows below that width, word-level change highlights, and explicit omitted-context/final-newline markers. Accepts complete or bounded unified hunks; `expanded` lets `FileBody` own scrolling and optional `beforeLabel`/`afterLabel` name the compared versions.
 
 ## `shared/time-range`
 

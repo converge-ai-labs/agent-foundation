@@ -8,6 +8,7 @@ import type { Schema } from "../../../shared/api";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { IconTile } from "../../../shared/identity";
 import { DetailHeader, DetailPage, useTabParam } from "../../../shared/page";
+import { MemoryAutomation } from "../automation";
 import { memoryQueries } from "../api";
 import { MemoryConfiguration } from "./configuration";
 import { MemoryFiles } from "./files";
@@ -18,7 +19,7 @@ type Resource = { value: Schema["Memory"]; etag?: string };
 
 /** A file memory's files and their history, or a record memory's records. */
 const tabs = {
-  file: ["files", "history", "configuration"],
+  file: ["files", "history", "organization", "configuration"],
   record: ["records", "configuration"],
 } as const;
 
@@ -42,6 +43,7 @@ function MemoryTabs({ resource }: { resource: Resource }) {
   const labels = {
     files: t("Files"),
     history: t("History"),
+    organization: t("Organization"),
     records: t("Records"),
     configuration: t("Configuration"),
   };
@@ -72,6 +74,8 @@ function MemoryTabs({ resource }: { resource: Resource }) {
         <MemoryFiles memory={memory} />
       ) : tab === "history" ? (
         <MemoryHistory memory={memory} />
+      ) : tab === "organization" ? (
+        <MemoryAutomation memory={memory} />
       ) : tab === "records" ? (
         <MemoryRecords memory={memory} />
       ) : (

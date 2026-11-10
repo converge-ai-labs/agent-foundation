@@ -31,6 +31,8 @@ def test_policy_defaults_and_bounds() -> None:
         "model": None,
         "check_interval_seconds": 10,
         "cooldown_seconds": 300,
+        "instructions": None,
+        "history": None,
         "trigger": {"type": "any_change"},
     }
     for fields in [
@@ -249,3 +251,220 @@ async def test_empty_manual_request_preserves_count_and_restore_counts_once(serv
         assert store.change_count == 3 and state.observed_change_count == 0
     await organize(service.runtime)
     assert len(await history(service, space)) == 1
+
+
+@pytest.mark.parametrize("target_kind", ["memory", "space"])
+async def test_automatic_history_consumes_sealed_runs_in_batches_without_file_changes(
+    service, scripted_model, runs_kit, listen, target_kind
+):
+    from a13n_service.runs.memories.organization_tables import (
+        FileOrganizationRow,
+        OrganizationProgressRow,
+        OrganizationRow,
+    )
+    from sqlalchemy import func, select
+
+    from .test_runs_memory import team_memory
+
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "History source", model)
+    sources = []
+    for text in ("Prefers tea", "Now prefers coffee"):
+        source = await runs_kit.start_thread(service, agent, text)
+        scripted_model.say("Noted")
+        await (await runs_kit.attempt(service))
+        sources.append(await runs_kit.get_run(service, source["run"]["id"]))
+    policy = {
+        "enabled": True,
+        "model": model,
+        "cooldown_seconds": 0,
+        "instructions": "Organize the selected history.",
+        "history": {
+            "session_ids": [item["session_id"] for item in sources],
+            "after": sources[0]["sealed_at"],
+            "max_runs": 1,
+        },
+    }
+    if target_kind == "space":
+        space = await create_space(service, organization=policy)
+        identifier, memory_id, state_type = space["id"], space["memory_id"], SpaceOrganizationRow
+    else:
+        memory = await team_memory(service)
+        # Delete existing files so history is the only trigger.
+        entries = (await service.client.get(f"{service.api}/memories/{memory['id']}/files")).json()["items"]
+        for entry in entries:
+            url = f"{service.api}/memories/{memory['id']}/files/{entry['path']}"
+            existing = await service.client.get(url)
+            assert (await service.client.delete(url, headers={"If-Match": existing.headers["etag"]})).status_code == 204
+        identifier = memory_id = memory["id"]
+        state_type = FileOrganizationRow
+        url = f"{service.api}/memories/{identifier}/organization"
+        initial = await service.client.get(url)
+        configured = await service.client.put(url, headers={"If-Match": initial.headers["etag"]}, json=policy)
+        assert configured.status_code == 200, configured.text
+        assert (
+            await service.client.put(url, headers={"If-Match": initial.headers["etag"]}, json=policy)
+        ).status_code == 412
+    accepted = []
+    for source in sources:
+        # A completed round first settles, then a later check admits the next bounded batch.
+        for _ in range(2):
+            async with transaction(service.runtime.storage) as session:
+                state = await session.get(state_type, identifier)
+                if state is not None:
+                    state.due_at = state.next_check_at = None
+            await organize(service.runtime)
+        async with short_session(service.runtime.storage) as session:
+            state = await session.get_one(state_type, identifier)
+            assert state.active_run_id is not None
+            organization = await session.scalar(
+                select(OrganizationRow).where(OrganizationRow.run_id == state.active_run_id)
+            )
+            assert organization.sources[0]["run_id"] == source["id"]
+            assert len(organization.sources) == 1
+            accepted.append(organization.run_id)
+        scripted_model.say("History organized")
+        from dataclasses import replace
+
+        async with listen(service.app) as control_url:
+            settings = service.runtime.settings
+            runtime = replace(
+                service.runtime,
+                settings=settings.model_copy(
+                    update={
+                        "server": settings.server.model_copy(update={"control_url": control_url}),
+                    }
+                ),
+            )
+            await (await runs_kit.attempt(service, runtime=runtime))
+        finished = await runs_kit.get_run(service, accepted[-1])
+        assert finished["status"] == "completed", finished.get("failure")
+    for _ in range(2):
+        async with transaction(service.runtime.storage) as session:
+            state = await session.get_one(state_type, identifier)
+            state.due_at = state.next_check_at = None
+        await organize(service.runtime)
+    async with short_session(service.runtime.storage) as session:
+        state = await session.get_one(state_type, identifier)
+        assert state.active_run_id is None
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(OrganizationProgressRow)
+                .where(OrganizationProgressRow.memory_id == memory_id)
+            )
+            == 2
+        )
+        assert len(set(accepted)) == 2
+
+
+async def test_standalone_policy_rechecks_model_and_coalesces_file_rounds(service, scripted_model, runs_kit):
+    from a13n_service.runs.memories.organization_tables import FileOrganizationRow
+
+    from .test_runs_memory import team_memory
+
+    model = await runs_kit.create_model(service, scripted_model)
+    memory = await team_memory(service)
+    url = f"{service.api}/memories/{memory['id']}/organization"
+    initial = await service.client.get(url)
+    assert initial.json()["policy"]["enabled"] is False
+    policy = {"enabled": True, "model": model, "cooldown_seconds": 0}
+    configured = await service.client.put(url, headers={"If-Match": initial.headers["etag"]}, json=policy)
+    assert configured.status_code == 200, configured.text
+    replay = await service.client.put(url, headers={"If-Match": configured.headers["etag"]}, json=policy)
+    assert replay.headers["etag"] == configured.headers["etag"]
+    await patch(service, f"models/{model}", enabled=False)
+    await organize(service.runtime)
+    blocked = await service.client.get(url)
+    assert blocked.json()["status"]["failure"] is not None
+    assert blocked.json()["status"]["active_run_id"] is None
+    await patch(service, f"models/{model}", enabled=True)
+    async with transaction(service.runtime.storage) as session:
+        state = await session.get_one(FileOrganizationRow, memory["id"])
+        state.due_at = state.next_check_at = None
+    await asyncio.gather(organize(service.runtime), organize(service.runtime))
+    admitted = (await service.client.get(url)).json()
+    run_id = admitted["status"]["active_run_id"]
+    assert run_id is not None
+    assert (await service.client.get(url)).headers["etag"] == configured.headers["etag"]
+    scripted_model.say("Organized")
+    await (await runs_kit.attempt(service))
+    for _ in range(2):
+        async with transaction(service.runtime.storage) as session:
+            state = await session.get_one(FileOrganizationRow, memory["id"])
+            state.due_at = state.next_check_at = None
+        await organize(service.runtime)
+    settled = (await service.client.get(url)).json()["status"]
+    assert settled["active_run_id"] is None and settled["last_run_id"] == run_id
+    space = await create_space(service)
+    assert (await service.client.get(f"{service.api}/memories/{space['memory_id']}/organization")).status_code == 409
+
+
+@pytest.mark.parametrize("outcome", ["failed", "cancelled"])
+async def test_failed_history_round_does_not_consume_sources(service, scripted_model, runs_kit, outcome):
+    from a13n_service.runs.memories.organization_tables import (
+        FileOrganizationRow,
+        OrganizationProgressRow,
+        OrganizationRow,
+    )
+    from a13n_service.runs.schemas import Failure, Outcome
+    from a13n_service.runs.seal import seal
+    from a13n_service.runs.tables import RunRow, ThreadRow
+    from sqlalchemy import func, select
+
+    from .test_runs_memory import team_memory
+
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "History", model)
+    source = await runs_kit.start_thread(service, agent, "Remember tea")
+    scripted_model.say("Noted")
+    await (await runs_kit.attempt(service))
+    source_run = await runs_kit.get_run(service, source["run"]["id"])
+    memory = await team_memory(service)
+    url = f"{service.api}/memories/{memory['id']}/organization"
+    initial = await service.client.get(url)
+    policy = {
+        "enabled": True,
+        "model": model,
+        "cooldown_seconds": 0,
+        "history": {
+            "session_ids": [source_run["session_id"]],
+            "after": source_run["sealed_at"],
+        },
+    }
+    no_start = {**policy, "history": {"session_ids": [source_run["session_id"]]}}
+    assert (
+        await service.client.put(url, headers={"If-Match": initial.headers["etag"]}, json=no_start)
+    ).status_code == 400
+    configured = await service.client.put(url, headers={"If-Match": initial.headers["etag"]}, json=policy)
+    assert configured.status_code == 200, configured.text
+    await organize(service.runtime)
+    async with transaction(service.runtime.storage) as session:
+        state = await session.get_one(FileOrganizationRow, memory["id"])
+        first = state.active_run_id
+        run = await session.get_one(RunRow, first)
+        thread = await session.get_one(ThreadRow, run.thread_id)
+        # Use the ordinary transition, including Thread pointers and inbox disposition.
+        await seal(
+            session,
+            service.runtime,
+            thread,
+            run,
+            None,
+            Outcome(status=outcome, failure=Failure(code=outcome, message="Test terminal outcome")),
+            at=await now(session),
+        )
+        state.due_at = None
+    await organize(service.runtime)
+    async with transaction(service.runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(OrganizationProgressRow)) == 0
+        state = await session.get_one(FileOrganizationRow, memory["id"])
+        state.due_at = state.next_check_at = None
+    await organize(service.runtime)
+    async with short_session(service.runtime.storage) as session:
+        state = await session.get_one(FileOrganizationRow, memory["id"])
+        assert state.active_run_id is not None and state.active_run_id != first
+        organization = await session.scalar(
+            select(OrganizationRow).where(OrganizationRow.run_id == state.active_run_id)
+        )
+        assert [item["run_id"] for item in organization.sources] == [source_run["id"]]

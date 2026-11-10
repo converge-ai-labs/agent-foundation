@@ -1,6 +1,18 @@
 """The OSS artifact's explicit internal tool contributions."""
 
-from a13n_service.platform_tools import Definition, validate_catalog
+from dataclasses import replace
+
+from a13n_service.platform_tools import Definition, ToolContext, validate_catalog
+from a13n_service.runs.memories.organization_history import authorize_tool
+from a13n_service.runs.runtime import Runtime
+
+
+def _history_scope(tool: Definition) -> Definition:
+    async def call(ctx: ToolContext[Runtime], **arguments):
+        await authorize_tool(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, tool.name, arguments)
+        return await tool.handler(ctx, **arguments)
+
+    return replace(tool, handler=call)
 
 
 def catalog() -> tuple[Definition, ...]:
@@ -34,4 +46,4 @@ def catalog() -> tuple[Definition, ...]:
         *content,
     )
     validate_catalog(result)
-    return result
+    return tuple(_history_scope(tool) for tool in result)

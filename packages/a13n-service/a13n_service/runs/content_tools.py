@@ -19,6 +19,7 @@ from a13n_service.platform_tools import definition
 from a13n_service.resources.agents import read_views as agent_reads
 from a13n_service.runs import entries, item_reads, runs, traces
 from a13n_service.runs.findings import analysis
+from a13n_service.runs.memories import organization_history
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import context_response
 from a13n_service.runs.tool_executions import views as execution_views
@@ -178,6 +179,13 @@ async def _read(
     ctx: ToolContext, source: Source, *, version: str | None, offset: int, limit: int, query: str | None
 ) -> reads.TextRead:
     runtime, actor, workspace_id = ctx.runtime, ctx.actor, ctx.workspace_id
+    await organization_history.authorize_content(
+        runtime,
+        actor,
+        workspace_id,
+        ctx.origin,
+        source.run_id if isinstance(source, (RunSource, ItemSource)) else None,
+    )
     if isinstance(source, ItemSource):
         item = await item_reads.get_item(runtime, actor, workspace_id, source.run_id, source.item_id, source.ordinal)
         value = await item_value(ctx, source.run_id, item)

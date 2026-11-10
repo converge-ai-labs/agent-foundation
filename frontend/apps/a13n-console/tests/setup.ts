@@ -20,6 +20,9 @@ beforeEach(() => {
     removeEventListener() {},
     dispatchEvent: () => true,
   }));
+  // jsdom has no layout; CodeMirror still measures ranges during its lifecycle.
+  Range.prototype.getClientRects = vi.fn(() => [] as unknown as DOMRectList);
+  Range.prototype.getBoundingClientRect = vi.fn(() => new DOMRect());
   Element.prototype.getAnimations = vi.fn(() => []);
   Element.prototype.scrollIntoView = vi.fn();
 });

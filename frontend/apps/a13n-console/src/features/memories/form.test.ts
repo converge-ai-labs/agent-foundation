@@ -10,7 +10,11 @@ import {
   sameDraft,
 } from "./form";
 
-import { defaultGuidance, selectSystemPreset } from "./guidance";
+import {
+  defaultGuidance,
+  selectSystemPreset,
+  type FileGuidance,
+} from "./guidance";
 
 const saved = {
   id: "mem_1",
@@ -108,12 +112,14 @@ it("selects a new system preset without losing custom guide or time zone", () =>
   const custom = {
     ...defaultGuidance(),
     system_override: "Authored rules",
+    modules: ["session_notes"] as FileGuidance["modules"],
     custom: "Project decisions",
     timezone: "Asia/Taipei",
   };
   expect(selectSystemPreset(custom, "journal")).toEqual({
     ...custom,
     system_preset: "journal",
+    modules: null,
     system_override: null,
   });
 });

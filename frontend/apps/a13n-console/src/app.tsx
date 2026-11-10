@@ -106,6 +106,11 @@ const MemoryDetail = lazy(() =>
     default: module.MemoryDetail,
   })),
 );
+const OrganizationReviewPage = lazy(() =>
+  import("./features/memories/organization-review").then((module) => ({
+    default: module.OrganizationReviewPage,
+  })),
+);
 const CreateEnvironmentTemplate = lazy(() =>
   import("./features/environments/template-create").then((module) => ({
     default: module.CreateEnvironmentTemplate,
@@ -361,6 +366,10 @@ function AppContent() {
                         element={<MemorySpaceDetail />}
                       />
                       <Route path="memories" element={<MemoriesPage />} />
+                      <Route
+                        path="memory-organizations/:organizationId/review"
+                        element={<OrganizationReviewPage />}
+                      />
                       <Route
                         path="memories/:memoryId"
                         element={<MemoryDetail />}

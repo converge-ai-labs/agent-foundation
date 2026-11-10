@@ -37,8 +37,9 @@ def test_execution_catalog_owns_every_existing_operation_and_has_no_http_argumen
         *content_tools.TOOLS,
     )
     names = {tool.name for tool in definitions}
-    assert len(names) == len(definitions) == 32
+    assert len(names) == len(definitions) == 33
     assert names == {
+        "list_organization_sources",
         "list_sessions",
         "get_session",
         "get_message_authors",

@@ -22,10 +22,17 @@ export default defineConfig({
             "@daypicker/react",
             "@daypicker/react/locale",
             "@phosphor-icons/react",
-            // Keep the editor and PromQL extensions in one graph for class identity.
+            // Keep editor languages, merge and PromQL extensions in one graph for class identity.
             "codemirror",
             "@codemirror/state",
             "@codemirror/view",
+            "@codemirror/language",
+            "@codemirror/lang-json",
+            "@codemirror/lang-markdown",
+            "@codemirror/lang-yaml",
+            "@codemirror/merge",
+            "@codemirror/search",
+            "@lezer/highlight",
             "@prometheus-io/codemirror-promql",
           ],
         },
