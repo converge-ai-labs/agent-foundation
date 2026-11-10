@@ -823,7 +823,7 @@ class _SkillsRunCapability(SkillsCapability):
             lines.append(entry)
             sizes[item.name] = ContextItemUsage(characters=len(entry), description=item.description)
         lines.append("</available-skills>")
-        return InstructionCatalog("\n".join(lines), sizes)
+        return InstructionCatalog("skills", "\n".join(lines), sizes)
 
     async def before_model_request(
         self,

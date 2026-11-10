@@ -686,6 +686,7 @@ def _render_working_state_blocks(
         blocks.append(
             ModelContextBlock(
                 source_id=_NOTES_CONTEXT_SOURCE_ID,
+                context_group="runtime_state",
                 placement=ModelContextPlacement.REQUEST_EPILOGUE,
                 content=rendered_notes,
             )
@@ -697,6 +698,7 @@ def _render_working_state_blocks(
         blocks.append(
             ModelContextBlock(
                 source_id=_TASKS_CONTEXT_SOURCE_ID,
+                context_group="runtime_state",
                 placement=ModelContextPlacement.REQUEST_EPILOGUE,
                 content=rendered_tasks,
             )

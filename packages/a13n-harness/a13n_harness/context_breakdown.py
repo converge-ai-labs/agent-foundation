@@ -6,7 +6,7 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeGuard, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import (
@@ -55,6 +55,7 @@ class ContextItemUsage(BaseModel):
 
 @dataclass(frozen=True)
 class InstructionCatalog:
+    group: ContextGroupName
     text: str
     items: dict[str, ContextItemUsage]
 
@@ -74,7 +75,16 @@ class ContextBreakdown(BaseModel):
     groups: dict[ContextGroupName, ContextGroupUsage]
 
 
-def _source_group(source: str | None, default: ContextGroupName) -> ContextGroupName:
+_CONTEXT_GROUPS = frozenset(get_args(ContextGroupName.__value__))
+
+
+def _is_context_group(value: object) -> TypeGuard[ContextGroupName]:
+    return isinstance(value, str) and value in _CONTEXT_GROUPS
+
+
+# Compatibility with persisted source IDs, including histories written before blocks carried a group.
+# New producers declare their group on the block or catalog.
+def _untagged_source_group(source: str | None, default: ContextGroupName) -> ContextGroupName:
     if source == "a13n.skills":
         return "skills"
     if source in ("a13n.memory.file", "a13n.memory.record"):
@@ -101,7 +111,7 @@ def _instruction_group(key: InstructionId | None) -> ContextGroupName:
     source = key.source if key else None
     if isinstance(source, ToolsetInstructionSource):
         return "tools"
-    return _source_group(source.id if isinstance(source, CapabilityInstructionSource) else None, "system")
+    return _untagged_source_group(source.id if isinstance(source, CapabilityInstructionSource) else None, "system")
 
 
 def measure_context(
@@ -109,6 +119,10 @@ def measure_context(
     params: ModelRequestParameters,
     catalogs: Mapping[str, InstructionCatalog] | None = None,
 ) -> ContextBreakdown:
+    from a13n_harness.tools.tool_search import proxy_control, valid_group_name, valid_tool_name
+    from a13n_harness.toolsets.memory_files import FILE_READ_TOOL_NAMES
+    from a13n_harness.toolsets.memory_records import RECORD_READ_TOOL_NAMES
+
     totals: Counter[ContextGroupName] = Counter()
     details: dict[ContextGroupName, Counter[str]] = defaultdict(Counter)
     calls: Counter[str] = Counter()
@@ -125,9 +139,9 @@ def measure_context(
         unmeasured.add("audio" if is_audio else "other")
 
     def instruction(key: InstructionId | None, content: str) -> None:
-        group = _instruction_group(key)
-        totals[group] += len(content)
         catalog = catalogs.get(str(key.source)) if catalogs and key else None
+        group = catalog.group if catalog else _instruction_group(key)
+        totals[group] += len(content)
         if catalog and content == catalog.text:
             for name, entry in catalog.items.items():
                 details[group][name] += entry.characters
@@ -151,9 +165,14 @@ def measure_context(
                 for item in prompt_content(message, index):
                     source = item.metadata.source_id
                     extra = item.metadata.model_extra or {}
-                    group = _source_group(source, "other" if source and not item.metadata.display else "conversation")
-                    if extra.get("context_group") == "environment_context":
-                        group = "environment_context"
+                    declared = extra.get("context_group")
+                    group = (
+                        declared
+                        if _is_context_group(declared)
+                        else _untagged_source_group(
+                            source, "other" if source and not item.metadata.display else "conversation"
+                        )
+                    )
                     if isinstance(item.value, (str, TextContent)):
                         size = len(item.value if isinstance(item.value, str) else item.value.content)
                         totals[group] += size
@@ -165,13 +184,10 @@ def measure_context(
             elif isinstance(part, BaseToolCallPart):
                 name = part.tool_name
                 tool_def = params.tool_defs.get(name)
-                if tool_def is not None and (tool_def.metadata or {}).get("a13n.tool_search.control") == "call":
+                if tool_def is not None and proxy_control(tool_def) == "call":
                     proxy = part.args_as_dict()
                     target, namespace = proxy.get("tool"), proxy.get("group")
-                    if all(
-                        isinstance(v, str) and re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9-]{0,127}", v)
-                        for v in (namespace, target)
-                    ):
+                    if valid_group_name(namespace) and valid_tool_name(target):
                         name = f"{namespace}.{target}"
                         call_names[part.tool_call_id, part.tool_name] = name
                 calls[name] += 1
@@ -180,9 +196,9 @@ def measure_context(
                 name = call_names.get((part.tool_call_id, part.tool_name), part.tool_name)
                 size = len(part.model_response_str())
                 mount = part.content.get("memory") if isinstance(part.content, dict) else None
+                tool_name = name.rsplit(".", 1)[-1]
                 if (
-                    name.rsplit(".", 1)[-1]
-                    in {"memory_file_view", "memory_file_grep", "memory_record_search", "memory_record_list"}
+                    (tool_name in FILE_READ_TOOL_NAMES or tool_name in RECORD_READ_TOOL_NAMES)
                     and part.outcome == "success"
                     and isinstance(mount, str)
                     and re.fullmatch(r"[a-z][a-z0-9-]{0,62}", mount)
@@ -227,15 +243,12 @@ def measure_context(
         items: dict[str, ContextItemUsage] = {}
         for name, chars in sorted(details[group].items(), key=lambda pair: (-pair[1], pair[0])):
             metric = ContextItemUsage(
-                characters=chars, description=skill_descriptions.get(name) if group == "skills" else None
+                characters=chars,
+                description=skill_descriptions.get(name) if group == "skills" else None,
+                calls=calls[name] if group == "tool_calls" else None,
+                argument_characters=arguments[name] if group == "tool_calls" else None,
+                result_characters=results[name] if group == "tool_calls" else None,
             )
-            if group == "tool_calls":
-                metric = ContextItemUsage(
-                    characters=chars,
-                    calls=calls[name],
-                    argument_characters=arguments[name],
-                    result_characters=results[name],
-                )
             cost = len(dump_json_text({name: metric.model_dump()}).encode())
             if cost <= detail_bytes:
                 items[name] = metric

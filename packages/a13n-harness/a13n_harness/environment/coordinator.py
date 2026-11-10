@@ -235,6 +235,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             blocks=(
                 ModelContextBlock(
                     source_id="a13n.environment-mounts",
+                    context_group="environment_context",
                     placement=(
                         ModelContextPlacement.INPUT_PREAMBLE
                         if request.kind is ModelContextRequestKind.INPUT

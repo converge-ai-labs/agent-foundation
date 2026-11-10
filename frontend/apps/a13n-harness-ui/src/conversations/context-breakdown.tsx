@@ -6,15 +6,21 @@ import type { Schema } from "../transport/client";
 import styles from "./context-breakdown.module.css";
 
 const sections = {
-  system: ["System prompt", "var(--a13n-brand, #7953ed)"],
-  tools: ["Tool definitions", "#598eef"],
-  skills: ["Skills", "#54c69b"],
-  memory: ["Memory", "#b079dc"],
-  environment_context: ["Environment context", "#f39b57"],
-  runtime_state: ["Working state", "#ed85af"],
-  conversation: ["Conversation", "#7a88ef"],
-  tool_calls: ["Tool calls", "#32bcbc"],
-  other: ["Other", "#929bab"],
+  system: ["System prompt", "var(--chart-1)"],
+  tools: ["Tool definitions", "var(--chart-2)"],
+  skills: ["Skills", "var(--chart-3)"],
+  memory: ["Memory", "color-mix(in oklab, var(--chart-1), var(--chart-5))"],
+  environment_context: ["Environment context", "var(--chart-4)"],
+  runtime_state: ["Working state", "var(--chart-5)"],
+  conversation: [
+    "Conversation",
+    "color-mix(in oklab, var(--chart-1), var(--chart-2))",
+  ],
+  tool_calls: [
+    "Tool calls",
+    "color-mix(in oklab, var(--chart-2), var(--chart-3))",
+  ],
+  other: ["Other", "var(--muted-foreground)"],
 } as const satisfies Record<
   Schema<"ContextGroupName">,
   readonly [string, string]
@@ -147,8 +153,23 @@ export function PromptBreakdown({
   });
   const format = (chars: number) =>
     number.format(estimate ? Math.round((chars / total) * textTokens) : chars);
+  const share = (chars: number) => percentage.format(fraction(chars));
+  const inputScale = windowScale ? textTokens / axis : 1;
+  const segments = groups.map(({ key, value, color }) => (
+    <span
+      key={key}
+      style={{
+        width: `${(value.characters / total) * inputScale * 100}%`,
+        backgroundColor: color,
+      }}
+    />
+  ));
   return (
-    <section className={styles.section} aria-label={t("Prompt breakdown")}>
+    <section
+      data-prompt-breakdown=""
+      className={styles.section}
+      aria-label={t("Prompt breakdown")}
+    >
       {windowScale && (
         <div
           className={styles.track}
@@ -163,15 +184,7 @@ export function PromptBreakdown({
           })}
         >
           {estimate ? (
-            groups.map(({ key, value, color }) => (
-              <span
-                key={key}
-                style={{
-                  width: `${(((value.characters / total) * textTokens) / axis) * 100}%`,
-                  backgroundColor: color,
-                }}
-              />
-            ))
+            segments
           ) : (
             <span
               className={styles.input}
@@ -199,15 +212,7 @@ export function PromptBreakdown({
       </div>
       {!windowScale && (
         <div className={styles.track} aria-label={t("Prompt breakdown")}>
-          {groups.map(({ key, value, color }) => (
-            <span
-              key={key}
-              style={{
-                width: `${(value.characters / total) * 100}%`,
-                backgroundColor: color,
-              }}
-            />
-          ))}
+          {segments}
         </div>
       )}
       {groups.map(({ key, label, color, value }) => {
@@ -224,9 +229,7 @@ export function PromptBreakdown({
               {items > 0 && <CaretRight aria-hidden="true" />}
             </span>
             <span className={styles.amount}>{format(value.characters)}</span>
-            <span className={styles.share}>
-              {percentage.format(fraction(value.characters))}
-            </span>
+            <span className={styles.share}>{share(value.characters)}</span>
           </>
         );
         return items ? (
@@ -245,7 +248,7 @@ export function PromptBreakdown({
                 group={key}
                 value={value}
                 format={format}
-                share={(chars) => percentage.format(fraction(chars))}
+                share={share}
               />
             </CollapsiblePanel>
           </Collapsible>

@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from copy import copy
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal, Protocol
+from typing import Protocol
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -30,6 +30,7 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.content import ContentItem, ContentMetadata, replace_request_parts, request_parts
 from a13n_harness.context import AgentContext
+from a13n_harness.context_breakdown import ContextGroupName
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import input_events
 
@@ -87,7 +88,7 @@ class ModelContextBlock:
     placement: ModelContextPlacement
     content: str
     memory_mount: str | None = None
-    context_group: Literal["environment_context"] | None = None
+    context_group: ContextGroupName | None = None
 
     def content_item(self) -> ContentItem:
         metadata = ContentMetadata(display=False, source_id=self.source_id)

@@ -78,6 +78,7 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id="tool_execution.summary",
+                    context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=f"Tool executions (status only; results are not consumed): {summary}",
                 ),

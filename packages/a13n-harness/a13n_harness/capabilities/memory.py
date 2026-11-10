@@ -153,8 +153,19 @@ class FileMemoryLimits(BaseModel):
     write_retries: int = Field(default=3, ge=0)
 
 
+class _MemoryCatalogCapability(AbstractModelContextCapability):
+    catalog_measurement: InstructionCatalog | None = None
+
+    def _render_catalog(self) -> InstructionCatalog | None:
+        raise NotImplementedError
+
+    def get_instructions(self) -> str | None:
+        catalog = self.catalog_measurement or self._render_catalog()
+        return catalog.text if catalog else None
+
+
 @dataclass(init=False)
-class FileMemoryCapability(AbstractModelContextCapability):
+class FileMemoryCapability(_MemoryCatalogCapability):
     """Mount file memories: instructions with their guides, tools, and context at each run's first input.
 
     The host opens one store per mount and passes the cursors it persisted; the
@@ -201,14 +212,8 @@ class FileMemoryCapability(AbstractModelContextCapability):
         ctx.deps._record_run_capability(FILE_MEMORY_CAPABILITY_ID, replacement)
         return replacement
 
-    catalog_measurement: InstructionCatalog | None = None
-
     def _render_catalog(self) -> InstructionCatalog | None:
         return _instructions(_INTRODUCTION, "file", self.mounts, DEFAULT_FILE_GUIDE)
-
-    def get_instructions(self) -> str | None:
-        catalog = self.catalog_measurement or self._render_catalog()
-        return catalog.text if catalog else None
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
         bindings = (self.mounts, self.limits, self.origin, self.tools)
@@ -334,6 +339,7 @@ class _FileMemoryRun(FileMemoryCapability):
         return tuple(
             ModelContextBlock(
                 source_id=FILE_MEMORY_CAPABILITY_ID,
+                context_group="memory",
                 placement=ModelContextPlacement.INPUT_PREAMBLE,
                 content=content,
                 memory_mount=name,
@@ -634,7 +640,7 @@ class RecordMemoryLimits(BaseModel):
 
 
 @dataclass(init=False)
-class RecordMemoryCapability(AbstractModelContextCapability):
+class RecordMemoryCapability(_MemoryCatalogCapability):
     """Mount record memories: instructions with their guides, tools, and recall at each run's first input.
 
     The host opens one store per mount. Recall searches every mount whose
@@ -668,14 +674,8 @@ class RecordMemoryCapability(AbstractModelContextCapability):
         ctx.deps._record_run_capability(RECORD_MEMORY_CAPABILITY_ID, replacement)
         return replacement
 
-    catalog_measurement: InstructionCatalog | None = None
-
     def _render_catalog(self) -> InstructionCatalog | None:
         return _instructions(_RECORD_INTRODUCTION, "record", self.mounts, DEFAULT_RECORD_GUIDE)
-
-    def get_instructions(self) -> str | None:
-        catalog = self.catalog_measurement or self._render_catalog()
-        return catalog.text if catalog else None
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
         return MemoryRecordToolset(self.mounts, record_chars=self.limits.record_chars, tools=self.tools).get_toolset()
@@ -739,6 +739,7 @@ class _RecordMemoryRun(RecordMemoryCapability):
                 blocks.append(
                     ModelContextBlock(
                         source_id=RECORD_MEMORY_CAPABILITY_ID,
+                        context_group="memory",
                         placement=ModelContextPlacement.INPUT_PREAMBLE,
                         content=block,
                         memory_mount=mount.name,
@@ -901,7 +902,7 @@ def _instructions(
         lines.append(text)
         items[mount.name] = ContextItemUsage(characters=len(text))
     lines.append("</memories>")
-    return InstructionCatalog("\n".join(lines), items)
+    return InstructionCatalog("memory", "\n".join(lines), items)
 
 
 def _encode(value: JsonValue) -> str:

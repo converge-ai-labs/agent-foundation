@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeGuard
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import ModelRetry, RunContext, ToolDefinition
@@ -41,7 +41,7 @@ class ProxyToolSearchConfig:
             raise ValueError("ProxyToolSearchConfig.mode must be 'proxy'")
         names = (self.search_name, self.describe_name, self.call_name, self.list_name, self.groups_name)
         for name in names:
-            if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is None:
+            if not valid_tool_name(name):
                 raise ValueError(
                     "ToolSearch entry names must start with a letter or underscore and contain 1-64 letters, digits, underscores, or hyphens."
                 )
@@ -81,8 +81,18 @@ class ToolSearchMembership:
     tool: str
 
 
+def valid_tool_name(name: object) -> TypeGuard[str]:
+    return isinstance(name, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is not None
+
+
+def valid_group_name(group: object) -> TypeGuard[str]:
+    return (
+        isinstance(group, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,31}", group) is not None and "__" not in group
+    )
+
+
 def validate_group(group: str, description: str) -> None:
-    if not isinstance(group, str) or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,31}", group) is None or "__" in group:
+    if not valid_group_name(group):
         raise ValueError(
             "ToolSearch group must start with a letter and contain 1-32 letters, digits, underscores, or hyphens, without '__'."
         )

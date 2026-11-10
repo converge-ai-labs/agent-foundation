@@ -63,6 +63,10 @@ def memory_toolset[K: str](
     return InstructionFunctionToolset(tools=offered, id=f"a13n-memory-{kind}-tools", instructions=[instruction])
 
 
+def memory_tool_name(kind: str, key: str) -> str:
+    return f"memory_{kind}_{key}"
+
+
 def _tool(function: Callable[..., Any], kind: str, key: str, spec: MemoryTool, names: list[str]) -> Tool[AgentContext]:
     def prepare(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> ToolDefinition:
         del ctx
@@ -72,7 +76,7 @@ def _tool(function: Callable[..., Any], kind: str, key: str, spec: MemoryTool, n
 
     tool = HarnessTool(
         function,
-        name=f"memory_{kind}_{key}",
+        name=memory_tool_name(kind, key),
         description=spec.description,
         prepare=prepare,
         harness_metadata=HarnessToolMetadata(

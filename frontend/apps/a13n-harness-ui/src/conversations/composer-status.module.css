@@ -448,7 +448,7 @@ button.metric:focus-visible {
 .contextPopup {
   width: min(280px, calc(100vw - 24px));
 }
-.contextPopup:has(section[aria-label]) {
+.contextPopup:has([data-prompt-breakdown]) {
   width: min(340px, calc(100vw - 24px));
 }
 .contextPopup .popupHeader {

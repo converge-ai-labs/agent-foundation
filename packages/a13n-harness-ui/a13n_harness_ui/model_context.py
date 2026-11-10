@@ -44,6 +44,7 @@ class CurrentAgentContextCapability(AbstractModelContextCapability):
                 *(block for block in projection.blocks if block.source_id != "a13n.agent-context"),
                 ModelContextBlock(
                     source_id="a13n.agent-context",
+                    context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,
                 ),

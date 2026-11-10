@@ -13,7 +13,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, validate_record_text
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._memory import MemoryName, MemoryTool, failure, memory_toolset, mounted
+from ._memory import MemoryName, MemoryTool, failure, memory_tool_name, memory_toolset, mounted
 
 if TYPE_CHECKING:
     from a13n_harness.capabilities.memory import RecordMount
@@ -29,6 +29,9 @@ _TOOLS: dict[RecordToolKey, MemoryTool] = {
     "update": MemoryTool("write", frozenset({"write"}), 4096, "Replace the whole text of a record."),
     "delete": MemoryTool("write", frozenset({"delete"}), 4096, "Delete a record."),
 }
+RECORD_READ_TOOL_NAMES = frozenset(
+    memory_tool_name("record", key) for key, spec in _TOOLS.items() if spec.access == "read"
+)
 RECORD_TOOL_KEYS: tuple[RecordToolKey, ...] = tuple(_TOOLS)
 _INSTRUCTION = tool_instruction("memory-records")
 

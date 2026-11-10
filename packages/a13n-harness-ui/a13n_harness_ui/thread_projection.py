@@ -606,18 +606,15 @@ class ThreadProjectionService:
         from a13n_harness_ui.model_thinking import summarize_thinking
 
         thinking = model.thinking_override if model.thinking_override is not None else model.settings.get("thinking")
+        usage = observed.request_usage if observed and observed.usage_status != "unavailable" else None
         return ContextUsageView(
             thread_id=thread_id,
             latest_request_tokens=latest,
             record_id=observed.record_id if observed else None,
             input_audio_tokens=observed.request_usage.input_audio_tokens if observed else None,
             context_breakdown=observed.context_breakdown if observed else None,
-            input_tokens=observed.request_usage.input_tokens
-            if observed and observed.usage_status != "unavailable"
-            else None,
-            output_tokens=observed.request_usage.output_tokens
-            if observed and observed.usage_status != "unavailable"
-            else None,
+            input_tokens=usage.input_tokens if usage else None,
+            output_tokens=usage.output_tokens if usage else None,
             context_window=(
                 None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
             ),

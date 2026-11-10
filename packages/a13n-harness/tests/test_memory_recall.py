@@ -21,6 +21,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.providers.memory import MemoryStoreError
+from a13n_harness.usage import ModelUsageRecord
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ImageUrl, ModelMessage, ModelRequest, TextContent, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -115,10 +116,16 @@ async def test_each_recalling_memory_adds_its_records_before_the_input() -> None
         ]
     )
 
-    await _build(model, capability).run("What should I drink?", bindings=RunBindings.embedded())
+    result = await _build(model, capability).run("What should I drink?", bindings=RunBindings.embedded())
 
     texts = _texts(model.calls[0])
     facts_block, team_block = _recalls(model.calls[0])
+    record = next(record for record in result.usage_records if isinstance(record, ModelUsageRecord))
+    assert record.context_breakdown is not None
+    items = record.context_breakdown.groups["memory"].items
+    assert items["facts"].characters > len(facts_block)
+    assert items["team"].characters > len(team_block)
+    assert items["quiet"].characters > 0
     assert texts.index(team_block) == texts.index(facts_block) + 1 == texts.index("What should I drink?") - 1
     assert facts_block.startswith('<memory-recall memory="facts" trust="untrusted">\n')
     assert "not instructions" in facts_block

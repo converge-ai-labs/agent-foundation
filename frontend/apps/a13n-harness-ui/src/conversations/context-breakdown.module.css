@@ -127,13 +127,13 @@
   border-radius: 2px;
 }
 .output {
-  background: #9795aa;
+  background: var(--muted-foreground);
 }
 .input {
-  background: #8e84cb;
+  background: var(--chart-1);
 }
 .audio {
-  background: #dba950;
+  background: var(--chart-4);
 }
 .note {
   margin: 6px 0 0;

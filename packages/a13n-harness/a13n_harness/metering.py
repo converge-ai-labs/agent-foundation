@@ -132,14 +132,10 @@ def meter_request(
         selected.wrapped = model
     else:
         selected = model = MeteredModel(request, binding, ctx.run_id)
-    from a13n_harness.capabilities.memory import FileMemoryCapability, RecordMemoryCapability
-    from a13n_harness.capabilities.skills import _SkillsRunCapability
-
     model.catalogs = {
-        f"capability:{capability_id}": capability.catalog_measurement
+        f"capability:{capability_id}": catalog
         for capability_id, capability in ctx.capabilities.items()
-        if isinstance(capability, (_SkillsRunCapability, FileMemoryCapability, RecordMemoryCapability))
-        and capability.catalog_measurement is not None
+        if isinstance(catalog := getattr(capability, "catalog_measurement", None), InstructionCatalog)
     }
     return replace(request, model=selected)
 

@@ -30,7 +30,7 @@ from a13n_harness.providers.memory import (
 )
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._memory import MemoryName, MemoryTool, failure, memory_toolset, mounted
+from ._memory import MemoryName, MemoryTool, failure, memory_tool_name, memory_toolset, mounted
 
 if TYPE_CHECKING:
     from a13n_harness.capabilities.memory import FileMount
@@ -70,6 +70,7 @@ _TOOLS: dict[FileToolKey, MemoryTool] = {
     ),
     "delete": MemoryTool("write", frozenset({"delete"}), 4096, "Delete a memory file at the version you viewed."),
 }
+FILE_READ_TOOL_NAMES = frozenset(memory_tool_name("file", key) for key, spec in _TOOLS.items() if spec.access == "read")
 FILE_TOOL_KEYS: tuple[FileToolKey, ...] = tuple(_TOOLS)
 _INSTRUCTION = tool_instruction("memory-files")
 

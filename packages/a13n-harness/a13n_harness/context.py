@@ -660,6 +660,7 @@ class AgentContext:
                 *environment.blocks,
                 ModelContextBlock(
                     source_id="a13n.agent-context",
+                    context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=content,
                 ),

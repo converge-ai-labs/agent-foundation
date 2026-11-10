@@ -45,6 +45,7 @@ from a13n_harness.model_context import (
     user_prompt_content,
 )
 from a13n_harness.providers.memory import FileEntry, FileText, MemoryStoreError
+from a13n_harness.usage import ModelUsageRecord
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -145,10 +146,14 @@ async def test_the_first_run_gets_always_loaded_files_and_the_index_before_its_i
         installed = ToolSearchCapability(groups={"memory": ToolSearchGroup(source, "Memory")})
     else:
         installed = capability
-    await _build(model, installed).run("hi", bindings=RunBindings.embedded())
+    result = await _build(model, installed).run("hi", bindings=RunBindings.embedded())
 
     texts = _texts(model.calls[0])
     [block] = _blocks(model.calls[0])
+    record = next(record for record in result.usage_records if isinstance(record, ModelUsageRecord))
+    assert record.context_breakdown is not None
+    memory = record.context_breakdown.groups["memory"]
+    assert memory.characters > memory.items["user"].characters > len(block)
     assert texts.index(block) == texts.index("hi") - 1
     opening, body = _parse(block)
     assert opening == '<memory-context memory="user" trust="untrusted" kind="full">'

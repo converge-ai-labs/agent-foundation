@@ -93,6 +93,7 @@ class CodeActCapability(AbstractModelContextCapability):
                 *projection.blocks,
                 ModelContextBlock(
                     source_id="codeact.stored_keys",
+                    context_group="runtime_state",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content=index,
                 ),
