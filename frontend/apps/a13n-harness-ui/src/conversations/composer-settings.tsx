@@ -80,10 +80,8 @@ export function ComposerSettings({
     return () => query.removeEventListener("change", update);
   }, []);
   const changeOpen = (next: boolean) => {
+    if (next) navigate("root");
     setOpen(next);
-    if (!next) {
-      navigate("root");
-    }
   };
   const content = (
     <SettingsContext
@@ -129,7 +127,12 @@ export function ComposerSettings({
         <span>{label ?? t("Model")}</span>
         <CaretDown aria-hidden="true" />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" className={styles.popup}>
+      <PopoverPopup
+        side="top"
+        align="end"
+        data-page={page}
+        className={styles.popup}
+      >
         {content}
       </PopoverPopup>
     </Popover>
