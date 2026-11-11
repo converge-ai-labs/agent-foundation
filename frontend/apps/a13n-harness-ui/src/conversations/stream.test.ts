@@ -922,6 +922,10 @@ it("updates context from the latest attributed root request, not cumulative or c
       record(10, 999, { run_id: "other" }),
       record(11, 999, { delegation_id: "child" }),
       record(12, 999, { source: "files.media_understanding" }),
+      record(13, 0, {
+        usage_status: "unavailable",
+        request_usage: { input_tokens: 0, output_tokens: 0 },
+      }),
     ],
   ];
   display.accept(snapshot(reports.length));

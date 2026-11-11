@@ -223,18 +223,21 @@ it("groups adjacent reasoning across saved entries and the live boundary, but no
     <ConversationTranscript
       entries={entries}
       blocks={[
-        { id: "third", kind: "thinking", text: "Third plan" },
+        { id: "third", kind: "thinking", text: "Third plan", done: true },
         { id: "reply", kind: "assistant", text: "An update" },
         { id: "fourth", kind: "thinking", text: "Fourth plan" },
       ]}
+      running
       localInputs={[]}
       threadId="one"
     />,
   );
-  expect(screen.getAllByText("Thought")).toHaveLength(2);
-  const group = screen.getByText("First plan").closest("details");
+  const group = screen.getByText("Thought").closest("details");
+  expect(screen.getByText("First plan").closest("details")).toBe(group);
   expect(screen.getByText("Third plan").closest("details")).toBe(group);
-  expect(screen.getByText("Fourth plan").closest("details")).not.toBe(group);
+  expect(screen.getByText("Fourth plan").closest("details")).toBe(
+    screen.getByText("Thinking").closest("details"),
+  );
 });
 
 it("keeps separate reasoning Markdown documents and stops grouping at tool activity", () => {

@@ -563,6 +563,9 @@ function ChildPresentation({
   const current = content.length ? (
     <LiveOutput
       blocks={content}
+      running={
+        child.persisted_status === "running" && child.local_status === "active"
+      }
       gap={live?.gap ?? false}
       label={t("Current observed output")}
     />
