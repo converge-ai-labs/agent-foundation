@@ -46,7 +46,7 @@ The guarantees depend on the mechanisms and configuration. A container with exce
 
 With the required capabilities and restrictions in mind, the next decision is how to deploy the agent runtime and its command execution environment. Three common arrangements are to execute commands directly on the agent's host, place each agent run and its commands together in a sandbox, or have the runtime connect to a separate environment. Each makes different trade-offs in permissions, resource management, lifecycles, and communication overhead.
 
-![Three arrangements: commands on the agent host, agent and commands together in a sandbox, and a runtime connected to a separate execution environment](cover.svg "Figure 1. Three ways to deploy the agent runtime and its commands. A separate execution environment can be on the same machine or a different one; isolation depends on its configuration.")
+![Three arrangements: two agents executing directly on one host, each agent and its commands in a separate sandbox on one host, and a runtime connected to a separate execution environment](cover.svg "Figure 1. Three ways to deploy the agent runtime and its commands. A separate execution environment can be on the same machine or a different one; isolation depends on its configuration.")
 
 ### Execute commands directly on the agent's host
 

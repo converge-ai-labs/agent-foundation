@@ -1,33 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 360" role="img" aria-label="Commands on the agent host, agent and commands together in a sandbox, and an agent runtime connected to a separate execution environment.">
-  <text class="pt ink" x="140" y="42" text-anchor="middle">Direct execution</text>
-  <text class="pt ink" x="390" y="42" text-anchor="middle">Shared sandbox</text>
-  <text class="pt ink" x="640" y="42" text-anchor="middle">Separate environment</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 784 294" role="img" aria-label="Two agents executing directly on one host; two agents each sharing a separate sandbox with their own commands on one host; and an agent runtime connected to a separate execution environment.">
+  <text class="pt ink" x="136.5" y="29.4" text-anchor="middle">Direct execution</text>
+  <text class="pt ink" x="402.5" y="21" text-anchor="middle">Agent + commands in a</text>
+  <text class="pt ink" x="402.5" y="36.4" text-anchor="middle">sandbox</text>
+  <text class="pt ink" x="665" y="29.4" text-anchor="middle">Separate environment</text>
 
-  <rect class="pf" x="40" y="66" width="200" height="238" rx="3" />
-  <text class="pt" x="58" y="91">host</text>
-  <rect class="pl" x="70" y="112" width="140" height="52" rx="2" />
-  <text class="pt ink" x="140" y="143" text-anchor="middle">agent runtime</text>
-  <path class="pa" d="M140 164V212m-5-7 5 7 5-7" />
-  <rect class="pl" x="70" y="212" width="140" height="52" rx="2" />
-  <text class="pt ink" x="140" y="243" text-anchor="middle">commands</text>
+  <rect class="pf" x="14" y="54.6" width="245" height="193.2" rx="2" />
+  <text class="pt" x="26.6" y="72.8" text-anchor="start">host</text>
+  <rect class="pl" x="28" y="107.8" width="91" height="43.4" rx="2" />
+  <text class="pt ink" x="73.5" y="125.3" text-anchor="middle">agent</text>
+  <text class="pt ink" x="73.5" y="140" text-anchor="middle">runtime</text>
+  <path class="pa" d="M73.5 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
+  <rect class="pl" x="28" y="189" width="91" height="33.6" rx="2" />
+  <text class="pt ink" x="73.5" y="210" text-anchor="middle">commands</text>
+  <rect class="pl" x="147" y="107.8" width="91" height="43.4" rx="2" />
+  <text class="pt ink" x="192.5" y="125.3" text-anchor="middle">agent</text>
+  <text class="pt ink" x="192.5" y="140" text-anchor="middle">runtime</text>
+  <path class="pa" d="M192.5 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
+  <rect class="pl" x="147" y="189" width="91" height="33.6" rx="2" />
+  <text class="pt ink" x="192.5" y="210" text-anchor="middle">commands</text>
 
-  <rect class="pa dash" x="290" y="66" width="200" height="238" rx="3" />
-  <text class="pt acc" x="308" y="91">sandbox</text>
-  <rect class="pl" x="320" y="112" width="140" height="52" rx="2" />
-  <text class="pt ink" x="390" y="143" text-anchor="middle">agent runtime</text>
-  <path class="pa" d="M390 164V212m-5-7 5 7 5-7" />
-  <rect class="pl" x="320" y="212" width="140" height="52" rx="2" />
-  <text class="pt ink" x="390" y="243" text-anchor="middle">commands</text>
+  <rect class="pf" x="280" y="54.6" width="245" height="193.2" rx="2" />
+  <text class="pt" x="292.6" y="72.8" text-anchor="start">host</text>
+  <rect class="pa dash" x="289.8" y="84" width="107.8" height="154" rx="2" />
+  <text class="pt acc" x="298.2" y="99.4" text-anchor="start">sandbox</text>
+  <rect class="pl" x="298.2" y="107.8" width="91" height="43.4" rx="2" />
+  <text class="pt ink" x="343.7" y="125.3" text-anchor="middle">agent</text>
+  <text class="pt ink" x="343.7" y="140" text-anchor="middle">runtime</text>
+  <path class="pa" d="M343.7 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
+  <rect class="pl" x="298.2" y="189" width="91" height="33.6" rx="2" />
+  <text class="pt ink" x="343.7" y="210" text-anchor="middle">commands</text>
+  <rect class="pa dash" x="407.4" y="84" width="107.8" height="154" rx="2" />
+  <text class="pt acc" x="415.8" y="99.4" text-anchor="start">sandbox</text>
+  <rect class="pl" x="415.8" y="107.8" width="91" height="43.4" rx="2" />
+  <text class="pt ink" x="461.3" y="125.3" text-anchor="middle">agent</text>
+  <text class="pt ink" x="461.3" y="140" text-anchor="middle">runtime</text>
+  <path class="pa" d="M461.3 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
+  <rect class="pl" x="415.8" y="189" width="91" height="33.6" rx="2" />
+  <text class="pt ink" x="461.3" y="210" text-anchor="middle">commands</text>
 
-  <rect class="pl" x="570" y="76" width="140" height="52" rx="2" />
-  <text class="pt ink" x="640" y="107" text-anchor="middle">agent runtime</text>
-  <path class="pa" d="M628 128V212m-5-7 5 7 5-7M652 212V128m-5 7 5-7 5 7" />
-  <text class="pt" x="666" y="166">API</text>
-  <rect class="pa dash" x="540" y="182" width="200" height="122" rx="3" />
-  <rect class="pl" x="570" y="212" width="140" height="52" rx="2" />
-  <text class="pt ink" x="640" y="243" text-anchor="middle">commands</text>
-  <text class="pt acc" x="640" y="287" text-anchor="middle">environment</text>
+  <rect class="pl" x="616" y="70" width="98" height="43.4" rx="2" />
+  <text class="pt ink" x="665" y="87.5" text-anchor="middle">agent</text>
+  <text class="pt ink" x="665" y="102.2" text-anchor="middle">runtime</text>
+  <rect class="pa dash" x="567" y="158.2" width="196" height="89.6" rx="2" />
+  <rect class="pl" x="616" y="189" width="98" height="33.6" rx="2" />
+  <text class="pt ink" x="665" y="210" text-anchor="middle">commands</text>
+  <text class="pt acc" x="665" y="238" text-anchor="middle">environment</text>
+  <path class="pa" d="M653.8 113.4V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
+  <path class="pa" d="M676.2 189V113.4m-3.5 4.9 3.5 -4.9 3.5 4.9" />
+  <text class="pt" x="689.5" y="144.9" text-anchor="start">API</text>
 
-  <path class="pf thin" d="M40 330H740" />
-  <text class="pt" x="390" y="352" text-anchor="middle">Same task. Different placement, permissions and lifecycles.</text>
+  <path class="pf thin" d="M14 268.8H770" />
+  <text class="pt" x="392" y="286.3" text-anchor="middle">Same task. Different placement, permissions and lifecycles.</text>
 </svg>
