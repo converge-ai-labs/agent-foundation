@@ -676,3 +676,20 @@ async def test_unknown_decision_admission_is_interrupted_without_stranding_dispa
         with fail_after(5):
             while any(item.state == "admitted" for item in await app._store.bot.inputs()):
                 await sleep(0.01)
+
+
+async def test_bot_publications_notify_once_per_message_not_per_run(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await app._threads.bot_thread()
+        notices = []
+        bot._notify = lambda thread_id, notice: notices.append((thread_id, notice))
+        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
+        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
+        await bot.publish(message_id="two", text="Second message", receipt_id="same-run")
+        assert len(notices) == 2
+        assert [notice.message_id for _, notice in notices] == ["one", "two"]
+        assert [notice.receipt_id for _, notice in notices] == ["same-run", "same-run"]
+        assert [notice.brief for _, notice in notices] == ["First message", "Second message"]
+        assert all(thread_id == BOT_THREAD_ID for thread_id, _ in notices)

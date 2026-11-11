@@ -215,7 +215,10 @@ class BotController:
             receipt_id = receipt_id or (active.receipt.receipt_id if active is not None else None)
             notice = (
                 RootOperationNotice(
-                    receipt_id=receipt_id, status="completed", brief=reply_brief(text) or "Bot sent a message."
+                    receipt_id=receipt_id,
+                    message_id=message.message_id,
+                    status="completed",
+                    brief=reply_brief(text) or "Bot sent a message.",
                 )
                 if receipt_id
                 else None

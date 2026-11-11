@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from hashlib import sha256
+from typing import Literal
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -38,6 +39,8 @@ class PushSubscriptionInput(BaseModel):
     endpoint: str = Field(max_length=4096)
     keys: PushKeys
     origin: str = Field(max_length=512)
+    scope: Literal["all", "bot"] = "all"
+    language: Literal["en", "zh-CN"] = "en"
 
     @field_validator("endpoint")
     @classmethod

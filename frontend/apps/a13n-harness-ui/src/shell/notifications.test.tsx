@@ -198,7 +198,7 @@ it("requires explicit background opt-in for granted permission and suppresses pa
   transport.close();
 });
 
-it("switches the retained test status without replaying subscription or test requests", async () => {
+it("relocalizes retained test status and synchronizes language without resending the test", async () => {
   permission = "granted";
   const transport = createTransport("fixture-key", vi.fn());
   vi.spyOn(push, "supportsPush").mockReturnValue(true);
@@ -221,7 +221,8 @@ it("switches the retained test status without replaying subscription or test req
       await i18n.changeLanguage("zh-CN");
     });
     expect(screen.getByText(/推送服务已接受测试/)).toBeTruthy();
-    expect(enable).toHaveBeenCalledTimes(subscriptions);
+    expect(enable).toHaveBeenCalledTimes(subscriptions + 1);
+    expect(enable).toHaveBeenLastCalledWith(transport, false);
     expect(test).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => {
@@ -697,3 +698,83 @@ it.each([
     }
   },
 );
+
+function botMessage(id: string): Schema<"SummaryInvalidation"> {
+  const event = notice("same-bot-receipt");
+  return {
+    ...event,
+    root_thread_id: "thread_bot",
+    thread_id: "thread_bot",
+    notice: { ...event.notice!, message_id: id, brief: `Message ${id}` },
+  };
+}
+
+it("presents distinct Bot messages from one run and opens the Bot conversation", async () => {
+  mount("/settings/notifications");
+  event = botMessage("one");
+  fireEvent.click(screen.getByText("Emit"));
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findAllByText("New message from Bot")).toHaveLength(1);
+  event = botMessage("two");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findAllByText("New message from Bot")).toHaveLength(2);
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getAllByText("Bot 给你发了消息")).toHaveLength(2);
+  fireEvent.click(screen.getAllByRole("button", { name: "查看消息" })[0]);
+  expect(screen.getByText("/bot")).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
+});
+
+it("suppresses viewed Bot messages and does not replay them after navigation", () => {
+  mount("/bot");
+  event = botMessage("viewed");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText("New message from Bot")).toBeNull();
+  fireEvent.click(screen.getByText("Other thread"));
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText("New message from Bot")).toBeNull();
+});
+
+it("persists Bot-only scope, filters ordinary notices and keeps Bot attention", async () => {
+  mount("/settings/notifications");
+  fireEvent.click(screen.getByRole("button", { name: "Bot only" }));
+  expect(localStorage.getItem("a13n-harness-ui.notifications.scope")).toBe(
+    "bot",
+  );
+  event = notice("filtered-failure", "failed");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText("Task failed - UI polish")).toBeNull();
+  event = {
+    ...notice("bot-attention", "suspended"),
+    root_thread_id: "thread_bot",
+  };
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findByText("Bot needs your response")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  event = notice("all-failure", "failed");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findByText("Task failed - UI polish")).toBeTruthy();
+});
+
+it("restores scope across reload and synchronizes existing push on scope and language changes", async () => {
+  permission = "granted";
+  writePreference("notifications.scope", "bot");
+  writePreference("notifications.push-subscription", "subscription-one");
+  const enable = vi.spyOn(push, "enablePush").mockResolvedValue();
+  mount("/settings/notifications", createTransport("fixture-key", vi.fn()));
+  expect(
+    screen
+      .getByRole("button", { name: "Bot only" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await waitFor(() =>
+    expect(enable).toHaveBeenCalledWith(expect.anything(), false),
+  );
+  enable.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  await waitFor(() => expect(enable).toHaveBeenCalledOnce());
+  enable.mockClear();
+  await act(() => i18n.changeLanguage("zh-CN"));
+  await waitFor(() => expect(enable).toHaveBeenCalledOnce());
+  await act(() => i18n.changeLanguage("en"));
+});
