@@ -32,6 +32,7 @@ from a13n_harness._output_contract import (
     _prepare_pydantic_output_spec,
     _uses_tool_based_output,
 )
+from a13n_harness.capabilities.browser.code import browser_code_dependencies
 from a13n_harness.capabilities.context import (
     HandoffCapability,
 )
@@ -628,8 +629,9 @@ class HarnessBuilder:
         plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
         plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
         _validate_capability_source(plugin_capabilities, source="plugin")
-        _validate_capability_source(definition.capabilities, source="definition")
+        definition_owners = _validate_capability_source(definition.capabilities, source="definition")
         selected_capabilities = (*definition.capabilities, *plugin_capabilities)
+        selected_capabilities += browser_code_dependencies(definition_owners, selected_capabilities)
         if definition.tool_search is not None:
             selected_capabilities = definition.tool_search._compose(selected_capabilities, contributions)
         authored_capabilities = _resolve_model_characteristics_capabilities(

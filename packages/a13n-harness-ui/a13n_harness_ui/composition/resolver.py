@@ -467,6 +467,7 @@ class AgentCompositionResolver:
         capabilities = self._capability_recipes(source, agent, active_model=model)
         children: list[ResolvedSubagent] = []
         provisional = ResolvedAgentNode(
+            browser_mode=agent.browser_mode,
             source_kind="agent",
             source_id=agent.id,
             roster_name=agent.id,

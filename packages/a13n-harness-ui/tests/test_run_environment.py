@@ -42,14 +42,15 @@ async def _stub_sandbox_runtime(app, thread_id, monkeypatch):
     prepare = executor._environments.prepare
     captures = []
 
-    async def prepare_without_isolation(composition):
+    async def prepare_without_isolation(composition, *, browser_skills=False):
         captures.append(composition)
         # Exercise real admission, capture, checkpointing and resumption without
         # requiring an envd binary. Only runtime entry uses the native fixture.
         return await prepare(
             composition.model_copy(
                 update={"environment_profile": native.value.environment_profile, "session_versions": {}}
-            )
+            ),
+            browser_skills=browser_skills,
         )
 
     monkeypatch.setattr(executor._environments, "prepare", prepare_without_isolation)
@@ -99,7 +100,8 @@ def browser_runtime(monkeypatch):
     return runtime
 
 
-async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, browser_runtime):
+@pytest.mark.parametrize("mode", ["browser-use", "browser-use-code", "off"])
+async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, browser_runtime, mode):
     capabilities = []
 
     class Reconstructor(_CompletedReconstructor):
@@ -107,9 +109,12 @@ async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, 
             capabilities.append(tuple(cap for cap in root_capabilities if isinstance(cap, BrowserUseCapability)))
             return super().reconstruct(composition, root_capabilities=root_capabilities, **kwargs)
 
+    configuration_path = _write_configuration(tmp_path)
+    agent_file = configuration_path.parent / "agents" / "assistant.yaml"
+    agent_file.write_text(agent_file.read_text() + f"\nbrowser_mode: {mode!r}\n")
     async with open_harness_ui_app(
         _settings(tmp_path / "state"),
-        configuration_path=_write_configuration(tmp_path),
+        configuration_path=configuration_path,
         host_mode="webui",
         share_computer=True,
     ) as app:
@@ -128,7 +133,9 @@ async def test_sandbox_run_does_not_inherit_host_browser(tmp_path, monkeypatch, 
             )
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
             assert captures[-1].environment_profile.profile_id == (profile or "environment-native")
-            assert bool(capabilities[-1]) is expected_browser
+            assert bool(capabilities[-1]) is (expected_browser and mode != "off")
+            if capabilities[-1]:
+                assert capabilities[-1][0].skill_name == mode
             assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
             assert host.binding(thread.thread_id) == binding
 

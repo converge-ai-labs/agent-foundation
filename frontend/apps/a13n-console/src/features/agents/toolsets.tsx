@@ -6,6 +6,7 @@ import {
   CollapsibleTrigger,
   Label,
   Checkbox,
+  ChoiceField,
 } from "a13n-ui";
 import { CaretRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -261,6 +262,31 @@ export function AgentToolsets({
           </div>
           <CollapsiblePanel>
             <div className={styles.toolsetGroupBody}>
+              {group.key === "browser" && (
+                <ChoiceField
+                  label={t("Browser mode")}
+                  readOnly={readOnly || !enabled}
+                  value={
+                    value.browser?.config?.mode === "browser-use-code"
+                      ? "browser-use-code"
+                      : "browser-use"
+                  }
+                  options={[
+                    { value: "browser-use", label: t("Standard") },
+                    { value: "browser-use-code", label: t("Programmable") },
+                  ]}
+                  onValueChange={(mode) =>
+                    onChange((previous) => ({
+                      ...previous,
+                      browser: {
+                        ...previous.browser,
+                        enabled,
+                        config: { ...previous.browser?.config, mode },
+                      },
+                    }))
+                  }
+                />
+              )}
               {group.tools.map((tool) => {
                 const selection = value[group.key]?.tools?.[tool.key];
                 const selectedPermission =

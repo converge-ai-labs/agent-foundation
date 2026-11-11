@@ -1011,3 +1011,30 @@ async def test_screenshot_leaves_other_session_screencast_running(native_browser
         finally:
             await browser.send("Page.stopScreencast", page=observer)
             await browser.send("Target.detachFromTarget", {"sessionId": observer.session})
+
+
+async def test_dedicated_script_reads_page_and_reports_uncertain_mutation(native_browser, workflow_site):
+    from a13n_harness.capabilities.browser import BrowserError, BrowserQuery
+    from a13n_harness.capabilities.browser.scope import DedicatedCdpBrowserBackend
+
+    endpoint, _ = native_browser
+    async with DedicatedCdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate(workflow_site)
+        await backend.observe(BrowserQuery())
+        assert await backend.page_script("({title: document.title})") == {"title": "Browser workflows"}
+        await backend.page_script("""(() => {
+            document.body.innerHTML = '<article data-stock="0"><b>Basic</b><i>10</i></article>'
+                + '<article data-stock="2"><b>Basic</b><i>8</i></article>';
+            return true;
+        })()""")
+        rows = await backend.page_script("""Array.from(document.querySelectorAll('article[data-stock="2"]'),
+            card => ({name: card.querySelector('b').textContent, price: Number(card.querySelector('i').textContent)}))""")
+        assert rows == [{"name": "Basic", "price": 8}]
+        with pytest.raises(BrowserError):
+            await backend.page_script("'x'.repeat(300000)")
+        with pytest.raises(BrowserError) as failure:
+            await backend.page_script("(() => { document.title = 'saved'; throw Error(); })()")
+        assert failure.value.dispatch == "unknown"
+        assert await backend.page_script("document.title") == "saved"
+        with pytest.raises(BrowserError, match="retired"):
+            await backend.pause()

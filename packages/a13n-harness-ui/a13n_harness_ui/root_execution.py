@@ -25,6 +25,7 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.browser.code import BrowserUseCodeCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
@@ -306,7 +307,9 @@ class RootRunExecutor:
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
         browser_binding = None
         browser_unavailable = "Host browser is unavailable."
-        if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
+        if published.value.root.browser_mode == "off":
+            browser_unavailable = "Browser tools are disabled for this Agent."
+        elif published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
             browser_unavailable = "Host browser requires this Run to use Full Control."
         elif self._browsers is not None:
             browser_binding = await self._browsers.admit(thread_id)
@@ -475,7 +478,11 @@ class RootRunExecutor:
                     ),
                     *(
                         (
-                            BrowserUseCapability(
+                            (
+                                BrowserUseCodeCapability
+                                if published.value.root.browser_mode == "browser-use-code"
+                                else BrowserUseCapability
+                            )(
                                 self._browsers.backend(thread_id, admission.browser_binding),
                                 on_human_control=partial(self._browsers.handback.blocked, thread_id),
                             ),
@@ -528,11 +535,12 @@ class RootRunExecutor:
                 item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
                 for item in published.value.root.capabilities
             )
-            environment = (
-                None
-                if admission.organization is not None or live_without_files
-                else await self._environments.prepare(published.value)
-            )
+            if admission.organization is None and admission.browser_binding is not None:
+                environment = await self._environments.prepare(published.value, browser_skills=True)
+            elif admission.organization is not None or live_without_files:
+                environment = None
+            else:
+                environment = await self._environments.prepare(published.value)
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
                 agent_instance_id=f"agent-{uuid4().hex[:20]}",

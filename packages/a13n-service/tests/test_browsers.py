@@ -368,6 +368,45 @@ async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, 
         assert not await lifecycle.unsettled(session, browser["id"])
 
 
+async def test_programmable_mode_selects_its_skill_and_respects_individual_grants(service, runs_kit, scripted_model):
+    supplier, browser = await setup(service, runs_kit)
+    lease, _ = await bound_run(
+        service,
+        runs_kit,
+        scripted_model,
+        browser,
+        toolsets={
+            "browser": {
+                "enabled": True,
+                "config": {"mode": "browser-use-code"},
+                "tools": {"screenshot": {"enabled": False}},
+            },
+            "files": {"enabled": False},
+        },
+        tool_search={"automatic": {}},
+    )
+    scripted_model.call(
+        "view", {"file_path": "/environment/browser-skills/browser-use-code/SKILL.md"}, call_id="manual"
+    )
+    scripted_model.call("run_code", {"code": "await browser_tabs(action='new')"}, call_id="new_tab")
+    scripted_model.say("Done")
+    await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
+    run = await runs_kit.get_run(service, lease.run_id)
+    assert run["status"] == "completed", run.get("failure")
+    request = await scripted_model.request()
+    names = {tool["function"]["name"] for tool in request["tools"]}
+    assert "run_code" in names and "browser_tabs" not in names
+    assert "async def browser_tabs" in str(request["messages"])
+    assert "async def browser_screenshot" not in str(request["messages"])
+    assert '<skill name="browser-use-code">' in str(request["messages"])
+    following = await scripted_model.request()
+    assert any(
+        message.get("role") == "tool" and "# Browser use with CodeAct" in str(message.get("content"))
+        for message in following["messages"]
+    )
+    assert supplier.pages == {"original", "new-1"}
+
+
 @pytest.fixture
 def invocation(monkeypatch):
     monkeypatch.setattr(

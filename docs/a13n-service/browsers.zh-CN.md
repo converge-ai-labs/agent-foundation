@@ -5,6 +5,8 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 
 为 agent 配置浏览器，让它访问网站、读取页面、填写表单和截图。同一个浏览器可以跨 run 复用，也可以由多个 thread 共享。浏览器与 agent 的[环境](environments.md)分别管理。
 
+要通过代码操作浏览器，请启用 Agent 的浏览器工具集并选择**可编程**。在 API 配置中将 `toolsets.browser.config.mode` 设为 `browser-use-code`。Run 需要浏览器绑定。系统自动提供对应的技能，模型通过 `run_code` 使用获准的浏览器操作。
+
 ## 选择浏览器
 
 自托管选 **Docker**；希望浏览器运行在云端，选 **Browserbase、Kernel 或 Browser Use Cloud**；已有自行运维的浏览器，使用**外部 CDP** 接入。**Native** 用于在 Service 主机上调试。

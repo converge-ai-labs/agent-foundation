@@ -22,6 +22,8 @@ A Thread has at most one desired Browser binding:
 
 The Browser's lifetime is independent of its borrowers. Run exit and binding detachment disconnect borrowed clients without closing tabs or terminating the supplier allocation. Providers advertising retained-profile stop/start keep a private profile owned directly by the Browser. Stopping ends its runtime and viewer input while retaining the identity, binding and profile; the next authorized preparation or use starts a new runtime generation. Profiles are not independent resources and are not migrated between hosts. Release terminally removes the owned runtime and profile. Releasing an external attachment only unregisters Service access.
 
+An enabled Agent browser toolset selects `config.mode` as `browser-use` (default) or `browser-use-code`. Both use the same per-tool grants and require a Browser binding. Programmable operations are available through CodeAct. The Worker exposes the selected [browser skill](../a13n-harness/23-browser-use.md#programmable-browser) with the binding, independently of workspace Skill resources.
+
 ## External CDP attachment
 
 `POST /browsers/attach` registers one existing instance under workspace `run` authority. It accepts `name`, secret `cdp_url`, optional secret `headers`, `prepare` (default false) and `idle_seconds` (default null). Registration, metadata reads and lazy binding open no connection. The protected handle contains the complete URL and headers, including secret query parameters, until release.

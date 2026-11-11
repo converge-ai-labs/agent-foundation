@@ -5,6 +5,8 @@ description: Choose a browser, connect it to an agent, and manage its lifetime a
 
 Give an agent a browser to navigate websites, read pages, fill forms and take screenshots. A browser can stay available across runs and be shared by several threads. You manage it separately from the agent's [environments](environments.md).
 
+To program the browser, enable the Agent’s Browser toolset and select **Programmable**. In API configuration set `toolsets.browser.config.mode` to `browser-use-code`. The Run must have a Browser binding. It receives the matching skill and uses `run_code` with the same per-tool grants.
+
 ## Choose a browser
 
 Use **Docker** for self-hosting, **Browserbase, Kernel, or Browser Use Cloud** to run browsers in the cloud, or **external CDP** to connect a browser you already operate. **Native** is for debugging on the Service host.

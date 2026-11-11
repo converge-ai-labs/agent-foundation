@@ -26,7 +26,10 @@ from a13n_harness.capabilities import (
     ToolSearchPlan,
     ToolSearchSelection,
 )
+from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.browser.skill import BrowserSkillReader, browser_skill_source
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.capabilities.skills import SkillManager, SkillsCapability
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -404,10 +407,16 @@ class AgentReconstructor:
 
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
+        browser = (
+            next((item for item in root_capabilities if isinstance(item, BrowserUseCapability)), None) if root else None
+        )
+        browser_source = browser_skill_source(browser.skill_name) if browser is not None else None
         capabilities: list[AbstractCapability[Any]] = [CurrentAgentContextCapability()]
         local_sources: dict[str, AbstractCapability[Any]] = {}
         for recipe, item in zip(node.capabilities, selected, strict=True):
             capability = item.capability
+            if isinstance(capability, SkillsCapability) and browser_source is not None:
+                capability = SkillsCapability(capability.manager.with_source(browser_source))
             if recipe.guardian_credits and isinstance(capability, ToolPermissionsCapability):
                 capability = ToolPermissionsCapability(
                     capability.permissions,
@@ -417,6 +426,10 @@ class AgentReconstructor:
                 capabilities.append(GuardianParentCapability())
             capabilities.append(capability)
             local_sources[recipe.capability] = capability
+        if browser is not None and browser_source is not None:
+            if not any(isinstance(item, SkillsCapability) for item in capabilities):
+                capabilities.append(SkillsCapability(SkillManager((browser_source,))))
+            capabilities.append(BrowserSkillReader(browser.skill_name))
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         mcp_sources = {

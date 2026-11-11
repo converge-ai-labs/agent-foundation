@@ -7,6 +7,7 @@ from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
     from .browser import BrowserUseCapability
+    from .browser.code import BrowserUseCodeCapability
     from .codeact import CodeActCapability, CodeActConfig
     from .context import (
         CompactionCapability,
@@ -167,6 +168,7 @@ if TYPE_CHECKING:
 
 _EXPORTS = {
     "a13n_harness.capabilities.browser": ("BrowserUseCapability",),
+    "a13n_harness.capabilities.browser.code": ("BrowserUseCodeCapability",),
     "a13n_harness.capabilities.tool_execution": ("ToolExecutionCapability", "ToolExecutionConfig"),
     "a13n_harness.capabilities.codeact": (
         "CodeActCapability",

@@ -25,6 +25,16 @@ A restrictive `allowed_hosts` configuration is rejected: native browser traffic 
 
 A Host may select an explicit `enabled_tools` subset on `BrowserUseCapability`; omitted selection exposes all nine native tools. Disabled names are absent from tool discovery and invocation. This is composition policy, independent of backend authorization.
 
+## Programmable Browser
+
+A definition selects either `BrowserUseCapability` (standard) or `BrowserUseCodeCapability` (programmable). Both borrow the same Run-bound backend and honor its individual tool grants. In programmable mode the model sends browser operations, including a single click, through inline CodeAct. The builder supplies an inline-only runner or reuses an explicitly configured CodeAct capability with inline execution enabled. The [CodeAct contract](18-codeact.md) owns interpreter state, budgets, nested policy checks and failure handling.
+
+Browser helpers stay in the execution directory for nested dispatch. Request-based model sessions omit their native tool declarations. Realtime sessions cannot project a separate helper directory at connect and reject programmable mode before model work. Direct calls to the helpers are refused. A helper returns a status and a value or recovery guidance. An acknowledged CDP input requires separate verification of the user's task. Handback requires fresh observation. An uncertain mutation is never replayed automatically.
+
+A trusted embedded Host may explicitly grant `js` on a dedicated script backend. The model can then evaluate a JavaScript expression in its selected Chromium page from CodeAct. The operation can mutate browser state and expires element and screenshot observations. The Host owns the exclusive browser and profile and must end their use before reassignment. Ordinary shared browser bindings and global tab visibility do not grant script execution. Page JavaScript may schedule future work, so the dedicated script backend refuses human takeover.
+
+The interactive Hosts mount release-owned browser skill files read-only and select the matching skill when the Run receives browser tools. The model reads its manual on demand through `view`; a browser-only Agent can read the selected manual without general file access. Publishing a skill grants no browser authority.
+
 ## Tab Access, Ownership, and Selection
 
 `CdpBrowserBackend(browser, tab_access="owned")` preserves the default owned-tab behavior. The Host can explicitly select `tab_access="global"` on the same runtime. This is a binding policy, separate from tab cleanup ownership and shared profile state.

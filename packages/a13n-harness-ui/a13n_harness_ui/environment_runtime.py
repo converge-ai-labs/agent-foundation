@@ -19,6 +19,7 @@ from weakref import WeakValueDictionary
 
 from a13n_envd_client import EIPDeviceConnection
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.capabilities.browser.skill import BROWSER_SKILLS_PATH, BROWSER_SKILLS_ROOT
 from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
@@ -373,10 +374,10 @@ class EnvironmentRunService:
         for key, version in composition.session_versions.items():
             await (await self._session_owner(composition.thread_id, key)).validate(version)
 
-    async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
+    async def prepare(self, composition: ResolvedRunComposition, *, browser_skills: bool = False) -> EnvironmentRunPlan:
         await self.validate_admission(composition)
         thread_root = await self._thread_files.touch(composition.thread_id)
-        return await self._assemble(composition, thread_root=thread_root, preview=False)
+        return await self._assemble(composition, thread_root=thread_root, preview=False, browser_skills=browser_skills)
 
     @asynccontextmanager
     async def preview(
@@ -405,7 +406,7 @@ class EnvironmentRunService:
                 yield environment, plan.path_layout
 
     async def _assemble(
-        self, composition: ResolvedRunComposition, *, thread_root: Path, preview: bool
+        self, composition: ResolvedRunComposition, *, thread_root: Path, preview: bool, browser_skills: bool = False
     ) -> EnvironmentRunPlan:
         live = composition.root.source_kind == "live"
         profile = composition.environment_profile
@@ -463,6 +464,15 @@ class EnvironmentRunService:
                     root=Path(root),
                     alias=f"content-plugin-{index}",
                     mount_path=mount_path,
+                )
+            )
+        if browser_skills:
+            mounts.append(
+                await self._prepare_host_files_mount(
+                    root=BROWSER_SKILLS_ROOT,
+                    alias="browser-skills",
+                    mount_path=BROWSER_SKILLS_PATH,
+                    file_actions=FILE_READ_ACTIONS,
                 )
             )
         if _root_selects_skills(composition):

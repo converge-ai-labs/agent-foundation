@@ -8,6 +8,8 @@ This optional Host facility requires WebUI computer sharing. Browser filesystem 
 
 Model-facing Host browser tools require the Run's captured Full Control profile (`environment-native`). A Run-only Sandbox override omits those tools even when the Thread default remains Full Control and its browser binding stays enabled. Eligibility is captured at Run admission; subsequent default changes neither grant nor revoke Host browser access for that Run. A Run-only Full Control override can capture a ready binding on a Sandbox-default Thread. Owner viewer and lifecycle controls use instance authority rather than the next Run's Environment defaults. Thread availability, binding lifetime and human takeover remain dynamic checks.
 
+Agent configuration selects `browser_mode` as `off`, `browser-use` (default), or `browser-use-code`. The resolved Agent captures the mode for the Run. Both active modes require the same current-Run browser admission. An admitted mode selects its [Harness browser skill](../a13n-harness/23-browser-use.md#programmable-browser).
+
 ## Host Preparation
 
 Global `browser.mode` is `auto` by default or `disabled`. Auto prepares one shared runtime at WebUI startup when computer sharing is enabled; disabled starts no runtime and injects no browser tools. This startup policy and executable bindings require an App restart after saving. Browser preparation never gates ordinary Run admission. A starting, failed, disabled or unavailable runtime leaves ordinary Runs available without browser tools and with explicit model-visible availability context.

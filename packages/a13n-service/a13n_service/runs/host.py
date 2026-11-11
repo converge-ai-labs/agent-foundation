@@ -15,6 +15,8 @@ from functools import partial
 from a13n_harness import AgentContext, EnvironmentMount, RequestContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.browser import BrowserUseCapability
+from a13n_harness.capabilities.browser.code import BrowserUseCodeCapability
+from a13n_harness.capabilities.browser.skill import BrowserSkillName, BrowserSkillReader, browser_skill_source
 from a13n_harness.capabilities.context import RuntimeContextCapability, RuntimeContextConfiguration
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
@@ -31,6 +33,7 @@ from a13n_service.resources.agents import instructions, stored
 from a13n_service.resources.agents.schemas import SharedSkillSync
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
+    browser_mode,
     enabled_tool,
     enabled_tools,
     memory_file_tools,
@@ -60,7 +63,7 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.model_context import ModelContext
-from a13n_service.runs.platform_files import SOURCE
+from a13n_service.runs.platform_files import SOURCE, browser_skill_mount
 from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import RunOptions
@@ -81,6 +84,7 @@ class _Parts:
     host_skills: bool
     builtin_instructions: str | None
     browser_tools: frozenset[str]
+    browser_code: bool
     assets: bool
     computer_notify: bool
 
@@ -149,6 +153,7 @@ async def resolve_host(
                 builtin.get(node.revision_id) if node.revision_id is not None else None
             ),
             browser_tools=enabled_tools(config.toolsets, "browser"),
+            browser_code=browser_mode(config.toolsets) == "browser-use-code",
             computer_notify=enabled_tool(config.toolsets, "computer", "notify") is not None,
             assets=enabled_tool(config.toolsets, "assets", "publish") is not None,
         )
@@ -195,12 +200,17 @@ class Host:
             features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
         sync = agent.config.skill_sync
-        if parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
+        browser_skill: BrowserSkillName | None = None
+        if agent.definition_id in self.browsers:
+            browser_skill = "browser-use-code" if parts.browser_code else "browser-use"
+            features.append(BrowserSkillReader(browser_skill))
+        if browser_skill or parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
                     cache=self.skill_cache,
                     builtin=SOURCE if parts.host_skills else None,
+                    browser_skill=browser_skill_source(browser_skill) if browser_skill else None,
                     sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
@@ -273,7 +283,8 @@ async def open_host(
                 browsers[definition_id] = await stack.enter_async_context(
                     open_backend(runtime, lease, plan.browser, check, parts.browser_tools)
                 )
-                tools[definition_id]["browser"] = BrowserUseCapability(
+                browser_capability = BrowserUseCodeCapability if parts.browser_code else BrowserUseCapability
+                tools[definition_id]["browser"] = browser_capability(
                     enabled_tools=parts.browser_tools,
                     on_human_control=lambda: BROWSER_GUIDANCE,
                     file_instructions=(
@@ -326,6 +337,8 @@ async def open_host(
             )
         if memory:
             tools[plan.root_definition_id]["memory"] = CombinedCapability(memory)
+        if browsers:
+            platform_mounts = {**platform_mounts, "browser-skills": browser_skill_mount()}
         yield Host(
             runtime,
             lease,

@@ -131,6 +131,20 @@ export function AgentFields({
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
       <SettingsSection title={t("Tools & capabilities")}>
+        <ChoiceField
+          label={t("Browser mode")}
+          value={raw.browser_mode ?? "browser-use"}
+          options={[
+            { value: "off", label: t("Off") },
+            { value: "browser-use", label: t("Standard") },
+            { value: "browser-use-code", label: t("Programmable") },
+          ]}
+          onValueChange={(mode) => {
+            if (mode === "browser-use") document.delete("browser_mode");
+            else document.set("browser_mode", mode);
+            onChange(document.toString());
+          }}
+        />
         <SettingsToggle
           label={t("Tasks")}
           description={t("Track the work this agent plans and completes.")}

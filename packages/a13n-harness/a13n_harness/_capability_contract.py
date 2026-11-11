@@ -13,6 +13,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, ResolveModelId
 
 from a13n_harness.capabilities.browser import BROWSER_USE_CAPABILITY_ID, BrowserUseCapability
+from a13n_harness.capabilities.browser.code import BROWSER_USE_CODE_CAPABILITY_ID, BrowserUseCodeCapability
 from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
 from a13n_harness.capabilities.context import (
     FILE_CONTEXT_CAPABILITY_ID,
@@ -83,6 +84,7 @@ from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCa
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
     BROWSER_USE_CAPABILITY_ID: (BrowserUseCapability,),
+    BROWSER_USE_CODE_CAPABILITY_ID: (BrowserUseCodeCapability,),
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
     TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
@@ -485,7 +487,9 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             raise DefinitionError(
                 f"{label}Capability requires its RunBindings dependency.", code=f"{prefix}_binding_missing"
             )
-    if ctx.deps.browser_backend is not None and ctx.capabilities.get(BROWSER_USE_CAPABILITY_ID) is None:
+    if ctx.deps.browser_backend is not None and not (
+        ctx.capabilities.get(BROWSER_USE_CAPABILITY_ID) or ctx.capabilities.get(BROWSER_USE_CODE_CAPABILITY_ID)
+    ):
         raise DefinitionError("A browser binding requires its definition owner.", code="browser_owner_missing")
     if ctx.deps.task_state is not None and ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID) is None:
         raise DefinitionError("A task-state binding requires its definition owner.", code="task_state_owner_missing")

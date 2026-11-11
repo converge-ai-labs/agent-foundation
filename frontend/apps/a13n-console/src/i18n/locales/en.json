@@ -1,4 +1,7 @@
 {
+  "Programmable": "Programmable",
+  "Standard": "Standard",
+  "Browser mode": "Browser mode",
   "Envd is installed on each new sandbox without a desktop or guest Python runtime. Creation can take several minutes; you can leave this page while it continues.": "Envd is installed on each new sandbox without a desktop or guest Python runtime. Creation can take several minutes; you can leave this page while it continues.",
   "Automatic Envd": "Automatic Envd",
   "Install headless Envd": "Install headless Envd",

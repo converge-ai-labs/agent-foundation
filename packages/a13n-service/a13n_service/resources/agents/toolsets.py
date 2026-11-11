@@ -50,6 +50,12 @@ class EmptyConfiguration(_Frozen):
     pass
 
 
+class BrowserConfiguration(_Frozen):
+    mode: Literal["browser-use", "browser-use-code"] = Field(
+        default="browser-use", exclude_if=lambda mode: mode == "browser-use"
+    )
+
+
 class SearchConfiguration(DomainRestrictions):
     """An enabled search requires `provider_id`; revision validation enforces it."""
 
@@ -220,6 +226,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             )
         ),
         description="Native browser tools on the Thread's managed Browser binding.",
+        config=BrowserConfiguration,
         discover_by_default=True,
     ),
     _Toolset(
@@ -754,6 +761,11 @@ def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
     return frozenset(tool.model_name for tool, _ in _enabled(toolsets))
 
 
+def browser_mode(toolsets: Mapping[ToolsetKey, ToolsetSelection]) -> Literal["browser-use", "browser-use-code"]:
+    selected = toolsets.get("browser")
+    return BrowserConfiguration.model_validate(selected.config if selected else {}).mode
+
+
 def discovery_members(
     toolsets: dict[ToolsetKey, ToolsetSelection], selected: tuple[BuiltinToolsetKey, ...]
 ) -> dict[str, frozenset[str] | None]:
@@ -761,6 +773,9 @@ def discovery_members(
     members: dict[str, frozenset[str] | None] = {}
     for key in selected:
         entry = _BY_KEY[key]
+        if key == "browser" and browser_mode(toolsets) == "browser-use-code":
+            # These helpers are already discoverable through the inline CodeAct catalog.
+            continue
         if entry.source is None:
             members[key] = None
         else:

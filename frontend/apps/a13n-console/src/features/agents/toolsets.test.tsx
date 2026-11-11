@@ -659,3 +659,34 @@ it("selects automatic review and opens a rule for the catalogue execution identi
     label: "fetch",
   });
 });
+
+it("switches the browser mode while preserving narrower tool grants", async () => {
+  const browser = {
+    ...web,
+    key: "browser",
+    display_name: "Browser",
+    tools: [
+      {
+        ...web.tools[0],
+        key: "act",
+        model_name: "browser_act",
+        resource_selector: null,
+      },
+    ],
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? { items: [browser] }
+      : { items: [], next_cursor: null },
+  }));
+  const tools = { act: { enabled: false, permission: "deny" as const } };
+  const { user, draft } = renderDraft({ browser: { enabled: true, tools } });
+  await user.click((await screen.findByText("Browser")).closest("button")!);
+  await user.click(screen.getByRole("combobox", { name: "Browser mode" }));
+  await user.click(screen.getByRole("option", { name: "Programmable" }));
+  expect(draft().browser).toEqual({
+    enabled: true,
+    config: { mode: "browser-use-code" },
+    tools,
+  });
+});

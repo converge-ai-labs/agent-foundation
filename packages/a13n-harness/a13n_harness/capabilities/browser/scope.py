@@ -8,6 +8,10 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Literal
 
+from pydantic import JsonValue
+
+from a13n_harness.codeact.values import bounded_json_size
+
 from . import (
     BrowserError,
     BrowserHumanControl,
@@ -393,3 +397,50 @@ class CdpBrowserBackend:
                 targets = targets | {item["page"] for item in self.browser.download_records.values()}
                 targets |= self.browser.download_omitted.keys()
             return self.browser.downloads(targets)
+
+
+class DedicatedCdpBrowserBackend(CdpBrowserBackend):
+    """Host-owned exclusive browser and profile with no human input or concurrent borrowers.
+
+    The Host must dedicate the runtime before constructing this binding and terminate it before
+    reassigning it. A script may schedule work that outlives its Python caller.
+    """
+
+    async def pause(self) -> None:
+        raise BrowserError("A script-enabled browser must be retired before human control.")
+
+    async def page_script(self, expression: str) -> JsonValue:
+        async with self._operation():
+            page = await self._selected_page()
+            async with self._page_operation(page):
+                self.browser.require_document(page)
+                if page.requires_observation:
+                    raise BrowserError("Observe the selected page before running a script.")
+                try:
+                    # Limit the serialized result in the renderer before CDP copies it to the Host.
+                    script = (
+                        "(async () => { const stringify = JSON.stringify; const value = await (\n"
+                        + expression
+                        + "\n); const text = stringify(value); "
+                        "if (typeof text !== 'string' || text.length > 262144) throw new RangeError(); "
+                        "return text; })()"
+                    )
+                    result = await self.browser.send(
+                        "Runtime.evaluate",
+                        {"expression": script, "returnByValue": True, "awaitPromise": True, "timeout": 5000},
+                        page,
+                    )
+                    if "exceptionDetails" in result:
+                        raise BrowserError("Page script failed. Inspect the page before retrying.", dispatch="unknown")
+                    remote = result.get("result", {})
+                    if not isinstance(remote.get("value"), str):
+                        raise BrowserError(
+                            "Page script did not return JSON. Inspect before retrying.", dispatch="unknown"
+                        )
+                    value = json.loads(remote["value"])
+                    bounded_json_size(value, 256 * 1024)
+                    return value
+                except (ValueError, TypeError, RecursionError) as exc:
+                    raise BrowserError("Page script result exceeds the JSON boundary.", dispatch="unknown") from exc
+                finally:
+                    page.invalidate()

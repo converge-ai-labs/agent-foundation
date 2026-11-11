@@ -23,6 +23,8 @@ For Composer or Finding, submit only the allowed model/settings or desired suppl
 
 Models use keys. Skills and subagents use IDs and exact Revision IDs after validation. Connection tools select existing Connections. Platform tools are toolsets named by group (`agents`, `models`, `connections`, `skills`, `environment_templates`, `providers`, `execution`, `schedules`), off by default; each tool is one operation keyed by its MCP tool name, with its own `enabled` and `permission`. `inherit` allows reads and asks before writes. `builtin_skills=["platform-operations"]` independently enables these instructions. Custom Agents, including copies of builtin Agents, need a primary Environment and synchronize these files with their `skill_sync` policy. Only server-owned builtin Agents keep Host-mounted instructions. A configuration change affects later runs, never the current run's frozen configuration or delegated authority.
 
+Set an enabled browser toolset’s `config.mode` to `browser-use-code` for CodeAct browser operations or `browser-use` for standard tools. Preserve existing tool selections and permissions when changing mode. A Run with a Browser binding automatically receives the matching browser skill.
+
 `memory` sets new-session defaults: `enabled` and `spaces[{name, space_id, access}]`, selecting existing workspace Memory Spaces with read or write access. The first accepted business run fills omitted session fields from its Agent Revision; the session then keeps those choices. Each Space owns its organization policy and model. `memory_mounts` selects standalone memories for new threads.
 
 ## Configure context compaction

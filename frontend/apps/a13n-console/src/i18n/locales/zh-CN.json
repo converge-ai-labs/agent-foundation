@@ -1,4 +1,7 @@
 {
+  "Programmable": "可编程",
+  "Standard": "标准",
+  "Browser mode": "浏览器模式",
   "Envd is installed on each new sandbox without a desktop or guest Python runtime. Creation can take several minutes; you can leave this page while it continues.": "Envd 会安装到每个新沙箱中，不需要桌面组件或环境内的 Python 运行时。创建可能需要数分钟，期间可以离开此页面。",
   "Automatic Envd": "自动准备 Envd",
   "Install headless Envd": "安装无桌面 Envd",

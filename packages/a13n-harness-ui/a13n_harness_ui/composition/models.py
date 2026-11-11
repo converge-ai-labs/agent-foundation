@@ -126,6 +126,9 @@ class ResolvedEnvironmentBinding(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
+    browser_mode: Literal["off", "browser-use", "browser-use-code"] = Field(
+        default="browser-use", exclude_if=lambda mode: mode == "browser-use"
+    )
     source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)

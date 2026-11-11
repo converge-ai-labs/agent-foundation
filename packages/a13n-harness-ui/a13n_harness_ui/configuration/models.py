@@ -807,6 +807,9 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
 
 
 class AgentResource(ConfigurationModel):
+    browser_mode: Literal["off", "browser-use", "browser-use-code"] = Field(
+        default="browser-use", exclude_if=lambda mode: mode == "browser-use"
+    )
     schema_version: Literal["1"]
     kind: Literal["agent"]
     id: ResourceId

@@ -103,13 +103,18 @@ def skills_capability(
     cache: Cache,
     sync: SkillSync = _DEFAULT_SYNC,
     builtin: SkillSource | None = None,
+    browser_skill: SkillSource | None = None,
 ) -> SkillsCapability:
     """The definition's skill catalog; the Harness materializes it when the run starts, before its first request."""
     pinned = _SkillPackages(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
     materialize = bool(skills) or (isinstance(sync, SharedSkillSync) and sync.cleanup)
     materializers = [pinned] if materialize else []
     sources: list[SkillSource] = [*materializers, *(() if builtin is None else (builtin,))]
-    policy = SkillsPolicy(conflict="error", max_skills=max(1, len(skills) + int(builtin is not None)))
+    if browser_skill is not None:
+        sources.append(browser_skill)
+    policy = SkillsPolicy(
+        conflict="error", max_skills=max(1, len(skills) + int(builtin is not None) + int(browser_skill is not None))
+    )
     return SkillsCapability(SkillManager(sources, materializers=materializers, policy=policy))
 
 

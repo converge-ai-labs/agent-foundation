@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from a13n_harness.capabilities.browser.skill import BROWSER_SKILLS_PATH, BROWSER_SKILLS_ROOT
 from a13n_harness.capabilities.skills import FileSkillSource
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.execution import EnvironmentConnector
@@ -75,6 +76,10 @@ class _LocalSource:
 def _mount(root: Path, path: str) -> EnvironmentMount:
     connector = DIRECT_LOCAL.execution_connector({"root": {"path": root}, "max_value_bytes": 4 * 1024 * 1024})
     return EnvironmentMount(_LocalSource(connector), permission_ceiling=_READ_TEXT, mount_path=path)
+
+
+def browser_skill_mount() -> EnvironmentMount:
+    return _mount(BROWSER_SKILLS_ROOT, BROWSER_SKILLS_PATH)
 
 
 @asynccontextmanager

@@ -556,6 +556,10 @@ class SkillManager:
             policy=policy,
         )
 
+    def with_source(self, source: SkillSource) -> SkillManager:
+        """Extend this Host's selected sources, preserving its materializers and policy."""
+        return SkillManager((*self._sources, source), materializers=self._materializers, policy=self.policy)
+
     @property
     def roots(self) -> tuple[str, ...]:
         """Absolute roots in the selected FileOperator namespace."""

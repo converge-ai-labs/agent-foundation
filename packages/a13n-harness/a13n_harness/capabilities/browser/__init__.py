@@ -126,6 +126,9 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
 
     id = BROWSER_USE_CAPABILITY_ID
 
+    skill_name: Literal["browser-use", "browser-use-code"] = "browser-use"
+    tool_keys = frozenset({"observe", "read", "navigate", "act", "wait", "tabs", "dialog", "files", "screenshot"})
+
     def __init__(
         self,
         backend: BrowserBackend | None = None,
@@ -139,17 +142,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             "List accessible tracked download status/Host paths, or set a file input to absolute browser-Host paths. "
             "Upload requires ref and 1-16 paths; downloads takes neither. Does not transfer client or sandbox files."
         )
-        if enabled_tools is not None and enabled_tools - {
-            "observe",
-            "read",
-            "navigate",
-            "act",
-            "wait",
-            "tabs",
-            "dialog",
-            "files",
-            "screenshot",
-        }:
+        if enabled_tools is not None and enabled_tools - self.tool_keys:
             raise ValueError("Unknown browser tool key.")
         self.enabled_tools = enabled_tools
         # An embedding Host can register its own handback notification and return
@@ -173,12 +166,18 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         backend = ctx.deps.browser_backend if ctx.deps.browser_backend is not None else self.backend
         if backend is None:
             raise DefinitionError("BrowserUseCapability requires a browser backend.", code="browser_binding_missing")
-        return BrowserUseCapability(
+        return type(self)(
             backend,
             on_human_control=self.on_human_control,
             enabled_tools=self.enabled_tools,
             file_instructions=self.file_instructions,
         )
+
+    def _error_result(self, error: BrowserError) -> str:
+        return str(error)
+
+    def _handback_result(self, guidance: str) -> str:
+        return guidance
 
     def _instructions(self) -> str:
         takeover = (
@@ -205,7 +204,8 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         )
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
-        owner = ctx.capabilities[BROWSER_USE_CAPABILITY_ID]
+        assert self.id is not None  # Both browser modes have reserved definition identities.
+        owner = ctx.capabilities[self.id]
         if not isinstance(owner, BrowserUseCapability) or owner.backend is None:
             raise DefinitionError("Browser tools require a Run-bound backend.", code="browser_binding_missing")
         return owner.get_toolset()
@@ -214,7 +214,15 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         backend = self.backend
         if backend is None:
             return DynamicToolset(self._toolset_for_run, per_run_step=False)
-        tools = InstructionFunctionToolset(instructions=self._instructions())
+
+        def instructions(ctx: RunContext[AgentContext]) -> str:
+            if ctx.capabilities.get("a13n.browser-skill-reader") is not None:
+                return (
+                    f"To use the browser, read the {self.skill_name} SKILL.md from the current skill catalog with view."
+                )
+            return self._instructions()
+
+        tools = InstructionFunctionToolset(instructions=instructions)
 
         def metadata(name: str, read: bool = False) -> dict[str, object]:
             effects: set[ToolEffect] = {"read"} if read else {"execute", "external_communication"}
@@ -235,16 +243,18 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
                 self._references.clear()
                 self._tabs.clear()
                 self._screenshot = None
-                return self.on_human_control()
+                return self._handback_result(self.on_human_control())
             try:
                 await backend.wait_for_handback()
             except BrowserError as exc:
-                return str(exc)
+                return self._error_result(exc)
             finally:
                 self._references.clear()
                 self._tabs.clear()
                 self._screenshot = None
-            return "Human control ended. Obtain a fresh browser_observe result before continuing. The pending action was not executed."
+            return self._handback_result(
+                "Human control ended. Obtain a fresh browser_observe result before continuing. The pending action was not executed."
+            )
 
         async def guarded[T](operation: Awaitable[T]) -> T | str:
             try:
@@ -252,7 +262,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             except BrowserHumanControl:
                 return await handback()
             except BrowserError as exc:
-                return str(exc)
+                return self._error_result(exc)
 
         def target(ref: str) -> str:
             if ref not in self._references:
@@ -279,7 +289,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
                 return await handback()
             except BrowserError as exc:
                 self._references.clear()
-                return str(exc)
+                return self._error_result(exc)
             previous = (
                 {target: ref for ref, target in self._references.items()}
                 if self._revision == observation.revision
@@ -449,7 +459,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             except BrowserHumanControl:
                 return await handback()
             except BrowserError as exc:
-                return str(exc)
+                return self._error_result(exc)
 
         enabled = self.enabled_tools
         return (

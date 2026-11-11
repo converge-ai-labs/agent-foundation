@@ -5,6 +5,8 @@ description: 准备 WebUI Host 上的浏览器自动化，与 Agent 浏览网页
 
 当 Agent 需要操作网站，或你想一起检查网页时，使用 Host 浏览器。先[启动 WebUI](webui.md#start-the-server)。这个浏览器运行在服务器 Host 上，与显示 WebUI 的浏览器分开。
 
+在 Agent 设置中选择**浏览器模式**。标准模式使用单个浏览器工具。可编程模式通过 CodeAct 执行所有浏览器操作。选择“关闭”可禁用该 Agent 的浏览器工具。两种启用模式都需要完全控制权限，并会自动提供对应的内置技能。
+
 ## 使用 Host 浏览器
 
 **Browser** 让 Agent 在服务器上使用 Chromium，你可以观看原生窗口。Linux 显示共享的专用桌面，macOS 只显示当前对话拥有的浏览器窗口。浏览器需要 Linux 或 macOS Host、计算机共享和 Full Control Run。Windows 浏览器可以查看支持的 Host，但 Windows 不能承载此桌面。

@@ -5,6 +5,8 @@ description: Prepare browser automation on the WebUI Host, browse with the Agent
 
 Use the Host browser when the Agent needs to operate a website or you want to review a page together. First [start WebUI](webui.md#start-the-server). The browser runs on the server Host, separately from the browser displaying WebUI.
 
+In Agent settings, select **Browser mode**. Standard uses individual browser tools. Programmable uses CodeAct for every browser operation. Off disables the browser tools for that Agent. Both active modes require Full Control and select their matching built-in skill automatically.
+
 ## Browse on the Host
 
 **Browser** lets the Agent browse with Chromium on the server while you watch its native window. Linux shows a shared private desktop; macOS shows only the conversation's owned browser window. Browsing requires a Linux or macOS Host, computer sharing, and a Full Control Run. Windows browsers can view a supported Host; Windows cannot host this desktop.
