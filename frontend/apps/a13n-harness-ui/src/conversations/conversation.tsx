@@ -1046,7 +1046,9 @@ function ConversationContent({
         {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
-            connectionStatus={publication?.status ?? connectionStatus}
+            connectionStatus={
+              publication ? publication.status : connectionStatus
+            }
             status={
               !guest && thread && !thread.archived ? (
                 <ComposerStatus
@@ -1092,7 +1094,7 @@ function ConversationContent({
         {(!canCompose || thread?.archived) && feedback && (
           <div className={styles.conversationFeedback}>{feedback}</div>
         )}
-        {publication && !detail.data && (
+        {publication?.status && !detail.data && (
           <div className={styles.conversationFeedback}>
             {publication.status}
           </div>
