@@ -726,3 +726,26 @@ async def test_resize_restores_window_after_screen_change(browser, state):
     await browser.resize_window(page, 768, 1024, prepare_bounds=prepare)
     assert restores >= 2
     assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}
+
+
+@pytest.mark.parametrize("code", [-32601, -32602])
+async def test_native_chord_retains_uncertainty_after_an_accepted_modifier(browser, code):
+    import json
+
+    page = Page("page", "session")
+
+    async def send(method, params, session):
+        if params.get("type") == "keyDown":
+            raise RuntimeError({"code": code, "message": "Rejected main key"})
+        return {}
+
+    browser.client.send_raw.side_effect = send
+    result = json.loads(await interact(browser, page, Press(kind="press", key="Control+A")))
+    assert result["dispatch"] == "unknown"
+    events = [call.args[1] for call in browser.client.send_raw.await_args_list]
+    assert [(event["type"], event["key"]) for event in events] == [
+        ("rawKeyDown", "Control"),
+        ("keyDown", "A"),
+        ("keyUp", "A"),
+        ("keyUp", "Control"),
+    ]

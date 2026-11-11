@@ -171,3 +171,63 @@ async def test_cdp_protocol_rejections_are_known_and_allow_followup(scoped_brows
     browser.client.send_raw.side_effect = None
     browser.client.send_raw.return_value = {"root": {"nodeName": "#document"}}
     assert (await backend.cdp("DOM.getDocument"))["root"]["nodeName"] == "#document"
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+async def test_programming_dialog_yields_to_recovery_without_replaying(scoped_browser, tool):
+    browser, _ = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"])
+    resumed = asyncio.Event()
+
+    async def send(*args):
+        backend.page.dialog = {"type": "alert", "message": "test"}
+        backend.page.dialog_opened.set()
+        await resumed.wait()
+        return {"result": {"value": 42}}
+
+    browser.client.send_raw.side_effect = send
+    with pytest.raises(BrowserError, match="Use browser_dialog") as error:
+        if tool == "js":
+            await backend.js("alert('test'); 42")
+        else:
+            await backend.cdp("Runtime.evaluate", {"expression": "alert('test'); 42"})
+    assert error.value.dispatch == "dispatched"
+    assert browser.tasks
+    resumed.set()
+    await asyncio.gather(*browser.tasks)
+    assert browser.client.send_raw.await_count == 1
+
+
+async def test_cdp_pending_dialog_rejects_document_commands_but_allows_handling(scoped_browser):
+    browser, _ = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"])
+    backend.page.dialog = {"type": "alert", "message": "test"}
+    backend.page.dialog_opened.set()
+    with pytest.raises(BrowserError, match="dialog is pending") as error:
+        await backend.cdp("Runtime.evaluate", {"expression": "42"})
+    assert error.value.dispatch == "not_dispatched"
+    browser.client.send_raw.assert_not_awaited()
+    assert await backend.cdp("Page.handleJavaScriptDialog", {"accept": True}) == {}
+    browser.client.send_raw.assert_awaited_once_with("Page.handleJavaScriptDialog", {"accept": True}, "session-one")
+
+
+@pytest.mark.parametrize("files", [["/host/private.txt"], ["relative.txt"]])
+async def test_cdp_drag_cannot_supply_host_files(scoped_browser, files):
+    browser, _ = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"])
+    with pytest.raises(BrowserError, match="browser_files") as error:
+        await backend.cdp("Input.dispatchDragEvent", {"data": {"files": files}})
+    assert error.value.dispatch == "not_dispatched"
+    browser.client.send_raw.assert_not_awaited()
+
+
+@pytest.mark.parametrize("files", [None, []])
+async def test_cdp_file_free_drag_remains_available(scoped_browser, files):
+    browser, _ = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"])
+    data = {"items": [{"mimeType": "text/plain", "data": "drag text"}], "dragOperationsMask": 1}
+    if files is not None:
+        data["files"] = files
+    params = {"type": "dragEnter", "x": 20, "y": 20, "data": data}
+    assert await backend.cdp("Input.dispatchDragEvent", params) == {}
+    browser.client.send_raw.assert_awaited_once_with("Input.dispatchDragEvent", params, "session-one")

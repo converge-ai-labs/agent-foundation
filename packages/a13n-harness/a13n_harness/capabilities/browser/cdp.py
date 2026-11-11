@@ -227,17 +227,6 @@ class Chromium:
                 "Browser connection closed; observe before retrying an uncertain action.", dispatch="unknown"
             ) from exc
         except (TimeoutError, RuntimeError, ConnectionError) as exc:
-            if (
-                isinstance(exc, RuntimeError)
-                and exc.args
-                and isinstance(exc.args[0], dict)
-                and exc.args[0].get("code") in {-32601, -32602}
-            ):
-                # Chromium rejected the method/arguments before executing it.
-                # A correctable raw-CDP request must not strand a Host permit.
-                raise BrowserError(
-                    "CDP rejected the method or parameters. Correct the request before retrying."
-                ) from exc
             raise BrowserError(
                 "Browser operation failed; its outcome may be uncertain. Observe before retrying.", dispatch="unknown"
             ) from exc

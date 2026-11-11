@@ -950,22 +950,30 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
 
 
 @pytest.mark.parametrize("tool", ["js", "cdp"])
-@pytest.mark.parametrize("outcome", ["success", "script_error", "unknown", "invalid_params"])
+@pytest.mark.parametrize("outcome", ["success", "script_error", "unknown", "invalid_params", "dialog"])
 async def test_programming_retains_selected_page_grants_and_unknown_permits(
     service, runs_kit, scripted_model, invocation, tool, outcome
 ):
     supplier, browser = await setup(service, runs_kit)
     lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
     async with execution.open_backend(
-        service.runtime, lease, binding, invocation, frozenset({"tabs", tool})
+        service.runtime, lease, binding, invocation, frozenset({"tabs", "dialog", tool})
     ) as backend:
         await backend.tabs("new")
         native = backend.native
         native.page.requires_observation = False
         original = supplier.send
+        resumed = asyncio.Event()
 
         async def send(method, params, session):
+            if method == "Page.handleJavaScriptDialog":
+                native.browser._dialog_closed({}, session)
+                resumed.set()
+                return {}
             if method in {"Runtime.evaluate", "DOM.getDocument"}:
+                if outcome == "dialog":
+                    native.browser._dialog_opened({"type": "alert", "message": "test"}, session)
+                    await resumed.wait()
                 assert session == "session-new-1"
                 if outcome == "unknown":
                     raise TimeoutError("outcome is unknown")
@@ -977,7 +985,7 @@ async def test_programming_retains_selected_page_grants_and_unknown_permits(
             return await original(method, params, session)
 
         native.browser.client.send_raw.side_effect = send
-        if outcome in {"unknown", "invalid_params"} or (outcome == "script_error" and tool == "js"):
+        if outcome in {"unknown", "invalid_params", "dialog"} or (outcome == "script_error" and tool == "js"):
             with pytest.raises(BrowserError) as error:
                 if tool == "js":
                     await backend.js("document.title")
@@ -985,7 +993,12 @@ async def test_programming_retains_selected_page_grants_and_unknown_permits(
                     await backend.cdp("DOM.getDocument")
             assert (
                 error.value.dispatch
-                == {"unknown": "unknown", "invalid_params": "not_dispatched", "script_error": "dispatched"}[outcome]
+                == {
+                    "unknown": "unknown",
+                    "invalid_params": "not_dispatched",
+                    "script_error": "dispatched",
+                    "dialog": "dispatched",
+                }[outcome]
             )
         elif tool == "js":
             assert await backend.js("document.title") == {"title": "page"}
@@ -996,7 +1009,10 @@ async def test_programming_retains_selected_page_grants_and_unknown_permits(
                 await session.scalars(select(BrowserOperationRow).where(BrowserOperationRow.settled_at.is_(None)))
             )
             assert bool(unsettled) is (outcome == "unknown")
-        if outcome == "invalid_params":
+        if outcome == "dialog":
+            assert await backend.dialog("accept")
+            await asyncio.gather(*native.browser.tasks)
+        if outcome in {"invalid_params", "dialog"}:
             assert await backend.tabs("list")  # Correctable requests must not strand the Browser.
         other = "cdp" if tool == "js" else "js"
         with pytest.raises(BrowserError, match="disabled"):
