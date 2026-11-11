@@ -114,7 +114,7 @@ async def test_default_tool_visibility_and_guidance_follow_effective_run_support
     expected = native_youtube or inline_video
     assert ("read_media_url" in definitions) is expected
     guidance = repr(seen[0][0]) + str(seen[0][1].instructions)
-    assert ('<tool-instruction name="read_media_url">' in guidance) is (expected and instructions_enabled)
+    assert ("<tool-name>read_media_url</tool-name>" in guidance) is (expected and instructions_enabled)
     assert ("YouTube links are attached as native" in guidance) is (native_youtube and instructions_enabled)
     assert ("Direct HTTP(S) media resources are downloaded" in guidance) is (inline_video and instructions_enabled)
     assert "read_media_url_youtube" not in guidance and "read_media_url_inline" not in guidance

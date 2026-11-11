@@ -1,1 +1,3 @@
+<best-practices>
 Use the latest Environment mount actions and exposed tool schemas to select the intended desktop. Support, mount permission, provider readiness and Host takeover admission are separate facts. Unprepared mounts may prepare on first use; their configured actions are not a live native readiness report. Shared GUI content can change between calls. Reconcile unknown or partial outcomes before further mutation; never replay automatically.
+</best-practices>

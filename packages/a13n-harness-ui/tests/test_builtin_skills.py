@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
@@ -213,7 +214,7 @@ async def test_root_run_reads_builtin_skill_navigation_and_documentation(
     expected_content = (
         ("Documentation map", "Documentation navigation", "Configuration reference")
         if skill_name == SKILL_NAME
-        else ("Guidance map", "Use brace alternatives", "Thread inspection")
+        else ("Guidance map", "Use brace alternatives", "current_run describes the captured configuration")
     )
     observed: list[str] = []
 
@@ -285,6 +286,23 @@ async def test_skill_preview_uses_run_only_roots_without_retargeting_thread(tmp_
         )
         assert "run-only" in {item.name for item in preview.items}
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
+
+
+@pytest.mark.parametrize("root", [None, "/release-guidance"])
+@pytest.mark.parametrize("name", ["threads", "coordinator", "worker"])
+def test_ui_guidance_uses_flat_attribute_free_xml_sections(name: str, root: str | None) -> None:
+    from a13n_harness_ui.builtin_guidance import ui_guidance
+
+    content = ui_guidance(name, root)
+    sections = ElementTree.fromstring(f"<guidance>{content}</guidance>")
+    assert sections.text is None
+    assert all(not section.attrib and not list(section) for section in sections)
+    assert [section.tag for section in sections] == [
+        "essential-rules",
+        "reference"
+        if root
+        else {"threads": "best-practices", "coordinator": "worker-lifecycle", "worker": "reporting"}[name],
+    ]
 
 
 @pytest.mark.parametrize(

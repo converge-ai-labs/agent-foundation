@@ -97,7 +97,7 @@ def _online_url(path: str, fragment: str) -> str:
 
 
 def _build_operations(package_root: Path, repository_root: Path) -> Path:
-    """Copy owned Markdown verbatim and generate its navigation, without runtime imports."""
+    """Reuse matching output or copy owned Markdown and regenerate its navigation."""
     sources = {
         "harness": repository_root / "packages/a13n-harness/a13n_harness/toolsets/prompts",
         "ui": package_root / "a13n_harness_ui/assets/guidance",
@@ -115,14 +115,17 @@ def _build_operations(package_root: Path, repository_root: Path) -> Path:
             contents[relative] = page.read_bytes()
             overview.append(f"- [{page.stem}]({relative}) — lines 1-{len(contents[relative].splitlines())}")
         overview.append("")
+    contents["SKILL.md"] = ("\n".join(overview).rstrip() + "\n").encode("utf-8")
     output = package_root / BUNDLE_PATH / OPERATIONS_SKILL_NAME
+    existing = {path.relative_to(output).as_posix(): path.read_bytes() for path in output.rglob("*") if path.is_file()}
+    if existing == contents:
+        return output
     if output.exists():
         shutil.rmtree(output)
     for relative, content in contents.items():
         target = output / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-    (output / "SKILL.md").write_text("\n".join(overview).rstrip() + "\n", encoding="utf-8")
     return output
 
 

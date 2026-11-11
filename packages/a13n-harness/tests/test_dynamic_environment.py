@@ -552,10 +552,10 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     assert "do not interpret repository ignore files" in ignored_description
     assert info.instructions is not None
     assert "Agent-wide tool timeout" in info.instructions
-    assert '<tool-instruction name="view">' in info.instructions
-    assert '<tool-instruction name="environment-shell">' in info.instructions
-    assert '<tool-instruction name="copy">' not in info.instructions
-    assert '<tool-instruction name="delete">' not in info.instructions
+    assert "<tool-name>view</tool-name>" in info.instructions
+    assert "<tool-name>environment-shell</tool-name>" in info.instructions
+    assert "<tool-name>copy</tool-name>" not in info.instructions
+    assert "<tool-name>delete</tool-name>" not in info.instructions
     mount_parts = [
         item.content
         for message in messages
@@ -920,10 +920,10 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         observed_results[:] = [cast(dict[str, Any], part.content) for part in returns]
         assert {"mkdir", "move", "copy", "delete"} <= {tool.name for tool in info.function_tools}
         assert info.instructions is not None
-        assert '<tool-instruction name="move">' in info.instructions
-        assert '<tool-instruction name="copy">' in info.instructions
-        assert '<tool-instruction name="delete">' in info.instructions
-        assert '<tool-instruction name="environment-shell">' not in info.instructions
+        assert "<tool-name>move</tool-name>" in info.instructions
+        assert "<tool-name>copy</tool-name>" in info.instructions
+        assert "<tool-name>delete</tool-name>" in info.instructions
+        assert "<tool-name>environment-shell</tool-name>" not in info.instructions
         if len(returns) < len(calls):
             name, arguments = calls[len(returns)]
             yield {
@@ -1196,8 +1196,8 @@ async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Pat
         names = {tool.name for tool in info.function_tools}
         assert names == {"copy"}
         assert info.instructions is not None
-        assert '<tool-instruction name="copy">' in info.instructions
-        assert '<tool-instruction name="environment-shell">' not in info.instructions
+        assert "<tool-name>copy</tool-name>" in info.instructions
+        assert "<tool-name>environment-shell</tool-name>" not in info.instructions
         if not returns:
             yield {
                 0: DeltaToolCall(

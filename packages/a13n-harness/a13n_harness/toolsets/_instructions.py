@@ -28,7 +28,7 @@ def tool_instruction(name: str, *sections: str, reference_root: str | None = Non
         )
         for section in (name, *sections)
     )
-    return f'<tool-instruction name="{name}">\n{content}\n</tool-instruction>'
+    return f"<tool-name>{name}</tool-name>\n{content}"
 
 
 def tool_guidance(name: str, *sections: str) -> Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]:

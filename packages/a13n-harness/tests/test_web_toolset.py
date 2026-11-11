@@ -133,10 +133,10 @@ async def test_web_instructions_follow_provider_activation() -> None:
     )
     assert base_parts is not None
     base = "\n".join(part.content for part in base_parts)
-    assert '<tool-instruction name="fetch">' in base
-    assert '<tool-instruction name="download">' in base
-    assert '<tool-instruction name="search">' not in base
-    assert '<tool-instruction name="scrape">' not in base
+    assert "<tool-name>fetch</tool-name>" in base
+    assert "<tool-name>download</tool-name>" in base
+    assert "<tool-name>search</tool-name>" not in base
+    assert "<tool-name>scrape</tool-name>" not in base
 
     provider_parts = (
         await _toolset(
@@ -148,8 +148,8 @@ async def test_web_instructions_follow_provider_activation() -> None:
     )
     assert provider_parts is not None
     provider = "\n".join(part.content for part in provider_parts)
-    assert '<tool-instruction name="search">' in provider
-    assert '<tool-instruction name="scrape">' in provider
+    assert "<tool-name>search</tool-name>" in provider
+    assert "<tool-name>scrape</tool-name>" in provider
 
 
 def test_tool_output_size_uses_serialized_characters_not_utf8_bytes() -> None:

@@ -1,3 +1,4 @@
+<essential-rules>
 Use restricted Python to compose tool calls and process their results before returning only the information needed for the next reasoning step.
 
 Host calls:
@@ -12,15 +13,14 @@ Host calls:
 
 - Tool effects are not transactional or rolled back. After a failure, inspect what completed and recover deliberately; do not blindly replay code that may repeat external effects.
 
-It has no ambient filesystem, network, process, environment, or credential access and cannot install packages. Use listed host tools for those operations.
+It has no ambient filesystem, network, process, environment, or credential access and cannot install packages. Use listed host tools for those operations. </essential-rules>
 
 <!-- reference -->
 
-## State and failure
-
+<state-and-failure>
 - Temporary Python bindings are distinct from explicit values saved with store/load.
 - When listed, await store(key=..., value=...) to replace a saved value; await load(key=...) to read a detached copy, or await load() to list keys. A missing key is an error, not null. Mutating a loaded value does not save it; use store again. Use forget(key=...) to delete.
 - Successful explicit writes survive sandbox reset, failure, and cancellation. Cross-run recovery requires the host to persist and restore HarnessState.
 - Failure feedback includes error type and source location when available, plus bounded nested validation diagnostics. An unsuccessful inline feed clears its bindings; successful stored writes remain.
 
-The Monty sandbox supports a Python subset, not general CPython. Built-in data processing includes `csv`, `hashlib`, `bisect`, `tomllib`, `fnmatch`, and `decimal`, plus dataclasses with methods. Convert Decimal values and dataclass instances explicitly to finite JSON-compatible values before passing them to tools, storing them, or returning them. Supported `datetime` and `time` APIs can read system time; the sandbox timezone defaults to UTC. Catalog function/type declarations are documentation, not definitions to execute or runtime classes to instantiate. The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority.
+The Monty sandbox supports a Python subset, not general CPython. Built-in data processing includes `csv`, `hashlib`, `bisect`, `tomllib`, `fnmatch`, and `decimal`, plus dataclasses with methods. Convert Decimal values and dataclass instances explicitly to finite JSON-compatible values before passing them to tools, storing them, or returning them. Supported `datetime` and `time` APIs can read system time; the sandbox timezone defaults to UTC. Catalog function/type declarations are documentation, not definitions to execute or runtime classes to instantiate. The JSON schemas preserve exact constraints; an Any annotation does not grant extra authority. </state-and-failure>

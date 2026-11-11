@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import runpy
 from pathlib import Path
 
@@ -25,11 +26,15 @@ def _source(tmp_path: Path) -> tuple[Path, Path]:
     )
     (assets / "guidance").mkdir()
     (assets / "guidance/threads.md").write_text(
-        "Receipts confirm admission.\n\n<!-- reference -->\n\nInspect outcomes.\n"
+        "<essential-rules>\nReceipts confirm admission.\n</essential-rules>\n\n<!-- reference -->\n\n"
+        "<best-practices>\nInspect outcomes.\n</best-practices>\n"
     )
     prompts = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts"
     prompts.mkdir(parents=True)
-    (prompts / "view.md").write_text("Read in chunks.\n\n<!-- reference -->\n\nUse focused media instructions.\n")
+    (prompts / "view.md").write_text(
+        "<essential-rules>\nRead in chunks.\n</essential-rules>\n\n<!-- reference -->\n\n"
+        "<best-practices>\nUse focused media instructions.\n</best-practices>\n"
+    )
     docs = repository / "docs/a13n-harness-ui"
     docs.mkdir(parents=True)
     (docs / "meta.json").write_text(
@@ -176,6 +181,62 @@ def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_f
     build_skills(package, repository)
     assert not (output / "ui/threads.md").exists()
     assert (output / "ui/coordination.md").is_file()
+
+
+def test_operations_reuses_matching_bundle_across_builder_loads_without_rewriting(tmp_path: Path) -> None:
+    package, _ = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    for path in output.rglob("*"):
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+    original = {path.relative_to(output): path.stat().st_mtime_ns for path in output.rglob("*")}
+    reloaded = runpy.run_path(str(PACKAGE_ROOT / "build_skills.py"))
+    reloaded["prepare_skills"](package)
+    assert {path.relative_to(output): path.stat().st_mtime_ns for path in output.rglob("*")} == original
+
+
+@pytest.mark.parametrize("change", ["source", "template", "missing", "corrupt", "extra"])
+def test_operations_rebuilds_changed_inputs_or_incomplete_output(tmp_path: Path, change: str) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    source = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/view.md"
+    if change == "source":
+        source.write_text(source.read_text().replace("Read in chunks.", "Read focused chunks."))
+    elif change == "template":
+        template = package / "a13n_harness_ui/assets/operations_skill.md"
+        template.write_text(template.read_text() + "\nUpdated navigation guidance.\n")
+    elif change == "missing":
+        (output / "harness/view.md").unlink()
+    elif change == "corrupt":
+        (output / "harness/view.md").write_text("stale contents")
+    else:
+        (output / "stale.md").write_text("removed source")
+    prepare_skills(package)
+    rebuilt = _files(output)
+    assert rebuilt["harness/view.md"] == source.read_bytes()
+    if change in {"source", "template"}:
+        assert rebuilt != original
+    else:
+        assert rebuilt == original
+
+
+@pytest.mark.parametrize("owner", ["harness", "ui"])
+def test_operations_validates_sources_before_reusing_existing_output(tmp_path: Path, owner: str) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    source = (
+        repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/view.md"
+        if owner == "harness"
+        else package / "a13n_harness_ui/assets/guidance/threads.md"
+    )
+    source.unlink()
+    with pytest.raises(ValueError, match=f"Missing {owner} operation guidance"):
+        prepare_skills(package)
+    assert _files(output) == original
 
 
 def test_sdist_preparation_rejects_missing_operations_reference(tmp_path: Path) -> None:

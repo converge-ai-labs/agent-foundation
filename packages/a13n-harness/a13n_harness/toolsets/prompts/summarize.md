@@ -2,8 +2,10 @@
 Use `summarize` for an explicit semantic handoff when continuity would improve by moving to a fresh context. Notes and tasks remain separately projected as current structured state.
 </overview>
 
+<essential-rules>
 - Call `summarize` directly as the only tool call in its response, outside CodeAct. Complete other calls and inspect their results before writing the summary.
 - Wait for retained CodeAct runners to finish and inspect their results before authoring a fresh summary. Do not reissue their work.
+</essential-rules>
 
 <!-- reference -->
 

@@ -1,9 +1,10 @@
+<essential-rules>
 - `pattern` is a regular expression by default. For exact code fragments, punctuation, or uncertain escaping, set `regex=false`; set `case_sensitive=false` to ignore case.
+</essential-rules>
 
 <!-- reference -->
 
-## Usage
-
+<best-practices>
 - Examples: `pattern="class Choice|class .*Picker|choices\\(|resume"` searches alternatives; `pattern="choices(", regex=false` searches literal code.
 - `root` accepts a file or directory. An explicit file searches only itself, including hidden or Git-ignored files; `include` matches its basename. A directory is searched recursively with the selected hidden/ignore filters.
 - Narrow `root` and `include` before raising limits. `include` uses the same glob syntax as `glob`: `*.py` at all depths, `/*.py` only at the root, or `{src,tests}/**/*.{py,rs}` for alternatives. Do not use regex alternation in `include`.
@@ -14,3 +15,4 @@
 - Keep context low for broad scans and raise it for focused inspection.
 - Increase per-file or total result limits only after narrowing the search.
 - Include hidden or ignored paths only when the target is likely there.
+</best-practices>

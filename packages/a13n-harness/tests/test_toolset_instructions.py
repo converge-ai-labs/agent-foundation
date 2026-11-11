@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator
+from importlib.resources import files
 
 import pytest
 from a13n_harness import (
@@ -76,13 +78,13 @@ async def test_toolset_instruction_switch_uses_run_override_before_agent_default
 
     assert "Authored Agent instruction." in instructions
     assert "Capability instruction." in instructions
-    assert ('<tool-instruction name="summarize">' in instructions) is expected_toolset_guidance
+    assert ("<tool-name>summarize</tool-name>" in instructions) is expected_toolset_guidance
 
 
 async def test_native_pydantic_agent_spec_keeps_toolset_instructions_enabled() -> None:
     instructions = await _capture_instructions(PydanticAgentSpec(), run_override=None)
 
-    assert '<tool-instruction name="summarize">' in instructions
+    assert "<tool-name>summarize</tool-name>" in instructions
 
 
 def test_run_binding_rejects_non_boolean_toolset_instruction_override() -> None:
@@ -104,6 +106,40 @@ async def test_reference_delivery_preserves_essentials_and_the_instruction_switc
     assert ("outside CodeAct" in instructions) is enabled
     assert "The user explicitly asks to summarize and continue" not in instructions
     assert "<!-- reference -->" not in instructions
+
+
+@pytest.mark.parametrize("root", [None, "/release-guidance"])
+def test_operational_instructions_use_flat_attribute_free_xml_sections(root: str | None) -> None:
+    from a13n_harness.toolsets._instructions import tool_instruction
+
+    model_prompts = {"compact", "tool_review"} | {
+        f"{kind}_understanding{suffix}" for kind in ("image", "audio", "video") for suffix in ("", "_default")
+    }
+    prompts = files("a13n_harness.toolsets.prompts")
+    for path in prompts.iterdir():
+        name = path.name.removesuffix(".md")
+        if not path.name.endswith(".md") or name in model_prompts:
+            continue
+        instruction = tool_instruction(name, reference_root=root)
+        identity = f"<tool-name>{name}</tool-name>\n"
+        assert instruction.startswith(identity)
+        # Inline code can quote runtime XML such as `<memory-context>`; it is not section markup.
+        body = re.sub(r"`[^`]*`", "", instruction.removeprefix(identity))
+        assert not re.search(r"(?m)^#+ ", body), name
+        tags = re.findall(r"</?[^>]+>", body)
+        assert tags, name
+        section = None
+        for markup in tags:
+            match = re.fullmatch(r"<(/?)([a-z][a-z-]*)>", markup)
+            assert match is not None, (name, markup)
+            closing, tag = match.groups()
+            if closing:
+                assert section == tag, (name, markup)
+                section = None
+            else:
+                assert section is None, (name, markup)
+                section = tag
+        assert section is None, name
 
 
 @pytest.mark.parametrize("path", ["relative", "/guidance/../other", "/guidance/"])

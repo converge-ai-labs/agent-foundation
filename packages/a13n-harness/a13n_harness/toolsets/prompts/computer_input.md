@@ -1,1 +1,3 @@
+<best-practices>
 Other users and agents may change the shared GUI. Text and keys affect current foreground focus, not a named window. Confirm focus before typing and split long text. `effect=executed` means input was posted, not that the application accepted it. `input_cleanup_complete` reports whether the operation released its own pressed keys/buttons. Partial or unknown effects are not replay-safe. If cleanup is incomplete, stop further input and ask the Host to reconcile input state; a screenshot alone cannot prove keys/buttons were released. Observe current state before deciding what to do next; never blindly repeat input after a timeout or uncertain result.
+</best-practices>
