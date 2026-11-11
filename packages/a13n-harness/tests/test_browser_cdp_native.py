@@ -443,6 +443,26 @@ root = await browser_cdp(method='DOM.getDocument', params={'depth':0})
         assert tool_execution_value(seen[7].content, seen[7].metadata) == 4
 
 
+@pytest.mark.parametrize(
+    ("method", "params", "dispatch"),
+    [
+        ("DOM.getOuterHTML", {"nodeId": 999999}, "dispatched"),
+        ("Runtime.getProperties", {"objectId": "stale-object"}, "dispatched"),
+        ("Page.handleJavaScriptDialog", {"accept": True}, "not_dispatched"),
+    ],
+)
+async def test_cdp_error_replies_allow_followup_on_real_chromium(native_browser, method, params, dispatch):
+    from a13n_harness.capabilities.browser import BrowserError
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate("data:text/html,<title>Protocol errors</title>")
+        with pytest.raises(BrowserError) as error:
+            await backend.cdp(method, params)
+        assert error.value.dispatch == dispatch
+        assert await backend.js("2+2") == 4
+
+
 @pytest.mark.parametrize("tool", ["js", "cdp"])
 async def test_programming_dialog_can_be_handled_without_replaying(native_browser, tool):
     from a13n_harness.capabilities.browser import BrowserError

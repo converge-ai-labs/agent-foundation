@@ -87,10 +87,17 @@ async def _send(browser: Chromium, page: Page, method: str, params: dict | None)
             isinstance(cause, RuntimeError)
             and cause.args
             and isinstance(cause.args[0], dict)
-            and cause.args[0].get("code") in {-32601, -32602}
+            and isinstance(cause.args[0].get("code"), int)
         ):
-            # This one programming command was rejected; native composites retain uncertainty.
-            raise BrowserError("CDP rejected the method or parameters. Correct the request before retrying.") from error
+            # A reply settles this command, not page effects or earlier native subcommands.
+            if cause.args[0]["code"] in {-32601, -32602}:
+                raise BrowserError(
+                    "CDP rejected the method or parameters. Correct the request before retrying."
+                ) from error
+            raise BrowserError(
+                "CDP returned an error after dispatch; earlier effects may have occurred. Observe before retrying.",
+                dispatch="dispatched",
+            ) from error
         raise
     finally:
         if dialog is not None:

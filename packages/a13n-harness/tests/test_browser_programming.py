@@ -136,11 +136,14 @@ async def test_programming_drains_for_takeover_and_invalidates_on_cancellation(s
 
 
 @pytest.mark.parametrize("tool", ["js", "cdp"])
-async def test_programming_transport_failure_is_unknown_and_never_replayed(scoped_browser, tool):
+@pytest.mark.parametrize(
+    "failure", [TimeoutError(), ConnectionError(), RuntimeError("local failure"), RuntimeError({})]
+)
+async def test_programming_transport_failure_is_unknown_and_never_replayed(scoped_browser, tool, failure):
     browser, _ = scoped_browser
     backend = CdpBrowserBackend(browser, browser.pages["one"])
     backend.page.revision = "old"
-    browser.client.send_raw.side_effect = TimeoutError()
+    browser.client.send_raw.side_effect = failure
     with pytest.raises(BrowserError) as error:
         if tool == "js":
             await backend.js("document.title='changed'")
@@ -171,6 +174,26 @@ async def test_cdp_protocol_rejections_are_known_and_allow_followup(scoped_brows
     browser.client.send_raw.side_effect = None
     browser.client.send_raw.return_value = {"root": {"nodeName": "#document"}}
     assert (await backend.cdp("DOM.getDocument"))["root"]["nodeName"] == "#document"
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+@pytest.mark.parametrize("code", [-32000, -32001, -32603])
+async def test_programming_error_replies_settle_without_claiming_no_effects(scoped_browser, tool, code):
+    browser, _ = scoped_browser
+    backend = CdpBrowserBackend(browser, browser.pages["one"])
+    backend.page.revision = "old"
+    browser.client.send_raw.side_effect = RuntimeError({"code": code, "message": "Command failed"})
+    with pytest.raises(BrowserError, match="earlier effects") as error:
+        if tool == "js":
+            await backend.js("document.title='changed'")
+        else:
+            await backend.cdp("DOM.getOuterHTML", {"nodeId": 999999})
+    assert error.value.dispatch == "dispatched"
+    assert browser.client.send_raw.await_count == 1
+    assert not backend.page.revision
+    browser.client.send_raw.side_effect = None
+    browser.client.send_raw.return_value = {"result": {"value": 4}}
+    assert await backend.js("2+2") == 4
 
 
 @pytest.mark.parametrize("tool", ["js", "cdp"])
