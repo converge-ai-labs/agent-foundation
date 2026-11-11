@@ -588,9 +588,10 @@ function Rows({
 }) {
   const { t } = useTranslation();
   const actions = useContext(MessageBranches);
-  const key = turn?.turn_id.startsWith("entry:")
-    ? `${turn.turn_id}@${turn.timestamp}`
-    : turn?.turn_id;
+  const key =
+    turn?.turn_id.startsWith("entry:") && turn.timestamp != null
+      ? `${turn.turn_id}@${turn.timestamp}`
+      : turn?.turn_id;
   const point = key && actions?.points?.[key];
   const notificationTitle = useNotificationTitle();
   const copyText = output

@@ -21,7 +21,6 @@ class Boundary:
 def boundaries(history: tuple[ModelMessage, ...], continuing_turn: bool) -> dict[str, Boundary]:
     points: dict[str, Boundary] = {}
     ambiguous: set[str] = set()
-    previous_end: int | None = 0
     turns = _transcript_turns(history)
     checked = 0
     restored_at = None
@@ -32,11 +31,12 @@ def boundaries(history: tuple[ModelMessage, ...], continuing_turn: bool) -> dict
         # an input alone cannot identify its original prefix.
         for prior in history[checked : turn.input_position]:
             metadata = prior.metadata or {}
-            if metadata.get("keep") == "compact" or metadata.get("a13n.context") in {"compaction", "handoff"}:
+            if prior.timestamp is not None and (
+                metadata.get("keep") == "compact" or metadata.get("a13n.context") in {"compaction", "handoff"}
+            ):
                 restored_at = prior.timestamp
         checked = turn.input_position
         if restored_at and (message.timestamp is None or message.timestamp < restored_at):
-            previous_end = None
             continue
         visible = [item for item in request_input_content(message) if item.metadata.display]
         projected = project_input_content(visible[0]) if len(visible) == 1 else None
@@ -54,13 +54,12 @@ def boundaries(history: tuple[ModelMessage, ...], continuing_turn: bool) -> dict
                 and isinstance(composer, dict)
                 and not composer.get("skills")
             )
-        before = turn.input_position if plain and previous_end == turn.input_position else None
+        before = turn.input_position if plain else None
         after = turn.end_position if turn.output_position is not None else None
-        previous_end = after
         # Live display groups use the native attempt ID. Imported rows retain
         # their authored input ID, or their original position and timestamp.
         identity = turn.turn_id
-        if identity.startswith("entry:"):
+        if identity.startswith("entry:") and turn.timestamp is not None:
             identity = f"{identity}@{turn.model_dump(mode='json')['timestamp']}"
         for key in {identity, message.run_id}:
             if key is None:
