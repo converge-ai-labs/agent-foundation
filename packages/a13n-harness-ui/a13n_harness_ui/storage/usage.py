@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -23,6 +25,7 @@ from a13n_logging import get_logger
 from anyio import sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -30,7 +33,7 @@ from sqlalchemy.sql import Select
 from a13n_harness_ui.errors import StoreIntegrityError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import ThreadRecord, ThreadUsageRecord
+from .models import ThreadRecord, ThreadUsageRecord, UsageModelRecord
 
 logger = get_logger(__name__)
 
@@ -111,6 +114,7 @@ class ModelUsageGroup:
     descendant: bool
     source: str
     totals: UsageTotals
+    reported_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +183,27 @@ class _Totals:
         )
 
 
+def usage_model(record: ModelUsageRecord, configured: str | None) -> tuple[str, str]:
+    """Stable filter key and visible label, including pre-selection observations."""
+    if record.model_id:
+        name = configured or record.model_id
+        return json.dumps([name], separators=(",", ":")), name
+    return json.dumps([record.provider_name, record.model_name], separators=(",", ":")), reported_model(record)
+
+
+def reported_model(record: ModelUsageRecord) -> str:
+    provider = record.provider_name or "unknown"
+    model = record.model_name or "unknown"
+    return model if model.startswith(f"{provider}/") else f"{provider}/{model}"
+
+
+async def configured_usage_models(session: AsyncSession) -> dict[str, str]:
+    rows = await session.execute(
+        select(UsageModelRecord.recipe_id, UsageModelRecord.model_id).where(UsageModelRecord.model_id.is_not(None))
+    )
+    return {key: model for key, model in rows if model is not None}
+
+
 @dataclass
 class _Aggregation:
     """Bounded display groups derived from one coherent database read."""
@@ -196,6 +221,7 @@ class _Aggregation:
     runs: dict[str, _Totals] = field(default_factory=lambda: defaultdict(_Totals))
     run_agents: dict[str, tuple[str, bool]] = field(default_factory=dict)
     model_owners: dict[tuple[str, bool], _Totals] = field(default_factory=lambda: defaultdict(_Totals))
+    reported_names: dict[tuple[str, str, bool, str], set[str]] = field(default_factory=lambda: defaultdict(set))
     groups: dict[tuple[str, str, bool, str], _Totals] = field(default_factory=lambda: defaultdict(_Totals))
     other_groups: _Totals = field(default_factory=_Totals)
 
@@ -207,6 +233,7 @@ class _Aggregation:
         observed: datetime,
         observed_through: datetime,
         recent_sequence: int | None,
+        configured: str | None = None,
     ) -> None:
         record = _RECORD.validate_json(payload)
         observed = observed.replace(tzinfo=UTC)
@@ -222,7 +249,7 @@ class _Aggregation:
             self.other_runs.add(record)
         (self.children if descendant else self.root).add(record)
         if isinstance(record, ModelUsageRecord):
-            name = f"{record.provider_name or 'unknown'}/{record.model_name or 'unknown'}"
+            _, name = usage_model(record, configured)
             if name in self.models or len(self.models) < _GROUPS:
                 self.models[name].add(record)
             else:
@@ -232,6 +259,8 @@ class _Aggregation:
             key = (name, record.agent_instance_id, descendant, record.source)
             if key in self.groups or len(self.groups) < _GROUPS * 4:
                 self.groups[key].add(record)
+                if record.model_id and record.model_name and len(self.reported_names[key]) < _GROUPS:
+                    self.reported_names[key].add(record.model_name)
             else:
                 self.other_groups.add(record)
         self.cursor = sequence
@@ -269,7 +298,12 @@ class _Aggregation:
             ),
             groups=tuple(
                 ModelUsageGroup(
-                    model=name, agent_instance_id=agent, descendant=child, source=source, totals=totals.view()
+                    model=name,
+                    agent_instance_id=agent,
+                    descendant=child,
+                    source=source,
+                    totals=totals.view(),
+                    reported_models=tuple(sorted(self.reported_names[name, agent, child, source])),
                 )
                 for (name, agent, child, source), totals in sorted(self.groups.items())
             ),
@@ -345,6 +379,7 @@ def _contributions(root_id: str | Select[tuple[str]], *, root_only: bool = False
 class ThreadUsageReporter:
     repository: ThreadUsageRepository
     thread_id: str
+    configured: Mapping[str, str] = field(default_factory=dict)
 
     async def report(self, snapshot: UsageSnapshot) -> None:
         """Own transient storage retries; queueing is cancellable, admitted commits settle."""
@@ -352,7 +387,7 @@ class ThreadUsageReporter:
         started = monotonic()
         for attempt in range(1, 4):
             try:
-                await self.repository.save(thread_id=self.thread_id, snapshot=snapshot)
+                await self.repository.save(thread_id=self.thread_id, snapshot=snapshot, configured=self.configured)
             except (TimeoutError, OperationalError) as exc:
                 if isinstance(exc, OperationalError) and not (
                     isinstance(exc.orig, sqlite3.OperationalError)
@@ -418,10 +453,12 @@ class ThreadUsageRepository:
         for start in range(0, len(records), _BATCH):
             await self.append(thread_id=thread_id, records=records[start : start + _BATCH])
 
-    def reporter(self, thread_id: str) -> ThreadUsageReporter:
-        return ThreadUsageReporter(self, thread_id)
+    def reporter(self, thread_id: str, configured: Mapping[str, str] | None = None) -> ThreadUsageReporter:
+        return ThreadUsageReporter(self, thread_id, configured or {})
 
-    async def save(self, *, thread_id: str, snapshot: UsageSnapshot) -> None:
+    async def save(
+        self, *, thread_id: str, snapshot: UsageSnapshot, configured: Mapping[str, str] | None = None
+    ) -> None:
         """Prepare outside the writer queue, then compare and publish atomically."""
         async with short_session(self._sessions) as session:
             root_id = await self._root_id(session, thread_id)
@@ -468,6 +505,8 @@ class ThreadUsageRepository:
                             ):
                                 raise StoreIntegrityError("A receipt changed its facts.", code="usage_record_conflict")
                 if row is None:
+                    if configured:
+                        await self.index_models(session, configured)
                     session.add(
                         ThreadUsageRecord(
                             root_thread_id=root_id,
@@ -482,6 +521,19 @@ class ThreadUsageRepository:
                 else:
                     row.payload_json = payload
             return
+
+    @staticmethod
+    async def index_models(session: AsyncSession, models: Mapping[str, str]) -> None:
+        values = [{"recipe_id": key, "model_id": model} for key, model in models.items()]
+        stmt = insert(UsageModelRecord)
+        await session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["recipe_id"],
+                set_={"model_id": stmt.excluded.model_id},
+                where=UsageModelRecord.model_id.is_(None),
+            ),
+            values,
+        )
 
     async def restore(self, *, thread_id: str, state: HarnessState) -> HarnessState:
         """Overlay accounting ahead of the selected execution checkpoint before a true resume."""
@@ -607,13 +659,17 @@ class ThreadUsageRepository:
                     facts.c.observed_at,
                     facts.c.observed_through,
                     recent.c.last_sequence,
+                    UsageModelRecord.model_id,
                 )
                 .outerjoin(recent, run_id == recent.c.run_id)
+                .outerjoin(
+                    UsageModelRecord, UsageModelRecord.recipe_id == func.json_extract(facts.c.payload, "$.model_id")
+                )
                 .order_by(facts.c.sequence, facts.c.ordinal)
             )
             async for batch in rows.partitions(_BATCH):
-                for sequence, descendant, payload, observed, observed_through, recent_sequence in batch:
-                    aggregate.add(sequence, descendant, payload, observed, observed_through, recent_sequence)
+                for row in batch:
+                    aggregate.add(*row)
             return aggregate.view(thread_id)
 
     @staticmethod

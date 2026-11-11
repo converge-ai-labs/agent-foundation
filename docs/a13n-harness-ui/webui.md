@@ -118,13 +118,13 @@ Process counts cover observed running handles, excluding foreground calls. The p
 Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the injected Skill names and their usage. Expand Tool calls to inspect argument and result sizes. Category token counts use the character proportions of this input. Media tokens without a separate count are distributed using the same proportions. Each percentage uses the full context window as its denominator.
 
 1. Open **Usage** using the chart icon beside the sidebar collapse button. **Project → View usage** or **Details → Usage → Open analytics** opens a preselected scope.
-2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model.
+2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or the configured Model used for the request.
 3. Compare daily totals and the Project, Thread, or model breakdown. Sort by tokens or cost and select a row to narrow the scope.
 4. Use **Refresh** for newly saved usage. Filters remain in the URL; the page does not update continuously.
 
 Totals include retained archived conversations, Memory, Live, child agents, auxiliary calls, and Coordinator workers. Project attribution follows the root Thread's current Project. Provider receipts remain in Thread details.
 
-Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
+New Runs look up prices using the selected Model’s configured route. In chat usage, expand a Model to inspect the names reported by the provider. Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
 
 ## Agent and Model settings
 

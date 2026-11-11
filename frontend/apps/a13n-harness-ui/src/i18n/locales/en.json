@@ -1151,6 +1151,7 @@
   "Token breakdown": "Token breakdown",
   "{{count, number}} requests_one": "{{count, number}} request",
   "{{count, number}} requests_other": "{{count, number}} requests",
+  "Reported models": "Reported models",
   "By model": "By model",
   "Older records don't show which models were used here.": "Older records don't show which models were used here.",
   "Other models": "Other models",

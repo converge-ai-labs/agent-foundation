@@ -980,7 +980,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             assert (await app.thread_usage(thread_id=backend.thread_id)).combined.model_requests == 1
             assert status.context_tokens is not None
             assert "ctx " in status.line(80)
-            assert "cost --" in status.line(80)  # FunctionModel has no invented price.
+            assert status.usage.cost > 0 and "$" in status.line(80)  # The selected Codex route supplies the price.
             assert "in " not in status.line(80) and "cache 0.0%" in status.line(80)
         finally:
             release.set()
@@ -1018,7 +1018,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
         assert status.total_tokens == dict(totals.tokens)["input_tokens"] + dict(totals.tokens)["output_tokens"]
         assert status.usage.cost == totals.model_cost_usd
         assert status.unknown_costs == totals.unknown_model_costs
-        assert "cost --" in status.line()
+        assert status.unknown_costs == 0 and "$" in status.line()
         assert status.context_tokens == latest_context
         await backend.new()
         assert status.requests == 0 and status.usage is None and status.context_tokens is None

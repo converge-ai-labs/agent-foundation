@@ -460,6 +460,14 @@ class ChildExecutionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class UsageModelRecord(Base):
+    """The configured Model resource selected by an immutable Harness UI recipe."""
+
+    __tablename__ = "usage_model"
+    recipe_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    model_id: Mapped[str | None] = mapped_column(String(128))
+
+
 class ThreadUsageRecord(Base):
     """First observed canonical usage contribution within one root Thread family."""
 

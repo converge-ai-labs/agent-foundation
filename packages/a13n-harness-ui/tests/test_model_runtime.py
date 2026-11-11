@@ -231,3 +231,38 @@ async def test_chatgpt_resolution_rejects_unenforceable_run_host_restrictions() 
     with pytest.raises(ModelResolutionError) as caught:
         await resolver.resolve(recipe.model_id, thread_id="thread-test")
     assert caught.value.code == "model_configuration_unsupported"
+
+
+def test_review_uses_its_selected_recipe_even_with_the_same_gateway_response():
+    from dataclasses import replace
+
+    from a13n_harness.pricing import ModelCostInput, get_default_pricing_catalog
+    from a13n_harness_ui.configuration import ApiKeyAuthentication
+    from pydantic_ai.usage import RequestUsage
+
+    primary = ResolvedModelRecipe(
+        model_id="primary",
+        route="anthropic:claude-opus-5.5",
+        authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY"),
+    )
+    review = _recipe(CodexSubscriptionAuthentication(kind="codex_subscription")).model_copy(
+        update={"route": "openai-codex:gpt-5.6-luna", "model_id": "review"}
+    )
+    missing = review.model_copy(update={"route": "openai-codex:private-deployment"})
+    catalog = get_default_pricing_catalog()
+    pricing = HarnessUiModelResolver({"primary": primary, "review": review, "missing": missing}).pricing(catalog)
+    value = ModelCostInput(
+        model_name="gpt-5.6-luna",
+        provider_name="openai",
+        provider_url=None,
+        request_started_at=_NOW,
+        response_timestamp=_NOW,
+        usage=RequestUsage(input_tokens=1000, output_tokens=100),
+    )
+    for selected, model, provider in [
+        ("primary", "claude-opus-5.5", "anthropic"),
+        ("review", "gpt-5.6-luna", "openai"),
+    ]:
+        expected = catalog.resolve(model, provider=provider).quote(value, source="catalog", revision=catalog.revision)
+        assert pricing.quote(replace(value, selected_model_id=selected)).cost_usd == expected.cost_usd
+    assert pricing.quote(replace(value, selected_model_id="missing")) is None

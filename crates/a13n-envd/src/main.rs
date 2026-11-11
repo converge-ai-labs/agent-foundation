@@ -14,6 +14,15 @@ fn main() {
         }
         return;
     }
+    if arguments.len() == 2 && arguments[0] == "--internal-accessibility-worker" {
+        let Some(epoch) = arguments[1].to_str() else {
+            std::process::exit(1);
+        };
+        if a13n_envd::run_internal_accessibility_worker(epoch).is_err() {
+            std::process::exit(1);
+        }
+        return;
+    }
     #[cfg(windows)]
     if arguments.as_slice() == [OsString::from("--internal-mxc-launcher")] {
         match a13n_envd::run_internal_mxc_launcher() {

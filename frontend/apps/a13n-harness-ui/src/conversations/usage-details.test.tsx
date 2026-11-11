@@ -108,6 +108,7 @@ it("switches model scope without treating a subagent media source as extra usage
               agent_instance_id: "agent-child",
               descendant: true,
               source: "files.media_understanding",
+              reported_models: ["gateway-media-v2"],
               totals: child,
             },
           ],
@@ -122,6 +123,7 @@ it("switches model scope without treating a subagent media source as extra usage
   fireEvent.click(screen.getByRole("button", { name: "Subagents" }));
   expect(screen.queryByText("provider/root-model")).toBeNull();
   expect(screen.getByText("provider/media-model")).toBeTruthy();
+  expect(screen.getByText(/Reported models: gateway-media-v2/)).toBeTruthy();
   fireEvent.click(screen.getByText("Agents and sources"));
   expect(
     screen.getByText("Subagent - Media understanding - view"),

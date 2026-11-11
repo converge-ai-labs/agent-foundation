@@ -10,7 +10,12 @@ from a13n_harness import HarnessBuilder, RunBindings
 from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.environment.computer import ComputerCall, ComputerObservation
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.models import (
+    ACCESSIBILITY_MUTATION_ACTIONS,
+    ACCESSIBILITY_READ_ACTIONS,
+    EnvironmentAction,
+    EnvironmentError,
+)
 from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_service.runs.environments.desktop.freshness import Freshness, Invocation, Observation, current
@@ -348,3 +353,26 @@ async def test_owned_capture_completion_requires_result_retrieval_and_a_new_requ
     finally:
         finish.set()
         await runtime.close()
+
+
+@pytest.mark.parametrize("action", sorted(ACCESSIBILITY_READ_ACTIONS))
+def test_accessibility_reads_are_allowed_without_crediting_screenshot_freshness(action):
+    capability = Freshness()
+    source = Invocation("agent", (), capability)
+    source.require("control", 1, 1, ComputerCall(action))
+    assert capability.observations == {}
+    with pytest.raises(EnvironmentError):
+        check_input(source)
+
+
+@pytest.mark.parametrize("action", sorted(ACCESSIBILITY_MUTATION_ACTIONS))
+def test_semantic_mutations_require_post_handback_model_observation(action):
+    capability = Freshness()
+    old = Invocation("agent", (), capability)
+    with pytest.raises(EnvironmentError):
+        old.require("control", 1, 1, ComputerCall(action))
+    image = captured(old)
+    fresh = capability.invocation("agent", [ModelRequest(parts=[UserPromptPart(content=image.content)])])
+    fresh.require("control", 1, 1, ComputerCall(action))
+    with pytest.raises(EnvironmentError):
+        fresh.require("control", 1, 2, ComputerCall(action))

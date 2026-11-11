@@ -245,9 +245,7 @@ class AgentReconstructor:
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
-            dict.fromkeys(
-                recipe.plugin_key for node in _walk_nodes(composition.root) for recipe in node.harness_plugins
-            )
+            dict.fromkeys(recipe.plugin_key for node in composition.agent_nodes() for recipe in node.harness_plugins)
         )
         try:
             plugin_catalog = self._catalog.plugin_catalog(plugin_keys)
@@ -289,8 +287,10 @@ class AgentReconstructor:
                 api_keys=self._api_keys,
                 configuration=composition.run_configuration,
             )
+            pricing = model_resolver.pricing(pricing_catalog)
+            definition = definition.with_updates(capabilities=(*definition.capabilities, pricing))
             compaction = (
-                CompactionRun(background_compaction, model_resolver.fresh(), pricing_catalog)
+                CompactionRun(background_compaction, model_resolver.fresh(), pricing)
                 if background_compaction is not None and composition.background_compaction.enabled
                 else None
             )
@@ -351,6 +351,12 @@ class AgentReconstructor:
                 ),
             )
         )
+        resolver = HarnessUiModelResolver(
+            {recipe_id: node.model},
+            subscription_sources=subscription_sources,
+            api_keys=self._api_keys,
+            configuration=composition.run_configuration,
+        )
         definition = AgentDefinition(
             agent=AgentSpec(
                 model=recipe_id,
@@ -361,7 +367,12 @@ class AgentReconstructor:
                 usage_limits=UsageLimits(request_limit=12),
             ),
             output_type=str,
-            capabilities=(*root_capabilities, memory, CurrentAgentContextCapability()),
+            capabilities=(
+                *root_capabilities,
+                memory,
+                CurrentAgentContextCapability(),
+                resolver.pricing(pricing_catalog),
+            ),
         )
         executable = HarnessBuilder(
             configured_plugins_enabled=False,
@@ -369,12 +380,7 @@ class AgentReconstructor:
         ).build(definition, pricing_catalog=pricing_catalog)
         return ReconstructedAgent(
             executable=cast(ExecutableAgent[str | None], executable),
-            model_resolver=HarnessUiModelResolver(
-                {recipe_id: node.model},
-                subscription_sources=subscription_sources,
-                api_keys=self._api_keys,
-                configuration=composition.run_configuration,
-            ),
+            model_resolver=resolver,
             run_configuration=composition.run_configuration,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
@@ -525,16 +531,6 @@ class AgentReconstructor:
                 ),
             ),
         )
-
-
-def _walk_nodes(root: ResolvedAgentNode) -> tuple[ResolvedAgentNode, ...]:
-    values: list[ResolvedAgentNode] = []
-    pending = [root]
-    while pending:
-        node = pending.pop()
-        values.append(node)
-        pending.extend(reversed(tuple(item.definition for item in node.children)))
-    return tuple(values)
 
 
 __all__ = ["AgentReconstructor", "ReconstructedAgent"]

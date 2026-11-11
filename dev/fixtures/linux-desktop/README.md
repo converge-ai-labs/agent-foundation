@@ -32,6 +32,36 @@ The test exercises:
 
 Xvfb tests do not validate physical display drivers, compositor-specific behavior, real user keyboard races, macOS permissions, or Wayland. The backend deliberately neither mutates keyboard maps nor uses the clipboard for text entry.
 
+## Native AT-SPI accessibility
+
+`make accessibility-linux-test` builds Envd, runs the Rust native-adapter tests, and exercises GTK through the Session helper, EIP and the Harness facade. On a Debian/Ubuntu development host, install `xvfb`, `xauth`, `dbus-daemon`, `dbus-x11`, `at-spi2-core`, `libatk-adaptor`, `python3-gi` and `gir1.2-gtk-3.0` first. The system `/usr/bin/python3` supplies GTK/GI; the uv environment supplies Harness.
+
+The wrapper creates a temporary home, runtime directory, Xvfb display and user D-Bus session. It removes inherited display/bus overrides and never connects to a personal desktop. The default test suite skips these opt-in native tests.
+
+The GTK fixture independently records button clicks, Unicode text, numeric values and selection changes. Tests cover character spans, protected controls, paginated traversal, call/byte limits, native hit testing, retained screenshot projection and Session-bound references. `atspi-provider.py` separately supplies controlled native D-Bus interfaces: all 30 mutation member/argument mappings, false/error/no-reply outcomes, exact owner/container rejection and cross-object Document selections. These wire-level checks complement the real GTK effects. The Session/EIP regression also stalls provider reads after successful and false mutation replies, checks definite protocol refusals, resumes a deadline-truncated read and verifies that the same helper epoch survives.
+
+The image includes the same desktop dependencies. To run the Harness acceptance test in the isolated image instead of the default physical-input test, keep the Docker restrictions above and replace its command with:
+
+```bash
+bash /app/dev/fixtures/linux-desktop/test-accessibility.sh \
+  /app/.venv/bin/python -m pytest -p no:cacheprovider -q \
+  packages/a13n-harness/tests/test_accessibility_linux_native.py
+```
+
+### Chromium text capabilities
+
+With an already installed Chromium/Chrome executable, run the separate opt-in gate:
+
+```bash
+A13N_ATSPI_CHROMIUM=/absolute/path/to/chromium make accessibility-chromium-test
+```
+
+It launches a visible X11 browser with a disposable profile, `--force-renderer-accessibility` and a controlled loopback page. The test-only browser uses `--no-sandbox`; do not reuse this invocation for untrusted browsing. Chromium is not downloaded or added to the default GTK/CI gate. The page independently reports DOM values and focus; every tested focus/write/read operation travels through native AT-SPI and Session/EIP, not CDP or JavaScript evaluation.
+
+The gate checks input, textarea and contenteditable controls both unfocused and explicitly focused. Native Text/read support does not imply EditableText/write support: without the advertised operation, writes must fail before dispatch and leave DOM values and focus unchanged. If writing is advertised, both native text and independent DOM state must reflect the Unicode write. A native acknowledgement alone is not application success, and the adapter does not focus or retry implicitly.
+
+Locally, Chromium 136.0.7103.25 and Chrome 156.0.8078.47 expose readable Text but no EditableText on all three controls, before and after focus. All six write attempts per browser return explicit `unsupported`; focusing does not add the missing interface. This is version-specific evidence, not a claim about every Chromium build. X11 literal `computer_type_text` is separately unsupported (including ASCII); semantic text entry is available only when that node advertises it. Explicit clipboard-and-paste or browser tools are separate choices with their own permissions, not hidden fallbacks.
+
 ## Service integration
 
 This opt-in test is excluded from the ordinary Service CI suite, which requires zero skipped cases. Run it explicitly with this disposable desktop; do not count an unconfigured or skipped run as native Computer Use validation.

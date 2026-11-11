@@ -197,8 +197,17 @@ Import parameter/result models, enums, codecs, `EIP_PROTOCOL_VERSION` and low-le
 
 Check the initialized descriptor before calling a method. Generated Python availability and a configured daemon's advertised methods are separate checks.
 
+The native accessibility reads below use `active_only` replay. Native mutations use exact `computer.ax_*`, `computer.uia_*` and `computer.atspi_*` methods with typed parameters and `AccessibilityMutationResult`; all use `terminal_evidence`. The generated `METHODS` map lists every exact operation, including 19 AX, 32 UIA and 30 AT-SPI mutations. Check the negotiated method inventory before invocation.
+
 | EIP method                   | Python method                | Parameters                     | Result                         | Replay class        |
 | ---------------------------- | ---------------------------- | ------------------------------ | ------------------------------ | ------------------- |
+| `computer.a11y_describe`     | `computer_a11y_describe`     | `ComputerA11yDescribeParams`   | `AccessibilityDescription`     | `active_only`       |
+| `computer.a11y_find`         | `computer_a11y_find`         | `ComputerA11yFindParams`       | `AccessibilityTree`            | `active_only`       |
+| `computer.a11y_inspect`      | `computer_a11y_inspect`      | `ComputerA11yInspectParams`    | `AccessibilityTree`            | `active_only`       |
+| `computer.a11y_range`        | `computer_a11y_range`        | `ComputerA11yRangeParams`      | `AccessibilityRangeResult`     | `active_only`       |
+| `computer.a11y_range_read`   | `computer_a11y_range_read`   | `ComputerA11yRangeReadParams`  | `AccessibilityRangeResult`     | `active_only`       |
+| `computer.a11y_read`         | `computer_a11y_read`         | `ComputerA11yReadParams`       | `AccessibilityContent`         | `active_only`       |
+| `computer.a11y_roots`        | `computer_a11y_roots`        | `ComputerA11yRootsParams`      | `AccessibilityTree`            | `active_only`       |
 | `computer.read_clipboard`    | `computer_read_clipboard`    | `ComputerReadClipboardParams`  | `ComputerReadClipboardResult`  | `active_only`       |
 | `computer.write_clipboard`   | `computer_write_clipboard`   | `ComputerWriteClipboardParams` | `ComputerWriteClipboardResult` | `terminal_evidence` |
 | `computer.describe`          | `computer_describe`          | `ComputerDescribeParams`       | `ComputerDescribeResult`       | `active_only`       |
