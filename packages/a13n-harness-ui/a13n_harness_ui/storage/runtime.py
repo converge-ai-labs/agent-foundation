@@ -10,6 +10,7 @@ from a13n_harness import HarnessState
 from a13n_logging import get_logger
 from anyio import sleep, to_thread
 from pydantic import JsonValue
+from sqlalchemy import select
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
@@ -19,11 +20,12 @@ from .checkpoint_pruning import CheckpointPruner
 from .compaction import CompactionRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
-from .database import Database, open_database
+from .database import Database, open_database, short_session, transaction
 from .drafts import DraftRepository
 from .envd_sessions import EnvdSessionRepository
 from .inspection import InspectionRepository
 from .layout import StorageLayout
+from .models import UsageModelRecord
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
 from .read_models import project_continuation
 from .repositories import (
@@ -129,6 +131,31 @@ class LocalStore:
                 extra={"thread_id": thread_id, "error_type": type(exc).__name__},
             )
             return False
+
+    async def repair_usage_models(self) -> None:
+        """Resolve pre-upgrade recipe IDs from immutable Run captures, never current settings."""
+        from a13n_harness_ui.composition.models import ResolvedRunComposition
+        from a13n_harness_ui.model_runtime import model_recipe_id
+
+        async with short_session(self.database.sessions) as session:
+            missing = set(
+                await session.scalars(select(UsageModelRecord.recipe_id).where(UsageModelRecord.model_id.is_(None)))
+            )
+        if not missing:
+            return
+        for reference in await self.objects.references(ObjectKind.run_composition):
+            composition = await self.objects.read_model(reference, ResolvedRunComposition)
+            recipes = list(composition.media_understanding.values())
+            for node in composition.agent_nodes():
+                recipes.append(node.model)
+                recipes.extend(item.model for item in node.capabilities if item.model is not None)
+            found = {key: recipe.model_id for recipe in recipes if (key := model_recipe_id(recipe)) in missing}
+            if found:
+                async with transaction(self.database.sessions) as session:
+                    await self.usage.index_models(session, found)
+                missing.difference_update(found)
+                if not missing:
+                    return
 
     async def repair_read_models(self) -> tuple[str, ...]:
         """Bounded, resumable maintenance; no object reads on query paths."""

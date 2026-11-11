@@ -17208,6 +17208,14 @@
           },
           "totals": {
             "$ref": "#/components/schemas/UsageTotals"
+          },
+          "reported_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reported Models",
+            "default": []
           }
         },
         "type": "object",

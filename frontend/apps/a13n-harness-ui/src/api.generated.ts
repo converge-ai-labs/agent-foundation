@@ -5897,6 +5897,11 @@ export interface components {
             /** Source */
             source: string;
             totals: components["schemas"]["UsageTotals"];
+            /**
+             * Reported Models
+             * @default []
+             */
+            reported_models?: string[];
         };
         /** ModelUsageView */
         ModelUsageView: {

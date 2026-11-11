@@ -1195,7 +1195,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             deferred_tools_supported=False,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
-            usage_reporter=self._store.usage.reporter(state.thread_id),
+            usage_reporter=self._store.usage.reporter(state.thread_id, reconstructed.model_resolver.configured_models),
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
         bindings = production_run_bindings(

@@ -6,8 +6,8 @@ from a13n_harness.usage import BoundedRequestUsage, UsageSnapshot
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage.database import open_database, transaction
 from a13n_harness_ui.storage.models import ThreadConfigurationRecord, ThreadUsageRecord
-from a13n_harness_ui.storage.usage import ThreadUsageRepository
-from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsRepository, UsageQuery, model_key
+from a13n_harness_ui.storage.usage import ThreadUsageRepository, usage_model
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsRepository, UsageQuery
 from pydantic import ValidationError
 
 from .test_thread_usage import _model, _receipt, _thread
@@ -112,7 +112,7 @@ async def test_latest_snapshot_response_date_and_actual_model_filters(tmp_path):
         await writer.save(thread_id="root", snapshot=snapshot.model_copy(update={"sequence": 2, "records": (updated,)}))
         auxiliary = _model(1).model_copy(update={"source": "reviewer", "model_name": "other"})
         await writer.append(thread_id="root", records=(auxiliary,))
-        view = await reader.snapshot(_query(model=model_key(updated)), project_names={})
+        view = await reader.snapshot(_query(model=usage_model(updated, None)[0]), project_names={})
         assert view.summary.model_requests == 1
         assert view.daily[0].totals.model_requests == 0
         assert view.daily[1].totals.total_tokens == 240
@@ -169,7 +169,7 @@ async def test_scope_and_legacy_duplicates_are_selected_before_filters(tmp_path,
         assert Decimal(view.summary.model_cost_usd) == Decimal("0.000000000123")
         assert view.summary.unknown_model_costs == 1
         assert len(view.models) == 1
-        filtered = await reader.snapshot(_query(model=model_key(later)), project_names={})
+        filtered = await reader.snapshot(_query(model=usage_model(later, None)[0]), project_names={})
         assert filtered.summary.model_requests == 0
         next_day = await reader.snapshot(UsageQuery(start=date(2026, 9, 8), end=date(2026, 9, 9)), project_names={})
         assert next_day.summary.model_requests == 0
@@ -280,3 +280,49 @@ async def test_http_contract_instance_auth_and_invalid_ranges(tmp_path):
         assert payload["group_count"] == 1
         assert (await client.get(path, params={**params, "end": "2028-01-01"}, headers=owner)).status_code == 422
         assert (await client.get(path, params={**params, "limit": 101}, headers=owner)).status_code == 422
+
+
+async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, monkeypatch):
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.storage.models import UsageModelRecord
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.models.function import FunctionModel
+    from sqlalchemy import update
+
+    from .test_app import _settings, _write_configuration
+
+    config = _write_configuration(tmp_path)
+    returned_names = iter(("anthropic/claude-opus-5.5", "gateway-deployment-42"))
+
+    async def resolve(self, context, model_id):
+        async def stream(messages, info):
+            yield "Done"
+
+        return FunctionModel(stream_function=stream, model_name=next(returned_names))
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    path = tmp_path / "models/primary.yaml"
+    path.write_text(path.read_text().replace("openai:gpt-5", "anthropic:claude-opus-5.5"))
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
+        thread = await app.create_thread()
+        for prompt in ("First", "Second"):
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        usage = await app.thread_usage(thread_id=thread.thread_id)
+        assert usage.combined.model_requests == 2
+        assert usage.combined.unknown_model_costs == 0 and usage.combined.model_cost_usd > 0
+        assert [model.name for model in usage.model_scopes] == ["model-primary"]
+        assert {alias for group in usage.groups for alias in group.reported_models} == {
+            "anthropic/claude-opus-5.5",
+            "gateway-deployment-42",
+        }
+        today = datetime.now(UTC).date()
+        analytics = await app.usage_analytics(UsageQuery(start=today, end=today + timedelta(days=1), group_by="model"))
+        assert [(group.label, group.totals.model_requests) for group in analytics.groups] == [("model-primary", 2)]
+        # An upgrade seeds the old recipe key without a configured ID.
+        async with transaction(app._store.database.sessions) as session:
+            await session.execute(update(UsageModelRecord).values(model_id=None))
+        await app._store.repair_usage_models()
+        assert await app.thread_usage(thread_id=thread.thread_id) == usage

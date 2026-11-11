@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
@@ -16,7 +15,7 @@ from sqlalchemy import select, text
 
 from .database import DatabaseSessions, short_session
 from .models import ThreadConfigurationRecord, ThreadRecord, ThreadUsageRecord
-from .usage import _Totals
+from .usage import _Totals, configured_usage_models, usage_model
 
 
 class _SnapshotRecords(BaseModel):
@@ -118,11 +117,6 @@ class UsageAnalyticsView(BaseModel):
     models: tuple[UsageOption, ...]
 
 
-def model_key(record: ModelUsageRecord) -> str:
-    """An unambiguous actual provider/model tuple, independent of configured Models."""
-    return json.dumps((record.provider_name, record.model_name), separators=(",", ":"))
-
-
 class UsageAnalyticsRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
@@ -155,6 +149,7 @@ class UsageAnalyticsRepository:
         async with short_session(self._sessions) as session:
             # Pin metadata and mutable usage snapshots to the same read transaction.
             await session.execute(text("BEGIN"))
+            configured = await configured_usage_models(session)
             metadata = (
                 await session.execute(
                     select(
@@ -211,13 +206,14 @@ class UsageAnalyticsRepository:
                     if not isinstance(record, ModelUsageRecord):
                         continue
                     day = record.response_timestamp.astimezone(UTC).date()
-                    # Date and actual-model selection happen after contribution deduplication.
+                    # Date and model selection happen after contribution deduplication.
                     if not query.start <= day < query.end:
                         continue
-                    actual_model = model_key(record)
-                    model_label = f"{record.provider_name or 'unknown'}/{record.model_name or 'unknown'}"
-                    models[actual_model] = model_label
-                    if query.model is not None and query.model != actual_model:
+                    selected_model, model_label = usage_model(
+                        record, configured.get(record.model_id) if record.model_id else None
+                    )
+                    models[selected_model] = model_label
+                    if query.model is not None and query.model != selected_model:
                         continue
                     observed = observed.replace(tzinfo=UTC)
                     observed_through = observed_through.replace(tzinfo=UTC)
@@ -231,8 +227,8 @@ class UsageAnalyticsRepository:
                         key = root_id
                         identity = (owner.label, owner.project_id, root_id, None)
                     else:
-                        key = actual_model
-                        identity = (model_label, None, None, actual_model)
+                        key = selected_model
+                        identity = (model_label, None, None, selected_model)
                     identities[key] = identity
                     totals.add(record)
                     days[day].add(record)
