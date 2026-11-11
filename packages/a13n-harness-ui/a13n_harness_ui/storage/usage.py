@@ -627,12 +627,13 @@ class ThreadUsageRepository:
             return tuple(ModelUsageRecord.model_validate_json(payload) for payload in payloads)
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
-        """Read current primary-request occupancy, never cumulative Context usage."""
+        """Return the latest primary root request with reported usage for context occupancy."""
         facts = _contributions(thread_id, root_only=True)
         query = select(facts.c.payload).where(
             facts.c.descendant.is_(False),
             func.json_extract(facts.c.payload, "$.kind") == "model",
             func.coalesce(func.json_extract(facts.c.payload, "$.source"), "agent") == "agent",
+            func.coalesce(func.json_extract(facts.c.payload, "$.usage_status"), "complete") != "unavailable",
         )
         if run_id is not None:
             query = query.where(func.json_extract(facts.c.payload, "$.run_id") == run_id)

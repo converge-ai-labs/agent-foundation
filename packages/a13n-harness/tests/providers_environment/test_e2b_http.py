@@ -106,6 +106,9 @@ async def test_attach_revalidates_target_and_cleans_up_without_lifecycle(peer):
                 raise TimeoutError("uncertain input")
     assert opened.await_count == closed.await_count == 2
     assert sandbox.commands.run.await_count == 2
+    assert all(
+        call.args == ("head -c 4097 /var/lib/a13n-envd/http-token",) for call in sandbox.commands.run.call_args_list
+    )
     assert events[0]["expected_device_id"] == "env-fixed"
     assert "computer.observe" in events[0]["required_methods"]
     assert "working_directory" not in events[0]

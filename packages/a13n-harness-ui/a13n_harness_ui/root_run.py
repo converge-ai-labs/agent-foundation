@@ -23,6 +23,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
@@ -81,6 +82,8 @@ class _RootOperation:
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
     input_files: RootInputFiles | None = None
+    branch_base: ObjectRef | None = None
+    continuing_turn: bool = False
     composition: ObjectRef | None = None
     run_id: str | None = None
     started_at: datetime | None = None
@@ -286,9 +289,25 @@ class RootRunCoordinator:
                     code="thread_run_active",
                 )
             yield
-            pending = self._interaction_waits.pop(thread_id, None)
-            if pending is not None:
+            if (pending := self._interaction_waits.pop(thread_id, None)) is not None:
                 pending.cancelled.set()
+
+    @asynccontextmanager
+    async def message_branch_source(
+        self, thread_id: str, *, editing: bool = False
+    ) -> AsyncGenerator[tuple[ObjectRef | None, bool]]:
+        """An active operation can only branch from history that preceded admission."""
+        async with self._thread_fence(thread_id):
+            receipt = self._active_by_thread.get(thread_id)
+            if receipt is None:
+                yield None, False
+            else:
+                if editing:
+                    raise RunCoordinationError(
+                        "Wait for the active run to finish before editing a message.", code="thread_run_active"
+                    )
+                operation = self._operations[receipt]
+                yield operation.branch_base, operation.continuing_turn
 
     async def submit_prompt(
         self,
@@ -303,7 +322,10 @@ class RootRunCoordinator:
         human_input: bool = False,
         reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
+        bot_input: bool = False,
     ) -> RootRunReceipt:
+        if thread_id == BOT_THREAD_ID and not (human_input or bot_input):
+            raise RunCoordinationError("Bot accepts only user, heartbeat or Connector input.", code="bot_wake_rejected")
         prompt = detach_input(prompt)
         return await self._submit(
             thread_id=thread_id,
@@ -446,6 +468,8 @@ class RootRunCoordinator:
                     raise RunCoordinationError(
                         "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
                     )
+                operation.branch_base = admission.thread.continuation or admission.thread.initial_state
+                operation.continuing_turn = admission.prompt is None or admission.response is not None
                 operation.composition = admission.published.reference
                 if (
                     pending is not None
@@ -792,6 +816,8 @@ class RootRunCoordinator:
                 )
             except Exception:
                 notice = None
+            if thread_id == BOT_THREAD_ID and operation.status is RootOperationStatus.completed:
+                notice = None
             await self._publish_change(operation, notice=None if operation.observation_only else notice)
             if self._on_settled is not None and self._accepting and not operation.observation_only:
                 try:
@@ -803,6 +829,8 @@ class RootRunCoordinator:
 
     def _start_interaction(self, operation: _RootOperation, outcome: RootRunOutcome) -> None:
         """Arm without yielding after successful continuation selection and settlement."""
+        if operation.receipt.thread_id == BOT_THREAD_ID:
+            return
         if self._restart is not None and (self._restart.requested or self._restart.restoring):
             return
         if not self._interaction_timeouts or not self._accepting or self._task_group is None:

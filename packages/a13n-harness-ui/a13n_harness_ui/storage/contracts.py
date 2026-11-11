@@ -56,7 +56,14 @@ class LiveAgentSource(StoredContract):
     id: Literal["live"] = "live"
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource
+class BotAgentSource(StoredContract):
+    """Application-owned persistent assistant; not a selectable Agent resource."""
+
+    kind: Literal["bot"] = "bot"
+    id: Literal["bot"] = "bot"
+
+
+type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource | BotAgentSource
 
 
 class ThreadConfiguration(StoredContract):

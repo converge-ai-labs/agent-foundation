@@ -334,7 +334,7 @@ Each Project can have several Coordinators. The role is permanent, including if 
 
 A worker is a root conversation with human controls, not a Subagent. **Managed by · name** fixes its owner and Project. Before creation, remove that label to make an independent draft without losing text, attachments, or choices. After creation it stays fixed; uncertain creation must be inspected before retrying. Workers appear under their owner, and search labels them **Coordinator worker**.
 
-Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Disabling Sidekick does not disable Coordinators.
+Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Sidekick defaults do not control Coordinator identity or automatic follow-up.
 
 Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
 
@@ -352,7 +352,7 @@ These limits apply to model tools, not human WebUI access. Workers cannot create
 
 An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` overrides the first Run only; `run_thread` can override a later Run. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
 
-Configure **Settings → General → Sidekick** for default Agent, Model, and reporting instructions. It is enabled by default. **Inherit current agent**, **Use agent model**, and **Disabled** express distinct choices. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+Configure **Settings → General → Subagent defaults** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 
 ## Fork a conversation
 
@@ -360,6 +360,8 @@ Configure **Settings → General → Sidekick** for default Agent, Model, and re
 2. Inspect the newly opened copy, then send your next instruction there.
 
 Forking makes no Model request. It copies saved history, notes, tasks, settings, and Thread-owned files. An active source contributes its last saved checkpoint. External Project directories, remote targets, and sandboxes remain shared resources.
+
+To start from an earlier reply, hover over it and select **Branch in new chat**. You can branch from a finished reply while a later Run is active. To revise an ordinary text message in an idle chat, select **Edit message**, then **Send**. The edited message runs in the new chat. Copies use numbered titles such as `Coffee brief (2)` and `Coffee brief (3)`.
 
 Coordinators, workers, Subagent Threads, and internal Memory/Live Threads cannot be forked. After uncertain creation, inspect the conversation list before retrying.
 

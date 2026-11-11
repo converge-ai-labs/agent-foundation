@@ -86,21 +86,47 @@ function renderFields(initial: string) {
   );
 }
 
-it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enabled", async () => {
+it("configures Bot's model, custom instructions and hourly heartbeat without choosing an agent", async () => {
+  const initial = 'schema_version: "1"\n';
+  renderFields(initial);
+  expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  fireEvent.click(screen.getByRole("switch", { name: "Bot" }));
+  expect(screen.getByRole("combobox", { name: "Bot model" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Bot agent" })).toBeNull();
+  expect(
+    screen.getByRole("combobox", { name: "Check in every" }).textContent,
+  ).toContain("1 hour");
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Coordinate my projects." } },
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Check in every" }));
+  await user.click(screen.getByRole("option", { name: "2 hours" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    webui: {
+      bot: {
+        enabled: true,
+        instructions: "Coordinate my projects.",
+        heartbeat_enabled: false,
+        interval_seconds: 7200,
+      },
+    },
+  });
+});
+
+it("shows Sidekick defaults for legacy null without rewriting source on load", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
   const user = userEvent.setup();
-  const sidekick = await screen.findByRole("switch", { name: "Sidekick" });
-  expect(sidekick.getAttribute("aria-checked")).toBe("false");
-  expect(screen.queryByRole("combobox", { name: "Sidekick agent" })).toBeNull();
-  expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
-  expect(screen.getByTestId("source").textContent).toBe(initial);
-  await user.click(sidekick);
-  await user.click(screen.getByText("Subagent defaults"));
-  expect(
-    parse(screen.getByTestId("source").textContent!).webui.sidekick,
-  ).toEqual({});
+  await user.click(await screen.findByText("Subagent defaults"));
+  expect(screen.queryByRole("switch", { name: "Sidekick" })).toBeNull();
   expect(screen.getByRole("combobox", { name: "Sidekick agent" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Sidekick model" })).toBeTruthy();
+  expect(screen.getByTestId("source").textContent).toBe(initial);
 });
 
 it("selects saved key metadata without rewriting model settings or dropping an unresolved reference on load", async () => {
@@ -422,4 +448,42 @@ it("edits web options without replacing nested custom constraints", async () => 
     search: { mode: "host", allowed_domains: ["example.com"] },
     download: { max_bytes: 1234, enabled: false },
   });
+});
+
+it("requires confirmation before turning Bot off and leaves policy untouched on cancel", async () => {
+  const initial =
+    'schema_version: "1"\nwebui:\n  bot: {enabled: true, instructions: "Keep", interval_seconds: 7200}\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("switch", { name: "Bot" }));
+  await screen.findByRole("dialog", { name: "Turn off Bot?" });
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(screen.getByRole("switch", { name: "Bot" }));
+  await user.click(await screen.findByRole("button", { name: "Turn off" }));
+  expect(parse(screen.getByTestId("source").textContent!).webui.bot).toEqual({
+    enabled: false,
+    instructions: "Keep",
+    interval_seconds: 7200,
+  });
+  expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
+});
+
+it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () => {
+  renderFields(
+    'schema_version: "1"\nwebui:\n  bot: {enabled: true, interval_seconds: 90}\n',
+  );
+  const input = screen.getByRole("spinbutton", { name: "Interval (minutes)" });
+  for (const value of ["", "0", "0.5", "1441"]) {
+    fireEvent.change(input, { target: { value } });
+    expect(
+      parse(screen.getByTestId("source").textContent!).webui.bot
+        .interval_seconds,
+    ).toBe(90);
+  }
+  fireEvent.change(input, { target: { value: "2.5" } });
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui.bot.interval_seconds,
+  ).toBe(150);
 });

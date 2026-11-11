@@ -195,7 +195,7 @@ pub(crate) async fn serve(
     });
     let listener = TcpListener::bind(http.bind).await?;
     let tls = build_tls_acceptor(http)?;
-    let mut shutdown = std::pin::pin!(shutdown_signal());
+    let mut shutdown = std::pin::pin!(crate::shutdown::wait(config.supervised));
     let mut maintenance = tokio::time::interval(Duration::from_secs(1));
     maintenance.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
@@ -876,20 +876,4 @@ pub(crate) async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8
         return Err(invalid_data("invalid HTTP attachment credential"));
     }
     Ok(bytes)
-}
-
-async fn shutdown_signal() -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {
-            result = tokio::signal::ctrl_c() => result,
-            _ = terminate.recv() => Ok(()),
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::signal::ctrl_c().await
-    }
 }

@@ -334,7 +334,7 @@ Coordinator 默认把实质性的调查、实现和测试委派给 worker，自�
 
 Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name** 固定 owner 和 Project。创建前移除此标签可变为独立草稿，不丢文字、附件或选择；创建后固定。创建结果不确定时先检查再重试。Worker 位于 owner 下，搜索标为 **Coordinator worker**。
 
-在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。关闭 Sidekick 不关闭 Coordinator。
+在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。Sidekick 默认值不控制 Coordinator 身份或自动跟进。
 
 自动跟进会在首次直接分配 worker 任务，以及所属工作完成、失败、取消或等待输入时尝试交付。Coordinator 先检查保存结果再接受完成。通知没有重试/重启重放。关闭浏览器保留工作；停止 Coordinator 不停止 worker，也不暂停之后通知。决策截止时间仍生效。
 
@@ -352,7 +352,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 只覆盖首个 Run，`run_thread` 可覆盖后续 Run。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
 
-在 **Settings → General → Sidekick** 配置默认 Agent、Model 和汇报指令，默认开启。**Inherit current agent**、**Use agent model** 和 **Disabled** 含义不同。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
+在 **设置 → 常规 → 子 Agent 默认值** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 
 ## 创建对话副本
 
@@ -360,6 +360,8 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 2. 检查打开的副本，再发送下一条指令。
 
 Fork 不发起 Model 请求，复制保存历史、笔记、任务、设置和 Thread 自有文件。活动来源提供最后保存检查点。外部 Project 目录、远程目标和沙箱仍是共享资源。
+
+要从较早的回复继续，悬停到该回复并选择**从这里新建分支聊天**。后续消息正在生成时也可以从已结束的回复分支。聊天空闲时，选择**编辑消息**可以修改普通文本消息，点**发送**后在新聊天中生成回复。副本按顺序编号，例如「白昼咖啡 (2)」「白昼咖啡 (3)」。
 
 Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork。创建结果不确定时，先检查对话列表再重试。
 

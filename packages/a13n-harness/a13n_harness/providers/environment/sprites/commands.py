@@ -1,7 +1,9 @@
 """Bounded, stdin-carried Sprites command dispatch; credentials never enter argv."""
 
 import asyncio
+import base64
 import json
+import shlex
 from urllib.parse import urlencode
 
 from websockets.asyncio.client import connect
@@ -21,13 +23,13 @@ async def command(
     max_output: int = 24 * 1024 * 1024,
     stdin: str | None = None,
 ) -> str:
-    launcher = [reference.config.python, "-I", "-c", "import json,os,sys; a=json.load(sys.stdin); os.execvp(a[0],a)"]
+    # Carry the quoted program through stdin rather than the provider URL. The
+    # guest only needs POSIX sh; Python remains an optional native execution tool.
+    program = "exec " + shlex.join(argv)
     if stdin is not None:
-        launcher[-1] = (
-            "import json,subprocess,sys; a=json.load(sys.stdin); "
-            "sys.exit(subprocess.run(a['argv'],input=a['stdin'].encode()).returncode)"
-        )
-    query = urlencode([*(("cmd", arg) for arg in launcher), ("path", launcher[0]), ("stdin", "true")])
+        encoded = base64.b64encode(stdin.encode()).decode()
+        program = f"printf %s {shlex.quote(encoded)} | base64 -d | " + shlex.join(argv)
+    query = urlencode([("cmd", "/bin/sh"), ("path", "/bin/sh"), ("stdin", "true")])
     url = "wss://api.sprites.dev" + reference.path + "/exec?" + query
     output = bytearray()
     try:
@@ -38,9 +40,7 @@ async def command(
                 max_size=1024 * 1024,
                 close_timeout=1,
             ) as socket:
-                await socket.send(
-                    b"\x00" + json.dumps(argv if stdin is None else {"argv": argv, "stdin": stdin}).encode()
-                )
+                await socket.send(b"\x00" + (program + "\n").encode())
                 await socket.send(b"\x04")
                 async for message in socket:
                     if isinstance(message, bytes):

@@ -247,6 +247,7 @@ def root_context_samples(event: LiveEvent) -> tuple[RequestContextSample, ...]:
             tokens=model.request_usage.input_tokens + model.request_usage.output_tokens,
         )
         for model in root_model_usage(event)
+        if model.usage_status != "unavailable"
     )
 
 

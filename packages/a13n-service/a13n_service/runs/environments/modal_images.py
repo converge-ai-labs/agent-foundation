@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, advisory_lock, lock, now, transaction
+from a13n_service.providers.environment.envd_assets import Profile
 from a13n_service.providers.environment.modal_build import ModalDesktopPreparation, ModalImageAPI
 from a13n_service.resources.providers.service import ResolvedProvider
 from a13n_service.runs.environments.adapters import credential_version
@@ -67,7 +68,15 @@ def _backend(runtime: Runtime, provider: ResolvedProvider) -> str:
     return _capability(runtime).locator(ModalConnectionConfiguration.model_validate(provider.config))
 
 
-async def bind(runtime: Runtime, session: AsyncSession, environment: EnvironmentRow, provider: ResolvedProvider) -> str:
+async def bind(
+    runtime: Runtime,
+    session: AsyncSession,
+    environment: EnvironmentRow,
+    provider: ResolvedProvider,
+    *,
+    profile: Profile = "desktop",
+    base_image: str | None = None,
+) -> str:
     version = credential_version(provider)
     if version is None:
         raise failure("modal", "desktop_build_credential_missing", Category.INVALID)
@@ -79,7 +88,7 @@ async def bind(runtime: Runtime, session: AsyncSession, environment: Environment
                 provider.id,
                 backend,
                 version,
-                _capability(runtime).revision(),
+                _capability(runtime).revision(profile, base_image),
             ]
         ).encode()
     ).hexdigest()
@@ -97,7 +106,7 @@ async def bind(runtime: Runtime, session: AsyncSession, environment: Environment
             scope=scope,
             credential_version=version,
             backend=backend,
-            manifest=_capability(runtime).specification(),
+            manifest=_capability(runtime).specification(profile, base_image),
             phase="new",
             deadline=await now(session) + timedelta(minutes=20),
         )

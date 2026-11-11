@@ -135,7 +135,7 @@ async def test_managed_sampler_bootstrap_enables_real_envd_without_exporter(daem
     from pydantic import SecretStr
 
     management = E2BManagement(
-        E2BRecipe(execution="envd_http", template="team-envd"),
+        E2BRecipe(execution="envd_http", template="team-envd", envd_management="managed"),
         environment_id="env_sampled",
         state=None,
         runtime=E2BProviderRuntime(SecretStr("test-key")),

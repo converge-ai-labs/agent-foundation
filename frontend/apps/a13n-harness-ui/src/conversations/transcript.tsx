@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { BOT_THREAD_ID } from "../bot-identity";
 import {
   memo,
   createContext,
@@ -37,6 +38,7 @@ import {
 } from "./tool-presentation";
 import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
+import { MessageActionButton, MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 import { FailureNotice } from "./failure-notice";
@@ -119,6 +121,7 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
+  timestamp?: DisplayBlock["timestamp"];
   id: string;
   subagentRunId?: string;
   anchor?: string;
@@ -197,13 +200,19 @@ function savedRows(
   groups: Map<Schema<"TranscriptPart">, ToolView[] | null>,
   continuation?: string | null,
   currentFailureRunId?: string | null,
+  threadId?: string,
 ): Row[] {
   const rows: Row[] = [];
   for (const entry of entries) {
     const identity = savedEntryIdentity(entry);
     const start = rows.length;
     entry.parts.forEach((part, index) => {
-      if (part.metadata?.display === false || part.kind === "system") return;
+      if (
+        part.metadata?.display === false ||
+        part.kind === "system" ||
+        (threadId === BOT_THREAD_ID && part.tool_name === "finish_silently")
+      )
+        return;
       // Sibling parts can grow at later checkpoints without replacing this part.
       const id = `saved:${savedEntryIdentity({ ...entry, parts: [part] })}:${index}`;
       const context = part.metadata?.["a13n.context"];
@@ -274,6 +283,7 @@ function savedRows(
       });
     }
     for (let index = start; index < rows.length; index++) {
+      rows[index].timestamp = entry.timestamp ?? undefined;
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
     }
@@ -283,14 +293,22 @@ function savedRows(
   return rows;
 }
 
-function liveRows(blocks: DisplayBlock[], running = false): Row[] {
+function liveRows(
+  blocks: DisplayBlock[],
+  running = false,
+  threadId?: string,
+): Row[] {
   const rows: Row[] = [];
   let previousChild: string | undefined;
   for (const block of blocks) {
     if (
       block.diagnostic ||
       block.kind === "task" ||
-      block.metadata?.display === false
+      block.metadata?.display === false ||
+      (threadId === BOT_THREAD_ID &&
+        block.kind === "tool" &&
+        block.name === "finish_silently" &&
+        !block.subagentRunId)
     )
       continue;
     const firstRow = rows.length;
@@ -382,8 +400,10 @@ function liveRows(blocks: DisplayBlock[], running = false): Row[] {
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
     }
-    for (let index = firstRow; index < rows.length; index++)
+    for (let index = firstRow; index < rows.length; index++) {
       rows[index].subagentRunId = block.subagentRunId;
+      rows[index].timestamp = block.timestamp;
+    }
   }
   return rows;
 }
@@ -509,6 +529,7 @@ function Reasoning({
   }[];
 }) {
   const { t } = useTranslation();
+  const running = segments.some((part) => part.running);
   const duration = executionTime(
     segments.every((segment) => segment.durationMs != null)
       ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
@@ -521,10 +542,8 @@ function Reasoning({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary
-        data-running-label={segments.some((part) => part.running) || undefined}
-      >
-        {t("Thought")}
+      <summary data-running-label={running || undefined}>
+        {running ? t("Thinking", { context: "active" }) : t("Thought")}
         {duration && (
           <span className={styles.executionDuration}>
             {t("for {{duration}}", { duration })}
@@ -556,13 +575,23 @@ function Rows({
   threadId,
   continuation = false,
   output = [],
+  turn,
+  messageActions = false,
 }: {
   rows: Row[];
   threadId?: string;
   continuation?: boolean;
+  turn?: Schema<"TranscriptTurn">;
+  messageActions?: boolean;
   output?: Extract<Row, { kind: "assistant" }>[];
 }) {
   const { t } = useTranslation();
+  const actions = useContext(MessageBranches);
+  const key =
+    turn?.turn_id.startsWith("entry:") && turn.timestamp != null
+      ? `${turn.turn_id}@${turn.timestamp}`
+      : turn?.turn_id;
+  const point = key && actions?.points?.[key];
   const notificationTitle = useNotificationTitle();
   const copyText = output
     .map((row) => row.text)
@@ -580,8 +609,16 @@ function Rows({
     >
       {row.kind === "input" ? (
         <InputContent
+          branchKey={
+            messageActions &&
+            !row.subagentRunId &&
+            row.position === turn?.input_position
+              ? (key ?? "")
+              : undefined
+          }
           threadId={threadId}
           parts={row.parts}
+          timestamp={row.timestamp}
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
         />
@@ -617,9 +654,27 @@ function Rows({
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
           )}
-          {row === output.at(-1) && copyText.trim() && (
+          {(row.timestamp != null ||
+            (row === output.at(-1) && copyText.trim())) && (
             <CopyMessage
-              text={copyText}
+              action={
+                messageActions &&
+                actions &&
+                !row.subagentRunId &&
+                (row === output.at(-1) || row.live) && (
+                  <MessageActionButton
+                    kind="branch"
+                    disabled={
+                      !point || !point.branch || actions.pending || !!row.live
+                    }
+                    onClick={() => {
+                      if (key) void actions.create(key);
+                    }}
+                  />
+                )
+              }
+              timestamp={row.timestamp}
+              text={row === output.at(-1) ? copyText : undefined}
               truncated={output.some((part) => part.truncated)}
             />
           )}
@@ -675,6 +730,7 @@ export const SavedEntry = memo(function SavedEntry({
           toolGroups ?? savedToolGroups([entry]),
           undefined,
           currentFailureRunId,
+          threadId,
         )}
         threadId={threadId}
         continuation={continuation}
@@ -686,6 +742,32 @@ export const SavedEntry = memo(function SavedEntry({
     </article>
   );
 });
+
+// Intentional publications use the same message rendering as native history.
+// Host heartbeat and working output remain available in the separate activity view.
+export function PublishedTranscript({
+  messages,
+}: {
+  messages: { message_id: string; role: "user" | "assistant"; text: string }[];
+}) {
+  return messages.map((message) => {
+    const row: Row =
+      message.role === "user"
+        ? {
+            id: message.message_id,
+            kind: "input",
+            parts: [{ kind: "text", text: message.text }],
+          }
+        : { id: message.message_id, kind: "assistant", text: message.text };
+    return (
+      <Rows
+        key={row.id}
+        rows={[row]}
+        output={row.kind === "assistant" ? [row] : []}
+      />
+    );
+  });
+}
 
 export function ConversationTranscript({
   entries,
@@ -725,10 +807,11 @@ export function ConversationTranscript({
         savedToolGroups(entries),
         continuation,
         currentFailureRunId,
+        threadId,
       ),
-    [entries, continuation, currentFailureRunId],
+    [entries, continuation, currentFailureRunId, threadId],
   );
-  const live = liveRows(blocks, running);
+  const live = liveRows(blocks, running, threadId);
   const savedIds = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
   );
@@ -979,8 +1062,9 @@ function TurnHistory({
         savedToolGroups(loaded),
         continuation,
         currentFailureRunId,
+        props.threadId,
       ),
-    [loaded, continuation, currentFailureRunId],
+    [loaded, continuation, currentFailureRunId, props.threadId],
   );
   const savedInputs = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
@@ -1257,6 +1341,8 @@ function TurnSegments({
               rows={segment.rows}
               threadId={threadId}
               output={output}
+              turn={turn}
+              messageActions
             />
           );
         return (
@@ -1294,6 +1380,8 @@ function ExecutionSegment({
 }) {
   const { t } = useTranslation();
   const latest = rows.at(-1);
+  const thinking =
+    latest?.kind === "thinking" && latest.segments.some((part) => part.running);
   const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
   const toolInfo = latestTool ? describeTool(latestTool) : undefined;
   const duration = executionTime(durationMs);
@@ -1304,18 +1392,15 @@ function ExecutionSegment({
     : toolInfo
       ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` - ${toolPhase(toolInfo.phase, t)}` : ""}`
       : latest?.kind === "thinking"
-        ? t("Thought")
+        ? thinking
+          ? t("Thinking", { context: "active" })
+          : t("Thought")
         : t("View the available execution steps");
   return (
     <ExecutionDetails
       complete={complete}
       preview={preview}
-      running={
-        !complete &&
-        (toolInfo?.running ||
-          (latest?.kind === "thinking" &&
-            latest.segments.some((part) => part.running)))
-      }
+      running={!complete && (toolInfo?.running || thinking)}
     >
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
@@ -1457,16 +1542,18 @@ function GapNotice() {
 export function LiveOutput({
   blocks,
   gap,
+  running = false,
   threadId,
   label,
 }: {
   label?: string;
   blocks: DisplayBlock[];
   gap: boolean;
+  running?: boolean;
   threadId?: string;
 }) {
   const { t } = useTranslation();
-  const rows = liveRows(blocks);
+  const rows = liveRows(blocks, running, threadId);
   return (
     <section
       className={styles.liveOutput}

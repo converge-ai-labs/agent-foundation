@@ -16,7 +16,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdCredential,
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
+from a13n_harness.providers.environment.remote_envd.managed import HTTP_TOKEN_READ, managed_http_runtime
 
 
 def tunnel_connection(url: str, timeout: float = 120) -> HttpEnvdConnectionConfiguration:
@@ -69,12 +69,7 @@ async def http_session(
         async def credential() -> HttpEnvdCredential:
             token = await execute_command(
                 sandbox,
-                [
-                    "python3",
-                    "-I",
-                    "-c",
-                    "import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))",
-                ],
+                list(HTTP_TOKEN_READ),
                 10,
             )
             try:

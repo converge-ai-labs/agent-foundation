@@ -181,6 +181,10 @@ impl StreamClosures {
 }
 
 pub(crate) async fn run_internal() -> io::Result<()> {
+    #[cfg(unix)]
+    // A stopped cleanup owner can receive HUP when daemon exit orphans its
+    // process group. Stay alive to observe EOF and reap the separate payload.
+    set_hangup(libc::SIG_IGN)?;
     #[cfg(target_os = "linux")]
     {
         crate::execution::namespace::protect_process()?;
@@ -825,9 +829,23 @@ async fn spawn_command_tree(command: &mut Command) -> io::Result<(Child, Command
 }
 
 #[cfg(unix)]
+fn set_hangup(disposition: libc::sighandler_t) -> io::Result<()> {
+    let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+    action.sa_sigaction = disposition;
+    unsafe { libc::sigemptyset(&mut action.sa_mask) };
+    if unsafe { libc::sigaction(libc::SIGHUP, &action, std::ptr::null_mut()) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
 fn configure_command_tree(command: &mut Command) {
     unsafe {
         command.pre_exec(|| {
+            // Cleanup-owner signal protection is not payload policy.
+            set_hangup(libc::SIG_DFL)?;
             if libc::setpgid(0, 0) == 0 {
                 Ok(())
             } else {

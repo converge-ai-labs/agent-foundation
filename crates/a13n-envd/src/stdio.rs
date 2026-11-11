@@ -42,7 +42,7 @@ pub(crate) async fn serve(daemon: Arc<Daemon>, config: &Config) -> io::Result<()
         daemon,
         config,
         SHUTDOWN_DRAIN_TIMEOUT,
-        shutdown_signal(),
+        crate::shutdown::wait(false),
     )
     .await
 }
@@ -466,22 +466,6 @@ fn invalid_data(message: &'static str) -> io::Error {
 /// Stdout stopped accepting responses, whichever queue or flush noticed it first.
 fn response_drain_timeout() -> io::Error {
     io::Error::new(io::ErrorKind::TimedOut, "response drain timed out")
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() -> io::Result<()> {
-    use tokio::signal::unix::{SignalKind, signal};
-
-    let mut terminate = signal(SignalKind::terminate())?;
-    tokio::select! {
-        result = tokio::signal::ctrl_c() => result,
-        _ = terminate.recv() => Ok(()),
-    }
-}
-
-#[cfg(not(unix))]
-async fn shutdown_signal() -> io::Result<()> {
-    tokio::signal::ctrl_c().await
 }
 
 #[cfg(test)]

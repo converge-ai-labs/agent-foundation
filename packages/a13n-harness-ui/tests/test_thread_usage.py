@@ -351,6 +351,7 @@ async def test_legacy_and_auxiliary_records_reaggregate_without_repricing_or_con
         legacy = _model(0).model_dump(mode="json")
         for field in (
             "call_id",
+            "usage_status",
             "source",
             "tool_id",
             "tool_call_id",
@@ -530,6 +531,32 @@ def _snapshot(*records, sequence=1, usage_id="usage-scope", thread_id="thr_root"
         sequence=sequence,
         records=records,
     )
+
+
+async def test_context_uses_the_latest_metered_root_request(tmp_path):
+    first, retry = _model(1), _model(3)
+
+    def failed(index):
+        return _model(index).model_copy(
+            update={
+                "outcome": "failed",
+                "response_state": "unavailable",
+                "usage_status": "unavailable",
+                "request_usage": BoundedRequestUsage(),
+            }
+        )
+
+    zero = _model(4).model_copy(update={"request_usage": BoundedRequestUsage(cost=Decimal("0"))})
+    records = []
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thr_root"))
+        repository = ThreadUsageRepository(database.sessions)
+        for record, expected in ((failed(0), None), (first, first), (failed(2), first), (retry, retry), (zero, zero)):
+            records.append(record)
+            await repository.save(thread_id="thr_root", snapshot=_snapshot(*records, sequence=len(records)))
+            assert await repository.latest_root_request(thread_id="thr_root") == expected
+        assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == len(records)
 
 
 async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engine(tmp_path):

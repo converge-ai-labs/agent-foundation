@@ -124,6 +124,19 @@
   box-shadow: var(--elevation-overlay);
 }
 
+/* The button itself supplies space around the glyph in adjacent action groups. */
+:has(> button[data-size^="icon"] + button[data-size^="icon"]) {
+  column-gap: 0;
+}
+@media (pointer: fine) {
+  button[data-size^="icon"]:has(+ button[data-size^="icon"]),
+  button[data-size^="icon"] + button[data-size^="icon"] {
+    inline-size: 24px;
+    block-size: 24px;
+    flex-shrink: 0;
+  }
+}
+
 /* A compact setting value is an anchor, not the reading width of its menu. */
 @media (max-width: 600px) {
   [data-slot="select-popup"] {

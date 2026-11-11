@@ -69,7 +69,7 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
                 "config": {
                     "recipe": {"snapshot": "envd"}
                     if type_ == "daytona"
-                    else {"image": "im-envd"}
+                    else {"image": "im-envd", "startup_command": ["/usr/local/bin/start-envd"]}
                     if type_ == "modal"
                     else {}
                 },

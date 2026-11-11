@@ -149,7 +149,10 @@ function NotificationState({ children }: { children: ReactNode }) {
   const transport = useContext(TransportContext);
   const navigate = useNavigate();
   const settings = useMatch("/settings/*");
-  const viewedThread = useMatch("/threads/:threadId/*")?.params.threadId;
+  const botPage = useMatch("/bot");
+  const viewedThread =
+    useMatch("/threads/:threadId/*")?.params.threadId ??
+    (botPage ? "thread_bot" : undefined);
   const queries = useQueryClient();
   const toast = useToast();
   const seen = useRef(new Set<string>());
@@ -326,7 +329,10 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name = detail?.thread.title || detail?.thread.excerpt?.first_input;
-      const path = `/threads/${encodeURIComponent(threadId)}`;
+      const path =
+        threadId === "thread_bot" && notice.status === "completed"
+          ? "/bot"
+          : `/threads/${encodeURIComponent(threadId)}`;
       current.current.toast.add({
         id,
         title: <NoticeTitle status={notice.status} name={name} />,

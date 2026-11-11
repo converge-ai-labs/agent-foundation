@@ -40,6 +40,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.bot import BotSnapshot
+from a13n_harness_ui.bot_models import BotInput, BotPause, BotSubmit
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -170,6 +172,8 @@ from a13n_harness_ui.storage.shares import unavailable
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.surfaces import (
+    BranchPoints,
+    BranchRequest,
     ChildControlResult,
     ChildExecutionPage,
     ContextUsageView,
@@ -604,6 +608,19 @@ def create_webui(
     )
     server.add_middleware(RequestLog)
     register_voice_routes(server, lambda: app().voice(), api_key)
+
+    @server.get("/api/bot", response_model=BotSnapshot)
+    async def bot_status() -> BotSnapshot:
+        return await app().bot().snapshot()
+
+    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmit))
+    async def bot_submit(request: Request) -> BotInput:
+        return await app().bot().submit(await _document(request, BotSubmit))
+
+    @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
+    async def bot_pause(request: Request) -> BotSnapshot:
+        command = await _document(request, BotPause)
+        return await app().bot().pause(command.paused)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -1944,6 +1961,14 @@ def create_webui(
     @server.patch("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def set_auto_followup(thread_id: str, body: CoordinatorUpdate) -> ThreadSummary:
         return await app().set_auto_followup(thread_id, body.auto_followup)
+
+    @server.get("/api/threads/{thread_id}/branch-points")
+    async def branch_points(thread_id: str) -> BranchPoints:
+        return await app().branch_points(thread_id)
+
+    @server.post("/api/threads/{thread_id}/branch", response_model=ThreadSummary, openapi_extra=_body(BranchRequest))
+    async def branch_thread(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().branch_thread(thread_id, await _document(request, BranchRequest))
 
     @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
     async def fork_thread(thread_id: str) -> ThreadSummary:

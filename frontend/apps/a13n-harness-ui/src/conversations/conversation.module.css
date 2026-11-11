@@ -623,6 +623,42 @@
   width: fit-content;
   max-width: min(85%, 640px);
 }
+.messageEditor {
+  width: min(100%, 640px);
+  margin: 8px 0 16px auto;
+  padding: 12px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: var(--harness-radius-panel);
+  background: var(--a13n-elevated);
+}
+.messageEditor textarea {
+  display: block;
+  width: 100%;
+  min-height: 3lh;
+  max-height: 36vh;
+  field-sizing: content;
+  resize: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
+}
+.messageEditor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.messageEditor:has(textarea:focus-visible) {
+  border-color: var(--a13n-secondary);
+}
+.messageEditor > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
 .sentAttachments {
   display: flex;
   flex-wrap: wrap;
@@ -685,6 +721,15 @@
     opacity: 1;
   }
 }
+.messageTime {
+  margin-inline: 4px;
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-xs);
+  white-space: nowrap;
+}
+.userInput .messageTime {
+  order: -1;
+}
 .copyMessage {
   color: inherit;
 }
@@ -711,7 +756,7 @@
   .threadStar {
     height: 44px;
   }
-  .copyMessage {
+  .messageActions button {
     width: 44px;
     height: 44px;
   }

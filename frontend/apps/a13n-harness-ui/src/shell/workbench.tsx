@@ -1,4 +1,5 @@
 import { useAppearance } from "../appearance/react";
+import { BotComposerProvider, BotNavigation, BotPage } from "../bot";
 import { AppearanceSettings } from "../configuration/appearance";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
@@ -114,7 +115,9 @@ export function Workbench(props: {
     <ResultsProvider>
       <LiveThreadsProvider>
         <UnsentProvider>
-          <WorkbenchContent {...props} />
+          <BotComposerProvider>
+            <WorkbenchContent {...props} />
+          </BotComposerProvider>
         </UnsentProvider>
       </LiveThreadsProvider>
     </ResultsProvider>
@@ -185,6 +188,7 @@ function WorkbenchContent({
     !memoryMode &&
     (location.pathname === "/" ||
       location.pathname === "/new" ||
+      location.pathname === "/bot" ||
       (selectedThread.data && location.pathname.startsWith("/threads/")))
   ) {
     lastChat.current = `${location.pathname}${location.search}`;
@@ -212,6 +216,7 @@ function WorkbenchContent({
   const navigation = (
     <>
       <div hidden={settingsMode} className={styles.navigationBody}>
+        <BotNavigation />
         {memoryMode && memoryEnabled ? (
           <MemoryNavigation
             backTo={lastChat.current}
@@ -491,6 +496,12 @@ function WorkbenchContent({
             unauthorized={unauthorized}
           >
             <Routes>
+              <Route
+                path="/bot"
+                element={
+                  <BotPage profile={profile} unauthorized={unauthorized} />
+                }
+              />
               <Route
                 path="/memory"
                 element={

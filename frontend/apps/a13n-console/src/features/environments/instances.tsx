@@ -45,13 +45,7 @@ import {
   environmentTemplates,
 } from "./api";
 import instanceStyles from "./environments.module.css";
-import {
-  FIRST_DESKTOP_NOTICE,
-  SPRITES_DESKTOP_NOTICE,
-  MODAL_FIRST_DESKTOP_NOTICE,
-  DAYTONA_FIRST_DESKTOP_NOTICE,
-  VERCEL_FIRST_DESKTOP_NOTICE,
-} from "./creation-progress";
+import { creationNotice } from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
@@ -339,6 +333,25 @@ function EnvironmentForm({
     [templateId, setTemplateId] = useState(""),
     [endpoint, setEndpoint] = useState(""),
     [token, setToken] = useState("");
+  const selectedTemplate = templates.data?.find(
+    (item) => item.id === templateId,
+  );
+  const selectedProvider = useQuery({
+    queryKey: ["environment-provider", selectedTemplate?.provider_id],
+    enabled: kind === "managed" && !!selectedTemplate?.provider_id,
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/environment-providers/{provider_id}", {
+          params: { path: { provider_id: selectedTemplate!.provider_id } },
+          signal,
+        })
+        .then(data),
+  });
+  const notice = creationNotice(
+    selectedProvider.data?.type,
+    selectedTemplate?.config?.recipe,
+  );
   const save = useMutation({
     mutationFn: () => {
       const named = name.trim() ? { name: name.trim() } : {};
@@ -469,38 +482,7 @@ function EnvironmentForm({
           </FormField>
         </>
       )}
-      {kind === "managed" &&
-        templates.data?.find((item) => item.id === templateId)?.config?.recipe
-          ?.template === "auto" && <p role="note">{t(FIRST_DESKTOP_NOTICE)}</p>}
-      {kind === "managed" &&
-        templates.data?.find((item) => item.id === templateId)?.config?.recipe
-          ?.image === "auto" && (
-          <p role="note">{t(MODAL_FIRST_DESKTOP_NOTICE)}</p>
-        )}
-      {kind === "managed" &&
-        templates.data?.find((item) => item.id === templateId)?.config?.recipe
-          ?.snapshot === "auto" && (
-          <p role="note">
-            {t(
-              templates.data?.find((item) => item.id === templateId)?.config
-                ?.recipe?.execution === "envd_http"
-                ? VERCEL_FIRST_DESKTOP_NOTICE
-                : DAYTONA_FIRST_DESKTOP_NOTICE,
-            )}
-          </p>
-        )}
-      {kind === "managed" &&
-        (() => {
-          const recipe = templates.data?.find((item) => item.id === templateId)
-            ?.config?.recipe;
-          return (
-            recipe?.desktop === true &&
-            recipe?.execution === "envd_http" &&
-            !recipe?.snapshot &&
-            !recipe?.template &&
-            !recipe?.image
-          );
-        })() && <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>}
+      {kind === "managed" && notice && <p role="note">{t(notice)}</p>}
       <MetricsSourcePicker
         value={metricsSource}
         onChange={setMetricsSource}

@@ -92,7 +92,13 @@ def seed_templates(api: Api, environment_providers: dict[str, Json], local_templ
         if provider_type == "daytona":
             body["config"] = {"recipe": {"snapshot": "northstar-fictional-envd"}}
         elif provider_type == "modal":
-            body["config"] = {"recipe": {"image": "northstar-fictional-envd"}}
+            body["config"] = {
+                "recipe": {
+                    "image": "northstar-fictional-envd",
+                    "envd_management": "preinstalled",
+                    "startup_command": ["/usr/local/bin/start-envd"],
+                }
+            }
         api.post("/api/v1/environment-templates", {**body, "labels": {"runtime": provider_type}})
     retired = api.post(
         "/api/v1/environment-templates",

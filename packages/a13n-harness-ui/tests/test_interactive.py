@@ -503,6 +503,9 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
     child = root.model_copy(update={"record_id": "child-1", "parent_agent_instance_id": "agent-root"})
     delegated = root.model_copy(update={"record_id": "delegated-1", "delegation_id": "delegation-1"})
     auxiliary = root.model_copy(update={"record_id": "aux-1", "source": "files.media_understanding"})
+    failed = root.model_copy(
+        update={"record_id": "failed", "usage_status": "unavailable", "request_usage": BoundedRequestUsage()}
+    )
     event = LiveEvent(
         epoch="test",
         sequence=1,
@@ -518,13 +521,15 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
                     "schema_version": "1",
                     "payload": {
                         "type": "usage_report",
-                        "records": [item.model_dump(mode="json") for item in (root, child, delegated, auxiliary)],
+                        "records": [
+                            item.model_dump(mode="json") for item in (root, child, delegated, auxiliary, failed)
+                        ],
                     },
                 }
             }
         },
     )
-    assert len(model_usage(event)) == 4
+    assert len(model_usage(event)) == 5
     samples = root_context_samples(event)
     assert len(samples) == 1
     assert samples[0].tokens == 120

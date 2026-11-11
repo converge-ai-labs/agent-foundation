@@ -258,6 +258,18 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 只应用 Project 指定的选择轴。如果只想更新四个 Environment 选择轴，使用 GET/POST `/api/threads/{thread_id}/project-environments`；其预览描述完整 Environment 替换。两个操作都不复制文件。
 
+## Bot
+
+持实例密钥的客户端可使用共享 [Bot](bot.md)，无需再创建 Thread。受限分享访客无法访问这些路由。
+
+| 方法与路径             | 请求体                                                                 | 结果                                                                   |
+| ---------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `GET /api/bot`         | 无                                                                     | 包含保存状态、有意发布的消息、保留输入、当前操作及待回答决策状态的快照 |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | 保留的输入；接受不代表 Run 已启动或完成                                |
+| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | 更新后的快照；暂停自动投递，直接输入仍可使用                           |
+
+查询不会启动工作。输入提交结果不确定时，显式使用相同 ID 和文本重试；相同 ID 配不同内容会失败。打开 `/threads/thread_bot` 查看活动，并使用现有决策 API 回答人类决策。配置位于 `webui.bot`；私有 Connector 配置既不是 YAML 资源，也不是提供方管理 API。
+
 ## Coordinator
 
 通过 `POST /api/threads` 和 `{"defaults":{"project_id":"project-main"},"coordinator":true}` 创建所有者。使用可用的 Project ID。创建会保存角色并启用自动后续处理；输入另行提交。提交失败不会删除已创建的 Thread。

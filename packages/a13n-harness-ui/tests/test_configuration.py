@@ -150,10 +150,10 @@ async def test_native_configuration_payloads_preserve_keys_values_and_whitespace
         ("", True),
         ("webui: {}\n", True),
         ("webui:\n  sidekick: {}\n", True),
-        ("webui:\n  sidekick: null\n", False),
+        ("webui:\n  sidekick: null\n", True),
     ],
 )
-async def test_sidekick_defaults_preserve_explicit_opt_out_without_rewriting_source(
+async def test_sidekick_defaults_normalize_null_without_rewriting_source(
     tmp_path: Path, webui: str, enabled: bool
 ) -> None:
     path = _write_source_tree(tmp_path, root='schema_version: "1"\n' + webui)

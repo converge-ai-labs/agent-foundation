@@ -25,6 +25,7 @@ export type ExecutionOutcome = "cancelled" | "interrupt" | "failed";
 export type ChildState = "running" | "suspended" | "completed";
 
 export type DisplayBlock = {
+  timestamp?: string | number;
   durationMs?: number;
   id: string;
   shellCommand?: string;
@@ -487,6 +488,8 @@ export class FocusDisplay {
     if (type === "TEXT_MESSAGE_START" || type === "REASONING_MESSAGE_START") {
       this.blocks.set(key, {
         id: key,
+        timestamp:
+          typeof payload.timestamp === "number" ? payload.timestamp : undefined,
         kind: type.startsWith("REASONING")
           ? "thinking"
           : payload.role === "user"
@@ -502,6 +505,8 @@ export class FocusDisplay {
       const block = this.blocks.get(key) ?? {
         id: key,
         kind: "assistant" as const,
+        timestamp:
+          typeof payload.timestamp === "number" ? payload.timestamp : undefined,
         text: "",
       };
       this.blocks.set(key, {
@@ -677,6 +682,7 @@ export class FocusDisplay {
       this.recovery = { ...this.recovery, state: "resumed" };
     const block: DisplayBlock = {
       id: item.id,
+      timestamp: item.started_at,
       durationMs: item.ended_at
         ? Math.max(0, Date.parse(item.ended_at) - Date.parse(item.started_at))
         : undefined,
@@ -855,6 +861,7 @@ export class FocusDisplay {
         if (
           !object(record) ||
           record.kind !== "model" ||
+          record.usage_status === "unavailable" ||
           (record.source ?? "agent") !== "agent" ||
           (record.run_id !== this.runId && !resumedScope) ||
           record.parent_agent_instance_id != null ||
@@ -1055,6 +1062,8 @@ export class FocusDisplay {
       setBlock(key, {
         id: key,
         kind: "user",
+        timestamp:
+          typeof event.timestamp === "number" ? event.timestamp : undefined,
         inputSource: string(source.source) || "user",
         inputGroup: string(source.input_id) || undefined,
         text: string(source.content),
@@ -1070,6 +1079,8 @@ export class FocusDisplay {
       setBlock(key, {
         id: key,
         kind: "media",
+        timestamp:
+          typeof event.timestamp === "number" ? event.timestamp : undefined,
         inputSource: string(source.source),
         inputGroup: string(source.input_id) || undefined,
         text: "",

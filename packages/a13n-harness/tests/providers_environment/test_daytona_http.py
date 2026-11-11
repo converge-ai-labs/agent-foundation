@@ -110,7 +110,10 @@ async def test_attach_authenticates_fixed_identity_and_does_not_replay(peer):
     assert all(
         call.args[:2] == ("GET", "sandbox/sb-fixed/ports/8888/preview-url") for call in cloud.request.call_args_list
     )
-    assert all("http-token" in call.kwargs["body"]["command"] for call in guest.request.call_args_list)
+    assert all(
+        call.kwargs["body"]["command"] == "sudo -n head -c 4097 /var/lib/a13n-envd/http-token"
+        for call in guest.request.call_args_list
+    )
     assert events[0]["expected_device_id"] == "env-fixed"
     assert "working_directory" not in events[0]
     assert events[0].get("configuration") is None

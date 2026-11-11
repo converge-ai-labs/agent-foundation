@@ -1,7 +1,7 @@
 """retain configured routes for chat usage.
 
 Revision ID: 2444030a5191
-Revises: 63bab3fe8f7b
+Revises: 7147a04d1d58
 Create Date: 2026-11-11 03:50:32.120141+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "2444030a5191"
-down_revision: str | Sequence[str] | None = "63bab3fe8f7b"
+down_revision: str | Sequence[str] | None = "7147a04d1d58"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -13,7 +13,7 @@ INPUTS = {
     },
     "e2b": {},
     "daytona": {"snapshot": "custom-envd"},
-    "modal": {"image": "im-custom"},
+    "modal": {"image": "im-custom", "startup_command": ["/usr/local/bin/start-envd"]},
     "runloop": {},
     "sprites": {},
     "vercel": {},

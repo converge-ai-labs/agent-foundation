@@ -1018,6 +1018,7 @@ class StreamRenderer:
         notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in {
             "background_process",
             "async_subagent",
+            "envd_session",
         }
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
@@ -1419,6 +1420,7 @@ class StreamRenderer:
                     "a13n.input.recovery",
                     "a13n.input.async_subagent",
                     "a13n.input.background_process",
+                    "a13n.input.envd_session",
                 }:
                     return
                 if name == "a13n.input.media":

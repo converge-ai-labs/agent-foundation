@@ -51,6 +51,7 @@ async def test_tls_tunnel_readonly_revocation_expiry_and_restart(tmp_path):
             desktop_assistance=True,
             execution="envd_http",
             snapshot=os.environ["A13N_TEST_VERCEL_SNAPSHOT"],
+            startup_command=json.loads(os.environ["A13N_TEST_VERCEL_STARTUP_COMMAND_JSON"]),
             request_timeout_seconds=300,
             timeout_seconds=1800,
         ),
