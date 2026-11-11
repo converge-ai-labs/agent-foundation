@@ -50,6 +50,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bot Status */
+        get: operations["bot_status_api_bot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bot/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bot Submit */
+        post: operations["bot_submit_api_bot_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bot/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bot Pause */
+        post: operations["bot_pause_api_bot_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/configuration": {
         parameters: {
             query?: never;
@@ -2951,14 +3002,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live";
+            kind: "agent" | "markdown" | "memory" | "live" | "bot";
             /** Id */
             id: string;
         };
@@ -3338,6 +3389,133 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
+        /**
+         * BotAgentSource
+         * @description Application-owned persistent assistant; not a selectable Agent resource.
+         */
+        BotAgentSource: {
+            /**
+             * Kind
+             * @default bot
+             * @constant
+             */
+            kind?: "bot";
+            /**
+             * Id
+             * @default bot
+             * @constant
+             */
+            id?: "bot";
+        };
+        /** BotInput */
+        BotInput: {
+            /** Input Id */
+            input_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "heartbeat" | "connector" | "automatic";
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * State
+             * @default queued
+             * @enum {string}
+             */
+            state?: "queued" | "dispatching" | "admitted" | "completed" | "interrupted" | "discarded";
+            /** Receipt Id */
+            receipt_id?: string | null;
+            /** Continuation Id */
+            continuation_id?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Causation Id */
+            causation_id?: string | null;
+        };
+        /** BotMessage */
+        BotMessage: {
+            /** Message Id */
+            message_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Input Id */
+            input_id?: string | null;
+        };
+        /** BotSnapshot */
+        BotSnapshot: {
+            /**
+             * Thread Id
+             * @default thread_bot
+             */
+            thread_id?: string;
+            state: components["schemas"]["BotState"];
+            thread?: components["schemas"]["ThreadSummary"] | null;
+            /** Available */
+            available: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Model Id */
+            model_id?: string | null;
+            /** Heartbeat Enabled */
+            heartbeat_enabled: boolean;
+            /** Interval Seconds */
+            interval_seconds: number;
+            operation?: components["schemas"]["RootOperationView"] | null;
+            /**
+             * Pending Decision
+             * @default false
+             */
+            pending_decision?: boolean;
+            /**
+             * Inputs
+             * @default []
+             */
+            inputs?: components["schemas"]["BotInput"][];
+            /**
+             * Messages
+             * @default []
+             */
+            messages?: components["schemas"]["BotMessage"][];
+        };
+        /** BotState */
+        BotState: {
+            /**
+             * Activated
+             * @default false
+             */
+            activated?: boolean;
+            /**
+             * Paused
+             * @default false
+             */
+            paused?: boolean;
+            /** Next Heartbeat At */
+            next_heartbeat_at?: string | null;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Heartbeat Interval Seconds */
+            heartbeat_interval_seconds?: number | null;
+        };
         /** BranchPoint */
         BranchPoint: {
             /** Edit */
@@ -3623,7 +3801,7 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
             /** Source Id */
             source_id: string;
             /** Model Id */
@@ -9153,6 +9331,18 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
         };
+        /** BotSubmit */
+        BotSubmit: {
+            /** Input Id */
+            input_id: string;
+            /** Text */
+            text: string;
+        };
+        /** BotPause */
+        BotPause: {
+            /** Paused */
+            paused: boolean;
+        };
         /** PushKeys */
         PushKeys: {
             /** P256Dh */
@@ -9882,6 +10072,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bot_status_api_bot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSnapshot"];
+                };
+            };
+        };
+    };
+    bot_submit_api_bot_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotSubmit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotInput"];
+                };
+            };
+        };
+    };
+    bot_pause_api_bot_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotPause"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSnapshot"];
                 };
             };
         };

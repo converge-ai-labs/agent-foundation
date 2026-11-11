@@ -23,6 +23,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
@@ -321,7 +322,10 @@ class RootRunCoordinator:
         human_input: bool = False,
         reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
+        bot_input: bool = False,
     ) -> RootRunReceipt:
+        if thread_id == BOT_THREAD_ID and not (human_input or bot_input):
+            raise RunCoordinationError("Bot accepts only user, heartbeat or Connector input.", code="bot_wake_rejected")
         prompt = detach_input(prompt)
         return await self._submit(
             thread_id=thread_id,
@@ -812,6 +816,8 @@ class RootRunCoordinator:
                 )
             except Exception:
                 notice = None
+            if thread_id == BOT_THREAD_ID and operation.status is RootOperationStatus.completed:
+                notice = None
             await self._publish_change(operation, notice=None if operation.observation_only else notice)
             if self._on_settled is not None and self._accepting and not operation.observation_only:
                 try:
@@ -823,6 +829,8 @@ class RootRunCoordinator:
 
     def _start_interaction(self, operation: _RootOperation, outcome: RootRunOutcome) -> None:
         """Arm without yielding after successful continuation selection and settlement."""
+        if operation.receipt.thread_id == BOT_THREAD_ID:
+            return
         if self._restart is not None and (self._restart.requested or self._restart.restoring):
             return
         if not self._interaction_timeouts or not self._accepting or self._task_group is None:

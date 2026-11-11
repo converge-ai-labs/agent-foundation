@@ -10,7 +10,7 @@ Harness UI keeps execution persistence continuation-oriented:
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. live runtime objects, presence, and native terminal sessions remain in process memory.
 
-The store supports local restart, inspection and native Shell supervision recovery. It persists retained tool records, frozen execution composition, native start correlation, cancellation intent and completion delivery state. Root input queues, active model invocations and arbitrary Python call stacks remain process-local. Harness UI uses local OS ownership locks rather than distributed worker leases.
+The store supports local restart, inspection and native Shell supervision recovery. It persists retained tool records, frozen execution composition, native start correlation, cancellation intent and completion delivery state. Ordinary root input queues, active model invocations and arbitrary Python call stacks remain process-local. [Bot and Connector Ingress](12-bot-and-connector-ingress.md) owns the bounded durable Bot input queue, intentional messages, scheduling state, private Connector configuration and selected-input inbox; those records do not restore root receipts or authorize uncertain replay. Harness UI uses local OS ownership locks rather than distributed worker leases.
 
 ## Persisted Values
 

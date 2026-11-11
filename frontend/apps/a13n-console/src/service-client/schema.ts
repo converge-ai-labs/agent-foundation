@@ -7186,6 +7186,11 @@ export interface components {
        */
       observed_at: string;
       /**
+       * Profile
+       * @enum {string}
+       */
+      profile: "headless" | "desktop";
+      /**
        * Retryable
        * @default false
        */

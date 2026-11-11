@@ -2975,7 +2975,7 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
         assert thread is not None and thread.continuation is not None
         stored = await read_continuation(app._store.objects, thread.continuation, include_display=True)
         history = [ModelRequest(parts=[UserPromptPart("Question")])]
-        for source in ("background_process", "async_subagent", "external"):
+        for source in ("background_process", "async_subagent", "envd_session", "external"):
             history.append(
                 ModelRequest(
                     parts=[UserPromptPart([TextContent(source, metadata={"a13n.steering-source": source})])],

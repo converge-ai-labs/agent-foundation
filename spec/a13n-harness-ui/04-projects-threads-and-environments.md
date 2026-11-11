@@ -8,6 +8,8 @@ A Thread is one continuation-backed root or child conversation. It owns mutable 
 
 The user-facing working-context hierarchy is Project → Environment → working directories. Multiple local roots belong to one local Environment group; directory mounts and their execution scopes remain internal. [Environment selection](04a-devices-and-environment-bindings.md#webui-behavior) owns grouping, readable defaults and the lossless projection onto retained configuration.
 
+The reserved [Bot Thread](12-bot-and-connector-ingress.md#identity-composition-and-workspace) remains projectless with a Host-owned source and an exclusive workspace under the selected configuration directory. Ordinary Thread mutation cannot repurpose it. Bot can create normal file-defined Projects and ordinary working Threads through application commands.
+
 ## Projects
 
 One file under `projects/` defines a Project:
@@ -115,7 +117,7 @@ A Project can contain multiple Coordinators. A Coordinator is a durable role of 
 
 A Coordinator owns workers newly created by its shared `create_thread` tool or explicitly assigned by an authenticated human at creation through `POST /api/threads` with `coordinator_thread_id`. Model-tool callers cannot supply an owner: the Host derives it from the source's durable identity. Human creation validates an unarchived Coordinator and an available same-Project selection; it uses ordinary explicit creation defaults, not Sidekick defaults. `coordinator=true` and a non-null owner are mutually exclusive. Each worker is a root with `parent_thread_id=null`, its own history, drafts, configuration, admission, steering, cancellation and pending decisions. Ownership is a flat, immutable, same-Project relation separate from subagent lineage. Coordinators and workers cannot change or clear their Project; other sticky selections remain editable. A worker cannot create another root. Human-created roots without an explicit owner, older Sidekicks and unrelated conversations remain independent; promotion never adopts them.
 
-Archive preserves role and ownership, with explicit Restore required before execution. Renaming or removing a Project resource does not delete saved roles or history. Sidekick configuration controls creation defaults, not promotion, role, visibility, scope or automatic follow-up. With Sidekick disabled a Coordinator can still create its workers using ordinary creation defaults. Turning off automatic follow-up retains all role capabilities and worker ownership.
+Archive preserves role and ownership, with explicit Restore required before execution. Renaming or removing a Project resource does not delete saved roles or history. Sidekick configuration controls creation defaults, not promotion, role, visibility, scope or automatic follow-up. Turning off automatic follow-up retains all role capabilities and worker ownership.
 
 When `auto_followup` is enabled, the WebUI Host attempts to run or steer a Coordinator after one of its owned workers settles, and on an admitted human submission to an initial-state owned worker. Human inspection and execution remain unrestricted ordinary root operations. No separate worker execution API, durable delivery queue, Project-wide stop or approval aggregation is added. [Runtime instructions and notifications](05-runtime-subagents-and-surfaces.md#coordinator-instructions) own coordination behavior; [browser presentation](webui/04-workbench-interaction.md#coordinator-entry) reflects the role and ownership.
 

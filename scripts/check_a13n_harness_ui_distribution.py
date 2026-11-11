@@ -37,6 +37,7 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/managed_runtime.py"),
     PurePosixPath("a13n_harness_ui/prompts.py"),
     PurePosixPath("a13n_harness_ui/assets/system_prompt.md"),
+    PurePosixPath("a13n_harness_ui/assets/bot_instruction.md"),
     PurePosixPath("a13n_harness_ui/interactive/shell.py"),
     PurePosixPath("a13n_harness_ui/interactive/backend.py"),
     PurePosixPath("a13n_harness_ui/interactive/commands.py"),
@@ -198,11 +199,14 @@ def _validate_wheel_imports(path: Path) -> None:
                     "from a13n_harness_ui.interactive.shell import CliShell; "
                     "from a13n_harness_ui.webui import create_webui; "
                     "from a13n_harness_ui.subagents import builtin_subagent_sources; "
-                    "from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT; "
+                    "from a13n_harness_ui.prompts import BOT_INSTRUCTIONS, DEFAULT_SYSTEM_PROMPT; "
                     "from importlib.resources import files; "
                     "assert DEFAULT_SYSTEM_PROMPT; "
                     "assert DEFAULT_SYSTEM_PROMPT == "
                     "files('a13n_harness_ui').joinpath('assets/system_prompt.md').read_text(encoding='utf-8').strip(); "
+                    "assert BOT_INSTRUCTIONS; "
+                    "assert BOT_INSTRUCTIONS == "
+                    "files('a13n_harness_ui').joinpath('assets/bot_instruction.md').read_text(encoding='utf-8').strip(); "
                     "assert callable(main) and CliShell and callable(create_webui); "
                     "assert len(builtin_subagent_sources()) == 3; "
                     "assert all(content for _, content in builtin_subagent_sources())"

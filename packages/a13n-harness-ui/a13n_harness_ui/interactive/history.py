@@ -83,6 +83,7 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
         elif part.kind in {"user", "media"} and (part.metadata.model_extra or {}).get("a13n.steering-source") in {
             "background_process",
             "async_subagent",
+            "envd_session",
         }:
             renderer.append("Activity · " + text, kind="tool")
         else:

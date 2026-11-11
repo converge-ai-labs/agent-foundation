@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation } from "react-router";
+import { useBot } from "../bot";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStatus, useTransport } from "../transport/context";
 import { FocusDisplay, watchThread } from "./stream";
@@ -130,7 +131,11 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   const transport = useTransport();
   const store = useMemo(() => new LiveThreads(), [transport]);
   const location = useLocation();
-  const selected = /^\/threads\/([^/]+)\/?$/.exec(location.pathname)?.[1];
+  const bot = useBot(location.pathname === "/bot");
+  const selected =
+    location.pathname === "/bot"
+      ? bot.data?.thread?.thread_id
+      : /^\/threads\/([^/]+)\/?$/.exec(location.pathname)?.[1];
   const status = useStatus();
   const memory = useMemoryThread(
     new URLSearchParams(location.search).get("project") ?? undefined,

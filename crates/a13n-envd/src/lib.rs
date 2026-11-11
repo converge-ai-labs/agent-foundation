@@ -6,6 +6,8 @@ mod computer;
 mod config;
 mod connect;
 mod daemon;
+mod daemon_control;
+mod daemon_supervisor;
 mod data_dispatch;
 mod device_path;
 #[cfg(any(target_os = "linux", test))]
@@ -20,6 +22,7 @@ mod egress;
 pub mod eip;
 mod execution;
 mod filesystem;
+mod health;
 mod http;
 mod monitoring;
 mod operation;
@@ -27,6 +30,7 @@ mod process;
 mod resource;
 mod retention;
 mod runtime;
+mod shutdown;
 mod stdio;
 mod supervisor;
 mod transfer;
@@ -125,6 +129,34 @@ pub fn run_internal_mxc_launcher() -> std::io::Result<i32> {
 /// Runs one a13n-envd instance from trusted process configuration.
 pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if matches!(
+        arguments.first().and_then(|value| value.to_str()),
+        Some("daemon" | "supervise")
+    ) && arguments.get(1).is_some_and(|value| value == "--help")
+        && arguments.len() == 2
+    {
+        println!("{}", daemon_supervisor::HELP);
+        return Ok(());
+    }
+    if arguments.first().is_some_and(|value| value == "restart") {
+        return daemon_control::restart(&arguments[1..]);
+    }
+    if arguments.first().is_some_and(|value| value == "supervise") {
+        return daemon_supervisor::run(&arguments[1..]);
+    }
+    let supervised = arguments
+        .first()
+        .is_some_and(|value| value == "--internal-supervised-daemon");
+    let foreground_daemon = supervised || arguments.first().is_some_and(|value| value == "daemon");
+    if foreground_daemon {
+        if supervised {
+            daemon_supervisor::authorize_child()?;
+        }
+        arguments.remove(0);
+        let mut config = config::Config::from_environment(arguments)?;
+        config.supervised = supervised;
+        return run(config);
+    }
     if arguments
         .first()
         .is_some_and(|value| value == "connect-link")
@@ -186,6 +218,7 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             ]
     {
         println!("{}", connect::HELP);
+        println!("\n{}", daemon_supervisor::HELP);
         println!("\nConnect to Service: a13n-envd connect-service --help");
         println!("\nUpdate the native installation: a13n-envd update --help");
         return Ok(());
@@ -223,8 +256,12 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             return Err("managed broker requires Linux".into());
         }
     } else {
-        config::Config::from_environment()?
+        config::Config::from_environment(arguments)?
     };
+    run(config)
+}
+
+fn run(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     #[cfg(target_os = "linux")]
     if execution::boundary::managed(&config.sandbox, config.egress) && !config.managed {
         execution::management::enter(config)?;
@@ -243,15 +280,22 @@ async fn serve(config: config::Config) -> Result<(), Box<dyn Error + Send + Sync
         computer::startup::prepare(config.computer_use_permission_timeout).await?;
     }
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
+    let listener = health::bind(&config.health).await?;
     let monitoring = daemon.start_monitoring()?;
-    let result = match &config.transport {
-        config::TransportConfig::Stdio => stdio::serve(daemon, &config).await,
-        config::TransportConfig::Http(http_config) => {
-            http::serve(daemon, &config, http_config).await
+    let carrier = async {
+        match &config.transport {
+            config::TransportConfig::Stdio => stdio::serve(daemon, &config).await,
+            config::TransportConfig::Http(http_config) => {
+                http::serve(daemon, &config, http_config).await
+            }
+            config::TransportConfig::ReverseWebSocket(websocket_config) => {
+                websocket::serve(daemon, &config, websocket_config).await
+            }
         }
-        config::TransportConfig::ReverseWebSocket(websocket_config) => {
-            websocket::serve(daemon, &config, websocket_config).await
-        }
+    };
+    let result = tokio::select! {
+        result = carrier => result,
+        result = health::serve(listener) => result,
     };
     if let Some(monitoring) = monitoring {
         monitoring.shutdown().await;

@@ -111,6 +111,12 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
         assert set(inspect(engine).get_table_names()) == {
             "accepted_configuration",
             "alembic_version",
+            "bot_state",
+            "bot_input",
+            "bot_message",
+            "connector_configuration",
+            "bot_inbox",
+            "bot_note",
             "child_execution",
             "compaction",
             "configuration_source",

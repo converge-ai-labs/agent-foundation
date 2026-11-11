@@ -14,7 +14,7 @@ import pytest
 
 INSTALLER = Path(__file__).parents[1] / "install-a13n-envd.sh"
 pytestmark = pytest.mark.skipif(os.name == "nt" or shutil.which("jq") is None, reason="POSIX shell and jq required")
-BINARY = b"native binary fixture; must not be executed\n"
+BINARY = b"#!/bin/sh\nprintf 'a13n-envd 0.0.6\\n'\n"
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def release(
         if bad == "missing":
             names.remove("a13n-envd")
         for name in names:
-            data = BINARY if name == "a13n-envd" else b"license\n"
+            data = BINARY.replace(b"0.0.6", version.encode()) if name == "a13n-envd" else b"license\n"
             entry = tarfile.TarInfo(name)
             if name == "a13n-envd" and bad in {"symlink", "hardlink"}:
                 entry.type = tarfile.SYMTYPE if bad == "symlink" else tarfile.LNKTYPE
@@ -109,6 +109,40 @@ def release(
     # Match release-a13n-envd.yml: find . ... | xargs -0 sha256sum.
     (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  ./{archive.name}\n")
     return archive
+
+
+@pytest.mark.parametrize("downloader", ["curl", "wget"])
+@pytest.mark.parametrize("variant", ["default", "vm"])
+def test_pinned_install_without_python_jq_or_other_downloader(installer, downloader, variant):
+    run, fixtures, destination, _, commands = installer
+    release(fixtures, variant=variant)
+    remote = (commands / "curl").read_text()
+    if downloader == "wget":
+        (commands / "curl").unlink()
+        remote = remote.replace("args.index('-o')", "args.index('-O')")
+        (commands / "wget").write_text(remote)
+        (commands / "wget").chmod(0o755)
+    for name in ("sh", "tar", "gzip", "sha256sum", "awk", "grep", "mkdir", "mktemp", "chmod", "mv", "rm", "wc", "tr"):
+        (commands / name).symlink_to(shutil.which(name))
+    result = run("--version", "0.0.6", "--variant", variant, PATH=str(commands))
+    assert result.returncode == 0, result.stderr
+    assert (destination / "a13n-envd").read_bytes() == BINARY
+    assert not (commands / "python3").exists()
+    assert not (commands / "jq").exists()
+
+
+def test_wrong_binary_version_preserves_existing_install(installer):
+    run, fixtures, destination, _, _ = installer
+    archive = release(fixtures, version="0.0.5")
+    renamed = fixtures / archive.name.replace("0.0.5", "0.0.6")
+    archive.rename(renamed)
+    (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(renamed.read_bytes()).hexdigest()}  {renamed.name}\n")
+    destination.mkdir()
+    (destination / "a13n-envd").write_bytes(b"previous")
+    result = run("--version", "0.0.6")
+    assert_failed(result, destination)
+    assert "version mismatch" in result.stderr
+    assert (destination / "a13n-envd").read_bytes() == b"previous"
 
 
 def assert_failed(result, destination: Path):

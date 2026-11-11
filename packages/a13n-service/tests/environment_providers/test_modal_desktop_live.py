@@ -44,7 +44,12 @@ async def test_modal_envd_desktop_and_resume(tmp_path):
             ModalCredential.model_validate_json(os.environ["A13N_TEST_MODAL_CREDENTIAL_JSON"]),
         )
         recipe = ModalRecipe(
-            desktop=True, image=os.environ["A13N_TEST_MODAL_IMAGE"], cpu=2, memory=4096, request_timeout_seconds=300
+            desktop=True,
+            envd_management="managed",
+            image=os.environ["A13N_TEST_MODAL_IMAGE"],
+            cpu=2,
+            memory=4096,
+            request_timeout_seconds=300,
         )
     except (KeyError, ValueError):
         pytest.fail("Configure the Modal test backend, credential and Envd image", pytrace=False)

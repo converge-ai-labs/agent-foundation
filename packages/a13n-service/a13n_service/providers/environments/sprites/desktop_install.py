@@ -7,34 +7,12 @@ import json
 from a13n_harness.providers.environment.sprites.commands import command
 from a13n_harness.providers.environment.sprites.shared import SpritesReference
 
+from a13n_service.providers.environment import envd_assets
+from a13n_service.providers.environment.envd_install import dispatch
 from a13n_service.providers.environment.envd_release import installation_command
 
-SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
-FILES = (
-    (
-        "deploy/docker/images/sandbox/entrypoint.sh",
-        "/usr/local/bin/a13n-sandbox-entrypoint",
-        "b3c53fb45406e3206ad6465bf4461b5fba385da67d1f11a3c534a83e066a0496",
-    ),
-    (
-        "deploy/docker/images/sandbox/desktop.py",
-        "/usr/local/bin/a13n-sandbox-desktop",
-        "455fbe3413af57fe36fea0f4a88a1d5bfbfb6bbc6f044121d46f0ce210e785b9",
-    ),
-    (
-        "deploy/docker/images/sandbox/init-skills.sh",
-        "/usr/local/bin/a13n-sandbox-init",
-        "e973546b911758e35c629d093d7b0496ce7e5af0342a7a10570f192a43508f47",
-    ),
-    (
-        "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
-        "/opt/a13n-desktop-access.py",
-        "68f4ed23ac4729b57262738a3390e239c79db90a1010ae08bf41ed5a1e81ffb4",
-    ),
-)
 
-
-def installation_script() -> str:
+def installation_script(profile: envd_assets.Profile = "desktop") -> str:
     commands = [
         "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
         "python3 ca-certificates curl libgcc-s1 util-linux procps sudo xvfb openbox xauth x11-utils x11-xkb-utils "
@@ -48,19 +26,26 @@ def installation_script() -> str:
         "&& rm -rf /var/lib/apt/lists/*",
         installation_command(),
     ]
-    for source, destination, digest in FILES:
-        url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"
-        commands.append(
-            f"curl -fL --retry 2 --max-time 60 '{url}' -o '{destination}' && echo '{digest}  {destination}' | sha256sum -c - && chmod 0755 '{destination}'"
+    if profile == "headless":
+        commands[0] = (
+            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
+            "ca-certificates curl libgcc-s1 util-linux procps sudo "
+            "&& (getent group sandbox >/dev/null || groupadd --gid 1002 sandbox) "
+            "&& (id sandbox >/dev/null 2>&1 || useradd --uid 1002 --gid sandbox --create-home --shell /bin/bash sandbox) "
+            '&& test "$(id -u sandbox)" = 1002 && test "$(id -g sandbox)" = 1002 '
+            "&& install -d -o sandbox -g sandbox /workspace "
+            "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
+            "&& rm -rf /var/lib/apt/lists/*"
         )
+    commands.extend(envd_assets.commands(profile))
     commands.append(
         "test ! -e /var/lib/a13n-envd/http-token && test ! -e /run/a13n-desktop-access/control.sock && /usr/local/bin/a13n-envd --version"
     )
     return "set -eu\n" + "\n".join(commands)
 
 
-def revision() -> str:
-    return hashlib.sha256(installation_script().encode()).hexdigest()
+def revision(profile: envd_assets.Profile = "desktop") -> str:
+    return hashlib.sha256(installation_script(profile).encode()).hexdigest()
 
 
 # The child inherits the locked fd. A lost response rejoins it; a dead child leaves
@@ -94,7 +79,15 @@ print('running')
 """
 
 
+def headless_dispatch(operation_id: str, *, root: str = "/var/lib/a13n-sprites-headless-install") -> str:
+    return dispatch(installation_script("headless"), revision("headless"), operation_id, root=root)
+
+
 async def install(reference: SpritesReference, operation_id: str) -> str:
+    if not reference.config.desktop:
+        return (
+            await command(reference, ["sudo", "-n", "sh", "-c", headless_dispatch(operation_id)], 30, max_output=64)
+        ).strip()
     payload = json.dumps([base64.b64encode(installation_script().encode()).decode(), revision(), operation_id])
     return (
         await command(reference, ["sudo", "-n", "python3", "-I", "-c", _LAUNCH, payload], 30, max_output=64)

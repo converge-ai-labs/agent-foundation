@@ -178,3 +178,14 @@ async def test_monitoring_cache_skips_exec_but_rechecks_owned_container_and_rout
         async with http.http_runtime(ref, credential_cache=cache):
             pytest.fail("Cached credentials cannot bypass ownership checks")
     assert http.DockerCommands.execute.await_count == 4
+
+
+async def test_attachment_uses_bounded_posix_credential_read_without_python(peer):
+    ref, _ = reference(desktop=False)
+    async with http.http_session(ref):
+        pass
+    check, token = http.DockerCommands.execute.await_args_list
+    assert check.args[0][0] == "/bin/sh"
+    assert check.kwargs["mutation"] is False
+    assert token.args[0] == ["head", "-c", "4097", "--", "/var/lib/a13n-envd/http-token"]
+    assert token.kwargs == {"maximum": 4096, "mutation": False}

@@ -16,8 +16,10 @@ from a13n_harness.providers.environment.docker.http import http_execution, http_
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
+from a13n_service.providers.environment import envd_upgrade
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.metrics import (
     DeviceObservation,
     MetricsLaunch,
@@ -104,22 +106,13 @@ class DockerManagement(DockerReference, ManagementBackend):
             commands = DockerCommands(self.runtime.engine, container_id, self.config)
             try:
                 if created:
-                    await commands.execute(
-                        [
-                            self.config.python,
-                            "-I",
-                            "-c",
-                            "import os; os.makedirs('/workspace',exist_ok=True); os.makedirs('/tmp/a13n',exist_ok=True)",
-                        ]
-                    )
+                    await commands.execute(["mkdir", "-p", "/workspace", "/tmp/a13n"])
                     if self.config.init_script:
                         await commands.execute(
                             [self.config.shell, "-c", self.config.init_script],
                             maximum=self.config.max_output_preview_bytes,
                         )
-                    await commands.execute(
-                        [self.config.python, "-I", "-c", "open('/tmp/a13n/initialized','w').close()"]
-                    )
+                    await commands.execute([self.config.shell, "-c", ": > /tmp/a13n/initialized"])
                 else:
                     await self._check_initialized(commands)
             finally:
@@ -143,13 +136,40 @@ class DockerManagement(DockerReference, ManagementBackend):
             if self.config.execution == "envd_http":
                 await self._wait_envd()
 
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        with engine_errors(mutation=True):
+            container = await asyncio.to_thread(self._lookup)
+            if container is None:
+                raise _missing()
+            container_id = self._remember(container)
+            commands = DockerCommands(
+                self.runtime.engine, container_id, self.config.model_copy(update={"user": "root"})
+            )
+            try:
+
+                async def execute(argv: list[str]) -> str:
+                    return (await commands.execute(argv, maximum=4096)).decode()
+
+                if not await envd_upgrade.upgrade(
+                    execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+                ):
+                    return Pending(self.state, settled=True)
+            finally:
+                commands.closed = True
+        if self.config.execution == "envd_http":
+            await self._wait_envd()
+        return None
+
     async def _wait_envd(self) -> None:
+        if self.defer_envd_readiness:
+            return
         try:
             async with asyncio.timeout(self.config.request_timeout_seconds):
                 while True:
                     execution = http_execution(self)
                     try:
-                        await execution.open(execution_id="desktop-readiness")
+                        await execution.open(execution_id="envd-readiness")
+                        await execution.check_ready(frozenset({"files", "shell"}))
                         if not self.config.desktop:
                             return
                         await execution.check_ready(frozenset({"computer"}))

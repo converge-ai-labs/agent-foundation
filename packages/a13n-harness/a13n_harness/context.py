@@ -453,6 +453,7 @@ class AgentContext:
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
+    _envd_session_replacements: list[str] = field(default_factory=list, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     _model_input: ModelInputState = field(default_factory=ModelInputState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None

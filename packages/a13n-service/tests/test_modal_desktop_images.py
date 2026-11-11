@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -67,8 +67,19 @@ async def setup(service, monkeypatch, runs_kit):
     )
     assert t.status_code == 201, t.text
 
-    async def create():
-        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
+    async def create(base_image=None, desktop=True):
+        template = t
+        if base_image is not None or not desktop:
+            template = await client.post(
+                "/api/v1/environment-templates",
+                json={
+                    "name": "Custom base",
+                    "provider_id": p.json()["id"],
+                    "config": {"recipe": {"desktop": desktop, "base_image": base_image}},
+                },
+            )
+            assert template.status_code == 201, template.text
+        r = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.modal_desktop_image is not None
@@ -81,6 +92,7 @@ async def test_first_build_then_reuse_pins_exact_image_before_allocation(setup, 
     runtime, cloud = setup.service.runtime, setup.cloud
     op = await setup.create()
     provider = AsyncMock()
+    provider.configure_envd_version = Mock()
     provider.create.return_value = EnvironmentState(provider_key="modal", state_version="1", state={})
     opener = AsyncMock(return_value=provider)
     monkeypatch.setattr(lifecycle, "open_provider", opener)
@@ -149,9 +161,11 @@ async def test_credential_and_backend_changes_refuse_existing_preparation(setup)
     assert not setup.cloud.calls
 
 
-async def test_failed_build_preserved_until_fenced_retry(setup):
+@pytest.mark.parametrize("base_image", [None, "registry.example/custom-base@sha256:" + "a" * 64])
+@pytest.mark.parametrize("desktop", [True, False])
+async def test_failed_build_preserved_until_fenced_retry(setup, base_image, desktop):
     runtime, client = setup.service.runtime, setup.service.client
-    op = await setup.create()
+    op = await setup.create(base_image, desktop)
     setup.cloud.error = failure("modal", "desktop_image_build_failed", Category.CONFLICT)
     result = await lifecycle.perform(runtime, op)
     assert result.fault is not None and result.fault.certainty == "not_dispatched"
@@ -167,6 +181,12 @@ async def test_failed_build_preserved_until_fenced_retry(setup):
     next_op = await lifecycle.claim(runtime, op.environment_id, owner="test")
     assert next_op.modal_desktop_image != op.modal_desktop_image
     assert next_op.generation > op.generation
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(builds.ModalDesktopImageRow, op.modal_desktop_image)
+        retried_image = await session.get_one(builds.ModalDesktopImageRow, next_op.modal_desktop_image)
+        assert retried_image.manifest == original.manifest
+        if base_image is not None:
+            assert retried_image.manifest["base"] == base_image
     setup.cloud.error = None
     assert (await lifecycle.perform(runtime, next_op)).pending
 
@@ -207,7 +227,9 @@ async def test_expired_preparation_fails_before_cloud_work(setup):
 async def test_provider_and_manifest_revision_isolate_reusable_images(setup, monkeypatch):
     op = await setup.create()
     capability = builds._capability(setup.service.runtime)
-    monkeypatch.setattr(builds, "_capability", lambda _: replace(capability, revision=lambda: "next-release"))
+    monkeypatch.setattr(
+        builds, "_capability", lambda _: replace(capability, revision=lambda profile, base_image: "next-release")
+    )
     other = await setup.create()
     assert other.modal_desktop_image != op.modal_desktop_image
     with pytest.raises(EnvironmentProviderError):
@@ -215,3 +237,48 @@ async def test_provider_and_manifest_revision_isolate_reusable_images(setup, mon
             setup.service.runtime, op.modal_desktop_image, replace(op.target.account, id="another-provider")
         )
     assert not setup.cloud.calls
+
+
+@pytest.mark.parametrize("base_image", [None, "registry.example/base@sha256:" + "a" * 64])
+async def test_headless_profile_is_frozen_and_isolated_from_desktop(setup, monkeypatch, base_image):
+    runtime = setup.service.runtime
+    desktop = await setup.create()
+    client = setup.service.client
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Headless",
+            "provider_id": desktop.target.account.id,
+            "config": {"recipe": {"desktop": False, "base_image": base_image}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    created = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+    assert created.status_code == 201, created.text
+    headless = await lifecycle.claim(runtime, created.json()["id"], owner="headless-test")
+    assert headless is not None and headless.modal_desktop_image is not None
+    assert headless.modal_desktop_image != desktop.modal_desktop_image
+    async with transaction(runtime.storage) as session:
+        image = await session.get(builds.ModalDesktopImageRow, headless.modal_desktop_image)
+        manifest = image.manifest
+        assert "python3" not in "\n".join(manifest["commands"])
+        assert "entrypoint.sh" in "\n".join(manifest["commands"])
+        if base_image is not None:
+            assert manifest["base"] == base_image
+            assert "envd_base_unsupported" in manifest["commands"][0]
+    provider = AsyncMock()
+    provider.configure_envd_version = Mock()
+    opener = AsyncMock(return_value=provider)
+    monkeypatch.setattr(lifecycle, "open_provider", opener)
+    outcome = await lifecycle.perform(runtime, headless)
+    assert outcome.pending and outcome.fault is None
+    opener.assert_not_called()
+    assert setup.cloud.calls[0][0] == manifest
+    async with transaction(runtime.storage) as session:
+        row = await session.get(EnvironmentRow, headless.environment_id)
+        recipe = Handle.model_validate(row.handle).recipe
+        assert recipe["image"] == "im-TestImage" and recipe["desktop"] is False
+        assert "base_image" not in recipe
+        from a13n_service.providers.environment.recipes.modal import ModalRecipe
+
+        ModalRecipe.model_validate(recipe)
