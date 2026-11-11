@@ -101,6 +101,17 @@ def _write_wheel(
         for relative, content in skill_files.items():
             if relative != omitted_skill_file:
                 archive.writestr(str(checker.SKILL_PREFIX / relative), content)
+        operations_prefix = checker.SKILL_PREFIX.parent / "harness-ui-operations"
+        operations_files = {
+            "SKILL.md": b"---\nname: harness-ui-operations\ndescription: Operate tools.\n---\n\n"
+            b"- [View](harness/view.md)\n- [Threads](ui/threads.md)\n",
+            "harness/view.md": b"Read in chunks.\n",
+            "ui/threads.md": b"Inspect saved outcomes.\n",
+        }
+        for relative, content in operations_files.items():
+            if f"harness-ui-operations/{relative}" != omitted_skill_file:
+                archive.writestr(str(operations_prefix / relative), content)
+        archive.writestr("a13n_harness_ui/assets/guidance/threads.md", operations_files["ui/threads.md"])
         archive.writestr("a13n_harness_ui/interactive/__init__.py", b"\n")
         if include_entrypoint:
             archive.writestr(
@@ -423,3 +434,11 @@ def test_rebuild_compares_normalized_dependency_ranges(
     else:
         rebuilt = checker.rebuild_wheel_from_sdist(sdist, require_compatible_dependencies=True)
         assert rebuilt.is_file()
+
+
+@pytest.mark.parametrize("missing", ["SKILL.md", "harness/view.md", "ui/threads.md"])
+def test_rejects_incomplete_operation_skill(artifact: Artifact, missing: str) -> None:
+    path, write = artifact
+    write(path, omitted_skill_file=f"harness-ui-operations/{missing}")
+    with pytest.raises(DistributionError, match="missing"):
+        _validate_release_artifact(path)

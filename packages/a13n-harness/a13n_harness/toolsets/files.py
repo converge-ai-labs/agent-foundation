@@ -40,7 +40,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._media import dispatch_media
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
@@ -368,7 +368,7 @@ class FileToolset:
         instruction_names = {"view", "write", "edit", "multi_edit", "ls", "glob", "grep"}
         if not shell_active:
             instruction_names.update({"move", "copy", "delete"})
-        instructions = [tool_instruction(tool.name) for tool in tools if tool.name in instruction_names]
+        instructions = [tool_guidance(tool.name) for tool in tools if tool.name in instruction_names]
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-file-tools",

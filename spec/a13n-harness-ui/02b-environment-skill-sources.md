@@ -113,6 +113,14 @@ The mount uses the Host's Direct Local Provider with a Harness permission ceilin
 
 The Skill routes configuration work through ordinary Environment file operations and existing validation facilities; it introduces no configuration mutation API or additional execution authority. Bundled documentation is available offline. References outside the bundled documentation subtree are identified as online references in the section index and can describe another release. Configuration acceptance, warnings, immutable active Runs, sticky selections, and restart-bound settings retain their existing contracts.
 
+### Operation guidance
+
+The same wheel and sdist include `harness-ui-operations`. Its generated `SKILL.md` indexes multiple verbatim Markdown sources: Harness owns tool and browser usage guidance; Harness UI owns Thread inspection, coordination, and reporting guidance. Source-checkout builds copy these owners into the release bundle. The sdist contains the complete generated index and references, so rebuilding it needs neither sibling package sources nor network documentation. Runtime IDs, selected tools and schemas, CodeAct catalogs, Environment mounts, and rosters remain generated runtime facts.
+
+For each independent root or child Run, Harness UI selects [file-backed guidance delivery](../a13n-harness/09-context-and-memory.md#file-backed-operational-guidance) when the root Agent selects `skills` and a `dynamic_environment` file reader with `view`. Capability-local file-tool selection and the Agent tool allowlist must both permit `view`. Otherwise, operational guidance remains inline. This choice does not enable Skills, file tools, or another mount, and does not replace the Toolset instruction switch. Core authority and execution rules remain inline in either mode.
+
+Operation references use the explicit release-owned path `/environment/builtin-skills/harness-ui-operations`, independently of Skill-name resolution. Higher-priority same-name Skills retain their ordinary catalog precedence without retargeting those references. Reading a reference uses existing file tools and adds no separate loader or authorization surface.
+
 ## Dedicated User Skill Mount
 
 When the root Agent for an independent Run selects `skills`, Harness UI resolves `~/.agents/skills` and creates that exact directory when absent. It ordinarily binds the directory as the non-default `user-skills` mount. A Host-path-preserving adapter assigns that mount's canonical resolved Host path as its aggregate root, so `<resolved-user-skills-root>/<name>/SKILL.md` uses the same address inside and outside the Agent. A virtual-layout adapter retains `/environment/user-skills/<name>/SKILL.md` as the aggregate route.

@@ -38,6 +38,7 @@ class _Context:
     def __init__(self) -> None:
         self.spills: list[bytes] = []
         self.toolset_instructions = True
+        self.instruction_reference_root = None
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
         self.spills.append(data)

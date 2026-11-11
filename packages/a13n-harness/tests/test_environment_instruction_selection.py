@@ -226,7 +226,8 @@ async def test_shell_instruction_sections_follow_exposed_controls(actions, selec
         assert text not in instructions
 
 
-async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instructions():
+@pytest.mark.parametrize("reference_root", [None, "/guidance/release"])
+async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instructions(reference_root):
     class Source(_Binding):
         @property
         def descriptor(self):
@@ -252,7 +253,9 @@ async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instru
         computer = ComputerToolset(env)
         before = computer.get_toolset()
         assert "computer_ax" in before.tools
-        ctx = SimpleNamespace(deps=SimpleNamespace(toolset_instructions=True))
+        ctx = SimpleNamespace(
+            deps=SimpleNamespace(toolset_instructions=True, instruction_reference_root=reference_root)
+        )
         before_instructions = await before.get_instructions(ctx)
         assert "Clipboard" in str(before_instructions)
         assert "selection_select" in str(before_instructions)

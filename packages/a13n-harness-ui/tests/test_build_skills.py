@@ -20,6 +20,16 @@ def _source(tmp_path: Path) -> tuple[Path, Path]:
     (assets / "configuration_skill.md").write_bytes(
         (PACKAGE_ROOT / "a13n_harness_ui/assets/configuration_skill.md").read_bytes()
     )
+    (assets / "operations_skill.md").write_bytes(
+        (PACKAGE_ROOT / "a13n_harness_ui/assets/operations_skill.md").read_bytes()
+    )
+    (assets / "guidance").mkdir()
+    (assets / "guidance/threads.md").write_text(
+        "Receipts confirm admission.\n\n<!-- reference -->\n\nInspect outcomes.\n"
+    )
+    prompts = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts"
+    prompts.mkdir(parents=True)
+    (prompts / "view.md").write_text("Read in chunks.\n\n<!-- reference -->\n\nUse focused media instructions.\n")
     docs = repository / "docs/a13n-harness-ui"
     docs.mkdir(parents=True)
     (docs / "meta.json").write_text(
@@ -106,6 +116,9 @@ def test_sdist_preparation_uses_bundled_files_without_repository(tmp_path: Path)
     output = prepare_skills(package)
     original = _files(output)
     (repository / "docs/a13n-harness-ui/meta.json").unlink()
+    import shutil
+
+    shutil.rmtree(repository / "packages/a13n-harness")
     assert prepare_skills(package) == output
     assert _files(output) == original
     (output / "SKILL.md").unlink()
@@ -137,3 +150,39 @@ def test_localized_pages_are_not_bundled(tmp_path: Path) -> None:
     assert not list(output.rglob("*.zh-CN.*"))
     assert "设置" not in (output / "SKILL.md").read_text(encoding="utf-8")
     assert (output / "docs/settings.md").read_bytes() == (source / "settings.md").read_bytes()
+
+
+def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_files(tmp_path: Path) -> None:
+    package, repository = _source(tmp_path)
+    build_skills(package, repository)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    assert "harness/view.md" in original and "ui/threads.md" in original
+    for owner, source in (
+        ("harness", repository / "packages/a13n-harness/a13n_harness/toolsets/prompts"),
+        ("ui", package / "a13n_harness_ui/assets/guidance"),
+    ):
+        for path in source.glob("*.md"):
+            assert (output / owner / path.name).read_bytes() == path.read_bytes()
+            assert (
+                f"({owner}/{path.name}) — lines 1-{len(path.read_bytes().splitlines())}"
+                in original["SKILL.md"].decode()
+            )
+    build_skills(package, repository)
+    assert _files(output) == original
+    (package / "a13n_harness_ui/assets/guidance/threads.md").rename(
+        package / "a13n_harness_ui/assets/guidance/coordination.md"
+    )
+    build_skills(package, repository)
+    assert not (output / "ui/threads.md").exists()
+    assert (output / "ui/coordination.md").is_file()
+
+
+def test_sdist_preparation_rejects_missing_operations_reference(tmp_path: Path) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    (repository / "docs/a13n-harness-ui/meta.json").unlink()
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    (output / "harness/view.md").unlink()
+    with pytest.raises(RuntimeError, match="operation guidance is incomplete"):
+        prepare_skills(package)

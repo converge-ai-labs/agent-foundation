@@ -13,6 +13,7 @@ import yaml
 from markdown_it import MarkdownIt
 
 SKILL_NAME = "harness-ui-configuration"
+OPERATIONS_SKILL_NAME = "harness-ui-operations"
 DOC_PREFIX = "a13n-harness-ui/"
 BUNDLE_PATH = Path("a13n_harness_ui/assets/builtin_skills")
 # Links outside the bundled pages point at the published documentation site.
@@ -95,8 +96,38 @@ def _online_url(path: str, fragment: str) -> str:
     return urljoin(SITE_URL, page) + (f"#{fragment}" if fragment else "")
 
 
+def _build_operations(package_root: Path, repository_root: Path) -> Path:
+    """Copy owned Markdown verbatim and generate its navigation, without runtime imports."""
+    sources = {
+        "harness": repository_root / "packages/a13n-harness/a13n_harness/toolsets/prompts",
+        "ui": package_root / "a13n_harness_ui/assets/guidance",
+    }
+    template = (package_root / "a13n_harness_ui/assets/operations_skill.md").read_text(encoding="utf-8")
+    overview = [template.rstrip(), "", "## Guidance map", ""]
+    contents: dict[str, bytes] = {}
+    for owner, source in sources.items():
+        pages = sorted(source.glob("*.md"))
+        if not pages:
+            raise ValueError(f"Missing {owner} operation guidance: {source}")
+        overview.extend([f"### {owner.title()}", ""])
+        for page in pages:
+            relative = f"{owner}/{page.name}"
+            contents[relative] = page.read_bytes()
+            overview.append(f"- [{page.stem}]({relative}) — lines 1-{len(contents[relative].splitlines())}")
+        overview.append("")
+    output = package_root / BUNDLE_PATH / OPERATIONS_SKILL_NAME
+    if output.exists():
+        shutil.rmtree(output)
+    for relative, content in contents.items():
+        target = output / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    (output / "SKILL.md").write_text("\n".join(overview).rstrip() + "\n", encoding="utf-8")
+    return output
+
+
 def build_skills(package_root: Path, repository_root: Path) -> Path:
-    """Generate one complete bundle; repository docs remain the only content source."""
+    """Generate release-owned configuration and operation Skills from their content owners."""
     docs_root = repository_root / "docs"
     source_root = docs_root / DOC_PREFIX
     pages = list(_navigation(source_root))
@@ -167,6 +198,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
         for source, reference, online in sorted(external):
             detail.append(f"- From `{source}`: `{reference}` → <{online}>")
         detail.append("")
+    _build_operations(package_root, repository_root)
     output = package_root / BUNDLE_PATH / SKILL_NAME
     # All navigation and link checks complete before replacing generated content.
     if output.exists():
@@ -189,6 +221,13 @@ def prepare_skills(package_root: Path) -> Path:
         raise RuntimeError("Harness UI built-in Skills are missing from the source distribution")
     if not (output / "docs").is_dir():
         raise RuntimeError("Harness UI bundled documentation is missing from the source distribution")
+    operations = package_root / BUNDLE_PATH / OPERATIONS_SKILL_NAME
+    index = operations / "SKILL.md"
+    if not index.is_file():
+        raise RuntimeError("Harness UI operation guidance is missing from the source distribution")
+    references = list(_references(index.read_text(encoding="utf-8")))
+    if not references or not all((operations / reference).is_file() for reference in references):
+        raise RuntimeError("Harness UI operation guidance is incomplete in the source distribution")
     return output
 
 

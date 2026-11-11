@@ -1,6 +1,9 @@
 <overview>
 Notes preserve structured working facts for the current session. Tasks preserve structured execution state; handoff summaries preserve narrative continuity and the next step.
 </overview>
+
+<!-- reference -->
+
 <when-to-use>
 - The user states a preference that should be remembered for this session.
 - Important facts, decisions, or intermediate results must survive later context changes.

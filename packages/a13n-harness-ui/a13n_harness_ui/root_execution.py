@@ -572,6 +572,7 @@ class RootRunExecutor:
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
+                instruction_reference_root=None if environment is None else environment.instruction_reference_root,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 retained_history_directory=None if environment is None else environment.retained_history_directory,
                 model_resolver=reconstructed.model_resolver,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from functools import cache
 from importlib.resources import files
 
@@ -12,16 +12,35 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.guidance import render_guidance
+
+type ToolInstruction = str | Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]
 
 
 @cache
-def tool_instruction(name: str, *sections: str) -> str:
-    """Compose packaged Markdown sections under one tool instruction name."""
+def tool_instruction(name: str, *sections: str, reference_root: str | None = None) -> str:
+    """Compose release-owned Markdown sections under one tool instruction name."""
     prompts = files("a13n_harness.toolsets.prompts")
     content = "\n\n".join(
-        prompts.joinpath(f"{section}.md").read_text(encoding="utf-8").strip() for section in (name, *sections)
+        render_guidance(
+            prompts.joinpath(f"{section}.md").read_text(encoding="utf-8"),
+            f"{reference_root}/harness/{section}.md" if reference_root is not None else None,
+        )
+        for section in (name, *sections)
     )
-    return f'<tool-instruction name="{name}">\n{content.strip()}\n</tool-instruction>'
+    return f'<tool-instruction name="{name}">\n{content}\n</tool-instruction>'
+
+
+def tool_guidance(name: str, *sections: str) -> Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]:
+    """Resolve delivery from fresh Run bindings without changing tool selection."""
+
+    async def instructions(ctx: RunContext[AgentContext]) -> InstructionPart:
+        return InstructionPart(
+            content=tool_instruction(name, *sections, reference_root=ctx.deps.instruction_reference_root),
+            dynamic=False,
+        )
+
+    return instructions
 
 
 class InstructionFunctionToolset(FunctionToolset[AgentContext]):
@@ -41,7 +60,7 @@ class InstructionExternalToolset(ExternalToolset[AgentContext]):
         tool_defs: list[ToolDefinition],
         *,
         id: str | None = None,
-        instructions: str | None = None,
+        instructions: ToolInstruction | None = None,
     ) -> None:
         super().__init__(tool_defs, id=id)
         self._instructions = instructions
@@ -52,11 +71,15 @@ class InstructionExternalToolset(ExternalToolset[AgentContext]):
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
         if not ctx.deps.deferred_tools_supported or not ctx.deps.toolset_instructions or not self._instructions:
             return None
+        if callable(self._instructions):
+            return await self._instructions(ctx)
         return InstructionPart(content=self._instructions, dynamic=False)
 
 
 __all__ = [
     "InstructionExternalToolset",
     "InstructionFunctionToolset",
+    "render_guidance",
+    "tool_guidance",
     "tool_instruction",
 ]

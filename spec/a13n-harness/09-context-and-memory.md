@@ -44,6 +44,14 @@ Harness `AgentSpec.toolset_instructions` is the definition-level default and def
 
 This switch applies only at the Toolset instruction boundary. It does not suppress explicit `AgentSpec.instructions`, Capability-owned feature instructions, tool descriptions or schemas, dynamic model-context projection, or tool availability. A bare native Pydantic `AgentSpec` uses the default `True`. For inline delegation, only an explicit runtime override propagates to the child binding; when the parent has no runtime override, each child uses its own definition-level default.
 
+### File-backed operational guidance
+
+`RunBindings.instruction_reference_root` optionally names a canonical absolute Environment directory containing release-matched guidance. The Host supplies that directory and an ordinary `view` reader. `None` keeps complete inline guidance, which is the default for embedded Harness and Service Runs. The resolved path is exposed on `AgentContext` and remains fixed across internal ModelAttempts. It is fresh Host delivery configuration, not portable state or a permission grant. Inline children receive no implicit reference root; their Host or binding factory selects delivery for their own tool surface.
+
+First-party Markdown can separate essential rules from operational details. Reference delivery keeps the essentials inline and points to the owning file under `harness/`; inline delivery includes both parts from the same source. Short guidance and runtime facts remain inline. Actual tool selection still determines which guidance sections are contributed, including after lazy Environment support narrows. Rendering guidance performs no Environment activation or tool enablement.
+
+This delivery choice is independent of `toolset_instructions`: disabling Toolset instructions still suppresses those contributions. CodeAct runner descriptions retain their essential invocation and side-effect rules and use the same delivery choice for operational details, independently of that switch. Tool schemas, runtime catalogs, Environment authority, and authored Agent or Capability instructions retain their existing owners.
+
 ## Request Preparation
 
 The standard Capability set performs the following semantic work without creating a global stage API:

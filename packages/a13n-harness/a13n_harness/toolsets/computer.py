@@ -29,7 +29,7 @@ from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, ToolInstruction, tool_guidance
 from ._results import environment_failure
 from .accessibility import AccessibilityToolset
 
@@ -140,7 +140,7 @@ class ComputerToolset:
             )
             if names & selected
         ]
-        instructions = [tool_instruction("environment-computer", *sections)] if tools else []
+        instructions: list[ToolInstruction] = [tool_guidance("environment-computer", *sections)] if tools else []
         if names & {
             "computer_observe",
             "computer_zoom",

@@ -204,6 +204,8 @@ capabilities:
 
 The file-only, non-default mount supports inspection, reading, search, and copy-source access. It remains available with Skills enabled, including without a Project or with a remote or sandboxed Project. It grants no configuration-write privilege and copies no files into user directories. Higher-priority Skills can override its name. Online references in the index can describe another release.
 
+The same mount includes `harness-ui-operations`. Its generated `SKILL.md` indexes release-owned Markdown for tools, browser automation, CodeAct, memory, handoff, and Thread coordination. When an Agent selects both Skills and the `view` file tool, Harness UI keeps essential execution rules inline and references these files for operational details. Without a selected file reader, it keeps the complete guidance inline. Root and child Runs select this independently. References point directly at the read-only release bundle; overriding the Skill name does not retarget them.
+
 For source development, regenerate bundled copies from `docs/a13n-harness-ui/` after changing documentation or navigation:
 
 ```console

@@ -27,7 +27,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
@@ -162,7 +162,7 @@ class ShellToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[tool_instruction("environment-shell", *sections)] if tools else [],
+            instructions=[tool_guidance("environment-shell", *sections)] if tools else [],
         )
 
     async def wrap_run(

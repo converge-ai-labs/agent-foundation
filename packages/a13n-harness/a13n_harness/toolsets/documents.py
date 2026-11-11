@@ -21,13 +21,13 @@ from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.usage import ProviderUsage
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 
 _DOCUMENT_INSTRUCTIONS = (
-    tool_instruction("pdf_convert"),
-    tool_instruction("office_to_markdown"),
+    tool_guidance("pdf_convert"),
+    tool_guidance("office_to_markdown"),
 )
 
 _SUPPORTED_OFFICE_EXTENSIONS = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".epub"})

@@ -204,6 +204,8 @@ capabilities:
 
 这是非默认、仅文件挂载，支持检查、读取、搜索和复制源操作。启用 Skill 后，即使没有 Project，或 Project 是远程、沙箱环境，也能使用。它不增加配置写入特权，也不会将文件复制到用户目录。更高优先级 Skill 可覆盖同名项；索引中的在线参考可能描述其他发行版。
 
+同一挂载还包含 `harness-ui-operations`。生成的 `SKILL.md` 索引工具、浏览器自动化、CodeAct、记忆、交接和 Thread 协作的发行版 Markdown 指引。Agent 同时选择 Skills 和 `view` 文件工具时，Harness UI 保留内联的必要执行规则，将操作细节改为文件引用。未选择文件读取工具时，仍内联完整指引。根 Run 和子 Run 分别选择该模式。引用直接指向只读发行版文件；覆盖同名 Skill 不会改变引用目标。
+
 源码开发时，修改文档或导航后，从 `docs/a13n-harness-ui/` 重新生成内置副本：
 
 ```console
