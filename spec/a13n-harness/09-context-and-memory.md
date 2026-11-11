@@ -595,7 +595,7 @@ After successful nested generation and replacement-history construction, compact
 | Pending handoff and logical file references  | Owning context Capabilities                                                             |
 | Loaded skills or discovered tools            | Owning discovery Capability                                                             |
 | Memory content and file context cursors      | Host-opened memory stores and Host-persisted `MemoryCursors`; nothing in `HarnessState` |
-| Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                |
+| Retained semantic inputs and user steering   | Mandatory steering bridge namespace when compaction, handoff or context recovery is on  |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs         |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup             |
 | Portable multi-Environment backend state     | Explicit `HarnessState.environment_states`; backing-target authority remains Host-owned |

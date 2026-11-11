@@ -470,7 +470,74 @@ async def test_default_recovery_first_uses_successful_normal_compaction() -> Non
     assert result.output_or_raise() == "done"
     assert len(calls) == 3
     assert "Semantic summary of unfinished work" in str(calls[-1])
+    assert "task" in _user_texts(calls[-1])
     assert result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID) is None
+
+
+def _user_texts(messages: list[ModelMessage]) -> list[str]:
+    return [
+        part.content
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    ]
+
+
+@pytest.mark.anyio
+async def test_default_recovery_compaction_replays_delivered_steering() -> None:
+    import asyncio
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages, info):
+        calls.append(deepcopy(messages))
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "first response"
+        elif len(calls) == 2:
+            raise ModelContextWindowExceededError("test", "too large")
+        elif len(calls) == 3:
+            yield "Semantic summary of unfinished work"
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
+    async with executable.stream("initial task", bindings=RunBindings.embedded()) as run:
+
+        async def consume() -> None:
+            async for _ in run:
+                pass
+
+        consumer = asyncio.create_task(consume())
+        await started.wait()
+        await run.steer("adjust the plan", input_id="input_one")
+        release.set()
+        await asyncio.wait_for(consumer, timeout=5)
+    result = run.result
+    assert result is not None and result.output_or_raise() == "done"
+    assert len(calls) == 4
+    replayed = _user_texts(calls[-1])
+    assert "initial task" in replayed and "adjust the plan" in replayed
+    assert replayed.index("initial task") < replayed.index("adjust the plan")
+
+
+@pytest.mark.anyio
+async def test_disabled_recovery_without_compaction_keeps_no_input_ledger() -> None:
+    async def stream(messages, info):
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        context_recovery=ContextRecoveryPolicy(enabled=False),
+    )
+    result = await executable.run("task")
+    assert result.state.agent_context_state.entries["a13n.steering"].data["retained_requests"] == []
 
 
 @pytest.mark.anyio
