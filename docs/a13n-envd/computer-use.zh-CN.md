@@ -132,6 +132,10 @@ Zoom 结果包含 `source_observation_id`，以及按原图像素表示的 `regi
 
 ## 原生无障碍访问
 
+Linux 在继承的 X11 桌面上实现原生 AT-SPI 读取及全部 30 种 AT-SPI 修改操作。从同一已登录图形会话启动 Envd，保留 `DBUS_SESSION_BUS_ADDRESS`，并确保 AT-SPI 无障碍总线正在运行。Debian/Ubuntu 需要安装 `at-spi2-core` 和 `libatk-adaptor`；应用必须公开无障碍接口。Envd 通过 `org.a11y.Bus` 发现总线，不会选择其他用户的总线。AT-SPI 对所有 `view` 值遍历应用的原生层级；Linux 上的 `raw`、`control` 和 `content` 不应用 UIA 过滤器。文本范围采用原生字符位置，与 UTF-8 字节限额分别计算。
+
+Linux 的焦点获取和命中点下探使用节点、调用次数及 deadline 预算，与树遍历的 `depth` 独立。点获取返回可见窗口的原生命中候选，不保证跨应用的最前窗口顺序。GTK 验收验证按钮动作、文本编辑、数值修改和焦点；受控 D-Bus provider 检查全部 30 种修改操作的原生成员、参数映射及失败证据。
+
 Computer 工具集也提供桌面语义访问。先调用 `computer_accessibility_describe` 检查后端、就绪状态和支持的读取。后端支持、挂载权限和具体控件的能力分别判断。没有原生后端的 daemon 会报告不支持；仅启用 Computer Use 不会提供原生后端。
 
 | 工具                                            | 用途                                                      |

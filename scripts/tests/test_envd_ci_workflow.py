@@ -61,6 +61,45 @@ def test_linux_ci_builds_real_embedded_vm_backends_on_both_architectures():
     assert "target\\debug" not in str(job)
 
 
+def test_linux_ci_runs_native_accessibility_and_selects_its_fixtures():
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    job = workflow["jobs"]["daemon"]
+    dependencies = next(step for step in job["steps"] if step["name"] == "Install Linux isolation dependency")
+    for package in ["dbus-daemon", "at-spi2-core", "python3-gi", "gir1.2-gtk-3.0"]:
+        assert package in dependencies["run"]
+    native = next(
+        step for step in job["steps"] if step["name"] == "Test native AT-SPI in an isolated desktop and user bus"
+    )
+    assert native["if"] == "matrix.linux"
+    assert native["env"]["ENVD_FEATURES"] == "${{ matrix.features }}"
+    assert "make accessibility-linux-test" in native["run"]
+    events = workflow.get("on", workflow.get(True))
+    filters = yaml.safe_load(workflow["jobs"]["changes"]["steps"][1]["with"]["filters"])
+    for path in ["dev/fixtures/linux-desktop/**", "packages/a13n-harness/tests/test_accessibility_linux_native.py"]:
+        assert path in events["pull_request"]["paths"]
+        assert path in events["push"]["paths"]
+        assert path in filters["daemon"]
+
+
+@pytest.mark.parametrize("features", ["", "vm"])
+def test_native_accessibility_make_target_uses_the_release_variant(features: str):
+    completed = subprocess.run(
+        ["make", "--dry-run", "accessibility-linux-test", f"ENVD_FEATURES={features}"],
+        cwd=WORKFLOW.parents[2],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    commands = completed.stdout
+    assert f'cargo build --release --locked --package a13n-envd --features "{features}"' in commands
+    assert (
+        f'cargo test --release --locked --package a13n-envd --features "{features}" --lib accessibility::linux'
+        in commands
+    )
+    assert '/target/release/a13n-envd"' in commands
+    assert "target/debug" not in commands
+
+
 def test_cgroup_monitoring_uses_current_release_binary():
     job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]
     step = next(step for step in job["steps"] if step["name"] == "Test current Envd binary against real cgroup limits")

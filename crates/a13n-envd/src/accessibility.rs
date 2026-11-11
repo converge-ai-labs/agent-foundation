@@ -36,9 +36,21 @@ pub(crate) mod budget;
 
 /// Exact platform inventory, separate from the canonical protocol inventory.
 /// Platform implementations extend this only alongside their native dispatcher.
-pub(crate) fn supports(_method: &str) -> bool {
-    false
+pub(crate) fn supports(method: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        linux::METHODS.contains(&method)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = method;
+        false
+    }
 }
+
+#[cfg(target_os = "linux")]
+#[path = "accessibility_linux.rs"]
+mod linux;
 
 pub(crate) fn is_method(method: &str) -> bool {
     [
@@ -456,12 +468,19 @@ trait Backend {
     ) -> Result<Value, EIPError>;
 }
 
-// Each platform PR installs its native factory and exact supported inventory.
-fn native_backend(_epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
-    Err(error(
-        ErrorType::Unsupported,
-        "no native accessibility backend is installed",
-    ))
+fn native_backend(epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::new(epoch)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = epoch;
+        Err(error(
+            ErrorType::Unsupported,
+            "no native accessibility backend is installed",
+        ))
+    }
 }
 
 /// Runs on the helper's initial thread, including backend construction and drop.
