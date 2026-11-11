@@ -30,6 +30,7 @@ NOT_OBJECT_KEYED = {
     "thread_environments",
     "thread_execution_contexts",
     "thread_session_bindings",
+    "thread_session_credentials",
     "thread_memories",
     "usage_records",
     "workspace_provisioning",
@@ -64,6 +65,13 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
     assert [column.name for column in metadata.tables["model_dispatches"].primary_key.columns] == ["call_id"]
     assert [column.name for column in metadata.tables["thread_codeact"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["thread_execution_contexts"].primary_key.columns] == ["thread_id"]
+    assert list(metadata.tables["thread_session_credentials"].primary_key.columns.keys()) == [
+        "thread_id",
+        "environment_id",
+        "binding_name",
+        "session_version",
+        "env",
+    ]
     assert [column.name for column in metadata.tables["memory_space_organizations"].primary_key.columns] == ["space_id"]
     assert [column.name for column in metadata.tables["memory_file_organizations"].primary_key.columns] == ["memory_id"]
     assert [column.name for column in metadata.tables["memory_organization_progress"].primary_key.columns] == [

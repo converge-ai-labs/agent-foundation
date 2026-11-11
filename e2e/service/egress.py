@@ -91,6 +91,8 @@ async def guest(
 ) -> AsyncIterator[Guest]:
     directory.mkdir()
     (directory / "workspace").mkdir()
+    # Keep host-owned signals separate from the workspace reassigned to the guest UID.
+    (directory / "workspace" / "control").mkdir()
     certificates(directory)
     credential = directory / "token"
     credential.write_text(token)

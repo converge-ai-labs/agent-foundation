@@ -13,32 +13,9 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.eip.v1 import SessionConfiguration as NativeSessionConfiguration
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
-from a13n_service.infra.ids import ObjectId
-from a13n_service.resources.egress_credentials.schemas import Hosts
-
-
-class SecretReference(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=128)
-    credential_id: ObjectId
-    inject_hosts: Hosts
-
-    @field_validator("env")
-    @classmethod
-    def unreserved_name(cls, value: str) -> str:
-        if value.upper().startswith(("A13N_ENVD_", "EIP_")) or value in {
-            "PATH",
-            "SSL_CERT_FILE",
-            "SSL_CERT_DIR",
-            "REQUESTS_CA_BUNDLE",
-            "CURL_CA_BUNDLE",
-            "NODE_EXTRA_CA_CERTS",
-        }:
-            raise ValueError("Credential variables cannot replace Envd transport or trust configuration")
-        return value
+from a13n_service.resources.egress_credentials.schemas import SecretReference
 
 
 class EgressConfiguration(BaseModel):

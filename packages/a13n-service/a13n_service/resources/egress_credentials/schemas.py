@@ -5,7 +5,9 @@ import re
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator
+
+from a13n_service.infra.ids import ObjectId
 
 
 def hostname(value: str) -> str:
@@ -39,6 +41,28 @@ type Hosts = Annotated[
 type CredentialValue = Annotated[SecretStr, AfterValidator(secret_value)]
 type Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 type Description = Annotated[str, StringConstraints(max_length=2048)]
+
+
+class SecretReference(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    env: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=128)
+    credential_id: ObjectId
+    inject_hosts: Hosts
+
+    @field_validator("env")
+    @classmethod
+    def unreserved_name(cls, value: str) -> str:
+        if value.upper().startswith(("A13N_ENVD_", "EIP_")) or value in {
+            "PATH",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "REQUESTS_CA_BUNDLE",
+            "CURL_CA_BUNDLE",
+            "NODE_EXTRA_CA_CERTS",
+        }:
+            raise ValueError("Credential variables cannot replace Envd transport or trust configuration")
+        return value
 
 
 class CredentialCreate(BaseModel):

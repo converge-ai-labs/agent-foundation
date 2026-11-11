@@ -17,10 +17,9 @@ def render(mounts: Sequence[EnvironmentMount]) -> str | None:
             continue
         for reference in mount.session_configuration.credential_references:
             bindings.append(
-                f"- Environment mount `{mount.name}`: `${reference.env}` may be used in HTTPS request headers "
-                f"to {', '.join(reference.inject_hosts)}. For a service accepting Bearer authentication, use "
-                f'`curl -H "Authorization: Bearer ${{{reference.env}}}" https://{reference.inject_hosts[0]}/`. '
-                "Choose the endpoint and authentication scheme required by that service."
+                f"- `{mount.name}`: `${{{reference.env}}}` for {', '.join(reference.inject_hosts)}. "
+                f'Bearer example: `curl -H "Authorization: Bearer ${{{reference.env}}}" '
+                f"https://{reference.inject_hosts[0]}/`."
             )
     if not bindings:
         return None
@@ -28,12 +27,10 @@ def render(mounts: Sequence[EnvironmentMount]) -> str | None:
         (
             "Configured HTTPS credentials for this Run:",
             *bindings,
-            "Availability is checked when the environment is prepared. Commands receive placeholders; "
-            "envd replaces them with credentials only in HTTPS headers to the configured hosts. "
-            "Use the environment variable directly without printing it, redefining it, or copying it into files. "
-            "These bindings apply to commands in the named environment, not Host web or browser tools. "
-            "Do not disable TLS verification; use the environment's configured certificate trust. "
-            "Credential rotation does not require changing commands or retrieving a new value.",
+            "Use the service's authentication scheme. Values are placeholders; envd substitutes credentials only "
+            "in HTTPS headers to these hosts. Shell commands only, not Host web/browser tools. "
+            "Use variables directly without printing, overwriting, or saving them. Keep TLS verification enabled. "
+            "Availability is checked when the environment is prepared; rotation is automatic.",
         )
     )
 

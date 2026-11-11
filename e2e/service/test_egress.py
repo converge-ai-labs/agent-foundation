@@ -63,6 +63,7 @@ async def test_docker_credential_rotation_and_idle_attach(stack, request, carrie
 
             await eventually(connected)
 
+        finish = native.workspace / "control" / "finish"
         values = ["fixture-" + uuid4().hex for _ in range(4)]
         response = await api.client.post(
             "/api/v1/egress-credentials", json={"name": "Journey", "allowed_hosts": [ALLOWED], "value": values[0]}
@@ -86,7 +87,7 @@ async def test_docker_credential_rotation_and_idle_attach(stack, request, carrie
             'printf "%s" "$GH_TOKEN" | sha256sum > marker; '
             f'curl --fail --max-time 5 -sS https://{OTHER}/denied -H "Authorization: Bearer $GH_TOKEN"; '
             "test $? -ne 0 || exit 9; "
-            "while [ ! -f finish ]; do "
+            "while [ ! -f control/finish ]; do "
             f'curl --fail --max-time 5 -sS https://{ALLOWED}/live -H "Authorization: Bearer $GH_TOKEN" || exit 10; '
             "sleep 0.2; done"
         )
@@ -122,7 +123,7 @@ async def test_docker_credential_rotation_and_idle_attach(stack, request, carrie
             assert (native.workspace / "marker").read_text() == marker
             await model.say("Background command finished.", to="[live]")
         finally:
-            (native.workspace / "finish").touch()
+            finish.touch()
 
         completion = await api.next_run(thread_id, run_id)
         assert (await api.sealed(completion["id"]))["status"] == "completed"
@@ -138,12 +139,12 @@ async def test_docker_credential_rotation_and_idle_attach(stack, request, carrie
         idle = await application(api, path, status="on_next_use", applied_credential_version=2, execution_active=False)
         assert idle["native_session_id"] == first["native_session_id"]
 
-        (native.workspace / "finish").unlink()
+        finish.unlink()
         await model.call(
             "shell_exec",
             {
                 "command": 'cd /workspace || exit 8; printf "%s" "$GH_TOKEN" | sha256sum > marker-after; '
-                "while [ ! -f finish ]; do "
+                "while [ ! -f control/finish ]; do "
                 f'curl --fail --max-time 5 -sS https://{ALLOWED}/reattach -H "Authorization: Bearer $GH_TOKEN" '
                 "|| { touch revoked; exit 0; }; sleep 0.2; done"
             },
@@ -169,7 +170,7 @@ async def test_docker_credential_rotation_and_idle_attach(stack, request, carrie
 
             await eventually(refused)
         finally:
-            (native.workspace / "finish").touch()
+            finish.touch()
 
         rejected = await api.start(agent, "Use the revoked credential")
         assert rejected["run"] is None

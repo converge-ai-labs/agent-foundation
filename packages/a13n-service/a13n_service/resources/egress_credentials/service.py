@@ -22,9 +22,9 @@ from a13n_service.resources.egress_credentials.schemas import (
     CredentialPage,
     CredentialRotation,
     CredentialUpdate,
+    SecretReference,
 )
 from a13n_service.resources.egress_credentials.tables import CredentialRow
-from a13n_service.resources.environment_instances.session_configuration import SecretReference
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
