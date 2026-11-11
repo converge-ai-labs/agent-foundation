@@ -13,7 +13,7 @@
   <path class="pa thin" d="m60 268 3 3 5-6" />
   <rect class="pa thin" x="58" y="295" width="12" height="12" rx="1" />
   <path class="pf" d="M82 237H184M82 269H204M82 301H166" />
-  <text class="pt" x="58" y="337">read / run / inspect</text>
+  <text class="pt" x="141" y="337" text-anchor="middle">read / run / inspect</text>
 
   <rect class="pf" x="338" y="54" width="426" height="374" rx="4" />
   <text class="pt ink" x="360" y="84">execution environment</text>
