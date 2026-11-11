@@ -17,7 +17,7 @@ Connections lists your saved accounts first, with separate readiness states. If 
 
 Token type, organization approval and GitHub permissions determine which GitHub operations work. Saving stores configuration locally; it does not contact GitHub or verify permissions. Choose **Test connection** in the saved view or the account menu for an explicit connectivity check. GitHub's connection details are built into the provider; setup only asks for your token.
 
-A blank token field retains the saved token. The **Saved** hint confirms a stored token; **Remove saved token** removes it. A replacement token and removal cannot be submitted together. Credentials are plaintext in this instance's private database, protected by Host filesystem access. Never paste a token into chat, Agent instructions or a tool call.
+The first save requires a non-blank token. Leading and trailing spaces are removed; control characters are rejected. A blank token field retains an existing saved token. The **Saved** hint confirms a stored token; **Remove saved token** removes it. A replacement token and removal cannot be submitted together. Credentials are plaintext in this instance's private database, protected by Host filesystem access. Never paste a token into chat, Agent instructions or a tool call.
 
 The GitHub Connector provides MCP tools. It does not poll notifications, create automatic Bot inputs or implement a separate GitHub OAuth application.
 
@@ -29,7 +29,7 @@ Configure an arbitrary MCP server through the separate [MCP servers](mcp.md) set
 
 ## Configure from a conversation
 
-An agent can offer a connection setup card. The offer accepts no credentials and creates no account or setup session by itself. Choose an existing account or **Add another account**, then open the same setup dialog as Settings. Forms never expand inside the transcript. A ready account resolves the card to a compact confirmation with a **Manage connections** link.
+An agent can offer a connection setup card. The offer accepts no credentials and creates no account or setup session by itself. Choose an existing account or **Add another account**, then open the same setup dialog as Settings. Forms never expand inside the transcript. A ready account resolves the card to a compact confirmation with a **Manage** link.
 
 Ordinary chat cards remain visible outside collapsed work, including offers made through CodeAct. Bot publishes an intentional setup card in its normal conversation rather than exposing its internal tool stream. Shared guests can view an intentionally published card but cannot configure the instance.
 
@@ -37,9 +37,9 @@ Setup success updates saved configuration. It starts no Run and replays no block
 
 ## Change, disable or delete
 
-The account menu's **Manage** opens a read-only connection summary, saved-credential hints and common account settings. **Edit connection** opens the separate setup dialog; **Setup again** is also available in the account menu. Names distinguish accounts. Disabling stops new operations and holds pending external input; it does not undo upstream writes. Deleting clears the connection's private credentials, state and pending input. Deleted IDs cannot be reused.
+The account menu's **Manage** opens a read-only connection summary, saved-credential hints and common account settings. **Edit connection** opens the separate setup dialog; **Set up again** is also available in the account menu. Names distinguish accounts. Disabling stops new operations and holds pending external input; it does not undo upstream writes. Deleting clears the connection's private credentials, state and pending input. Deleted IDs cannot be reused.
 
-If setup or another browser changes saved settings, an untouched settings dialog updates automatically. An edited draft remains intact and shows a conflict; choose **Reload saved settings** before saving. Closing a dirty dialog asks before discarding unsaved changes. Private setup fields clear when dispatched. After an unknown action response, use **Refresh status** before taking another action. The client never automatically replays that action. Setup sessions expire and do not survive App restart; saved configuration does.
+If setup or another browser changes saved settings, an untouched settings dialog updates automatically. An edited draft remains intact and shows a conflict; choose **Reload saved settings** before saving. Closing a dirty dialog asks before discarding unsaved changes. GitHub setup reopens with current saved settings after an account change. An already-open stale setup rejects actions; choose **Refresh status**, then **Start again** to reload it. Private setup fields clear when dispatched. After an unknown action response, use **Refresh status** before taking another action. The client never automatically replays that action. Setup sessions expire and do not survive App restart; saved configuration does.
 
 Only one WebUI App owns the data root's Bot and Connector runtime. Another App can inspect saved status but cannot operate accounts. A missing plugin preserves its connection data as unavailable.
 

@@ -33,12 +33,13 @@ class CredentialsForm(BaseModel):
 
     @model_validator(mode="after")
     def token_action(self):
+        if any(ord(char) < 32 or ord(char) == 127 for char in self.token):
+            raise HarnessUiError("Token must contain no control characters.", code="connector_input_invalid")
+        self.token = self.token.strip()
         if self.clear_token and self.token:
             raise HarnessUiError(
                 "Choose either a replacement token or removal, not both.", code="connector_input_invalid"
             )
-        if any(ord(char) < 32 or ord(char) == 127 for char in self.token):
-            raise HarnessUiError("Token must contain no control characters.", code="connector_input_invalid")
         return self
 
 
@@ -89,9 +90,16 @@ class GitHubSetup(SetupFlow):
         self._configuration_version: int | None = None
 
     async def read(self) -> Step:
+        current = await self.controller.context.configuration()
+        if self._configuration_version is not None and current.version != self._configuration_version:
+            return Step(
+                key="changed",
+                title="Connection settings changed",
+                state="failed",
+                error="Connection settings changed. Start again to reload the saved connection.",
+            )
         if self._step is not None:
             return self._step
-        current = await self.controller.context.configuration()
         self._configuration_version = current.version
         if self.intent == "test":
             self._step = await self._saved_step()
@@ -122,9 +130,7 @@ class GitHubSetup(SetupFlow):
         context = self.controller.context
         current = await context.configuration()
         if self._configuration_version is not None and current.version != self._configuration_version:
-            raise HarnessUiError(
-                "Connection settings changed; close this setup and start again.", code="connector_conflict"
-            )
+            return await self.read()
         if action == "done":
             self._step = Step(key="completed", title="Connection saved", state="completed")
         elif action == "edit":
@@ -149,6 +155,8 @@ class GitHubSetup(SetupFlow):
                 credentials.pop("token", None)
             elif form.token:
                 credentials["token"] = f"Bearer {form.token}"
+            elif not credentials.get("token"):
+                raise HarnessUiError("Enter a GitHub personal access token.", code="connector_input_invalid")
             saved = await context.configure(current, expected_version=current.version, credentials=credentials)
             self._configuration_version = saved.version
             self._step = await self._saved_step()
@@ -157,13 +165,18 @@ class GitHubSetup(SetupFlow):
         return self._step
 
     async def _saved_step(self) -> Step:
+        configured = bool((await self.controller.context.configuration()).credentials.get("token"))
         actions = [SetupAction(id="edit", label="Edit connection")]
         if (await self.controller.status()).state == "ready":
             actions.append(SetupAction(id="test", label="Test connection"))
         actions.append(SetupAction(id="done", label="Done"))
         return Step(
             key="saved",
-            title="Connection saved",
-            description="Send a new message to use it. No operation was replayed.",
+            title="Connection saved" if configured else "Setup incomplete",
+            description=(
+                "Send a new message to use it. No operation was replayed."
+                if configured
+                else "No token is saved. Edit the connection to complete setup."
+            ),
             actions=tuple(actions),
         )

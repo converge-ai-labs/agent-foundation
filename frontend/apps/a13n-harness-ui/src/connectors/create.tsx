@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ModalFrame } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useConnectors } from "./data";
 import { ConnectorSetup } from "./setup";
@@ -27,6 +27,7 @@ export function CreateConnector({
       candidate = `${typeName} ${number}`;
     return candidate;
   });
+  const [connectorId] = useState(() => `connector-${crypto.randomUUID()}`);
   const [created, setCreated] = useState<Schema<"Instance"> | null>(null);
   const [cleanup, setCleanup] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,12 +42,24 @@ export function CreateConnector({
     try {
       const instance = await result(
         client.PUT("/api/connectors/{connector_id}", {
-          params: {
-            path: { connector_id: `connector-${crypto.randomUUID()}` },
-          },
+          params: { path: { connector_id: connectorId } },
           body: { kind: item.key, name: name.trim() },
         }),
-      );
+      ).catch(async (failure: unknown) => {
+        if (
+          !(failure instanceof ApiError) ||
+          failure.code !== "connector_conflict"
+        )
+          throw failure;
+        // A previous create may have committed before its response was lost.
+        const saved = await result(
+          client.GET("/api/connectors/{connector_id}", {
+            params: { path: { connector_id: connectorId } },
+          }),
+        );
+        if (saved.kind !== item.key) throw failure;
+        return saved;
+      });
       setCreated(instance);
       await cache.invalidateQueries({ queryKey: ["connectors"] });
     } catch (failure) {
@@ -93,7 +106,7 @@ export function CreateConnector({
     return (
       <ConnectorSetup
         connectorId={created.connector_id}
-        name={name}
+        name={created.name}
         onClose={closeSetup}
       />
     );

@@ -156,12 +156,16 @@ async def test_setup_reopen_does_not_create_another_session_and_conflicts_retain
         assert (await app.begin_connector_setup("connector-test")).session_id == setup.session_id
         current = await app._store.connectors.configuration("connector-test")
         await app.configure_connector(current.model_copy(update={"name": "Renamed"}), expected_version=current.version)
-        result = await app.act_connector_setup(
-            setup.session_id,
-            SetupCommand(
-                operation_id="stale", version=setup.version, action="save", values={"token": "test-private-token"}
-            ),
-        )
+        with pytest.raises(HarnessUiError) as failure:
+            await app.act_connector_setup(
+                setup.session_id,
+                SetupCommand(
+                    operation_id="stale", version=setup.version, action="save", values={"token": "test-private-token"}
+                ),
+            )
+        assert failure.value.code == "connector_setup_conflict"
+        result = await app.connectors().setup(setup.session_id)
+        assert result.step.state == "failed"
         assert "changed" in result.step.error
         assert not (await app._store.connectors.configuration("connector-test")).credentials
 
@@ -417,15 +421,14 @@ async def test_form_profile_rejects_cycles_unsupported_unions_and_secret_default
             validate_form(schema)
 
 
-async def test_github_setup_rejects_token_controls(tmp_path):
+@pytest.mark.parametrize("token", ["bad\r\ntoken", "\nfake-token", "fake-token\x7f"])
+async def test_github_setup_rejects_token_controls(tmp_path, token):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
         await create_github(app)
         setup = await app.begin_connector_setup("connector-test")
         result = await app.act_connector_setup(
             setup.session_id,
-            SetupCommand(
-                operation_id="invalid", version=setup.version, action="save", values={"token": "bad\r\ntoken"}
-            ),
+            SetupCommand(operation_id="invalid", version=setup.version, action="save", values={"token": token}),
         )
         assert result.step.error
         assert not (await app._store.connectors.configuration("connector-test")).credentials
@@ -792,3 +795,103 @@ async def test_github_rejects_transport_settings_and_setup_exposes_saved_test_do
                 )
             assert failure.value.code == "connector_configuration_invalid"
         assert (await app._store.connectors.configuration("connector-test")).settings == {}
+
+
+@pytest.mark.parametrize("change", [{"name": "Renamed"}, {"enabled": False}])
+async def test_github_reopen_replaces_setup_after_account_settings_change(tmp_path, change):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await create_github(app)
+        setup = await app.begin_connector_setup("connector-test")
+        current = await app._store.connectors.configuration("connector-test")
+        await app.configure_connector(current.model_copy(update=change), expected_version=current.version)
+        reopened = await app.begin_connector_setup("connector-test")
+        assert reopened.session_id != setup.session_id
+        saved = await app.act_connector_setup(
+            reopened.session_id,
+            SetupCommand(operation_id="save", version=reopened.version, action="save", values={"token": "fake-token"}),
+        )
+        assert saved.step.key == "saved", saved.step.error
+        current = await app._store.connectors.configuration("connector-test")
+        assert all(getattr(current, key) == value for key, value in change.items())
+        assert current.credentials["token"] == "Bearer fake-token"
+
+
+async def test_github_parallel_test_setup_reopens_after_token_replacement(tmp_path):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await save_github(app)
+        test = await app.begin_connector_setup("connector-test", intent="test")
+        configure = await app.begin_connector_setup("connector-test")
+        await app.act_connector_setup(
+            configure.session_id,
+            SetupCommand(
+                operation_id="replace", version=configure.version, action="save", values={"token": "replacement"}
+            ),
+        )
+        reopened = await app.begin_connector_setup("connector-test", intent="test")
+        assert reopened.session_id != test.session_id
+        assert {action.id for action in reopened.step.actions} == {"edit", "test", "done"}
+        done = await app.act_connector_setup(
+            reopened.session_id, SetupCommand(operation_id="done", version=reopened.version, action="done")
+        )
+        assert done.step.state == "completed"
+
+
+@pytest.mark.parametrize("token", ["", "   "])
+async def test_github_first_save_requires_token_and_corrected_submission_can_save(tmp_path, token):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await create_github(app)
+        setup = await app.begin_connector_setup("connector-test")
+        invalid = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(operation_id="blank", version=setup.version, action="save", values={"token": token}),
+        )
+        assert invalid.step.key == "configure"
+        assert invalid.step.error == "Enter a GitHub personal access token."
+        current = await app._store.connectors.configuration("connector-test")
+        assert not current.credentials
+        assert current.version == 1
+        saved = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(
+                operation_id="corrected", version=invalid.version, action="save", values={"token": "  fake-token  "}
+            ),
+        )
+        assert saved.step.key == "saved", saved.step.error
+        assert (await app._store.connectors.configuration("connector-test")).credentials == {
+            "token": "Bearer fake-token"
+        }
+
+
+async def test_github_blank_keeps_saved_token_and_removal_reports_incomplete_setup(tmp_path):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await save_github(app)
+        setup = await app.begin_connector_setup("connector-test")
+        kept = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(operation_id="keep", version=setup.version, action="save", values={"token": "   "}),
+        )
+        assert kept.step.key == "saved", kept.step.error
+        assert (await app._store.connectors.configuration("connector-test")).credentials == {
+            "token": "Bearer test-private-token"
+        }
+        edited = await app.act_connector_setup(
+            setup.session_id, SetupCommand(operation_id="edit", version=kept.version, action="edit")
+        )
+        invalid = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(
+                operation_id="ambiguous",
+                version=edited.version,
+                action="save",
+                values={"clear_token": True, "token": "replacement"},
+            ),
+        )
+        assert invalid.step.error == "Choose either a replacement token or removal, not both."
+        removed = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(operation_id="remove", version=invalid.version, action="save", values={"clear_token": True}),
+        )
+        assert removed.step.title == "Setup incomplete"
+        assert "test" not in {action.id for action in removed.step.actions}
+        assert not (await app._store.connectors.configuration("connector-test")).credentials
+        assert (await app.connectors().instance("connector-test")).status.state == "unconfigured"

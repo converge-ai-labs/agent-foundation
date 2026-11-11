@@ -15,7 +15,8 @@ import { MemoryRouter } from "react-router";
 import { SchemaForm } from "./form";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { i18n } from "../i18n";
-import type { Schema } from "../transport/client";
+import { ApiError, type Schema } from "../transport/client";
+import { CreateConnector } from "./create";
 import { ConnectorSetup } from "./setup";
 import { ConnectorOffer } from "./offers";
 import { ConnectorsSection } from "./connections";
@@ -504,4 +505,47 @@ it("resolves chat offers from saved readiness without opening a form inline or s
   ).toBe("/settings/connections");
   expect(screen.queryByRole("button", { name: "Continue setup" })).toBeNull();
   expect(transport.client.POST).toHaveBeenCalledTimes(1);
+});
+
+it("reconciles a lost create response using the same account ID without overwriting saved settings", async () => {
+  const accounts = new Map<string, Schema<"Instance">>();
+  transport.client.PUT.mockImplementation(async (_url, options) => {
+    const id = options.params.path.connector_id;
+    if (accounts.has(id))
+      throw new ApiError("Changed", 409, "connector_conflict");
+    accounts.set(id, {
+      ...instance,
+      connector_id: id,
+      name: options.body.name,
+    });
+    throw new TypeError("Response lost after commit");
+  });
+  transport.client.GET.mockImplementation(async (url, options) => ({
+    data:
+      url === "/api/connectors/{connector_id}"
+        ? accounts.get(options.params.path.connector_id)
+        : [...accounts.values()],
+  }));
+  mount(<CreateConnector item={catalog[0]} onClose={() => {}} />);
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Original account" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("alert");
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Changed draft" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByLabelText("GitHub personal access token");
+  expect(accounts.size).toBe(1);
+  const calls = transport.client.PUT.mock.calls;
+  expect(calls).toHaveLength(2);
+  expect(calls[0][1].params.path).toEqual(calls[1][1].params.path);
+  expect(
+    calls.every((call) => call[1].body.expected_version === undefined),
+  ).toBe(true);
+  expect(screen.getByText("Original account")).toBeTruthy();
+  expect(transport.client.POST.mock.calls[0][1].params.path.connector_id).toBe(
+    [...accounts.keys()][0],
+  );
 });
