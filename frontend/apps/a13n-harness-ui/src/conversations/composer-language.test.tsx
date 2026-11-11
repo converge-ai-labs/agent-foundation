@@ -210,7 +210,7 @@ it("switches the real language control without replacing the editor, selection, 
     },
   });
   await screen.findByRole("button", {
-    name: "预览 中文-source.png",
+    name: "中文-source.png - 待上传",
   });
   const originalText = draft.doc.getText("text").toString();
   act(() => {
@@ -222,7 +222,8 @@ it("switches the real language control without replacing the editor, selection, 
     });
     draft.undo.stopCapturing();
   });
-  const chip = screen.getByRole("button", { name: "预览 中文-source.png" });
+  const chip = screen.getByRole("button", { name: "中文-source.png - 待上传" });
+  expect(textbox.contains(chip)).toBe(true);
   const image = chip.querySelector("img");
   const imageCreations = createObjectURL.mock.calls.length;
   const imageReleases = revokeObjectURL.mock.calls.length;
@@ -237,9 +238,9 @@ it("switches the real language control without replacing the editor, selection, 
   expect(editor.state.selection.toJSON()).toEqual(selection);
   expect(draft.doc).toBe(document);
   expect(draft.undo).toBe(undo);
-  expect(screen.getByRole("button", { name: "Preview 中文-source.png" })).toBe(
-    chip,
-  );
+  expect(
+    screen.getByRole("button", { name: "中文-source.png - ready to upload" }),
+  ).toBe(chip);
   expect(chip.querySelector("img")).toBe(image);
   expect(createObjectURL).toHaveBeenCalledTimes(imageCreations);
   expect(revokeObjectURL).toHaveBeenCalledTimes(imageReleases);

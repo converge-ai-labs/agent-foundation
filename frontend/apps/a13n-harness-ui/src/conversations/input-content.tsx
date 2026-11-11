@@ -166,11 +166,11 @@ function Attachment({
     </Popover>
   );
   return (
-    <div className={image ? styles.imageTile : styles.inlineAttachment}>
+    <span className={styles.inlineAttachment}>
       {image ? (
         <button
           type="button"
-          className={styles.imageTileOpen}
+          className={styles.inlineAttachmentOpen}
           onClick={() => setPreview(true)}
           aria-label={t("Preview {{name}}", { name: attachment.name })}
           title={attachment.name}
@@ -189,7 +189,7 @@ function Attachment({
           close={() => setPreview(false)}
         />
       )}
-    </div>
+    </span>
   );
 }
 function Media({ part }: { part: InputPart }) {
@@ -307,7 +307,6 @@ export function InputContent({
   const source = visible
     .map((part) => threadMessage(part.metadata))
     .find(Boolean);
-  const attachments: ReactNode[] = [];
   const body =
     (!source || expanded) &&
     visible.map((part, index) => {
@@ -321,15 +320,14 @@ export function InputContent({
             (composerIdentity(item) ??
               inputAttachment(item.metadata)?.attachment_id) === identity,
         );
-        attachments.push(
+        return (
           <Attachment
             key={`${threadId}:${identity}`}
             threadId={threadId}
             attachment={attachment}
             related={related}
-          />,
+          />
         );
-        return null;
       }
       const text = part.text || "";
       if (part.kind !== "media" && !text) return null;
@@ -406,9 +404,6 @@ export function InputContent({
     );
   return (
     <div className={styles.userInput}>
-      {attachments.length > 0 && (
-        <div className={styles.sentAttachments}>{attachments}</div>
-      )}
       {(source || status || (body && body.some(Boolean))) && (
         <div
           className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}

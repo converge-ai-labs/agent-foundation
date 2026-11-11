@@ -659,16 +659,6 @@
   gap: 8px;
   margin-top: 8px;
 }
-.sentAttachments {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.sentAttachments + .userMessage {
-  margin-top: 8px;
-}
 .userMessage {
   width: fit-content;
   max-width: 100%;
@@ -1572,13 +1562,13 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachment {
   display: inline-flex;
   align-items: center;
-  vertical-align: -0.12em;
+  vertical-align: middle;
   box-sizing: border-box;
-  height: 20px;
+  height: 28px;
   max-width: min(280px, calc(100% - 5px));
-  margin-inline: 1px 4px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 999px;
+  margin: 2px 4px 2px 1px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
   background: var(--a13n-surface);
   font-family: inherit;
   font-size: calc(var(--a13n-text-body) * 13 / 14);
@@ -1605,12 +1595,18 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
   padding-inline-end: 1px;
 }
+.inlineAttachment:has(img) {
+  height: 44px;
+}
 .inlineAttachmentOpen img {
-  width: 16px;
-  height: 16px;
-  object-fit: cover;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
   border-radius: 4px;
   flex-shrink: 0;
+}
+.inlineAttachmentOpen img[hidden] {
+  display: none;
 }
 .inlineAttachmentOpen span {
   line-height: 1.4;
@@ -1621,7 +1617,7 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--harness-log-text);
-  width: 19px;
+  width: 24px;
   justify-content: center;
   padding: 0;
   margin-inline-end: 2px;
@@ -1631,8 +1627,17 @@ dl.detailGrid > .detailLongRow dd {
   background: var(--a13n-hover);
 }
 .inlineAttachment button:focus-visible {
-  outline: 2px solid var(--a13n-secondary);
+  outline: 2px solid var(--a13n-signal);
   outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .inlineAttachment {
+    min-height: 46px;
+  }
+  .inlineAttachmentOpen,
+  .inlineAttachmentRemove {
+    min-width: 44px;
+  }
 }
 .attachmentThumbnail {
   width: 36px;
@@ -2199,73 +2204,4 @@ dl.detailGrid > .detailLongRow dd {
 }
 .conversationFeedback:empty {
   display: none;
-}
-
-.imageTray {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 6px var(--composer-text-inset, 4px);
-  max-width: 100%;
-}
-.imageTile {
-  width: 120px;
-  aspect-ratio: 1;
-  flex: none;
-  position: relative;
-}
-.imageTileOpen {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 1px solid var(--a13n-border);
-  border-radius: 9px;
-  overflow: hidden;
-  background: var(--a13n-surface);
-  color: var(--harness-log-text);
-  cursor: zoom-in;
-}
-.imageTileOpen img {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  object-fit: cover;
-}
-.imageTileOpen img:not([hidden]) + span {
-  display: none;
-}
-.imageTileOpen span {
-  padding: 6px;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-}
-.imageTileRemove {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--card);
-  background: var(--a13n-text);
-  color: var(--card);
-  font: 14px/1 sans-serif;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .imageTile:not(:hover, :focus-within) .imageTileRemove {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
-.composerEditor [data-image-placeholder]::before {
-  content: attr(data-image-placeholder);
-  position: absolute;
-  pointer-events: none;
-  color: var(--harness-placeholder);
 }
