@@ -628,6 +628,12 @@ class AgentCompositionResolver:
                 name="Bot",
                 model=model_id,
                 instructions=source.document.webui.bot.instructions,
+                capabilities=(
+                    CapabilitySelection(
+                        capability="dynamic_environment",
+                        configuration={"files_enabled": True, "shell_enabled": False, "computer_enabled": False},
+                    ),
+                ),
             ),
             plugin_catalog=self.catalog.plugin_catalog(()),
             root_plugins=(),
@@ -731,6 +737,7 @@ class AgentCompositionResolver:
             model_id=item.id,
             subscription_group=group,
             route=normalized.route,
+            base_model=item.base_model,
             authentication=item.authentication,
             settings=normalized.settings,
             model_configuration=normalized.model_cfg,

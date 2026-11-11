@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-label="When retention is configured, agent run A can disconnect while the environment and files remain. A later agent run B can connect to the same environment. This does not imply running processes survive or agent state is restored automatically.">
+  <text class="pt" x="48" y="26">time</text>
+  <path class="pf" d="M90 22H752m-6-4 6 4-6 4" />
+  <rect class="pl" x="60" y="58" width="196" height="60" rx="3" />
+  <text class="pt ink" x="158" y="83" text-anchor="middle">agent run A</text>
+  <text class="pt" x="158" y="103" text-anchor="middle">work with project files</text>
+  <path class="pf dash" d="M274 88H526" />
+  <text class="pt" x="400" y="74" text-anchor="middle">no agent attached</text>
+  <text class="pt" x="400" y="109" text-anchor="middle">environment retained</text>
+  <rect class="pl" x="544" y="58" width="196" height="60" rx="3" />
+  <text class="pt ink" x="642" y="83" text-anchor="middle">agent run B</text>
+  <text class="pt" x="642" y="103" text-anchor="middle">reuse existing files</text>
+  <path class="pa" d="M158 118V198m-5-7 5 7 5-7M642 118V198m-5-7 5 7 5-7" />
+  <text class="pt acc" x="173" y="149">connect</text>
+  <text class="pt" x="173" y="168">then disconnect</text>
+  <text class="pt acc" x="627" y="149" text-anchor="end">connect again</text>
+  <rect class="band" x="48" y="198" width="704" height="76" rx="3" />
+  <rect class="pa thin" x="48" y="198" width="704" height="76" rx="3" />
+  <text class="pt acc" x="400" y="224" text-anchor="middle">same retained execution environment</text>
+  <text class="pt ink" x="400" y="250" text-anchor="middle">project files / installed dependencies / saved output</text>
+  <text class="pt" x="400" y="305" text-anchor="middle">Example: retention is configured independently of individual agent runs.</text>
+</svg>

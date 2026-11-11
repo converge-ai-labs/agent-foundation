@@ -103,7 +103,7 @@ it("configures Bot's model, custom instructions and hourly heartbeat without cho
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Check in every" }));
-  await user.click(screen.getByRole("option", { name: "2 hours" }));
+  await user.click(await screen.findByRole("option", { name: "2 hours" }));
   fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
   expect(parse(screen.getByTestId("source").textContent!)).toEqual({
     schema_version: "1",
@@ -209,6 +209,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
     agent: "agent-main",
     default_environment: "thread-files",
   });
+  await user.click(screen.getByText("When applying to existing chats"));
   await user.click(
     screen.getByRole("button", {
       name: "Local only",
@@ -247,6 +248,7 @@ it("allows the last local Project root to be removed only with Device bindings",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  fireEvent.click(screen.getByText("When applying to existing chats"));
   expect(
     (
       screen.getByRole("button", {

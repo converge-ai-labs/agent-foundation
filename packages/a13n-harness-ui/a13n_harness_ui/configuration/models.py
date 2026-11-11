@@ -525,6 +525,9 @@ class ModelResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     route: str = Field(min_length=3, max_length=512)
+    base_model: str | None = Field(
+        default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
+    )
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)

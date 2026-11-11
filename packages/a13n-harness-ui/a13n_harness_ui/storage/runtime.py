@@ -147,7 +147,7 @@ class LocalStore:
 
         async with short_session(self.database.sessions) as session:
             missing = set(
-                await session.scalars(select(UsageModelRecord.recipe_id).where(UsageModelRecord.model_id.is_(None)))
+                await session.scalars(select(UsageModelRecord.recipe_id).where(UsageModelRecord.route.is_(None)))
             )
         if not missing:
             return
@@ -157,7 +157,7 @@ class LocalStore:
             for node in composition.agent_nodes():
                 recipes.append(node.model)
                 recipes.extend(item.model for item in node.capabilities if item.model is not None)
-            found = {key: recipe.model_id for recipe in recipes if (key := model_recipe_id(recipe)) in missing}
+            found = {key: recipe for recipe in recipes if (key := model_recipe_id(recipe)) in missing}
             if found:
                 async with transaction(self.database.sessions) as session:
                     await self.usage.index_models(session, found)

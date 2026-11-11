@@ -48,7 +48,9 @@ class BotSnapshot(SurfaceModel):
     messages: tuple[BotMessage, ...] = ()
 
 
-_HEARTBEAT = """Host heartbeat: list Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
+_HEARTBEAT = """Host heartbeat: read HEARTBEAT.md in your working directory if it exists and follow its current checklist.
+Create or update HEARTBEAT.md as useful to manage future checks.
+List Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
 Check known working Threads before creating anything. Follow up through existing collaboration tools only when useful and authorized.
 Create or update any working Thread slot as appropriate; clear handled follow-ups, or retain concise next steps.
 Notes and Thread completion do not wake you; use this legitimate input opportunity.
@@ -125,7 +127,7 @@ class BotController:
                 detail = await self._projections.detail(BOT_THREAD_ID)
                 if detail.deferred_requests:
                     raise ThreadError(
-                        "Resolve Bot's pending decision in its activity view first.", code="thread_deferred_pending"
+                        "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
                     )
                 thread = await self._threads.get(BOT_THREAD_ID)
                 proposed = BotInput(
@@ -158,11 +160,12 @@ class BotController:
                             await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
                     except BaseException:
                         await self._save_interrupted(
-                            item, "Bot steering was interrupted. Inspect activity before continuing."
+                            item,
+                            "Bot steering was interrupted. Review the reported error and working Thread results before continuing.",
                         )
                         raise
                     if not result.accepted:
-                        error = "Bot is not accepting input. Inspect Activity and send again when ready."
+                        error = "Bot is not accepting input. Send a new message when ready."
                         await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": error}))
                         raise ThreadError(error, code="bot_input_rejected")
                 retained = await self._store.bot.get_input(item.input_id)
@@ -218,7 +221,8 @@ class BotController:
                     raise
                 except BaseException:
                     await self._save_interrupted(
-                        item, "Bot decision admission was interrupted. Inspect activity before continuing."
+                        item,
+                        "Bot decision admission was interrupted. Review the reported error and working Thread results before continuing.",
                     )
                     raise
                 await self._store.bot.save_input(
@@ -269,7 +273,10 @@ class BotController:
             receipt_id = receipt_id or (active.receipt.receipt_id if active is not None else None)
             notice = (
                 RootOperationNotice(
-                    receipt_id=receipt_id, status="completed", brief=reply_brief(text) or "Bot sent a message."
+                    receipt_id=receipt_id,
+                    message_id=message.message_id,
+                    status="completed",
+                    brief=reply_brief(text) or "Bot sent a message.",
                 )
                 if receipt_id
                 else None
@@ -290,7 +297,8 @@ class BotController:
                     for item in await self._store.bot.inputs(pending_only=True):
                         if item.state in {"queued", "dispatching", "admitted"}:
                             await self._interrupt(
-                                item, "Bot was interrupted. Inspect saved activity and effects before continuing."
+                                item,
+                                "Bot was interrupted. Review the reported error and any effects before continuing.",
                             )
                     self._owned = True
                     async with create_task_group() as group:
@@ -403,7 +411,10 @@ class BotController:
             return False
         except BaseException:
             with CancelScope(shield=True):
-                await self._save_interrupted(item, "Bot admission was interrupted. Inspect activity before continuing.")
+                await self._save_interrupted(
+                    item,
+                    "Bot admission was interrupted. Review the reported error and working Thread results before continuing.",
+                )
             raise
         with CancelScope(shield=True):
             item = item.model_copy(update={"receipt_id": receipt.receipt_id})
@@ -414,7 +425,10 @@ class BotController:
                     state.model_copy(update={"activated": True, "last_attempt_at": datetime.now(UTC)})
                 )
             except BaseException:
-                await self._save_interrupted(item, "Bot admission was interrupted. Inspect activity before continuing.")
+                await self._save_interrupted(
+                    item,
+                    "Bot admission was interrupted. Review the reported error and working Thread results before continuing.",
+                )
                 raise
         return True
 
@@ -439,7 +453,10 @@ class BotController:
                 with CancelScope(shield=True):
                     if item.receipt_id is not None:
                         await self._runs.cancel(receipt_id=item.receipt_id)
-                    await self._interrupt(item, "Bot processing was interrupted. Inspect activity before continuing.")
+                    await self._interrupt(
+                        item,
+                        "Bot processing was interrupted. Review the reported error and working Thread results before continuing.",
+                    )
                 raise
 
     async def _finish(self, item: BotInput) -> None:
@@ -462,7 +479,8 @@ class BotController:
             else:
                 for value in related:
                     await self._save_interrupted(
-                        value, "Bot did not complete this input. Inspect activity before continuing."
+                        value,
+                        "Bot did not complete this input. Review the reported error and working Thread results before continuing.",
                     )
 
     async def _receipt_inputs(self, item: BotInput) -> tuple[BotInput, ...]:

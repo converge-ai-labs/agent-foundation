@@ -138,3 +138,25 @@ it("never opens a cross-origin target from notification data", async () => {
   expect(self.clients.openWindow).not.toHaveBeenCalled();
   expect(self.clients.matchAll).not.toHaveBeenCalled();
 });
+
+it("preserves the Bot target through push display and notification click", async () => {
+  const { self, dispatch } = worker();
+  await dispatch("push", {
+    data: {
+      json: () => ({
+        title: "New message from Bot",
+        body: "Review is ready.",
+        tag: "message-one",
+        path: "/bot",
+      }),
+    },
+  });
+  const options = self.registration.showNotification.mock.calls[0][1];
+  expect(options.data.path).toBe("/bot");
+  await dispatch("notificationclick", {
+    notification: { close: vi.fn(), data: options.data },
+  });
+  expect(self.clients.openWindow).toHaveBeenCalledWith(
+    "https://anui.example.test:8090/bot",
+  );
+});

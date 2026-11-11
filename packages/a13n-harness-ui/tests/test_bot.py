@@ -455,6 +455,93 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         assert not composition.root.children
 
 
+async def test_bot_reads_and_updates_heartbeat_checklist_with_guidance_and_custom_instructions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    root = _write_configuration(tmp_path, instructions="Agent-only policy sentinel")
+    root.write_text(root.read_text() + "    instructions: Custom Bot policy sentinel\n")
+    (tmp_path / "AGENTS.md").write_text("Global Bot policy sentinel")
+    workspace = tmp_path / "bot"
+    workspace.mkdir()
+    guidance = workspace / "AGENTS.md"
+    guidance.write_text("Workspace policy revision one")
+    checklist = workspace / "HEARTBEAT.md"
+    checklist.write_text("Original heartbeat check sentinel")
+    steps = 0
+    reads: list[str] = []
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            nonlocal steps
+            step = steps
+            steps += 1
+            projected = str(messages) + (info.instructions or "")
+            if step == 0:
+                tools = {tool.name for tool in info.function_tools}
+                assert {"view", "write", "edit"} <= tools
+                assert not {"shell_exec", "shell_input", "computer_screenshot", "computer_click"} & tools
+                assert "Manage recurring checks in HEARTBEAT.md" in projected
+                assert "Custom Bot policy sentinel" in (info.instructions or "")
+                assert "Global Bot policy sentinel" in projected
+                assert "Workspace policy revision one" in projected
+                assert "Agent-only policy sentinel" not in projected
+                assert "Original heartbeat check sentinel" not in projected
+                yield "Ready to check on heartbeat."
+                return
+            if step in {1, 4}:
+                assert "Host heartbeat: read HEARTBEAT.md in your working directory" in str(messages)
+                if step == 1:
+                    assert "Original heartbeat check sentinel" not in projected
+                else:
+                    assert "Workspace policy revision two" in projected
+                name, args = "view", {"file_path": "HEARTBEAT.md"}
+            elif step in {2, 5}:
+                returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+                assert returned[-1].tool_name == "view"
+                reads.append(str(returned[-1].content))
+                expected = "Original heartbeat check sentinel" if step == 2 else "Bot-managed heartbeat check sentinel"
+                assert expected in str(returned[-1].content)
+                if step == 5:
+                    yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-next")}
+                    return
+                name, args = (
+                    "write",
+                    {
+                        "file_path": "HEARTBEAT.md",
+                        "content": "Bot-managed heartbeat check sentinel",
+                    },
+                )
+            else:
+                assert step == 3
+                yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-updated")}
+                return
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"checklist-{step}")}
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await bot.submit(BotSubmit(input_id="checklist", text="Manage recurring checks in your workspace."))
+        assert (await consumed(app, "checklist")).state == "completed"
+        assert checklist.read_text() == "Original heartbeat check sentinel"
+        due = (await bot.snapshot()).state.next_heartbeat_at
+        await deliver_tick(bot, now=due)
+        assert (await bot.snapshot()).inputs[-1].state == "completed", reads
+        assert checklist.read_text() == "Bot-managed heartbeat check sentinel"
+        guidance.write_text("Workspace policy revision two")
+        await deliver_tick(bot, now=due + timedelta(hours=1))
+        assert (await bot.snapshot()).inputs[-1].state == "completed"
+        assert steps == 6
+        assert len((await bot.snapshot()).messages) == 2
+
+
 async def test_native_finish_silently_completes_without_publication_and_resumes_next_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -474,6 +561,8 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
                 yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-direct")}
             elif requests == 2:
                 assert "call finish_silently with no arguments" in str(messages)
+                assert "Host heartbeat: read HEARTBEAT.md in your working directory if it exists" in str(messages)
+                assert not (tmp_path / "bot/HEARTBEAT.md").exists()
                 assert any(
                     isinstance(part, ToolReturnPart) and part.tool_call_id == "quiet-direct"
                     for message in messages
@@ -772,3 +861,20 @@ async def test_early_automatic_publication_waits_for_receipt_correlation(tmp_pat
         assert snapshot.messages[0].input_id == item.input_id
         assert snapshot.messages[0].text == "Verified progress"
         assert snapshot.thread.completion is not None
+
+
+async def test_bot_publications_notify_once_per_message_not_per_run(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await app._threads.bot_thread()
+        notices = []
+        bot._notify = lambda thread_id, notice: notices.append((thread_id, notice))
+        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
+        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
+        await bot.publish(message_id="two", text="Second message", receipt_id="same-run")
+        assert len(notices) == 2
+        assert [notice.message_id for _, notice in notices] == ["one", "two"]
+        assert [notice.receipt_id for _, notice in notices] == ["same-run", "same-run"]
+        assert [notice.brief for _, notice in notices] == ["First message", "Second message"]
+        assert all(thread_id == BOT_THREAD_ID for thread_id, _ in notices)

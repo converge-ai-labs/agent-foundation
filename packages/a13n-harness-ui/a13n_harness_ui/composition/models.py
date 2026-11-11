@@ -56,6 +56,9 @@ class DependencyProvenance(CompositionModel):
 class ResolvedModelRecipe(CompositionModel):
     model_id: str = Field(min_length=1, max_length=128)
     route: str = Field(min_length=3, max_length=512)
+    base_model: str | None = Field(
+        default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
+    )
     authentication: ModelAuthentication
     subscription_group: SubscriptionGroupResource | None = Field(default=None, exclude_if=lambda value: value is None)
     settings: dict[str, JsonValue] = Field(default_factory=dict)

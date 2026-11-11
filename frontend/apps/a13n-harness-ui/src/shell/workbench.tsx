@@ -216,22 +216,25 @@ function WorkbenchContent({
   const navigation = (
     <>
       <div hidden={settingsMode} className={styles.navigationBody}>
-        <BotNavigation />
         {memoryMode && memoryEnabled ? (
-          <MemoryNavigation
-            backTo={lastChat.current}
-            projectId={
-              selectedThread.data?.thread.memory_scope
-                ? selectedThread.data.thread.configuration.project_id
-                : undefined
-            }
-          />
+          <>
+            <BotNavigation />
+            <MemoryNavigation
+              backTo={lastChat.current}
+              projectId={
+                selectedThread.data?.thread.memory_scope
+                  ? selectedThread.data.thread.configuration.project_id
+                  : undefined
+              }
+            />
+          </>
         ) : (
           <ConversationNavigation />
         )}
       </div>
       {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
       <div className={styles.sidebarFooter}>
+        {!settingsMode && <BotNavigation />}
         <Menu>
           <MenuTrigger
             className={styles.workspaceMenu}
