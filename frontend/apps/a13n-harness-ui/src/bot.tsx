@@ -186,7 +186,7 @@ export function BotPage({
             ? t("Automation paused · You can still chat")
             : busy
               ? t("Working…")
-              : t("Ready when you are");
+              : null;
   return (
     <Conversation
       threadId={BOT_THREAD_ID}
@@ -198,11 +198,11 @@ export function BotPage({
         revision: JSON.stringify(data?.messages ?? []),
         completionVersion: data?.thread?.completion?.version ?? 0,
         messages: <PublishedTranscript messages={data?.messages ?? []} />,
-        status: (
+        status: status ? (
           <span className={styles.status} role="status" title={status}>
             {status}
           </span>
-        ),
+        ) : null,
         composer:
           data && !data.enabled ? (
             <div className={styles.offBar}>

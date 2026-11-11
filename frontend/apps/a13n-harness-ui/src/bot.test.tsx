@@ -271,8 +271,14 @@ function mount(initial = "/bot", withActions = false) {
 }
 it("registers the lazy root's zero baseline before its first admission and clears accepted input", async () => {
   mount();
-  await screen.findByText("Ready when you are");
+  await screen.findByRole("textbox", { name: "Message" });
   typeMessage("Track this");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(screen.queryByText("Ready when you are")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(tracker.followVersion).toHaveBeenCalledWith(BOT_THREAD_ID, 0);
@@ -308,8 +314,13 @@ it("submits human input while busy or paused through Bot admission only", async 
 it("retains drafts and uncertain exact commands across navigation without automatic retry", async () => {
   reject = true;
   mount();
-  await screen.findByText("Ready when you are");
+  await screen.findByRole("textbox", { name: "Message" });
   typeMessage("Do once");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
   expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
