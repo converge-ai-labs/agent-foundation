@@ -45,7 +45,7 @@ async def http_runtime(
         async def credential() -> HttpEnvdCredential:
             with sdk_errors():
                 result = await sandbox.commands.run(
-                    "python3 -I -c \"import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))\"",
+                    "head -c 4097 /var/lib/a13n-envd/http-token",
                     user="root",
                     timeout=10,
                     request_timeout=15,
@@ -78,7 +78,7 @@ async def http_session(
             session_recovery=session_recovery,
             required_methods=REQUIRED_METHODS
             | (
-                frozenset({"computer.describe", "computer.observe"})
+                frozenset({"computer.describe", "computer.observe", "computer.action"})
                 if reference._configuration.desktop
                 else frozenset()
             ),

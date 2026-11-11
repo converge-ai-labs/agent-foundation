@@ -42,7 +42,7 @@ _NOTIFICATION_SOURCE_METADATA_KEY = "a13n.steering-source"
 _NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
 _NOTIFICATION_REFERENCES_METADATA_KEY = "a13n.notification-references"
 
-type SteeringInputSource = Literal["external", "async_subagent", "background_process"]
+type SteeringInputSource = Literal["external", "async_subagent", "background_process", "envd_session"]
 
 
 class _SteeringState(BaseModel):
@@ -205,7 +205,7 @@ class SteeringBridge:
         self,
         message: str,
         *,
-        source: Literal["async_subagent", "background_process"],
+        source: Literal["async_subagent", "background_process", "envd_session"],
         references: Sequence[str],
     ) -> str | None:
         """Best-effort enqueue one Harness lifecycle notice when this Run is active."""
@@ -232,10 +232,18 @@ class SteeringBridge:
         await self._emit_enqueued(enqueue_id, source=source, references=tuple(references))
         return enqueue_id
 
+    async def notify_session_replaced(self, session_id: str) -> None:
+        await self.notify(
+            "The Envd Session was replaced. Handles from the previous Session are no longer valid. "
+            "Use fresh operations; previous operations were not replayed.",
+            source="envd_session",
+            references=(session_id,),
+        )
+
     async def discard_notifications(
         self,
         *,
-        source: Literal["async_subagent", "background_process"],
+        source: Literal["async_subagent", "background_process", "envd_session"],
         references: Sequence[str],
     ) -> None:
         """Withdraw matching lifecycle hints that have not entered native history."""
@@ -521,8 +529,14 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
         *,
         handler: Callable[[], Awaitable[Any]],
     ) -> Any:
-        owned = await ctx.deps._steering.bind(ctx)
+        bridge = ctx.deps._steering
+        owned = await bridge.bind(ctx)
         try:
+            if owned:
+                pending = tuple(ctx.deps._envd_session_replacements)
+                ctx.deps._envd_session_replacements.clear()
+                for session_id in pending:
+                    await bridge.notify_session_replaced(session_id)
             return await handler()
         finally:
             ctx.deps._steering.unbind(ctx, owned=owned)

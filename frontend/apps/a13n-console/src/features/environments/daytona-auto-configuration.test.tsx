@@ -59,7 +59,7 @@ it("retains a custom snapshot and resource choices when enabling desktop", async
 it("preserves the custom draft when switching between automatic and custom", async () => {
   render(<Editor initial={{ desktop: true, snapshot: "im-custom" }} />);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Automatic desktop" }));
+  await user.click(screen.getByRole("button", { name: "Automatic Envd" }));
   expect(configuration().snapshot).toBe("auto");
   await user.click(screen.getByRole("button", { name: "Custom snapshot" }));
   expect(configuration().snapshot).toBe("im-custom");

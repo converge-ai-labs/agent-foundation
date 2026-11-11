@@ -52,6 +52,13 @@ def test_seeded_state_verifies_after_a_restart_and_private_resources_apply_once(
         assert local_provider["type"] == "local" and local_provider["created_by_id"] is None
         assert local_template["provider_id"] == local_provider["id"]
         seeded = seed(api, instance)
+        modal = next(
+            template
+            for template in api.items("/api/v1/environment-templates")
+            if template.get("labels", {}).get("runtime") == "modal"
+        )
+        assert modal["config"]["recipe"]["envd_management"] == "preinstalled"
+        assert modal["config"]["recipe"]["startup_command"] == ["/usr/local/bin/start-envd"]
         assert api.get(f"/api/v1/environment-templates/{local_template['id']}") == local_template
         checks = verify(api, seeded)
         assert [name for name, passed in checks if not passed] == []

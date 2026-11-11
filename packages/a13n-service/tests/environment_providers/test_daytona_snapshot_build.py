@@ -75,8 +75,20 @@ async def test_auto_defaults_and_explicit_custom_snapshot():
     recipe = DaytonaRecipe(desktop=True)
     assert recipe.snapshot == "auto" and recipe.desktop_assistance
     assert not DaytonaRecipe(snapshot="custom", desktop=True).desktop_assistance
-    with pytest.raises(ValueError):
-        DaytonaRecipe()
+    headless = DaytonaRecipe()
+    assert headless.snapshot == "auto" and not headless.desktop and not headless.desktop_assistance
+
+
+async def test_headless_snapshot_excludes_desktop_packages_and_assets():
+    headless = build.specification("headless")["dockerfile"]
+    desktop = build.specification("desktop")["dockerfile"]
+    assert isinstance(headless, str) and isinstance(desktop, str)
+    for dependency in ("python3", "xvfb", "chromium", "desktop.py", "desktop_guest.py", "init-skills.sh"):
+        assert dependency not in headless
+        assert dependency in desktop
+    assert "a13n-sandbox-entrypoint" in headless and "--version" in headless
+    assert build.specification() == build.specification("desktop")
+    assert build.revision("headless") != build.revision("desktop")
 
 
 async def test_account_discovery_closes_transport(monkeypatch):

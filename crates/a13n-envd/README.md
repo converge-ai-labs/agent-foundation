@@ -54,6 +54,14 @@ Envd provides [read-only Device metrics](../../docs/a13n-envd/configuration.md#s
 
 The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootstrap fields and limits. The [Python client guide](../../docs/a13n-envd/python-client.md) shows shared Device ownership and independent Session scopes.
 
+## Foreground daemon or native supervision
+
+Use `a13n-envd daemon [daemon options]` under an external service manager and let that manager own restarts. Omitting the subcommand preserves the existing foreground behavior, including caller-owned stdio EOF.
+
+For HTTP or reverse-WebSocket deployments without a reliable service manager, use `a13n-envd supervise [daemon options]`. The native parent starts this same executable as a separate daemon child. Any child exit, including zero, consumes one of three lifetime replacement attempts with 1/2/4-second backoff. Operator stop cancels replacement, requests drain and forcibly retires the owned tree after a three-second grace period. Windows reuses the existing kill-on-close Job ownership; Unix uses a private lifetime pipe and a dedicated daemon process group. This mode rejects stdio and does not probe for live hangs.
+
+Each replacement preserves the installation identity, launch configuration and credential files, but creates a fresh generation. Old Sessions and handles become invalid; interrupted commands are never replayed. Readiness still requires an authenticated EIP handshake and a new Session probe. See [launch ownership](../../docs/a13n-envd/configuration.md#daemon-lifetime-and-restarts) for deployment guidance.
+
 ## Security and cleanup
 
 Sessions use the configured execution identity and selected Sandbox/egress boundary. On Linux, an omitted execution UID/GID preserves the launcher identity; an explicit pair selects a provisioned account. Commands and file RPCs use that identity, while explicit sudo changes only the invoking command's authority. Linux deployments can opt into [Session egress](../../docs/a13n-envd/egress.md) for transparent destination policy and HTTPS header credential injection. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.

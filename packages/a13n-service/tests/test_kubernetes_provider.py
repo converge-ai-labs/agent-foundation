@@ -916,3 +916,62 @@ def test_kubernetes_catalog_starters_are_valid_native_recipes():
         recipe = definition.environment_model.model_validate(value)
         assert recipe.connection == name
         assert recipe.pod_template.spec["containers"][0]["image"] == "a13n-sandbox:local"
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+def test_headless_ready_image_or_authored_shared_volume_preserves_startup(native, bootstrap):
+    mount = {"name": "envd-assets", "mountPath": "/opt/envd"}
+    agent = {"name": "agent", "image": "sandbox:slim", "command": ["/usr/local/bin/a13n-envd"]}
+    spec = {"containers": [agent], "restartPolicy": "OnFailure"}
+    if bootstrap:
+        spec.update(
+            volumes=[{"name": "envd-assets", "emptyDir": {}}],
+            initContainers=[
+                {
+                    "name": "prepare",
+                    "image": "envd-assets:test",
+                    "command": ["sh", "-c", "cp /usr/local/bin/a13n-envd /opt/envd/a13n-envd"],
+                    "volumeMounts": [mount],
+                }
+            ],
+        )
+        agent.update(
+            image="compatible-base:test", command=["/opt/envd/a13n-envd"], volumeMounts=[mount | {"readOnly": True}]
+        )
+    config = recipe(pod_template={"spec": spec})
+    state = initial(config, native.runtime.connection, "env_test")
+    rendered = render(config, native.runtime.profile, state, state.resources[-1])["spec"]
+    execution = rendered["containers"][0]
+    assert execution["image"] == agent["image"]
+    assert execution["command"] == agent["command"]
+    assert rendered["restartPolicy"] == "OnFailure"
+    assert rendered.get("initContainers", []) == spec.get("initContainers", [])
+    assert rendered["volumes"][:-1] == spec.get("volumes", [])
+    assert execution["volumeMounts"][:-1] == agent.get("volumeMounts", [])
+    assert execution["volumeMounts"][-1]["name"] == CREDENTIAL_VOLUME
+    assert config.pod_template.spec == spec
+
+
+def test_documented_headless_bootstrap_shares_binary_without_exposing_credential(native):
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[3]
+    config = KubernetesRecipe.model_validate(
+        yaml.safe_load((root / "deploy/kubernetes/examples/headless-bootstrap-recipe.yaml").read_text())
+    )
+    state = initial(config, native.runtime.connection, "env_bootstrap")
+    pod = render(config, native.runtime.profile, state, state.resources[-1])
+    spec = pod["spec"]
+    init = spec["initContainers"][0]
+    execution = spec["containers"][0]
+    assert spec["restartPolicy"] == "OnFailure"
+    assert init == config.pod_template.spec["initContainers"][0]
+    assert "cp /usr/local/bin/a13n-envd /prepared/a13n-envd" in init["command"][-1]
+    assert execution["command"] == config.pod_template.spec["containers"][0]["command"]
+    assert "python" not in str(execution["command"])
+    assert execution["volumeMounts"][0] == {"name": "envd-binary", "mountPath": "/opt/a13n/bin", "readOnly": True}
+    assert all(mount["name"] != CREDENTIAL_VOLUME for mount in init["volumeMounts"])
+    assert execution["volumeMounts"][-1]["name"] == CREDENTIAL_VOLUME
+    assert {resource.kind for resource in state.resources} == {"Pod", "Secret"}

@@ -45,6 +45,7 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
     credential = ModalCredential.model_validate_json(os.environ["A13N_TEST_MODAL_CREDENTIAL_JSON"])
     recipe = ModalRecipe(
         image=os.environ["A13N_TEST_MODAL_IMAGE"],
+        envd_management="managed",
         desktop=True,
         desktop_assistance=True,
         cpu=2,

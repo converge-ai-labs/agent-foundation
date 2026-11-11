@@ -2,11 +2,17 @@ import { expect, it } from "vitest";
 import { applyDockerPreset, dockerMode } from "./docker-presets";
 
 const presets = {
-  standard: { image: "sandbox:reviewed", execution: "native", desktop: false },
+  standard: {
+    image: "sandbox:reviewed",
+    execution: "native",
+    desktop: false,
+    envd_management: "preinstalled",
+  },
   desktop: {
     image: "sandbox:reviewed-desktop",
     execution: "envd_http",
     desktop: true,
+    envd_management: "managed",
   },
 };
 const schema = {
@@ -14,12 +20,21 @@ const schema = {
     image: { default: presets.standard.image },
     execution: { default: "native" },
     desktop: { default: false },
+    envd_management: { default: "preinstalled" },
     shell: { default: "/bin/sh" },
   },
 };
 
 it("recognizes defaults without silently converting custom images or advanced settings", () => {
   expect(dockerMode({}, schema, presets)).toBe("standard");
+  expect(dockerMode({ ...presets.desktop }, schema, presets)).toBe("desktop");
+  expect(
+    dockerMode(
+      { ...presets.desktop, envd_management: "preinstalled" },
+      schema,
+      presets,
+    ),
+  ).toBe("custom");
   expect(
     dockerMode(
       { ...presets.desktop, cpus: 2, shell: "/bin/sh" },

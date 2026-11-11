@@ -50,6 +50,7 @@ async def test_tls_tunnel_readonly_revocation_expiry_and_restart(tmp_path):
             desktop=True,
             desktop_assistance=True,
             image=os.environ["A13N_TEST_MODAL_IMAGE"],
+            envd_management="managed",
             cpu=2,
             memory=4096,
             request_timeout_seconds=300,

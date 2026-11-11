@@ -10,18 +10,18 @@ Harness is one consumer through the provider-neutral [Environment integration](.
 
 ## Document Catalog
 
-| Document                                                                                   | Owning contract                                                                |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| [00-overview.md](00-overview.md)                                                           | Architecture, ownership, main flow and invariants                              |
-| [01-daemon-lifecycle-and-configuration.md](01-daemon-lifecycle-and-configuration.md)       | Device identity, generation, bootstrap, aggregate limits and shutdown          |
-| [02-eip-protocol.md](02-eip-protocol.md)                                                   | Device/Session controls, method catalog, selectors, evidence and compatibility |
-| [03-transports-and-sessions.md](03-transports-and-sessions.md)                             | Authentication, multiplexing, framing and disconnect semantics                 |
-| [04-resource-operations.md](04-resource-operations.md)                                     | Device paths, directory discovery, file/search/port operations and transfers   |
-| [05-command-and-process-execution.md](05-command-and-process-execution.md)                 | Command start, process status, control and native cleanup                      |
-| [06-output-retention.md](06-output-retention.md)                                           | Separate raw stdout/stderr, offsets, bounds and release                        |
-| [07-execution-isolation.md](07-execution-isolation.md)                                     | Host boundary, controlled Session egress and native cleanup limits             |
-| [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership              |
-| [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, maximum lifetime, history and pressure collection          |
+| Document                                                                                   | Owning contract                                                                       |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                                           | Architecture, ownership, main flow and invariants                                     |
+| [01-daemon-lifecycle-and-configuration.md](01-daemon-lifecycle-and-configuration.md)       | Launch/restart ownership, Device identity, generation, bootstrap, limits and shutdown |
+| [02-eip-protocol.md](02-eip-protocol.md)                                                   | Device/Session controls, method catalog, selectors, evidence and compatibility        |
+| [03-transports-and-sessions.md](03-transports-and-sessions.md)                             | Authentication, multiplexing, framing and disconnect semantics                        |
+| [04-resource-operations.md](04-resource-operations.md)                                     | Device paths, directory discovery, file/search/port operations and transfers          |
+| [05-command-and-process-execution.md](05-command-and-process-execution.md)                 | Command start, process status, control and native cleanup                             |
+| [06-output-retention.md](06-output-retention.md)                                           | Separate raw stdout/stderr, offsets, bounds and release                               |
+| [07-execution-isolation.md](07-execution-isolation.md)                                     | Host boundary, controlled Session egress and native cleanup limits                    |
+| [08-protocol-source-client-and-generation.md](08-protocol-source-client-and-generation.md) | IDL, generated Rust/Python surfaces, client and release ownership                     |
+| [09-resource-lifetime-and-reclamation.md](09-resource-lifetime-and-reclamation.md)         | Session inactivity, maximum lifetime, history and pressure collection                 |
 
 [10-computer-use.md](10-computer-use.md) owns optional native desktop targets, observations, input effects and cleanup. [11-resource-monitoring.md](11-resource-monitoring.md) owns Device system information, optional cross-platform resource observations, Prometheus HTTP exposition, native OTLP export, metric scopes and sampler lifecycle.
 

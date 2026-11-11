@@ -6,8 +6,20 @@ from urllib.parse import urlsplit
 from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
 from pydantic import Field, model_validator
 
+from ..envd_policy import EnvdRecipe
 
-class DockerRecipe(DockerEnvironmentConfiguration):
+
+class DockerRecipe(DockerEnvironmentConfiguration, EnvdRecipe):
+    @model_validator(mode="before")
+    @classmethod
+    def managed_image(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("execution") in {"envd_http", "envd_ws"}:
+            image = value.get("image", cls.model_fields["image"].get_default())
+            if isinstance(image, str) and image.startswith("ghcr.io/converge-ai-labs/a13n-sandbox:"):
+                value = dict(value)
+                value.setdefault("envd_management", "managed")
+        return value
+
     desktop_assistance: bool = Field(default=False, title="Desktop viewing and control")
     desktop_viewer_url: str | None = Field(
         default=None,

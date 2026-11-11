@@ -19,32 +19,9 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 from pydantic import BaseModel, Field, JsonValue
 
+from a13n_service.providers.environment import envd_assets
 from a13n_service.providers.environment.envd_release import installation_command
 from a13n_service.providers.environment.vercel_build import BuildTarget, Snapshot
-
-SOURCE_REVISION = "1da9b5c08f1ed0a6095906583bef9555863eeb6a"
-FILES = (
-    (
-        "deploy/docker/images/sandbox/entrypoint.sh",
-        "/usr/local/bin/a13n-sandbox-entrypoint",
-        "b3c53fb45406e3206ad6465bf4461b5fba385da67d1f11a3c534a83e066a0496",
-    ),
-    (
-        "deploy/docker/images/sandbox/desktop.py",
-        "/usr/local/bin/a13n-sandbox-desktop",
-        "455fbe3413af57fe36fea0f4a88a1d5bfbfb6bbc6f044121d46f0ce210e785b9",
-    ),
-    (
-        "deploy/docker/images/sandbox/init-skills.sh",
-        "/usr/local/bin/a13n-sandbox-init",
-        "e973546b911758e35c629d093d7b0496ce7e5af0342a7a10570f192a43508f47",
-    ),
-    (
-        "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
-        "/opt/a13n-desktop-access.py",
-        "68f4ed23ac4729b57262738a3390e239c79db90a1010ae08bf41ed5a1e81ffb4",
-    ),
-)
 
 
 def specification() -> dict[str, JsonValue]:
@@ -54,18 +31,16 @@ def specification() -> dict[str, JsonValue]:
         "x11vnc websockify fonts-noto-cjk fonts-noto-color-emoji xterm mousepad xdotool "
         "&& curl -fL --retry 2 --max-time 120 -o /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb "
         "&& apt-get install -y /tmp/google-chrome.deb && rm /tmp/google-chrome.deb "
-        "&& ln -s /usr/bin/google-chrome-stable /usr/local/bin/chromium "
-        "&& groupadd --gid 1001 sandbox && useradd --uid 1001 --gid sandbox --create-home --shell /bin/bash sandbox "
+        "&& ln -sf /usr/bin/google-chrome-stable /usr/local/bin/chromium "
+        "&& (getent group sandbox >/dev/null || groupadd --gid 1001 sandbox) "
+        "&& (id sandbox >/dev/null 2>&1 || useradd --uid 1001 --gid sandbox --create-home --shell /bin/bash sandbox) "
+        '&& test "$(id -u sandbox)" = 1001 && test "$(id -g sandbox)" = 1001 '
         "&& install -d -o sandbox -g sandbox /workspace "
         "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
         "&& rm -rf /var/lib/apt/lists/*",
         installation_command(),
     ]
-    for source, destination, digest in FILES:
-        url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"
-        commands.append(
-            f"curl -fL --retry 2 --max-time 60 '{url}' -o '{destination}' && echo '{digest}  {destination}' | sha256sum -c - && chmod 0755 '{destination}'"
-        )
+    commands.extend(envd_assets.commands("desktop"))
     commands.append(
         "test ! -e /var/lib/a13n-envd/http-token && test ! -e /run/a13n-desktop-access/control.sock && /usr/local/bin/a13n-envd --version"
     )

@@ -71,7 +71,7 @@ One fixed-cwd Session selection; never a daemon launch policy.
 
 | Field               | Required | Type / choices                  | Constraints and default                  |
 | ------------------- | -------- | ------------------------------- | ---------------------------------------- |
-| `egress`            | false    | EnvdEgressConfiguration or null | default=null                             |
+| `session`           | false    | EnvdSessionConfiguration        | —; default from model factory            |
 | `expected_boundary` | false    | EnvdBoundaryRequirement or null | default=null                             |
 | `working_directory` | false    | string or null                  | format="eip-absolute-path"; default=null |
 | `required_methods`  | false    | array of string                 | maxItems=128; default=[]                 |
@@ -99,7 +99,7 @@ Choices: `"inherit", "deny", "controlled"`.
 
 ## `EnvdBoundaryRequirement`
 
-A selected remote boundary, not authority to change that Device.
+An expected effective Session boundary.
 
 | Field                    | Required | Type / choices                  | Constraints and default |
 | ------------------------ | -------- | ------------------------------- | ----------------------- |
@@ -123,6 +123,20 @@ A selected remote boundary, not authority to change that Device.
 | `source`       | true     | EnvironmentCredentialSource | —                                                   |
 | `inject_hosts` | true     | array of string             | minItems=1; maxItems=256                            |
 
+## `EnvdSessionConfiguration`
+
+Immutable Session selection; credential references are resolved at acquisition.
+
+| Field               | Required | Type / choices                  | Constraints and default                  |
+| ------------------- | -------- | ------------------------------- | ---------------------------------------- |
+| `working_directory` | false    | string or null                  | format="eip-absolute-path"; default=null |
+| `sandbox`           | false    | SandboxPolicy or null           | default=null                             |
+| `egress_mode`       | false    | EgressMode or null              | default=null                             |
+| `egress`            | false    | EnvdEgressConfiguration or null | default=null                             |
+| `lifecycle`         | false    | SessionLifecyclePolicy or null  | default=null                             |
+| `commands`          | false    | boolean or null                 | default=null                             |
+| `isolation`         | false    | SessionIsolation or null        | default=null                             |
+
 ## `EnvironmentCredentialSource`
 
 | Field  | Required | Type / choices | Constraints and default              |
@@ -140,6 +154,12 @@ A selected remote boundary, not authority to change that Device.
 ## `GrantAccess`
 
 Choices: `"read_only", "read_write"`.
+
+## `NativeIsolation`
+
+| Field  | Required | Type / choices | Constraints and default |
+| ------ | -------- | -------------- | ----------------------- |
+| `mode` | true     | "native"       | —                       |
 
 ## `PublicDestinations`
 
@@ -165,6 +185,40 @@ Choices: `"read_only", "read_write"`.
 ## `SandboxPolicy`
 
 Choices: `DisabledSandbox or RestrictedSandbox`.
+
+## `SessionIsolation`
+
+Choices: `NativeIsolation or VmIsolation`.
+
+## `SessionLifecyclePolicy`
+
+| Field             | Required | Type / choices  | Constraints and default                               |
+| ----------------- | -------- | --------------- | ----------------------------------------------------- |
+| `idle_timeout_ms` | true     | integer         | minimum=1; maximum=18446744073709551615               |
+| `max_lifetime_ms` | false    | integer or null | minimum=1; maximum=18446744073709551615; default=null |
+
+## `VmBackend`
+
+Choices: `"boxlite", "microsandbox"`.
+
+## `VmIsolation`
+
+| Field        | Required | Type / choices            | Constraints and default         |
+| ------------ | -------- | ------------------------- | ------------------------------- |
+| `mode`       | true     | "vm"                      | —                               |
+| `backend`    | true     | "boxlite", "microsandbox" | —                               |
+| `image`      | true     | string                    | minLength=1; maxLength=4096     |
+| `cpus`       | true     | integer                   | minimum=1; maximum=255          |
+| `memory_mib` | true     | integer                   | minimum=128; maximum=4294967295 |
+| `mounts`     | false    | array of VmMount          | default=[]                      |
+
+## `VmMount`
+
+| Field    | Required | Type / choices            | Constraints and default    |
+| -------- | -------- | ------------------------- | -------------------------- |
+| `source` | true     | string                    | format="eip-absolute-path" |
+| `target` | true     | string                    | format="eip-absolute-path" |
+| `access` | true     | "read_only", "read_write" | —                          |
 
 ## `LocalEnvdLaunchConfiguration`
 
@@ -261,6 +315,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 | Field                         | Required | Type / choices                       | Constraints and default                                                          |
 | ----------------------------- | -------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `envd_management`             | false    | "managed", "preinstalled"            | default="preinstalled"                                                           |
 | `image`                       | false    | string                               | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
 | `execution`                   | false    | "native" or "envd_http" or "envd_ws" | default="native"                                                                 |
 | `desktop`                     | false    | boolean                              | default=false                                                                    |
@@ -292,6 +347,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | --------------------------- | -------- | -------------------------------- | --------------------------------------------------------- |
 | `template`                  | false    | string                           | minLength=1; maxLength=256; default="base"                |
 | `execution`                 | false    | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `preparation`               | false    | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false    | boolean                          | default=false                                             |
 | `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
 | `root`                      | false    | string                           | default="/home/user"                                      |
@@ -309,8 +365,10 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 | Field                       | Required | Type / choices                   | Constraints and default                                   |
 | --------------------------- | -------- | -------------------------------- | --------------------------------------------------------- |
+| `envd_management`           | false    | "managed", "preinstalled"        | default="preinstalled"                                    |
 | `template`                  | false    | string                           | minLength=1; maxLength=256; default="base"                |
 | `execution`                 | false    | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `preparation`               | false    | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false    | boolean                          | default=false                                             |
 | `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
 | `root`                      | false    | string                           | default="/home/user"                                      |
@@ -328,33 +386,39 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaRecipe`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `snapshot`                | false    | string                 | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `desktop_assistance`      | false    | boolean                | default=false                                |
+| Field                     | Required | Type / choices            | Constraints and default                                                                     |
+| ------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `envd_management`         | false    | "managed", "preinstalled" | default="preinstalled"                                                                      |
+| `snapshot`                | false    | string                    | minLength=1; maxLength=256; default="auto"                                                  |
+| `desktop`                 | false    | boolean                   | default=false                                                                               |
+| `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
+| `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
+| `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
+| `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
 
 ## `ModalRecipe`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `image`                   | false    | string                 | minLength=1; maxLength=256; default="auto"   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
-| `desktop_assistance`      | false    | boolean                | default=false                                |
+| Field                     | Required | Type / choices            | Constraints and default                                                                     |
+| ------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| `envd_management`         | false    | "managed", "preinstalled" | default="preinstalled"                                                                      |
+| `image`                   | false    | string                    | minLength=1; maxLength=256; default="auto"                                                  |
+| `desktop`                 | false    | boolean                   | default=false                                                                               |
+| `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
+| `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
+| `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `timeout_seconds`         | false    | integer                   | minimum=300; maximum=86400; default=86400                                                   |
+| `cpu`                     | false    | number                    | maximum=64; exclusiveMinimum=0; default=1                                                   |
+| `memory`                  | false    | integer                   | minimum=128; maximum=262144; default=1024                                                   |
+| `startup_command`         | false    | array of string or null   | minItems=1; default=null                                                                    |
+| `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
+| `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
 
 ## `VercelRecipe`
 
 | Field                     | Required | Type / choices                   | Constraints and default                                                             |
 | ------------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `envd_management`         | false    | "managed", "preinstalled"        | default="preinstalled"                                                              |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                                                       |
 | `root`                    | false    | string                           | default="/vercel/sandbox"                                                           |
 | `python`                  | false    | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
@@ -369,12 +433,14 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `runtime`                 | false    | string                           | minLength=1; maxLength=128; default="python3.13"                                    |
 | `timeout_seconds`         | false    | integer                          | minimum=300; maximum=18000; default=3600                                            |
 | `vcpus`                   | false    | integer                          | minimum=2; maximum=8; default=2                                                     |
+| `startup_command`         | false    | array of string or null          | minItems=1; default=null                                                            |
 | `desktop_assistance`      | false    | boolean                          | default=false                                                                       |
 
 ## `SpritesRecipe`
 
 | Field                     | Required | Type / choices                   | Constraints and default                                |
 | ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
+| `envd_management`         | false    | "managed", "preinstalled"        | default="preinstalled"                                 |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
 | `root`                    | false    | string                           | default="/home/sprite"                                 |
 | `python`                  | false    | string                           | default="python3"                                      |
@@ -466,7 +532,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 | Field               | Required | Type / choices                  | Constraints and default                  |
 | ------------------- | -------- | ------------------------------- | ---------------------------------------- |
-| `egress`            | false    | EnvdEgressConfiguration or null | default=null                             |
+| `session`           | false    | EnvdSessionConfiguration        | —; default from model factory            |
 | `expected_boundary` | false    | EnvdBoundaryRequirement or null | default=null                             |
 | `working_directory` | false    | string or null                  | format="eip-absolute-path"; default=null |
 | `required_methods`  | false    | array of string                 | maxItems=128; default=[]                 |

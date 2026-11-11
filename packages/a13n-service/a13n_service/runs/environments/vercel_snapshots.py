@@ -14,14 +14,15 @@ from a13n_harness.providers.environment.native.configuration import TokenCredent
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.vercel.shared import VercelConnectionConfiguration
 from pydantic import JsonValue
-from sqlalchemy import DateTime, ForeignKeyConstraint, String, UniqueConstraint, select
+from sqlalchemy import DateTime, ForeignKeyConstraint, Select, String, UniqueConstraint, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, advisory_lock, lock, now, transaction
 from a13n_service.providers.environment.vercel_build import BuildTarget, VercelDesktopPreparation, VercelSnapshotAPI
-from a13n_service.resources.providers.service import ResolvedProvider
+from a13n_service.resources.providers.service import ResolvedProvider, read_provider
+from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import credential_version
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -120,13 +121,29 @@ class Claim:
     builder: BuildTarget | None
 
 
-async def _claim(runtime: Runtime, key: str, provider: ResolvedProvider) -> Claim | None:
+def _waiters(key: str, workspace_id: str, environment_id: str | None = None) -> Select[tuple[str]]:
+    due = select(EnvironmentRow.id).where(
+        EnvironmentRow.workspace_id == workspace_id,
+        EnvironmentRow.status == "creating",
+        EnvironmentRow.handle["vercel_desktop_snapshot"].astext == key,
+    )
+    return due.where(EnvironmentRow.id != environment_id) if environment_id is not None else due
+
+
+async def _claim(
+    runtime: Runtime, key: str, provider: ResolvedProvider, *, cancel: bool, environment_id: str | None
+) -> Claim | None:
     async with transaction(runtime.storage) as session:
         row = await lock(session, VercelDesktopSnapshotRow, key)
         if row is None or row.provider_id != provider.id or row.credential_version != credential_version(provider):
             raise failure("vercel", "desktop_build_credential_changed", Category.CONFLICT)
         if row.backend != _backend(runtime, provider):
             raise failure("vercel", "desktop_build_account_changed", Category.CONFLICT)
+        if cancel and (
+            row.phase in {"ready", "failed"}
+            or await session.scalar(_waiters(key, row.workspace_id, environment_id).limit(1)) is not None
+        ):
+            return None
         current = await now(session)
         if row.lease_expires_at is not None and row.lease_expires_at > current:
             return None
@@ -166,10 +183,17 @@ async def _save(runtime: Runtime, claim: Claim, phase: str, *, release: bool = T
         return True
 
 
-async def prepare(runtime: Runtime, key: str, provider: ResolvedProvider, *, cancel: bool = False) -> str | None:
+async def prepare(
+    runtime: Runtime,
+    key: str,
+    provider: ResolvedProvider,
+    *,
+    cancel: bool = False,
+    environment_id: str | None = None,
+) -> str | None:
     """One bounded build step, with durable allocation/snapshot intent before external mutations."""
     await runtime.registry.check_environment_endpoint("vercel", provider.config, runtime.endpoint_policy)
-    claim = await _claim(runtime, key, provider)
+    claim = await _claim(runtime, key, provider, cancel=cancel, environment_id=environment_id)
     if claim is None:
         await anyio.sleep(1)
         return None
@@ -266,17 +290,39 @@ async def cancel(runtime: Runtime, key: str, provider: ResolvedProvider, environ
         row = await lock(session, VercelDesktopSnapshotRow, key)
         if row is None or row.phase in {"ready", "failed"}:
             return True
-        others = await session.scalar(
-            select(EnvironmentRow.id)
-            .where(
-                EnvironmentRow.id != environment_id,
-                EnvironmentRow.workspace_id == row.workspace_id,
-                EnvironmentRow.status == "creating",
-                EnvironmentRow.handle["vercel_desktop_snapshot"].astext == key,
-            )
-            .limit(1)
-        )
+        others = await session.scalar(_waiters(key, row.workspace_id, environment_id).limit(1))
         if others is not None:
             return True
-    await prepare(runtime, key, provider, cancel=True)
+    await prepare(runtime, key, provider, cancel=True, environment_id=environment_id)
     return False
+
+
+def orphaned() -> Select[tuple[str]]:
+    """Unfinished legacy builds without a creating instance; ready snapshot assets stay retained."""
+    row = VercelDesktopSnapshotRow
+    waiters = select(EnvironmentRow.id).where(
+        EnvironmentRow.workspace_id == row.workspace_id,
+        EnvironmentRow.status == "creating",
+        EnvironmentRow.handle["vercel_desktop_snapshot"].astext == row.id,
+    )
+    return (
+        select(row.id)
+        .where(
+            row.phase.not_in(("ready", "failed")),
+            or_(row.lease_expires_at.is_(None), row.lease_expires_at < func.now()),
+            ~waiters.exists(),
+        )
+        .order_by(row.updated_at, row.id)
+    )
+
+
+async def drain(runtime: Runtime, key: str) -> None:
+    """One cancellation-only step; a blocked account rotates behind other orphan candidates."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, VercelDesktopSnapshotRow, key)
+        if row is None or await session.scalar(orphaned().where(VercelDesktopSnapshotRow.id == key)) is None:
+            return
+        row.updated_at = await now(session)
+        provider = await read_provider(session, EnvironmentProviderRow, row.provider_id)
+    with anyio.fail_after(runtime.settings.environments.operation_seconds):
+        await prepare(runtime, key, provider, cancel=True)

@@ -61,10 +61,21 @@ def test_service_version_selects_a_reviewed_sandbox_independent_of_its_version(
     schema = model.model_json_schema()
     assert schema["properties"]["image"]["default"] == expected
     presets = schema["x-environment-presets"]
-    assert presets["standard"] == {"image": expected, "execution": "native", "desktop": False}
-    assert presets["desktop"] == {"image": f"{expected}-desktop", "execution": "envd_http", "desktop": True}
+    assert presets["standard"] == {
+        "image": expected,
+        "execution": "native",
+        "desktop": False,
+        "envd_management": "preinstalled",
+    }
+    assert presets["desktop"] == {
+        "image": f"{expected}-desktop",
+        "execution": "envd_http",
+        "desktop": True,
+        "envd_management": "managed",
+    }
     for recipe in presets.values():
-        model.model_validate(recipe)
+        saved = model.model_validate(recipe)
+        assert model.model_validate(saved.model_dump()).envd_management == recipe["envd_management"]
     assert "cpus" in schema["x-primary-fields"]
     assert model.model_validate({"image": "custom@sha256:" + "a" * 64}).image == "custom@sha256:" + "a" * 64
     # Service policy does not change the independently released Harness provider.
