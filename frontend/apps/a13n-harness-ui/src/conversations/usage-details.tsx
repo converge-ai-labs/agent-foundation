@@ -288,6 +288,9 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
             )}
             <ul className={styles.models}>
               {models.map(([name, value]) => {
+                const label =
+                  scopes.find((model) => model.name === name)?.display_name ??
+                  name;
                 const groups = (usage.groups ?? []).filter(
                   (group) =>
                     group.model === name &&
@@ -306,13 +309,13 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                         <span
                           className={styles.modelName}
                           title={
-                            name === "Other models" ? t("Other models") : name
+                            name === "Other models" ? t("Other models") : label
                           }
                         >
                           {name === "Other models" ? (
                             t("Other models")
                           ) : (
-                            <ModelIdentity name={name} />
+                            <ModelIdentity name={label} />
                           )}
                         </span>
                         <span className={styles.modelCost}>

@@ -731,6 +731,7 @@ class AgentCompositionResolver:
             model_id=item.id,
             subscription_group=group,
             route=normalized.route,
+            base_model=item.base_model,
             authentication=item.authentication,
             settings=normalized.settings,
             model_configuration=normalized.model_cfg,

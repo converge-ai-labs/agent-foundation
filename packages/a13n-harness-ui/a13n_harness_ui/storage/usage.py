@@ -111,6 +111,7 @@ class ModelUsageView:
     root: UsageTotals
     descendants: UsageTotals
     combined: UsageTotals
+    display_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,7 +272,7 @@ class _Aggregation:
                 self.other_groups.add(record)
         self.cursor = sequence
 
-    def view(self, thread_id: str) -> ThreadUsageView:
+    def view(self, thread_id: str, labels: Mapping[str, str]) -> ThreadUsageView:
         return ThreadUsageView(
             thread_id=thread_id,
             first_observed_at=self.first,
@@ -294,6 +295,7 @@ class _Aggregation:
             model_scopes=tuple(
                 ModelUsageView(
                     name=name,
+                    display_name=labels.get(name),
                     root=self.model_owners.get((name, False), _Totals()).view(),
                     descendants=self.model_owners.get((name, True), _Totals()).view(),
                     combined=totals.view(),
@@ -641,7 +643,7 @@ class ThreadUsageRepository:
             payload = await session.scalar(query.order_by(facts.c.sequence.desc(), facts.c.ordinal.desc()).limit(1))
         return None if payload is None else ModelUsageRecord.model_validate_json(payload)
 
-    async def snapshot(self, *, thread_id: str) -> ThreadUsageView:
+    async def snapshot(self, *, thread_id: str, model_names: Mapping[str, str] | None = None) -> ThreadUsageView:
         """Rebuild bounded groups in a pinned read transaction; no stale cross-process cache."""
         catalog = await to_thread.run_sync(get_current_pricing_catalog)
 
@@ -668,6 +670,7 @@ class ThreadUsageRepository:
                 .limit(_GROUPS)
                 .cte("recent_usage_runs")
             )
+            labels = dict(model_names or {})
             aggregate = _Aggregation()
             rows = await session.stream(
                 select(
@@ -677,6 +680,7 @@ class ThreadUsageRepository:
                     facts.c.observed_at,
                     facts.c.observed_through,
                     recent.c.last_sequence,
+                    UsageModelRecord.model_id,
                     UsageModelRecord.route,
                 )
                 .outerjoin(recent, run_id == recent.c.run_id)
@@ -687,9 +691,11 @@ class ThreadUsageRepository:
             )
             async for batch in rows.partitions(_BATCH):
                 for row in batch:
-                    *fact, route = row
-                    aggregate.add(*fact, configured=display_name(route) if route else None)
-            return aggregate.view(thread_id)
+                    *fact, model_id, route = row
+                    if model_id and route and model_id not in labels:
+                        labels[model_id] = display_name(route)
+                    aggregate.add(*fact, configured=model_id)
+            return aggregate.view(thread_id, labels)
 
     @staticmethod
     async def _root_id(session: AsyncSession, thread_id: str) -> str:

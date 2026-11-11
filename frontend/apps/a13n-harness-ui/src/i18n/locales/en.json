@@ -3249,5 +3249,11 @@
   "Heartbeat": "Heartbeat",
   "Interval (seconds)": "Interval (seconds)",
   "Heartbeat interval": "Heartbeat interval",
-  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line."
+  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.",
+  "Base model": "Base model",
+  "Identifies the model behind this connection for usage and cost estimates.": "Identifies the model behind this connection for usage and cost estimates.",
+  "Search base models…": "Search base models…",
+  "Automatic (use request model)": "Automatic (use request model)",
+  "This base model is missing from the current catalog.": "This base model is missing from the current catalog.",
+  "No matching models": "No matching models"
 }

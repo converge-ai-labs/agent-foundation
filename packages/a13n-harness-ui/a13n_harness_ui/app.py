@@ -1125,7 +1125,9 @@ class HarnessUiApp:
 
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():
-            return await self._store.usage.snapshot(thread_id=thread_id)
+            source = await self._configurations.current()
+            names = {item.id: item.name for item in source.models.values()} if source else {}
+            return await self._store.usage.snapshot(thread_id=thread_id, model_names=names)
 
     async def thread_work(
         self,
@@ -2910,7 +2912,7 @@ class HarnessUiApp:
 
     async def model_choices(self) -> ModelChoices:
         async with self._operation():
-            return ModelChoices()
+            return await to_thread.run_sync(ModelChoices)
 
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():

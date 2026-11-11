@@ -5974,6 +5974,8 @@ export interface components {
         };
         /** ModelChoices */
         ModelChoices: {
+            /** Base Models */
+            base_models?: components["schemas"]["ModelChoice"][];
             /** Connections */
             connections?: components["schemas"]["ModelConnection"][];
             /**
@@ -6073,6 +6075,8 @@ export interface components {
         ModelRecipe: {
             /** Route */
             route: string;
+            /** Base Model */
+            base_model?: string | null;
             authentication: components["schemas"]["ModelAuthentication"];
             /** Settings */
             settings?: {
@@ -6155,6 +6159,8 @@ export interface components {
             root: components["schemas"]["UsageTotals"];
             descendants: components["schemas"]["UsageTotals"];
             combined: components["schemas"]["UsageTotals"];
+            /** Display Name */
+            display_name?: string | null;
         };
         /** MonitoringCatalog */
         MonitoringCatalog: {
@@ -9575,6 +9581,8 @@ export interface components {
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */
@@ -9599,6 +9607,8 @@ export interface components {
         VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */

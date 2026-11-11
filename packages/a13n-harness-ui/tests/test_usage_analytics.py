@@ -303,7 +303,9 @@ async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, 
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     path = tmp_path / "models/primary.yaml"
-    path.write_text(path.read_text().replace("openai:gpt-5", "anthropic:claude-opus-5.5"))
+    path.write_text(
+        path.read_text().replace("openai:gpt-5", "anthropic:private-deployment\nbase_model: anthropic:claude-opus-5-5")
+    )
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
     async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
         thread = await app.create_thread()
@@ -313,7 +315,7 @@ async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, 
         usage = await app.thread_usage(thread_id=thread.thread_id)
         assert usage.combined.model_requests == 2
         assert usage.combined.unknown_model_costs == 0 and usage.combined.model_cost_usd > 0
-        assert [model.name for model in usage.model_scopes] == ["anthropic/claude-opus-5-5"]
+        assert [(model.name, model.display_name) for model in usage.model_scopes] == [("model-primary", "Primary")]
         assert {alias for group in usage.groups for alias in group.reported_models} == {
             "anthropic/claude-opus-5.5",
             "gateway-deployment-42",

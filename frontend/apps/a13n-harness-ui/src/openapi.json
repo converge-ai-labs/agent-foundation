@@ -17335,6 +17335,13 @@
       },
       "ModelChoices": {
         "properties": {
+          "base_models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "type": "array",
+            "title": "Base Models"
+          },
           "connections": {
             "items": {
               "$ref": "#/components/schemas/ModelConnection"
@@ -17553,6 +17560,19 @@
             "maxLength": 512,
             "minLength": 3,
             "title": "Route"
+          },
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
           },
           "authentication": {
             "$ref": "#/components/schemas/ModelAuthentication"
@@ -17801,6 +17821,17 @@
           },
           "combined": {
             "$ref": "#/components/schemas/UsageTotals"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           }
         },
         "type": "object",
@@ -26913,6 +26944,19 @@
       },
       "ModelOptionsRequest": {
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "connection": {
             "type": "string",
             "maxLength": 128,
@@ -26980,6 +27024,19 @@
       },
       "ModelRecipeRequest": {
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "connection": {
             "type": "string",
             "maxLength": 128,

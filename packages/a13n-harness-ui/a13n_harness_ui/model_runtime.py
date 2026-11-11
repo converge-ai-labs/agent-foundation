@@ -117,9 +117,10 @@ class HarnessUiModelResolver:
             catalog = get_current_pricing_catalog()
         entries = {}
         for key, recipe in self._recipes.items():
-            entry = configured_price_entry(catalog, recipe.route)
+            identity = recipe.base_model or recipe.route
+            entry = configured_price_entry(catalog, identity)
             # A Developer API tariff is not an explicit Vertex price.
-            if recipe.route.startswith("google-vertex:") and entry is not None and entry.provider == "google":
+            if identity.startswith("google-vertex:") and entry is not None and entry.provider == "google":
                 continue
             entries[key] = entry
         return TokenPricingCapability(entries)

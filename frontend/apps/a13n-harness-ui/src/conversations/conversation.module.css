@@ -1,4 +1,5 @@
 .navigation {
+  --thread-label-inset: 32px;
   --harness-nav-height: 30px;
   display: flex;
   flex-direction: column;
@@ -434,7 +435,8 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 4px 8px 4px 32px;
+  padding: 4px 8px;
+  padding-inline-start: var(--thread-label-inset, 32px);
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
@@ -1560,7 +1562,9 @@ dl.detailGrid > .detailLongRow dd {
   height: 24px;
 }
 .showMore {
-  margin: 4px 0 0 8px;
+  margin-block-start: 4px;
+  margin-inline-start: calc(var(--thread-label-inset) - 8px);
+  padding-inline: 7px;
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
