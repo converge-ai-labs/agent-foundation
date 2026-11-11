@@ -320,6 +320,22 @@ class TranscriptEntry(SurfaceModel):
         return value.astimezone(UTC)
 
 
+class BranchPoint(SurfaceModel):
+    edit: bool
+    branch: bool
+
+
+class BranchPoints(SurfaceModel):
+    source: str
+    points: dict[str, BranchPoint]
+
+
+class BranchRequest(SurfaceModel):
+    expected_continuation_id: str = Field(pattern=r"^(?:initial:)?[0-9a-f]{64}$")
+    turn_key: str = Field(min_length=1, max_length=512)
+    side: Literal["before", "after"]
+
+
 class TranscriptTurn(SurfaceModel):
     """One ordinary input and its execution, including steering and resumes."""
 

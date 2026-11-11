@@ -57,10 +57,13 @@ async def test_fork_preserves_saved_conversation_work_and_files_and_continues_in
         await app._thread_files.retain(source.thread_id, attachment.attachment_id)
         source_dir = app._thread_files.directory(source.thread_id)
         (source_dir / "tmp" / "script.py").write_text("original scratch")
+        before_fork = (await app.thread_usage(thread_id=source.thread_id)).combined
+        assert before_fork.model_requests == len(calls) == 2
         copied = await app.fork_thread(source.thread_id)
+        assert (await app.thread_usage(thread_id=copied.thread_id)).combined.model_requests == 0
         assert len(calls) == 2
         assert copied.thread_id != source.thread_id
-        assert copied.title == source.title
+        assert copied.title == "Same title (2)"
         assert copied.role == "ordinary" and copied.root_activity.state == "inactive"
         assert copied.last_execution is None and copied.completion is None
         saved = await app._threads.get(copied.thread_id)
@@ -86,6 +89,8 @@ async def test_fork_preserves_saved_conversation_work_and_files_and_continues_in
     async with open_harness_ui_app(settings, configuration_path=path, instrumentation=None) as app:
         receipt = await app.submit_thread(thread_id=copied.thread_id, prompt="Continue only the fork")
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        assert (await app.thread_usage(thread_id=source.thread_id)).combined == before_fork
+        assert (await app.thread_usage(thread_id=copied.thread_id)).combined.model_requests == 1
         assert "Original question" in calls[-1] and "Original answer" in calls[-1]
         assert "Keep this note" in calls[-1] and "Keep this task" in calls[-1]
         assert (await app._threads.get(source.thread_id)).continuation == source.continuation
@@ -107,7 +112,7 @@ async def test_fork_empty_projectless_thread_retains_metadata(tmp_path: Path):
             ),
         )
         copied = await app.fork_thread(source.thread_id)
-        assert copied.title == "Untouched" and copied.archived and copied.starred
+        assert copied.title == "Untouched (2)" and copied.archived and copied.starred
         assert copied.configuration.project_id is None
         stored = await app._threads.get(copied.thread_id)
         assert stored.continuation is None
@@ -250,3 +255,64 @@ async def test_fork_active_thread_copies_only_saved_state(tmp_path: Path, monkey
         finally:
             release.set()
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+
+
+async def test_message_branch_uses_only_the_selected_prefix_and_numbers_copies(tmp_path: Path, monkeypatch):
+    from a13n_harness_ui.errors import RunCoordinationError
+    from a13n_harness_ui.surfaces import BranchRequest
+    from anyio import Event
+
+    config = _write_configuration(tmp_path)
+    calls = []
+    started, finish = Event(), Event()
+
+    async def resolve(self, context, model_id):
+        async def stream(messages, info):
+            calls.append(ModelMessagesTypeAdapter.dump_json(messages).decode())
+            if "hold-current-run" in calls[-1]:
+                started.set()
+                await finish.wait()
+            yield "saved reply"
+
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(
+        _settings(tmp_path / "data"), configuration_path=config, instrumentation=None
+    ) as app:
+        source = await app.create_thread(title="Coffee brief")
+
+        async def send(thread, prompt):
+            receipt = await app.submit_thread(thread_id=thread, prompt=prompt)
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+
+        for prompt in ("first-choice", "second-choice", "third-choice"):
+            await send(source.thread_id, prompt)
+        turns = (await app.get_thread_transcript(thread_id=source.thread_id)).turns
+        points = await app.branch_points(source.thread_id)
+        request = BranchRequest(expected_continuation_id=points.source, turn_key=turns[1].turn_id, side="after")
+        current = await app.submit_thread(thread_id=source.thread_id, prompt="hold-current-run")
+        try:
+            await started.wait()
+            assert (await app.branch_points(source.thread_id)).source == points.source
+            with pytest.raises(RunCoordinationError, match="editing"):
+                await app.branch_thread(source.thread_id, request.model_copy(update={"side": "before"}))
+            branch = await app.branch_thread(source.thread_id, request)
+            assert len(calls) == 4 and branch.title == "Coffee brief (2)"
+            await send(branch.thread_id, "continue-branch")
+            assert (
+                "second-choice" in calls[-1] and "third-choice" not in calls[-1] and "hold-current-run" not in calls[-1]
+            )
+        finally:
+            finish.set()
+            await app.wait_root_operation(current.receipt_id)
+        points = await app.branch_points(source.thread_id)
+        edited = await app.branch_thread(
+            source.thread_id, request.model_copy(update={"side": "before", "expected_continuation_id": points.source})
+        )
+        assert edited.title == "Coffee brief (3)"
+        await send(edited.thread_id, "edited-choice")
+        assert "first-choice" in calls[-1] and "edited-choice" in calls[-1]
+        assert "second-choice" not in calls[-1] and "third-choice" not in calls[-1]
+        copied = await app.fork_thread(branch.thread_id)
+        assert copied.title == "Coffee brief (4)"

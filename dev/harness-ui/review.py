@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 
 import uvicorn
 import yaml
+from a13n_harness.content import project_input_content, request_input_content
 from a13n_harness_ui import model_catalog
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
@@ -224,6 +225,28 @@ def seed_memory(configuration_root: Path) -> None:
 
 
 async def model(messages, info):
+    authored = [
+        text
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if item.metadata.display
+        if (part := project_input_content(item)) and isinstance(text := part[0], str)
+    ]
+    separator = "："  # noqa: RUF001 -- Chinese review conversation.
+    if any("店名" + separator in text for text in authored):
+        if "慢速" in authored[-1]:
+            yield "正在整理当前方案…\n\n"
+            await asyncio.sleep(12)
+        choices = {}
+        for text in authored:
+            label, _, value = text.partition(separator)
+            if label in {"店名", "主色", "标语"} and value.strip():
+                choices[label] = value.strip()
+        yield (
+            "目前确定的方案是" + separator + "、".join(f"{label}「{value}」" for label, value in choices.items()) + "。"
+        )
+        return
     last_input = max(
         (
             i
@@ -396,6 +419,15 @@ async def serve(root: Path, port: int):
             status = await app.status()
             if status.candidate_error_message:
                 raise RuntimeError(status.candidate_error_message)
+            demo = await app.create_thread(
+                title="白昼咖啡 · 品牌方案", defaults=NewThreadDefaults(project_id="project-research")
+            )
+            for prompt in ("店名：白昼咖啡", "主色：橄榄绿", "标语：慢一点，喝一杯"):  # noqa: RUF001
+                receipt = await app.submit_thread(thread_id=demo.thread_id, prompt=prompt)
+                result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=30)
+                if result.status != "completed":
+                    raise RuntimeError("Branch review fixture did not finish")
+            print(f"  Branch preview: /threads/{demo.thread_id}", flush=True)
             for title, project, prompt in (
                 (
                     "Review the checkout flow",

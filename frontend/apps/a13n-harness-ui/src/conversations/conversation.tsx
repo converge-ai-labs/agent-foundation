@@ -1,3 +1,4 @@
+import { MessageBranchProvider } from "./message-branch";
 import { ReaderFades } from "./reader-fades";
 import { useComposerRunChoices } from "./composer-run-choices";
 import { useTranslation } from "../i18n";
@@ -801,67 +802,87 @@ function ConversationContent({
                 </Button>
               )}
               <PauseConversationFollowing value={interruptScroll}>
-                <ConversationTranscript
-                  currentFailureRunId={
-                    thread?.last_execution?.status === "failed"
-                      ? thread.last_execution.run_id
-                      : undefined
-                  }
-                  entries={entries}
-                  running={
-                    operation?.state === "running" &&
-                    presentation === display &&
-                    operation.run_id === presentation.runId
-                  }
-                  blocks={showLive ? liveBlocks : []}
-                  localInputs={hasLater ? [] : draft.localInputs}
-                  turns={turns}
-                  loadDetails
-                  onSavedEntries={reconcileSavedInputs}
+                <MessageBranchProvider
+                  receipt={thread?.root_activity.receipt_id}
+                  thread={threadId}
+                  draft={draft}
                   continuation={continuation}
-                  gap={showLive && display.gap}
-                  threadId={threadId}
-                  activity={
-                    !readOnly &&
-                    !showGoal &&
-                    !hasLater &&
-                    !thread?.archived &&
-                    !detail.data?.deferred_requests?.length &&
-                    display.recovery?.state !== "retrying" ? (
-                      <RunActivity
-                        activity={operation}
-                        submission={draft.submission}
-                        operation={observedOperation.data}
-                      />
-                    ) : undefined
+                  enabled={
+                    !!thread &&
+                    !guest &&
+                    thread.role === "ordinary" &&
+                    !thread.parent_thread_id &&
+                    !thread.memory_scope &&
+                    thread.configuration.agent_source.kind === "agent" &&
+                    !thread.archived
                   }
-                  pending={
-                    !hasLater && detail.data?.deferred_requests?.length
-                      ? {
-                          requestIds: detail.data.deferred_requests
-                            .filter(
-                              (request) =>
-                                request.tool_name === "ask_user_question",
-                            )
-                            .map((request) => request.request_id),
-                          content: decisions.slot,
-                        }
-                      : undefined
+                  active={
+                    thread?.root_activity.state !== "inactive" ||
+                    draft.submission.kind === "pending"
                   }
-                  recovery={
-                    !hasLater && display.recovery?.state === "resumed"
-                      ? display.recovery
-                      : undefined
-                  }
-                />
-                {decisions.portal}
-                {!guest && (
-                  <McpInputs
+                >
+                  <ConversationTranscript
+                    currentFailureRunId={
+                      thread?.last_execution?.status === "failed"
+                        ? thread.last_execution.run_id
+                        : undefined
+                    }
+                    entries={entries}
+                    running={
+                      operation?.state === "running" &&
+                      presentation === display &&
+                      operation.run_id === presentation.runId
+                    }
+                    blocks={showLive ? liveBlocks : []}
+                    localInputs={hasLater ? [] : draft.localInputs}
+                    turns={turns}
+                    loadDetails
+                    onSavedEntries={reconcileSavedInputs}
+                    continuation={continuation}
+                    gap={showLive && display.gap}
                     threadId={threadId}
-                    requests={mcpInputs.data}
-                    reconcile={() => void mcpInputs.refetch()}
+                    activity={
+                      !readOnly &&
+                      !showGoal &&
+                      !hasLater &&
+                      !thread?.archived &&
+                      !detail.data?.deferred_requests?.length &&
+                      display.recovery?.state !== "retrying" ? (
+                        <RunActivity
+                          activity={operation}
+                          submission={draft.submission}
+                          operation={observedOperation.data}
+                        />
+                      ) : undefined
+                    }
+                    pending={
+                      !hasLater && detail.data?.deferred_requests?.length
+                        ? {
+                            requestIds: detail.data.deferred_requests
+                              .filter(
+                                (request) =>
+                                  request.tool_name === "ask_user_question",
+                              )
+                              .map((request) => request.request_id),
+                            content: decisions.slot,
+                          }
+                        : undefined
+                    }
+                    recovery={
+                      !hasLater && display.recovery?.state === "resumed"
+                        ? display.recovery
+                        : undefined
+                    }
                   />
-                )}
+                  {decisions.portal}
+                  {!guest && (
+                    <McpInputs
+                      threadId={threadId}
+                      requests={mcpInputs.data}
+                      reconcile={() => void mcpInputs.refetch()}
+                    />
+                  )}
+                </MessageBranchProvider>
               </PauseConversationFollowing>
               {hasLater && (
                 <div className={styles.historyActions}>

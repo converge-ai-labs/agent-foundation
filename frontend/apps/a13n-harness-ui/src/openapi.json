@@ -5674,6 +5674,94 @@
         }
       }
     },
+    "/api/threads/{thread_id}/branch-points": {
+      "get": {
+        "summary": "Branch Points",
+        "operationId": "branch_points_api_threads__thread_id__branch_points_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BranchPoints"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/branch": {
+      "post": {
+        "summary": "Branch Thread",
+        "operationId": "branch_thread_api_threads__thread_id__branch_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BranchRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/fork": {
       "post": {
         "summary": "Fork Thread",
@@ -9855,6 +9943,47 @@
           "unsupported"
         ],
         "title": "Availability"
+      },
+      "BranchPoint": {
+        "properties": {
+          "edit": {
+            "type": "boolean",
+            "title": "Edit"
+          },
+          "branch": {
+            "type": "boolean",
+            "title": "Branch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edit",
+          "branch"
+        ],
+        "title": "BranchPoint"
+      },
+      "BranchPoints": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "points": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BranchPoint"
+            },
+            "type": "object",
+            "title": "Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "points"
+        ],
+        "title": "BranchPoints"
       },
       "BrowserAccess": {
         "properties": {
@@ -27138,6 +27267,37 @@
           "defaults_digest"
         ],
         "title": "ProjectDefaultsApply",
+        "type": "object"
+      },
+      "BranchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_continuation_id": {
+            "pattern": "^(?:initial:)?[0-9a-f]{64}$",
+            "title": "Expected Continuation Id",
+            "type": "string"
+          },
+          "turn_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Turn Key",
+            "type": "string"
+          },
+          "side": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_continuation_id",
+          "turn_key",
+          "side"
+        ],
+        "title": "BranchRequest",
         "type": "object"
       },
       "ApprovalDecision": {

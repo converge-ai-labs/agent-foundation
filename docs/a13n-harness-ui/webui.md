@@ -361,6 +361,8 @@ Configure **Settings → General → Sidekick** for default Agent, Model, and re
 
 Forking makes no Model request. It copies saved history, notes, tasks, settings, and Thread-owned files. An active source contributes its last saved checkpoint. External Project directories, remote targets, and sandboxes remain shared resources.
 
+To start from an earlier reply, hover over it and select **Branch in new chat**. You can branch from a finished reply while a later Run is active. To revise an ordinary text message in an idle chat, select **Edit message**, then **Send**. The edited message runs in the new chat. Copies use numbered titles such as `Coffee brief (2)` and `Coffee brief (3)`.
+
 Coordinators, workers, Subagent Threads, and internal Memory/Live Threads cannot be forked. After uncertain creation, inspect the conversation list before retrying.
 
 ## Star important conversations

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -277,6 +278,8 @@ class ThreadRepository:
         source: Thread,
         thread_id: str,
         initial_state: ObjectRef,
+        excerpt: ConversationExcerpt,
+        historical: bool = False,
         continuation: ObjectRef | None,
         read_model: ThreadReadModel | None,
     ) -> Thread:
@@ -305,21 +308,41 @@ class ThreadRepository:
             if (
                 current.metadata_version != source.metadata_version
                 or _configuration_value(configuration) != source.configuration
-                or _continuation_ref(current) != source.continuation
+                or (not historical and _continuation_ref(current) != source.continuation)
             ):
                 raise StoreConflictError(
                     "The source Thread changed while copying. Fork it again.", code="thread_fork_conflict"
                 )
+            name = source.title or source.excerpt.first_input or "Untitled chat"
+            base = re.sub(r" \(([2-9]|[1-9]\d+)\)$", "", name).rstrip() or name
+            # Allocate inside the publication transaction, including archived siblings.
+            used = set(
+                await session.scalars(
+                    select(ThreadRecord.title)
+                    .join(ThreadConfigurationRecord)
+                    .where(
+                        ThreadConfigurationRecord.project_id == source.configuration.project_id,
+                        ThreadRecord.title.startswith(base[:480], autoescape=True),
+                    )
+                )
+            )
+            number = 2
+            while True:
+                suffix = f" ({number})"
+                title = base[: 512 - len(suffix)].rstrip() + suffix
+                if title not in used:
+                    break
+                number += 1
             record = ThreadRecord(
                 thread_id=thread_id,
                 metadata_version=1,
-                title=source.title,
+                title=title,
                 archived=source.archived,
                 starred=source.starred,
-                first_input=source.excerpt.first_input,
-                latest_input=source.excerpt.latest_input,
-                latest_reply=source.excerpt.latest_reply,
-                reply_kind=source.excerpt.reply_kind,
+                first_input=excerpt.first_input,
+                latest_input=excerpt.latest_input,
+                latest_reply=excerpt.latest_reply,
+                reply_kind=excerpt.reply_kind,
                 created_at=now,
                 updated_at=now,
                 touched_at=now,
