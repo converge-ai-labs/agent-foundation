@@ -43,6 +43,7 @@ from a13n_service.resources.agents.toolsets import (
 )
 from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
+from a13n_service.resources.environment_instances.session_configuration import SessionConfiguration
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
 
@@ -272,6 +273,9 @@ class AgentConfig(_Frozen):
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
     default_environment_id: ObjectId | None = None
+    default_session_configuration: SessionConfiguration | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # Otherwise create/start mounted instances before Harness; execution connections still open on first use.
     lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
@@ -346,6 +350,7 @@ class AgentConfigurationChanges(_Frozen):
     retries: RetryConfig | MISSING | None = Field(default=MISSING)
     default_environment_template_id: ObjectId | MISSING | None = Field(default=MISSING)
     default_environment_id: ObjectId | MISSING | None = Field(default=MISSING)
+    default_session_configuration: SessionConfiguration | MISSING | None = Field(default=MISSING)
     lazy_environment: bool | MISSING = Field(default=MISSING)
     memory_mounts: MemoryMounts | MISSING = Field(default=MISSING)
     memory: SessionMemorySettings | MISSING = Field(default=MISSING)

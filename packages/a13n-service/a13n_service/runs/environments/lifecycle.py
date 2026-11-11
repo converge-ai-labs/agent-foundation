@@ -64,6 +64,7 @@ from a13n_service.runs.environments.adapters import (
     open_provider,
     provider_identity,
 )
+from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
@@ -869,6 +870,7 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
                 from a13n_service.runs.environments.desktop.identity import invalidate
 
                 await invalidate(session, handle.state)
+                await retire_environment(session, environment.id)
             return
         environment.operation_unsettled = False
         environment.failure = None
@@ -884,6 +886,7 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             environment.metrics_application = applied.model_copy(update={"applied_at": current}).model_dump(mode="json")
             environment.metrics_launch = None
         if reached == "deleted":
+            await retire_environment(session, environment.id)
             environment.retirement_state = None if outcome.state is None else outcome.state.model_dump(mode="json")
             environment.handle = None
             environment.metrics_launch = environment.envd_bootstrap = None

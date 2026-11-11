@@ -233,7 +233,7 @@ async def prepare_thread(
     if body.session is not None and body.session.memory is not None:
         await configure(session, owner, body.session.memory)
         await session.flush()
-    await mount_environments(session, thread, body.environments, principal_id=actor.id)
+    await mount_environments(session, thread, body.environments, principal=actor)
     await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
     return thread, await prepare_message(
         session,
@@ -298,7 +298,7 @@ async def fork(
         session.add(thread)
         await session.flush()
         shared = [] if body.fresh_environments else await shared_mounts(session, origin_thread)
-        await mount_environments(session, thread, [*shared, *body.environments], principal_id=actor.id)
+        await mount_environments(session, thread, [*shared, *body.environments], principal=actor)
         memories = [*await shared_memory_mounts(session, origin_thread), *body.memories]
         await mount_memories(session, thread, memories, limit=runtime.settings.memory.mounts_per_thread)
         return thread, await prepare_message(

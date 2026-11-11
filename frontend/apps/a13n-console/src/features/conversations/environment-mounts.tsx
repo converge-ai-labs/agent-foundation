@@ -12,6 +12,7 @@ import { FormActions } from "../../shared/forms";
 import { WorkingDirectory } from "../environments/working-directory";
 import { ComputerCheck } from "./computer-check";
 import { MountComputerPermissions } from "./mount-computer-permissions";
+import { ThreadSessionBinding } from "./session-binding";
 import { EnvironmentReference } from "../environments/reference";
 import { conversationQueries, invalidateConversation } from "./api";
 import { useInteractiveThread } from "./transcript/run-actions";
@@ -74,6 +75,14 @@ export function ThreadEnvironmentMounts({
               control={<EnvironmentReference id={mount.environment_id} />}
             >
               <div className="order-last flex w-full flex-col items-start gap-3 pt-2">
+                {thread.data && (
+                  <ThreadSessionBinding
+                    key={`${thread.data.id}/${mount.environment_id}/${mount.session_binding ?? "default"}`}
+                    thread={thread.data}
+                    mount={mount}
+                    editable={can("run") && interactive}
+                  />
+                )}
                 {thread.data && (
                   <MountComputerPermissions
                     thread={thread.data}

@@ -818,15 +818,6 @@ fn render_field_default(
             "fn is_{function}(value: &{field_type}) -> bool {{ value == &{function}() }}\n\n"
         ));
     }
-    if option.has_field_by_name("const_string") {
-        let expected = string_field(&option, "const_string")?;
-        output.push_str(&format!(
-            "fn deserialize_{function}<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {{\n\
-             let value = String::deserialize(d)?;\n\
-             if value != {expected:?} {{ return Err(serde::de::Error::custom(\"invalid discriminator\")); }}\n\
-             Ok(value)\n}}\n\n"
-        ));
-    }
     Ok(Some(function))
 }
 
@@ -841,6 +832,35 @@ fn real_oneof_fields(descriptor: &MessageDescriptor) -> Vec<Vec<FieldDescriptor>
             (!fields.is_empty()).then_some(fields)
         })
         .collect()
+}
+
+fn render_constant_deserializer(
+    output: &mut String,
+    owner: &MessageDescriptor,
+    field: &FieldDescriptor,
+    extensions: &Extensions,
+) -> Result<Option<String>, String> {
+    let Some(option) = field_option_message(field, extensions)? else {
+        return Ok(None);
+    };
+    if !option.has_field_by_name("const_string") {
+        return Ok(None);
+    }
+    // Untagged unions choose a variant during deserialization, before EipValidate runs.
+    // Enforce constants here so variants with omitted default fields cannot match the wrong arm.
+    let expected = string_field(&option, "const_string")?;
+    let function = format!(
+        "deserialize_{}_{}",
+        owner.name().to_snake_case(),
+        field.name()
+    );
+    output.push_str(&format!(
+        "fn {function}<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {{\n\
+         let value = String::deserialize(deserializer)?;\n\
+         if value != {expected:?} {{ return Err(serde::de::Error::custom(\"invalid discriminator\")); }}\n\
+         Ok(value)\n}}\n\n"
+    ));
+    Ok(Some(function))
 }
 
 fn render_message(
@@ -902,9 +922,14 @@ fn render_message(
     }
 
     let mut default_functions = BTreeMap::new();
+    let mut constant_deserializers = BTreeMap::new();
     for field in &fields {
         if let Some(function) = render_field_default(output, descriptor, field, extensions)? {
             default_functions.insert(field.full_name().to_owned(), function);
+        }
+        if let Some(function) = render_constant_deserializer(output, descriptor, field, extensions)?
+        {
+            constant_deserializers.insert(field.full_name().to_owned(), function);
         }
     }
     let options = descriptor.options();
@@ -934,13 +959,9 @@ fn render_message(
         let required = field_option
             .as_ref()
             .is_some_and(|option| bool_field(option, "required"));
-        if field_option
-            .as_ref()
-            .is_some_and(|option| option.has_field_by_name("const_string"))
-            && let Some(function) = explicit_default
-        {
+        if let Some(function) = constant_deserializers.get(field.full_name()) {
             output.push_str(&format!(
-                "    #[serde(deserialize_with = \"deserialize_{function}\")]\n"
+                "    #[serde(deserialize_with = \"{function}\")]\n"
             ));
         }
         if required && !(field.is_list() || field.is_map()) {

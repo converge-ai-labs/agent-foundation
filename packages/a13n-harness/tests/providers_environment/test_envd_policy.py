@@ -115,6 +115,31 @@ def test_native_launch_keeps_inherited_environment(monkeypatch):
     assert environment["NATIVE_TEST_VARIABLE"] == "kept"
 
 
+def test_host_identity_excludes_rotating_values_but_preserves_legacy_digest():
+    import hashlib
+
+    from a13n_envd_client.eip.v1 import SessionConfiguration
+    from a13n_harness.environment.session_recovery import configuration_digest
+
+    def configuration(value):
+        return SessionConfiguration.model_validate(
+            {
+                "egress_mode": "controlled",
+                "egress": {
+                    "destinations": {"mode": "allowlist", "hosts": ["api.example.com"]},
+                    "secrets": [{"env": "TOKEN", "value": value, "inject_hosts": ["api.example.com"]}],
+                },
+            }
+        )
+
+    first, rotated = configuration("first-private-token"), configuration("second-private-token")
+    identity = "host-owned-canonical-selection-with-credential-reference"
+    assert configuration_digest(first, identity=identity) == configuration_digest(rotated, identity=identity)
+    assert configuration_digest(first, identity=identity) != configuration_digest(first, identity="other-selection")
+    assert configuration_digest(first) != configuration_digest(rotated)
+    assert configuration_digest(first) == hashlib.sha256(first.model_dump_json().encode()).hexdigest()
+
+
 @pytest.mark.parametrize("backend", ["boxlite", "microsandbox"])
 async def test_session_isolation_survives_host_resolution_and_changes_recovery_identity(backend):
     from a13n_harness.environment.session_recovery import configuration_digest

@@ -185,11 +185,12 @@ impl Fixture {
     }
 
     fn start_payload(&self, session: &str) -> u32 {
+        // Publish readiness only after the effect that crash tests assert has been written.
         #[cfg(unix)]
-        let script = "echo $$ > payload; printf once >> effects; exec sleep 300";
+        let script = "printf once >> effects; echo $$ > payload; exec sleep 300";
         #[cfg(windows)]
         let script =
-            "$PID | Set-Content payload; Add-Content effects once; Start-Sleep -Seconds 300";
+            "Add-Content effects once; $PID | Set-Content payload; Start-Sleep -Seconds 300";
         let response = self
             .request(
                 Some(session),

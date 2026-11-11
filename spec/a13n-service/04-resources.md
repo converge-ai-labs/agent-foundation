@@ -86,6 +86,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `execution`: sparse defaults for tool execution mode, foreground wait and steering, resolved per leaf with Thread and Run choices at acceptance ([05](05-runs.md#execution-policy)).
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
 - `default_environment_id`: an existing environment in the workspace, mutually exclusive with `default_environment_template_id`. Publication checks caller access; acceptance rechecks the execution principal. It supplies `workspace` only when a non-child thread has no primary mount and never grants access to another principal's private device.
+- `default_session_configuration`: optional initial policy for a new primary Session binding, including workspace credential references. An existing binding keeps its desired configuration. A Run's explicit Session selection replaces that selection for the Run without editing Thread defaults ([Session credentials](06-environments.md#session-credentials)). Omission preserves historical configuration serialization.
 - `lazy_environment`: defaults to `true`; `false` creates or starts all frozen mounted instances before entering Harness, while execution connections still open on first use ([06](06-environments.md#execution)). A Run may override it through `options.overrides`.
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
@@ -387,6 +388,25 @@ A template is the live configuration managed environments are created from ([06]
 A template is created enabled. `PATCH` (with `If-Match`) may change `provider_id`, `config`, `name`, `description`, `labels` and `enabled`; a disabled template refuses new environments. How template changes reach instances is [06](06-environments.md#templates-and-instances)'s.
 
 Automatically provisioned templates have null creator/updater until a user changes them ([09](09-runtime.md#workspace-provisioning)).
+
+## Egress credentials
+
+An egress credential is a workspace-owned, write-only static token for a controlled Envd Session. It is independent of provider accounts, connection authorization and the daemon transport credential. Workspace `write` manages it; workspace `run` permits execution to reference it. A stored Agent reference grants no authority. The workspace is the credential-use trust boundary; there is no per-credential ACL.
+
+```
+egress_credentials   (ecred_)
+  id  organization_id  workspace_id  name  description  allowed_hosts JSONB  value JSONB NULL
+  state  credential_version  version  created_by_id  updated_by_id  created_at  updated_at  revoked_at NULL
+  UNIQUE (workspace_id, id)
+  state IN ('active', 'revoked')
+  credential_version > 0  version > 0
+```
+
+`allowed_hosts` is a normalized, deduplicated list of 1–256 exact ASCII DNS names. IP addresses, URLs and wildcards are refused. It is immutable: changing a credential's permitted destinations requires a new resource and explicit reference changes. `value` is a token of 1–8192 UTF-8 bytes without ASCII control characters, encrypted for its exact row and column under [credential encryption](03-tenancy.md#credential-encryption). Resource reads, audit details, traces and errors never contain its plaintext, ciphertext or Envd sentinel.
+
+`POST /egress-credentials` creates an active credential at credential version 1. `GET` lists it newest-first or reads one resource. `PATCH` edits only name and description. `PUT /egress-credentials/{id}/value` replaces the encrypted value and increments `credential_version`; `POST /egress-credentials/{id}/revoke` clears the value, records `revoked_at` and increments the same counter. Both return 202 after database commit: saving a version does not prove that every existing Session has applied it. Mutations of an existing resource require its `If-Match`. Metadata edits advance only the ordinary resource version; encryption-key rewrapping does not itself rotate the upstream token. Revocation is final and retained resources are not hard-deleted.
+
+Management reads are explicitly admitted to MCP. Credential writes are excluded from management MCP and Run platform tools. Audit actions are `egress_credential.create`, `.update`, `.rotate` and `.revoke`; details contain changed field names or the credential version, never the value. Envd Session references, application evidence and lifecycle are owned by [Environments](06-environments.md).
 
 ## Connections
 

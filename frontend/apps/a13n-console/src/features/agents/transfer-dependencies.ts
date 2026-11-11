@@ -14,6 +14,7 @@ type DependencyKind =
   | "agent"
   | "environment"
   | "environment_template"
+  | "credential"
   | "web";
 export interface AgentDependency {
   path: string;
@@ -82,6 +83,28 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         default_environment_template_id: value,
       }),
     });
+  const session = config.default_session_configuration;
+  const egress = session?.egress;
+  if (egress)
+    for (const [index, reference] of (egress.secrets ?? []).entries()) {
+      refs.push({
+        path: `default_session_configuration.egress.secrets.${index}.credential_id`,
+        kind: "credential",
+        value: reference.credential_id,
+        replace: (value) => ({
+          ...config,
+          default_session_configuration: {
+            ...session,
+            egress: {
+              ...egress,
+              secrets: egress.secrets?.map((item, at) =>
+                at === index ? { ...item, credential_id: value } : item,
+              ),
+            },
+          },
+        }),
+      });
+    }
   const reviewer = config.reviewer;
   if (reviewer)
     refs.push({
@@ -283,6 +306,24 @@ export async function inspectAgentDependencies(
   const refs = agentDependencies(config);
   async function choices(kind: DependencyKind): Promise<DependencyOption[]> {
     switch (kind) {
+      case "credential": {
+        const items = await allPages((cursor) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/egress-credentials", {
+              params: { query: { cursor, limit: 100 } },
+              signal,
+            })
+            .then(data),
+        );
+        return items
+          .filter((item) => item.state === "active")
+          .map((item) => ({
+            value: item.id,
+            id: item.id,
+            label: `${item.name} · ${item.allowed_hosts.join(", ")}`,
+          }));
+      }
       case "model": {
         const api = modelApi(client, workspaceId);
         const items = await allPages((cursor) => api.models(signal, cursor));

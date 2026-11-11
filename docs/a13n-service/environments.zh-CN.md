@@ -264,6 +264,36 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 
 挂载通过 `session_binding` 选择绑定（默认 `default`），通过 `session_configuration` 初始化启动策略。使用 `GET` 或 `PUT /api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}?workspace_id=…` 查看或替换期望策略；PUT 使用 Thread ETag 和 `configuration` 对象。启动策略变化后，只有没有已接纳 Run 或未完成保留工具使用该绑定时，接纳才会替换 Session；否则返回 `environment_busy`。目录选择仍属于单个挂载。
 
+### 命令中的 HTTPS 凭据
+
+先创建工作空间的[出站凭据](resources.md#egress-credentials)，再在 Session 配置中引用其 ID。例如：
+
+```json
+{
+  "egress_mode": "controlled",
+  "egress": {
+    "destinations": { "mode": "allowlist", "hosts": ["api.github.com"] },
+    "secrets": [
+      {
+        "env": "GH_TOKEN",
+        "credential_id": "ecred_your_credential_id",
+        "inject_hosts": ["api.github.com"]
+      }
+    ]
+  }
+}
+```
+
+在 Agent 的 `default_session_configuration` 中设置这段策略，可以初始化新的主 Session 绑定；在 Thread 绑定的 `configuration` 中设置，供后续 Run 使用；在 `options.environment.session_configuration` 中设置，只对本次 Run 生效。已有 Thread 绑定优先于 Agent 默认值。Run 覆盖不会改写 Thread 的期望配置；不同配置不能同时使用同一个绑定。
+
+环境必须支持 Envd controlled egress。Service 在允许命令执行前检查当前凭据；不支持时会明确失败，不会把真实 token 放进普通环境变量。Envd 提供占位值，仅在发往指定域名的 HTTPS 请求头中替换为真实值。命令仍需按服务要求构造请求头，例如 `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`。保持 TLS 校验开启，使用环境配置的证书信任。Host 的 web 和 browser 工具不会继承这些绑定。
+
+Agent 在每次模型请求中获得当前选定的变量名、域名和使用说明，只有一份当前说明，上下文压缩不会将其移除。说明不包含真实值或占位值；仅轮换 token 时无需更改命令或说明。
+
+轮换先同步保存新值，再异步更新活跃 Session。现有 Session 持有者也会定期比较版本，默认间隔十秒，因此通知丢失后仍会补偿。受跟踪的后台任务可以在 Run 结束后继续保持同步。空闲 Session 不会为了更新凭据而被连接；它在下次 attach 时、执行命令前取得最新版本。detach 保留 Session 及其凭据，原生 close 或过期负责清理。
+
+撤销后，Service 接纳流程立即阻止新使用；活跃 Session 异步删除绑定。空闲 Session 可能保留旧值直到再次 attach 或原生清理。需要立即失效时，应同时在上游服务撤销 token。保存或撤销接口成功，不代表所有原生 Session 都已应用。
+
 ### 升级到 Session 绑定
 
 切换 schema 前，完成或取消并收尾所有使用环境挂载的已接纳 Run（包括等待中的 Run），以及全部保留的环境或 Shell 工具。仅 drain 或移交 Worker 不够。停止全部旧 Control 和 Worker，执行迁移，再仅启动新版本。迁移保留注册、provider 状态、文件和历史 Run 捕获，但不会将旧 Session 恢复提示导入新绑定头。新工作打开新 Session。升级期间不要混用新旧进程。

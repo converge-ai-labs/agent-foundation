@@ -30,6 +30,7 @@ from a13n_service.runs.environments.adapters import (
     provider_identity,
 )
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -315,6 +316,8 @@ async def delete_environment(
             environment.status = "deleted"
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
+            if environment.kind == "managed":
+                await retire_environment(session, environment.id)
             if environment.kind == "external":
                 config = await session.get(ClientSettingsRow, environment.id)
                 if config is not None:

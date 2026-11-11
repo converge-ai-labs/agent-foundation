@@ -216,6 +216,16 @@
             ],
             "title": "Default Environment Template Id"
           },
+          "default_session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution": {
             "anyOf": [
               {
@@ -431,6 +441,16 @@
               }
             ],
             "title": "Default Environment Template Id"
+          },
+          "default_session_configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "execution": {
             "anyOf": [
@@ -2088,6 +2108,17 @@
         ],
         "title": "AppToolResult",
         "type": "object"
+      },
+      "ApplicationStatus": {
+        "enum": [
+          "applied",
+          "pending",
+          "retry",
+          "on_next_use",
+          "on_create",
+          "unknown"
+        ],
+        "type": "string"
       },
       "ApprovalDecision": {
         "discriminator": {
@@ -6005,6 +6036,126 @@
         "title": "CreationProgress",
         "type": "object"
       },
+      "Credential": {
+        "properties": {
+          "allowed_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Hosts",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "credential_version": {
+            "title": "Credential Version",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by_id": {
+            "title": "Updated By Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "name",
+          "description",
+          "allowed_hosts",
+          "state",
+          "credential_version",
+          "version",
+          "created_by_id",
+          "updated_by_id",
+          "created_at",
+          "updated_at",
+          "revoked_at"
+        ],
+        "title": "Credential",
+        "type": "object"
+      },
+      "CredentialCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_hosts": {
+            "$ref": "#/components/schemas/Hosts"
+          },
+          "description": {
+            "$ref": "#/components/schemas/Description",
+            "default": ""
+          },
+          "name": {
+            "$ref": "#/components/schemas/Name"
+          },
+          "value": {
+            "$ref": "#/components/schemas/CredentialValue"
+          }
+        },
+        "required": [
+          "name",
+          "allowed_hosts",
+          "value"
+        ],
+        "title": "CredentialCreate",
+        "type": "object"
+      },
       "CredentialMode": {
         "enum": [
           "required",
@@ -6013,6 +6164,79 @@
         ],
         "title": "CredentialMode",
         "type": "string"
+      },
+      "CredentialPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Credential"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "CredentialPage",
+        "type": "object"
+      },
+      "CredentialRotation": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/CredentialValue"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "CredentialRotation",
+        "type": "object"
+      },
+      "CredentialUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Description"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Name"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "CredentialUpdate",
+        "type": "object"
+      },
+      "CredentialValue": {
+        "format": "password",
+        "type": "string",
+        "writeOnly": true
       },
       "Credentials": {
         "additionalProperties": false,
@@ -6772,6 +6996,10 @@
         "title": "DeploymentPreset",
         "type": "object"
       },
+      "Description": {
+        "maxLength": 2048,
+        "type": "string"
+      },
       "Device": {
         "properties": {
           "created_at": {
@@ -7437,6 +7665,28 @@
         "title": "DynamicSubagents",
         "type": "object"
       },
+      "EgressConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "$ref": "#/components/schemas/EgressDestinations"
+          },
+          "secrets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SecretReference"
+            },
+            "maxItems": 64,
+            "title": "Secrets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destinations"
+        ],
+        "title": "EgressConfiguration",
+        "type": "object"
+      },
       "EgressDestinations": {
         "discriminator": {
           "mapping": {
@@ -7943,58 +8193,6 @@
         "title": "EntryView",
         "type": "object"
       },
-      "EnvdEgressConfiguration": {
-        "additionalProperties": false,
-        "properties": {
-          "destinations": {
-            "$ref": "#/components/schemas/EgressDestinations"
-          },
-          "secrets": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/EnvdSecretReference"
-            },
-            "maxItems": 64,
-            "title": "Secrets",
-            "type": "array"
-          }
-        },
-        "required": [
-          "destinations"
-        ],
-        "title": "EnvdEgressConfiguration",
-        "type": "object"
-      },
-      "EnvdSecretReference": {
-        "additionalProperties": false,
-        "properties": {
-          "env": {
-            "maxLength": 128,
-            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-            "title": "Env",
-            "type": "string"
-          },
-          "inject_hosts": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 256,
-            "minItems": 1,
-            "title": "Inject Hosts",
-            "type": "array"
-          },
-          "source": {
-            "$ref": "#/components/schemas/EnvironmentCredentialSource"
-          }
-        },
-        "required": [
-          "env",
-          "source",
-          "inject_hosts"
-        ],
-        "title": "EnvdSecretReference",
-        "type": "object"
-      },
       "EnvironmentAction": {
         "description": "Exact authorization values in the locked first-party catalog.",
         "enum": [
@@ -8131,27 +8329,6 @@
         ],
         "title": "EnvironmentAction",
         "type": "string"
-      },
-      "EnvironmentCredentialSource": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "const": "environment",
-            "title": "Kind",
-            "type": "string"
-          },
-          "name": {
-            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "name"
-        ],
-        "title": "EnvironmentCredentialSource",
-        "type": "object"
       },
       "EnvironmentFailure": {
         "additionalProperties": false,
@@ -10803,6 +10980,14 @@
         ],
         "title": "HistoryPurge",
         "type": "object"
+      },
+      "Hosts": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 256,
+        "minItems": 1,
+        "type": "array"
       },
       "ImageInputPolicy": {
         "additionalProperties": false,
@@ -15691,6 +15876,11 @@
         ],
         "title": "MountView",
         "type": "object"
+      },
+      "Name": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
       },
       "NativeIsolation": {
         "additionalProperties": false,
@@ -22205,6 +22395,33 @@
         "title": "ScheduleUpdate",
         "type": "object"
       },
+      "SecretReference": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "env": {
+            "maxLength": 128,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Env",
+            "type": "string"
+          },
+          "inject_hosts": {
+            "$ref": "#/components/schemas/Hosts"
+          }
+        },
+        "required": [
+          "env",
+          "credential_id",
+          "inject_hosts"
+        ],
+        "title": "SecretReference",
+        "type": "object"
+      },
       "SelectedTrace": {
         "additionalProperties": false,
         "properties": {
@@ -22507,6 +22724,51 @@
         "title": "ServiceAccountUpdate",
         "type": "object"
       },
+      "SessionApplicationSummary": {
+        "description": "All matching binding versions, counted once each independently of page size and cursor.",
+        "properties": {
+          "applied": {
+            "minimum": 0.0,
+            "title": "Applied",
+            "type": "integer"
+          },
+          "on_create": {
+            "minimum": 0.0,
+            "title": "On Create",
+            "type": "integer"
+          },
+          "on_next_use": {
+            "minimum": 0.0,
+            "title": "On Next Use",
+            "type": "integer"
+          },
+          "pending": {
+            "minimum": 0.0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "retry": {
+            "minimum": 0.0,
+            "title": "Retry",
+            "type": "integer"
+          },
+          "unknown": {
+            "minimum": 0.0,
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "pending",
+          "retry",
+          "on_next_use",
+          "on_create",
+          "unknown"
+        ],
+        "title": "SessionApplicationSummary",
+        "type": "object"
+      },
       "SessionBindingUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -22565,7 +22827,7 @@
           "egress": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EnvdEgressConfiguration"
+                "$ref": "#/components/schemas/EgressConfiguration"
               },
               {
                 "type": "null"
@@ -22684,6 +22946,201 @@
           }
         },
         "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionCredential": {
+        "properties": {
+          "applied_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          },
+          "applied_credential_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Credential Version"
+          },
+          "applied_device_generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Device Generation"
+          },
+          "applied_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Session Id"
+          },
+          "binding_name": {
+            "title": "Binding Name",
+            "type": "string"
+          },
+          "credential_id": {
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "credential_name": {
+            "title": "Credential Name",
+            "type": "string"
+          },
+          "credential_state": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "title": "Credential State",
+            "type": "string"
+          },
+          "credential_version": {
+            "title": "Credential Version",
+            "type": "integer"
+          },
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "environment_name": {
+            "title": "Environment Name",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "execution_active": {
+            "title": "Execution Active",
+            "type": "boolean"
+          },
+          "inject_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Inject Hosts",
+            "type": "array"
+          },
+          "native_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Native Session Id"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "session_version": {
+            "title": "Session Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApplicationStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id",
+          "environment_id",
+          "environment_name",
+          "binding_name",
+          "session_version",
+          "env",
+          "credential_id",
+          "credential_name",
+          "credential_state",
+          "credential_version",
+          "inject_hosts",
+          "status",
+          "execution_active",
+          "native_session_id",
+          "applied_credential_version",
+          "applied_session_id",
+          "applied_device_generation",
+          "applied_at"
+        ],
+        "title": "SessionCredential",
+        "type": "object"
+      },
+      "SessionCredentialPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionCredential"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SessionApplicationSummary"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "summary"
+        ],
+        "title": "SessionCredentialPage",
         "type": "object"
       },
       "SessionIsolation": {
@@ -35867,6 +36324,667 @@
         "x-a13n-mcp": false
       }
     },
+    "/api/v1/egress-credentials": {
+      "get": {
+        "operationId": "list_egress_credentials",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Egress Credentials",
+        "tags": [
+          "egress credentials"
+        ],
+        "x-a13n-mcp": true
+      },
+      "post": {
+        "operationId": "create_egress_credential",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Egress Credential",
+        "tags": [
+          "egress credentials"
+        ]
+      }
+    },
+    "/api/v1/egress-credentials/{credential_id}": {
+      "get": {
+        "operationId": "get_egress_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Egress Credential",
+        "tags": [
+          "egress credentials"
+        ],
+        "x-a13n-mcp": true
+      },
+      "patch": {
+        "operationId": "update_egress_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Egress Credential",
+        "tags": [
+          "egress credentials"
+        ]
+      }
+    },
+    "/api/v1/egress-credentials/{credential_id}/revoke": {
+      "post": {
+        "operationId": "revoke_egress_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Revoke Egress Credential",
+        "tags": [
+          "egress credentials"
+        ]
+      }
+    },
+    "/api/v1/egress-credentials/{credential_id}/sessions": {
+      "get": {
+        "operationId": "list_credential_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCredentialPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Credential Sessions",
+        "tags": [
+          "egress credentials"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/egress-credentials/{credential_id}/sync": {
+      "post": {
+        "operationId": "sync_egress_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Sync Egress Credential",
+        "tags": [
+          "egress credentials"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/egress-credentials/{credential_id}/value": {
+      "put": {
+        "operationId": "rotate_egress_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialRotation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Rotate Egress Credential",
+        "tags": [
+          "egress credentials"
+        ]
+      }
+    },
     "/api/v1/environment-provider-options/vercel": {
       "post": {
         "description": "List accessible teams, or projects in a selected team, using an unsaved credential.",
@@ -37399,6 +38517,101 @@
         "summary": "Get Environment Creation",
         "tags": [
           "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/credential-sessions": {
+      "get": {
+        "operationId": "list_environment_credential_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCredentialPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Environment Credential Sessions",
+        "tags": [
+          "egress credentials"
         ],
         "x-a13n-mcp": true
       }

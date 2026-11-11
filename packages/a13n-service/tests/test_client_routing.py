@@ -73,10 +73,11 @@ async def test_immediate_results_are_not_lost_and_calls_are_not_repeated(redis_u
 
 async def test_lost_reply_has_unknown_outcome_without_replaying(redis_url):
     worker = Routing(RedisSettings(url=SecretStr(redis_url)), ClientEnvironments())
-    call = request(seconds=0.3)
     try:
         async with worker.redis.pubsub() as sink:
-            await asyncio.wait_for(subscribe(sink, request_channel(call.environment_id)), 3)
+            await asyncio.wait_for(subscribe(sink, request_channel("env_client")), 3)
+            # Start the request budget after the observer is ready, using the normal fixture deadline.
+            call = request()
             with pytest.raises(EnvironmentError) as failed:
                 await worker.call(call)
             assert failed.value.details.get("dispatch_stage") != "pre_dispatch"

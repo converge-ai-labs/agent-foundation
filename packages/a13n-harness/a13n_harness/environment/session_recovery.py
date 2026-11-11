@@ -128,6 +128,7 @@ class EnvdSessionRecovery:
         required_methods: frozenset[str],
         expected_boundary: EnvdBoundaryRequirement | None,
         original_session_id: str | None = None,
+        configuration_identity: str | None = None,
     ) -> AsyncIterator[EIPSession]:
         replacement = None
         async with self._lock:
@@ -136,7 +137,7 @@ class EnvdSessionRecovery:
             self._check_original(original_session_id)
             if original_session_id is None:
                 configuration = await resolve_configuration(configuration)
-                digest = configuration_digest(configuration)
+                digest = configuration_digest(configuration, identity=configuration_identity)
             else:
                 # Exact recovery uses the original worker's immutable startup inputs.
                 # Its current secret sources need not still exist, and cannot reconfigure it.
@@ -198,6 +199,8 @@ class EnvdSessionRecovery:
                         await self._release()
                 raise
             self._users += 1
+        # Resolved values are startup inputs, not state retained for the borrower's lifetime.
+        del configuration
         try:
             if replacement is not None and (notify := _SESSION_REPLACEMENT_NOTIFIER.get()) is not None:
                 try:
@@ -290,6 +293,12 @@ class EnvdSessionRecovery:
         self.state = state
 
 
-def configuration_digest(configuration: SessionConfiguration) -> str:
-    """Persist compatibility evidence, never resolved credential values."""
-    return hashlib.sha256(configuration.model_dump_json().encode()).hexdigest()
+def configuration_digest(configuration: SessionConfiguration, *, identity: str | None = None) -> str:
+    """Hash the Host's nonsecret selection, or retain legacy resolved-configuration identity.
+
+    A Host supplying identity must include every startup option and credential reference,
+    but exclude credential values and their rotation versions. It owns synchronizing live
+    credentials before exposing a recovered Session; borrowing alone never changes them.
+    """
+    value = configuration.model_dump_json() if identity is None else identity
+    return hashlib.sha256(value.encode()).hexdigest()

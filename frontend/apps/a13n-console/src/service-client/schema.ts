@@ -1325,6 +1325,110 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/egress-credentials": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Egress Credentials */
+    get: operations["list_egress_credentials"];
+    put?: never;
+    /** Create Egress Credential */
+    post: operations["create_egress_credential"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/egress-credentials/{credential_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Egress Credential */
+    get: operations["get_egress_credential"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Egress Credential */
+    patch: operations["update_egress_credential"];
+    trace?: never;
+  };
+  "/api/v1/egress-credentials/{credential_id}/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Egress Credential */
+    post: operations["revoke_egress_credential"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/egress-credentials/{credential_id}/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Credential Sessions */
+    get: operations["list_credential_sessions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/egress-credentials/{credential_id}/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Sync Egress Credential */
+    post: operations["sync_egress_credential"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/egress-credentials/{credential_id}/value": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Rotate Egress Credential */
+    put: operations["rotate_egress_credential"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-provider-options/vercel": {
     parameters: {
       query?: never;
@@ -1524,6 +1628,23 @@ export interface paths {
     };
     /** Get Environment Creation */
     get: operations["get_environment_creation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/credential-sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Environment Credential Sessions */
+    get: operations["list_environment_credential_sessions"];
     put?: never;
     post?: never;
     delete?: never;
@@ -5206,6 +5327,8 @@ export interface components {
       default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      default_session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
@@ -5287,6 +5410,8 @@ export interface components {
       default_environment_id?: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      default_session_configuration?:
+        components["schemas"]["SessionConfiguration"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
@@ -5803,6 +5928,9 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
     };
+    /** @enum {string} */
+    ApplicationStatus:
+      "applied" | "pending" | "retry" | "on_next_use" | "on_create" | "unknown";
     ApprovalDecision:
       components["schemas"]["Approve"] | components["schemas"]["Deny"];
     /** Approve */
@@ -7207,11 +7335,77 @@ export interface components {
        */
       started_at: string;
     };
+    /** Credential */
+    Credential: {
+      /** Allowed Hosts */
+      allowed_hosts: string[];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Credential Version */
+      credential_version: number;
+      /** Description */
+      description: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Revoked At */
+      revoked_at: string | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "active" | "revoked";
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Updated By Id */
+      updated_by_id: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** CredentialCreate */
+    CredentialCreate: {
+      allowed_hosts: components["schemas"]["Hosts"];
+      /** @default  */
+      description?: components["schemas"]["Description"];
+      name: components["schemas"]["Name"];
+      value: components["schemas"]["CredentialValue"];
+    };
     /**
      * CredentialMode
      * @enum {string}
      */
     CredentialMode: "required" | "optional" | "forbidden";
+    /** CredentialPage */
+    CredentialPage: {
+      /** Items */
+      items: components["schemas"]["Credential"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** CredentialRotation */
+    CredentialRotation: {
+      value: components["schemas"]["CredentialValue"];
+    };
+    /** CredentialUpdate */
+    CredentialUpdate: {
+      description?: components["schemas"]["Description"] | null;
+      name?: components["schemas"]["Name"] | null;
+    };
+    /** Format: password */
+    CredentialValue: string;
     /** Credentials */
     Credentials: {
       /** Headers */
@@ -7487,6 +7681,7 @@ export interface components {
       /** Revision */
       revision: string;
     };
+    Description: string;
     /** Device */
     Device: {
       /**
@@ -7702,6 +7897,15 @@ export interface components {
        */
       enabled?: boolean;
     };
+    /** EgressConfiguration */
+    EgressConfiguration: {
+      destinations: components["schemas"]["EgressDestinations"];
+      /**
+       * Secrets
+       * @default []
+       */
+      secrets?: components["schemas"]["SecretReference"][];
+    };
     EgressDestinations:
       | components["schemas"]["PublicDestinations"]
       | components["schemas"]["AllowlistDestinations"];
@@ -7852,23 +8056,6 @@ export interface components {
       /** Thread Id */
       thread_id: string;
     };
-    /** EnvdEgressConfiguration */
-    EnvdEgressConfiguration: {
-      destinations: components["schemas"]["EgressDestinations"];
-      /**
-       * Secrets
-       * @default []
-       */
-      secrets?: components["schemas"]["EnvdSecretReference"][];
-    };
-    /** EnvdSecretReference */
-    EnvdSecretReference: {
-      /** Env */
-      env: string;
-      /** Inject Hosts */
-      inject_hosts: string[];
-      source: components["schemas"]["EnvironmentCredentialSource"];
-    };
     /**
      * EnvironmentAction
      * @description Exact authorization values in the locked first-party catalog.
@@ -8005,16 +8192,6 @@ export interface components {
       | "environment.computer.atspi_text_selection_remove"
       | "environment.computer.atspi_text_selection_set"
       | "environment.computer.atspi_value_set";
-    /** EnvironmentCredentialSource */
-    EnvironmentCredentialSource: {
-      /**
-       * Kind
-       * @constant
-       */
-      kind: "environment";
-      /** Name */
-      name: string;
-    };
     /**
      * EnvironmentFailure
      * @description The last error of the outstanding operation or, on a ready instance, of its last renewal.
@@ -9122,6 +9299,7 @@ export interface components {
       /** Purged */
       purged: number;
     };
+    Hosts: string[];
     /**
      * ImageInputPolicy
      * @description Preparation limits for one model's image input, not native ModelSettings.
@@ -10758,6 +10936,7 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
+    Name: string;
     /** NativeIsolation */
     NativeIsolation: {
       /**
@@ -12944,6 +13123,14 @@ export interface components {
       schedule?: components["schemas"]["ScheduleRule"] | null;
       target?: components["schemas"]["ScheduleTarget"] | null;
     };
+    /** SecretReference */
+    SecretReference: {
+      /** Credential Id */
+      credential_id: string;
+      /** Env */
+      env: string;
+      inject_hosts: components["schemas"]["Hosts"];
+    };
     /** SelectedTrace */
     SelectedTrace: {
       /** Run Id */
@@ -13038,6 +13225,24 @@ export interface components {
       /** Status */
       status?: ("active" | "disabled") | null;
     };
+    /**
+     * SessionApplicationSummary
+     * @description All matching binding versions, counted once each independently of page size and cursor.
+     */
+    SessionApplicationSummary: {
+      /** Applied */
+      applied: number;
+      /** On Create */
+      on_create: number;
+      /** On Next Use */
+      on_next_use: number;
+      /** Pending */
+      pending: number;
+      /** Retry */
+      retry: number;
+      /** Unknown */
+      unknown: number;
+    };
     /** SessionBindingUpdate */
     SessionBindingUpdate: {
       configuration: components["schemas"]["SessionConfiguration"];
@@ -13059,7 +13264,7 @@ export interface components {
     SessionConfiguration: {
       /** Commands */
       commands?: boolean | null;
-      egress?: components["schemas"]["EnvdEgressConfiguration"] | null;
+      egress?: components["schemas"]["EgressConfiguration"] | null;
       egress_mode?: components["schemas"]["EgressMode"] | null;
       isolation?: components["schemas"]["SessionIsolation"] | null;
       lifecycle?: components["schemas"]["SessionLifecyclePolicy"] | null;
@@ -13082,6 +13287,59 @@ export interface components {
       origin?: components["schemas"]["SessionOrigin"] | null;
       /** Title */
       title?: string | null;
+    };
+    /** SessionCredential */
+    SessionCredential: {
+      /** Applied At */
+      applied_at: string | null;
+      /** Applied Credential Version */
+      applied_credential_version: number | null;
+      /** Applied Device Generation */
+      applied_device_generation: string | null;
+      /** Applied Session Id */
+      applied_session_id: string | null;
+      /** Binding Name */
+      binding_name: string;
+      /** Credential Id */
+      credential_id: string;
+      /** Credential Name */
+      credential_name: string;
+      /**
+       * Credential State
+       * @enum {string}
+       */
+      credential_state: "active" | "revoked";
+      /** Credential Version */
+      credential_version: number;
+      /** Env */
+      env: string;
+      /** Environment Id */
+      environment_id: string;
+      /** Environment Name */
+      environment_name: string;
+      /** Error Code */
+      error_code?: string | null;
+      /** Execution Active */
+      execution_active: boolean;
+      /** Inject Hosts */
+      inject_hosts: string[];
+      /** Native Session Id */
+      native_session_id: string | null;
+      /** Retry At */
+      retry_at?: string | null;
+      /** Session Version */
+      session_version: number;
+      status: components["schemas"]["ApplicationStatus"];
+      /** Thread Id */
+      thread_id: string;
+    };
+    /** SessionCredentialPage */
+    SessionCredentialPage: {
+      /** Items */
+      items: components["schemas"]["SessionCredential"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      summary: components["schemas"]["SessionApplicationSummary"];
     };
     SessionIsolation:
       | components["schemas"]["NativeIsolation"]
@@ -17781,6 +18039,242 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_egress_credentials: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CredentialPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CredentialCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CredentialUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  revoke_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_credential_sessions: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionCredentialPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  sync_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  rotate_egress_credential: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        credential_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CredentialRotation"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Credential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   vercel_provider_options: {
     parameters: {
       query?: never;
@@ -18323,6 +18817,36 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["CreationProgress"] | null;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_environment_credential_sessions: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionCredentialPage"];
         };
       };
       400: components["responses"]["Error"];

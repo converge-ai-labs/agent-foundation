@@ -9,6 +9,8 @@ import { OptionsRefresh } from "../../shared/forms/options-refresh";
 import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
+import type { AgentConfig } from "./configuration";
+import { AgentSessionConfiguration } from "./session-configuration";
 
 export function AgentEnvironment({
   value,
@@ -17,6 +19,9 @@ export function AgentEnvironment({
   onEnvironmentChange,
   disabled,
   readOnly = false,
+  sessionConfiguration,
+  onSessionConfigurationChange,
+  sessionInvalid = false,
 }: {
   value: string | null;
   environmentId: string | null;
@@ -24,6 +29,11 @@ export function AgentEnvironment({
   onChange: (value: string | null) => void;
   disabled: boolean;
   readOnly?: boolean;
+  sessionConfiguration: AgentConfig["default_session_configuration"];
+  onSessionConfigurationChange: (
+    value: AgentConfig["default_session_configuration"],
+  ) => void;
+  sessionInvalid?: boolean;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -144,6 +154,12 @@ export function AgentEnvironment({
         retry={() => void providers.refetch()}
       />
       <ErrorNotice error={types.error} retry={() => void types.refetch()} />
+      <AgentSessionConfiguration
+        value={sessionConfiguration}
+        onChange={onSessionConfigurationChange}
+        readOnly={readOnly || disabled}
+        invalid={sessionInvalid}
+      />
     </Section>
   );
 }
