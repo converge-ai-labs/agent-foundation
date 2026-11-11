@@ -187,6 +187,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows Bot once in the upper chat shortcuts without a second profile-menu entry", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  window.history.replaceState(null, "", "/new");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (new URL(request.url).pathname === "/api/status") return json(status);
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const sidebar = within(
+    await screen.findByRole("complementary", { name: "Workbench navigation" }),
+  );
+  const shortcuts = sidebar.getByRole("navigation", { name: "Chat shortcuts" });
+  expect(sidebar.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
+  expect(
+    within(shortcuts).getByRole("link", { name: "Bot" }).getAttribute("href"),
+  ).toBe("/bot");
+});
+
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");
@@ -260,6 +281,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   });
   render(<BrowserApp />);
   await screen.findByText("Global-only memory");
+  expect(screen.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
   expect(
     screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
   ).toBe("true");
