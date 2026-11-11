@@ -48,7 +48,9 @@ class BotSnapshot(SurfaceModel):
     messages: tuple[BotMessage, ...] = ()
 
 
-_HEARTBEAT = """Host heartbeat: list Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
+_HEARTBEAT = """Host heartbeat: read HEARTBEAT.md in your working directory if it exists and follow its current checklist.
+Create or update HEARTBEAT.md as useful to manage future checks.
+List Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
 Check known working Threads before creating anything. Follow up through existing collaboration tools only when useful and authorized.
 Create or update any working Thread slot as appropriate; clear handled follow-ups, or retain concise next steps.
 Notes and Thread completion do not wake you; use this legitimate input opportunity.
