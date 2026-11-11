@@ -119,7 +119,7 @@ it("lets a managed desktop select outbound WebSocket", async () => {
   await user.click(
     screen.getByRole("combobox", { name: "Execution connection" }),
   );
-  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  await user.click(await screen.findByRole("option", { name: "Envd ws" }));
   expect(configuration()).toMatchObject({
     execution: "envd_ws",
     desktop: true,
@@ -133,7 +133,7 @@ it("selects direct headless preparation without enabling desktop and preserves s
   await user.click(
     screen.getByRole("combobox", { name: "Execution connection" }),
   );
-  await user.click(screen.getByRole("option", { name: "Envd HTTP" }));
+  await user.click(await screen.findByRole("option", { name: "Envd HTTP" }));
   expect(configuration()).toMatchObject({
     execution: "envd_http",
     snapshot: "auto",
@@ -197,7 +197,7 @@ it("preserves explicit managed ownership when changing only the Envd transport",
   await user.click(
     screen.getByRole("combobox", { name: "Execution connection" }),
   );
-  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  await user.click(await screen.findByRole("option", { name: "Envd ws" }));
   expect(configuration()).toMatchObject({
     execution: "envd_ws",
     snapshot: "snap-team",
