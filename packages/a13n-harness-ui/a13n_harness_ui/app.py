@@ -2177,6 +2177,12 @@ class HarnessUiApp:
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
     async def _maintain_read_models(self) -> None:
+        try:
+            await self._store.repair_usage_models()
+        except Exception as exc:
+            get_logger(__name__).warning(
+                "Historical usage model lookup failed", extra={"error_type": type(exc).__name__}
+            )
         while True:
             try:
                 repaired = await self._store.repair_read_models()

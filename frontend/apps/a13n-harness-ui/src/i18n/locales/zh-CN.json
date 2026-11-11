@@ -1115,6 +1115,7 @@
   "Output": "输出",
   "Token breakdown": "token 明细",
   "{{count, number}} requests_other": "{{count, number}} 次请求",
+  "Reported models": "响应报告的模型",
   "By model": "按模型",
   "Older records don't show which models were used here.": "较早的记录没有显示这里使用了哪些模型。",
   "Other models": "其他模型",

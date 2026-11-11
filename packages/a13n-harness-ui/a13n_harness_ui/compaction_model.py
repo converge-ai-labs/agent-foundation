@@ -10,8 +10,8 @@ from a13n_harness.compaction import CompactionInput, CompactionOperation, Compac
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.metering import MeteredModel, ModelUsageBinding
 from a13n_harness.model_calls import ModelCall
-from a13n_harness.pricing import CatalogModelCostCapability, PricingCatalog
 from a13n_harness.request_budget import RequestBudget
+from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.usage import (
     TOKEN_COUNTERS,
     ModelUsageRecord,
@@ -87,11 +87,11 @@ class CompactionRun(CompactionOperator):
     """Bind detached requests at Run admission, never borrowing an AgentContext."""
 
     def __init__(
-        self, owner: BackgroundCompaction, resolver: HarnessUiModelResolver, catalog: PricingCatalog | None
+        self, owner: BackgroundCompaction, resolver: HarnessUiModelResolver, pricing: TokenPricingCapability
     ) -> None:
         self.owner = owner
         self._resolver = resolver
-        self._cost = CatalogModelCostCapability(catalog=catalog)
+        self._cost = pricing
         self._scope: tuple[AgentInstanceContext, ThreadUsageReporter, CompactionBudget] | None = None
 
     async def prepare(
