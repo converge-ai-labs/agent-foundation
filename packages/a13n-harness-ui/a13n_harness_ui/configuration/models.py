@@ -255,7 +255,6 @@ class BotConfiguration(ConfigurationModel):
     heartbeat_enabled: bool = True
     interval_seconds: int = Field(default=3600, ge=60, le=86400)
     connector_interval_seconds: int = Field(default=60, ge=1, le=86400)
-    run_timeout_seconds: int = Field(default=180, ge=10, le=3600)
 
 
 class WebUiConfiguration(ConfigurationModel):
@@ -675,6 +674,7 @@ class McpCommandTransport(StrictModel):
 
 class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
+    init_timeout_seconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     headers: dict[str, McpValueSource] = Field(default_factory=dict)
 
     @model_validator(mode="after")

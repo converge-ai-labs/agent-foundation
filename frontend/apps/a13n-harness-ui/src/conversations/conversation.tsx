@@ -13,7 +13,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router";
+import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
@@ -80,6 +87,14 @@ export function ConversationPage(props: {
   unauthorized: () => void;
 }) {
   const { threadId = "" } = useParams();
+  const location = useLocation();
+  if (threadId === BOT_THREAD_ID)
+    return (
+      <Navigate
+        to={{ pathname: "/bot", search: location.search, hash: location.hash }}
+        replace
+      />
+    );
   return <Conversation key={threadId} threadId={threadId} {...props} />;
 }
 export function Conversation(
@@ -122,11 +137,9 @@ function ConversationContent({
   const guest = useGuestAccess();
   const mcpInputs = useMcpInputRequests(threadId, !guest && !!detail.data);
   const readOnly = !!detail.data?.thread.memory_scope;
-  const botActivity = threadId === "thread_bot";
+  const isBot = threadId === BOT_THREAD_ID;
   const canCompose =
-    !botActivity &&
-    !readOnly &&
-    (!guest || guest.grant.permission === "prompt");
+    !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
   const owner = useQuery({
@@ -202,7 +215,7 @@ function ConversationContent({
     // Saved body readiness is independent of live replay and editor sync.
     // The composer retains its own connection/control guards before sending.
   );
-  const rename = !botActivity && !guest && !readOnly && dialog === "rename";
+  const rename = !isBot && !guest && !readOnly && dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
@@ -289,6 +302,8 @@ function ConversationContent({
   const reconcile = useCallback(() => {
     refreshThread(queries, threadId, "reconcile");
     refreshActivity(queries, transport, threadId);
+    if (threadId === BOT_THREAD_ID)
+      void queries.invalidateQueries({ queryKey: ["bot"] });
   }, [queries, transport, threadId]);
   const decisions = useDecisionPlacement(
     detail.data?.deferred_requests?.length ? (
@@ -750,7 +765,7 @@ function ConversationContent({
       continuationId={detail.data?.continuation_id}
       completedContinuationId={thread?.completion?.continuation_id}
       retry={
-        botActivity || guest || readOnly || thread?.archived
+        isBot || guest || readOnly || thread?.archived
           ? undefined
           : () => {
               void submitContinuation(
@@ -883,7 +898,11 @@ function ConversationContent({
                 </Button>
               )}
               {publication ? (
-                publication.messages
+                <>
+                  {publication.messages}
+                  {decisions.slot}
+                  {decisions.portal}
+                </>
               ) : (
                 <>
                   <PauseConversationFollowing value={interruptScroll}>
@@ -894,7 +913,7 @@ function ConversationContent({
                       continuation={continuation}
                       enabled={
                         !!thread &&
-                        !botActivity &&
+                        !isBot &&
                         !guest &&
                         thread.role === "ordinary" &&
                         !thread.parent_thread_id &&
@@ -1089,11 +1108,6 @@ function ConversationContent({
         {(!canCompose || thread?.archived) && feedback && (
           <div className={styles.conversationFeedback}>{feedback}</div>
         )}
-        {botActivity && !publication && (
-          <Link to="/bot" className={styles.conversationFeedback}>
-            {t("Message Bot")}
-          </Link>
-        )}
         {publication && !detail.data && (
           <div className={styles.conversationFeedback}>
             {publication.status}
@@ -1202,7 +1216,7 @@ function ConversationContent({
             {t("View-only link - Following this chat live.")}
           </p>
         )}
-        {!guest && !readOnly && !botActivity && (
+        {!guest && !readOnly && !isBot && (
           <SharePanel
             open={dialog === "share"}
             onClose={closeDialog}
@@ -1274,7 +1288,7 @@ function ConversationContent({
             reconcile={reconcile}
             management={
               <div className={styles.detailActions}>
-                {!botActivity && !readOnly && thread && (
+                {!isBot && !readOnly && thread && (
                   <CoordinatorSettings
                     thread={thread}
                     pending={!!detail.data?.deferred_requests?.length}

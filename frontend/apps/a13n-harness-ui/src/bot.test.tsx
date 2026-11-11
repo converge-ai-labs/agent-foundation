@@ -8,11 +8,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Link, MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BotComposerProvider, BotPage, BOT_THREAD_ID } from "./bot";
-import { Conversation } from "./conversations/conversation";
-import { ShareButton } from "./sharing";
+import { BotActions, BotComposerProvider, BotPage, BOT_THREAD_ID } from "./bot";
+import { ConversationPage } from "./conversations/conversation";
+import type { DecisionResponse } from "./conversations/decision-inputs";
 import { createTransport, type Schema } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
@@ -34,6 +34,7 @@ vi.mock("./conversations/live-threads", async () => {
 const tracker = vi.hoisted(() => ({
   follow: vi.fn(async () => {}),
   followVersion: vi.fn(async () => {}),
+  beforeRun: vi.fn(async () => {}),
   acknowledge: vi.fn(async () => {}),
   invalidate: vi.fn(),
 }));
@@ -47,6 +48,14 @@ vi.mock("./conversations/results", () => ({
 
 let snapshot: Schema<"BotSnapshot">;
 let requests: Schema<"BotSubmit">[];
+let decisionResponses: DecisionResponse[];
+const approval: Schema<"ApprovalRequestView"> = {
+  kind: "approval",
+  request_id: "approval-one",
+  tool_name: "create_project",
+  arguments: { name: "Reviewed project" },
+  override_allowed: false,
+};
 let reject: boolean;
 let rootSource: string;
 let configurationWrites: string[];
@@ -92,6 +101,7 @@ beforeEach(() => {
     inputs: [],
   };
   requests = [];
+  decisionResponses = [];
   rootSource =
     '# Keep this comment\nschema_version: "1"\ndefaults: {agent: agent-assistant}\nwebui:\n  bot: {enabled: false}\n';
   configurationWrites = [];
@@ -110,7 +120,7 @@ beforeEach(() => {
         if (reject) throw new TypeError("Offline");
         return Response.json({
           input_id: requests.at(-1)!.input_id,
-          state: "queued",
+          state: "admitted",
         });
       }
       if (path === "/api/bot/pause") {
@@ -130,9 +140,23 @@ beforeEach(() => {
             },
             ...snapshot.thread,
           },
+          continuation_id: "bot-continuation",
           available_actions: [],
-          deferred_requests: [],
+          deferred_requests: snapshot.pending_decision ? [approval] : [],
         });
+      if (path === `/api/threads/${BOT_THREAD_ID}/decisions`) {
+        if (request.method === "POST") {
+          const body = await request.json();
+          expect(body.expected_continuation_id).toBe("bot-continuation");
+          decisionResponses.push(...body.responses);
+          snapshot = { ...snapshot, pending_decision: false };
+          return Response.json({ receipt_id: "receipt-decision" });
+        }
+        return Response.json({
+          continuation_id: "bot-continuation",
+          requests: [approval],
+        });
+      }
       if (path === "/api/selectors")
         return Response.json({
           agents: [
@@ -196,7 +220,16 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function mount(initial = "/bot") {
+function CurrentLocation() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
+  );
+}
+function mount(initial = "/bot", withActions = false) {
   return render(
     <TransportContext value={transport}>
       <QueryClientProvider client={queries}>
@@ -206,24 +239,24 @@ function mount(initial = "/bot") {
               <BotComposerProvider>
                 <Link to="/elsewhere">Leave</Link>
                 <Link to="/bot">Return</Link>
+                <CurrentLocation />
                 <Routes>
                   <Route
                     path="/bot"
                     element={
-                      <BotPage profile={profile} unauthorized={() => {}} />
+                      <>
+                        {withActions && <BotActions />}
+                        <BotPage profile={profile} unauthorized={() => {}} />
+                      </>
                     }
                   />
                   <Route
-                    path={`/threads/${BOT_THREAD_ID}`}
+                    path="/threads/:threadId"
                     element={
-                      <>
-                        <ShareButton />
-                        <Conversation
-                          threadId={BOT_THREAD_ID}
-                          profile={profile}
-                          unauthorized={() => {}}
-                        />
-                      </>
+                      <ConversationPage
+                        profile={profile}
+                        unauthorized={() => {}}
+                      />
                     }
                   />
                   <Route path="/elsewhere" element={<p>Elsewhere</p>} />
@@ -238,7 +271,7 @@ function mount(initial = "/bot") {
 }
 it("registers the lazy root's zero baseline before its first admission and clears accepted input", async () => {
   mount();
-  await screen.findByText("Heartbeat every 60 minutes");
+  await screen.findByText("Ready when you are");
   typeMessage("Track this");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
@@ -248,7 +281,7 @@ it("registers the lazy root's zero baseline before its first admission and clear
   );
   await waitFor(() => expect(draft.doc.getText("text").toString()).toBe(""));
 });
-it("queues human input while busy or paused without using Thread run or steer", async () => {
+it("submits human input while busy or paused through Bot admission only", async () => {
   snapshot = {
     ...snapshot,
     state: { activated: true, paused: true },
@@ -263,7 +296,7 @@ it("queues human input while busy or paused without using Thread run or steer", 
   };
   mount();
   await screen.findByText("Automation paused · You can still chat");
-  typeMessage("Queue this work");
+  typeMessage("Change direction now");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
   const paths = vi
@@ -275,7 +308,7 @@ it("queues human input while busy or paused without using Thread run or steer", 
 it("retains drafts and uncertain exact commands across navigation without automatic retry", async () => {
   reject = true;
   mount();
-  await screen.findByText("Heartbeat every 60 minutes");
+  await screen.findByText("Ready when you are");
   typeMessage("Do once");
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
@@ -351,14 +384,16 @@ it("acknowledges the rendered completion, preserves a scrolled-up reader, and ex
   };
   await act(async () => {
     queries.setQueryData(["bot"], snapshot);
+    await queries.invalidateQueries({
+      queryKey: ["thread", BOT_THREAD_ID, "detail"],
+    });
   });
   expect(reader.scrollTop).toBe(100);
   expect(tracker.acknowledge).not.toHaveBeenCalled();
   expect(
-    (
-      await screen.findByRole("link", { name: "Open Activity to respond" })
-    ).getAttribute("href"),
-  ).toBe(`/threads/${BOT_THREAD_ID}`);
+    await screen.findByRole("region", { name: "Pending decisions" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Activity" })).toBeNull();
   expect(
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
@@ -401,7 +436,7 @@ webui:
     enabled: false
     instructions: Original
     interval_seconds: 3600
-    run_timeout_seconds: 180
+    connector_interval_seconds: 180
 `;
     mount();
     const enable = await screen.findByRole("button", { name: "Turn on Bot" });
@@ -419,8 +454,8 @@ webui:
         "interval_seconds: 7200 # Latest interval",
       )
       .replace(
-        "run_timeout_seconds: 180",
-        "run_timeout_seconds: 600 # Latest timeout",
+        "connector_interval_seconds: 180",
+        "connector_interval_seconds: 600 # Latest delivery interval",
       );
     fireEvent.click(enable);
     await screen.findByRole("button", { name: "Send" });
@@ -431,10 +466,12 @@ webui:
       editInstructions ? "Track release progress" : "Changed elsewhere",
     );
     expect(saved.getIn(["webui", "bot", "interval_seconds"])).toBe(7200);
-    expect(saved.getIn(["webui", "bot", "run_timeout_seconds"])).toBe(600);
+    expect(saved.getIn(["webui", "bot", "connector_interval_seconds"])).toBe(
+      600,
+    );
     expect(configurationWrites[0]).toContain("# Keep this comment");
     expect(configurationWrites[0]).toContain("# Latest interval");
-    expect(configurationWrites[0]).toContain("# Latest timeout");
+    expect(configurationWrites[0]).toContain("# Latest delivery interval");
     expect(requests).toHaveLength(0);
   },
 );
@@ -637,7 +674,7 @@ it("preserves a newer Settings draft when setup publication finishes after route
   );
 });
 
-it("offers Settings recovery for unavailable processing and explains queued busy chat", async () => {
+it("offers Settings recovery and keeps busy chat available without queue warnings", async () => {
   snapshot.available = false;
   snapshot.model_id = null;
   mount();
@@ -656,22 +693,40 @@ it("offers Settings recovery for unavailable processing and explains queued busy
         source: "user",
         text: "existing",
         created_at: "2026-11-11T00:00:00Z",
-        state: "queued",
+        state: "admitted",
       },
     ],
   };
   await act(async () => {
     queries.setQueryData(["bot"], snapshot);
   });
+  expect(await screen.findByText("Working…")).toBeTruthy();
+  expect(screen.queryByText(/will be queued/)).toBeNull();
+  expect(screen.queryByRole("link", { name: "Model" })).toBeNull();
+  typeMessage("Change direction now");
   expect(
-    await screen.findByText(
-      "Messages sent while Bot is working will be queued.",
-    ),
-  ).toBeTruthy();
+    screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+  ).toBe(false);
 });
 
-it("excludes sharing from Bot Activity, including a direct share-dialog URL", async () => {
-  mount(`/threads/${BOT_THREAD_ID}?dialog=share`);
+it("redirects the reserved Thread URL to Bot chat without exposing execution history or sharing", async () => {
+  snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+  snapshot.messages = [
+    {
+      message_id: "result",
+      role: "assistant",
+      text: "Published result",
+      created_at: "2026-11-11T00:00:00Z",
+    },
+  ];
+  mount(`/threads/${BOT_THREAD_ID}?dialog=share&native=files`, true);
+  await screen.findByText("Published result");
+  expect(screen.getByTestId("location").textContent).toBe(
+    "/bot?dialog=share&native=files",
+  );
+  expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Bot settings" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Activity" })).toBeNull();
   await waitFor(() =>
     expect(
       vi
@@ -691,6 +746,45 @@ it("excludes sharing from Bot Activity, including a direct share-dialog URL", as
       .mock.calls.some(
         ([request]) =>
           new URL((request as Request).url).pathname === "/api/shares",
+      ),
+  ).toBe(false);
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([request]) =>
+        new URL((request as Request).url).pathname.endsWith("/transcript"),
+      ),
+  ).toBe(false);
+});
+
+it("answers Bot decisions inside chat and refreshes the composer without a Thread run", async () => {
+  snapshot = {
+    ...snapshot,
+    pending_decision: true,
+    thread: { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">,
+  };
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Approve once" }));
+  await waitFor(() =>
+    expect(decisionResponses).toEqual([
+      { kind: "approval", request_id: "approval-one", approved: true },
+    ]),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("region", { name: "Pending decisions" }),
+    ).toBeNull(),
+  );
+  typeMessage("Continue the work");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].text).toBe("Continue the work");
+  expect(screen.getByTestId("location").textContent).toBe("/bot");
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([request]) =>
+        /\/(run|steer)$/.test(new URL((request as Request).url).pathname),
       ),
   ).toBe(false);
 });

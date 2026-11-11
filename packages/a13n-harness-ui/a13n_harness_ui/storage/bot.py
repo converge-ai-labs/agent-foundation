@@ -26,6 +26,11 @@ class BotRepository:
             else:
                 row.payload = state.model_dump_json()
 
+    async def get_input(self, input_id: str) -> BotInput | None:
+        async with short_session(self._sessions) as session:
+            row = await session.get(BotInputRecord, input_id)
+            return BotInput.model_validate_json(row.payload) if row is not None else None
+
     async def retain(self, item: BotInput) -> BotInput:
         async with transaction(self._sessions) as session:
             row = await session.get(BotInputRecord, item.input_id)
@@ -82,12 +87,12 @@ class BotRepository:
             return True
 
     async def has_visible_result(self, *, direct_reply: bool = False) -> bool:
-        """Only direct replies or intentional publications advance Bot's result marker."""
+        """Final text or intentional publications advance Bot's result marker, regardless of input source."""
+        if direct_reply:
+            return True
         current = tuple(
             item for item in await self.inputs(pending_only=True) if item.state in {"dispatching", "admitted"}
         )
-        if direct_reply and any(item.source == "user" for item in current):
-            return True
         identities = {item.input_id for item in current}
         return any(message.role == "assistant" and message.input_id in identities for message in await self.messages())
 

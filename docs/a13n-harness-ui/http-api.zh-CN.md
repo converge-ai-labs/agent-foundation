@@ -265,10 +265,10 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 | 方法与路径             | 请求体                                                                 | 结果                                                                   |
 | ---------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `GET /api/bot`         | 无                                                                     | 包含保存状态、有意发布的消息、保留输入、当前操作及待回答决策状态的快照 |
-| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | 保留的输入；接受不代表 Run 已启动或完成                                |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | 含原生接受或 steering 结果的保留输入；接受不代表完成                   |
 | `POST /api/bot/pause`  | `{ "paused": true }`                                                   | 更新后的快照；暂停自动投递，直接输入仍可使用                           |
 
-查询不会启动工作。输入提交结果不确定时，显式使用相同 ID 和文本重试；相同 ID 配不同内容会失败。打开 `/threads/thread_bot` 查看活动，并使用现有决策 API 回答人类决策。配置位于 `webui.bot`；私有 Connector 配置既不是 YAML 资源，也不是提供方管理 API。
+查询不会启动工作。新的人类消息会立即启动空闲 Run，或向确切的当前 Run 发起 immediate steer，不经过自动 inbox，也不受全局 steering 模式影响。steering 被拒绝时会返回错误，不排队或启动替代 Run。输入提交结果不确定时，显式使用相同 ID 和文本重试；精确重试只返回保留结果，不重复执行；相同 ID 配不同内容会失败。打开 `/threads/thread_bot` 查看活动，并使用现有决策 API 回答人类决策。配置位于 `webui.bot`；私有 Connector 配置既不是 YAML 资源，也不是提供方管理 API。
 
 ## Coordinator
 

@@ -326,7 +326,7 @@ webui:
 
 **设置 → 常规 → Bot** 为内置个人助手选择 Model，并按需添加自定义指令。`webui.bot.model` 默认为 `null`，仅沿用全局默认 Agent 的 Model。Bot 使用自己的指令、自定义指令和全局 `AGENTS.md`，无需选择 Agent。
 
-`webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`，`run_timeout_seconds` 为 `180`。这些字段都直接位于 `webui.bot` 下。打开页面或保存设置不会启动工作；开启后经过一个间隔进行首次 Heartbeat，无需先发送消息。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
+`webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。打开页面或保存设置不会启动工作；开启后经过一个间隔进行首次 Heartbeat，无需先发送消息。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
 
 ### WebUI Sidekick
 

@@ -124,6 +124,21 @@ it("updates the toast viewport accessible name when the language changes", async
   expect(screen.getByRole("region", { name: "通知" })).toBeTruthy();
   await act(() => i18n.changeLanguage("en"));
 });
+it.each(["completed", "failed", "suspended"] as const)(
+  "opens Bot chat for a %s notification",
+  async (status) => {
+    mount("/threads/thread-other");
+    event = {
+      ...notice(`bot-${status}`, status),
+      root_thread_id: "thread_bot",
+      thread_id: "thread_bot",
+    };
+    fireEvent.click(screen.getByText("Emit"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open chat" }));
+    expect(screen.getByText("/bot")).toBeTruthy();
+  },
+);
+
 it("relocalizes a retained suspended notice without replaying it", async () => {
   await act(() => i18n.changeLanguage("en"));
   mount("/threads/thread-other");

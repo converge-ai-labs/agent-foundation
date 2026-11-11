@@ -164,6 +164,24 @@ async def test_views_share_session_not_followup_results_and_requests_are_single_
     assert (await _settle(operations, second.view_id, "one")).result["structuredContent"]["count"] == 3
 
 
+async def test_app_activation_uses_the_current_remote_handshake_timeout(apps) -> None:
+    from unittest.mock import patch
+
+    operations, reference = apps
+    connections = operations.snapshots.connections
+    first = await operations.activate(reference)
+    path = operations.configuration_root / "mcp/docs.yaml"
+    server = yaml.safe_load(path.read_text())
+    server["transport"]["init_timeout_seconds"] = 20
+    path.write_text(yaml.safe_dump(server))
+    await _accept(operations)
+
+    with patch.object(connections, "acquire", wraps=connections.acquire) as acquire:
+        second = await operations.activate(reference)
+    assert second.connection_generation != first.connection_generation
+    assert acquire.await_args.kwargs["init_timeout"] == 20
+
+
 async def test_current_policy_and_schema_reject_before_business_dispatch(apps) -> None:
     operations, reference = apps
     view = await operations.activate(reference)

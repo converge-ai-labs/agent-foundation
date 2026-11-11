@@ -55,7 +55,9 @@ async def test_default_off_enable_arms_without_run_and_first_due_tick_needs_no_c
         item = (await bot.snapshot()).inputs[-1]
         assert item.source == "automatic" and batch[0].input_id in item.text
         assert (await consumed(app, item.input_id)).state == "completed"
-        assert not (await bot.snapshot()).messages
+        snapshot = await bot.snapshot()
+        assert [message.text for message in snapshot.messages] == ["root complete"]
+        assert snapshot.thread.completion is not None
 
 
 async def test_busy_run_retains_ticks_and_fair_mixed_batch_steers_exact_receipt(tmp_path: Path, monkeypatch) -> None:

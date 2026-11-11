@@ -100,7 +100,7 @@ class Connection:
         client_factory: type[HostClient] = HostClient,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
-        init_timeout: int = 30,
+        init_timeout: float = 30,
         cleanup_timeout_seconds: float = 10,
     ) -> None:
         self.thread_id, self.server_id = thread_id, server_id
@@ -300,6 +300,7 @@ class Connections:
         binding: str | None = None,
         activate: bool = False,
         protocol: str = "auto",
+        init_timeout: float = 30,
         client_factory: type[HostClient] | None = None,
         extensions: Sequence[ClientExtension] | None = None,
     ) -> Connection:
@@ -327,6 +328,7 @@ class Connections:
                     transport,
                     binding,
                     protocol=protocol,
+                    init_timeout=init_timeout,
                     client_factory=client_factory or self._client_factory,
                     extensions=self._extensions if extensions is None else extensions,
                     input_handler=self._input_handler,
