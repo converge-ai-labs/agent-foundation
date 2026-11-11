@@ -539,3 +539,81 @@ async def test_envd_secret_cannot_be_shared_through_a_host_mount(native):
     assert rejected.value.code == "envd_credential_not_private"
     engine.client.containers.create.assert_not_called()
     engine.client.images.get.assert_not_called()
+
+
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+async def test_envd_bootstrap_and_restart_need_no_guest_python(native, monkeypatch, execution):
+    _original, engine, container = native
+    config = DockerRecipe(
+        image="sandbox:slim", execution=execution, python="/missing-python", init_script="echo initialized"
+    )
+    runtime = DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    env = DockerManagement(config, "env_headless", None, runtime)
+    container.labels = env.labels
+    if execution == "envd_ws":
+        # The outbound bootstrap is tested separately; isolate guest initialization.
+        monkeypatch.setattr(env, "_create", lambda: container)
+    monkeypatch.setattr(env, "_wait_envd", AsyncMock())
+    await env.create()
+    calls = [call.args[0] for call in DockerCommands.execute.await_args_list]
+    assert calls == [
+        ["mkdir", "-p", "/workspace", "/tmp/a13n"],
+        ["/bin/sh", "-c", "echo initialized"],
+        ["/bin/sh", "-c", ": > /tmp/a13n/initialized"],
+    ]
+    engine.client.containers.get.side_effect = None
+    engine.client.containers.get.return_value = container
+    DockerCommands.execute.reset_mock()
+    await env.start()
+    await env.create()
+    calls = DockerCommands.execute.await_args_list
+    assert len(calls) == 2
+    assert all(call.args[0][0] == "/bin/sh" and call.kwargs["mutation"] is False for call in calls)
+    assert all("Initialization incomplete" in call.args[0][-1] for call in calls)
+    await env.close()
+
+
+@pytest.mark.parametrize("method", ["create", "start"])
+async def test_managed_upgrade_reentry_and_retry_reach_guest_while_eip_is_down(native, monkeypatch, method):
+    from a13n_service.providers.environment import envd_upgrade
+    from a13n_service.providers.environment.errors import EnvironmentManagementError
+    from a13n_service.providers.environment.management import Pending
+    from a13n_service.providers.environments.docker import management
+
+    _original, engine, container = native
+    config = DockerRecipe(execution="envd_http", envd_management="managed")
+    runtime = DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    container.id = "a" * 64
+    container.labels = DockerManagement(config, "env_upgrade", None, runtime).labels
+
+    def allocate(*args, **kwargs):
+        engine.client.containers.get.side_effect = None
+        engine.client.containers.get.return_value = container
+        return container
+
+    engine.client.containers.create.side_effect = allocate
+    guest = AsyncMock(side_effect=[False, False, True])
+    monkeypatch.setattr(envd_upgrade, "upgrade", guest)
+    eip = AsyncMock(side_effect=AssertionError("EIP must follow the completed guest upgrade"))
+    monkeypatch.setattr(management, "http_execution", eip)
+    # Seed only native allocation/provisioning, with a pending upgrade and no EIP process.
+    async with await DOCKER.open_provider(runtime=runtime) as provider:
+        provider.configure_envd_version("0.8.0")
+        pending = await provider.create(config, environment_id="env_upgrade", operation_id="first")
+        assert isinstance(pending, Pending)
+        engine.client.containers.get.side_effect = None
+        engine.client.containers.get.return_value = container
+        pending = await getattr(provider, method)(
+            config, environment_id="env_upgrade", operation_id="first", state=pending.state
+        )
+        assert isinstance(pending, Pending)
+        eip.assert_not_called()
+        # Explicit retry reaches the same guest job before checking authenticated readiness.
+        # A final readiness failure still refuses publication after the upgrade completes.
+        with pytest.raises(EnvironmentManagementError):
+            await getattr(provider, method)(
+                config, environment_id="env_upgrade", operation_id="retry", state=pending.state
+            )
+    assert [call.kwargs["operation_id"] for call in guest.await_args_list] == ["first", "first", "retry"]
+    eip.assert_called_once()
+    engine.client.containers.create.assert_called_once()

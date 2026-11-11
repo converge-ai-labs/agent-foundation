@@ -17,6 +17,10 @@ struct DeviceProcess {
 
 impl DeviceProcess {
     fn start(transport: &str, address: SocketAddr, extra: Value) -> Self {
+        Self::start_mode("daemon", transport, address, extra)
+    }
+
+    fn start_mode(mode: &str, transport: &str, address: SocketAddr, extra: Value) -> Self {
         let mut random = [0_u8; 8];
         getrandom::fill(&mut random).unwrap();
         let root =
@@ -43,7 +47,9 @@ impl DeviceProcess {
         }
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_a13n-envd"));
         command
+            .arg(mode)
             .env_clear()
+            .env("TOKIO_WORKER_THREADS", "2")
             .env("A13N_ENVD_RUNTIME_DIR", root.join("runtime"))
             .env("A13N_ENVD_TRANSPORT", transport)
             .args(["--config", root.join("config.json").to_str().unwrap()])
@@ -350,6 +356,57 @@ async fn http_sessions_are_not_tcp_affine_and_close_is_scoped() {
     );
     result(http_control(address, request(Some(&beta), "session.close", json!({}))).await);
     device.stop().await;
+}
+
+#[tokio::test]
+async fn supervised_reverse_websocket_uses_the_same_authenticated_carrier_and_stops_with_parent() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let device = DeviceProcess::start_mode(
+        "supervise",
+        "reverse_websocket",
+        listener.local_addr().unwrap(),
+        json!({}),
+    );
+    let mut socket = accept(&listener).await;
+    let descriptor = result(
+        ws_control(&mut socket, request(None, "initialize", initialize())).await,
+    )["descriptor"]
+        .clone();
+    assert_eq!(descriptor["device_id"], "device-test");
+    let opened = result(
+        ws_control(
+            &mut socket,
+            request(
+                None,
+                "session.open",
+                open_params(&descriptor, &device.path("alpha")),
+            ),
+        )
+        .await,
+    );
+    let session = opened["descriptor"]["session_id"].as_str().unwrap();
+    result(
+        ws_control(
+            &mut socket,
+            request(Some(session), "environment.readiness", context("ready")),
+        )
+        .await,
+    );
+    device.stop().await;
+    timeout(Duration::from_secs(5), async {
+        while let Some(Ok(message)) = socket.next().await {
+            if message.is_close() {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        timeout(Duration::from_millis(200), listener.accept())
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

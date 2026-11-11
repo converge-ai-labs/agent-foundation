@@ -140,6 +140,35 @@ function open(
   return { cache, user };
 }
 
+it("shows headless preparation from the frozen instance even when the current template has no automatic recipe", async () => {
+  const creating = {
+    ...environment,
+    status: "creating",
+    operation_id: "envoper_test",
+  } as Schema["EnvironmentView"];
+  serve(() => creating);
+  const read = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) => {
+    if (path.includes("environment-providers"))
+      return { data: { ...provider, type: "e2b" } };
+    if (path.endsWith("/creation"))
+      return {
+        data: {
+          profile: "headless",
+          stage: "building",
+          retryable: false,
+          started_at: environment.created_at,
+          observed_at: environment.created_at,
+        },
+      };
+    return read(path, ...args);
+  });
+  const { cache, user } = open(creating);
+  await user.click(screen.getByRole("button", { name: "Details" }));
+  expect(await screen.findByText("Installing headless Envd")).toBeTruthy();
+  cache.clear();
+});
+
 it("shows a registered client offline with the observation time", async () => {
   const laptop: Schema["EnvironmentView"] = {
     ...external,

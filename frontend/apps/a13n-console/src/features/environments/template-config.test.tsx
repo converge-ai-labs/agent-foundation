@@ -44,6 +44,23 @@ const e2bSchema = {
       default: 3600,
       minimum: 30,
     },
+    desktop: { type: "boolean", default: false },
+    desktop_assistance: { type: "boolean", default: false },
+    execution: {
+      type: "string",
+      enum: ["native", "envd_http", "envd_ws"],
+      default: "native",
+    },
+    preparation: {
+      type: "string",
+      enum: ["preinstalled", "headless"],
+      default: "preinstalled",
+    },
+    envd_management: {
+      type: "string",
+      enum: ["managed", "preinstalled"],
+      default: "preinstalled",
+    },
     max_file_bytes: { type: "integer", title: "File limit", default: 1000 },
     metadata: {
       type: "object",
@@ -74,11 +91,13 @@ const dockerSchema = {
     standard: {
       image: "a13n-sandbox:dev",
       execution: "native",
+      envd_management: "preinstalled",
       desktop: false,
     },
     desktop: {
       image: "a13n-sandbox:dev-desktop",
       execution: "envd_http",
+      envd_management: "managed",
       desktop: true,
     },
   },
@@ -104,6 +123,12 @@ const dockerSchema = {
       title: "Execution connection",
       default: "native",
       enum: ["native", "envd_http"],
+    },
+    envd_management: {
+      type: "string",
+      title: "Envd binary management",
+      enum: ["managed", "preinstalled"],
+      default: "preinstalled",
     },
     desktop: { type: "boolean", default: false },
     memory_gb: { type: "number", title: "Memory (GB)" },
@@ -282,7 +307,11 @@ it("creates an E2B template configuration from ordinary fields without a schema-
         description: null,
         provider_id: "eprov_e2b",
         config: {
-          recipe: { template: "my-template" },
+          recipe: {
+            template: "my-template",
+            preparation: "preinstalled",
+            envd_management: "preinstalled",
+          },
           stop_after_seconds: null,
           delete_after_seconds: null,
         },
@@ -703,7 +732,11 @@ it("creates a connection in place, clears canceled credentials and retains the r
           description: null,
           provider_id: connection.id,
           config: {
-            recipe: { template: "custom-base" },
+            recipe: {
+              template: "custom-base",
+              preparation: "preinstalled",
+              envd_management: "preinstalled",
+            },
             stop_after_seconds: null,
             delete_after_seconds: null,
           },
@@ -771,57 +804,72 @@ it("keeps a late connection result without replacing a newly selected runtime", 
   expect(state.POST).toHaveBeenCalledOnce();
 });
 
-it("preserves advanced Docker settings when switching desktop capability and JSON mode", async () => {
-  const user = userEvent.setup();
-  await selectProvider(user, "Docker");
-  await user.click(screen.getByRole("button", { name: "Custom image" }));
-  await user.click(screen.getByRole("button", { name: "JSON" }));
-  const json = screen.getByRole("textbox", {
-    name: "Template configuration (JSON)",
-  });
-  await user.clear(json);
-  await user.paste(
-    '{"image":"sandbox:desktop","shell":"/bin/bash","desktop":false}',
-  );
-  await user.click(screen.getByRole("button", { name: "Fields" }));
-  await user.click(screen.getByRole("switch", { name: "Desktop capability" }));
-  await user.click(screen.getByRole("button", { name: "JSON" }));
-  expect(
-    JSON.parse(
-      (
-        screen.getByRole("textbox", {
-          name: "Template configuration (JSON)",
-        }) as HTMLTextAreaElement
-      ).value,
-    ),
-  ).toEqual({
-    image: "sandbox:desktop",
-    shell: "/bin/bash",
-    desktop: true,
-    execution: "envd_http",
-  });
-  await user.click(screen.getByRole("button", { name: "Fields" }));
-  await user.click(
-    screen.getByRole("button", { name: "Standard environment" }),
-  );
-  expect(screen.queryByRole("textbox", { name: "Container image" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Custom image" }));
-  await user.click(screen.getByRole("button", { name: "JSON" }));
-  expect(
-    JSON.parse(
-      (
-        screen.getByRole("textbox", {
-          name: "Template configuration (JSON)",
-        }) as HTMLTextAreaElement
-      ).value,
-    ),
-  ).toEqual({
-    image: "sandbox:desktop",
-    shell: "/bin/bash",
-    desktop: true,
-    execution: "envd_http",
-  });
-});
+it.each(["managed", "preinstalled"])(
+  "preserves %s ownership and advanced Docker settings through presets and JSON",
+  async (policy) => {
+    const user = userEvent.setup();
+    await selectProvider(user, "Docker");
+    await user.click(screen.getByRole("button", { name: "Custom image" }));
+    await user.click(screen.getByRole("button", { name: "JSON" }));
+    const json = screen.getByRole("textbox", {
+      name: "Template configuration (JSON)",
+    });
+    await user.clear(json);
+    await user.paste(
+      JSON.stringify({
+        image: "sandbox:desktop",
+        shell: "/bin/bash",
+        desktop: false,
+        execution: "envd_http",
+        envd_management: policy,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Fields" }));
+    await user.click(
+      screen.getByRole("switch", { name: "Desktop capability" }),
+    );
+    await user.click(screen.getByRole("button", { name: "JSON" }));
+    expect(
+      JSON.parse(
+        (
+          screen.getByRole("textbox", {
+            name: "Template configuration (JSON)",
+          }) as HTMLTextAreaElement
+        ).value,
+      ),
+    ).toEqual({
+      image: "sandbox:desktop",
+      shell: "/bin/bash",
+      desktop: true,
+      execution: "envd_http",
+      envd_management: policy,
+    });
+    await user.click(screen.getByRole("button", { name: "Fields" }));
+    await user.click(
+      screen.getByRole("button", { name: "Standard environment" }),
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "Container image" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Custom image" }));
+    await user.click(screen.getByRole("button", { name: "JSON" }));
+    expect(
+      JSON.parse(
+        (
+          screen.getByRole("textbox", {
+            name: "Template configuration (JSON)",
+          }) as HTMLTextAreaElement
+        ).value,
+      ),
+    ).toEqual({
+      image: "sandbox:desktop",
+      shell: "/bin/bash",
+      desktop: true,
+      execution: "envd_http",
+      envd_management: policy,
+    });
+  },
+);
 
 it("creates a desktop preset without exposing image or execution controls", async () => {
   const user = userEvent.setup();
@@ -848,6 +896,7 @@ it("creates a desktop preset without exposing image or execution controls", asyn
   expect(state.POST.mock.calls[0]?.[1].body.config.recipe).toEqual({
     image: "a13n-sandbox:dev-desktop",
     execution: "envd_http",
+    envd_management: "managed",
     desktop: true,
   });
 });

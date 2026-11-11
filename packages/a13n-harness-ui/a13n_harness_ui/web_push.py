@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from py_vapid import Vapid
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import RootOperationNotice
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushTestResult, decode_key
@@ -72,7 +73,9 @@ class WebPush:
                         "title": f"{title} · {(thread.title or 'Conversation')[:80]}",
                         "body": notice.brief[:180],
                         "tag": f"a13n-harness-ui.{notice.receipt_id}",
-                        "path": f"/threads/{quote(thread_id, safe='')}",
+                        "path": "/bot"
+                        if thread_id == BOT_THREAD_ID and notice.status == "completed"
+                        else f"/threads/{quote(thread_id, safe='')}",
                     }
                     async with create_task_group() as deliveries:
                         for subscription in await self.repository.recipients():

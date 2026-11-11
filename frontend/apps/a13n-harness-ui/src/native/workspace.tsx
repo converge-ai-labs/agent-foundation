@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { BotActions, BOT_THREAD_ID, useBot } from "../bot";
 import { ViewLink } from "./view-link";
 import {
   useContext,
@@ -121,9 +122,14 @@ export function NativeWorkspace({
   const buffers = useContext(FileBuffers);
   const location = useLocation();
   const navigate = useNavigate();
-  const threadId = matchPath("/threads/:threadId", location.pathname)?.params
-    .threadId;
-  const thread = useThread(threadId ?? "");
+  const botMode = location.pathname === "/bot";
+  const bot = useBot(botMode);
+  const threadId = botMode
+    ? BOT_THREAD_ID
+    : matchPath("/threads/:threadId", location.pathname)?.params.threadId;
+  const thread = useThread(
+    botMode && !bot.data?.thread ? "" : (threadId ?? ""),
+  );
   const composers = useContext(ComposerDrafts);
   const isNew =
     location.pathname === "/" || !!matchPath("/new", location.pathname);
@@ -131,7 +137,9 @@ export function NativeWorkspace({
     location.pathname === "/memory" || !!thread.data?.thread.memory_scope;
   const isWorkspace =
     !memoryMode && (location.pathname === "/" || !!threadId || isNew);
-  const projectLoading = projects.isPending || (!!threadId && thread.isPending);
+  const projectLoading =
+    projects.isPending ||
+    (botMode ? bot.isPending : !!threadId && thread.isPending);
   const resolvedProject = projects.data?.find(
     (item) =>
       item.project_id ===
@@ -690,18 +698,20 @@ export function NativeWorkspace({
     return () => window.removeEventListener("keydown", keydown, true);
   });
   const unavailableThread = isUnavailableChat(thread.error);
-  const title = threadId
-    ? unavailableThread
-      ? t("Chat unavailable")
-      : conversationTitle(
-          thread.data?.thread,
-          composers.get(threadId)?.localInputs,
-        )
-    : PAGE_TITLES[location.pathname]
-      ? t(PAGE_TITLES[location.pathname])
-      : matchPath("/projects/:projectId", location.pathname)
-        ? t("Project settings")
-        : t("Page not found");
+  const title = botMode
+    ? t("Bot")
+    : threadId
+      ? unavailableThread
+        ? t("Chat unavailable")
+        : conversationTitle(
+            thread.data?.thread,
+            composers.get(threadId)?.localInputs,
+          )
+      : PAGE_TITLES[location.pathname]
+        ? t(PAGE_TITLES[location.pathname])
+        : matchPath("/projects/:projectId", location.pathname)
+          ? t("Project settings")
+          : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
     document.title = `${title} - Harness UI`;
@@ -1081,7 +1091,8 @@ export function NativeWorkspace({
               />
             )}
             {profile}
-            {threadId && !unavailableThread && (
+            {botMode && <BotActions />}
+            {threadId && !botMode && !unavailableThread && (
               <Menu>
                 <MenuTrigger
                   render={<Button variant="ghost" size="icon-sm" />}
@@ -1097,22 +1108,27 @@ export function NativeWorkspace({
                       ["details", "Chat details", SlidersHorizontal],
                       ["share", "Share", ShareNetwork],
                     ] as const
-                  ).map(([action, label, Icon]) => (
-                    <MenuItem
-                      key={action}
-                      onClick={() => {
-                        const search = new URLSearchParams(location.search);
-                        search.set("dialog", action);
-                        navigate({
-                          pathname: location.pathname,
-                          search: search.toString(),
-                        });
-                      }}
-                    >
-                      <Icon />
-                      {t(label)}
-                    </MenuItem>
-                  ))}
+                  )
+                    .filter(
+                      ([action]) =>
+                        threadId !== BOT_THREAD_ID || action === "details",
+                    )
+                    .map(([action, label, Icon]) => (
+                      <MenuItem
+                        key={action}
+                        onClick={() => {
+                          const search = new URLSearchParams(location.search);
+                          search.set("dialog", action);
+                          navigate({
+                            pathname: location.pathname,
+                            search: search.toString(),
+                          });
+                        }}
+                      >
+                        <Icon />
+                        {t(label)}
+                      </MenuItem>
+                    ))}
                 </MenuPopup>
               </Menu>
             )}

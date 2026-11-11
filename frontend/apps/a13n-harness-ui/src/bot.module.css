@@ -1,0 +1,62 @@
+.status {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+}
+.navigation {
+  margin: 4px 8px;
+}
+.navigation[aria-current="page"] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.unread {
+  margin-inline-start: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a13n-signal);
+}
+
+.setup {
+  composes: settingsContent from "./shell/workbench.module.css";
+}
+.setupFields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.setupActions,
+.offBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.setupActions p,
+.offBar p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 1.5;
+}
+.setupActions > button,
+.offBar > a {
+  flex-shrink: 0;
+}
+.offBar {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--a13n-surface);
+}
+@media (max-width: 600px) {
+  .setupActions,
+  .offBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -32,7 +32,9 @@ HANDBACK = (
 
 @pytest.fixture
 def cloud(monkeypatch):
-    recipe = ModalRecipe(image="im-envd", desktop=True, desktop_assistance=True)
+    recipe = ModalRecipe(
+        image="im-envd", startup_command=["/usr/local/bin/start-envd"], desktop=True, desktop_assistance=True
+    )
     state = EnvironmentState(
         provider_key="modal",
         state_version="1",

@@ -2,8 +2,9 @@
 
 import asyncio
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -15,6 +16,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 from a13n_harness.environment.models import EnvironmentError
+
+type SessionReplacementNotifier = Callable[[str], Awaitable[None]]
+_SESSION_REPLACEMENT_NOTIFIER: ContextVar[SessionReplacementNotifier | None] = ContextVar(
+    "envd_session_replacement_notifier", default=None
+)
+
+
+@contextmanager
+def envd_session_notifications(notify: SessionReplacementNotifier) -> Iterator[None]:
+    """Bind notices to the originating Run or invocation, including retained tasks."""
+    token = _SESSION_REPLACEMENT_NOTIFIER.set(notify)
+    try:
+        yield
+    finally:
+        _SESSION_REPLACEMENT_NOTIFIER.reset(token)
 
 
 class EnvdSessionState(BaseModel):
@@ -114,6 +130,7 @@ class EnvdSessionRecovery:
         original_session_id: str | None = None,
         configuration_identity: str | None = None,
     ) -> AsyncIterator[EIPSession]:
+        replacement = None
         async with self._lock:
             if device.descriptor.device_id != expected_device_id:
                 raise EIPSessionStateError("Session context belongs to another Device")
@@ -169,6 +186,8 @@ class EnvdSessionRecovery:
                     raise
                 self._scope = scope
                 self._session = session
+                if previous is not None and previous.descriptor.session_id != session.session_id:
+                    replacement = session.session_id
             try:
                 if required_methods - set(session.descriptor.available_methods):
                     raise EIPSessionStateError("Session does not expose the required methods")
@@ -183,6 +202,12 @@ class EnvdSessionRecovery:
         # Resolved values are startup inputs, not state retained for the borrower's lifetime.
         del configuration
         try:
+            if replacement is not None and (notify := _SESSION_REPLACEMENT_NOTIFIER.get()) is not None:
+                try:
+                    await notify(replacement)
+                except Exception:
+                    # A lifecycle hint must not undo an already checkpointed acquisition.
+                    pass
             async with session.use():
                 yield session
         finally:

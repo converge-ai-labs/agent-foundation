@@ -33,12 +33,12 @@ def bootstrap():
         ("docker", {}),
         ("e2b", {"template": "team-envd"}),
         ("daytona", {"snapshot": "team-envd"}),
-        ("modal", {"image": "team-envd"}),
-        ("vercel", {"snapshot": "snap_test"}),
+        ("modal", {"image": "team-envd", "startup_command": ["/usr/local/bin/start-envd"]}),
+        ("vercel", {"snapshot": "snap_test", "startup_command": ["/usr/local/bin/start-envd"]}),
         ("sprites", {"desktop": True}),
     ],
 )
-def test_managed_recipes_describe_outbound_execution(provider, recipe):
+def test_recipes_describe_outbound_execution(provider, recipe):
     definition = Registry.of(OSS.providers).get("environment", provider)
     config = definition.validate_environment({**recipe, "execution": "envd_ws"})
     assert definition.execution_environment(config.model_dump(mode="json")).execution == "envd_ws"
@@ -70,7 +70,7 @@ def test_standalone_connector_rejects_outbound_without_silently_using_native():
 
 async def test_e2b_outbound_uses_private_bootstrap_without_http_probe():
     manager = E2BManagement(
-        E2BRecipe(execution="envd_ws", template="team-envd"),
+        E2BRecipe(execution="envd_ws", template="team-envd", envd_management="managed"),
         environment_id="env_test",
         state=None,
         runtime=E2BProviderRuntime(SecretStr("test-key")),

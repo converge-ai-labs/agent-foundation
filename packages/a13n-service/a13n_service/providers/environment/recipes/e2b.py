@@ -7,25 +7,36 @@ from pydantic import ConfigDict, Field, model_validator
 
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
 
+from ..envd_policy import EnvdRecipe
 
-class E2BRecipe(E2BEnvironmentConfiguration):
+
+class E2BRecipe(E2BEnvironmentConfiguration, EnvdRecipe):
     template: str = Field(
         default="base",
         min_length=1,
         max_length=256,
         title="E2B template name or ID",
-        description="Use auto for a Service-prepared private desktop, or an existing custom E2B template name or ID.",
+        description="Use auto for a Service-prepared desktop. Headless Envd prepares the selected template's actual sandbox when preparation=headless. Stock base may require a newer GNU/Linux template for the pinned daemon.",
     )
 
     @model_validator(mode="before")
     @classmethod
     def automatic_desktop(cls, value: object) -> object:
-        if isinstance(value, dict) and value.get("desktop") is True:
+        if isinstance(value, dict):
             value = dict(value)
-            value.setdefault("execution", "envd_http")
-            value.setdefault("template", "auto")
-            if value.get("template") == "auto":
-                value.setdefault("desktop_assistance", True)
+            if value.get("desktop") is True:
+                value.setdefault("execution", "envd_http")
+                value.setdefault("template", "auto")
+                if value.get("template") == "auto":
+                    value.setdefault("desktop_assistance", True)
+            elif (
+                value.get("envd_management") != "preinstalled"
+                and value.get("execution") in {"envd_http", "envd_ws"}
+                and value.get("template", "base") == "base"
+            ):
+                value.setdefault("preparation", "headless")
+            if value.get("template") == "auto" or value.get("preparation") == "headless":
+                value.setdefault("envd_management", "managed")
         return value
 
     desktop_assistance: bool = Field(
@@ -42,6 +53,10 @@ class E2BRecipe(E2BEnvironmentConfiguration):
 
     @model_validator(mode="after")
     def assistance_template(self) -> Self:
+        if self.envd_management == "preinstalled" and (self.template == "auto" or self.preparation == "headless"):
+            raise ValueError("Preinstalled Envd requires a custom template and preparation=preinstalled")
+        if self.preparation == "headless" and self.timeout_seconds < 960:
+            raise ValueError("Headless preparation requires a sandbox timeout of at least 960 seconds")
         if self.template == "auto" and not self.desktop:
             raise ValueError("Automatic E2B templates require desktop=True")
         if self.desktop_assistance and (not self.desktop or self.template in {"desktop", "base"}):

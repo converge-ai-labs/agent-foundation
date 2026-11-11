@@ -38,10 +38,6 @@ class VercelEnvironmentConfiguration(CommandConfiguration):
 
     @model_validator(mode="after")
     def execution_requirements(self) -> Self:
-        if self.snapshot == "auto" and not self.desktop:
-            raise ValueError("Automatic snapshots require desktop=True")
-        if self.execution != "native" and self.snapshot is None:
-            raise ValueError("Envd execution requires an operator-built compatible snapshot")
         if self.execution == "native" and (self.desktop or self.snapshot is not None):
             raise ValueError("Desktop and snapshot require execution=envd_http")
         return self

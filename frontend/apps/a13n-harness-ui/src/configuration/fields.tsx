@@ -7,7 +7,7 @@ import { Link, useLocation } from "react-router";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
-import { Button, FormField, Switch, Textarea } from "a13n-ui";
+import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -17,6 +17,7 @@ import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { useRootConfiguration } from "./root-configuration";
+import { BotFields } from "./bot-fields";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
@@ -388,41 +389,23 @@ export function ResourceFields({
           <>
             <SettingsSection variant="grouped" title={t("Chats")}>
               {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-              <SettingsRow
-                label="Sidekick"
-                controlId="sidekick-enabled"
-                stackOnNarrow={false}
-                description={t(
-                  "Let your agent delegate work to separate chats.",
-                )}
-              >
-                <Switch
-                  id="sidekick-enabled"
-                  checked={get(["webui", "sidekick"]) !== null}
-                  onCheckedChange={(enabled) =>
-                    set(["webui", "sidekick"], enabled ? {} : null)
-                  }
-                />
-              </SettingsRow>
-              {get(["webui", "sidekick"]) !== null && (
-                <details className={layout.groupDisclosure}>
-                  <summary>{t("Subagent defaults")}</summary>
-                  <div>
-                    {scalar(
-                      t("Sidekick agent"),
-                      ["webui", "sidekick", "agent"],
-                      agentOptions,
-                      t("Use current agent"),
-                    )}
-                    {scalar(
-                      t("Sidekick model"),
-                      ["webui", "sidekick", "model"],
-                      models,
-                      t("Use agent model"),
-                    )}
-                  </div>
-                </details>
-              )}
+              <details className={layout.groupDisclosure}>
+                <summary>{t("Subagent defaults")}</summary>
+                <div>
+                  {scalar(
+                    t("Sidekick agent"),
+                    ["webui", "sidekick", "agent"],
+                    agentOptions,
+                    t("Use current agent"),
+                  )}
+                  {scalar(
+                    t("Sidekick model"),
+                    ["webui", "sidekick", "model"],
+                    models,
+                    t("Use agent model"),
+                  )}
+                </div>
+              </details>
             </SettingsSection>
             <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
@@ -499,6 +482,9 @@ export function ResourceFields({
                 </>
               )}
             </SettingsSection>
+            <section id="bot">
+              <BotFields source={source} onChange={onChange} />
+            </section>
             <section id="live">
               <SettingsSection variant="grouped" title={t("Live voice")}>
                 <SettingsRow

@@ -8,6 +8,24 @@ description: 将 Envd 连接到 Host，选择执行设置，并采集资源指�
 
 本页的 JSON 和环境变量用于守护进程。Harness UI YAML 和 `EnvironmentProviderSpec` 配置 Host 侧适配器，包括必需方法及带秘密引用的可选会话出站策略。需要预置账号、shell 和 sudo 的容器时，使用[沙箱镜像](sandbox.md)。
 
+## 守护进程生命周期与重启
+
+为守护进程选择一个重启责任方：
+
+| 部署方式                                       | 命令                                   | 重启责任方            |
+| ---------------------------------------------- | -------------------------------------- | --------------------- |
+| 外部 service manager                           | `a13n-envd daemon [daemon options]`    | 外部 service manager  |
+| 缺少可靠 manager 的 HTTP 或反向 WebSocket 环境 | `a13n-envd supervise [daemon options]` | Envd 独立的原生父进程 |
+| Host 管理的 stdio                              | `a13n-envd daemon [daemon options]`    | Host 及其协议管道     |
+
+两个命令使用相同的可信守护进程选项、JSON 和环境配置。省略子命令时保留前台守护进程行为。`connect` 和 `connect-service` 仍是供外部 service manager 管理的前台注册启动器；`supervise` 接受独立守护进程选项，不接受注册命令。
+
+子进程每次退出都会触发原生 supervisor 替换，包括退出码为零的情况。整个父进程生命周期最多替换三次，退避时间依次为 1、2、4 秒。预算耗尽后以失败状态退出。运维停止会取消退避、请求优雅排空，并在三秒后强制终止所拥有的进程树，最后最多等待一秒完成回收。Unix 接受 SIGINT、SIGTERM 和 SIGHUP；Windows 接受 Ctrl+C、Ctrl+Break 和控制台关闭。私有父进程生命周期管道也能在没有 Windows 控制台时请求排空；Windows 另有句柄关闭即终止的 Job 所有权。Unix 子进程能响应时，会在父进程消失后排空退出。
+
+此模式监督进程退出，不检测活进程卡死，也不替代认证 EIP 就绪检查。它拒绝 stdio；stdio 的 EOF 和协议生命周期由调用方负责。普通前台 HTTP 和反向 WebSocket 启动不受 stdin EOF 影响。
+
+替换会保留安装的 Device ID、工作区文件和已有凭据文件，并启动新的 generation。旧会话和句柄失效。客户端必须打开并探测新会话；中断的命令不会重放。客户端会话替换与守护进程监督相互独立。
+
 ## 配置层级
 
 Envd 按五层配置启动，后面的层优先：
@@ -108,6 +126,23 @@ Envd 为当前代次创建不可预测的私有子目录，并持有独占运行
 `configuration.working_directory` 省略或为 null 时，默认工作目录作为该会话的初始 cwd。省略时，Envd 记录启动 cwd。目录不存在会导致会话打开失败，而非守护进程启动失败。文件访问遵循执行账号、Sandbox 授权及外层沙箱的边界，不以 cwd 为边界。目录发现可在会话创建前读取有界的一层目录。
 
 用 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 指定稳定设备 ID，或让安装状态目录保留生成的 ID。CLI 元数据选项覆盖 JSON。目录发现通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置。Windows 启动路径使用原生格式，EIP 路径使用 `/C:/...` 或 `/UNC/server/share/...`。
+
+## 可选健康探针
+
+部署平台需要时，可以开启独立 HTTP 存活探针。默认关闭；开启后的默认监听地址为 `127.0.0.1:8080`：
+
+```bash
+export A13N_ENVD_HEALTH_ENABLED=true
+export A13N_ENVD_HEALTH_BIND=0.0.0.0:8080
+# 保留已有的传输、凭据和运行时配置。
+a13n-envd daemon
+```
+
+等价 JSON 为 `{"health":{"enabled":true,"bind":"0.0.0.0:8080"}}`，环境变量覆盖 JSON。监听地址接受数字 IPv4 或方括号包围的 IPv6 地址及端口。已开启的探针绑定失败会导致启动失败。
+
+使用 `GET /healthz` 或 `GET /ping`；本地 daemon 正常响应时，两者均返回 HTTP 200 和 `ok`。也支持 HEAD。探针适用于 stdio、HTTP 和 outbound WebSocket，outbound 重连期间仍保持存活。daemon 退出时关闭探针，原生 supervisor 启动替代 daemon 后重新监听。
+
+探针表示本地存活。Device／会话就绪及 Service 连通性仍通过认证 EIP 检查。探针使用无认证明文 HTTP，不暴露执行接口或 Device 详情。请按部署网络选择监听地址和访问范围；Service 不会自动开启它。
 
 ## 系统信息与资源监控
 

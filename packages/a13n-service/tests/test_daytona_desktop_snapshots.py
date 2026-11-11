@@ -54,8 +54,8 @@ class Cloud:
         self.closed += 1
 
 
-@pytest.fixture
-async def setup(service, monkeypatch, runs_kit):
+@pytest.fixture(params=[True, False], ids=["desktop", "headless"])
+async def setup(service, monkeypatch, runs_kit, request):
     await runs_kit.pause_sweeps(service)
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
@@ -75,13 +75,24 @@ async def setup(service, monkeypatch, runs_kit):
         json={
             "name": "Desktop",
             "provider_id": p.json()["id"],
-            "config": {"recipe": {"desktop": True}},
+            "config": {"recipe": {"desktop": request.param}},
         },
     )
     assert t.status_code == 201, t.text
 
-    async def create():
-        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
+    async def create(base_image=None):
+        template = t
+        if base_image is not None:
+            template = await client.post(
+                "/api/v1/environment-templates",
+                json={
+                    "name": "Custom base",
+                    "provider_id": p.json()["id"],
+                    "config": {"recipe": {"desktop": request.param, "base_image": base_image}},
+                },
+            )
+            assert template.status_code == 201, template.text
+        r = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.daytona_desktop_snapshot is not None
@@ -186,9 +197,10 @@ async def test_credential_and_backend_changes_refuse_existing_preparation(setup)
     assert not setup.cloud.calls
 
 
-async def test_failed_build_preserved_until_fenced_retry(setup):
+@pytest.mark.parametrize("base_image", [None, "registry.example/custom-base@sha256:" + "a" * 64])
+async def test_failed_build_preserved_until_fenced_retry(setup, base_image):
     runtime, client = setup.service.runtime, setup.service.client
-    op = await setup.create()
+    op = await setup.create(base_image)
     setup.cloud.error = failure("daytona", "desktop_snapshot_build_failed", Category.CONFLICT)
     result = await lifecycle.perform(runtime, op)
     assert result.fault is not None and result.fault.certainty == "not_dispatched"
@@ -204,6 +216,12 @@ async def test_failed_build_preserved_until_fenced_retry(setup):
     next_op = await lifecycle.claim(runtime, op.environment_id, owner="test")
     assert next_op.daytona_desktop_snapshot != op.daytona_desktop_snapshot
     assert next_op.generation > op.generation
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(builds.DaytonaDesktopSnapshotRow, op.daytona_desktop_snapshot)
+        retried_snapshot = await session.get_one(builds.DaytonaDesktopSnapshotRow, next_op.daytona_desktop_snapshot)
+        assert retried_snapshot.manifest == original.manifest
+        if base_image is not None:
+            assert retried_snapshot.manifest["dockerfile"].startswith("FROM " + base_image + "\n")
     setup.cloud.error = None
     assert (await lifecycle.perform(runtime, next_op)).pending
 
@@ -246,7 +264,9 @@ async def test_expired_preparation_fails_before_cloud_work(setup):
 async def test_provider_and_manifest_revision_isolate_reusable_snapshots(setup, monkeypatch):
     op = await setup.create()
     capability = builds._capability(setup.service.runtime)
-    monkeypatch.setattr(builds, "_capability", lambda _: replace(capability, revision=lambda: "next-release"))
+    monkeypatch.setattr(
+        builds, "_capability", lambda _: replace(capability, revision=lambda profile, base_image: "next-release")
+    )
     other = await setup.create()
     assert other.daytona_desktop_snapshot != op.daytona_desktop_snapshot
     with pytest.raises(EnvironmentProviderError):
@@ -254,3 +274,33 @@ async def test_provider_and_manifest_revision_isolate_reusable_snapshots(setup, 
             setup.service.runtime, op.daytona_desktop_snapshot, replace(op.target.account, id="another-provider")
         )
     assert not setup.cloud.calls
+
+
+@pytest.mark.parametrize("base_image", [None, "registry.example/base@sha256:" + "a" * 64])
+async def test_profiles_have_separate_frozen_snapshots(setup, base_image):
+    op = await setup.create()
+    other_desktop = not op.target.recipe["desktop"]
+    client = setup.service.client
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Other profile",
+            "provider_id": op.target.account.id,
+            "config": {"recipe": {"desktop": other_desktop, "base_image": base_image}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    environment = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+    assert environment.status_code == 201, environment.text
+    other = await lifecycle.claim(setup.service.runtime, environment.json()["id"], owner="test")
+    assert other is not None and other.daytona_desktop_snapshot != op.daytona_desktop_snapshot
+    async with transaction(setup.service.runtime.storage) as session:
+        first_row = await session.get(builds.DaytonaDesktopSnapshotRow, op.daytona_desktop_snapshot)
+        other_row = await session.get(builds.DaytonaDesktopSnapshotRow, other.daytona_desktop_snapshot)
+        first_manifest, other_manifest = dict(first_row.manifest), dict(other_row.manifest)
+    assert ("python3" in first_manifest["dockerfile"]) is op.target.recipe["desktop"]
+    assert ("python3" in other_manifest["dockerfile"]) is other_desktop
+    assert first_manifest != other_manifest
+    if base_image is not None:
+        assert other_manifest["dockerfile"].startswith("FROM " + base_image + "\n")
+        assert "envd_base_unsupported" in other_manifest["dockerfile"]

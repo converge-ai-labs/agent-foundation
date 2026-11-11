@@ -241,7 +241,7 @@ def test_additional_inputs_exclude_notifications_and_count_submissions_not_parts
         metadata={**steering, "a13n.steering-input": "multipart"},
     )
     messages = [input_message("Question", "first"), multipart, multipart]
-    for source in ("background_process", "async_subagent"):
+    for source in ("background_process", "async_subagent", "envd_session"):
         # Both current message-level metadata and retained content-only metadata work.
         messages.extend(
             [

@@ -94,6 +94,16 @@ export function updateDocument(
   const document = readDocument(source);
   if (!document) throw new Error("Fix the YAML syntax before editing fields.");
   if (value === undefined) document.deleteIn(path);
-  else document.setIn(path, value);
+  else {
+    // An explicit legacy null has the same defaults as an omitted Sidekick.
+    if (
+      path[0] === "webui" &&
+      path[1] === "sidekick" &&
+      path.length > 2 &&
+      document.getIn(["webui", "sidekick"]) === null
+    )
+      document.setIn(["webui", "sidekick"], {});
+    document.setIn(path, value);
+  }
   return document.toString();
 }

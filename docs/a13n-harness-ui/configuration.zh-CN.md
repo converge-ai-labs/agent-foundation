@@ -322,9 +322,15 @@ webui:
 
 这控制请求地址准入，不是 CORS。认证和同源检查保留；列出的 origin 不能相互调用 API。配置重载不改变活动监听器。见[反向代理](running-webui.md#reverse-proxies-and-public-addresses)。
 
+### WebUI Bot
+
+**设置 → 常规 → Bot** 为内置个人助手选择 Model，并按需添加自定义指令。`webui.bot.model` 默认为 `null`，仅沿用全局默认 Agent 的 Model。Bot 使用自己的指令、自定义指令和全局 `AGENTS.md`，无需选择 Agent。
+
+`webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`，`run_timeout_seconds` 为 `180`。这些字段都直接位于 `webui.bot` 下。打开页面或保存设置不会启动工作；开启后经过一个间隔进行首次 Heartbeat，无需先发送消息。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
+
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** 控制独立工作的默认选择。省略设置或 `sidekick: {}` 开启；`sidekick: null` 关闭。为新 Sidekick Thread 选择默认 Model：
+**Settings → General → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:
@@ -335,7 +341,7 @@ webui:
 
 使用已保存 ID。null/省略 `agent` 继承调用方；null/省略 `model` 跟随该 Agent 的 Model。配置的 Model 成为新 Thread 的持久默认值，供后续输入使用。显式 `create_thread(model_id=...)` 或 Run 选择器只覆盖对应 Run。
 
-保存后影响新的 WebUI 根 Run。保存不启动工作、不改变已有 Thread，也不改变 `defaults.agent`、TUI Run 或委派子级。设置向导保留关闭/自定义选择。关闭移除 Sidekick 指令；发现工具仍按角色范围独立可用。见[协作与交付](webui.md#agent-collaboration-and-sidekick)。
+保存后影响新的 WebUI 根 Run。保存不启动工作、不改变已有 Thread，也不改变 `defaults.agent`、TUI Run 或委派子级。设置向导保留已配置的 Agent/Model 选择。Sidekick 不再提供关闭开关；工具可见性和角色范围仍然有效。见[协作与交付](webui.md#agent-collaboration-and-sidekick)。
 
 ### MCP 生命周期与协议
 

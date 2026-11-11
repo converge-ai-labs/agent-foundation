@@ -112,6 +112,15 @@ fn standalone_device_identity_survives_restart_and_eof_cleans_runtime() {
 }
 
 #[test]
+fn explicit_daemon_mode_preserves_stdio_eof_and_startup_options() {
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command.args(["daemon", "--device-id", "device-foreground"]);
+    let descriptor = fixture.initialize(command);
+    assert_eq!(descriptor["device_id"], "device-foreground");
+}
+
+#[test]
 fn startup_arguments_override_file_metadata_without_materializing_mounts() {
     let fixture = Fixture::new();
     let cwd = fixture.0.join("work");

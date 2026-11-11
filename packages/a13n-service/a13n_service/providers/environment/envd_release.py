@@ -1,61 +1,47 @@
-"""Render the shared release installer; downloads run only inside the cloud build."""
+"""Render the pinned shell installer; downloads execute inside the target or build."""
 
 import shlex
+from pathlib import PurePosixPath
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 TARGET = "x86_64-unknown-linux-gnu"
-
-# Executed by the guest's Python, not by the Service event loop. Keep the whole
-# program in the frozen command so installer changes invalidate recipe revisions.
-_INSTALL = r"""
-import hashlib
-import pathlib
-import re
-import shutil
-import subprocess
-import sys
-import tarfile
-import tempfile
-
-version, target, destination = sys.argv[1:]
-destination = pathlib.Path(destination)
-asset = f"a13n-envd-{version}-{target}.tar.gz"
-base = f"https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v{version}"
-with tempfile.TemporaryDirectory(prefix=".a13n-envd-", dir=destination.parent) as directory:
-    root = pathlib.Path(directory)
-    for name in (asset, "SHA256SUMS"):
-        subprocess.run(
-            ["curl", "-fL", "--retry", "2", "--max-time", "120", f"{base}/{name}", "-o", str(root / name)],
-            check=True,
-        )
-    matches = []
-    for line in (root / "SHA256SUMS").read_text().splitlines():
-        parts = line.split(maxsplit=1)
-        if len(parts) == 2 and parts[1].removeprefix("*").removeprefix("./") == asset:
-            matches.append(parts[0])
-    if len(matches) != 1 or re.fullmatch(r"[0-9a-fA-F]{64}", matches[0]) is None:
-        raise RuntimeError("Expected one SHA256SUMS entry for " + asset)
-    digest = hashlib.sha256()
-    with (root / asset).open("rb") as archive:
-        for chunk in iter(lambda: archive.read(1024 * 1024), b""):
-            digest.update(chunk)
-    if digest.hexdigest() != matches[0].lower():
-        raise RuntimeError("Envd release checksum mismatch")
-    candidate = root / "a13n-envd"
-    with tarfile.open(root / asset, "r:gz") as archive:
-        member = archive.getmember("a13n-envd")
-        if not member.isfile():
-            raise RuntimeError("Envd release executable is not a regular file")
-        with archive.extractfile(member) as source, candidate.open("wb") as output:
-            shutil.copyfileobj(source, output)
-    candidate.chmod(0o755)
-    result = subprocess.check_output([str(candidate), "--version"], text=True, timeout=10).strip()
-    if result != f"a13n-envd {version}":
-        raise RuntimeError("Envd release version mismatch: " + result)
-    candidate.replace(destination)
-"""
+SOURCE_REVISION = "9d5ae301051f4faea8ac7a2cfed7c6d61d598bff"
+INSTALLER_SHA256 = "a9b2be3131bb182f35bcdedd3e0cf763dac5f87aa36ba22d03216d138285d88d"
 
 
-def installation_command(destination: str = "/usr/local/bin/a13n-envd") -> str:
-    """Return one POSIX shell line suitable for a Dockerfile RUN or guest script."""
-    return shlex.join(["python3", "-I", "-c", f"exec({_INSTALL!r})", VERSION, TARGET, destination])
+def download_command(url: str, destination: str, digest: str) -> str:
+    """Fetch one immutable public asset and verify it before use."""
+    checksum = shlex.quote(f"{digest}  {destination}")
+    url, destination = shlex.quote(url), shlex.quote(destination)
+    # Callers install curl/CA or supply GNU wget. Do not pipe downloads to sh.
+    return (
+        f"if command -v curl >/dev/null 2>&1; then curl -fL --retry 2 --max-time 120 {url} -o {destination}; "
+        f"else wget --tries=3 --timeout=120 -O {destination} {url}; fi && "
+        f"printf '%s\\n' {checksum} | sha256sum -c -"
+    )
+
+
+def installation_command(destination: str = "/usr/local/bin/a13n-envd", *, version: str | None = None) -> str:
+    """Freeze the same standalone installer used outside managed environments."""
+    version = version or VERSION
+    path = PurePosixPath(destination)
+    if not path.is_absolute():
+        raise ValueError("Envd destination must be absolute")
+    url = (
+        "https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/"
+        f"{SOURCE_REVISION}/scripts/install-a13n-envd.sh"
+    )
+    # Stage alongside the destination so the final rename is atomic, including
+    # custom executable names. Installer failure leaves the previous file intact.
+    script = (
+        'set -eu; destination=$1; parent=${destination%/*}; mkdir -p "$parent"; '
+        'root=$(mktemp -d "$parent/.a13n-envd-XXXXXXXX"); '
+        "trap 'rm -rf \"$root\"' EXIT HUP INT TERM; "
+        'cd "$root"; '
+        + download_command(url, "installer.sh", INSTALLER_SHA256)
+        + ' || exit 1; test "$(uname -s):$(uname -m)" = Linux:x86_64; '
+        'test "$2" = x86_64-unknown-linux-gnu; '
+        f'sh installer.sh --version {shlex.quote(version)} --install-dir "$root" --no-add-to-path; '
+        'mv -f "$root/a13n-envd" "$destination"'
+    )
+    return shlex.join(["sh", "-c", script, "a13n-envd-install", destination, TARGET])

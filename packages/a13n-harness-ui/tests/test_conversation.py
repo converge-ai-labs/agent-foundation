@@ -113,7 +113,7 @@ def test_collector_preserves_first_input_and_pairs_delivered_steering():
     assert previous.latest_input == "Older question"
 
 
-@pytest.mark.parametrize("source", ["context", "recovery", "async_subagent", "background_process"])
+@pytest.mark.parametrize("source", ["context", "recovery", "async_subagent", "background_process", "envd_session"])
 def test_generated_input_never_changes_authored_excerpts(source):
     previous = ConversationExcerpt(
         first_input="Question", latest_input="Question", latest_reply="Answer", reply_kind="final"

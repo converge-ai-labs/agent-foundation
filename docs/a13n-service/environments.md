@@ -21,11 +21,45 @@ Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites or Vercel t
 
 Standalone Console desktop preview is currently unavailable for `envd_ws`; the button explains this restriction. Agent Computer tools remain available when the daemon and permissions support them. If an execution Session expires while the device stays online, the failed tool reports it and the run can prepare a new Session at its next tool use. Previous commands are not replayed, and old process handles are not restored.
 
-Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. E2B and Vercel need their compatible template/snapshot; Sprites needs its desktop mode. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
+Configure `server.public_url` as an HTTPS origin reachable from the sandbox and allow WebSocket forwarding. Use an updated compatible Envd image/template with `a13n-sandbox-entrypoint`. Automatic preparation supports headless and desktop profiles: E2B can install into a compatible selected template, Vercel installs on the final persistent Ubuntu target, and Sprites installs on the final Sprite. Explicit custom image/template/snapshot inputs keep their preinstalled prerequisites. In Console, choose the execution connection in template configuration (Docker: select a custom environment).
 
 Service supplies a private per-environment connection credential and waits for EIP initialization before marking creation/start ready. A failed connection preserves the allocated sandbox for retry or cleanup. Worker tools use the outbound connection without reaching an Envd HTTP port. Provider lifecycle APIs, human desktop access and metrics retain their own network requirements. Binary files and screenshots use Redis Streams between Worker and Control, and the existing WebSocket between Control and Envd.
 
 Existing templates keep their native or HTTP default. This execution mode requires Service; standalone Harness provider connectors reject it. Changing a template affects new environments, not already-created instances.
+
+## Envd installation and upgrades
+
+Docker, E2B, Modal, Daytona, Vercel and Sprites recipes accept `envd_management`:
+
+| Value          | Installation and startup ownership                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `managed`      | Service installs its pinned release and restarts the runtime during preparation.                                            |
+| `preinstalled` | Supply Envd and its boot command yourself. Service checks readiness without installing, replacing startup, or upgrading it. |
+
+Automatic Envd preparation and official Docker Envd images default to `managed`. Explicit custom images/templates/snapshots default to `preinstalled`. Automatic asset selectors require `managed`; conflicting settings are rejected. Native execution does not accept `managed`. Kubernetes keeps its operator-authored Pod and init-container boot recipe.
+
+For example, E2B can prepare a compatible selected template and manage its Envd binary:
+
+```json
+{"execution":"envd_http","template":"my-debian13-template","preparation":"headless","envd_management":"managed"}
+```
+
+Choose `preinstalled` for a compatible custom runtime you maintain yourself:
+
+- E2B: a custom `template` and `preparation: "preinstalled"`.
+- Modal: a custom `image` and `startup_command`, for example `["/usr/local/bin/start-envd"]`. Service uses this argv unchanged on create and snapshot resume.
+- Daytona: a custom snapshot whose boot command starts Envd.
+- Vercel: a custom `snapshot` and `startup_command`, for example `["/usr/local/bin/start-envd"]`. The command must start the runtime in the background and return. Service executes this argv as root with the instance bootstrap environment on create and native session resume. A recorded job per native session lets management rejoin startup after a lost reply without replaying the command; filesystem snapshots do not preserve processes.
+- Sprites: `envd_http` with your own installed runtime, Device identity and configured service; Service does not register its standard launcher. `preinstalled` with `envd_ws` is rejected because private outbound bootstrap currently requires the Service launcher.
+- Docker: an image with your authored boot command.
+
+Modal/Daytona `base_image` selects a supported custom base for automatic managed preparation. Opting an existing custom runtime into `managed` requires the standard root-owned install/runtime paths, GNU/Linux installer prerequisites and native supervision; the flag does not replace its entrypoint or install a desktop.
+
+Service updates on creation, start/resume, and the first use of an existing managed instance after the Service pin advances. It claims the normal durable preparation operation before execution, installs the verified release, requests restart, and checks authenticated EIP readiness. Concurrent callers join the same operation. Human desktop reservations and viewers defer a first-use update. Idle instances are not updated by a timer, and Service never selects `latest`.
+
+**An upgrade ends existing Envd Sessions and their processes and output handles.** Workspace files follow the provider's normal persistence rules. Session recovery can open a new Session; commands are never replayed. Installation failure keeps the previous binary and records the failed preparation. Inspect the target's protected `/var/lib/a13n-envd/update-<version>/output` and reconcile its outcome. Console offers **Retry preparation** for a confirmed failed upgrade; API clients use `POST /api/v1/environments/{id}/retry-creation` with the current `If-Match`. The retry retains the instance and selected version, starts a new guest attempt, and rejects active or unknown outcomes and confirmed instance loss. A failed upgrade keeps a previously ready managed instance in `starting`, unavailable until the explicit retry succeeds; it does not start failed-initial-preparation reclamation. Fix a missing release or incompatible runtime before retrying. Confirmed native loss requires replacement or deletion. A lost receipt is not evidence that a command did not run.
+
+External service managers run `a13n-envd daemon` and own restarts. Without such a manager, prepared runtimes use `a13n-envd supervise`; Service asks that native supervisor to restart after installing the binary. [Envd operations](../a13n-envd/operations.md#restart-after-installing-a-release) describes the local restart command.
 
 ## Workspace provisioning
 
@@ -171,7 +205,7 @@ With `recipe.image` omitted, Service selects its reviewed `ghcr.io/converge-ai-l
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.5.1`   |
+| Stable or RC                                          | `0.8.0`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Sandbox versions belong to Envd and are independent of Service versions. Set an explicit tag or digest to choose another image. `pull_policy: if_missing` uses the Engine's local image or pulls it at first creation; `never` requires the image to be present. Provisioned templates save an explicit image, so upgrades preserve that choice.

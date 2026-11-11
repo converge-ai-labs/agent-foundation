@@ -5996,6 +5996,14 @@
             "title": "Observed At",
             "type": "string"
           },
+          "profile": {
+            "enum": [
+              "headless",
+              "desktop"
+            ],
+            "title": "Profile",
+            "type": "string"
+          },
           "retryable": {
             "default": false,
             "title": "Retryable",
@@ -6020,6 +6028,7 @@
           }
         },
         "required": [
+          "profile",
           "stage",
           "started_at",
           "observed_at"

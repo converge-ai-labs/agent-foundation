@@ -40,6 +40,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.browser_context import BrowserContextCapability
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -120,7 +121,7 @@ class RootContinuationSelection:
 
 @dataclass(frozen=True, slots=True)
 class RootRunOutcome:
-    result: HarnessRunResult[str]
+    result: HarnessRunResult[str | None]
     environment: EnvironmentFinalization
     continuation: RootContinuationSelection
     composition: ObjectRef
@@ -596,8 +597,8 @@ class RootRunExecutor:
                 capability_count=len(reconstructed.definition_capability_ids),
                 environment_prepared=True,
             )
-        result: HarnessRunResult[str] | None = None
-        stream: HarnessRunStream[str] | None = None
+        result: HarnessRunResult[str | None] | None = None
+        stream: HarnessRunStream[str | None] | None = None
         stream_entry_attempted = False
         run_error: BaseException | None = None
         excerpts: ExcerptCollector | None = None
@@ -751,11 +752,13 @@ class RootRunExecutor:
                                 usage=result.usage,
                             )
                         )
-                    completed_run_id = (
-                        stream.run_id
-                        if stream is not None and result.status == "completed" and run_error is None
-                        else None
-                    )
+                    run_completed = stream is not None and result.status == "completed" and run_error is None
+                    completed_run_id = stream.run_id if stream is not None and run_completed else None
+                    if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
+                        if not await self._store.bot.has_visible_result(
+                            direct_reply=isinstance(result.output, str) and bool(result.output.strip())
+                        ):
+                            completed_run_id = None
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -765,7 +768,7 @@ class RootRunExecutor:
                         state=result.state,
                         display_base=archive,
                         display=(
-                            display.capture(result.state.message_history, completed=completed_run_id is not None)
+                            display.capture(result.state.message_history, completed=run_completed)
                             if display is not None and result.state is not None
                             else None
                         ),

@@ -35,6 +35,11 @@ export function pageFocus(
         target: { kind: "resource", resource_kind: kind, resource_id: id },
       };
   }
+  if (path === "/bot")
+    return {
+      root_thread_id: "thread_bot",
+      target: { kind: "conversation", thread_id: "thread_bot" },
+    };
   if (parts[0] === "threads" && parts[1])
     return {
       root_thread_id: parts[1],
@@ -90,9 +95,12 @@ export function useLiveWorkbench(
     focus: nativeFocus
       ? {
           target: nativeFocus,
-          root_thread_id: location.pathname.startsWith("/threads/")
-            ? location.pathname.split("/")[2]
-            : null,
+          root_thread_id:
+            location.pathname === "/bot"
+              ? "thread_bot"
+              : location.pathname.startsWith("/threads/")
+                ? location.pathname.split("/")[2]
+                : null,
         }
       : transport.shareId && !location.pathname.startsWith("/threads/")
         ? null
@@ -107,6 +115,11 @@ export function useLiveWorkbench(
       transport,
       (event) => {
         if (event) notify?.(event);
+        if (
+          event?.root_thread_id === "thread_bot" ||
+          event?.thread_id === "thread_bot"
+        )
+          scheduleRefresh(queries, (query) => query.queryKey[0] === "bot");
         if (!event || event.kind === "configuration") results?.invalidate();
         else if (["thread", "root_operation"].includes(event.kind))
           results?.invalidate(
@@ -148,9 +161,13 @@ export function useLiveWorkbench(
             );
           } else
             scheduleRefresh(queries, (query) =>
-              ["thread", "threads", "unsent-drafts", "unsent-threads"].includes(
-                String(query.queryKey[0]),
-              ),
+              [
+                "bot",
+                "thread",
+                "threads",
+                "unsent-drafts",
+                "unsent-threads",
+              ].includes(String(query.queryKey[0])),
             );
         } else {
           // Open/reset reconcile all observations. Configuration changes do not
@@ -173,9 +190,13 @@ export function useLiveWorkbench(
       if (document.visibilityState === "visible") {
         results?.invalidate();
         scheduleRefresh(queries, (query) =>
-          ["thread", "threads", "unsent-drafts", "unsent-threads"].includes(
-            String(query.queryKey[0]),
-          ),
+          [
+            "bot",
+            "thread",
+            "threads",
+            "unsent-drafts",
+            "unsent-threads",
+          ].includes(String(query.queryKey[0])),
         );
       }
     }, 15000);

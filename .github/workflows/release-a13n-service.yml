@@ -38,16 +38,9 @@ jobs:
       - name: Verify reviewed sandbox release is published
         run: |
           image=$(python - <<'PY'
-          import ast
-          from pathlib import Path
-          source = Path("packages/a13n-service/a13n_service/providers/environments/docker/__init__.py")
-          module = ast.parse(source.read_text())
-          for node in module.body:
-              if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "DEFAULT_SANDBOX_IMAGE" for t in node.targets):
-                  print(ast.literal_eval(node.value))
-                  break
-          else:
-              raise SystemExit("Missing reviewed sandbox image pin")
+          import runpy
+          release = runpy.run_path("packages/a13n-service/a13n_service/providers/environment/envd_release.py")
+          print(f"ghcr.io/converge-ai-labs/a13n-sandbox:{release['VERSION']}")
           PY
           )
           docker manifest inspect "$image" > /dev/null

@@ -322,9 +322,15 @@ Non-default ports are significant. Default ports and a trailing `/` are normaliz
 
 This controls request-address admission, not CORS. Authentication and same-origin checks remain; listed origins cannot call each other's APIs. A configuration reload does not change an active listener. See [reverse proxies](running-webui.md#reverse-proxies-and-public-addresses).
 
+### WebUI Bot
+
+**Settings → General → Bot** selects a Model and optional custom instructions for the built-in personal assistant. `webui.bot.model` defaults to `null`, following only the global default Agent's Model. Bot uses its own instructions plus custom instructions and global `AGENTS.md`; no Agent selection is required.
+
+`webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), `connector_interval_seconds` to `60`, and `run_timeout_seconds` to `180`. These fields are siblings under `webui.bot`. Reading the page or saving settings starts no work. Enabling schedules the first Heartbeat one interval later, without requiring a first message. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
+
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** controls defaults for independent work. Omitted settings or `sidekick: {}` enable it; `sidekick: null` disables it. To choose a default Model for new Sidekick Threads:
+**Settings → General → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:
@@ -335,7 +341,7 @@ webui:
 
 Use saved IDs. Null/omitted `agent` inherits the caller; null/omitted `model` follows that Agent's Model. A configured Model becomes the new Thread's saved default for follow-ups. Explicit `create_thread(model_id=...)` or a Run picker overrides only that Run.
 
-Save to affect new WebUI root Runs. Saving starts no work, changes no existing Thread, and does not change `defaults.agent`, TUI Runs, or delegated children. Setup preserves disabled/custom choices. Disabling removes Sidekick instructions; discovery tools remain independently available under role scope. See [collaboration and delivery](webui.md#agent-collaboration-and-sidekick).
+Save to affect new WebUI root Runs. Saving starts no work, changes no existing Thread, and does not change `defaults.agent`, TUI Runs, or delegated children. Setup preserves authored Agent/Model choices. There is no Sidekick disable switch; tool visibility and role scope still apply. See [collaboration and delivery](webui.md#agent-collaboration-and-sidekick).
 
 ### MCP lifetime and protocol
 

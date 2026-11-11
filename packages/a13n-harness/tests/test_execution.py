@@ -908,7 +908,8 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         assert terminal_error.value.code == "run_not_active"
 
 
-async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event() -> None:
+@pytest.mark.parametrize("source", ["async_subagent", "envd_session"])
+async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event(source) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     calls: list[tuple[ModelMessage, ...]] = []
@@ -929,7 +930,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         await started.wait()
         enqueue_id = await stream.context._steering.notify(
             "Background subagent subagent-1 has finished. Call wait_subagent.",
-            source="async_subagent",
+            source=source,
             references=("subagent-1",),
         )
         release.set()
@@ -952,14 +953,12 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         for content in request_input_content(message)
     ]
     assert content[0].metadata.display is False
-    assert content[0].metadata.source_id == "a13n.async_subagent"
+    assert content[0].metadata.source_id == f"a13n.{source}"
     assert content[0].value == "Background subagent subagent-1 has finished. Call wait_subagent."
     observed = [
         item.event
         for item in items
-        if isinstance(item, HarnessEvent)
-        and isinstance(item.event, InputTextEvent)
-        and item.event.source == "async_subagent"
+        if isinstance(item, HarnessEvent) and isinstance(item.event, InputTextEvent) and item.event.source == source
     ]
     assert len(observed) == 1
     assert observed[0].content == content[0].value
@@ -976,7 +975,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
     assert notifications[0].payload == {
         "type": "steering_input_enqueued",
         "enqueue_id": enqueue_id,
-        "source": "async_subagent",
+        "source": source,
         "references": ["subagent-1"],
         "handoff_requested": False,
     }
@@ -1273,3 +1272,65 @@ async def test_immediate_steering_reenters_logical_run_and_preserves_partial_out
         and any(isinstance(part, TextPart) and part.content == "partial response" for part in message.parts)
         for message in calls[1]
     )
+
+
+async def test_session_notice_binding_is_run_local_and_reaches_model_history() -> None:
+    from a13n_harness.environment.session_recovery import _SESSION_REPLACEMENT_NOTIFIER
+
+    callbacks = []
+    calls = []
+    turn = 0
+
+    async def acquire() -> str:
+        callback = _SESSION_REPLACEMENT_NOTIFIER.get()
+        assert callback is not None
+        if callbacks:
+            # Retained callbacks belong to their originating Run, even on the same Thread.
+            await callbacks[0]("session-old-run")
+        callbacks.append(callback)
+        await asyncio.create_task(callback(f"session-{len(callbacks)}"))
+        return "primary-result"
+
+    async def model(messages, info):
+        nonlocal turn
+        del info
+        calls.append(tuple(messages))
+        turn += 1
+        if turn == 1:
+            yield {0: DeltaToolCall(name="acquire", json_args="{}", tool_call_id="acquire-one")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(Capability(tools=[Tool(acquire)]),),
+    )
+    state = HarnessState.new()
+    for index in range(2):
+        turn = 0
+        calls.clear()
+        async with executable.stream("acquire", previous_state=state, bindings=RunBindings.embedded()) as stream:
+            items = await _consume_stream(stream)
+        terminal = items[-1]
+        assert isinstance(terminal, HarnessRunResultEvent)
+        assert terminal.result.output_or_raise() == "done"
+        state = terminal.result.state
+        assert "primary-result" in str(calls[-1])
+        # Native queuing may merge the prompt into a tool-result request without request metadata.
+        assert str(calls[-1]).count("The Envd Session was replaced.") == index + 1
+        from pydantic_ai.messages import EnqueuedMessagesEvent
+
+        notices = [
+            message
+            for item in items
+            if isinstance(item, HarnessEvent) and isinstance(item.event, EnqueuedMessagesEvent)
+            for message in item.event.messages
+            if isinstance(message, ModelRequest)
+            and (message.metadata or {}).get("a13n.steering-source") == "envd_session"
+        ]
+        references = [(message.metadata or {}).get("a13n.notification-references") for message in notices]
+        assert references == [[f"session-{index + 1}"]]
+        assert ["session-old-run"] not in references
+        assert _SESSION_REPLACEMENT_NOTIFIER.get() is None

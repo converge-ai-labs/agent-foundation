@@ -249,6 +249,7 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
             "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
             {"service", "browser", "sandbox"},
         ),
+        ("crates/a13n-envd/src/daemon_supervisor.rs", {"sandbox"}),
         ("deploy/docker/images/sandbox/init-skills.sh", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
         ("uv.lock", {"service"}),
@@ -337,7 +338,7 @@ def test_service_release_requires_its_reviewed_sandbox(available, tmp_path, monk
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     result = subprocess.run(["bash", "-eu", "-c", gate["run"]], cwd=ROOT, capture_output=True, text=True)
     assert (result.returncode == 0) is available, result.stderr
-    assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.7.0"
+    assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.8.0"
 
 
 def test_quickstart_waits_for_initialization_without_host_authority() -> None:
@@ -459,6 +460,7 @@ def test_container_ci_checks_all_variants_on_both_native_architectures(tmp_path,
     for name in (
         "deploy/docker/images/sandbox/init-skills.sh",
         "deploy/docker/images/sandbox/entrypoint.sh",
+        "crates/a13n-envd/src/daemon_supervisor.rs",
         "deploy/docker/images/sandbox/desktop.py",
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "scripts/sandbox_smoke.py",

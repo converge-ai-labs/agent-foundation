@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from ._backend import ManagementBackend
 from .desktop_access import Reply, Request
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError
-from .management import EnvironmentProvider, EnvironmentStatus
+from .management import EnvironmentProvider, EnvironmentStatus, ManagementResult, Pending
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 from .websocket import WebSocketBootstrap
 
@@ -64,8 +64,12 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         self._factory = factory
         self._runtime = runtime
         self._owned = owned
+        self._envd_version: str | None = None
         self._websocket: WebSocketBootstrap | None = None
         self._close_task: asyncio.Task[None] | None = None
+
+    def configure_envd_version(self, version: str) -> None:
+        self._envd_version = version
 
     def configure_websocket(self, bootstrap: WebSocketBootstrap) -> None:
         self._websocket = bootstrap
@@ -150,21 +154,37 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         operation_id: str,
         state: EnvironmentState | None = None,
         metrics: MetricsLaunch | None = None,
-    ) -> EnvironmentState | None:
+    ) -> ManagementResult:
         async with self._operation(environment, environment_id, state, operation_id) as target:
             if metrics is not None:
                 target.configure_metrics(metrics)
             self._require_websocket(environment)
-            await target.create()
+            target.defer_envd_readiness = self._envd_version is not None
+            result = await target.create()
+            target.defer_envd_readiness = False
+            if isinstance(result, Pending):
+                return result
+            if self._envd_version is not None:
+                progress = await target.update_envd(self._envd_version, operation_id)
+                if progress is not None:
+                    return progress
             await self._wait_ready(target, operation_id)
             return target.state
 
     async def start(
         self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
-    ) -> EnvironmentState | None:
+    ) -> ManagementResult:
         async with self._operation(environment, environment_id, state, operation_id) as target:
             self._require_websocket(environment)
-            await target.start()
+            target.defer_envd_readiness = self._envd_version is not None
+            result = await target.start()
+            target.defer_envd_readiness = False
+            if isinstance(result, Pending):
+                return result
+            if self._envd_version is not None:
+                progress = await target.update_envd(self._envd_version, operation_id)
+                if progress is not None:
+                    return progress
             await self._wait_ready(target, operation_id)
             return target.state
 

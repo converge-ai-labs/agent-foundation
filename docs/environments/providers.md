@@ -50,6 +50,10 @@ Custom native images need Linux, Python 3.10+, the configured shell, and writabl
 
 For HTTP EIP, configure the connection's `envd_http` with a Worker-reachable host and bind address. Service preserves the image entrypoint and publishes container port 8888 to a Docker-assigned host port. Use a compatible Envd image and keep networking enabled. The image owns execution identities, so this route rejects recipe `user` overrides. Add `desktop: true` to include observable, input-ready desktop readiness. Plain HTTP requires loopback or an explicitly trusted private link. Follow [Create a Docker desktop](../a13n-service/computer-use.md#create-a-docker-desktop) for the Console steps.
 
+For headless Envd, select an official `-slim` sandbox tag matching your deployment and `execution="envd_http"` with `desktop=false`. Management bootstrap and credential reads need POSIX shell/core utilities, not guest Python or jq. Native Docker file operations still require Python.
+
+To use a custom base, build an explicitly compatible wrapper image: install a compatible Envd binary and the common `a13n-sandbox-entrypoint`, provision its Session user and writable workspace, and select the wrapper plus the daemon command in your Dockerfile. Service preserves that entrypoint/command and starts it as root. A plain base image is not an automatic installation request. Match the binary's architecture and userspace requirements; adding a shell script cannot make a glibc binary run on musl. Desktop wrappers additionally supply the desktop launcher and its dependencies.
+
 An embedding Host can borrow its own Engine client:
 
 ```python

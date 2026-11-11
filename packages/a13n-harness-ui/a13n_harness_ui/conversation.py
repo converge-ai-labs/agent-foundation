@@ -59,7 +59,11 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
     attachments: list[str] = []
     for value, metadata in content:
         extra = metadata.model_extra or {}
-        if not metadata.display or extra.get("a13n.steering-source") in {"background_process", "async_subagent"}:
+        if not metadata.display or extra.get("a13n.steering-source") in {
+            "background_process",
+            "async_subagent",
+            "envd_session",
+        }:
             continue
         attachment = extra.get("harness_ui")
         if isinstance(attachment, dict) and isinstance(attachment.get("attachment"), dict):
@@ -138,7 +142,7 @@ class ExcerptCollector:
                 self.value = self.value.model_copy(update={"latest_reply": self._reply, "reply_kind": "progress"})
                 self.changed = True
 
-    def finish(self, result: HarnessRunResult[str] | None) -> ConversationExcerpt:
+    def finish(self, result: HarnessRunResult[str | None] | None) -> ConversationExcerpt:
         if result is not None and result.status == "completed" and isinstance(result.output, str):
             text = excerpt_text(result.output)
             if text:

@@ -76,7 +76,7 @@ async def http_session(
                     "POST",
                     target.id + "/process/execute",
                     body={
-                        "command": "sudo -n python3 -I -c \"import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))\"",
+                        "command": "sudo -n head -c 4097 /var/lib/a13n-envd/http-token",
                         "timeout": 10,
                     },
                 ),
