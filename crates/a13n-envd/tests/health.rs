@@ -184,7 +184,7 @@ fn health_remains_live_while_outbound_host_is_unavailable() {
 #[test]
 fn enabled_probe_bind_failure_and_invalid_configuration_fail_startup() {
     let fixture = Fixture::new();
-    let held = TcpListener::bind(fixture.address).unwrap();
+    let held = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut command = fixture.command();
     command
         .env("A13N_ENVD_HEALTH_ENABLED", "1")
