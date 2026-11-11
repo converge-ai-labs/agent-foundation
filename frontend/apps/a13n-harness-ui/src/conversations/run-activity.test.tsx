@@ -62,14 +62,14 @@ it("uses the working row for model recovery and removes it on completion", () =>
   const view = render(<RunActivity {...props} />);
   const row = screen.getByRole("status");
   for (const [state, label] of [
-    ["retrying", "Reconnecting to model…"],
-    ["resumed", "Model connection restored"],
+    ["retrying", "Reconnecting to model… - 1 retry"],
+    ["resumed", "Working…"],
   ] as const) {
     view.rerender(
       <RunActivity {...props} recovery={{ id: "retry", state, retries: 1 }} />,
     );
     expect(screen.getByRole("status")).toBe(row);
-    expect(row.textContent).toBe(`${label} - 1 retry`);
+    expect(row.textContent).toBe(label);
   }
   view.rerender(
     <RunActivity

@@ -32,11 +32,12 @@ export function RunActivity({
   operation?: Schema<"RootOperationView">;
 }) {
   const { t } = useTranslation();
-  const working = recovery ? (
-    <RecoveryText recovery={recovery} />
-  ) : (
-    t("Working…")
-  );
+  const working =
+    recovery && recovery.state !== "resumed" ? (
+      <RecoveryText recovery={recovery} />
+    ) : (
+      t("Working…")
+    );
   let label: React.ReactNode;
   if (submission.kind === "pending")
     label =
