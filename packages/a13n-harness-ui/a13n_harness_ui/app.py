@@ -1126,8 +1126,12 @@ class HarnessUiApp:
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():
             source = await self._configurations.current()
-            names = {item.id: item.name for item in source.models.values()} if source else {}
-            return await self._store.usage.snapshot(thread_id=thread_id, model_names=names)
+            models = (
+                {item.id: (item.name, item.base_model or item.route) for item in source.models.values()}
+                if source
+                else {}
+            )
+            return await self._store.usage.snapshot(thread_id=thread_id, model_identities=models)
 
     async def thread_work(
         self,

@@ -2030,7 +2030,7 @@ div:has(+ .execution) > .assistantMessage {
 }
 .executionContent {
   position: relative;
-  max-height: min(192px, 32dvh);
+  max-height: min(256px, 42.67dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
