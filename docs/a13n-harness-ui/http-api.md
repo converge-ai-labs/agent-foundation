@@ -265,10 +265,10 @@ Instance-key clients can use the shared [Bot](bot.md) without creating another T
 | Method and path        | Body                                                                   | Result                                                                                                          |
 | ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, retained inputs, active operation, and pending-decision status |
-| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input; acceptance is not Run admission or completion                                                   |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input with native admission/steering outcome; acceptance is not completion                             |
 | `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                   |
 
-Queries start no work. For an uncertain input submission, explicitly retry the same ID and text. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
+Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
 
 ## Coordinator
 

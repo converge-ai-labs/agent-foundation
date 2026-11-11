@@ -255,7 +255,6 @@ class BotConfiguration(ConfigurationModel):
     heartbeat_enabled: bool = True
     interval_seconds: int = Field(default=3600, ge=60, le=86400)
     connector_interval_seconds: int = Field(default=60, ge=1, le=86400)
-    run_timeout_seconds: int = Field(default=180, ge=10, le=3600)
 
 
 class WebUiConfiguration(ConfigurationModel):

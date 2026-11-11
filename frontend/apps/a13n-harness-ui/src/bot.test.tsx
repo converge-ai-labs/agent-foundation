@@ -120,7 +120,7 @@ beforeEach(() => {
         if (reject) throw new TypeError("Offline");
         return Response.json({
           input_id: requests.at(-1)!.input_id,
-          state: "queued",
+          state: "admitted",
         });
       }
       if (path === "/api/bot/pause") {
@@ -271,7 +271,7 @@ function mount(initial = "/bot", withActions = false) {
 }
 it("registers the lazy root's zero baseline before its first admission and clears accepted input", async () => {
   mount();
-  await screen.findByText("Heartbeat every 60 minutes");
+  await screen.findByText("Ready when you are");
   typeMessage("Track this");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
@@ -281,7 +281,7 @@ it("registers the lazy root's zero baseline before its first admission and clear
   );
   await waitFor(() => expect(draft.doc.getText("text").toString()).toBe(""));
 });
-it("queues human input while busy or paused without using Thread run or steer", async () => {
+it("submits human input while busy or paused through Bot admission only", async () => {
   snapshot = {
     ...snapshot,
     state: { activated: true, paused: true },
@@ -296,7 +296,7 @@ it("queues human input while busy or paused without using Thread run or steer", 
   };
   mount();
   await screen.findByText("Automation paused · You can still chat");
-  typeMessage("Queue this work");
+  typeMessage("Change direction now");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
   const paths = vi
@@ -308,7 +308,7 @@ it("queues human input while busy or paused without using Thread run or steer", 
 it("retains drafts and uncertain exact commands across navigation without automatic retry", async () => {
   reject = true;
   mount();
-  await screen.findByText("Heartbeat every 60 minutes");
+  await screen.findByText("Ready when you are");
   typeMessage("Do once");
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
@@ -436,7 +436,7 @@ webui:
     enabled: false
     instructions: Original
     interval_seconds: 3600
-    run_timeout_seconds: 180
+    connector_interval_seconds: 180
 `;
     mount();
     const enable = await screen.findByRole("button", { name: "Turn on Bot" });
@@ -454,8 +454,8 @@ webui:
         "interval_seconds: 7200 # Latest interval",
       )
       .replace(
-        "run_timeout_seconds: 180",
-        "run_timeout_seconds: 600 # Latest timeout",
+        "connector_interval_seconds: 180",
+        "connector_interval_seconds: 600 # Latest delivery interval",
       );
     fireEvent.click(enable);
     await screen.findByRole("button", { name: "Send" });
@@ -466,10 +466,12 @@ webui:
       editInstructions ? "Track release progress" : "Changed elsewhere",
     );
     expect(saved.getIn(["webui", "bot", "interval_seconds"])).toBe(7200);
-    expect(saved.getIn(["webui", "bot", "run_timeout_seconds"])).toBe(600);
+    expect(saved.getIn(["webui", "bot", "connector_interval_seconds"])).toBe(
+      600,
+    );
     expect(configurationWrites[0]).toContain("# Keep this comment");
     expect(configurationWrites[0]).toContain("# Latest interval");
-    expect(configurationWrites[0]).toContain("# Latest timeout");
+    expect(configurationWrites[0]).toContain("# Latest delivery interval");
     expect(requests).toHaveLength(0);
   },
 );
@@ -672,7 +674,7 @@ it("preserves a newer Settings draft when setup publication finishes after route
   );
 });
 
-it("offers Settings recovery for unavailable processing and explains queued busy chat", async () => {
+it("offers Settings recovery and keeps busy chat available without queue warnings", async () => {
   snapshot.available = false;
   snapshot.model_id = null;
   mount();
@@ -691,18 +693,20 @@ it("offers Settings recovery for unavailable processing and explains queued busy
         source: "user",
         text: "existing",
         created_at: "2026-11-11T00:00:00Z",
-        state: "queued",
+        state: "admitted",
       },
     ],
   };
   await act(async () => {
     queries.setQueryData(["bot"], snapshot);
   });
+  expect(await screen.findByText("Working…")).toBeTruthy();
+  expect(screen.queryByText(/will be queued/)).toBeNull();
+  expect(screen.queryByRole("link", { name: "Model" })).toBeNull();
+  typeMessage("Change direction now");
   expect(
-    await screen.findByText(
-      "Messages sent while Bot is working will be queued.",
-    ),
-  ).toBeTruthy();
+    screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+  ).toBe(false);
 });
 
 it("redirects the reserved Thread URL to Bot chat without exposing execution history or sharing", async () => {

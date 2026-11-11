@@ -103,7 +103,7 @@ it("configures Bot's model, custom instructions and hourly heartbeat without cho
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Check in every" }));
-  await user.click(screen.getByRole("option", { name: "2 hours" }));
+  await user.click(await screen.findByRole("option", { name: "2 hours" }));
   fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
   expect(parse(screen.getByTestId("source").textContent!)).toEqual({
     schema_version: "1",
