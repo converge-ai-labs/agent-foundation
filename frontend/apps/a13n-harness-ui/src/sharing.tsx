@@ -22,6 +22,7 @@ import { isUnavailableChat } from "./conversations/conversation-unavailable";
 import { ErrorNotice } from "./shell/ui";
 import styles from "./sharing.module.css";
 import { copyText } from "./platform";
+import { BOT_THREAD_ID } from "./bot-identity";
 
 type Permission = Schema<"ShareGrant">["permission"];
 type Scope = Schema<"ShareGrant">["scope"];
@@ -45,6 +46,7 @@ export function ShareButton() {
   const detail = useThread(threadId ?? "");
   if (
     !threadId ||
+    threadId === BOT_THREAD_ID ||
     isUnavailableChat(detail.error) ||
     detail.data?.thread.memory_scope ||
     detail.data?.thread.configuration.agent_source.kind === "live"

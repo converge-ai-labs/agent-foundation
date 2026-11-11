@@ -82,7 +82,12 @@ from a13n_harness_ui.configuration.mcp_tools import (
     selection_mutation,
     tool_settings,
 )
-from a13n_harness_ui.configuration.models import BrowserConfiguration, DeviceResource, PairedDeviceAuthentication
+from a13n_harness_ui.configuration.models import (
+    BrowserConfiguration,
+    DeviceResource,
+    PairedDeviceAuthentication,
+    ProjectResource,
+)
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
@@ -201,6 +206,8 @@ if TYPE_CHECKING:
 
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
+from a13n_harness_ui.bot import BotController
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -466,6 +473,7 @@ class HarnessUiApp:
         self._restart = restart_coordinator
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
+        self._bot: BotController | None = None
         self._web_push = web_push
         self._store = store
         self.sharing = Sharing(self, ShareRepository(store.database.sessions))
@@ -524,6 +532,11 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    def bot(self) -> BotController:
+        if self._bot is None:
+            raise HarnessUiError("Bot is available only in WebUI.", code="bot_unavailable")
+        return self._bot
 
     def voice(self) -> VoiceController:
         if self._voice is None:
@@ -956,6 +969,52 @@ class HarnessUiApp:
             if model_id is not None and model_id not in source.models:
                 raise AppStateError("The selected Model no longer exists.", code="model_missing")
             await self._store.project_models.set(project_id, model_id)
+
+    async def create_project(self, *, project: ProjectResource) -> ProjectResource:
+        """Create a configuration-backed Project without replacing an existing resource."""
+        async with self._operation(), self._configuration_lock:
+            path = self._require_configuration_path()
+            source = await self._configurations.current()
+            destination = f"projects/{project.id}.yaml"
+            if (
+                source is not None
+                and (project.id in source.projects or any(item.relative_path == destination for item in source.sources))
+            ) or await to_thread.run_sync((path.parent / destination).exists):
+                raise AppStateError(
+                    "Project already exists; inspect it before making changes.", code="project_conflict"
+                )
+            result = await mutate_configuration_source(
+                path,
+                destination,
+                ResourceMutationRequest(content=project.model_dump_json()),
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            await self._accept_mutation(result)
+            return result.configuration.projects[project.id]
+
+    async def read_project_memory(self, *, project_id: str, path: str = "", offset: int = 0) -> dict[str, Any]:
+        """Read one Project scope on demand; directory entries or bounded file text."""
+        if offset < 0:
+            raise ThreadError("Memory offset must be non-negative.", code="memory_offset_invalid")
+        if not path:
+            entries = await self.memory_files(project_id=project_id)
+            end = min(len(entries), offset + 100)
+            return {
+                "project_id": project_id,
+                "entries": [entry.model_dump(mode="json") for entry in entries[offset:end]],
+                "next_offset": end if end < len(entries) else None,
+            }
+        value = await self.memory_file(project_id=project_id, path=path)
+        end = min(len(value.text), offset + 16384)
+        return {
+            "project_id": project_id,
+            "path": value.path,
+            "version": value.version,
+            "offset": offset,
+            "text": value.text[offset:end],
+            "next_offset": end if end < len(value.text) else None,
+        }
 
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
@@ -2335,6 +2394,8 @@ class HarnessUiApp:
         attachment_ids = tuple(attachment_ids)
         if mode not in {"normal", "goal"}:
             raise ValueError("Unknown submission mode")
+        if thread_id == BOT_THREAD_ID:
+            raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
             draft_clear = self._prepare_draft_clear(thread_id, draft, reset_mode=True)
@@ -2420,6 +2481,8 @@ class HarnessUiApp:
     ) -> RootRunReceipt:
         async with self._operation():
             await self._threads.require_interactive(thread_id)
+            if thread_id == BOT_THREAD_ID:
+                return await self.bot().respond(response, mutation=mutation, model_overrides=model_overrides)
             return await self._root_runs.submit_response(
                 thread_id=thread_id,
                 response=response,
@@ -2514,6 +2577,9 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        if thread_id == BOT_THREAD_ID:
+            # Results stay available for inspection on the next permitted input.
+            return True
         if self._state is not AppState.ready:
             return False
         detail = await self._projections.detail(thread_id)
@@ -2572,6 +2638,8 @@ class HarnessUiApp:
         return True
 
     async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
+        if thread_id == BOT_THREAD_ID:
+            return True
         if self._state is not AppState.ready or not current():
             return False
         detail = await self._projections.detail(thread_id)
@@ -2639,6 +2707,8 @@ class HarnessUiApp:
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
+            if operation.receipt.thread_id == BOT_THREAD_ID:
+                raise ThreadError("Use Bot chat to send Bot input.", code="bot_chat_required")
             await self._threads.require_interactive(operation.receipt.thread_id)
             draft_clear = self._prepare_draft_clear(operation.receipt.thread_id, draft)
             catalog = (
@@ -3248,6 +3318,8 @@ class HarnessUiApp:
         self._replace_candidate_error(None)
         self._devices.update_monitoring_sources(result.configuration.devices.values())
         self._memory_organizer.configuration_changed(result.configuration)
+        if self._bot is not None:
+            await self._bot.reconcile_policy()
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
@@ -3778,6 +3850,7 @@ async def open_harness_ui_app(
             threads = ThreadService(
                 store=store,
                 configurations=configurations,
+                configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
             )
 
             async def authorize_browser(thread_id: str) -> None:
@@ -3970,6 +4043,15 @@ async def open_harness_ui_app(
                 restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
+                app._bot = BotController(
+                    store=store,
+                    threads=threads,
+                    configurations=configurations,
+                    runs=root_runs,
+                    projections=projections,
+                    summaries=summary_hub,
+                    notify=web_push.enqueue if web_push is not None else None,
+                )
                 if configuration_path is not None:
                     app._voice = VoiceController(
                         configuration_root=configuration_path.expanduser().resolve().parent,
@@ -3988,6 +4070,9 @@ async def open_harness_ui_app(
                     configurations=configurations,
                     inspect_configuration=app.inspect_thread_configuration,
                     voice=app._voice,
+                    bot=app._bot,
+                    create_project=app.create_project,
+                    read_project_memory=app.read_project_memory,
                 )
                 root_executor.set_root_capability_factory(
                     lambda composition: ThreadCollaborationCapability(
@@ -4004,6 +4089,8 @@ async def open_harness_ui_app(
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
+                    if app._bot is not None:
+                        background.start_soon(app._bot.run)
                     if app._voice is not None:
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)

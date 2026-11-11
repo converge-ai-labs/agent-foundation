@@ -12,6 +12,7 @@
     "webui",
     "host-browser",
     "live-mode",
+    "bot",
     "---配置---",
     "configuration-recipes",
     "configuration",

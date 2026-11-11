@@ -99,6 +99,80 @@
         }
       }
     },
+    "/api/bot": {
+      "get": {
+        "summary": "Bot Status",
+        "operationId": "bot_status_api_bot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/inputs": {
+      "post": {
+        "summary": "Bot Submit",
+        "operationId": "bot_submit_api_bot_inputs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotInput"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/pause": {
+      "post": {
+        "summary": "Bot Pause",
+        "operationId": "bot_pause_api_bot_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotPause"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/push/configuration": {
       "get": {
         "summary": "Push Configuration",
@@ -8828,6 +8902,9 @@
           },
           {
             "$ref": "#/components/schemas/LiveAgentSource"
+          },
+          {
+            "$ref": "#/components/schemas/BotAgentSource"
           }
         ]
       },
@@ -8839,7 +8916,8 @@
               "agent",
               "markdown",
               "memory",
-              "live"
+              "live",
+              "bot"
             ],
             "title": "Kind",
             "type": "string"
@@ -9856,6 +9934,331 @@
         ],
         "title": "Availability"
       },
+      "BotAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "bot",
+            "title": "Kind",
+            "default": "bot"
+          },
+          "id": {
+            "type": "string",
+            "const": "bot",
+            "title": "Id",
+            "default": "bot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BotAgentSource",
+        "description": "Application-owned persistent assistant; not a selectable Agent resource."
+      },
+      "BotInput": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Input Id"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "heartbeat",
+              "connector",
+              "automatic"
+            ],
+            "title": "Source"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536,
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "dispatching",
+              "admitted",
+              "completed",
+              "interrupted",
+              "discarded"
+            ],
+            "title": "State",
+            "default": "queued"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "causation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "source",
+          "text",
+          "created_at"
+        ],
+        "title": "BotInput"
+      },
+      "BotMessage": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "input_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_id",
+          "role",
+          "text",
+          "created_at"
+        ],
+        "title": "BotMessage"
+      },
+      "BotSnapshot": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "default": "thread_bot"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BotState"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "heartbeat_enabled": {
+            "type": "boolean",
+            "title": "Heartbeat Enabled"
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "title": "Interval Seconds"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_decision": {
+            "type": "boolean",
+            "title": "Pending Decision",
+            "default": false
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/BotInput"
+            },
+            "type": "array",
+            "title": "Inputs",
+            "default": []
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/BotMessage"
+            },
+            "type": "array",
+            "title": "Messages",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "available",
+          "enabled",
+          "heartbeat_enabled",
+          "interval_seconds"
+        ],
+        "title": "BotSnapshot"
+      },
+      "BotState": {
+        "properties": {
+          "activated": {
+            "type": "boolean",
+            "title": "Activated",
+            "default": false
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          },
+          "next_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Heartbeat At"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "heartbeat_interval_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Interval Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BotState"
+      },
       "BrowserAccess": {
         "properties": {
           "protocol": {
@@ -10397,7 +10800,8 @@
               "agent",
               "markdown",
               "memory",
-              "live"
+              "live",
+              "bot"
             ],
             "title": "Source Kind"
           },
@@ -25708,6 +26112,44 @@
         ],
         "title": "ErrorEnvelope",
         "type": "object"
+      },
+      "BotSubmit": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Input Id"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "text"
+        ],
+        "title": "BotSubmit"
+      },
+      "BotPause": {
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paused"
+        ],
+        "title": "BotPause"
       },
       "PushKeys": {
         "properties": {

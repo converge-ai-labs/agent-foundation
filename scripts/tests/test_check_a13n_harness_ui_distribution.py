@@ -82,6 +82,7 @@ def _write_wheel(
             if module.as_posix().startswith("a13n_harness_ui/subagents/") or module.as_posix() in {
                 "a13n_harness_ui/prompts.py",
                 "a13n_harness_ui/assets/system_prompt.md",
+                "a13n_harness_ui/assets/bot_instruction.md",
             }:
                 content = (SCRIPTS_DIRECTORY.parent / "packages/a13n-harness-ui" / module).read_bytes()
             elif module.as_posix() == "a13n_harness_ui/interactive/shell.py":
@@ -199,7 +200,9 @@ def test_rejects_missing_terminal_shell(tmp_path: Path) -> None:
         validate_wheel(wheel)
 
 
-@pytest.mark.parametrize("name", ["code-reviewer.md", "executor.md", "explorer.md", "system_prompt.md"])
+@pytest.mark.parametrize(
+    "name", ["code-reviewer.md", "executor.md", "explorer.md", "system_prompt.md", "bot_instruction.md"]
+)
 def test_rejects_missing_packaged_prompt(tmp_path: Path, name: str) -> None:
     wheel = tmp_path / "a13n-harness-ui.whl"
     _write_wheel(wheel, omitted_package_file=name)

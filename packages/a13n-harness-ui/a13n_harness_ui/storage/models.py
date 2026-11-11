@@ -127,6 +127,81 @@ class ToolExecutionHeadRecord(Base):
     completion_state: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting", index=True)
 
 
+class ConnectorConfigurationRecord(Base):
+    """Host-private Connector instance configuration, including plaintext credentials."""
+
+    __tablename__ = "connector_configuration"
+
+    connector_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    deliver_to_bot: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selected_events: Mapped[str] = mapped_column(Text, nullable=False)
+    settings: Mapped[str] = mapped_column(Text, nullable=False)
+    credentials: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class BotInboxRecord(Base):
+    __tablename__ = "bot_inbox"
+    __table_args__ = (
+        CheckConstraint(
+            "(source = 'connector' AND connector_id IS NOT NULL) OR "
+            "(source = 'heartbeat' AND connector_id IS NULL AND event_type = 'heartbeat')",
+            name="source",
+        ),
+        UniqueConstraint("connector_id", "source_event_id", name="connector_source_event"),
+        Index("uq_bot_inbox_heartbeat", "source", unique=True, sqlite_where=text("source = 'heartbeat'")),
+        Index("ix_bot_inbox_pending", "created_at", "input_id"),
+    )
+
+    input_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    connector_id: Mapped[str | None] = mapped_column(
+        String(_ID), ForeignKey("connector_configuration.connector_id", ondelete="CASCADE"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_event_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class BotNoteRecord(Base):
+    __tablename__ = "bot_note"
+    __table_args__ = (CheckConstraint("length(CAST(content AS BLOB)) BETWEEN 1 AND 16384", name="content_size"),)
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    last_writer_thread_id: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+class BotStateRecord(Base):
+    __tablename__ = "bot_state"
+    __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
+
+    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class BotInputRecord(Base):
+    __tablename__ = "bot_input"
+
+    input_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class BotMessageRecord(Base):
+    __tablename__ = "bot_message"
+
+    message_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class PlannedRestartRecord(Base):
     """The only prepared/claimed update handoff for this local data root."""
 
@@ -328,7 +403,9 @@ class ThreadConfigurationRecord(Base):
     __tablename__ = "thread_configuration"
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
-        CheckConstraint("agent_source_kind IN ('agent', 'markdown', 'memory', 'live')", name="agent_source_kind"),
+        CheckConstraint(
+            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot')", name="agent_source_kind"
+        ),
     )
 
     thread_id: Mapped[str] = mapped_column(

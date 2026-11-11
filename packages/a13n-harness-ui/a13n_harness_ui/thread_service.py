@@ -12,6 +12,7 @@ from a13n_harness import __version__ as harness_version
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
 from a13n_harness_ui.display_history import (
@@ -32,7 +33,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
-from a13n_harness_ui.storage.contracts import LiveAgentSource, MemoryAgentSource
+from a13n_harness_ui.storage.contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
     ConfigurationOrigin,
@@ -79,9 +80,11 @@ class ThreadService:
         *,
         store: LocalStore,
         configurations: CompositionAcceptanceService,
+        configuration_root: Path | None = None,
     ) -> None:
         self._store = store
         self._configurations = configurations
+        self._configuration_root = configuration_root
 
     async def create(
         self,
@@ -109,6 +112,27 @@ class ThreadService:
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
+
+    async def bot_thread(self) -> Thread:
+        """One instance-global root with built-in policy and its own Host workspace."""
+        if self._configuration_root is None:
+            raise ThreadError("Bot requires a selected configuration directory.", code="configuration_missing")
+        workspace = self._configuration_root.expanduser().resolve() / "bot"
+        await to_thread.run_sync(lambda: workspace.mkdir(parents=True, exist_ok=True))
+        async with AsyncFileLock(self._store.layout.root / ".bot-thread.lock"):
+            existing = await self._store.threads.get(BOT_THREAD_ID)
+            if existing is not None:
+                return existing
+            return await self._create(
+                configuration=ThreadConfiguration(
+                    version=1,
+                    agent_source=BotAgentSource(),
+                    local_roots=(str(workspace),),
+                    environment_profile_id=FULL_CONTROL_PROFILE_ID,
+                ),
+                title="Bot",
+                thread_id=BOT_THREAD_ID,
+            )
 
     async def live_thread(self, *, configuration_root: Path) -> Thread:
         """One persistent projectless executor for the selected configuration root."""
@@ -159,7 +183,8 @@ class ThreadService:
         async with checkpoint_lock(self._store.layout.root, thread_id):
             source = await self.get(thread_id)
             if (
-                source.parent_thread_id is not None
+                thread_id == BOT_THREAD_ID
+                or source.parent_thread_id is not None
                 or source.memory_scope is not None
                 or source.configuration.agent_source.kind != "agent"
                 or await self._store.threads.is_coordinator(thread_id)
@@ -208,6 +233,8 @@ class ThreadService:
         return copied
 
     async def promote_coordinator(self, thread_id: str) -> Thread:
+        if thread_id == BOT_THREAD_ID:
+            raise ThreadError("Bot is an independent instance-global root.", code="bot_thread_reserved")
         thread = await self.require_interactive(thread_id)
         if await self._store.threads.is_coordinator(thread_id):
             return thread
@@ -369,6 +396,8 @@ class ThreadService:
     ) -> tuple[str, ...]:
         async with checkpoint_lock(self._store.layout.root, thread_id):
             thread = await self.require_interactive(thread_id)
+            if thread_id == BOT_THREAD_ID:
+                raise ThreadError("Bot is retained for the instance.", code="bot_thread_reserved")
             if thread.parent_thread_id is not None:
                 raise ThreadError("Delete subagent history with its parent chat.", code="child_thread_scoped")
             if thread.configuration.agent_source.kind == "live":
@@ -390,6 +419,8 @@ class ThreadService:
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         patch = mutation.patch
+        if thread_id == BOT_THREAD_ID and (patch.archived or "title" in patch.model_fields_set):
+            raise ThreadError("Bot keeps its global identity and remains available.", code="bot_thread_reserved")
         if thread.configuration.agent_source.kind == "live" and patch.archived:
             raise ThreadError("The Live Thread stays available for voice sessions.", code="live_thread_reserved")
         if "starred" in patch.model_fields_set and await self._store.threads.worker_owners((thread_id,)):
@@ -434,11 +465,16 @@ def apply_configuration_mutation(
     source: LoadedHarnessUiConfiguration, thread: Thread, mutation: ThreadConfigurationMutation
 ) -> ThreadConfiguration:
     """Validate the next configuration without persisting it."""
-    if thread.configuration.agent_source.kind == "live":
-        raise ThreadError("Configure the built-in executor in Live settings.", code="live_thread_reserved")
+    if thread.configuration.agent_source.kind in {"live", "bot"}:
+        kind = thread.configuration.agent_source.kind
+        raise ThreadError(
+            f"Configure the built-in executor in {kind.title()} settings.", code=f"{kind}_thread_reserved"
+        )
     if thread.configuration.version != mutation.expected_version:
         raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
     replacement = mutation.patch.apply(thread.configuration)
+    if thread.thread_id == BOT_THREAD_ID and replacement.project_id is not None:
+        raise ThreadError("Bot belongs to the instance, not a Project.", code="bot_thread_reserved")
     _validate_configuration(source, replacement, root=thread.parent_thread_id is None)
     return replacement
 

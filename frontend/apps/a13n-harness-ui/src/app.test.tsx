@@ -1545,11 +1545,7 @@ it("configures Sidekick in General without changing defaults or starting chats",
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  expect(
-    (await screen.findByRole("switch", { name: "Sidekick" })).getAttribute(
-      "aria-checked",
-    ),
-  ).toBe("true");
+  await screen.findByText("Subagent defaults");
   await user.click(screen.getByText("Subagent defaults"));
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
@@ -1575,10 +1571,13 @@ it("configures Sidekick in General without changing defaults or starting chats",
       screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
     ).toContain("Worker"),
   );
-  await user.click(screen.getByRole("switch", { name: "Sidekick" }));
+  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Use current agent" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(2));
-  expect(parse(content).webui.sidekick).toBeNull();
+  expect(parse(content).webui.sidekick).toEqual({ model: "model-worker" });
   expect(content).toContain("custom: keep");
   expect(content).toContain("agent-assistant");
   expect(submissions).toBe(0);
