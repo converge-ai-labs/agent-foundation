@@ -222,7 +222,7 @@ it("edits Secret references and borrowed storage with explicit source controls",
     target: { value: "API_KEY" },
   });
   await user.click(screen.getByRole("combobox", { name: "Value source" }));
-  await user.click(screen.getByRole("option", { name: "Secret key" }));
+  await user.click(await screen.findByRole("option", { name: "Secret key" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Reference name" }), {
     target: { value: "app-secrets" },
   });
