@@ -1,5 +1,6 @@
 use std::{error::Error, sync::Arc};
 
+mod accessibility;
 mod capacity;
 mod computer;
 mod config;
@@ -36,6 +37,12 @@ mod windows_directory;
 mod windows_job;
 #[cfg(windows)]
 mod windows_path;
+
+/// Runs the Session-local native accessibility helper on its initial thread.
+#[doc(hidden)]
+pub fn run_internal_accessibility_worker(epoch: &str) -> std::io::Result<()> {
+    accessibility::run_internal(epoch)
+}
 
 /// Runs the private gated command supervisor used by this binary.
 #[doc(hidden)]

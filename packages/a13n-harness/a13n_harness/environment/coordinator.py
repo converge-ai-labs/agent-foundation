@@ -215,6 +215,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "name": mount.name,
                 "root": _preferred_mount_path(mount, snapshot.default_mount),
                 "operations": cast(JsonValue, operations),
+                "operations_source": "configured" if mount.descriptor.generation == "unprepared" else "execution",
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
             }
@@ -231,20 +232,19 @@ class CompositeBoundEnvironment(BoundEnvironment):
             payload,
             _MAX_MODEL_CONTEXT_BYTES - len(prefix.encode("utf-8")),
         )
-        return ModelContextProjection(
-            blocks=(
-                ModelContextBlock(
-                    source_id="a13n.environment-mounts",
-                    context_group="environment_context",
-                    placement=(
-                        ModelContextPlacement.INPUT_PREAMBLE
-                        if request.kind is ModelContextRequestKind.INPUT
-                        else ModelContextPlacement.REQUEST_EPILOGUE
-                    ),
-                    content=content,
-                ),
-            )
+        block = ModelContextBlock(
+            source_id="a13n.environment-mounts",
+            context_group="environment_context",
+            placement=(
+                ModelContextPlacement.INPUT_PREAMBLE
+                if request.kind is ModelContextRequestKind.INPUT
+                else ModelContextPlacement.REQUEST_EPILOGUE
+            ),
+            content=content,
         )
+        if request.history.matches_latest(block):
+            return ModelContextProjection()
+        return ModelContextProjection(blocks=(block,))
 
     def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
         route = self._resolve_path(path, alias=alias)

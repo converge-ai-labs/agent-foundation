@@ -20,6 +20,41 @@ description: 提供当前上下文，跨 Run 保留决策，并在压缩 Thread 
 
 先运行[两次 Run 的示例](#context-composition)，再按需添加工作区指导或压缩。Host 如何保存和续接 Thread，见[状态与恢复](state-and-resume.md)。
 
+## 来源自主决定上下文注入
+
+每个 context producer 通过 `AbstractModelContextCapability` 或 `RunBindings.model_context` 决定要注入什么。Harness 为所有 producer 提供同一个只读的 `request.history` 视图，校验完整返回投影，并提交所有返回的 block。稳定的 `(source_id, key)` 用于区分独立变化的块；规范 metadata 在提示正文之外记录身份、placement 和 SHA-256 内容摘要。
+
+`history.matches_latest(block)` 将快照的哈希与同一 `(source_id, key)` 最近保留块的哈希比较。哈希覆盖完整渲染文本的 UTF-8 字节，保存在 metadata 中，不写入提示正文。下面的 producer 仅在指导内容与最近快照不同时追加：
+
+```python
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextPlacement,
+    ModelContextProjection,
+)
+
+
+class WorkspaceGuide(AbstractModelContextCapability):
+    async def wrap_model_context(self, ctx, request, handler):
+        projection = await handler(request)
+        block = ModelContextBlock(
+            source_id="example.guide",
+            key="workspace",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="Workspace guidance: run the focused tests before committing.",
+        )
+        if request.history.matches_latest(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
+```
+
+当前状态 producer（包括独立文件正文）使用同一比较方式。`A → A → B → A` 追加 `A、B、A`：切回 A 时与最近的 B 不同，因此重新发送完整的 A 块。文件上下文另行跟踪所选路径，以显式空列表报告全部移除。无法观测是另一种状态。可选的 `history.contains(block)` 查询相同身份的哈希是否在保留历史中出现过；较早的匹配不能证明当前状态相同。
+
+事件、提醒和增量投递保留各自 owner 的触发条件和 cursor。事件发生时就返回，即使此前事件的文字完全相同；没有 emission 开关，也没有框架返回后的自动过滤。如果外层 middleware 改写 block，它就负责基于已提交的最终正文判断是否注入。
+
+Checkpoint 续接和 fork 查询所选的保留历史。压缩或 handoff 移除块后，`matches_latest` 变为 false，producer 可以重新提供内容。精确 retry/resume 边界保持不变。在 Live 中，视图包含已确认的连接上下文；待发送内容不构成存在证明，顺序不明时 `matches_latest` 返回 false，已确认的旧哈希仍然保留。
+
 ## Run 配置
 
 `RunConfiguration` 提供一次 Run 内工具和插件共享的设置。下面的片段构建配置并在本地检查 URL，不发出 HTTP 请求：

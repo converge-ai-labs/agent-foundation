@@ -538,7 +538,7 @@ class RootRunExecutor:
                 actor="a13n-harness-ui.root",
                 host_refs={"thread_id": thread.thread_id},
             )
-            usage_reporter = self._store.usage.reporter(thread_id)
+            usage_reporter = self._store.usage.reporter(thread_id, reconstructed.model_resolver.configured_models)
             model_call_check = (
                 await reconstructed.compaction.prepare(
                     instance=instance,

@@ -475,3 +475,14 @@ async def test_restored_values_obey_current_limits_before_model_execution() -> N
     with pytest.raises(ValueError, match="max_state_entries"):
         await executable.run("run", bindings=RunBindings.embedded(), previous_state=_stored({"one": 1, "two": 2}))
     assert not reached_model
+
+
+async def test_stored_key_removal_publishes_empty_snapshot_once() -> None:
+    _, _, contexts = await _run(
+        [_code('await forget(key="saved")'), _code("await load()")],
+        previous_state=_stored({"saved": 1}),
+    )
+    assert "CodeAct stored keys (1 of 1)" in contexts[0]
+    assert contexts[0].count("CodeAct stored keys: [].") == 0
+    assert contexts[1].count("CodeAct stored keys: [].") == 1
+    assert contexts[2].count("CodeAct stored keys: [].") == 1

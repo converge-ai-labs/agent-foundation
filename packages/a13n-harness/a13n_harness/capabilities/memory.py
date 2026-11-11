@@ -343,6 +343,7 @@ class _FileMemoryRun(FileMemoryCapability):
                 placement=ModelContextPlacement.INPUT_PREAMBLE,
                 content=content,
                 memory_mount=name,
+                key=name,
             )
             for name, content in contents
         )
@@ -743,6 +744,7 @@ class _RecordMemoryRun(RecordMemoryCapability):
                         placement=ModelContextPlacement.INPUT_PREAMBLE,
                         content=block,
                         memory_mount=mount.name,
+                        key=mount.name,
                     )
                 )
         _bound_sources(observed, "records")

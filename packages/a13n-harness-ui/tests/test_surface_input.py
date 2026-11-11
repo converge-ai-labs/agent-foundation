@@ -1,24 +1,28 @@
 """Fixed interface hints stay model-visible without becoming authored input."""
 
 from copy import deepcopy
+from itertools import pairwise
 from xml.etree import ElementTree
 
 import pytest
+from a13n_harness.content import input_request, request_input_content
 from a13n_harness.errors import InputError
 from a13n_harness_ui.errors import RunCoordinationError
-from a13n_harness_ui.root_input import append_surface_hint
+from a13n_harness_ui.surface_context import append_surface_provenance, surface_context
 from a13n_harness_ui.surfaces import RootOperationStatus
 from a13n_harness_ui.thread_files import ComposerInput
-from pydantic_ai.messages import BinaryContent, ModelResponse, TextContent, TextPart
+from pydantic_ai.messages import BinaryContent, ModelRequest, ModelResponse, TextContent, TextPart
 
 from .test_long_text_input import _app, _function_model, _references, _text_parts
 
 
 def _hints(messages):
     return [
-        part
-        for part in _text_parts(messages)
-        if isinstance(part, TextContent) and (part.metadata or {}).get("source_id") == "a13n-harness-ui.surface"
+        TextContent(item.value, metadata=item.metadata.model_dump(mode="json"))
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if item.metadata.source_id == "a13n-harness-ui.surface" and isinstance(item.value, str)
     ]
 
 
@@ -29,39 +33,52 @@ def test_surface_hint_preserves_native_parts_and_uses_hidden_xml(surface):
     prompt = [text, image, " then explain"]
     before = deepcopy(prompt)
 
-    result = append_surface_hint(prompt, surface)
+    result = append_surface_provenance(prompt, surface)
 
     assert prompt == before
     assert result[:-1] == tuple(prompt)
     assert result[0] is text and result[1] is image
-    hint = result[-1]
-    assert isinstance(hint, TextContent)
-    assert hint.metadata == {"display": False, "source_id": "a13n-harness-ui.surface"}
+    origin = result[-1]
+    assert isinstance(origin, TextContent)
+    assert origin.metadata == {
+        "display": False,
+        "source_id": "a13n-harness-ui.input-surface",
+        "context_group": "runtime_state",
+        "input_surface": surface,
+    }
+    assert "This input was submitted" in origin.content
+    hint = surface_context([input_request(result)])[0]
     element = ElementTree.fromstring(hint.content)
     assert element.tag == "surface-context"
     assert element.attrib == {"source": "a13n-harness-ui"}
     assert "<![CDATA[" in hint.content
     assert f"Harness UI {surface.upper() if surface == 'tui' else 'WebUI'}" in element.text
-    assert "For the response to this input" in element.text
     if surface == "webui":
         assert "static diagrams" in element.text
         assert "LaTeX math renders with KaTeX" in element.text
-        assert "$...$ for inline math" in element.text
-        assert "$$ on separate lines" in element.text
-        assert "fenced math blocks" in element.text
-        assert "interactive callbacks are not supported" in element.text
         assert "/threads/{root_thread_id}?native=files&native_path=" in element.text
-        assert "/threads/{root_thread_id}?native=files&native_path=" in hint.content
-        assert "Do not use a bare Host path" in element.text
     else:
         assert "as source text rather than diagrams" in element.text
         assert "does not restrict formats written to files" in element.text
-        assert "native_path" not in element.text
-    assert append_surface_hint("hello", surface)[0] == "hello"
+    assert append_surface_provenance("hello", surface)[0] == "hello"
+
+
+@pytest.mark.parametrize("surface", [None, "tui", "webui"])
+def test_surface_provenance_is_counted_as_runtime_state_after_reload(surface):
+    from a13n_harness.context_breakdown import measure_context
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+    from pydantic_ai.models import ModelRequestParameters
+
+    prompt = append_surface_provenance("hello", surface)
+    history = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json([input_request(prompt)]))
+    breakdown = measure_context(history, ModelRequestParameters())
+    assert breakdown.groups["conversation"].characters == len("hello")
+    assert breakdown.groups["runtime_state"].characters == len(prompt[-1].content)
+    assert "other" not in breakdown.groups
 
 
 @pytest.mark.anyio
-async def test_surface_hint_is_per_submission_hidden_and_not_externalized(tmp_path, monkeypatch):
+async def test_surface_guidance_changes_only_on_transition_and_provenance_is_per_submission(tmp_path, monkeypatch):
     observed = []
 
     def model(messages, info):
@@ -70,17 +87,28 @@ async def test_surface_hint_is_per_submission_hidden_and_not_externalized(tmp_pa
 
     async with _app(tmp_path, monkeypatch, _function_model(model), threshold=10) as (app, _, _):
         thread = await app.create_thread()
-        for surface in (None, "webui", "tui"):
+        for surface in (None, "webui", "webui", "tui", "tui", "webui", None):
             receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello", input_surface=surface)
             outcome = await app.wait_root_operation(receipt.receipt_id)
             assert outcome.status is RootOperationStatus.completed, outcome.failure
 
-        assert _hints(observed[0]) == []
-        assert len(_hints(observed[1])) == 1
-        assert "Harness UI WebUI" in _hints(observed[1])[0].content
-        assert len(_hints(observed[2])) == 2
-        assert "Harness UI TUI" in _hints(observed[2])[-1].content
-        assert not _references(observed[2])  # Even a threshold below hint length must leave it inline.
+        assert [len(_hints(history)) for history in observed] == [1, 2, 2, 3, 3, 4, 5]
+        assert "no declared response surface" in _hints(observed[0])[0].content
+        assert "Harness UI WebUI" in _hints(observed[1])[-1].content
+        assert "Harness UI TUI" in _hints(observed[3])[-1].content
+        assert "Harness UI WebUI" in _hints(observed[5])[-1].content
+        assert "no declared response surface" in _hints(observed[6])[-1].content
+        assert not _references(observed[-1])
+        for previous, current in pairwise(observed):
+            # Cross-Run instruction capture can change; committed surface blocks cannot.
+            assert _hints(current)[: len(_hints(previous))] == _hints(previous)
+        origins = [
+            part
+            for part in _text_parts(observed[-1])
+            if isinstance(part, TextContent)
+            and (part.metadata or {}).get("source_id") == "a13n-harness-ui.input-surface"
+        ]
+        assert len(origins) == 7
 
         page = await app.get_thread_transcript(thread_id=thread.thread_id)
         hints = [
@@ -89,7 +117,7 @@ async def test_surface_hint_is_per_submission_hidden_and_not_externalized(tmp_pa
             for part in entry.parts
             if part.metadata.source_id == "a13n-harness-ui.surface"
         ]
-        assert len(hints) == 2
+        assert len(hints) == 5
         assert all(part.metadata.display is False for part in hints)
         assert all(
             "surface-context" not in (part.text or "")
@@ -119,3 +147,24 @@ async def test_surface_hint_does_not_make_empty_input_valid(tmp_path, monkeypatc
         thread = await app.create_thread()
         with pytest.raises(error, match=r"blank|empty"):
             await app.submit_thread(thread_id=thread.thread_id, prompt=prompt, input_surface=surface)
+
+
+def test_surface_provenance_survives_retained_input_replay_and_internal_messages_do_not_clear_it():
+    from a13n_harness.content import ContentItem, ContentMetadata
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+    web = input_request(append_surface_provenance("question", "webui"))
+    history = [web, input_request("internal follow-up")]
+    assert "Harness UI WebUI" in surface_context(history)[0].content
+    # Compaction/handoff replays semantic retained inputs, not generated guidance.
+    origin = request_input_content(web)[-1]
+    retained = input_request([ContentItem(origin.value, origin.metadata), "summary"])
+    restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json([retained]))
+    assert surface_context(restored) == surface_context(history)
+    steering = input_request([ContentItem("adjust", ContentMetadata.model_validate({"a13n.steering-source": "user"}))])
+    assert surface_context([*restored, steering]) == surface_context(history)
+    tui = input_request(append_surface_provenance("next", "tui"))
+    assert "Harness UI TUI" in surface_context([*restored, tui])[0].content
+    unspecified = input_request(append_surface_provenance("next", None))
+    assert "no declared response surface" in surface_context([*restored, tui, unspecified])[0].content
+    assert not surface_context([input_request("summary without retained inputs")])

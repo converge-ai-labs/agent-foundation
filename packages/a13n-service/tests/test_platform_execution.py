@@ -159,6 +159,11 @@ async def test_item_navigation_resolves_retained_content_and_keeps_pages_bounded
     await (await runs_kit.attempt(service))
     ctx = context(service)
     page = await platform_queries.list_run_items(ctx, run_id=created["run"]["id"], limit=100)
+    while not any("retained marker" in item.text.text for item in page.page.items):
+        assert page.page.next_after is not None, "Missing assistant output summary"
+        page = await platform_queries.list_run_items(
+            ctx, run_id=created["run"]["id"], after=page.page.next_after, limit=100
+        )
     assert reads.size(page) < 12000
     found = False
     for refs in page.content.values():
@@ -185,6 +190,11 @@ async def test_item_discovery_is_lazy_and_continuations_bind_first_read(service,
     monkeypatch.setattr(runs, "content", retained)
     monkeypatch.setattr(item_reads, "get_item", selected)
     page = await platform_queries.list_run_items(ctx, run_id=created["run"]["id"], limit=100)
+    while not any("retained marker" in item.text.text for item in page.page.items):
+        assert page.page.next_after is not None, "Missing assistant output summary"
+        page = await platform_queries.list_run_items(
+            ctx, run_id=created["run"]["id"], after=page.page.next_after, limit=100
+        )
     selected.assert_not_awaited()
     retained.assert_not_awaited()
     for item in page.page.items:

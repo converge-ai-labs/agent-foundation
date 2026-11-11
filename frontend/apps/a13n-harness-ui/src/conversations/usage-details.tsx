@@ -294,6 +294,11 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                     (scope === "combined" ||
                       group.descendant === (scope === "descendants")),
                 );
+                const reported = [
+                  ...new Set(
+                    groups.flatMap((group) => group.reported_models ?? []),
+                  ),
+                ];
                 return (
                   <li key={name}>
                     <details className={styles.modelDetails}>
@@ -314,6 +319,11 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                           {modelCost(value)}
                         </span>
                       </summary>
+                      {reported.length > 0 && (
+                        <p className={styles.scope}>
+                          {t("Reported models")}: {reported.join(", ")}
+                        </p>
+                      )}
                       <TokenRows totals={value} />
                       {value.unknown_model_costs > 0 && (
                         <p className={styles.scope}>

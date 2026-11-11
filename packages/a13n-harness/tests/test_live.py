@@ -36,6 +36,7 @@ from pydantic_ai.capabilities import AbstractCapability, Capability, HandleDefer
 from pydantic_ai.exceptions import ModelRetry
 from pydantic_ai.messages import (
     BinaryAudio,
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -47,6 +48,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     SpeechPart,
     SpeechPartDelta,
+    TextContent,
     ToolReturnPart,
 )
 from pydantic_ai.models import ModelRequestParameters
@@ -236,20 +238,20 @@ async def _call(model: _Model, name: str, args: str = "{}", *, call_id: str = "c
 class _ContextProjection:
     def __init__(self) -> None:
         self.requests = []
+        self.value: str | None = None
+        self.repeat = False
 
     async def wrap_model_context(self, ctx, request, handler):
         projection = await handler(request)
         self.requests.append(request)
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id="test.live-context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=f"Live context {len(self.requests)}",
-                ),
-            )
+        block = ModelContextBlock(
+            source_id="test.live-context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=self.value if self.value is not None else f"Live context {len(self.requests)}",
         )
+        if not self.repeat and request.history.matches_latest(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 
 
 async def test_live_tool_result_preserves_content_and_refreshes_context_before_send() -> None:
@@ -798,3 +800,139 @@ async def test_live_plugin_cleanup_failure_withholds_terminal_result() -> None:
     assert not any(isinstance(event, HarnessRunResultEvent) for event in events)
     assert failure.value.outcome is not None and failure.value.outcome.output is None
     assert "Keep before plugin failure" in (await live.export_state()).model_dump_json()
+
+
+@pytest.mark.parametrize("repeat", [False, True])
+async def test_live_snapshot_delivery_uses_confirmed_connection_context(repeat) -> None:
+    def lookup() -> str:
+        return "found"
+
+    projection = _ContextProjection()
+    projection.value = "snapshot A"
+    projection.repeat = repeat
+    executable = HarnessBuilder().build(
+        AgentDefinition(output_type=str, agent=AgentSpec(), capabilities=(Capability(tools=[lookup]),))
+    )
+    model = _Model()
+    delivered = asyncio.Queue()
+    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+
+        async def consume():
+            async for event in live:
+                if isinstance(event, HarnessEvent) and isinstance(event.event, FunctionToolResultEvent):
+                    await delivered.put(event.event.part.tool_call_id)
+
+        consumer = asyncio.create_task(consume())
+        for index, value in enumerate(("snapshot A", "snapshot B", "snapshot B", "snapshot A")):
+            projection.value = value
+            result = await _call(model, "lookup", call_id=f"snapshot-{index}")
+            assert await asyncio.wait_for(delivered.get(), 5) == f"snapshot-{index}"
+            items = [
+                item
+                for item in result.content or ()
+                if isinstance(item, TextContent) and item.metadata.get("source_id") == "test.live-context"
+            ]
+            expected = repeat or index in (1, 3)
+            assert bool(items) is expected
+            if expected:
+                assert items[0].content == value
+                assert items[0].metadata["display"] is False
+                assert items[0].metadata["model_context"]["placement"] == "request_epilogue"
+        await live.close()
+        await consumer
+    assert live.result is not None
+    # Initial instructions stay instructions, not a fabricated user message.
+    from a13n_harness.content import request_input_content
+
+    snapshots = [
+        item.value.content
+        for message in live.result.all_messages()
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if item.metadata.source_id == "test.live-context" and isinstance(item.value, TextContent)
+    ]
+    assert snapshots == (
+        ["snapshot A", "snapshot B", "snapshot B", "snapshot A"] if repeat else ["snapshot B", "snapshot A"]
+    )
+
+
+async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_events():
+    from a13n_harness.live import _LiveCapability
+
+    bridge = _LiveCapability(None)
+
+    def projection(text):
+        return ModelContextProjection(
+            blocks=(
+                ModelContextBlock(
+                    source_id="test.snapshot",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=text,
+                ),
+            )
+        )
+
+    def confirmed(call_id, value, *, outcome="success", include_content=True):
+        return FunctionToolResultEvent(
+            part=ToolReturnPart(tool_name="lookup", tool_call_id=call_id, content="found", outcome=outcome),
+            content=[
+                TextContent(block.content, metadata=block.content_item().metadata.model_dump(mode="json"))
+                for block in value.blocks
+            ]
+            if include_content
+            else None,
+        )
+
+    def select(call_id, value):
+        # Selection belongs to the producer. The bridge only records delivery.
+        selected = ModelContextProjection(
+            blocks=tuple(block for block in value.blocks if not bridge.history.matches_latest(block))
+        )
+        bridge.record_pending(call_id, selected)
+        return selected
+
+    a, b = projection("A"), projection("B")
+    bridge.initial = a
+    bridge.connected()
+    assert not select("unchanged", a).blocks
+    assert select("first", b) == b
+    assert bridge.history.contains(a.blocks[0])
+    assert not bridge.history.matches_latest(a.blocks[0])
+    assert not bridge.history.matches_latest(b.blocks[0])
+    assert select("second", a) == a
+    # Result observations may replay in call order, not actual send order.
+    bridge.settled(confirmed("first", b))
+    bridge.settled(confirmed("second", a))
+    assert bridge.history.contains(b.blocks[0])
+    assert not bridge.history.matches_latest(a.blocks[0])
+    assert not bridge.history.matches_latest(b.blocks[0])
+    assert select("repair", a) == a
+    bridge.settled(confirmed("repair", a))
+    assert not select("stable", a).blocks
+    assert bridge.history.contains(a.blocks[0])
+    assert select("failed", b) == b
+    bridge.settled(confirmed("failed", b, outcome="interrupted", include_content=False))
+    assert select("resend", b) == b
+    bridge.settled(confirmed("resend", b, include_content=False))
+    assert select("missing", b) == b
+    # No settlement arrives for this call. A later confirmation cannot establish
+    # ordering against a delivery whose outcome is still unknown.
+    assert select("after-missing", a) == a
+    bridge.settled(confirmed("after-missing", a))
+    assert "missing" in bridge.pending
+    assert bridge.history.contains(a.blocks[0])
+    assert not bridge.history.matches_latest(a.blocks[0])
+    bridge.reconnected()
+    assert not bridge.delivered.blocks
+    assert not bridge.pending
+    assert not bridge.ambiguous
+    # A result from the old connection cannot establish the new baseline.
+    bridge.settled(confirmed("missing", b))
+    assert select("new-connection", a) == a
+    bridge.settled(confirmed("new-connection", a))
+    assert not select("new-stable", a).blocks
+    assert select("next-b", b) == b
+    bridge.settled(confirmed("next-b", b))
+    assert bridge.history.contains(a.blocks[0])
+    assert bridge.history.contains(b.blocks[0])
+    assert bridge.history.matches_latest(b.blocks[0])

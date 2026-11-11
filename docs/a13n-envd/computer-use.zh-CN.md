@@ -130,6 +130,39 @@ Zoom 结果包含 `source_observation_id`，以及按原图像素表示的 `regi
 
 在 WebUI 展开**观测桌面**或 **Inspect desktop region** 查看图像。临时显示副本可能过期。客户端集成应及时关闭截图 reader，释放传输容量。
 
+## 原生无障碍访问
+
+macOS 在继承的登录会话中，通过 Session 所有的 helper 实现全部七种语义读取及 19 种封闭的 AX 修改操作。在系统设置中为 daemon 或负责启动它的应用授予辅助功能权限；就绪检查不会弹出授权提示。AX 对所有 `view` 值公开同一原生层级。属性元数据保留观测到的可写性，动作保留确切的所有者，原生文本范围保留 AX 位置（AppKit 文本采用 UTF-16 位置）。派生范围保持应用选区不变，直到显式执行选择修改。原生边界使用逻辑 `ax_screen` 坐标；截图映射将所选显示器与保留的观测进行验证，再按该图像缩放。跨显示器矩形可能报告投影不可用。不支持的原生范围操作会明确报告。
+
+Windows 在继承的已解锁交互桌面上实现全部七种语义读取及 32 种封闭的 UIA 修改操作。UIA 对象保留在 Session 所有的 COM helper 中。`raw`、`control` 和 `content` 使用对应的 UIA 树遍历器。`applications` 返回原生顶层窗口；`application` 按 `process_id` 过滤这些窗口，因为 UIA 没有定义应用容器。TextPattern 范围保留不透明的原生端点；派生范围会克隆源范围，并保持应用选区不变。要改变选区，请显式调用选择修改操作。不支持的整数偏移和行索引会返回不支持。原生边界使用 `uia_physical_screen` 坐标框架，保留显示器的负坐标原点。控件公开实际模式和观测到的可写性；依赖操作数的支持状态保留为候选，并在派发前验证。
+
+Linux 在继承的 X11 桌面上实现原生 AT-SPI 读取及全部 30 种 AT-SPI 修改操作。从同一已登录图形会话启动 Envd，保留 `DBUS_SESSION_BUS_ADDRESS`，并确保 AT-SPI 无障碍总线正在运行。Debian/Ubuntu 需要安装 `at-spi2-core` 和 `libatk-adaptor`；应用必须公开无障碍接口。Envd 通过 `org.a11y.Bus` 发现总线，不会选择其他用户的总线。AT-SPI 对所有 `view` 值遍历应用的原生层级；Linux 上的 `raw`、`control` 和 `content` 不应用 UIA 过滤器。文本范围采用原生字符位置，与 UTF-8 字节限额分别计算。
+
+Linux 的焦点获取和命中点下探使用节点、调用次数及 deadline 预算，与树遍历的 `depth` 独立。点获取返回可见窗口的原生命中候选，不保证跨应用的最前窗口顺序。GTK 验收验证按钮动作、文本编辑、数值修改和焦点；受控 D-Bus provider 检查全部 30 种修改操作的原生成员、参数映射及失败证据。
+
+Computer 工具集也提供桌面语义访问。先调用 `computer_accessibility_describe` 检查后端、就绪状态和支持的读取。后端支持、挂载权限和具体控件的能力分别判断。没有原生后端的 daemon 会报告不支持；仅启用 Computer Use 不会提供原生后端。
+
+| 工具                                            | 用途                                                      |
+| ----------------------------------------------- | --------------------------------------------------------- |
+| `computer_accessibility_describe`               | 发现原生后端和就绪状态                                    |
+| `computer_accessibility_roots`                  | 定位桌面、应用、焦点或指定点的根节点                      |
+| `computer_accessibility_inspect`                | 读取有界树和各节点的原生能力                              |
+| `computer_accessibility_find`                   | 在保留的根节点内查找有界匹配                              |
+| `computer_accessibility_read`                   | 读取原生属性、文本、选区、表格和平台专用元数据            |
+| `computer_accessibility_range`                  | 获取或变换原生文本范围引用                                |
+| `computer_accessibility_range_read`             | 读取保留范围的文本、边界或元数据                          |
+| `computer_ax`, `computer_uia`, `computer_atspi` | 执行显式选择的 macOS AX、Windows UIA 或 Linux AT-SPI 修改 |
+
+分别授予语义读取权限，例如 `environment.computer.a11y_describe`、`environment.computer.a11y_roots` 和 `environment.computer.a11y_inspect`。修改需要精确动作权限，例如 `environment.computer.ax_perform_action`、`environment.computer.uia_invoke` 或 `environment.computer.atspi_do_action`。选择分组工具不会授权其中的全部操作。
+
+先检查目标，选择它实际报告的能力，执行原生操作，再回读或截图验证应用结果。限额约束节点数、深度、文本、条目、匹配数、原生调用、序列化字节和时间。判断未匹配前，检查完整性和字段错误。受保护值保持不可用。原生文本偏移保留声明的平台单位。
+
+节点和文本范围引用属于原环境执行及原生 helper 代次。保留返回的引用，不要根据标签或原生 ID 重建。Session 或 helper 替换后重新获取。过期引用会失败，不会改选相似控件。
+
+基于截图命中测试时，roots scope 使用 `kind: "screenshot_point"`，传入已有 `observation_id`，并按配置的截图坐标空间提供 `point`。Inspect 可以请求 `projection_observation_id`；各节点的 `image_projection` 报告原生边界能否映射到该图像。只使用返回的投影，不要将原生边界当作截图坐标。语义读取和投影不会捕获像素或刷新观测。
+
+原生修改结果分别记录原生确认和操作 receipt。`application_outcome: "unverified"` 要求随后观察结果。投递或完成状态不明时，先检查当前状态再决定是否重试；不能安全地自动重放。
+
 ## 剪贴板文本
 
 分别授予 `environment.computer.read_clipboard` 和 `environment.computer.write_clipboard`，供 `computer_read_clipboard` 和 `computer_write_clipboard` 使用。两者均支持 macOS、Windows 和 Linux X11。通过 `alias` 选择挂载；调用不需要观测引用。

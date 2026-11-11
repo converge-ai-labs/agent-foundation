@@ -219,9 +219,12 @@
   font: var(--harness-code-size)/1.6 var(--font-mono);
   tab-size: 4;
 }
-.content pre {
+.sourceScroll {
+  --reader-surface: var(--a13n-surface);
   max-height: 16rem;
-  overflow: auto;
+}
+.content pre {
+  overflow: visible;
   padding: 4px 12px 12px;
   white-space: pre;
 }

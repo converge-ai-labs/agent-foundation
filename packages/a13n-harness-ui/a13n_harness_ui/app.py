@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mappi
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from itertools import chain
 from pathlib import Path
@@ -132,6 +133,7 @@ from a13n_harness_ui.errors import (
     HarnessUiError,
     LivePresentationError,
     RunCoordinationError,
+    StoreIntegrityError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -248,7 +250,7 @@ from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import append_surface_hint, detach_input
+from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -276,6 +278,7 @@ from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+from a13n_harness_ui.surface_context import append_surface_provenance
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
     ChildControlResult,
@@ -483,6 +486,7 @@ class HarnessUiApp:
         self._host_git = HostGit(enabled=share_computer)
         self._host_terminal = HostTerminal(enabled=share_computer)
         self._shared_drafts: dict[str, SharedDraft] = {}
+        self._shared_drafts_lock = Lock()
         self._page_presence = PagePresence()
         self._root_runs = root_runs
         self._tool_executions = tool_executions
@@ -1827,25 +1831,55 @@ class HarnessUiApp:
             return exc.code
 
     async def list_unsent_drafts(self) -> tuple[DraftSummary, ...]:
-        """Discover process-local shared input without joining editors or reading text."""
+        """Discover saved shared input without joining editors or reading text."""
         async with self._operation():
             return tuple(
-                DraftSummary(thread_id=thread_id, draft_id=draft.draft_id, unsent_since=draft.unsent_since)
-                for thread_id, draft in self._shared_drafts.items()
-                if draft.unsent_since is not None and not draft.closed
+                DraftSummary(thread_id=thread_id, draft_id=draft_id, unsent_since=since)
+                for thread_id, draft_id, since in await self._store.drafts.unsent()
             )
 
     async def shared_draft(self, thread_id: str) -> SharedDraft:
-        async with self._operation():
-            thread = await self._threads.require_interactive(thread_id)
-            if thread.parent_thread_id is not None:
-                raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
-            await self._thread_files.touch(thread_id)
-            if thread_id not in self._shared_drafts:
-                self._shared_drafts[thread_id] = SharedDraft()
-            return self._shared_drafts[thread_id]
+        async with self._operation(), self._shared_drafts_lock:
+            return await self._load_shared_draft(thread_id)
 
-    async def edit_shared_draft(self, thread_id: str, participant: str, command: DraftCommand) -> None:
+    @asynccontextmanager
+    async def shared_draft_editor(self, thread_id: str) -> AsyncGenerator[tuple[SharedDraft, str]]:
+        draft: SharedDraft | None = None
+        participant: str | None = None
+        try:
+            async with self._operation(), self._shared_drafts_lock:
+                draft = await self._load_shared_draft(thread_id)
+                participant = draft.attach()
+            yield draft, participant
+        finally:
+            if draft is not None and participant is not None:
+                draft.detach(participant)
+
+    async def _load_shared_draft(self, thread_id: str) -> SharedDraft:
+        """Load under the draft lock; editor registration shares its prune boundary."""
+        thread = await self._threads.require_interactive(thread_id)
+        if thread.parent_thread_id is not None:
+            raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
+        await self._thread_files.touch(thread_id)
+        if thread_id not in self._shared_drafts:
+            from a13n_harness_ui.storage.drafts import DRAFT_RETENTION
+
+            stored = await self._store.drafts.get(thread_id)
+            if stored is not None and stored.updated_at < datetime.now(UTC) - DRAFT_RETENTION:
+                stored = None
+            try:
+                draft = SharedDraft(thread_id=thread_id, stored=stored, persist=self._store.drafts.save)
+            except ValueError as exc:
+                raise StoreIntegrityError(
+                    "Couldn't restore this saved composer. Its stored input was preserved; repair the saved draft before reconnecting.",
+                    code="draft_restore_failed",
+                ) from exc
+            self._shared_drafts[thread_id] = draft
+        return self._shared_drafts[thread_id]
+
+    async def edit_shared_draft(
+        self, thread_id: str, participant: str, command: DraftCommand, *, edit_options: bool = True
+    ) -> None:
         async with self._operation():
             # Joining establishes the immutable root/interactive scope and holds
             # Thread files until App close. Commands must belong to that room;
@@ -1857,26 +1891,38 @@ class HarnessUiApp:
             async def validate(attachments: tuple[str, ...]) -> None:
                 await self._thread_files.validate_attachments(thread_id, attachments)
 
-            if await draft.command(participant, command, validate):
+            if await draft.command(participant, command, validate, edit_options=edit_options):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
-    def _prepare_draft_clear(self, thread_id: str, capture: DraftCapture | None) -> tuple[SharedDraft, bytes] | None:
+    def _prepare_draft_clear(
+        self, thread_id: str, capture: DraftCapture | None, *, reset_mode: bool = False
+    ) -> tuple[SharedDraft, tuple[bytes, bytes | None]] | None:
         if capture is None:
             return None
         draft = self._shared_drafts.get(thread_id)
         if draft is None:
             raise AppStateError("The shared draft instance changed.", code="draft_instance_conflict")
-        return draft, draft.prepare_clear(capture)
+        return draft, draft.prepare_clear(capture, reset_mode=reset_mode)
 
-    async def _clear_submitted_draft(self, thread_id: str, prepared: tuple[SharedDraft, bytes] | None) -> None:
+    async def _clear_submitted_draft(
+        self, thread_id: str, prepared: tuple[SharedDraft, tuple[bytes, bytes | None]] | None
+    ) -> None:
         if prepared is None:
             return
         draft, update = prepared
         # Admission already succeeded. Finish its draft cleanup even if the
         # initiating request disappears, without shielding admission itself.
         with CancelScope(shield=True):
-            if await draft.clear(update):
-                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+            try:
+                if await draft.clear(update):
+                    await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+            except (HarnessUiError, ValueError) as exc:
+                # Do not turn known admission into rejection: a caller could
+                # otherwise retry input which is already executing.
+                get_logger(__name__).warning(
+                    "Accepted input draft cleanup failed",
+                    extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+                )
 
     @property
     def host_terminal_available(self) -> bool:
@@ -2112,9 +2158,31 @@ class HarnessUiApp:
 
     async def prune_thread_files(self) -> tuple[str, ...]:
         async with self._operation():
-            return await self._thread_files.prune()
+            return await self._prune_scratch()
+
+    async def _prune_scratch(self) -> tuple[str, ...]:
+        retained = frozenset(thread_id for thread_id, _, _ in await self._store.drafts.unsent()) | frozenset(
+            thread_id
+            for thread_id, draft in self._shared_drafts.items()
+            if draft.participants and draft.unsent_since is not None
+        )
+        return await self._thread_files.prune(retained=retained)
+
+    async def _prune_drafts(self) -> None:
+        async with self._shared_drafts_lock:
+            active = tuple(thread_id for thread_id, draft in self._shared_drafts.items() if draft.participants)
+            for thread_id in await self._store.drafts.prune(active=active):
+                if (draft := self._shared_drafts.pop(thread_id, None)) is not None:
+                    draft.close()
+                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
     async def _maintain_read_models(self) -> None:
+        try:
+            await self._store.repair_usage_models()
+        except Exception as exc:
+            get_logger(__name__).warning(
+                "Historical usage model lookup failed", extra={"error_type": type(exc).__name__}
+            )
         while True:
             try:
                 repaired = await self._store.repair_read_models()
@@ -2132,7 +2200,8 @@ class HarnessUiApp:
     async def _prune_storage(self) -> None:
         """Independent maintenance failures never cancel the App's task group."""
         for kind, prune in (
-            ("scratch", self._thread_files.prune),
+            ("draft", self._prune_drafts),
+            ("scratch", self._prune_scratch),
             ("compaction", self._prune_compactions),
             ("checkpoint", self._store.checkpoints.prune),
             ("tool_execution", self._store.tool_executions.prune),
@@ -2268,7 +2337,7 @@ class HarnessUiApp:
             raise ValueError("Unknown submission mode")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
-            draft_clear = self._prepare_draft_clear(thread_id, draft)
+            draft_clear = self._prepare_draft_clear(thread_id, draft, reset_mode=True)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
             if mode == "goal":
@@ -2307,10 +2376,16 @@ class HarnessUiApp:
                 prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
-                    TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
+                    TextContent(
+                        text,
+                        metadata={
+                            "source_id": "a13n-harness-ui.mcp-app-context",
+                            "harness_ui": {"mcp_app_context": True},
+                        },
+                    )
+                    for text in selected_context
                 )
-            if input_surface is not None:
-                prompt = append_surface_hint(prompt, input_surface)
+            prompt = append_surface_provenance(prompt, input_surface)
 
             async def authorize_app_message() -> None:
                 if mcp_app_view is not None:

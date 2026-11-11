@@ -921,7 +921,7 @@ async def test_reporter_retries_only_transient_failures_with_warning(
             driver_error.sqlite_errorcode = sqlite3.SQLITE_BUSY if failure_kind == "busy" else sqlite3.SQLITE_LOCKED
             error = OperationalError("", {}, driver_error)
 
-        async def save(*, thread_id, snapshot):
+        async def save(*, thread_id, snapshot, configured):
             attempts.append(snapshot)
             if len(attempts) <= failures:
                 raise error

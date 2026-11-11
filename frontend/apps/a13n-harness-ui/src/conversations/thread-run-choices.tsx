@@ -2,8 +2,9 @@ import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { Schema } from "../transport/client";
+import { thinkingLabel } from "./thinking-picker";
 import { ModelOptions } from "./model-picker";
 import {
   EnvironmentsEditor,
@@ -157,14 +158,7 @@ type RunChoiceProps = ModelControlProps & {
 
 export function ThreadRunChoices(props: RunChoiceProps) {
   const { t } = useTranslation();
-  const {
-    catalog,
-    agentId,
-    defaultAgentId,
-    defaultModelId,
-    modelId,
-    onControlsChange,
-  } = props;
+  const { catalog, agentId, defaultAgentId, defaultModelId, modelId } = props;
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
   );
@@ -178,21 +172,6 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     (selectedModelId
       ? t("{{name}} (unavailable)", { name: selectedModelId })
       : t("Model unavailable"));
-  const selectionKey = agent
-    ? JSON.stringify([agent.agent_id, selectedModelId])
-    : undefined;
-  const previousSelection = useRef(selectionKey);
-  useEffect(() => {
-    if (selectionKey === undefined) return;
-    if (
-      previousSelection.current !== undefined &&
-      previousSelection.current !== selectionKey
-    ) {
-      // Cover a collaborator's Agent change or a new inherited default as well.
-      onControlsChange({});
-    }
-    previousSelection.current = selectionKey;
-  }, [selectionKey, onControlsChange]);
   return (
     <div
       className={panelStyles.identity}
@@ -203,7 +182,15 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       title={`${agent?.name ?? t("Default agent")} - ${modelName}`}
     >
       <ComposerSettings
-        label={<ModelIdentity model={model} name={modelName} />}
+        label={
+          <span className={panelStyles.modelSummary}>
+            <ModelIdentity model={model} name={modelName} />
+            {(model?.thinking?.status === "supported" ||
+              props.controls.thinking != null) && (
+              <small>{thinkingLabel(model, props.controls.thinking, t)}</small>
+            )}
+          </span>
+        }
       >
         <AgentModelChoices {...props} />
       </ComposerSettings>

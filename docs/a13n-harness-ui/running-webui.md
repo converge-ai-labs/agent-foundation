@@ -46,7 +46,7 @@ Graceful shutdown saves root/child checkpoints, finalizes Environments, and reco
 
 The grace budget does not bound total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time; trusted Python code that ignores cancellation can delay exit. Use an external process supervisor if you need a hard termination deadline. Let the old process finish before starting its replacement.
 
-After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Native terminals, old Shell handles, shared drafts, and unsaved editors are not restored.
+After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Saved shared composers restore under their retention limits. Native terminals, old Shell handles, and unsaved editors are not restored.
 
 ## Server logs and shutdown
 

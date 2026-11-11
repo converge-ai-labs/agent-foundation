@@ -30,14 +30,41 @@ def test_reporter_uses_trusted_code_and_completed_run_artifacts():
     assert steps[0]["with"]["persist-credentials"] is False
     assert steps[1]["with"]["run-id"] == "${{ github.event.workflow_run.id }}"
     assert "workflow_run" in workflow[True]
+    assert steps[1]["with"]["pattern"] == "envd-size-*-attempt-${{ github.event.workflow_run.run_attempt }}"
+    producer = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-envd.yml").read_text())
+    uploads = [
+        step
+        for job in producer["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("with", {}).get("path") == "test-results/size/report.json"
+    ]
+    assert len(uploads) == 1
+    assert uploads[0]["with"]["name"] == "envd-size-${{ matrix.cache-key }}-attempt-${{ github.run_attempt }}"
 
 
 @pytest.mark.parametrize(
-    "scenario", ["create", "update", "fork", "wrong_repository", "stale", "moved", "newer", "empty", "invalid"]
+    "scenario",
+    [
+        "create",
+        "update",
+        "fork",
+        "wrong_repository",
+        "stale",
+        "moved",
+        "newer",
+        "empty",
+        "invalid",
+        "rerun",
+        "old_attempt",
+    ],
 )
 def test_reporter_posts_only_for_current_head_and_upserts(tmp_path, scenario):
-    directory = tmp_path / "envd-size-test"
+    directory = tmp_path / "envd-size-test-attempt-1"
     directory.mkdir()
+    if scenario == "rerun":
+        current = tmp_path / "envd-size-test-attempt-2"
+        current.mkdir()
+        (current / "report.json").write_text(json.dumps(REPORT | {"binary_bytes": 33}))
     if scenario != "empty":
         (directory / "report.json").write_text(
             json.dumps(REPORT | ({"target": "<untrusted>"} if scenario == "invalid" else {}))
@@ -50,6 +77,7 @@ const context = {repo: {owner: 'owner', repo: 'repo'}, payload: {workflow_run: r
 // A fork head belongs to a different repository than the base, but still matches
 // the completed run's head_repository. A mismatched repository must be ignored.
 if (scenario === 'fork') run.head_repository.id = 999;
+if (['rerun', 'old_attempt'].includes(scenario)) run.run_attempt = 2;
 const head = {sha: scenario === 'stale' ? 'previous' : 'abc123',
     repo: {id: scenario === 'wrong_repository' ? 888 : run.head_repository.id}};
 const calls = [];
@@ -66,14 +94,20 @@ post({github, context, core: {info() {}}, directory: process.cwd()})
         ["node", "-e", program, str(REPORTER), scenario], cwd=tmp_path, text=True, capture_output=True, check=True
     )
     data = json.loads(result.stdout)
-    if scenario in {"create", "update", "fork"}:
+    if scenario in {"create", "update", "fork", "rerun"}:
         assert len(data["calls"]) == 1
         operation, args = data["calls"][0]
-        assert operation == ("create" if scenario == "fork" else scenario)
+        assert operation == ("create" if scenario in {"fork", "rerun"} else scenario)
         assert "| Linux x86_64 | Default |" in args["body"]
-        assert "**1 build within budget.**" in args["body"]
+        if scenario == "rerun":
+            assert "**1 of 1 reported builds failed.**" in args["body"]
+        else:
+            assert "**1 build within budget.**" in args["body"]
         assert "<summary>Budgets and build details</summary>" in args["body"]
-        assert "1/6 build reports" in args["body"]
+        assert "1/6 build reports available for this attempt" in args["body"]
+        if scenario == "rerun":
+            assert "(attempt 2)" in args["body"]
+            assert "earlier attempts are not remeasured" in args["body"]
     else:
         assert data["calls"] == []
         if scenario == "invalid":

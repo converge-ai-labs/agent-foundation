@@ -42,6 +42,9 @@ type Page = "root" | "model" | "agent" | "thinking" | "speed" | "reasoning";
 const SettingsContext = createContext<{
   page: Page;
   navigate: (page: Page) => void;
+  mobile: boolean;
+  close: () => void;
+  open: boolean;
 } | null>(null);
 export const useComposerSettings = () => useContext(SettingsContext);
 
@@ -70,86 +73,21 @@ export function ComposerSettings({
   const [mobile, setMobile] = useState(
     () => window.matchMedia("(max-width: 639px)").matches,
   );
-  const heading = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 639px)");
     const update = () => setMobile(query.matches);
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
-  useEffect(() => {
-    if (open) heading.current?.focus();
-  }, [page, open, mobile]);
   const changeOpen = (next: boolean) => {
+    if (next) navigate("root");
     setOpen(next);
-    if (!next) {
-      navigate("root");
-    }
   };
-  const Title = mobile ? DialogTitle : PopoverTitle;
-  const showHeader = mobile || page !== "root";
-  const help =
-    page === "thinking"
-      ? t(
-          "Higher thinking levels spend more time and tokens on a response. Available levels depend on the selected model. Default uses the model’s saved setting.",
-        )
-      : page === "speed"
-        ? t(
-            "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates.",
-          )
-        : undefined;
   const content = (
-    <SettingsContext value={{ page, navigate }}>
-      <div
-        className={showHeader ? styles.header : styles.srOnly}
-        ref={heading}
-        tabIndex={-1}
-      >
-        {page !== "root" && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t("Back to Agent & Model settings")}
-            title={t("Back to Agent & Model settings")}
-            onClick={() => navigate("root")}
-          >
-            <CaretLeft />
-          </Button>
-        )}
-        <Title className={styles.title}>
-          {page === "root" ? rootTitle : titles[page]}
-        </Title>
-        {help && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  tooltip={false}
-                  aria-label={
-                    page === "thinking" ? t("About thinking") : t("About speed")
-                  }
-                />
-              }
-            >
-              <Question />
-            </TooltipTrigger>
-            <TooltipPopup>{help}</TooltipPopup>
-          </Tooltip>
-        )}
-        {mobile && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t("Close Agent & Model settings")}
-            title={t("Close Agent & Model settings")}
-            onClick={() => changeOpen(false)}
-          >
-            <X />
-          </Button>
-        )}
-      </div>
+    <SettingsContext
+      value={{ page, navigate, mobile, open, close: () => changeOpen(false) }}
+    >
+      {page !== "thinking" && <SettingsHeader title={titles[page]} />}
       <div className={styles.body}>{children}</div>
     </SettingsContext>
   );
@@ -193,6 +131,83 @@ export function ComposerSettings({
         {content}
       </PopoverPopup>
     </Popover>
+  );
+}
+
+export function SettingsHeader({
+  title,
+  accessibleTitle,
+  action,
+}: {
+  title: ReactNode;
+  accessibleTitle?: string;
+  action?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const settings = useComposerSettings();
+  const { page, mobile, open, navigate, close } = settings ?? {};
+  const heading = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) heading.current?.focus();
+  }, [page, open, mobile]);
+  const Title = !settings ? "h3" : mobile ? DialogTitle : PopoverTitle;
+  const showHeader = mobile || page !== "root";
+  const help =
+    page === "speed"
+      ? t(
+          "Default uses the model’s saved setting. Faster modes depend on your provider and account, may consume more credits, and do not guarantee faster responses. Ultrafast requires an eligible plan and has higher usage rates.",
+        )
+      : undefined;
+  return (
+    <div
+      className={showHeader ? styles.header : styles.srOnly}
+      ref={heading}
+      tabIndex={-1}
+    >
+      {navigate && page !== "root" && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("Back to Agent & Model settings")}
+          title={t("Back to Agent & Model settings")}
+          onClick={() => navigate("root")}
+        >
+          <CaretLeft />
+        </Button>
+      )}
+      <Title className={styles.title} aria-label={accessibleTitle}>
+        {title}
+      </Title>
+      {action}
+      {help && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                tooltip={false}
+                aria-label={t("About speed")}
+              />
+            }
+          >
+            <Question />
+          </TooltipTrigger>
+          <TooltipPopup>{help}</TooltipPopup>
+        </Tooltip>
+      )}
+      {mobile && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("Close Agent & Model settings")}
+          title={t("Close Agent & Model settings")}
+          onClick={close}
+        >
+          <X />
+        </Button>
+      )}
+    </div>
   );
 }
 

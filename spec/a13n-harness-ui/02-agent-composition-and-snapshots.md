@@ -22,7 +22,7 @@ Use the current Model name when attributing work to a model.
 </agent-context>
 ```
 
-The identity block exposes no internal Run, Agent, Model-resource, or recipe IDs. The Thread ID remains available for interaction. Other context sources, tool results, and historical projections remain intact. The block is refreshed at eligible input and ordinary tool-result boundaries; tool-result projections identify themselves as automatic metadata rather than new user instructions. Exact continuations retain Harness's no-projection boundary. After compaction or handoff, the next eligible boundary supplies fresh identity without relying on old history.
+The identity block exposes no internal Run, Agent, Model-resource, or recipe IDs. The Thread ID remains available for interaction. Other context sources, tool results, and historical projections remain intact. The block is recomputed at eligible input and ordinary tool-result boundaries, using identical rendering and the automatic-metadata disclaimer at both boundaries. The UI identity owner queries retained context and contributes the block only when its rendered content differs from the latest retained value. It removes the default Harness identity before making this decision, including when its own block is omitted. A fresh Run still resolves current bindings and Model names; equality never skips resolution. Exact continuations retain Harness's no-projection boundary. After compaction or handoff, the next eligible boundary supplies fresh identity without relying on old history.
 
 ## Models
 

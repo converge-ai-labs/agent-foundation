@@ -539,7 +539,10 @@ async def test_root_io_and_host_phases_are_local_to_operation(tmp_path, monkeypa
     if content is HarnessTraceContent.NONE:
         assert "a13n.input" not in root.attributes and "a13n.output" not in root.attributes
     else:
-        assert json.loads(root.attributes["langfuse.observation.input"]) == "this turn input"
+        assert json.loads(root.attributes["langfuse.observation.input"]) == [
+            "this turn input",
+            "This input was submitted through an unspecified interface.",
+        ]
         assert json.loads(root.attributes["langfuse.observation.output"]) == "observation test completed"
     for span in spans:
         if span is not root:

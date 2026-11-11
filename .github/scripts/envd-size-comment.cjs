@@ -41,7 +41,7 @@ function render(reports, run, repo) {
   return [marker, '## Envd release size', '', summary, '',
     '| Platform | Build | Binary (MiB) | Archive (MiB) | Result |',
     '| --- | --- | ---: | ---: | --- |', ...rows, '',
-    ...(rows.length < 6 ? [`${rows.length}/6 build reports available; see CI for missing measurements.`, ''] : []),
+    ...(rows.length < 6 ? [`${rows.length}/6 build reports available for this attempt; see CI for missing measurements. Successful jobs from earlier attempts are not remeasured by a failed-jobs-only rerun.`, ''] : []),
     '<details>', '<summary>Budgets and build details</summary>', '',
     `Limits (binary / archive): ${[...budgets].sort().join('; ')}.`, '',
     'Measured from the release binaries used by native tests. VM builds must contain exactly one embedded Microsandbox runtime archive.', '',
@@ -60,7 +60,8 @@ async function post({github, context, core, directory = 'size-reports'}) {
   const reports = [];
   if (fs.existsSync(directory)) {
     for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
-      if (!entry.isDirectory() || !entry.name.startsWith('envd-size-')) continue;
+      if (!entry.isDirectory() || !entry.name.startsWith('envd-size-') ||
+        !entry.name.endsWith(`-attempt-${run.run_attempt}`)) continue;
       const file = path.join(directory, entry.name, 'report.json');
       if (!fs.existsSync(file)) continue;
       if (!fs.lstatSync(file).isFile() || fs.statSync(file).size > 16384) throw new Error('Invalid report file');

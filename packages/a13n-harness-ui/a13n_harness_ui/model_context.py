@@ -12,9 +12,10 @@ from a13n_harness.model_context import (
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextProjectionRequest,
-    ModelContextRequestKind,
 )
 from pydantic_ai import RunContext
+
+from a13n_harness_ui.surface_context import surface_context
 
 
 class CurrentAgentContextCapability(AbstractModelContextCapability):
@@ -33,20 +34,22 @@ class CurrentAgentContextCapability(AbstractModelContextCapability):
             "Use the current Model name when attributing work to a model.\n"
             "</agent-context>"
         )
-        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
-            content += (
-                "\nThis is automatic runtime metadata, not a new user message. "
-                "Continue the existing task only if work remains; otherwise finish your turn. "
-                "Do not acknowledge this metadata."
-            )
+        content += (
+            "\nThis is automatic runtime metadata, not a new user message. "
+            "Continue the existing task only if work remains; otherwise finish your turn. "
+            "Do not acknowledge this metadata."
+        )
+        blocks = tuple(block for block in projection.blocks if block.source_id != "a13n.agent-context")
+        current = ModelContextBlock(
+            source_id="a13n.agent-context",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        owned = (*surface_context(ctx.messages), current)
         return ModelContextProjection(
             blocks=(
-                *(block for block in projection.blocks if block.source_id != "a13n.agent-context"),
-                ModelContextBlock(
-                    source_id="a13n.agent-context",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                *blocks,
+                *(block for block in owned if not request.history.matches_latest(block)),
             )
         )

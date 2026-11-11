@@ -489,9 +489,9 @@ Revision 是不透明的 OS 元数据观察值，不是内容哈希或历史版�
 
 只有客户端需要共同编辑未发送输入时，才实现此协议。普通 HTTP 脚本直接提交 `parts` 即可。
 
-GET `/api/drafts` 以 `{thread_id,draft_id,unsent_since}` 列出非空草稿，不返回文本或编辑者成员。选中的 pending/failed 附件算作非空，空白文本和休眠条目不算。收到 `draft` 摘要提示或 reset 后重新获取，再另行查找 Thread 元数据。索引和文档都在内存中，App 重启后消失。
+GET `/api/drafts` 以 `{thread_id,draft_id,unsent_since}` 列出非空草稿，不返回文本或编辑者成员。选中的 pending/failed 附件算作非空，空白文本和休眠条目不算。收到 `draft` 摘要提示或 reset 后重新获取，再另行查找 Thread 元数据。索引来自当前持久化草稿，App 重启后仍可恢复。每个根 Thread 有一条有界输入框记录；内容或选项连续 30 天未编辑即过期，清理时跳过仍有编辑者连接的记录。
 
-使用首帧认证连接 `/api/threads/{thread_id}/draft/connect`。每个根 Thread 在一个 App 中支持一份共享文档，与 computer sharing 独立。`DraftFrame` 包含 `draft_id`、participant ID、base64 Yjs v1 完整状态更新和 presence。使用以下根类型：
+使用首帧认证连接 `/api/threads/{thread_id}/draft/connect`。每个根 Thread 在一个 App 中支持一份逻辑共享输入框，与 computer sharing 独立。`DraftFrame` 包含 `draft_id`、participant ID、base64 Yjs v1 内容更新、可选的仅 owner 可用的 `options_update_base64` 和 presence。内容与选项使用两个 Y 文档，在同一条记录中原子保存。选项文档的 `options` map 包含 `model`、`environment`、`mode`；owner 客户端在同步和提交快照中携带其完整更新。Guest 不接收也不能提交选项字节，包括重放更新。使用以下根类型：
 
 | 根                               | 含义                                                               |
 | -------------------------------- | ------------------------------------------------------------------ |
@@ -500,18 +500,18 @@ GET `/api/drafts` 以 `{thread_id,draft_id,unsent_since}` 列出非空草稿，�
 
 内联文本 token 为 `U+FFFC + key + U+FFFC`。只有实际出现的 token 选择输入；休眠 map 条目用于撤销。缺失或未完成条目阻止提交。发送前按文本顺序展开出现项，避免编辑器 token 进入执行。可用附件元数据端点查看附件，无需下载字节。
 
-将服务器更新应用到兼容 Yjs 的副本。发送 `{"kind":"sync","draft_id":"...","update_base64":"..."}`，其中必须是副本的**完整**更新，包含依赖和删除。服务器原子校验合并后的文档。`draft_invalid` 保留服务器状态；保留被拒绝的本地内容以便修正。上限为 512 KiB 编码 CRDT 状态、256 Ki 文本字符、八个已选附件及 20 MiB 附件字节。CRDT 历史计入状态上限。
+将服务器更新应用到兼容 Yjs 的副本。发送 `{"kind":"sync","draft_id":"...","update_base64":"..."}`，其中必须是副本的**完整**更新，包含依赖和删除。服务器原子校验合并后的文档。`draft_invalid` 保留服务器状态；保留被拒绝的本地内容以便修正。上限为内容和选项合计 512 KiB 编码 CRDT 状态、256 Ki 文本字符、八个已选附件及 20 MiB 附件字节。CRDT 历史计入状态上限。
 
 编辑者 presence 使用 `{"kind":"presence","draft_id":"...","presence":{"name":"Alice","color":"#112233"}}`；可选 `anchor`/`head` 为 base64 Y relative positions。名称和颜色未经身份验证。重连时只有 `draft_id` 相同才能合并离线编辑；身份丢失后应显式提供本地恢复选项。
 
 通过普通 `/submit` 发送，不使用独立草稿端点：
 
 1. 同步编辑，并观察其已接受 CRDT 状态。
-2. 克隆副本，将文本/附件选择展开为有序 `parts`。
+2. 同步克隆两个副本，将文本/附件选择展开为有序 `parts`。从同一快照捕获 owner 的 Run 选项；这些选项只覆盖本次 Run，不改变 Thread 默认配置。
 3. 明确收到提交成功确认后，只删除该克隆中可见的文本，再将完整删除更新合并到实时副本。保留内联注册项，以支持并发出现的 token。
 4. 请求被拒绝或传输结果不确定时保留草稿。编辑状态重放可以核对合并；重新提交执行是另一个操作。
 
-断开连接移除编辑者 presence，保留内存文档和活跃 Run。关闭 App 会丢弃草稿；保存的对话历史有独立生命周期。
+断开连接移除编辑者 presence，保留已保存输入框和活跃 Run。关闭 App 后保留未过期草稿；保存的对话历史有独立生命周期。Send 成功仅清理捕获的输入和 goal 模式选择，保留并发编辑及可复用的 Model/Environment 选项。
 
 ### 有序输入体
 
@@ -569,7 +569,7 @@ Summary 先发送 `open`，再发送 `invalidation`。`resumed:true` 会重放�
 | `GET /api/host/terminals` 和 `/{terminal_id}`   | 列出终端或查看一个终端                      |
 | `GET /healthz` 和 `/readyz`                     | 检查监听器存活与 App 就绪                   |
 
-功能标志描述可用性：`host_files` 要求共享，`host_git` 还要求 Git，`host_terminal` 要求支持的原生终端。`shared_drafts` 和 `page_presence` 描述独立于共享的内存协作功能。Health、readiness、静态资源和 OpenAPI 下载各有自己的边界，不列入普通 schema 路由。
+功能标志描述可用性：`host_files` 要求共享，`host_git` 还要求 Git，`host_terminal` 要求支持的原生终端。`shared_drafts` 描述持久化输入框协作，`page_presence` 描述进程内 presence，均独立于 computer sharing。Health、readiness、静态资源和 OpenAPI 下载各有自己的边界，不列入普通 schema 路由。
 
 ## 错误与版本
 

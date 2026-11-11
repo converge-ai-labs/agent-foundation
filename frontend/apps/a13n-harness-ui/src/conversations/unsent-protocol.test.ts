@@ -7,7 +7,7 @@ import { createTransport, result } from "../transport/client";
 import { watchSummary } from "../transport/events";
 import { ThreadDraft } from "./draft";
 
-it("discovers disconnected rooms via authenticated summaries, follows peer clears, and resets on App restart", async () => {
+it("discovers disconnected rooms via authenticated summaries, follows peer clears, and restores after App restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "a13n-unsent-"));
   let app: Awaited<ReturnType<typeof startApp>> | undefined;
   let transport: ReturnType<typeof createTransport> | undefined;
@@ -103,14 +103,30 @@ it("discovers disconnected rooms via authenticated summaries, follows peer clear
     });
     peer.addAttachment("failed");
     await vi.waitFor(() => expect(peer.synchronized).toBe(true));
-    expect(await result(reloaded.client.GET("/api/drafts"))).toHaveLength(1);
+    const saved = await result(reloaded.client.GET("/api/drafts"));
+    expect(saved).toHaveLength(1);
     for (const stop of close.splice(0)) stop();
     transport.close();
     const port = new URL(app.origin).port;
     await app.close();
     app = await startApp("--root", root, "--port", port);
     transport = createTransport("test-only-key", () => {});
-    expect(await result(transport.client.GET("/api/drafts"))).toEqual([]);
+    expect(await result(transport.client.GET("/api/drafts"))).toEqual(saved);
+    const restored = new ThreadDraft();
+    const restoredEditor = restored.connect(
+      transport,
+      created.thread_id,
+      () => {},
+    );
+    close.push(restoredEditor.close);
+    await vi.waitFor(() => {
+      expect(restored.synchronized).toBe(true);
+      expect(restored.draftId).toBe(saved[0].draft_id);
+      expect(restored.hasUnsentInput).toBe(true);
+      expect([...restored.doc.getMap("attachments").values()]).toEqual([
+        "failed",
+      ]);
+    });
   } finally {
     for (const stop of close) stop();
     transport?.close();

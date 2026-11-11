@@ -206,6 +206,15 @@ class ResolvedRunComposition(CompositionModel):
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 
+    def agent_nodes(self) -> tuple[ResolvedAgentNode, ...]:
+        values: list[ResolvedAgentNode] = []
+        pending = [self.root]
+        while pending:
+            node = pending.pop()
+            values.append(node)
+            pending.extend(reversed(tuple(item.definition for item in node.children)))
+        return tuple(values)
+
     @model_validator(mode="after")
     def _valid_environment_selection(self) -> Self:
         validate_environment_selection(

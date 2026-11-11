@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from a13n_harness.environment.accessibility import AccessibilityNodeReference
 from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.computer import ComputerObservation
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt, EnvironmentPermissionSet
@@ -76,6 +77,7 @@ class _OwnedProviderScope:
 def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
     bound_types = (
         ComputerObservation,
+        AccessibilityNodeReference,
         BoundProcessHandle,
         BoundOutputReference,
         BoundOutputCursor,

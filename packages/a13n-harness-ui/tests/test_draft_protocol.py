@@ -19,8 +19,8 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from .test_app import _write_configuration
 from .test_host_git import git, repository
-from .test_interactive_protocol import frame_until, listener
-from .test_shared_drafts import replica
+from .test_interactive_protocol import frame_until, listener, listener_with_app
+from .test_shared_drafts import replica, sync
 
 pytestmark = pytest.mark.anyio
 
@@ -44,6 +44,31 @@ async def send(connection: ClientConnection, draft_id: str, doc: Doc) -> None:
 
 async def containing(connection: ClientConnection, text: str) -> dict[str, Any]:
     return await frame_until(connection, lambda f: f.get("kind") == "draft" and text in str(document(f)["text"]))
+
+
+async def test_corrupt_saved_composer_reports_a_sanitized_protocol_error(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    async with listener_with_app(tmp_path, configuration_path=_write_configuration(tmp_path)) as (_, ws, app):
+        thread = await app.create_thread()
+        async with app.shared_draft_editor(thread.thread_id) as (draft, participant):
+            authored = composer_document()
+            authored.get("text", type=Text).insert(0, "saved input")
+            await app.edit_shared_draft(thread.thread_id, participant, sync(draft, authored))
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        broken = replace(stored, document_update=b"bad")
+        await app._store.drafts.save(broken)
+        app._shared_drafts.pop(thread.thread_id)
+        async with connect(ws + f"/api/threads/{thread.thread_id}/draft/connect") as connection:
+            await connection.send('{"api_key":"test-only-key"}')
+            error = await frame_until(connection, lambda frame: "error" in frame)
+            assert error["error"]["code"] == "draft_restore_failed"
+            assert "stored input was preserved" in error["error"]["message"]
+            assert "Traceback" not in json.dumps(error)
+            await connection.wait_closed()
+            assert connection.close_code == 4404
+        assert await app._store.drafts.get(thread.thread_id) == broken
 
 
 async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
@@ -205,9 +230,9 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
     async with listener(tmp_path, configuration_path=root) as (http, ws):
         async with connect(ws + prefix + "/draft/connect", proxy=None, origin=http) as restarted:
             current = await join(restarted)
-            assert current["draft_id"] != draft_id
-            assert composer_values(document(current)) == ("", ())
-            await send(restarted, draft_id, composer_document())
+            assert current["draft_id"] == draft_id
+            assert composer_values(document(current)) == ("NEXT", ())
+            await send(restarted, "draft-expired", composer_document())
             assert (await frame_until(restarted, lambda f: "error" in f))["error"]["code"] == "draft_instance_conflict"
         async with httpx.AsyncClient(base_url=http, headers=headers, trust_env=False) as api:
             assert "reviewed bytes" in (await api.get(prefix + "/transcript")).text

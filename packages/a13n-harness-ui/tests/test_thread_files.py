@@ -199,8 +199,8 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
     pruned = Event()
     prune = ThreadFiles.prune
 
-    async def observe_prune(self):
-        result = await prune(self)
+    async def observe_prune(self, *, retained=frozenset()):
+        result = await prune(self, retained=retained)
         pruned.set()
         return result
 

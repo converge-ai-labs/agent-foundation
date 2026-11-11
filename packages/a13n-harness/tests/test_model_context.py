@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
+from dataclasses import replace
 from itertools import pairwise
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
     ModelContextCoordinatorCapability,
+    ModelContextHistory,
     ModelContextInputOrigin,
     ModelContextNext,
     ModelContextPlacement,
@@ -101,16 +103,14 @@ class _ProjectionCapability(AbstractModelContextCapability):
         self._calls.append("capability:before")
         projection = await handler(request)
         self._calls.append("capability:after")
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id=self.id,
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content="plugin context",
-                ),
-            )
+        block = ModelContextBlock(
+            source_id=self.id,
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="plugin context",
         )
+        if request.history.contains(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
 
 
 class _SequencedProjectionCapability(AbstractModelContextCapability):
@@ -304,7 +304,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
     result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
-    assert projection_requests == [
+    assert [replace(request, history=ModelContextHistory()) for request in projection_requests] == [
         ModelContextProjectionRequest(
             kind=ModelContextRequestKind.INPUT,
             input_origin=ModelContextInputOrigin.USER,
@@ -319,16 +319,21 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
         ),
     ]
     assert len(seen) == 3
-    # Hidden UI metadata is not sent to providers. Every fresh tool-results overlay
-    # must identify itself in the actual text so it cannot masquerade as new input.
-    for messages in seen[1:]:
-        final = messages[-1]
-        assert isinstance(final, ModelRequest)
+    # Identity is byte-stable across boundaries and remains present once in history.
+    # Its text still identifies the block as automatic metadata.
+    for messages in seen:
         runtime_context = [
-            item.value for item in request_input_content(final) if item.metadata.source_id == "a13n.agent-context"
+            item.value
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for item in request_input_content(message)
+            if item.metadata.source_id == "a13n.agent-context"
         ]
         assert len(runtime_context) == 1
-        assert json.loads(runtime_context[0].splitlines()[1]) == {"harness_run_id": result.run_id}
+        assert json.loads(runtime_context[0].splitlines()[1]) == {
+            "harness_run_id": result.run_id,
+            "thread_id": result.thread_id,
+        }
         assert "automatic runtime metadata, not a new user message" in runtime_context[0]
         assert "Continue the existing task only if work remains" in runtime_context[0]
     assert seen_instructions == [seen_instructions[0]] * 3
@@ -786,3 +791,37 @@ def test_request_coalescing_preserves_settings_deltas_and_content_annotations() 
     assert isinstance(request, ModelRequest)
     assert tuple(request.parts) == (low, first.parts[1], high, second.parts[1])
     assert [item.value for item in request_input_content(request)] == ["first", "second"]
+
+
+async def test_unchanged_context_does_not_emit_new_input_observations_across_runs() -> None:
+    from a13n_harness import HarnessEvent
+    from a13n_harness.events import InputTextEvent
+
+    calls: list[str] = []
+
+    async def respond(messages, info):
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(_ProjectionCapability(calls),),
+    )
+    previous = None
+    observed = []
+    for _ in range(3):
+        async with executable.stream("next", previous_state=previous, bindings=RunBindings.embedded()) as stream:
+            async for event in stream:
+                if (
+                    isinstance(event, HarnessEvent)
+                    and isinstance(event.event, InputTextEvent)
+                    and event.event.metadata.source_id == _ProjectionCapability.id
+                ):
+                    observed.append(event.event)
+        assert stream.result is not None
+        previous = stream.result.state
+    assert len(calls) == 6  # Fresh projection still runs at every eligible boundary.
+    assert [event.content for event in observed] == ["plugin context"]
+    assert not observed[0].metadata.display
+    assert observed[0].metadata.model_extra["model_context"]["placement"] == "request_epilogue"

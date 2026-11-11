@@ -174,27 +174,43 @@ beforeEach(() => {
       height: 0,
     }),
   });
+  const serverDrafts = new Map<string, { input: Y.Doc; options: Y.Doc }>();
   vi.spyOn(ThreadDraft.prototype, "connect").mockImplementation(function (
     this: ThreadDraft,
+    _transport,
+    threadId,
   ) {
     let active = true;
+    const server = serverDrafts.get(threadId) ?? {
+      input: new Y.Doc(),
+      options: new Y.Doc(),
+    };
+    serverDrafts.set(threadId, server);
     const acknowledge = () =>
       queueMicrotask(() => {
-        if (active && !this.synchronized)
+        if (active && !this.synchronized) {
+          Y.applyUpdate(server.input, Y.encodeStateAsUpdate(this.doc));
+          Y.applyUpdate(server.options, Y.encodeStateAsUpdate(this.optionsDoc));
           this.receive({
             draft_id: "draft-one",
             participant_id: "participant-one",
             participants: {},
-            update_base64: encode(Y.encodeStateAsUpdate(this.doc)),
+            update_base64: encode(Y.encodeStateAsUpdate(server.input)),
+            options_update_base64: encode(
+              Y.encodeStateAsUpdate(server.options),
+            ),
           });
+        }
       });
     this.doc.on("update", acknowledge);
+    this.optionsDoc.on("update", acknowledge);
     acknowledge();
     return {
       presence() {},
       close: () => {
         active = false;
         this.doc.off("update", acknowledge);
+        this.optionsDoc.off("update", acknowledge);
       },
     };
   });
@@ -711,6 +727,36 @@ it("distinguishes inherited choices and sends an independent model without chang
     mode: "normal",
     parts: ["Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
+    model_id: "model-one",
+    thinking: "low",
+  });
+});
+
+it("submits the same model and effort after reopening a saved chat with a fresh composer", async () => {
+  const user = userEvent.setup();
+  const view = mount(`/threads/${id}`);
+  const settings = () =>
+    screen.findByRole("button", { name: "Agent & Model settings" });
+  await user.click(await settings());
+  await user.click(screen.getByRole("button", { name: "Model" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Primary model" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Thinking" }));
+  await user.click(screen.getByRole("button", { name: "Quick thinking" }));
+  view.unmount();
+  drafts = new Map();
+  queries.clear();
+  mount(`/threads/${id}`);
+  await waitFor(async () =>
+    expect((await settings()).textContent).toContain("Quick thinking"),
+  );
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
+  const send = screen.getByRole("button", { name: "Send" });
+  await waitFor(() => expect(send).toHaveProperty("disabled", false));
+  await user.click(send);
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(await writes[0].json()).toMatchObject({
     model_id: "model-one",
     thinking: "low",
   });
@@ -2352,7 +2398,7 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
   ).toBe(2);
 });
 
-it("keeps private Model selection responsive during a background detail read", async () => {
+it("keeps shared Model selection responsive during a background detail read", async () => {
   const user = userEvent.setup();
   mount(`/threads/${id}`);
   await user.click(

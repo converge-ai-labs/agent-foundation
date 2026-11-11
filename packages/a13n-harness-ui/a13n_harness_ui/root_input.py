@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from typing import Literal
 
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment.models import EnvironmentAction
@@ -19,41 +18,6 @@ from a13n_harness_ui.thread_files import (
     AttachmentUpload,
     ThreadFiles,
 )
-
-_SURFACE_HINTS = {
-    "webui": (
-        "This input was submitted through Harness UI WebUI.\n"
-        "For the response to this input, the interface supports Markdown and renders fenced mermaid blocks "
-        "as static diagrams. Use them when helpful. Mermaid configuration directives, image assets, and "
-        "interactive callbacks are not supported. LaTeX math renders with KaTeX: use $...$ for inline math, "
-        "$$ on separate lines for display math, or fenced math blocks. Escape literal dollar signs as "
-        "\\$ when needed. Follow the user's explicit output-format preferences.\n"
-        "When a Host file should be directly openable by the user, link it as "
-        "`[label](/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path})`, "
-        "using the current root Thread ID supplied in your instructions. The WebUI opens that same-instance "
-        "link in its Files drawer. Do not use a bare Host path or an `/api/host/files/...` URL as the link target."
-    ),
-    "tui": (
-        "This input was submitted through Harness UI TUI.\n"
-        "For the response to this input, the interface supports terminal Markdown but displays Mermaid blocks "
-        "as source text rather than diagrams. Prefer prose or simple ASCII diagrams for inline explanations "
-        "unless the user requests Mermaid. This does not restrict formats written to files."
-    ),
-}
-
-
-def append_surface_hint(prompt: RunInputValue, surface: Literal["tui", "webui"]) -> RunInputValue:
-    """Append a fixed presentation hint after authored input has been validated."""
-    parts = (prompt,) if isinstance(prompt, str) else tuple(prompt)
-    return (
-        *parts,
-        TextContent(
-            '<surface-context source="a13n-harness-ui">\n<![CDATA[\n'
-            + _SURFACE_HINTS[surface]
-            + "\n]]>\n</surface-context>",
-            metadata={"display": False, "source_id": "a13n-harness-ui.surface"},
-        ),
-    )
 
 
 def detach_input(prompt: RunInputValue) -> RunInputValue:
@@ -96,7 +60,10 @@ class RootInputFiles:
                 *parts,
                 TextContent(
                     "Long text was kept inline because this Run has no enabled file reader for the thread-files mount.",
-                    metadata={"harness_ui": {"long_text_skipped": True}},
+                    metadata={
+                        "source_id": "a13n-harness-ui.long-text-notice",
+                        "harness_ui": {"long_text_skipped": True},
+                    },
                 ),
             )
         # Resolve through the entered Environment before retaining any input. This

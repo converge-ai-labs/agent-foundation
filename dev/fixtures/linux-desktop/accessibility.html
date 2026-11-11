@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>AT-SPI Chromium fixture</title>
+  <button id="anchor" autofocus>Focus anchor</button>
+  <input id="input" aria-label="Browser input" value="initial input" />
+  <textarea id="textarea" aria-label="Browser textarea">initial textarea</textarea>
+  <div id="editable" role="textbox" contenteditable="true" aria-label="Browser contenteditable">initial editable</div>
+  <script>
+    // Independent DOM evidence: the native test never writes through CDP/DOM.
+    const ids = ["input", "textarea", "editable"];
+    let reporting = false;
+    async function report() {
+      if (reporting) return;
+      reporting = true;
+      try {
+        await fetch("/state", {
+          method: "POST",
+          body: JSON.stringify({
+            active: document.activeElement.id,
+            values: Object.fromEntries(ids.map(id => {
+              const element = document.getElementById(id);
+              return [id, element.value ?? element.textContent];
+            })),
+          }),
+        });
+      } finally {
+        reporting = false;
+      }
+    }
+    setInterval(report, 50);
+    report();
+  </script>
+</html>
