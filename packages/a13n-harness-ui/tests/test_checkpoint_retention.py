@@ -17,7 +17,7 @@ from a13n_harness_ui.storage import open_local_store
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.storage.objects import ObjectKind
-from a13n_harness_ui.surfaces import RootOperationStatus
+from a13n_harness_ui.surfaces import BranchRequest, RootOperationStatus
 from anyio import CancelScope, Event, create_task_group, fail_after, sleep, to_thread
 from pydantic_ai.models.function import FunctionModel
 
@@ -80,6 +80,16 @@ async def test_each_run_retains_only_its_last_checkpoint_and_preserves_previous_
         assert sum(ref.object_kind is ObjectKind.continuation_display for ref in refs) == 2
         if ending != "completed":
             assert after.completion == before.completion
+        if ending in {"cancelled", "failed"}:
+            points = await app.branch_points(thread.thread_id)
+            earlier, stopped = (await app.get_thread_transcript(thread_id=thread.thread_id)).turns
+            assert points.points[earlier.turn_id].edit and points.points[earlier.turn_id].branch
+            assert points.points[stopped.turn_id].branch
+            copied = await app.branch_thread(
+                thread.thread_id,
+                BranchRequest(turn_key=stopped.turn_id, side="after", expected_continuation_id=points.source),
+            )
+            assert copied.thread_id != thread.thread_id
         async with open_local_store(settings.storage) as other:
             with pytest.raises(StoreConflictError) as stale:
                 await other.read_continuation(thread.thread_id, during.continuation)

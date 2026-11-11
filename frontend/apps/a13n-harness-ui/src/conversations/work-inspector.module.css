@@ -22,13 +22,16 @@
   gap: 4px;
   min-width: 0;
 }
+.shortcuts {
+  gap: 2px;
+}
 .shortcuts > button {
   flex-shrink: 0;
 }
 .shortcuts .shortcut {
-  min-width: 32px;
-  gap: 4px;
-  padding-inline: 8px;
+  min-width: 28px;
+  gap: 3px;
+  padding-inline: 5px;
 }
 .shortcut > svg {
   margin-inline: 0;

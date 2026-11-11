@@ -7,8 +7,6 @@ from a13n_harness.content import project_input_content, request_input_content
 from pydantic_ai.messages import ModelMessage, ModelRequest
 
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
-from a13n_harness_ui.errors import ThreadError
-from a13n_harness_ui.surfaces import BranchPoint, BranchRequest
 from a13n_harness_ui.thread_projection import _MAX_TEXT, _transcript_turns
 
 
@@ -71,21 +69,7 @@ def boundaries(history: tuple[ModelMessage, ...], continuing_turn: bool) -> dict
     return {key: point for key, point in points.items() if key not in ambiguous}
 
 
-def availability(state: HarnessState, continuing_turn: bool) -> dict[str, BranchPoint]:
-    return {
-        key: BranchPoint(edit=p.before is not None, branch=p.after is not None)
-        for key, p in boundaries(state.message_history, continuing_turn).items()
-    }
-
-
-def branch_state(
-    state: HarnessState, request: BranchRequest, continuing_turn: bool
-) -> tuple[HarnessState, ConversationExcerpt, set[str]]:
-    history = state.message_history
-    point = boundaries(history, continuing_turn).get(request.turn_key)
-    cut = (point.before if request.side == "before" else point.after) if point else None
-    if cut is None:
-        raise ThreadError("This message no longer has a usable history boundary.", code="thread_branch_stale")
+def branch_prefix(history: tuple[ModelMessage, ...], cut: int) -> tuple[HarnessState, ConversationExcerpt, set[str]]:
     prefix = history[:cut]
     baseline = HarnessState.new(message_history=prefix)
     attachments = set()

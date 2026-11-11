@@ -114,6 +114,24 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(screen.queryByRole("status")).toBeNull();
+  view.rerender(
+    <ConversationTranscript
+      {...base}
+      blocks={[
+        { ...tool, result: "checked" },
+        {
+          ...tool,
+          id: "tool-two",
+          name: "view",
+          text: '{"path":"layout.css"}',
+          result: "read",
+        },
+        { ...tool, id: "tool-three", result: "checked again" },
+        { id: "thought", kind: "thinking", text: "Next step" },
+      ]}
+    />,
+  );
+  expect(trigger.textContent).toContain("Run 2 commands, Read 1 file");
 });
 
 it.each([

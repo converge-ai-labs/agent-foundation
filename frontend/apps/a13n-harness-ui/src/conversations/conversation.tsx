@@ -393,6 +393,7 @@ function ConversationContent({
     previousLocalInput.current = latestLocalInput;
   }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
+  const lastTurn = turns.at(-1);
   const completionVersion =
     publication?.completionVersion ??
     (history.isPreviousHistory || history.isError
@@ -740,6 +741,55 @@ function ConversationContent({
         </Link>
       </div>
     );
+  const failureNotice = (
+    <RootFailureNotice
+      lastExecution={thread?.last_execution}
+      threadId={threadId}
+      receipt={receipt}
+      display={display}
+      continuationId={detail.data?.continuation_id}
+      completedContinuationId={thread?.completion?.continuation_id}
+      retry={
+        botActivity || guest || readOnly || thread?.archived
+          ? undefined
+          : () => {
+              void submitContinuation(
+                draft,
+                transport,
+                threadId,
+                tracker ? () => tracker.beforeRun(threadId) : undefined,
+                () => appContexts?.capture(threadId) ?? [],
+              ).finally(reconcile);
+            }
+      }
+      retryDisabled={
+        !detail.data?.available_actions?.includes("run") ||
+        thread?.root_activity.state !== "inactive" ||
+        agentSelection.isPending ||
+        agentSelection.isError ||
+        detail.isError ||
+        draft.submission.kind === "pending" ||
+        draft.submission.kind === "unknown" ||
+        (draft.submission.kind === "accepted" &&
+          draft.submission.receipt !== receipt)
+      }
+    />
+  );
+  const terminalTurn =
+    thread?.root_activity.state === "inactive" &&
+    (thread.last_execution?.status === "cancelled" ||
+      thread.last_execution?.status === "failed") &&
+    thread.last_execution.completed_at &&
+    continuation === detail.data?.continuation_id &&
+    lastTurn &&
+    lastTurn.end_position === latestPage?.total &&
+    lastTurn.final_position == null
+      ? {
+          id: lastTurn.turn_id,
+          time: thread.last_execution.completed_at,
+          notice: failureNotice,
+        }
+      : undefined;
   const content = (
     <>
       <div className={styles.page}>
@@ -858,6 +908,7 @@ function ConversationContent({
                       }
                     >
                       <ConversationTranscript
+                        terminalTurn={terminalTurn}
                         currentFailureRunId={
                           thread?.last_execution?.status === "failed"
                             ? thread.last_execution.run_id
@@ -929,42 +980,7 @@ function ConversationContent({
                       </Button>
                     </div>
                   )}
-                  <RootFailureNotice
-                    lastExecution={thread?.last_execution}
-                    threadId={threadId}
-                    receipt={receipt}
-                    display={display}
-                    continuationId={detail.data?.continuation_id}
-                    completedContinuationId={
-                      thread?.completion?.continuation_id
-                    }
-                    retry={
-                      botActivity || guest || readOnly || thread?.archived
-                        ? undefined
-                        : () => {
-                            void submitContinuation(
-                              draft,
-                              transport,
-                              threadId,
-                              tracker
-                                ? () => tracker.beforeRun(threadId)
-                                : undefined,
-                              () => appContexts?.capture(threadId) ?? [],
-                            ).finally(reconcile);
-                          }
-                    }
-                    retryDisabled={
-                      !detail.data?.available_actions?.includes("run") ||
-                      thread?.root_activity.state !== "inactive" ||
-                      agentSelection.isPending ||
-                      agentSelection.isError ||
-                      detail.isError ||
-                      draft.submission.kind === "pending" ||
-                      draft.submission.kind === "unknown" ||
-                      (draft.submission.kind === "accepted" &&
-                        draft.submission.receipt !== receipt)
-                    }
-                  />
+                  {!terminalTurn && failureNotice}
 
                   {((guest && !canCompose) || readOnly || isCoordinator) &&
                     !entries.length &&

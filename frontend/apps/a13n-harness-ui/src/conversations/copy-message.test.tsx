@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
 import { InputContent, inputCopyText, type InputPart } from "./input-content";
 import { previewInput } from "./local-input";
@@ -279,4 +280,51 @@ it("only adds final output copying after saved-history cutover and labels trunca
   );
   await screen.findByRole("button", { name: "Copied" });
   expect(write).toHaveBeenCalledWith("Saved preview");
+});
+
+it("offers copy, branch and the stop time once after a tool interrupts the last reply", async () => {
+  const write = clipboard();
+  const create = vi.fn();
+  const time = "2026-04-01T12:30:00.000Z";
+  render(
+    <MessageBranches
+      value={{
+        busy: false,
+        pending: false,
+        create,
+        points: { turn: { edit: true, branch: true } },
+      }}
+    >
+      <ConversationTranscript
+        threadId="one"
+        localInputs={[]}
+        blocks={[]}
+        entries={[
+          entry(0, [{ kind: "user", text: "Start" }]),
+          entry(1, [{ kind: "assistant", text: "Earlier" }]),
+          entry(2, [{ kind: "assistant", text: "Last saved prose" }]),
+          entry(3, [{ kind: "thinking", text: "Next step" }]),
+        ]}
+        turns={[
+          {
+            turn_id: "turn",
+            input_position: 0,
+            end_position: 4,
+            preview: "Start",
+          },
+        ]}
+        terminalTurn={{ id: "turn", time }}
+      />
+    </MessageBranches>,
+  );
+  const footer = screen.getByRole("button", {
+    name: "Branch in new chat",
+  }).parentElement!;
+  fireEvent.click(within(footer).getByRole("button", { name: "Copy message" }));
+  expect(write).toHaveBeenCalledWith("Last saved prose");
+  expect(footer.querySelector("time")?.dateTime).toBe(time);
+  fireEvent.click(
+    within(footer).getByRole("button", { name: "Branch in new chat" }),
+  );
+  expect(create).toHaveBeenCalledWith("turn");
 });

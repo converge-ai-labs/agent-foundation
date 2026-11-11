@@ -243,7 +243,7 @@ export function ConversationNavigation() {
               >
                 <DotsThree />
               </MenuTrigger>
-              <MenuPopup align="end">
+              <MenuPopup align="end" className={styles.navigationViewMenu}>
                 <MenuRadioGroup
                   value={view}
                   onValueChange={changeView}

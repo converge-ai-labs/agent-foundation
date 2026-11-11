@@ -24,8 +24,19 @@
 .navigationHeadingActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex-shrink: 0;
+}
+/* Menu focus guards can sit between the two action buttons while open. */
+@media (pointer: fine) {
+  .navigationHeadingActions > button,
+  .messageActions > button {
+    inline-size: 22px;
+    block-size: 22px;
+  }
+}
+.navigationViewMenu [data-slot="menu-radio-item"] {
+  font-size: var(--harness-nav-font);
 }
 .navigationHeading > span {
   overflow: hidden;
@@ -681,7 +692,7 @@
 .messageActions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
   min-height: 32px;
   margin-top: 4px;
   margin-inline-start: -6px;
@@ -714,7 +725,7 @@
   }
 }
 .messageTime {
-  margin-inline: 4px;
+  margin-inline: 2px;
   color: var(--a13n-tertiary);
   font-size: var(--a13n-text-xs);
   white-space: nowrap;
@@ -1917,7 +1928,13 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .execution {
-  margin: 8px 0 16px;
+  margin: 8px 0;
+}
+div:has(+ .execution) > .assistantMessage {
+  margin-block-end: 8px;
+}
+.execution + div > .assistantMessage {
+  margin-block-start: 8px;
 }
 .executionHeading {
   display: flex;

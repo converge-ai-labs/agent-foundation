@@ -3264,5 +3264,15 @@
   "Search base models…": "Search base models…",
   "Automatic (use request model)": "Automatic (use request model)",
   "This base model is missing from the current catalog.": "This base model is missing from the current catalog.",
-  "No matching models": "No matching models"
+  "No matching models": "No matching models",
+  "Call {{count}} tools_one": "Call {{count}} tool",
+  "Call {{count}} tools_other": "Call {{count}} tools",
+  "Read {{count}} files_one": "Read {{count}} file",
+  "Read {{count}} files_other": "Read {{count}} files",
+  "Run {{count}} commands_one": "Run {{count}} command",
+  "Run {{count}} commands_other": "Run {{count}} commands",
+  "Edit {{count}} files_one": "Edit {{count}} file",
+  "Edit {{count}} files_other": "Edit {{count}} files",
+  "Run {{count}} searches_one": "Run {{count}} search",
+  "Run {{count}} searches_other": "Run {{count}} searches"
 }

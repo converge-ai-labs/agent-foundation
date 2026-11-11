@@ -1,9 +1,7 @@
 from datetime import UTC, datetime
 
-from a13n_harness import HarnessState
 from a13n_harness.compaction import CompactionInput, CompactionResult, apply_compaction
-from a13n_harness_ui.surfaces import BranchRequest
-from a13n_harness_ui.thread_branch import Boundary, boundaries, branch_state
+from a13n_harness_ui.thread_branch import Boundary, boundaries, branch_prefix
 from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 
@@ -19,11 +17,7 @@ def test_edit_uses_the_input_boundary_after_an_interrupted_reply():
     points = boundaries(history, continuing_turn=False)
     assert points["first"] == points["entry:1"] == Boundary(before=1, after=None)
     assert points["retry"] == Boundary(before=3, after=5)
-    edited, _, _ = branch_state(
-        HarnessState.new(message_history=history),
-        BranchRequest(expected_continuation_id="0" * 64, turn_key="retry", side="before"),
-        continuing_turn=False,
-    )
+    edited, _, _ = branch_prefix(history, points["retry"].before)
     assert edited.message_history == history[:3]
 
 
