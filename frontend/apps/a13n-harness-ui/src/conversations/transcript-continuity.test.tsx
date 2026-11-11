@@ -60,6 +60,43 @@ const props = {
 const readingAnchor = (node: HTMLElement) =>
   node.closest<HTMLElement>("[data-reading-anchor]")?.dataset.readingAnchor;
 
+it("shows response time only on the final reply of a completed run", () => {
+  const timestamp = "2026-11-11T05:57:43.000Z";
+  const entries = [
+    input,
+    { ...output, timestamp },
+    {
+      ...output,
+      position: 2,
+      timestamp,
+      parts: [{ kind: "assistant" as const, text: "Final reply" }],
+    },
+  ];
+  const closing = { ...turn, end_position: 3, output_position: 2 };
+  const view = render(
+    <ConversationTranscript
+      {...props}
+      entries={entries}
+      turns={[closing]}
+      blocks={[]}
+    />,
+  );
+  expect(view.container.querySelector("time")).toBeNull();
+  view.rerender(
+    <ConversationTranscript
+      {...props}
+      entries={entries}
+      turns={[{ ...closing, final_position: 2 }]}
+      blocks={[]}
+    />,
+  );
+  expect(view.container.querySelectorAll("time")).toHaveLength(1);
+  expect(
+    screen.getByText("Final reply").closest("section")?.querySelector("time")
+      ?.dateTime,
+  ).toBe(timestamp);
+});
+
 it("branches from an imported reply without a timestamp", () => {
   const create = vi.fn();
   const imported = {

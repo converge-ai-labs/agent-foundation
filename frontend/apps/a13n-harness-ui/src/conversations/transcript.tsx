@@ -39,6 +39,7 @@ import {
 import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
 import { MessageActionButton, MessageBranches } from "./message-branch";
+import { RecoveryText } from "./run-activity";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 import { FailureNotice } from "./failure-notice";
@@ -654,14 +655,12 @@ function Rows({
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
           )}
-          {(row.timestamp != null ||
-            (row === output.at(-1) && copyText.trim())) && (
+          {row === output.at(-1) && copyText.trim() && (
             <CopyMessage
               action={
                 messageActions &&
                 actions &&
-                !row.subagentRunId &&
-                (row === output.at(-1) || row.live) && (
+                !row.subagentRunId && (
                   <MessageActionButton
                     kind="branch"
                     disabled={
@@ -673,8 +672,10 @@ function Rows({
                   />
                 )
               }
-              timestamp={row.timestamp}
-              text={row === output.at(-1) ? copyText : undefined}
+              timestamp={
+                turn?.final_position != null ? row.timestamp : undefined
+              }
+              text={copyText}
               truncated={output.some((part) => part.truncated)}
             />
           )}
@@ -779,7 +780,6 @@ export function ConversationTranscript({
   turns = [],
   loadDetails = false,
   onSavedEntries,
-  recovery,
   pending,
   activity,
   currentFailureRunId,
@@ -789,7 +789,6 @@ export function ConversationTranscript({
   currentFailureRunId?: string | null;
   activity?: ReactNode;
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   turns?: Schema<"TranscriptTurn">[];
   loadDetails?: boolean;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
@@ -854,7 +853,6 @@ export function ConversationTranscript({
         loadDetails={loadDetails}
         onSavedEntries={onSavedEntries}
         continuation={continuation}
-        recovery={recovery}
         pending={pending}
       />
       {activity}
@@ -872,11 +870,9 @@ function TurnRows({
   loadDetails,
   onSavedEntries,
   continuation,
-  recovery,
   pending,
 }: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
   turns: Schema<"TranscriptTurn">[];
@@ -960,14 +956,14 @@ function TurnRows({
     }
     groups.at(-1)!.rows.push(row);
   }
-  if (!groups.length && (recovery || pending))
+  if (!groups.length && pending)
     groups.push({
       id: "ungrouped",
       presentationKey: "turn:ungrouped",
       rows: [],
     });
   return groups.map((group, index) =>
-    group.id === "ungrouped" && !recovery && !pending ? (
+    group.id === "ungrouped" && !pending ? (
       <Rows
         key={group.presentationKey}
         rows={questionRows(group.rows)}
@@ -977,7 +973,6 @@ function TurnRows({
       <Turn
         key={group.presentationKey}
         {...group}
-        recovery={index === groups.length - 1 ? recovery : undefined}
         pending={index === groups.length - 1 ? pending : undefined}
         entries={group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries}
         threadId={threadId}
@@ -996,7 +991,6 @@ function TurnRows({
 
 function Turn(props: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1024,7 +1018,6 @@ function TurnHistory({
 }: {
   pending?: PendingInteraction;
   id: string;
-  recovery?: FocusDisplay["recovery"];
   turn?: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
   rows: Row[];
@@ -1167,11 +1160,9 @@ function TurnSegments({
   retry,
   loading = false,
   failed = false,
-  recovery,
   pending,
 }: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1291,18 +1282,6 @@ function TurnSegments({
       mountedExecution.current.has(segment.id) ||
       segment.rows.some((row) => row.position === undefined),
   );
-  let recoverySegment = visibleSegments.findLast(
-    (segment) => segment.kind === "execution",
-  );
-  if (recovery && !recoverySegment) {
-    // Use the next execution boundary so arriving tools reuse an open reader.
-    recoverySegment = {
-      id: `${boundary}:execution:${textIndex}`,
-      kind: "execution",
-      rows: [],
-    };
-    visibleSegments.push(recoverySegment);
-  }
   useLayoutEffect(() => {
     mountedExecution.current = new Set(
       visibleSegments
@@ -1357,7 +1336,6 @@ function TurnSegments({
                 ? turn?.duration_ms
                 : undefined
             }
-            recovery={segment === recoverySegment ? recovery : undefined}
           />
         );
       })}
@@ -1370,10 +1348,8 @@ function ExecutionSegment({
   threadId,
   complete,
   durationMs,
-  recovery,
 }: {
   durationMs?: number | null;
-  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   threadId: string;
   complete: boolean;
@@ -1405,7 +1381,6 @@ function ExecutionSegment({
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
           <Rows rows={rows} threadId={threadId} continuation />
-          <RecoveryNotice recovery={recovery} />
         </ExecutionReader>
       )}
     </ExecutionDetails>
@@ -1507,7 +1482,6 @@ export function RecoveryNotice({
 }: {
   recovery: FocusDisplay["recovery"];
 }) {
-  const { t } = useTranslation();
   if (!recovery) return null;
   return (
     <div
@@ -1517,12 +1491,7 @@ export function RecoveryNotice({
     >
       <ArrowClockwise aria-hidden="true" />
       <span>
-        {recovery.state === "retrying"
-          ? t("Reconnecting to model…")
-          : recovery.state === "resumed"
-            ? t("Model connection restored")
-            : t("Model reconnection ended")}
-        {` - ${t("Retry count", { count: recovery.retries })}`}
+        <RecoveryText recovery={recovery} />
       </span>
     </div>
   );

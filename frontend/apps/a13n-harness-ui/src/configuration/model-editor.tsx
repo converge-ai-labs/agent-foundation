@@ -281,6 +281,7 @@ function LoadedModelEditor({
   const [authentication, setAuthentication] = useState(
     draft?.authentication ?? value?.authentication,
   );
+  const [baseSearch, setBaseSearch] = useState("");
   const [modelSearch, setModelSearch] = useState("");
   const [customContext, setCustomContext] = useState(false);
   const [customAffinity, setCustomAffinity] = useState(false);
@@ -358,6 +359,7 @@ function LoadedModelEditor({
       connection,
       effectiveId,
       effectiveUrl,
+      value?.base_model,
       value?.settings,
     ],
     queryFn: ({ signal }) =>
@@ -367,6 +369,7 @@ function LoadedModelEditor({
             connection,
             model_id: effectiveId,
             base_url: effectiveUrl,
+            base_model: value?.base_model,
             settings: value?.settings,
           },
           signal,
@@ -441,6 +444,7 @@ function LoadedModelEditor({
             connection,
             model_id: effectiveId,
             base_url: effectiveUrl,
+            base_model: value?.base_model,
             ...(!reset && value
               ? {
                   settings: value.settings ?? {},
@@ -557,6 +561,22 @@ function LoadedModelEditor({
       label: modelSearch.trim(),
       description: t("Use custom model ID"),
     });
+  const baseModels = choices.base_models ?? [];
+  const currentBase = value?.base_model;
+  const query = baseSearch.trim().toLowerCase();
+  const baseOptions = baseModels
+    .filter((item) =>
+      (item.label + " " + item.value).toLowerCase().includes(query),
+    )
+    .slice(0, 50);
+  if (currentBase && !baseOptions.some((item) => item.value === currentBase)) {
+    baseOptions.unshift(
+      baseModels.find((item) => item.value === currentBase) ?? {
+        value: currentBase,
+        label: currentBase,
+      },
+    );
+  }
   const defaultsSummary = [
     selectedPreset ? t(selectedPreset.label) : t("Custom settings"),
     contextBudget
@@ -639,6 +659,46 @@ function LoadedModelEditor({
               />
             </SettingsRow>
 
+            <SettingsRow
+              label={t("Base model")}
+              description={t(
+                "Identifies the model behind this connection for usage and cost estimates.",
+              )}
+            >
+              <SearchPicker
+                label={t("Base model")}
+                placeholder={t("Search base models…")}
+                emptyMessage={t("No matching models")}
+                disabled={!value || !matches}
+                value={currentBase ?? "auto"}
+                onSearchChange={setBaseSearch}
+                onValueChange={(id) =>
+                  update({ base_model: id === "auto" ? undefined : id })
+                }
+                groups={[
+                  {
+                    label: "",
+                    options: [
+                      {
+                        value: "auto",
+                        label: t("Automatic (use request model)"),
+                      },
+                      ...baseOptions.map((item) => ({
+                        ...item,
+                        description: item.value,
+                        icon: <ModelIcon name={item.value} />,
+                      })),
+                    ],
+                  },
+                ]}
+              />
+            </SettingsRow>
+            {currentBase &&
+              !baseModels.some((item) => item.value === currentBase) && (
+                <small role="status">
+                  {t("This base model is missing from the current catalog.")}
+                </small>
+              )}
             {api && (catalog.isPending || catalog.error) && (
               <small role="status">
                 {catalog.isPending
@@ -1101,6 +1161,7 @@ export function ModelFields({
     typeof raw?.route === "string" && raw.route && raw?.authentication
       ? {
           route: raw.route,
+          base_model: raw.base_model,
           authentication: raw.authentication,
           settings: raw.settings,
           model_configuration: raw.model_configuration,

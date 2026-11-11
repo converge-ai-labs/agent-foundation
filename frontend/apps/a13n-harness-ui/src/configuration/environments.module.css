@@ -1,13 +1,45 @@
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   min-width: 0;
 }
-.sectionTitle {
-  display: inline-flex;
-  align-items: center;
+.project {
+  display: grid;
   gap: 4px;
+}
+.localEnvironment,
+.remote .environment {
+  min-width: 0;
+  border-radius: var(--harness-radius-panel);
+  background: var(--a13n-surface);
+  padding: 0 var(--harness-group-inset);
+}
+.localEnvironment > [data-slot="settings-row"] {
+  border-top: 1px solid var(--a13n-border-soft);
+  min-height: 42px;
+}
+.remoteHeading {
+  display: flex;
+  align-items: center;
+}
+.remoteHeading button {
+  font-weight: 400;
+}
+.applyDetails {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 20px;
+}
+.applyDetails summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.applyDetails p {
+  margin-block: 6px 2px;
+}
+.applyDetails button {
+  padding-inline: 0;
 }
 .editor [data-slot="settings-row"] > :first-child {
   display: contents;
@@ -71,10 +103,7 @@
 .remote:empty {
   display: none;
 }
-.addEnvironment {
-  margin-inline-start: -8px;
-  padding-inline: 8px;
-}
+
 .remote .environment {
   padding: 12px 16px;
   border-radius: var(--harness-radius-panel);
@@ -110,7 +139,7 @@
   line-height: 20px;
 }
 .defaultDirectory [data-slot="settings-row"] {
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) fit-content(65%);
 }
 .defaultDirectory [data-slot="select-trigger"] {
   max-width: 260px;

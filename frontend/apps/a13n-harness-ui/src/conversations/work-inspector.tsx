@@ -162,7 +162,7 @@ export function WorkInspector({
             return (
               <DialogTrigger
                 key={item}
-                render={<Button variant="ghost" size="icon-sm" />}
+                render={<Button variant="ghost" size="sm" />}
                 className={styles.shortcut}
                 aria-label={t("Inspect {{activity}}", {
                   activity: label.toLowerCase(),

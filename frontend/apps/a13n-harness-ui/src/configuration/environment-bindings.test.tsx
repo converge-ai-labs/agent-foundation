@@ -142,7 +142,9 @@ function Fields({ initial = [] }: { initial?: EnvironmentBinding[] }) {
 }
 async function chooseDevice() {
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Add environment" }));
+  await user.click(
+    screen.getByRole("button", { name: "Add remote environment" }),
+  );
   await user.click(screen.getByRole("combobox", { name: "Device" }));
   await user.click(
     await screen.findByRole("option", { name: "Build machine" }),

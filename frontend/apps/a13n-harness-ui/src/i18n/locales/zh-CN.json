@@ -1533,6 +1533,9 @@
   "Additional instructions": "附加指令",
   "Used by new chats. Existing chats keep their settings.": "用于新聊天，现有聊天保留其设置。",
   "Used by new chats, or when you apply Project defaults.": "用于新聊天或应用项目默认设置时。",
+  "Local environment": "本地环境",
+  "Add remote environment": "添加远程环境",
+  "When applying to existing chats": "应用到已有对话时",
   "New chats add no remote environments. Existing chats keep theirs.": "新聊天不添加远程环境，现有聊天保留原有环境。",
   "Applying these defaults replaces the chat's remote environments.": "应用这些默认设置将替换聊天的远程环境。",
   "Applying these defaults removes the chat's remote environments.": "应用这些默认设置将移除聊天的远程环境。",
@@ -3217,5 +3220,11 @@
   "Heartbeat": "心跳",
   "Interval (seconds)": "间隔（秒）",
   "Heartbeat interval": "心跳间隔",
-  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "草稿仅保留在当前标签页。刷新会丢失未发送内容和提交结果不确定的请求详情。Enter 发送，Shift+Enter 换行。"
+  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "草稿仅保留在当前标签页。刷新会丢失未发送内容和提交结果不确定的请求详情。Enter 发送，Shift+Enter 换行。",
+  "Base model": "基础模型",
+  "Identifies the model behind this connection for usage and cost estimates.": "指定此连接背后的模型，用于用量统计和费用估算。",
+  "Search base models…": "搜索基础模型…",
+  "Automatic (use request model)": "自动（按请求模型）",
+  "This base model is missing from the current catalog.": "当前目录中找不到此基础模型。",
+  "No matching models": "没有匹配的模型"
 }

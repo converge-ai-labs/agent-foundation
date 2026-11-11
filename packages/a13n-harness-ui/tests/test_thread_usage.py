@@ -156,7 +156,7 @@ def test_usage_aggregation_reuses_existing_group_totals(monkeypatch) -> None:
     for index in range(1, 65):
         aggregate.add(index + 1, False, _model(index).model_dump_json(), _NOW, _NOW, 65)
     assert allocations == 0
-    view = aggregate.view("thread-root")
+    view = aggregate.view("thread-root", {})
     assert view.combined.model_requests == 65
     assert dict(view.combined.tokens)["input_tokens"] == 6500
     assert view.root == view.recent_runs[0].totals == view.models[0][1] == view.groups[0].totals
