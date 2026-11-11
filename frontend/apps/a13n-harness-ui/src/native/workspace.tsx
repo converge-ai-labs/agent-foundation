@@ -1111,7 +1111,7 @@ export function NativeWorkspace({
                   )
                     .filter(
                       ([action]) =>
-                        threadId !== BOT_THREAD_ID || action !== "rename",
+                        threadId !== BOT_THREAD_ID || action === "details",
                     )
                     .map(([action, label, Icon]) => (
                       <MenuItem

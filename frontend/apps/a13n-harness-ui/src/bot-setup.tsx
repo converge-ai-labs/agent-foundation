@@ -1,4 +1,10 @@
-import { useContext, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useTranslation } from "./i18n";
@@ -16,10 +22,11 @@ import { useRootConfiguration } from "./configuration/root-configuration";
 import { readDocument, updateDocument } from "./configuration/documents";
 import styles from "./bot.module.css";
 
-export function BotSetup() {
+function useBotSetup() {
   const { t } = useTranslation();
   const { client } = useTransport();
-  const root = useRootConfiguration();
+  const [active, setActive] = useState(false);
+  const root = useRootConfiguration(active);
   const selectors = useSelectors();
   const drafts = useContext(DraftContext);
   const queries = useQueryClient();
@@ -40,6 +47,7 @@ export function BotSetup() {
   const canEnable = selectors.data?.models?.some(
     (model) => model.model_id === modelId,
   );
+  const heartbeat = document?.webui?.bot?.heartbeat_enabled !== false;
   const enable = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -62,7 +70,7 @@ export function BotSetup() {
         throw new Error(
           t("Save or discard your global settings changes first."),
         );
-      // Apply only edited fields to the latest source, retaining concurrent settings and YAML nodes.
+      // Patch the latest source. The shared configuration API has no write precondition.
       const content = updateDocument(
         applyEdits(latest.content),
         ["webui", "bot", "enabled"],
@@ -74,14 +82,19 @@ export function BotSetup() {
           body: { content },
         }),
       );
-      drafts.set(path, {
-        content,
-        base: content,
-        digest: publication.source_digest,
-        replacement: false,
-      });
+      // Keep a newer Settings draft and its original conflict metadata together:
+      // its content may not include this publication's Bot settings.
+      const after = drafts.get(path);
+      if (!after || after.content === after.base)
+        drafts.set(path, {
+          content,
+          base: content,
+          digest: publication.source_digest,
+          replacement: false,
+        });
     },
     onSuccess: () => {
+      setEdits({});
       setUncertain(false);
       void queries.invalidateQueries();
     },
@@ -98,9 +111,54 @@ export function BotSetup() {
     mutationFn: () => result(client.GET("/api/bot")),
     onSuccess: (snapshot) => {
       queries.setQueryData(["bot"], snapshot);
+      if (snapshot.enabled) setEdits({});
       setUncertain(false);
     },
   });
+  useEffect(() => {
+    if (!Object.keys(edits).length) return;
+    const protect = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", protect);
+    return () => window.removeEventListener("beforeunload", protect);
+  }, [edits]);
+  return {
+    root,
+    source,
+    setEdits,
+    canEnable,
+    heartbeat,
+    enable,
+    check,
+    uncertain,
+    setActive,
+  };
+}
+
+const BotSetupContext = createContext<ReturnType<typeof useBotSetup> | null>(
+  null,
+);
+// Setup drafts and in-flight saves survive page navigation, just like Bot chat input.
+export function BotSetupProvider({ children }: { children: ReactNode }) {
+  const setup = useBotSetup();
+  return <BotSetupContext value={setup}>{children}</BotSetupContext>;
+}
+
+export function BotSetup() {
+  const { t } = useTranslation();
+  const setup = useContext(BotSetupContext);
+  if (!setup) throw new Error("Bot setup is missing.");
+  const {
+    root,
+    source,
+    setEdits,
+    canEnable,
+    heartbeat,
+    enable,
+    check,
+    uncertain,
+    setActive,
+  } = setup;
+  useEffect(() => setActive(true), [setActive]);
   return (
     <main className={styles.setup}>
       <PageHeader
@@ -110,24 +168,38 @@ export function BotSetup() {
         )}
       />
       {root.data?.content && (
-        <BotFields
-          source={source}
-          onChange={(_, key, value) =>
-            setEdits((current) => ({ ...current, [key]: value }))
-          }
-          setup
-        />
+        <fieldset
+          className={styles.setupFields}
+          disabled={enable.isPending || uncertain}
+          inert={enable.isPending || uncertain}
+        >
+          <BotFields
+            source={source}
+            onChange={(_, key, value) => {
+              if (!enable.isPending && !uncertain)
+                setEdits((current) => ({ ...current, [key]: value }));
+            }}
+            setup
+          />
+        </fieldset>
       )}
       <ErrorNotice error={root.error} retry={() => void root.refetch()} />
       <ErrorNotice
         error={check.error || enable.error}
         retry={!uncertain ? () => enable.mutate() : undefined}
       />
+      {root.data && !root.data.writable && (
+        <p role="status">{t("Global settings are read-only.")}</p>
+      )}
       <div className={styles.setupActions}>
         <p>
-          {t(
-            "Turning on saves these settings without starting a run. The first Heartbeat is scheduled automatically; you can also message Bot anytime.",
-          )}
+          {heartbeat
+            ? t(
+                "Turning on saves these settings without starting a run. The first Heartbeat is scheduled automatically; you can also message Bot anytime.",
+              )
+            : t(
+                "Turning on saves these settings without starting a run. Heartbeat is off; you can message Bot anytime.",
+              )}
         </p>
         {uncertain ? (
           <Button disabled={check.isPending} onClick={() => check.mutate()}>

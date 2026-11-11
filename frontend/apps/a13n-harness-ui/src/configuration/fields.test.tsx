@@ -467,3 +467,21 @@ it("requires confirmation before turning Bot off and leaves policy untouched on 
   });
   expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
 });
+
+it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () => {
+  renderFields(
+    'schema_version: "1"\nwebui:\n  bot: {enabled: true, interval_seconds: 90}\n',
+  );
+  const input = screen.getByRole("spinbutton", { name: "Interval (minutes)" });
+  for (const value of ["", "0", "0.5", "1441"]) {
+    fireEvent.change(input, { target: { value } });
+    expect(
+      parse(screen.getByTestId("source").textContent!).webui.bot
+        .interval_seconds,
+    ).toBe(90);
+  }
+  fireEvent.change(input, { target: { value: "2.5" } });
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui.bot.interval_seconds,
+  ).toBe(150);
+});

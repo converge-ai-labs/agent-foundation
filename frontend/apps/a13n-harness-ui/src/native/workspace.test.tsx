@@ -1963,3 +1963,14 @@ it("explicit native links reopen only their destination chat's saved closed pane
     "closed",
   );
 });
+
+it("keeps only Chat details in the reserved Bot Activity actions", async () => {
+  setup("/threads/thread_bot");
+  const actions = await screen.findByRole("button", { name: "Chat actions" });
+  fireEvent.click(actions);
+  expect(
+    await screen.findByRole("menuitem", { name: "Chat details" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Share" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
+});

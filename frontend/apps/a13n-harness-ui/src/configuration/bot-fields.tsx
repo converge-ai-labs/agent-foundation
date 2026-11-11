@@ -11,6 +11,7 @@ import {
 } from "../shell/settings";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ResourceChoice } from "./resource-choice";
+import { ErrorNotice } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 
@@ -102,9 +103,17 @@ export function BotFields({
             onValueChange={(value) => set("model", value || null)}
             loading={selectors.isLoading}
           />
+          <ErrorNotice
+            error={selectors.error}
+            retry={() => void selectors.refetch()}
+          />
           {!get("model") && !defaultModel && (
             <p className={styles.fieldGroup}>
-              <Link to="/settings/models">{t("Add a model first.")}</Link>
+              {models.length ? (
+                t("Choose an existing model to continue.")
+              ) : (
+                <Link to="/settings/models">{t("Add a model first.")}</Link>
+              )}
             </p>
           )}
           <div className={styles.fieldGroup}>
@@ -171,12 +180,15 @@ export function BotFields({
                     max={1440}
                     step="any"
                     value={interval / 60}
-                    onChange={(event) =>
-                      set(
-                        "interval_seconds",
-                        Math.round(Number(event.target.value) * 60),
+                    onChange={(event) => {
+                      const minutes = Number(event.target.value);
+                      if (
+                        Number.isFinite(minutes) &&
+                        minutes >= 1 &&
+                        minutes <= 1440
                       )
-                    }
+                        set("interval_seconds", Math.round(minutes * 60));
+                    }}
                   />
                 </SettingsRow>
               )}

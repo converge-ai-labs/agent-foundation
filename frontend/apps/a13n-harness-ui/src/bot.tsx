@@ -22,7 +22,7 @@ import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
 import styles from "./bot.module.css";
 
-import { BotSetup } from "./bot-setup";
+import { BotSetup, BotSetupProvider } from "./bot-setup";
 import { BOT_THREAD_ID } from "./bot-identity";
 export { BOT_THREAD_ID } from "./bot-identity";
 
@@ -103,7 +103,11 @@ const BotComposerContext = createContext<ReturnType<
 // Keep the exact uncertain command alive across navigation. It is never replayed automatically.
 export function BotComposerProvider({ children }: { children: ReactNode }) {
   const composer = useBotComposer();
-  return <BotComposerContext value={composer}>{children}</BotComposerContext>;
+  return (
+    <BotSetupProvider>
+      <BotComposerContext value={composer}>{children}</BotComposerContext>
+    </BotSetupProvider>
+  );
 }
 
 export function BotActions() {
@@ -256,6 +260,19 @@ export function BotPage({
                     error={send.error || data?.state.last_error}
                     retry={uncertain ? () => send.mutate() : undefined}
                   />
+                  {data && !data.available && (
+                    <p>
+                      {t(
+                        "Check Bot's model in Settings. Another app may also own Bot processing.",
+                      )}{" "}
+                      <Link to="/settings#bot">{t("Bot settings")}</Link>
+                    </p>
+                  )}
+                  {busy && !data?.pending_decision && (
+                    <p role="status">
+                      {t("Messages sent while Bot is working will be queued.")}
+                    </p>
+                  )}
                   {data?.pending_decision && (
                     <Link to={`/threads/${BOT_THREAD_ID}`}>
                       {t("Open Activity to respond")}

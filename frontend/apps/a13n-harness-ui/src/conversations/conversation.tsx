@@ -1171,7 +1171,7 @@ function ConversationContent({
             {t("View-only link - Following this chat live.")}
           </p>
         )}
-        {!guest && !readOnly && (
+        {!guest && !readOnly && !botActivity && (
           <SharePanel
             open={dialog === "share"}
             onClose={closeDialog}

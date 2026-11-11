@@ -11,6 +11,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotComposerProvider, BotPage, BOT_THREAD_ID } from "./bot";
+import { Conversation } from "./conversations/conversation";
+import { ShareButton } from "./sharing";
 import { createTransport, type Schema } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
@@ -50,6 +52,7 @@ let rootSource: string;
 let configurationWrites: string[];
 let writable: boolean;
 let saveFailure: "validation" | "unknown" | null;
+let saveGate: Promise<void> | undefined;
 let savedDrafts: Map<string, SourceDraft>;
 let queries: QueryClient;
 let transport: ReturnType<typeof createTransport>;
@@ -94,6 +97,7 @@ beforeEach(() => {
   configurationWrites = [];
   writable = true;
   saveFailure = null;
+  saveGate = undefined;
   savedDrafts = new Map();
   reject = false;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -165,8 +169,10 @@ beforeEach(() => {
               { error: { message: "Invalid configuration" } },
               { status: 422 },
             );
-          rootSource = (await request.json()).content;
-          configurationWrites.push(rootSource);
+          const submitted = (await request.json()).content;
+          configurationWrites.push(submitted);
+          await saveGate;
+          rootSource = submitted;
           snapshot = { ...snapshot, enabled: true };
           return Response.json({ source_digest: "saved" });
         }
@@ -190,13 +196,13 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function mount() {
+function mount(initial = "/bot") {
   return render(
     <TransportContext value={transport}>
       <QueryClientProvider client={queries}>
         <DraftContext value={savedDrafts}>
           <ComposerDrafts value={new Map([[BOT_THREAD_ID, draft]])}>
-            <MemoryRouter initialEntries={["/bot"]}>
+            <MemoryRouter initialEntries={[initial]}>
               <BotComposerProvider>
                 <Link to="/elsewhere">Leave</Link>
                 <Link to="/bot">Return</Link>
@@ -205,6 +211,19 @@ function mount() {
                     path="/bot"
                     element={
                       <BotPage profile={profile} unauthorized={() => {}} />
+                    }
+                  />
+                  <Route
+                    path={`/threads/${BOT_THREAD_ID}`}
+                    element={
+                      <>
+                        <ShareButton />
+                        <Conversation
+                          threadId={BOT_THREAD_ID}
+                          profile={profile}
+                          unauthorized={() => {}}
+                        />
+                      </>
                     }
                   />
                   <Route path="/elsewhere" element={<p>Elsewhere</p>} />
@@ -496,4 +515,195 @@ it("retains setup edits after validation failure and rechecks unknown saves befo
   await screen.findByRole("button", { name: "Send" });
   expect(configurationWrites).toHaveLength(0);
   expect(requests).toHaveLength(0);
+});
+
+it("keeps setup edits across navigation and describes Heartbeat-off accurately", async () => {
+  snapshot.enabled = false;
+  mount();
+  const instructions = await screen.findByRole("textbox", {
+    name: "Custom instructions",
+  });
+  fireEvent.change(instructions, { target: { value: "Retain my setup" } });
+  fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
+  expect(
+    screen.getByText(/Heartbeat is off; you can message Bot anytime/),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByText("Leave"));
+  fireEvent.click(screen.getByText("Return"));
+  expect(
+    (
+      (await screen.findByRole("textbox", {
+        name: "Custom instructions",
+      })) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Retain my setup");
+  expect(
+    screen
+      .getByRole("switch", { name: "Heartbeat" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+});
+
+it("freezes all setup fields and retains the save across navigation while publication is pending", async () => {
+  snapshot.enabled = false;
+  let release!: () => void;
+  saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Submitted A" } },
+  );
+  fireEvent.click(enable);
+  await waitFor(() => expect(configurationWrites).toHaveLength(1));
+  for (const name of [
+    "Custom instructions",
+    "Bot model",
+    "Heartbeat",
+    "Check in every",
+  ]) {
+    const control = screen.getByRole(
+      name === "Custom instructions"
+        ? "textbox"
+        : name === "Heartbeat"
+          ? "switch"
+          : "combobox",
+      { name },
+    );
+    expect(control.closest("fieldset")?.disabled).toBe(true);
+  }
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Custom instructions" }),
+    { target: { value: "Attempted B" } },
+  );
+  fireEvent.click(screen.getByText("Leave"));
+  fireEvent.click(screen.getByText("Return"));
+  expect(
+    screen.getByRole("button", { name: "Saving…" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Custom instructions",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Submitted A");
+  await act(async () => {
+    release();
+  });
+  await screen.findByRole("button", { name: "Send" });
+  expect(configurationWrites).toHaveLength(1);
+  expect(configurationWrites[0]).toContain("Submitted A");
+  expect(configurationWrites[0]).not.toContain("Attempted B");
+});
+
+it("preserves a newer Settings draft when setup publication finishes after route unmount", async () => {
+  snapshot.enabled = false;
+  let release!: () => void;
+  saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(enable);
+  await waitFor(() => expect(configurationWrites).toHaveLength(1));
+  fireEvent.click(screen.getByText("Leave"));
+  const newer = rootSource + "# New unsaved Settings edit\n";
+  savedDrafts.set("root.yaml", {
+    content: newer,
+    base: rootSource,
+    digest: "old",
+    replacement: false,
+  });
+  await act(async () => {
+    release();
+  });
+  fireEvent.click(screen.getByText("Return"));
+  await screen.findByRole("button", { name: "Send" });
+  // Retain the original conflict metadata: this older document does not include
+  // Bot activation, so reopening Settings must warn about the external change.
+  expect(savedDrafts.get("root.yaml")).toEqual({
+    content: newer,
+    base: newer.replace("# New unsaved Settings edit\n", ""),
+    digest: "old",
+    replacement: false,
+  });
+  expect(savedDrafts.get("root.yaml")?.content).not.toBe(
+    savedDrafts.get("root.yaml")?.base,
+  );
+});
+
+it("offers Settings recovery for unavailable processing and explains queued busy chat", async () => {
+  snapshot.available = false;
+  snapshot.model_id = null;
+  mount();
+  await screen.findByText(
+    "Check Bot's model in Settings. Another app may also own Bot processing.",
+  );
+  expect(
+    screen.getByRole("link", { name: "Bot settings" }).getAttribute("href"),
+  ).toBe("/settings#bot");
+  snapshot = {
+    ...snapshot,
+    available: true,
+    inputs: [
+      {
+        input_id: "pending",
+        source: "user",
+        text: "existing",
+        created_at: "2026-11-11T00:00:00Z",
+        state: "queued",
+      },
+    ],
+  };
+  await act(async () => {
+    queries.setQueryData(["bot"], snapshot);
+  });
+  expect(
+    await screen.findByText(
+      "Messages sent while Bot is working will be queued.",
+    ),
+  ).toBeTruthy();
+});
+
+it("excludes sharing from Bot Activity, including a direct share-dialog URL", async () => {
+  mount(`/threads/${BOT_THREAD_ID}?dialog=share`);
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([request]) =>
+            new URL((request as Request).url).pathname ===
+            `/api/threads/${BOT_THREAD_ID}`,
+        ),
+    ).toBe(true),
+  );
+  expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Share" })).toBeNull();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([request]) =>
+          new URL((request as Request).url).pathname === "/api/shares",
+      ),
+  ).toBe(false);
+});
+
+it("asks for an existing model rather than adding one when no default is configured", async () => {
+  snapshot.enabled = false;
+  rootSource = 'schema_version: "1"\nwebui:\n  bot: {enabled: false}\n';
+  mount();
+  await screen.findByText("Choose an existing model to continue.");
+  expect(screen.queryByText("Add a model first.")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Turn on Bot" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
 });

@@ -24,6 +24,12 @@
 .setup {
   composes: settingsContent from "./shell/workbench.module.css";
 }
+.setupFields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .setupActions,
 .offBar {
   display: flex;
