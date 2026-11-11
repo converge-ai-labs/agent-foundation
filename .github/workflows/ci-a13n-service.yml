@@ -273,8 +273,8 @@ jobs:
       - name: Install native Browser desktop dependencies
         if: matrix.name == 'native'
         run: |
-          # Keep the runner's HTTPS fallback mirrors; Azure downloads can exhaust the job timeout.
-          sudo sed -i '\|http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
+          # Avoid ubuntu.com DNS failures on hosted runners; APT still verifies Ubuntu signatures.
+          printf 'https://mirrors.edge.kernel.org/ubuntu/\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           sudo apt-get update
           sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
 
