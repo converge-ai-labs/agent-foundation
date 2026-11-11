@@ -973,6 +973,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/host/files/pick-directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick Host Directory */
+        post: operations["pick_host_directory_api_host_files_pick_directory_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/files/reveal": {
         parameters: {
             query?: never;
@@ -5957,6 +5974,8 @@ export interface components {
         };
         /** ModelChoices */
         ModelChoices: {
+            /** Base Models */
+            base_models?: components["schemas"]["ModelChoice"][];
             /** Connections */
             connections?: components["schemas"]["ModelConnection"][];
             /**
@@ -6056,6 +6075,8 @@ export interface components {
         ModelRecipe: {
             /** Route */
             route: string;
+            /** Base Model */
+            base_model?: string | null;
             authentication: components["schemas"]["ModelAuthentication"];
             /** Settings */
             settings?: {
@@ -6138,6 +6159,8 @@ export interface components {
             root: components["schemas"]["UsageTotals"];
             descendants: components["schemas"]["UsageTotals"];
             combined: components["schemas"]["UsageTotals"];
+            /** Display Name */
+            display_name?: string | null;
         };
         /** MonitoringCatalog */
         MonitoringCatalog: {
@@ -9558,6 +9581,8 @@ export interface components {
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */
@@ -9582,6 +9607,8 @@ export interface components {
         VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */
@@ -11789,6 +11816,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pick_host_directory_api_host_files_pick_directory_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string | null;
                 };
             };
         };

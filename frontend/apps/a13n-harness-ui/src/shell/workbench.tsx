@@ -234,6 +234,7 @@ function WorkbenchContent({
       </div>
       {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
       <div className={styles.sidebarFooter}>
+        {!settingsMode && <BotNavigation />}
         <Menu>
           <MenuTrigger
             className={styles.workspaceMenu}

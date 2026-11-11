@@ -676,9 +676,7 @@ it("uses the existing validated source publication to add a project without crea
     within(dialog).getByRole("textbox", { name: "Project name" }),
     { target: { value: "Example: workspace" } },
   );
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Add local folder" }),
-  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add folder" }));
   fireEvent.change(
     within(dialog).getByRole("textbox", { name: "Server directory" }),
     { target: { value: "/srv/my project" } },

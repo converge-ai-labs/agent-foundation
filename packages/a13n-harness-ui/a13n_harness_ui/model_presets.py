@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import JsonValue
 
 if TYPE_CHECKING:
+    from a13n_harness.pricing import ModelPricingEntry, PricingCatalog
     from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 
 
@@ -131,6 +132,11 @@ def pricing_provider(provider: str) -> str:
         "grok": "x-ai",
         "grok-build": "x-ai",
     }.get(provider, provider)
+
+
+def configured_price_entry(catalog: PricingCatalog, route: str) -> ModelPricingEntry | None:
+    provider, _, model = route.partition(":")
+    return catalog.resolve(model, provider=pricing_provider(provider))
 
 
 def known_context_window(provider: str, model_id: str, base_url: str) -> int | None:

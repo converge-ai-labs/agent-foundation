@@ -235,3 +235,26 @@ async def test_reveal_uses_host_manager_only_for_local_shared_files(
             assert (await client.get("/api/status")).json()["features"]["file_manager"] == "explorer"
             assert (await client.post("/api/host/files/reveal", params={"path": str(target)})).status_code == 204
             launch.assert_awaited_once_with(str(tmp_path / "explorer.exe"), "/select,", str(target))
+
+
+async def test_pick_host_directory_accepts_only_local_shared_requests(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import a13n_harness_ui.webui as transport
+
+    run = AsyncMock(
+        side_effect=[
+            SimpleNamespace(returncode=0, stdout=b"/tmp/two words/\n"),
+            SimpleNamespace(returncode=0, stdout=b"\n"),
+        ]
+    )
+    monkeypatch.setattr(transport, "run_process", run)
+    monkeypatch.setattr(transport, "sys", SimpleNamespace(platform="darwin"))
+    async with webui(tmp_path, [PUBLIC], share_computer=True) as (server, _):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server), base_url="http://localhost", headers=AUTH
+        ) as client:
+            path = "/api/host/files/pick-directory"
+            assert (await client.post(PUBLIC + path)).status_code == 403
+            assert (await client.post(path, headers={"X-Forwarded-For": "192.0.2.1"})).status_code == 403
+            run.assert_not_awaited()
+            assert (await client.post(path)).json() == "/tmp/two words"
+            assert (await client.post(path)).json() is None
