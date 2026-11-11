@@ -432,6 +432,10 @@ Project 可混用本地/远程目录，也可只有远程目录；始终至少�
 
 ## 任务通知
 
+在通知设置的**通知范围**中选择**全部**或**只 Bot**，默认为全部。此选项同时筛选当前浏览器的站内提示和后台通知，不影响其他设备、未读标记或主动发送的测试通知。只 Bot 包含 Bot 消息和需要你回应的通知，不包含普通聊天的任务结果。
+
+Bot 发布的消息显示**Bot 给你发了消息**和实际消息预览。选择**查看消息**或点击系统通知即可打开 Bot。同一轮运行中的不同消息会分别通知。需要输入时显示 **Bot 需要你的回应**，点击后在 Activity 中处理。系统通知标题使用当前浏览器最近同步的显示语言，消息正文保持原文。
+
 1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → General → Notifications**。
 2. 选择 **Allow notifications** 或 **Enable background notifications**，接受浏览器提示。
 3. 确认 **Enabled on this device**，再点击 **Send test notification**。

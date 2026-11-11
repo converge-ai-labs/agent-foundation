@@ -25343,6 +25343,20 @@
             "title": "Receipt Id",
             "type": "string"
           },
+          "message_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
           "status": {
             "enum": [
               "completed",
@@ -26372,6 +26386,24 @@
             "type": "string",
             "maxLength": 512,
             "title": "Origin"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "bot"
+            ],
+            "title": "Scope",
+            "default": "all"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "zh-CN"
+            ],
+            "title": "Language",
+            "default": "en"
           }
         },
         "additionalProperties": false,

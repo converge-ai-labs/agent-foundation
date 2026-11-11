@@ -47,6 +47,8 @@ class PushRepository:
             record.p256dh = subscription.keys.p256dh
             record.auth = subscription.keys.auth
             record.origin = subscription.origin
+            record.scope = subscription.scope
+            record.language = subscription.language
             record.updated_at = datetime.now(UTC)
         return subscription.subscription_id
 
@@ -94,4 +96,6 @@ def _subscription(record: WebPushSubscriptionRecord) -> PushSubscriptionInput:
         endpoint=record.endpoint,
         keys=PushKeys(p256dh=record.p256dh, auth=record.auth),
         origin=record.origin,
+        scope=record.scope,
+        language=record.language,
     )

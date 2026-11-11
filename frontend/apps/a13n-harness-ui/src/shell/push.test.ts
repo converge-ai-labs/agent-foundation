@@ -9,6 +9,7 @@ import {
   testPush,
 } from "./push";
 import { writePreference } from "./preferences";
+import { saveLanguage } from "../i18n/preferences";
 
 const key = "B" + "A".repeat(86);
 let permission: NotificationPermission;
@@ -316,3 +317,25 @@ it.each(["hidden", "disabled", "revoked", "removed", "aborted"])(
     expect(subscribe).not.toHaveBeenCalled();
   },
 );
+
+it("refreshes scope and display language without replacing the device endpoint", async () => {
+  const { i18n } = await import("../i18n");
+  await enablePush(transport);
+  fetchMock.mockClear();
+  writePreference("notifications.scope", "bot");
+  saveLanguage("zh-CN");
+  // Another tab saved Chinese; this tab's i18n instance is still English.
+  await i18n.changeLanguage("en");
+  try {
+    await enablePush(transport, false);
+    const put = fetchMock.mock.calls
+      .map(([request]) => request as Request)
+      .find((request) => request.method === "PUT")!;
+    expect(await put.json()).toMatchObject({ scope: "bot", language: "zh-CN" });
+    expect(subscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalled();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});

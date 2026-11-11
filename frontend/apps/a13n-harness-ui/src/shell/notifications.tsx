@@ -12,7 +12,13 @@ import {
 import { useMatch, useNavigate } from "react-router";
 import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
+import {
+  Button,
+  SegmentedControl,
+  Switch,
+  ToastProvider,
+  useToast,
+} from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
 import { TransportContext } from "../transport/context";
@@ -24,6 +30,8 @@ import {
   pushSubscriptionId,
   supportsPush,
   testPush,
+  notificationScope,
+  type NotificationScope,
 } from "./push";
 import { PageHeader } from "./ui";
 import styles from "./notifications.module.css";
@@ -36,11 +44,17 @@ type NoticeStatus = Schema<"RootOperationNotice">["status"];
 function NoticeTitle({
   status,
   name,
+  bot = false,
+  message = false,
 }: {
   status: NoticeStatus;
   name?: string;
+  bot?: boolean;
+  message?: boolean;
 }) {
   const { t } = useTranslation();
+  if (bot && message) return <>{t("New message from Bot")}</>;
+  if (bot && status === "suspended") return <>{t("Bot needs your response")}</>;
   const state = {
     completed: t("Task completed"),
     failed: t("Task failed"),
@@ -58,13 +72,14 @@ function NoticeTitle({
   );
 }
 
-function NoticeActionLabel() {
+function NoticeActionLabel({ message = false }: { message?: boolean }) {
   const { t } = useTranslation();
+  const label = message ? t("View message") : t("Open chat");
   return (
     <>
-      <span className="sr-only">{t("Open chat")}</span>
+      <span className="sr-only">{label}</span>
       <span aria-hidden="true" className={styles.desktopLabel}>
-        {t("Open chat")}
+        {label}
       </span>
       <span aria-hidden="true" className={styles.mobileLabel}>
         {t("Open")}
@@ -89,6 +104,8 @@ export function notificationPermission(): Permission {
 
 type Notifications = {
   enabled: boolean;
+  scope: NotificationScope;
+  setScope: (value: NotificationScope) => void;
   permission: Permission;
   requesting: boolean;
   error: string;
@@ -114,7 +131,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 }
 function NotificationState({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage;
+  const [scope, updateScope] = useState(notificationScope);
   const frame = useRef<HTMLDivElement>(null);
   useEffect(
     () => (frame.current ? fitVisualViewport(frame.current) : undefined),
@@ -163,12 +182,21 @@ function NotificationState({ children }: { children: ReactNode }) {
     toast,
     background,
     viewedThread,
+    scope,
   });
-  current.current = { enabled, navigate, toast, background, viewedThread };
+  current.current = {
+    enabled,
+    navigate,
+    toast,
+    background,
+    viewedThread,
+    scope,
+  };
   useEffect(() => {
     alive.current = true;
     const refresh = () => {
       setPermission(notificationPermission());
+      updateScope(notificationScope());
       if (document.visibilityState === "visible")
         refreshSubscription((version) => version + 1);
       updateEnabled(
@@ -204,7 +232,12 @@ function NotificationState({ children }: { children: ReactNode }) {
       .then(() => {
         if (active) {
           setBackground(pushSubscriptionId() ? "enabled" : "disabled");
-          setError("");
+          updateError((previous) =>
+            previous.text ===
+            "Background alerts are paused. Reconnect to resume delivery."
+              ? { text: "" }
+              : previous,
+          );
         }
       })
       .catch(() => {
@@ -218,7 +251,15 @@ function NotificationState({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [transport, enabled, permission, refreshVersion, requesting]);
+  }, [
+    transport,
+    enabled,
+    permission,
+    refreshVersion,
+    requesting,
+    scope,
+    language,
+  ]);
   useEffect(() => {
     if (!transport || !enabled || permission !== "granted" || requesting)
       return;
@@ -268,6 +309,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         });
     }
   };
+  const setScope = (value: NotificationScope) => {
+    current.current.scope = value;
+    writePreference("notifications.scope", value);
+    updateScope(value);
+  };
   const request = async () => {
     if (
       requesting ||
@@ -311,11 +357,14 @@ function NotificationState({ children }: { children: ReactNode }) {
         event.kind !== "root_operation"
       )
         return;
-      const id = `${event.epoch}:${notice.receipt_id}`;
+      const bot = threadId === "thread_bot";
+      const message = bot && !!notice.message_id;
+      const id = `${event.epoch}:${notice.message_id ?? notice.receipt_id}`;
       if (seen.current.has(id)) return;
       seen.current.add(id);
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
+      if (current.current.scope === "bot" && !bot) return;
       // The transcript already shows completion. Keep receipt deduplication,
       // attention/failure notices and server Push delivery independent.
       if (
@@ -329,16 +378,21 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name = detail?.thread.title || detail?.thread.excerpt?.first_input;
-      const path =
-        threadId === "thread_bot"
-          ? "/bot"
-          : `/threads/${encodeURIComponent(threadId)}`;
+      const path = bot ? "/bot" : `/threads/${encodeURIComponent(threadId)}`;
       current.current.toast.add({
         id,
-        title: <NoticeTitle status={notice.status} name={name} />,
+        title: (
+          <NoticeTitle
+            status={notice.status}
+            name={name}
+            bot={bot}
+            message={message}
+          />
+        ),
         description: notice.brief,
-        type:
-          notice.status === "failed"
+        type: message
+          ? "info"
+          : notice.status === "failed"
             ? "error"
             : notice.status === "suspended" ||
                 notice.status === "goal_incomplete"
@@ -346,7 +400,7 @@ function NotificationState({ children }: { children: ReactNode }) {
               : "success",
         timeout: notice.status === "suspended" ? 0 : 8000,
         actionProps: {
-          children: <NoticeActionLabel />,
+          children: <NoticeActionLabel message={message} />,
           onClick: () => current.current.navigate(path),
         },
       });
@@ -382,6 +436,8 @@ function NotificationState({ children }: { children: ReactNode }) {
   };
   const value = {
     enabled,
+    scope,
+    setScope,
     permission,
     requesting,
     error: error.push?.registration
@@ -517,7 +573,7 @@ export function NotificationSettings({
         <PageHeader
           title={t("Notifications")}
           description={t(
-            "Task results and requests for your input on this browser.",
+            "Bot messages, task results and requests for your input on this browser.",
           )}
         />
       )}
@@ -530,13 +586,32 @@ export function NotificationSettings({
           stackOnNarrow={false}
           controlId="desktop-notifications"
           description={t(
-            "Alerts from every chat in this browser. Previews may appear on your lock screen.",
+            "Enable system alerts on this browser. Previews may appear on your lock screen.",
           )}
         >
           <Switch
             id="desktop-notifications"
             checked={notifications.enabled}
             onCheckedChange={notifications.setEnabled}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t("Notify me about")}
+          description={t(
+            "Applies to in-app notices and background notifications on this browser.",
+          )}
+        >
+          <SegmentedControl
+            label={t("Notification scope")}
+            value={notifications.scope}
+            onValueChange={(value) => {
+              if (value === "all" || value === "bot")
+                notifications.setScope(value);
+            }}
+            options={[
+              { value: "all", label: t("All") },
+              { value: "bot", label: t("Bot only") },
+            ]}
           />
         </SettingsRow>
         <SettingsRow
