@@ -155,6 +155,7 @@ function inlineEditor() {
       ],
     ]),
     preview: vi.fn(),
+    previewLocal: vi.fn(),
     upload: vi.fn(),
     retry: vi.fn(),
   };
@@ -426,7 +427,7 @@ it("renders a file as an atomic attachment with preview, removal, and undo", asy
   expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
 });
 
-it("previews staged images locally and releases the thumbnail when removed", async () => {
+it("keeps staged images between text slices with local preview, removal and undo", async () => {
   const createObjectURL = vi.fn().mockReturnValue("blob:staged-image");
   const revokeObjectURL = vi.fn();
   vi.stubGlobal(
@@ -436,12 +437,13 @@ it("previews staged images locally and releases the thumbnail when removed", asy
       static revokeObjectURL = revokeObjectURL;
     },
   );
-  const { draft, context, rendered } = inlineEditor();
+  const { draft, context, rendered, textbox } = inlineEditor();
   try {
     let key = "";
     const file = new File(["image"], "draft.png", { type: "image/png" });
     act(() => {
-      key = draft.addAttachment("pending");
+      draft.doc.getText("text").insert(0, "before after");
+      key = draft.addAttachment("pending", 7);
       draft.uploads.set(key, { file, status: "staged" });
       draft.notify();
     });
@@ -449,13 +451,27 @@ it("previews staged images locally and releases the thumbnail when removed", asy
       name: "draft.png - ready to upload",
     });
     expect(chip.textContent).toBe("draft.png");
+    expect(textbox.querySelector(".cm-line")?.textContent).toBe(
+      "before draft.png×after",
+    );
+    fireEvent.click(chip);
+    expect(context.previewLocal).toHaveBeenCalledWith(file);
+    expect(context.retry).not.toHaveBeenCalled();
     expect(chip.querySelector("img")?.src).toBe("blob:staged-image");
     expect(createObjectURL).toHaveBeenCalledWith(file);
     expect(context.transport.fetch).not.toHaveBeenCalled();
-    act(() => draft.removeAttachment(key));
+    fireEvent.click(screen.getByRole("button", { name: /Remove draft.png/ }));
+    expect(values(draft.doc)).toEqual({
+      prompt: "before after",
+      attachment_ids: [],
+    });
+    expect(textbox.contains(window.document.activeElement)).toBe(true);
     await waitFor(() =>
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:staged-image"),
     );
+    act(() => draft.undo.undo());
+    await screen.findByRole("button", { name: "draft.png - ready to upload" });
+    expect(attachmentSelections(draft.doc)[0].key).toBe(key);
   } finally {
     rendered.unmount();
     vi.unstubAllGlobals();
