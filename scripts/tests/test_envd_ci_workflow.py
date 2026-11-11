@@ -59,3 +59,13 @@ def test_linux_ci_builds_real_embedded_vm_backends_on_both_architectures():
     assert "cargo build" not in size["run"]
     assert "continue-on-error" not in size
     assert "target\\debug" not in str(job)
+
+
+def test_cgroup_monitoring_uses_current_release_binary():
+    job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["daemon"]
+    step = next(step for step in job["steps"] if step["name"] == "Test current Envd binary against real cgroup limits")
+    script = step["run"]
+    assert "target/debug" not in script
+    assert "src=$PWD/target/release/a13n-envd,dst=/test-bin/a13n-envd,readonly" in script
+    assert "--cpus=0.5 --memory=512m" in script
+    assert "/tests/monitoring_linux.py /test-bin/a13n-envd" in script

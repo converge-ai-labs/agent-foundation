@@ -288,6 +288,11 @@ fn capture_pixels(g: &Geometry) -> Result<RgbImage, EIPError> {
 }
 
 impl Backend {
+    pub(super) fn accessibility_geometry(&self, target: &str) -> Result<Geometry, EIPError> {
+        ready()?;
+        let _dpi = Dpi::enter()?;
+        select(Some(target))
+    }
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         ready()?;
         let _dpi = Dpi::enter()?;

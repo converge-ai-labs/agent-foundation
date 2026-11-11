@@ -9,6 +9,13 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from a13n_harness.environment.accessibility import (
+    AccessibilityContent,
+    AccessibilityDescription,
+    AccessibilityRangeResult,
+    AccessibilityTree,
+)
+from a13n_harness.environment.accessibility_mutations import AccessibilityMutationResult
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentOperationReceipt
 
 
@@ -187,6 +194,11 @@ class ComputerCall:
         | ComputerDescription
         | ComputerClipboard
         | ComputerZoom
+        | AccessibilityDescription
+        | AccessibilityTree
+        | AccessibilityContent
+        | AccessibilityRangeResult
+        | AccessibilityMutationResult
         | None
     ) = None
 

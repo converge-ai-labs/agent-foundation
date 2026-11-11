@@ -40,6 +40,7 @@ use crate::{
 };
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
+mod accessibility;
 mod computer;
 mod configuration;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -192,6 +193,10 @@ fn session_methods(config: &Config) -> Vec<String> {
     eip::METHODS
         .iter()
         .filter(|method| !method.device_scoped && method.name != "egress.update")
+        .filter(|method| {
+            !crate::accessibility::is_method(method.name)
+                || crate::accessibility::supports(method.name)
+        })
         .filter(|method| {
             let execution = method.name.starts_with("process.")
                 || method.name.starts_with("output.")
@@ -1205,6 +1210,7 @@ impl Daemon {
 pub(crate) struct Session {
     authority: Arc<RwLock<()>>,
     computer: Arc<crate::computer::Computer>,
+    accessibility: Arc<crate::accessibility::Supervisor>,
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     remote: Option<crate::execution::runtime::Runtime>,
     descriptor: SessionDescriptor,
@@ -1374,6 +1380,7 @@ impl Session {
         Ok(Self {
             authority: Arc::new(RwLock::new(())),
             computer: Arc::new(crate::computer::Computer::new(daemon.ids.clone())),
+            accessibility: Arc::new(crate::accessibility::Supervisor::new(daemon.ids.clone())),
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             remote: None,
             closed,
@@ -1482,6 +1489,7 @@ impl Session {
                 None => true,
             };
             let transfers_closed = self.transfers.close_session().await;
+            let accessibility_closed = self.accessibility.close().await;
             self.operations.wait_until_owned_idle().await;
             let computer = self.computer.clone();
             let computer_closed = tokio::task::spawn_blocking(move || computer.close())
@@ -1494,7 +1502,11 @@ impl Session {
             let candidates_closed = tokio::task::spawn_blocking(move || filesystem.retry_cleanup())
                 .await
                 .unwrap_or(false);
-            computer_closed && transfers_closed && outputs_closed && candidates_closed
+            computer_closed
+                && accessibility_closed
+                && transfers_closed
+                && outputs_closed
+                && candidates_closed
         })
         .await
         .unwrap_or(false)
@@ -1638,6 +1650,732 @@ impl Session {
 }
 
 impl EipSessionHandler for Session {
+    async fn computer_a11y_describe(
+        &self,
+        params: eip::ComputerA11yDescribeParams,
+    ) -> Result<eip::AccessibilityDescription, EIPError> {
+        self.read_accessibility("computer.a11y_describe", &params.context, &params, 5000)
+            .await
+    }
+    async fn computer_a11y_roots(
+        &self,
+        params: eip::ComputerA11yRootsParams,
+    ) -> Result<eip::AccessibilityTree, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_roots",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_a11y_inspect(
+        &self,
+        params: eip::ComputerA11yInspectParams,
+    ) -> Result<eip::AccessibilityTree, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_inspect",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_a11y_find(
+        &self,
+        params: eip::ComputerA11yFindParams,
+    ) -> Result<eip::AccessibilityTree, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_find",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_a11y_read(
+        &self,
+        params: eip::ComputerA11yReadParams,
+    ) -> Result<eip::AccessibilityContent, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_read",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_a11y_range(
+        &self,
+        params: eip::ComputerA11yRangeParams,
+    ) -> Result<eip::AccessibilityRangeResult, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_range",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_a11y_range_read(
+        &self,
+        params: eip::ComputerA11yRangeReadParams,
+    ) -> Result<eip::AccessibilityRangeResult, EIPError> {
+        self.read_accessibility(
+            "computer.a11y_range_read",
+            &params.context,
+            &params,
+            params.limits.timeout_ms,
+        )
+        .await
+    }
+    async fn computer_ax_disclosing_set(
+        &self,
+        params: eip::ComputerAXDisclosingSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_disclosing_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_expanded_set(
+        &self,
+        params: eip::ComputerAXExpandedSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_expanded_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_focus(
+        &self,
+        params: eip::ComputerAXFocusParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_focus", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_focused_window_set(
+        &self,
+        params: eip::ComputerAXFocusedWindowSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_focused_window_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_main_set(
+        &self,
+        params: eip::ComputerAXMainSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_main_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_minimized_set(
+        &self,
+        params: eip::ComputerAXMinimizedSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_minimized_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_perform_action(
+        &self,
+        params: eip::ComputerAXPerformActionParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_perform_action", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_position_set(
+        &self,
+        params: eip::ComputerAXPositionSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_position_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_selected_children_set(
+        &self,
+        params: eip::ComputerAXSelectedChildrenSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.ax_selected_children_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_ax_selected_columns_set(
+        &self,
+        params: eip::ComputerAXSelectedColumnsSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_selected_columns_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_selected_rows_set(
+        &self,
+        params: eip::ComputerAXSelectedRowsSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_selected_rows_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_selected_set(
+        &self,
+        params: eip::ComputerAXSelectedSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_selected_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_selected_text_set(
+        &self,
+        params: eip::ComputerAXSelectedTextSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_selected_text_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_size_set(
+        &self,
+        params: eip::ComputerAXSizeSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_size_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_text_range_select(
+        &self,
+        params: eip::ComputerAXTextRangeSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_text_range_select", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_text_ranges_select(
+        &self,
+        params: eip::ComputerAXTextRangesSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_text_ranges_select", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_value_number_set(
+        &self,
+        params: eip::ComputerAXValueNumberSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_value_number_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_value_string_set(
+        &self,
+        params: eip::ComputerAXValueStringSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.ax_value_string_set", &params.context, &params)
+            .await
+    }
+    async fn computer_ax_visible_text_range_set(
+        &self,
+        params: eip::ComputerAXVisibleTextRangeSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.ax_visible_text_range_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_uia_collapse(
+        &self,
+        params: eip::ComputerUIACollapseParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_collapse", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_dock_set(
+        &self,
+        params: eip::ComputerUIADockSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_dock_set", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_expand(
+        &self,
+        params: eip::ComputerUIAExpandParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_expand", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_focus(
+        &self,
+        params: eip::ComputerUIAFocusParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_focus", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_invoke(
+        &self,
+        params: eip::ComputerUIAInvokeParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_invoke", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_legacy_default_action(
+        &self,
+        params: eip::ComputerUIALegacyDefaultActionParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.uia_legacy_default_action",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_uia_legacy_select(
+        &self,
+        params: eip::ComputerUIALegacySelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_legacy_select", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_legacy_value_set(
+        &self,
+        params: eip::ComputerUIALegacyValueSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_legacy_value_set", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_range_add_selection(
+        &self,
+        params: eip::ComputerUIARangeAddSelectionParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_range_add_selection", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_range_remove_selection(
+        &self,
+        params: eip::ComputerUIARangeRemoveSelectionParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.uia_range_remove_selection",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_uia_range_scroll_into_view(
+        &self,
+        params: eip::ComputerUIARangeScrollIntoViewParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.uia_range_scroll_into_view",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_uia_range_select(
+        &self,
+        params: eip::ComputerUIARangeSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_range_select", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_range_show_context_menu(
+        &self,
+        params: eip::ComputerUIARangeShowContextMenuParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.uia_range_show_context_menu",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_uia_range_value_set(
+        &self,
+        params: eip::ComputerUIARangeValueSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_range_value_set", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_realize(
+        &self,
+        params: eip::ComputerUIARealizeParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_realize", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_scroll_amount(
+        &self,
+        params: eip::ComputerUIAScrollAmountParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_scroll_amount", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_scroll_into_view(
+        &self,
+        params: eip::ComputerUIAScrollIntoViewParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_scroll_into_view", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_scroll_percent(
+        &self,
+        params: eip::ComputerUIAScrollPercentParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_scroll_percent", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_selection_add(
+        &self,
+        params: eip::ComputerUIASelectionAddParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_selection_add", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_selection_remove(
+        &self,
+        params: eip::ComputerUIASelectionRemoveParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_selection_remove", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_selection_select(
+        &self,
+        params: eip::ComputerUIASelectionSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_selection_select", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_show_context_menu(
+        &self,
+        params: eip::ComputerUIAShowContextMenuParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_show_context_menu", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_toggle(
+        &self,
+        params: eip::ComputerUIAToggleParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_toggle", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_transform_move(
+        &self,
+        params: eip::ComputerUIATransformMoveParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_transform_move", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_transform_resize(
+        &self,
+        params: eip::ComputerUIATransformResizeParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_transform_resize", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_transform_rotate(
+        &self,
+        params: eip::ComputerUIATransformRotateParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_transform_rotate", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_transform_zoom(
+        &self,
+        params: eip::ComputerUIATransformZoomParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_transform_zoom", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_transform_zoom_unit(
+        &self,
+        params: eip::ComputerUIATransformZoomUnitParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_transform_zoom_unit", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_value_set(
+        &self,
+        params: eip::ComputerUIAValueSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_value_set", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_view_set(
+        &self,
+        params: eip::ComputerUIAViewSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_view_set", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_window_close(
+        &self,
+        params: eip::ComputerUIAWindowCloseParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_window_close", &params.context, &params)
+            .await
+    }
+    async fn computer_uia_window_state_set(
+        &self,
+        params: eip::ComputerUIAWindowStateSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.uia_window_state_set", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_caret_set(
+        &self,
+        params: eip::ComputerAtspiCaretSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_caret_set", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_component_extents_set(
+        &self,
+        params: eip::ComputerAtspiComponentExtentsSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_component_extents_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_component_position_set(
+        &self,
+        params: eip::ComputerAtspiComponentPositionSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_component_position_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_component_size_set(
+        &self,
+        params: eip::ComputerAtspiComponentSizeSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_component_size_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_do_action(
+        &self,
+        params: eip::ComputerAtspiDoActionParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_do_action", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_document_selections_set(
+        &self,
+        params: eip::ComputerAtspiDocumentSelectionsSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_document_selections_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_focus(
+        &self,
+        params: eip::ComputerAtspiFocusParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_focus", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_range_scroll_to(
+        &self,
+        params: eip::ComputerAtspiRangeScrollToParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_range_scroll_to", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_range_scroll_to_point(
+        &self,
+        params: eip::ComputerAtspiRangeScrollToPointParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_range_scroll_to_point",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_scroll_to(
+        &self,
+        params: eip::ComputerAtspiScrollToParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_scroll_to", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_scroll_to_point(
+        &self,
+        params: eip::ComputerAtspiScrollToPointParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_scroll_to_point", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_selection_add_child(
+        &self,
+        params: eip::ComputerAtspiSelectionAddChildParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_selection_add_child",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_selection_all(
+        &self,
+        params: eip::ComputerAtspiSelectionAllParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_selection_all", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_selection_clear(
+        &self,
+        params: eip::ComputerAtspiSelectionClearParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_selection_clear", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_selection_remove_child(
+        &self,
+        params: eip::ComputerAtspiSelectionRemoveChildParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_selection_remove_child",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_selection_remove_selected(
+        &self,
+        params: eip::ComputerAtspiSelectionRemoveSelectedParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_selection_remove_selected",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_table_column_select(
+        &self,
+        params: eip::ComputerAtspiTableColumnSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_table_column_select",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_table_column_unselect(
+        &self,
+        params: eip::ComputerAtspiTableColumnUnselectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_table_column_unselect",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_table_row_select(
+        &self,
+        params: eip::ComputerAtspiTableRowSelectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_table_row_select", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_table_row_unselect(
+        &self,
+        params: eip::ComputerAtspiTableRowUnselectParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_table_row_unselect",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_text_contents_set(
+        &self,
+        params: eip::ComputerAtspiTextContentsSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_contents_set", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_copy(
+        &self,
+        params: eip::ComputerAtspiTextCopyParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_copy", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_cut(
+        &self,
+        params: eip::ComputerAtspiTextCutParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_cut", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_delete(
+        &self,
+        params: eip::ComputerAtspiTextDeleteParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_delete", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_insert(
+        &self,
+        params: eip::ComputerAtspiTextInsertParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_insert", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_paste(
+        &self,
+        params: eip::ComputerAtspiTextPasteParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_text_paste", &params.context, &params)
+            .await
+    }
+    async fn computer_atspi_text_selection_add(
+        &self,
+        params: eip::ComputerAtspiTextSelectionAddParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_text_selection_add",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_text_selection_remove(
+        &self,
+        params: eip::ComputerAtspiTextSelectionRemoveParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_text_selection_remove",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_text_selection_set(
+        &self,
+        params: eip::ComputerAtspiTextSelectionSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility(
+            "computer.atspi_text_selection_set",
+            &params.context,
+            &params,
+        )
+        .await
+    }
+    async fn computer_atspi_value_set(
+        &self,
+        params: eip::ComputerAtspiValueSetParams,
+    ) -> Result<eip::AccessibilityMutationResult, EIPError> {
+        self.mutate_accessibility("computer.atspi_value_set", &params.context, &params)
+            .await
+    }
     async fn computer_read_clipboard(
         &self,
         params: eip::ComputerReadClipboardParams,

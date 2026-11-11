@@ -12,7 +12,6 @@ from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnviro
 from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
 from a13n_harness.environment.computer import ComputerPoint
 from a13n_harness.environment.models import (
-    COMPUTER_ACTIONS,
     FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentError,
@@ -25,7 +24,7 @@ from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
-from .test_computer_environment import Computer
+from .test_computer_environment import COMPUTER_ACTIONS, Computer
 from .test_dynamic_environment import _local_mount
 from .test_environment_core import _Binding, _instance
 

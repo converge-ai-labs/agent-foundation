@@ -34,6 +34,12 @@ impl Backend {
         super::macos_clipboard::write(text, interrupted)
     }
     pub(super) fn close_clipboard(&self) {}
+    pub(super) fn accessibility_geometry(&self, _: &str) -> Result<Geometry, EIPError> {
+        Err(error(
+            ErrorType::Unsupported,
+            "AX display transform is unavailable",
+        ))
+    }
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         describe()
     }

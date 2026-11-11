@@ -96,6 +96,94 @@ class EnvironmentAction(StrEnum):
     COMPUTER_PRESS_KEYS = "environment.computer.press_keys"
     COMPUTER_READ_CLIPBOARD = "environment.computer.read_clipboard"
     COMPUTER_WRITE_CLIPBOARD = "environment.computer.write_clipboard"
+    COMPUTER_A11Y_DESCRIBE = "environment.computer.a11y_describe"
+    COMPUTER_A11Y_ROOTS = "environment.computer.a11y_roots"
+    COMPUTER_A11Y_INSPECT = "environment.computer.a11y_inspect"
+    COMPUTER_A11Y_FIND = "environment.computer.a11y_find"
+    COMPUTER_A11Y_READ = "environment.computer.a11y_read"
+    COMPUTER_A11Y_RANGE = "environment.computer.a11y_range"
+    COMPUTER_A11Y_RANGE_READ = "environment.computer.a11y_range_read"
+    COMPUTER_AX_DISCLOSING_SET = "environment.computer.ax_disclosing_set"
+    COMPUTER_AX_EXPANDED_SET = "environment.computer.ax_expanded_set"
+    COMPUTER_AX_FOCUS = "environment.computer.ax_focus"
+    COMPUTER_AX_FOCUSED_WINDOW_SET = "environment.computer.ax_focused_window_set"
+    COMPUTER_AX_MAIN_SET = "environment.computer.ax_main_set"
+    COMPUTER_AX_MINIMIZED_SET = "environment.computer.ax_minimized_set"
+    COMPUTER_AX_PERFORM_ACTION = "environment.computer.ax_perform_action"
+    COMPUTER_AX_POSITION_SET = "environment.computer.ax_position_set"
+    COMPUTER_AX_SELECTED_CHILDREN_SET = "environment.computer.ax_selected_children_set"
+    COMPUTER_AX_SELECTED_COLUMNS_SET = "environment.computer.ax_selected_columns_set"
+    COMPUTER_AX_SELECTED_ROWS_SET = "environment.computer.ax_selected_rows_set"
+    COMPUTER_AX_SELECTED_SET = "environment.computer.ax_selected_set"
+    COMPUTER_AX_SELECTED_TEXT_SET = "environment.computer.ax_selected_text_set"
+    COMPUTER_AX_SIZE_SET = "environment.computer.ax_size_set"
+    COMPUTER_AX_TEXT_RANGE_SELECT = "environment.computer.ax_text_range_select"
+    COMPUTER_AX_TEXT_RANGES_SELECT = "environment.computer.ax_text_ranges_select"
+    COMPUTER_AX_VALUE_NUMBER_SET = "environment.computer.ax_value_number_set"
+    COMPUTER_AX_VALUE_STRING_SET = "environment.computer.ax_value_string_set"
+    COMPUTER_AX_VISIBLE_TEXT_RANGE_SET = "environment.computer.ax_visible_text_range_set"
+    COMPUTER_UIA_COLLAPSE = "environment.computer.uia_collapse"
+    COMPUTER_UIA_DOCK_SET = "environment.computer.uia_dock_set"
+    COMPUTER_UIA_EXPAND = "environment.computer.uia_expand"
+    COMPUTER_UIA_FOCUS = "environment.computer.uia_focus"
+    COMPUTER_UIA_INVOKE = "environment.computer.uia_invoke"
+    COMPUTER_UIA_LEGACY_DEFAULT_ACTION = "environment.computer.uia_legacy_default_action"
+    COMPUTER_UIA_LEGACY_SELECT = "environment.computer.uia_legacy_select"
+    COMPUTER_UIA_LEGACY_VALUE_SET = "environment.computer.uia_legacy_value_set"
+    COMPUTER_UIA_RANGE_ADD_SELECTION = "environment.computer.uia_range_add_selection"
+    COMPUTER_UIA_RANGE_REMOVE_SELECTION = "environment.computer.uia_range_remove_selection"
+    COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW = "environment.computer.uia_range_scroll_into_view"
+    COMPUTER_UIA_RANGE_SELECT = "environment.computer.uia_range_select"
+    COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU = "environment.computer.uia_range_show_context_menu"
+    COMPUTER_UIA_RANGE_VALUE_SET = "environment.computer.uia_range_value_set"
+    COMPUTER_UIA_REALIZE = "environment.computer.uia_realize"
+    COMPUTER_UIA_SCROLL_AMOUNT = "environment.computer.uia_scroll_amount"
+    COMPUTER_UIA_SCROLL_INTO_VIEW = "environment.computer.uia_scroll_into_view"
+    COMPUTER_UIA_SCROLL_PERCENT = "environment.computer.uia_scroll_percent"
+    COMPUTER_UIA_SELECTION_ADD = "environment.computer.uia_selection_add"
+    COMPUTER_UIA_SELECTION_REMOVE = "environment.computer.uia_selection_remove"
+    COMPUTER_UIA_SELECTION_SELECT = "environment.computer.uia_selection_select"
+    COMPUTER_UIA_SHOW_CONTEXT_MENU = "environment.computer.uia_show_context_menu"
+    COMPUTER_UIA_TOGGLE = "environment.computer.uia_toggle"
+    COMPUTER_UIA_TRANSFORM_MOVE = "environment.computer.uia_transform_move"
+    COMPUTER_UIA_TRANSFORM_RESIZE = "environment.computer.uia_transform_resize"
+    COMPUTER_UIA_TRANSFORM_ROTATE = "environment.computer.uia_transform_rotate"
+    COMPUTER_UIA_TRANSFORM_ZOOM = "environment.computer.uia_transform_zoom"
+    COMPUTER_UIA_TRANSFORM_ZOOM_UNIT = "environment.computer.uia_transform_zoom_unit"
+    COMPUTER_UIA_VALUE_SET = "environment.computer.uia_value_set"
+    COMPUTER_UIA_VIEW_SET = "environment.computer.uia_view_set"
+    COMPUTER_UIA_WINDOW_CLOSE = "environment.computer.uia_window_close"
+    COMPUTER_UIA_WINDOW_STATE_SET = "environment.computer.uia_window_state_set"
+    COMPUTER_ATSPI_CARET_SET = "environment.computer.atspi_caret_set"
+    COMPUTER_ATSPI_COMPONENT_EXTENTS_SET = "environment.computer.atspi_component_extents_set"
+    COMPUTER_ATSPI_COMPONENT_POSITION_SET = "environment.computer.atspi_component_position_set"
+    COMPUTER_ATSPI_COMPONENT_SIZE_SET = "environment.computer.atspi_component_size_set"
+    COMPUTER_ATSPI_DO_ACTION = "environment.computer.atspi_do_action"
+    COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET = "environment.computer.atspi_document_selections_set"
+    COMPUTER_ATSPI_FOCUS = "environment.computer.atspi_focus"
+    COMPUTER_ATSPI_RANGE_SCROLL_TO = "environment.computer.atspi_range_scroll_to"
+    COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT = "environment.computer.atspi_range_scroll_to_point"
+    COMPUTER_ATSPI_SCROLL_TO = "environment.computer.atspi_scroll_to"
+    COMPUTER_ATSPI_SCROLL_TO_POINT = "environment.computer.atspi_scroll_to_point"
+    COMPUTER_ATSPI_SELECTION_ADD_CHILD = "environment.computer.atspi_selection_add_child"
+    COMPUTER_ATSPI_SELECTION_ALL = "environment.computer.atspi_selection_all"
+    COMPUTER_ATSPI_SELECTION_CLEAR = "environment.computer.atspi_selection_clear"
+    COMPUTER_ATSPI_SELECTION_REMOVE_CHILD = "environment.computer.atspi_selection_remove_child"
+    COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED = "environment.computer.atspi_selection_remove_selected"
+    COMPUTER_ATSPI_TABLE_COLUMN_SELECT = "environment.computer.atspi_table_column_select"
+    COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT = "environment.computer.atspi_table_column_unselect"
+    COMPUTER_ATSPI_TABLE_ROW_SELECT = "environment.computer.atspi_table_row_select"
+    COMPUTER_ATSPI_TABLE_ROW_UNSELECT = "environment.computer.atspi_table_row_unselect"
+    COMPUTER_ATSPI_TEXT_CONTENTS_SET = "environment.computer.atspi_text_contents_set"
+    COMPUTER_ATSPI_TEXT_COPY = "environment.computer.atspi_text_copy"
+    COMPUTER_ATSPI_TEXT_CUT = "environment.computer.atspi_text_cut"
+    COMPUTER_ATSPI_TEXT_DELETE = "environment.computer.atspi_text_delete"
+    COMPUTER_ATSPI_TEXT_INSERT = "environment.computer.atspi_text_insert"
+    COMPUTER_ATSPI_TEXT_PASTE = "environment.computer.atspi_text_paste"
+    COMPUTER_ATSPI_TEXT_SELECTION_ADD = "environment.computer.atspi_text_selection_add"
+    COMPUTER_ATSPI_TEXT_SELECTION_REMOVE = "environment.computer.atspi_text_selection_remove"
+    COMPUTER_ATSPI_TEXT_SELECTION_SET = "environment.computer.atspi_text_selection_set"
+    COMPUTER_ATSPI_VALUE_SET = "environment.computer.atspi_value_set"
 
 
 COMPUTER_ACTIONS: frozenset[EnvironmentAction] = frozenset(
@@ -104,6 +192,15 @@ COMPUTER_ACTIONS: frozenset[EnvironmentAction] = frozenset(
 """Shared desktop permissions; never included in legacy file/execution defaults."""
 
 FILE_EXECUTION_ACTIONS: frozenset[EnvironmentAction] = frozenset(EnvironmentAction) - COMPUTER_ACTIONS
+
+ACCESSIBILITY_READ_ACTIONS: frozenset[EnvironmentAction] = frozenset(
+    action for action in EnvironmentAction if action.value.startswith("environment.computer.a11y_")
+)
+ACCESSIBILITY_MUTATION_ACTIONS: frozenset[EnvironmentAction] = frozenset(
+    action
+    for action in EnvironmentAction
+    if action.value.startswith(("environment.computer.ax_", "environment.computer.uia_", "environment.computer.atspi_"))
+)
 
 
 FILE_ACTIONS: frozenset[EnvironmentAction] = frozenset(
@@ -178,6 +275,14 @@ ENVIRONMENT_ACTION_DISPATCH: Mapping[EnvironmentAction, EnvironmentActionDispatc
         EnvironmentAction.COMPUTER_WRITE_CLIPBOARD: EnvironmentActionDispatch(
             "computer", "computer", "write_clipboard"
         ),
+        **{
+            action: EnvironmentActionDispatch("computer", "accessibility", action.value.rsplit("a11y_", 1)[1])
+            for action in ACCESSIBILITY_READ_ACTIONS
+        },
+        **{
+            action: EnvironmentActionDispatch("computer", "accessibility", "execute")
+            for action in ACCESSIBILITY_MUTATION_ACTIONS
+        },
     }
 )
 

@@ -197,8 +197,17 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 
 调用方法前，检查初始化后的描述符。Python 中存在生成方法，与配置的守护进程声明支持该方法，是两项独立检查。
 
+下列原生无障碍读取使用 `active_only` 重放。原生修改使用精确的 `computer.ax_*`、`computer.uia_*` 和 `computer.atspi_*` 方法、类型化参数及 `AccessibilityMutationResult`；均使用 `terminal_evidence`。生成的 `METHODS` 映射列出所有精确操作，包括 19 项 AX、32 项 UIA 和 30 项 AT-SPI 修改。调用前检查协商后的方法清单。
+
 | EIP 方法                     | Python 方法                  | 参数                           | 结果                           | 重放类别            |
 | ---------------------------- | ---------------------------- | ------------------------------ | ------------------------------ | ------------------- |
+| `computer.a11y_describe`     | `computer_a11y_describe`     | `ComputerA11yDescribeParams`   | `AccessibilityDescription`     | `active_only`       |
+| `computer.a11y_find`         | `computer_a11y_find`         | `ComputerA11yFindParams`       | `AccessibilityTree`            | `active_only`       |
+| `computer.a11y_inspect`      | `computer_a11y_inspect`      | `ComputerA11yInspectParams`    | `AccessibilityTree`            | `active_only`       |
+| `computer.a11y_range`        | `computer_a11y_range`        | `ComputerA11yRangeParams`      | `AccessibilityRangeResult`     | `active_only`       |
+| `computer.a11y_range_read`   | `computer_a11y_range_read`   | `ComputerA11yRangeReadParams`  | `AccessibilityRangeResult`     | `active_only`       |
+| `computer.a11y_read`         | `computer_a11y_read`         | `ComputerA11yReadParams`       | `AccessibilityContent`         | `active_only`       |
+| `computer.a11y_roots`        | `computer_a11y_roots`        | `ComputerA11yRootsParams`      | `AccessibilityTree`            | `active_only`       |
 | `computer.read_clipboard`    | `computer_read_clipboard`    | `ComputerReadClipboardParams`  | `ComputerReadClipboardResult`  | `active_only`       |
 | `computer.write_clipboard`   | `computer_write_clipboard`   | `ComputerWriteClipboardParams` | `ComputerWriteClipboardResult` | `terminal_evidence` |
 | `computer.describe`          | `computer_describe`          | `ComputerDescribeParams`       | `ComputerDescribeResult`       | `active_only`       |

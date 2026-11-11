@@ -18,6 +18,7 @@ from a13n_envd_client.eip.v1 import (
     encode_data_frame,
     encode_model,
 )
+from a13n_envd_client.eip.v1 import models as wire
 from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
     ConnectionMetrics,
@@ -55,6 +56,163 @@ from pydantic import BaseModel, ValidationError
 REPOSITORY_ROOT = Path(__file__).parents[4]
 GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/golden.json"
 DATA_FRAME_GOLDEN_PATH = REPOSITORY_ROOT / "crates/a13n-envd/protocol/eip/v1/testdata/data-frame-golden.json"
+
+
+@pytest.mark.parametrize(
+    ("union", "payload"),
+    [
+        (wire.AccessibilityRead, {"kind": "text"}),
+        (wire.AccessibilityRead, {"kind": "numeric_value"}),
+        (wire.AccessibilityRead, {"kind": "table"}),
+        (wire.AccessibilityRangeQuery, {"kind": "document"}),
+        (wire.AccessibilityRangeReadRequest, {"kind": "text"}),
+        (wire.AccessibilityValue, {"kind": "scalars", "values": []}),
+    ],
+)
+def test_accessibility_union_tags_survive_compact_encoding(union: object, payload: dict[str, object]):
+    from pydantic import TypeAdapter
+
+    adapter = TypeAdapter(union)
+    value = adapter.validate_python(payload)
+    encoded = encode_model(value)
+    assert json.loads(encoded)["kind"] == payload["kind"]
+    assert adapter.validate_json(encoded) == value
+
+
+@pytest.mark.parametrize("model", [wire.AccessibilityTextRead, wire.LimitedCpuLimit, wire.UnlimitedMemoryLimit])
+def test_constant_serializers_preserve_model_json_schema(model: type[BaseModel]):
+    for mode in ("validation", "serialization"):
+        schema = model.model_json_schema(mode=mode)
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["kind"]["type"] == "string"
+        assert "const" in schema["properties"]["kind"]
+    assert model.model_json_schema(mode="serialization") == model.model_json_schema(mode="validation")
+
+
+def test_accessibility_compact_encoding_keeps_nested_tags():
+    value = wire.ComputerA11yReadParams.model_validate(
+        {
+            "context": {"operation_id": "op-text", "timeout_ms": 1000},
+            "node": {"backend": "atspi", "backend_epoch": "epoch", "node_handle": "node"},
+            "request": {"kind": "text"},
+        }
+    )
+    encoded = encode_model(value)
+    assert json.loads(encoded)["request"] == {"kind": "text"}
+    assert decode_model(encoded, wire.ComputerA11yReadParams) == value
+
+
+@pytest.mark.parametrize(
+    ("model", "operand"),
+    [
+        (wire.AXChildrenSelectedChildrenSet, "children"),
+        (wire.AXChildrenSelectedColumnsSet, "children"),
+        (wire.AXChildrenSelectedRowsSet, "children"),
+        (wire.AXRanges, "ranges"),
+        (wire.AtspiDocumentSelections, "selections"),
+    ],
+)
+def test_accessibility_collection_operands_require_presence(model: type[BaseModel], operand: str):
+    with pytest.raises(ValidationError):
+        model.model_validate({})
+    result = model.model_validate({operand: []})
+    assert result.model_dump(mode="json", exclude_defaults=True)[operand] == []
+
+
+@pytest.mark.parametrize("model", [wire.AccessibilityRangeMoveMove, wire.AccessibilityRangeMoveMoveEndpoint])
+@pytest.mark.parametrize("count", [-10001, -10000, -1, 0, 10000, 10001])
+def test_accessibility_signed_movement_bounds(model: type[BaseModel], count: int):
+    payload = {"unit": "character", "count": count}
+    if abs(count) > 10000:
+        with pytest.raises(ValidationError):
+            model.model_validate(payload)
+    else:
+        assert model.model_validate(payload).model_dump()["count"] == count
+
+
+@pytest.mark.parametrize("model", [wire.AXSize, wire.UIAResize])
+@pytest.mark.parametrize("size", [-1.0, 0.0, 0.5, 1.0, float("inf"), float("nan")])
+def test_accessibility_positive_finite_sizes(model: type[BaseModel], size: float):
+    payload = {"width": size, "height": size}
+    if 0 < size < float("inf"):
+        model.model_validate(payload)
+    else:
+        with pytest.raises(ValidationError):
+            model.model_validate(payload)
+
+
+@pytest.mark.parametrize("model", [wire.AtspiSize, wire.AtspiExtents])
+@pytest.mark.parametrize("size", [-1, 0, 1])
+def test_accessibility_positive_integer_sizes(model: type[BaseModel], size: int):
+    payload = {"width": size, "height": size, "point": {"x": 0.0, "y": 0.0, "frame": "atspi_screen"}}
+    if model is wire.AtspiSize:
+        del payload["point"]
+    if size > 0:
+        model.model_validate(payload)
+    else:
+        with pytest.raises(ValidationError):
+            model.model_validate(payload)
+
+
+@pytest.mark.parametrize("percent", [-0.5, 0.0, 0.5, 100.0, 100.5])
+def test_accessibility_percentage_bounds(percent: float):
+    if 0 <= percent <= 100:
+        assert wire.UIAScrollPercent(horizontal=percent).horizontal == percent
+    else:
+        with pytest.raises(ValidationError):
+            wire.UIAScrollPercent(horizontal=percent)
+    if percent > 0:
+        wire.UIAZoom(percent=percent)
+    else:
+        with pytest.raises(ValidationError):
+            wire.UIAZoom(percent=percent)
+
+
+@pytest.mark.parametrize("value", [None, {}, [], [1], {"secret": "text"}])
+def test_accessibility_scalars_reject_containers_and_null(value: object):
+    with pytest.raises(ValidationError):
+        wire.AccessibilityScalar.model_validate({"value": value})
+    with pytest.raises(ValidationError):
+        wire.AccessibilityScalarsValue.model_validate({"values": [value]})
+
+
+@pytest.mark.parametrize("value", [False, True, -42, 42, 0.5, "", "text"])
+def test_accessibility_scalars_preserve_primitive_types(value: object):
+    decoded = wire.AccessibilityScalar.model_validate({"value": value}).value
+    assert type(decoded) is type(value)
+    assert decoded == value
+
+
+@pytest.mark.parametrize("value", [None, {}, [], 42, 0.5])
+def test_accessibility_states_are_boolean_or_string(value: object):
+    with pytest.raises(ValidationError):
+        wire.AccessibilityFind.model_validate({"states": {"enabled": value}})
+    assert wire.AccessibilityFind(states={"enabled": False, "native": "unknown"}).states["enabled"] is False
+
+
+@pytest.mark.parametrize(
+    ("model", "field"),
+    [
+        (wire.AXStringValue, "value"),
+        (wire.AXSelectedText, "text"),
+        (wire.AtspiTextContents, "text"),
+        (wire.UIAStringValueValueSet, "value"),
+        (wire.AccessibilityRangeFind, "text"),
+    ],
+)
+@pytest.mark.parametrize("text", ["", "a" * 65536, "😀" * 16384, "a\x00b", "😀" * 16385])
+def test_accessibility_text_uses_utf8_bytes_without_nul(model: type[BaseModel], field: str, text: str):
+    payload = {field: text}
+    if "\x00" in text or len(text.encode("utf-8")) > 65536:
+        with pytest.raises(ValidationError):
+            model.model_validate(payload)
+    else:
+        assert model.model_validate(payload).model_dump()[field] == text
+
+
+def test_accessibility_description_defaults_limits():
+    result = wire.AccessibilityDescription(backend="uia", ready=False, reason="unsupported", desktop_identity="local")
+    assert result.limits == wire.AccessibilityLimits()
 
 
 def test_clipboard_wire_requires_text_and_preserves_empty():

@@ -35,7 +35,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
-          pattern: envd-size-*
+          pattern: envd-size-*-attempt-${{ github.event.workflow_run.run_attempt }}
           path: size-reports
       - name: Update PR size report
         uses: actions/github-script@v8
