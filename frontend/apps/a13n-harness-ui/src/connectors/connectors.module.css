@@ -121,6 +121,10 @@
 .actions:empty {
   display: none;
 }
+/* Link actions share the dialog's text start instead of a button inset. */
+.actions > a[data-variant="link"] {
+  padding-inline: 0;
+}
 .error {
   color: var(--destructive);
   margin: 0;
@@ -173,13 +177,28 @@
   .summaryValue {
     max-width: 170px;
   }
-  .rowActions {
-    gap: 2px;
-    flex-wrap: wrap;
-    justify-content: end;
+  /* Phones keep each connection's name with its type and give status and
+     actions a full-width second line instead of wrapping beside the name. */
+  .instanceRow.instanceRow {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .rowActions > button {
-    order: 1;
+  .instanceRow.instanceRow > :first-child {
+    display: block;
+  }
+  .instanceRow.instanceRow > :first-child > p {
+    margin: 4px 0 0;
+  }
+  .instanceRow.instanceRow > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: stretch;
+  }
+  .rowActions {
+    width: 100%;
+    gap: 4px;
+  }
+  .rowActions > :last-child {
+    margin-inline-start: auto;
   }
   .offer .header {
     align-items: start;

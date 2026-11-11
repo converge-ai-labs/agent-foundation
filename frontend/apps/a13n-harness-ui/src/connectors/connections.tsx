@@ -140,6 +140,7 @@ export function ConnectorsSection() {
             return (
               <SettingsRow
                 key={instance.connector_id}
+                className={styles.instanceRow}
                 label={instance.name}
                 description={item?.declaration?.name ?? instance.kind}
               >
