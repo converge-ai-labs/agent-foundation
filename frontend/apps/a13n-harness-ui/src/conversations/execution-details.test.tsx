@@ -417,7 +417,7 @@ it("folds completed progress, thoughts and tools together while keeping the fina
   expect(screen.getByText("I will inspect the submit handler.")).toBeTruthy();
   view.rerender(<ConversationTranscript {...props} />);
   const trigger = screen.getByRole("button", {
-    name: /Worked for 1m 5s/,
+    name: /^Worked for 1m 5s\s*Work log$/,
     expanded: false,
   });
   expect(screen.queryByText("I will inspect the submit handler.")).toBeNull();

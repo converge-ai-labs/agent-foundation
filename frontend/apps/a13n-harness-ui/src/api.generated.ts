@@ -6161,6 +6161,8 @@ export interface components {
             combined: components["schemas"]["UsageTotals"];
             /** Display Name */
             display_name?: string | null;
+            /** Model Identity */
+            model_identity?: string | null;
         };
         /** MonitoringCatalog */
         MonitoringCatalog: {

@@ -288,9 +288,8 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
             )}
             <ul className={styles.models}>
               {models.map(([name, value]) => {
-                const label =
-                  scopes.find((model) => model.name === name)?.display_name ??
-                  name;
+                const model = scopes.find((item) => item.name === name);
+                const label = model?.display_name ?? name;
                 const groups = (usage.groups ?? []).filter(
                   (group) =>
                     group.model === name &&
@@ -315,7 +314,10 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                           {name === "Other models" ? (
                             t("Other models")
                           ) : (
-                            <ModelIdentity name={label} />
+                            <ModelIdentity
+                              name={label}
+                              modelIdentity={model?.model_identity ?? undefined}
+                            />
                           )}
                         </span>
                         <span className={styles.modelCost}>

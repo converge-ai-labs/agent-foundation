@@ -1390,6 +1390,30 @@ function ExecutionSegment({
   complete: boolean;
 }) {
   const { t } = useTranslation();
+  const duration = executionTime(durationMs);
+  const { preview, running } = complete
+    ? {
+        preview: duration
+          ? t("Worked for {{duration}}", { duration })
+          : t("Worked"),
+        running: false,
+      }
+    : executionSummary(rows, t);
+  return (
+    <ExecutionDetails complete={complete} preview={preview} running={running}>
+      {(open) => (
+        <ExecutionReader open={open} complete={complete}>
+          <Rows rows={rows} threadId={threadId} continuation />
+        </ExecutionReader>
+      )}
+    </ExecutionDetails>
+  );
+}
+
+function executionSummary(
+  rows: Row[],
+  t: ReturnType<typeof useTranslation>["t"],
+) {
   const counts = new Map<string, Set<string>>();
   let running = false;
   let thinking = false;
@@ -1440,12 +1464,6 @@ function ExecutionSegment({
   );
   labels.push(...otherActivities);
   if (notices) labels.push(t("System update count", { count: notices }));
-  if (complete) {
-    const duration = executionTime(durationMs);
-    labels.unshift(
-      duration ? t("Worked for {{duration}}", { duration }) : t("Worked"),
-    );
-  }
   const preview = labels.length
     ? labels.join(", ")
     : thinking
@@ -1453,19 +1471,7 @@ function ExecutionSegment({
         ? t("Thinking", { context: "active" })
         : t("Thought")
       : t("View the available execution steps");
-  return (
-    <ExecutionDetails
-      complete={complete}
-      preview={preview}
-      running={!complete && (running || activeThought)}
-    >
-      {(open) => (
-        <ExecutionReader open={open} complete={complete}>
-          <Rows rows={rows} threadId={threadId} continuation />
-        </ExecutionReader>
-      )}
-    </ExecutionDetails>
-  );
+  return { preview, running: running || activeThought };
 }
 
 function ExecutionReader({
