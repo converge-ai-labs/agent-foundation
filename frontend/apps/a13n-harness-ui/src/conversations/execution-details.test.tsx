@@ -132,6 +132,17 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(trigger.textContent).toContain("Run 2 commands, Read 1 file");
+  view.rerender(
+    <ConversationTranscript
+      {...base}
+      running
+      blocks={[
+        { ...tool, result: "checked" },
+        { id: "thought", kind: "thinking", text: "Next step" },
+      ]}
+    />,
+  );
+  expect(trigger.textContent).toBe("ThinkingWork log");
 });
 
 it.each([

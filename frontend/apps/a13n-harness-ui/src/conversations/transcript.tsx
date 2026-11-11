@@ -22,7 +22,12 @@ import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
-import { QuestionInteraction, ToolActivity } from "./tool-call";
+import {
+  QuestionInteraction,
+  ToolActivity,
+  toolLabel,
+  toolSummary,
+} from "./tool-call";
 import {
   activityKind,
   describeTool,
@@ -1415,16 +1420,18 @@ function executionSummary(
   t: ReturnType<typeof useTranslation>["t"],
 ) {
   const counts = new Map<string, Set<string>>();
-  let running = false;
+  let activeStep: string | undefined;
   let thinking = false;
-  let activeThought = false;
   let notices = 0;
   const otherActivities = new Set<string>();
   for (const row of rows) {
     if (row.kind === "tools") {
       for (const tool of row.tools) {
         const info = describeTool(tool);
-        running ||= info.running;
+        if (info.running)
+          activeStep = [toolLabel(info, t), toolSummary(info, t)]
+            .filter(Boolean)
+            .join(" ");
         const action =
           info.kind === "file"
             ? "Read {{count}} files"
@@ -1445,7 +1452,8 @@ function executionSummary(
       }
     } else if (row.kind === "thinking") {
       thinking = true;
-      activeThought ||= row.segments.some((part) => part.running);
+      if (row.segments.some((part) => part.running))
+        activeStep = t("Thinking", { context: "active" });
     } else if (row.kind === "notifications") notices += row.notices.length;
     else if (row.kind === "context")
       otherActivities.add(
@@ -1459,6 +1467,7 @@ function executionSummary(
     else if (row.kind === "activity")
       otherActivities.add(row.name || t("Activity"));
   }
+  if (activeStep) return { preview: activeStep, running: true };
   const labels = Array.from(counts, ([action, members]) =>
     t(action, { count: members.size }),
   );
@@ -1467,11 +1476,9 @@ function executionSummary(
   const preview = labels.length
     ? labels.join(", ")
     : thinking
-      ? activeThought
-        ? t("Thinking", { context: "active" })
-        : t("Thought")
+      ? t("Thought")
       : t("View the available execution steps");
-  return { preview, running: running || activeThought };
+  return { preview, running: false };
 }
 
 function ExecutionReader({
