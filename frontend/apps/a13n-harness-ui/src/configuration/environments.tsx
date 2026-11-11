@@ -1,10 +1,6 @@
 import { useTranslation } from "../i18n";
-import {
-  SettingsChoice as ChoiceField,
-  SettingsSection,
-} from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
 import styles from "./environments.module.css";
-import { HelpTip } from "../shell/help-tip";
 
 import type { Schema } from "../transport/client";
 import {
@@ -52,16 +48,22 @@ export function EnvironmentsEditor({
   );
   return (
     <div className={styles.editor}>
-      <SettingsSection
-        title={
-          <span className={styles.sectionTitle}>
-            {t("Local")}
-            <HelpTip label={t("About local environments")}>
-              {t("The computer running Harness.")}
-            </HelpTip>
-          </span>
-        }
+      <section
+        className={styles.localEnvironment}
+        aria-label={t("Local environment")}
       >
+        <ProjectFolders
+          roots={roots.map((path) => ({ path }))}
+          allowEmpty={!requireWorkspace || !!value.environment_bindings?.length}
+          onChange={(next) =>
+            onChange(
+              changeLocalRoots(
+                value,
+                next.map((item) => item.path),
+              ),
+            )
+          }
+        />
         <ChoiceField
           label={t("Local mode")}
           description={
@@ -97,20 +99,7 @@ export function EnvironmentsEditor({
               : []),
           ]}
         />
-        <ProjectFolders
-          compact
-          roots={roots.map((path) => ({ path }))}
-          allowEmpty={!requireWorkspace || !!value.environment_bindings?.length}
-          onChange={(next) =>
-            onChange(
-              changeLocalRoots(
-                value,
-                next.map((item) => item.path),
-              ),
-            )
-          }
-        />
-      </SettingsSection>
+      </section>
       <EnvironmentBindings
         bindings={value.environment_bindings ?? []}
         localRoots={roots}

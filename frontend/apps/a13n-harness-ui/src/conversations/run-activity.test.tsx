@@ -54,6 +54,33 @@ it("shows immediate feedback through admission, preparation and execution before
   expect(screen.getByRole("status").textContent).toBe("Working…");
 });
 
+it("uses the working row for model recovery and removes it on completion", () => {
+  const props = {
+    activity: { state: "running", receipt_id: "receipt-one" } as const,
+    submission: accepted,
+  };
+  const view = render(<RunActivity {...props} />);
+  const row = screen.getByRole("status");
+  for (const [state, label] of [
+    ["retrying", "Reconnecting to model… - 1 retry"],
+    ["resumed", "Working…"],
+  ] as const) {
+    view.rerender(
+      <RunActivity {...props} recovery={{ id: "retry", state, retries: 1 }} />,
+    );
+    expect(screen.getByRole("status")).toBe(row);
+    expect(row.textContent).toBe(label);
+  }
+  view.rerender(
+    <RunActivity
+      {...props}
+      recovery={{ id: "retry", state: "ended", retries: 1 }}
+      operation={operation("failed")}
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
 it("uses the accepted receipt while activity observations catch up", () => {
   const view = render(
     <RunActivity

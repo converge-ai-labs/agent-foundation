@@ -32,6 +32,12 @@ const mocks = vi.hoisted(() => ({
     data:
       path === "/api/models/choices"
         ? {
+            base_models: [
+              {
+                value: "anthropic:claude-fable-5-2",
+                label: "Claude Fable 5.2",
+              },
+            ],
             connections: [
               {
                 id: "codex",
@@ -208,6 +214,25 @@ function mount(initial = original, onReady = vi.fn()) {
     </MemoryRouter>,
   );
 }
+it("selects a base model and returns to automatic without editing the gateway route", async () => {
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Base model" }));
+  await user.type(
+    await screen.findByPlaceholderText("Search base models…"),
+    "fable",
+  );
+  await user.click(await screen.findByRole("option", { name: /Claude Fable/ }));
+  expect(parse(source())).toMatchObject({
+    route: "openai-responses:old-custom",
+    base_model: "anthropic:claude-fable-5-2",
+  });
+  await user.click(screen.getByRole("combobox", { name: "Base model" }));
+  await user.click(await screen.findByRole("option", { name: /Automatic/ }));
+  expect(parse(source()).base_model).toBeUndefined();
+  expect(parse(source()).route).toBe("openai-responses:old-custom");
+});
+
 it.each([undefined, "http", "websocket"])(
   "reflects and edits persisted WebSocket settings (%s) without losing YAML",
   async (transport) => {

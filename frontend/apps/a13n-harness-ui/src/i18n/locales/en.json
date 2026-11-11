@@ -1557,6 +1557,9 @@
   "Additional instructions": "Additional instructions",
   "Used by new chats. Existing chats keep their settings.": "Used by new chats. Existing chats keep their settings.",
   "Used by new chats, or when you apply Project defaults.": "Used by new chats, or when you apply Project defaults.",
+  "Local environment": "Local environment",
+  "Add remote environment": "Add remote environment",
+  "When applying to existing chats": "When applying to existing chats",
   "New chats add no remote environments. Existing chats keep theirs.": "New chats add no remote environments. Existing chats keep theirs.",
   "Applying these defaults replaces the chat's remote environments.": "Applying these defaults replaces the chat's remote environments.",
   "Applying these defaults removes the chat's remote environments.": "Applying these defaults removes the chat's remote environments.",
@@ -3255,5 +3258,11 @@
   "Heartbeat": "Heartbeat",
   "Interval (seconds)": "Interval (seconds)",
   "Heartbeat interval": "Heartbeat interval",
-  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line."
+  "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.": "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.",
+  "Base model": "Base model",
+  "Identifies the model behind this connection for usage and cost estimates.": "Identifies the model behind this connection for usage and cost estimates.",
+  "Search base models…": "Search base models…",
+  "Automatic (use request model)": "Automatic (use request model)",
+  "This base model is missing from the current catalog.": "This base model is missing from the current catalog.",
+  "No matching models": "No matching models"
 }

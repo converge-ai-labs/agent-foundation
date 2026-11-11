@@ -124,7 +124,7 @@ flowchart TB
 
 总量包含保留的归档对话、Memory、Live、子 agent、辅助调用和 Coordinator worker。Project 归属跟随根 Thread 当前的 Project。Provider 回执仍可在 Thread 详情查看。
 
-新 Run 按所选模型配置的 route 查价。在聊天用量里展开模型，可以查看供应商返回的名称。费用是记录的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 标记只含已知部分的小计。缓存 token 属于输入/输出的子集，不额外计数。未记录的历史消耗无法补回。访客链接不授予用量分析访问权限。
+新 Run 按所选模型配置的 route 查价。聊天用量中的**按模型**显示配置路由对应的供应商和模型（例如 `anthropic/claude-opus-5-5`）。展开模型可以查看供应商返回的名称。费用是记录的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 标记只含已知部分的小计。缓存 token 属于输入/输出的子集，不额外计数。未记录的历史消耗无法补回。访客链接不授予用量分析访问权限。
 
 ## Agent 与 Model 设置
 
@@ -405,7 +405,7 @@ Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork�
 
 表单/YAML 共用草稿。**Save changes** 校验并替换整个文件。标签页内导航保留未保存编辑，重载不保留。检测到外部变化会保留未保存草稿，文件保存仍以后写覆盖前写。MCP 源文本隐藏，替换也会覆盖不可见字段和文件中全部资源。活动 Run 保留捕获配置。完整文件设置见[配置配方](configuration-recipes.md)。
 
-打开 **Project settings** 编辑服务器目录和创建默认值。**Browse → Use this directory** 只改草稿，保存后应用。关闭计算机共享时手动输入 Host 路径。新 Thread 使用保存默认值；已有 Thread 保留选择，除非明确修改。Default、None、Custom 不同，预览展示保存值/来源，不测试 Model。
+打开 **Project settings** 编辑服务器目录和创建默认值。开启计算机共享后，在本机直连的 macOS 或 Windows 上，点 **Add folder** 会打开系统目录选择器。其他连接可浏览服务器目录，关闭共享时可手动输入路径。保存后生效。新 Thread 使用保存默认值；已有 Thread 保留选择，除非明确修改。Default、None、Custom 不同，预览展示保存值/来源，不测试 Model。
 
 点击右上角生成的协作名称并 **Save name**，修改当前浏览器标签。在线指示打开按标签页区分的参与者目录。名称和 presence 是实时协作元数据，不是 provider 身份。后台标签页与前台关注可区分。
 

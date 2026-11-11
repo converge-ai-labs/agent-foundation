@@ -4,6 +4,7 @@ import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { Link, useLocation } from "react-router";
+import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
@@ -278,26 +279,13 @@ export function ResourceFields({
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
-            variant="grouped"
+            variant="plain"
             title={t("Environments")}
             description={t(
               "Used by new chats, or when you apply Project defaults.",
             )}
           >
-            <div className={styles.fieldGroup}>
-              <p className="mb-3 text-sm text-muted-foreground">
-                {rawBindings == null
-                  ? t(
-                      "New chats add no remote environments. Existing chats keep theirs.",
-                    )
-                  : bindings.length
-                    ? t(
-                        "Applying these defaults replaces the chat's remote environments.",
-                      )
-                    : t(
-                        "Applying these defaults removes the chat's remote environments.",
-                      )}
-              </p>
+            <div className={environments.project}>
               {roots ? (
                 <EnvironmentsEditor
                   value={{
@@ -352,33 +340,49 @@ export function ResourceFields({
                   {t("Fix the folder list in Advanced configuration first.")}
                 </p>
               )}
-              <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
-                {rawBindings == null && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      setEnvironments(
-                        [],
-                        text(["defaults", "default_environment"]) || null,
+              <details className={environments.applyDetails}>
+                <summary>{t("When applying to existing chats")}</summary>
+                <p>
+                  {rawBindings == null
+                    ? t(
+                        "New chats add no remote environments. Existing chats keep theirs.",
                       )
-                    }
-                  >
-                    {t("Local only")}
-                  </Button>
-                )}
-                {(rawBindings != null ||
-                  text(["defaults", "default_environment"])) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={!roots?.length}
-                    onClick={() => setEnvironments(undefined, null)}
-                  >
-                    {t("Keep current")}
-                  </Button>
-                )}
-              </div>
+                    : bindings.length
+                      ? t(
+                          "Applying these defaults replaces the chat's remote environments.",
+                        )
+                      : t(
+                          "Applying these defaults removes the chat's remote environments.",
+                        )}
+                </p>
+                <div>
+                  {rawBindings == null && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() =>
+                        setEnvironments(
+                          [],
+                          text(["defaults", "default_environment"]) || null,
+                        )
+                      }
+                    >
+                      {t("Local only")}
+                    </Button>
+                  )}
+                  {(rawBindings != null ||
+                    text(["defaults", "default_environment"])) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={!roots?.length}
+                      onClick={() => setEnvironments(undefined, null)}
+                    >
+                      {t("Keep current")}
+                    </Button>
+                  )}
+                </div>
+              </details>
             </div>
           </SettingsSection>
         </>

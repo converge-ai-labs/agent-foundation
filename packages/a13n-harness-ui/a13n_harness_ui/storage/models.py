@@ -469,6 +469,7 @@ class UsageModelRecord(Base):
     __tablename__ = "usage_model"
     recipe_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     model_id: Mapped[str | None] = mapped_column(String(128))
+    route: Mapped[str | None] = mapped_column(String(512))
 
 
 class ThreadUsageRecord(Base):

@@ -209,6 +209,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
     agent: "agent-main",
     default_environment: "thread-files",
   });
+  await user.click(screen.getByText("When applying to existing chats"));
   await user.click(
     screen.getByRole("button", {
       name: "Local only",
@@ -247,6 +248,7 @@ it("allows the last local Project root to be removed only with Device bindings",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  fireEvent.click(screen.getByText("When applying to existing chats"));
   expect(
     (
       screen.getByRole("button", {

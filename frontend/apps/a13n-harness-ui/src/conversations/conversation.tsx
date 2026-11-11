@@ -58,7 +58,7 @@ import {
   isUnavailableChat,
 } from "./conversation-unavailable";
 import { LiveConnectionStatus } from "./live-connection";
-import { ConversationTranscript, RecoveryNotice } from "./transcript";
+import { ConversationTranscript } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { inputSource, conversationTitle } from "./local-input";
 import { InputNavigation } from "./input-navigation";
@@ -882,9 +882,9 @@ function ConversationContent({
                           !showGoal &&
                           !hasLater &&
                           !thread?.archived &&
-                          !detail.data?.deferred_requests?.length &&
-                          display.recovery?.state !== "retrying" ? (
+                          !detail.data?.deferred_requests?.length ? (
                             <RunActivity
+                              recovery={display.recovery}
                               activity={operation}
                               submission={draft.submission}
                               operation={observedOperation.data}
@@ -902,11 +902,6 @@ function ConversationContent({
                                   .map((request) => request.request_id),
                                 content: decisions.slot,
                               }
-                            : undefined
-                        }
-                        recovery={
-                          !hasLater && display.recovery?.state === "resumed"
-                            ? display.recovery
                             : undefined
                         }
                       />
@@ -970,9 +965,7 @@ function ConversationContent({
                         draft.submission.receipt !== receipt)
                     }
                   />
-                  {display.recovery?.state !== "resumed" && (
-                    <RecoveryNotice recovery={display.recovery} />
-                  )}
+
                   {((guest && !canCompose) || readOnly || isCoordinator) &&
                     !entries.length &&
                     !draft.localInputs.length &&

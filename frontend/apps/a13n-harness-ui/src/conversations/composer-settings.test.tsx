@@ -500,7 +500,8 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  const folder = screen.getByDisplayValue("/workspace");
+  await user.click(screen.getByTitle("/workspace"));
+  const folder = screen.getByRole("textbox", { name: "Server directory" });
   await user.clear(folder);
   await user.type(folder, "/changed");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -511,8 +512,10 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   if (!screen.queryByRole("button", { name: "Environments" }))
     await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
-  expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
-  const restoredFolder = screen.getByDisplayValue("/workspace");
+  await user.click(screen.getByTitle("/workspace"));
+  const restoredFolder = screen.getByRole("textbox", {
+    name: "Server directory",
+  });
   await user.clear(restoredFolder);
   await user.type(restoredFolder, "/accepted");
   await user.click(screen.getByRole("button", { name: "Use for next run" }));
@@ -556,7 +559,8 @@ it.each([false, true])(
     if (!screen.queryByRole("button", { name: "Environments" }))
       await user.click(screen.getByRole("button", { name: "Chat options" }));
     await user.click(screen.getByRole("button", { name: "Environments" }));
-    const folder = screen.getByDisplayValue("/workspace");
+    await user.click(screen.getByTitle("/workspace"));
+    const folder = screen.getByRole("textbox", { name: "Server directory" });
     await user.clear(folder);
     await user.type(folder, "/staged");
     act(() => {

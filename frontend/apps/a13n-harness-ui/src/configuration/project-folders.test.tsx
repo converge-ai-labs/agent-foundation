@@ -17,6 +17,8 @@ import { ProjectFolders } from "./project-folders";
 import { i18n } from "../i18n";
 
 let sharing: boolean;
+let finder: boolean;
+let picked: string | null;
 let failMore: boolean;
 let reads: URL[];
 let queries: QueryClient;
@@ -32,6 +34,8 @@ function entry(path: string, kind = "directory") {
 }
 beforeEach(() => {
   sharing = true;
+  finder = false;
+  picked = null;
   failMore = false;
   reads = [];
   queries = new QueryClient({
@@ -40,10 +44,18 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
-      expect(request.method).toBe("GET");
       const url = new URL(request.url);
+      if (url.pathname === "/api/host/files/pick-directory") {
+        expect(request.method).toBe("POST");
+        return json(picked);
+      }
       if (url.pathname === "/api/status")
-        return json({ features: { host_files: sharing } });
+        return json({
+          features: {
+            host_files: sharing,
+            file_manager: finder ? "finder" : null,
+          },
+        });
       if (url.pathname === "/api/setup")
         return json({ suggested_project_path: "/srv" });
       if (url.pathname === "/api/host/files") {
@@ -106,11 +118,35 @@ function mount() {
     </QueryClientProvider>,
   );
 }
+async function clickAdd() {
+  const button = screen.getByRole("button", {
+    name: "Add folder",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+}
+it("adds a native selection to the draft and leaves it intact on cancellation", async () => {
+  finder = true;
+  mount();
+  picked = "/chosen/workspace";
+  await clickAdd();
+  await screen.findByTitle("/chosen/workspace");
+  picked = null;
+  await clickAdd();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Add folder" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  expect(screen.getByLabelText("Roots").textContent).toBe(
+    '[{"path":"/chosen/workspace"}]',
+  );
+  expect(reads).toHaveLength(0);
+});
 it("browses a level at a time, paginates with a revision, follows links, and selects only explicitly", async () => {
   mount();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Browse directory 1" }),
-  );
+  await clickAdd();
   await screen.findByRole("button", { name: "code" });
   expect(screen.queryByRole("button", { name: "readme.md" })).toBeNull();
   expect(screen.getByLabelText("Roots").textContent).toBe('[{"path":""}]');
@@ -139,7 +175,12 @@ it("browses a level at a time, paginates with a revision, follows links, and sel
 it("keeps manual rows usable without native sharing and removes only the selected root", async () => {
   sharing = false;
   mount();
-  await screen.findByText(/Turn on computer sharing to browse folders/);
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Add folder" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
   expect(
     screen.queryByRole("button", { name: "Browse directory 1" }),
   ).toBeNull();
@@ -154,21 +195,15 @@ it("keeps manual rows usable without native sharing and removes only the selecte
   fireEvent.click(screen.getByRole("button", { name: "Remove directory 1" }));
   expect(screen.getByLabelText("Roots").textContent).toBe('[{"path":"/two"}]');
   expect(
-    (
-      screen.getByRole("button", {
-        name: "Remove directory 1",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
+    screen.queryByRole("button", { name: "Remove directory 1" }),
+  ).toBeNull();
   expect(reads).toHaveLength(0);
   expect(submitted).not.toHaveBeenCalled();
 });
 it("restarts changed directory pagination and does not submit the project when entering a browse path", async () => {
   mount();
   const user = userEvent.setup();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Browse directory 1" }),
-  );
+  await clickAdd();
   await screen.findByRole("button", { name: "code" });
   failMore = true;
   fireEvent.click(screen.getByRole("button", { name: "Load more entries" }));
@@ -207,7 +242,7 @@ it("keeps the open directory browser and draft paths when the language changes",
       target: { value: "/srv" },
     },
   );
-  fireEvent.click(screen.getByRole("button", { name: "Browse directory 1" }));
+  await clickAdd();
   await screen.findByRole("button", { name: "code" });
   fireEvent.change(
     screen.getByRole("textbox", { name: "Browse server path" }),
@@ -226,13 +261,6 @@ it("keeps the open directory browser and draft paths when the language changes",
       }) as HTMLInputElement
     ).value,
   ).toBe("/draft/path");
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: i18n.t("Server directory"),
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("/srv");
   expect(screen.getByRole("button", { name: "code" })).toBeTruthy();
   expect(screen.getByLabelText("Roots").textContent).toBe('[{"path":"/srv"}]');
 });
