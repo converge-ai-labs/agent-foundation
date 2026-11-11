@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { Button } from "a13n-ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Button, ModalFrame } from "a13n-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
 import {
   clearSecrets,
@@ -14,20 +15,39 @@ import {
 } from "./schema";
 import styles from "./connectors.module.css";
 
+function stepValues(step: Schema<"Step">): Json {
+  const form = step.form as FormSchema | null;
+  return form
+    ? {
+        ...(defaultValue(form) as Record<string, Json>),
+        ...(step.values as Record<string, Json>),
+      }
+    : {};
+}
+
 export function ConnectorSetup({
   connectorId,
+  name,
+  intent = "configure",
   onClose,
 }: {
   connectorId: string;
+  name?: string;
+  intent?: string;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
   const cache = useQueryClient();
+  const formId = useId();
+  const heading = useRef<HTMLSpanElement>(null);
+  const formElement = useRef<HTMLFormElement>(null);
   const [snapshot, setSnapshot] = useState<Schema<"SetupSnapshot"> | null>(
     null,
   );
   const [values, setValues] = useState<Json>({});
+  const [dirty, setDirty] = useState(false);
+  const [discard, setDiscard] = useState<"close" | "cancel" | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -44,6 +64,11 @@ export function ConnectorSetup({
     ["completed", "failed", "cancelled", "expired"].includes(
       snapshot.step.state ?? "input",
     );
+  const submitActions =
+    snapshot?.step.actions?.filter(
+      (action) => action.kind === "submit" || action.kind === "confirm",
+    ) ?? [];
+  const primary = submitActions.at(-1);
 
   useEffect(() => {
     let active = true;
@@ -51,26 +76,19 @@ export function ConnectorSetup({
     const current = ++generation.current;
     setError(null);
     setValues({});
+    setDirty(false);
     setUncertain(false);
     setSnapshot(null);
     void result(
       client.POST("/api/connectors/{connector_id}/setup", {
         params: { path: { connector_id: connectorId } },
-        body: {},
+        body: { intent },
       }),
     )
       .then((next) => {
         if (!active || current !== generation.current) return;
         setSnapshot(next);
-        const form = next.step.form as FormSchema | null;
-        setValues(
-          form
-            ? {
-                ...(defaultValue(form) as Record<string, Json>),
-                ...(next.step.values as Record<string, Json>),
-              }
-            : {},
-        );
+        setValues(stepValues(next.step));
       })
       .catch((failure) => {
         if (active) setError(failure);
@@ -79,7 +97,16 @@ export function ConnectorSetup({
       active = false;
       mounted.current = false;
     };
-  }, [client, connectorId, attempt]);
+  }, [client, connectorId, intent, attempt]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const first = formElement.current?.querySelector<HTMLInputElement>(
+      'input:not([disabled]):not([type="hidden"]),textarea:not([disabled])',
+    );
+    if (first && !first.value) first.focus();
+    else heading.current?.focus();
+  }, [snapshot?.step.key]);
 
   async function read() {
     if (!snapshot || reading.current || actionPending.current) return;
@@ -96,15 +123,8 @@ export function ConnectorSetup({
       setUncertain(false);
       setError(null);
       if (next.step.key !== snapshot.step.key) {
-        const form = next.step.form as FormSchema | null;
-        setValues(
-          form
-            ? {
-                ...(defaultValue(form) as Record<string, Json>),
-                ...(next.step.values as Record<string, Json>),
-              }
-            : {},
-        );
+        setValues(stepValues(next.step));
+        setDirty(false);
       }
       void cache.invalidateQueries({ queryKey: ["connectors"] });
     } catch (failure) {
@@ -113,15 +133,12 @@ export function ConnectorSetup({
       reading.current = false;
     }
   }
-
   useEffect(() => {
     const wait = snapshot?.step.wait;
     if (!wait || terminal || busy || uncertain) return;
-    const deadline = Math.min(
-      Date.parse(wait.expires_at),
-      Date.parse(snapshot.expires_at),
-    );
-    const remaining = deadline - Date.now();
+    const remaining =
+      Math.min(Date.parse(wait.expires_at), Date.parse(snapshot.expires_at)) -
+      Date.now();
     const timer = setTimeout(
       () => {
         void read();
@@ -130,7 +147,6 @@ export function ConnectorSetup({
     );
     return () => clearTimeout(timer);
   });
-
   useEffect(() => {
     if (!snapshot || terminal) return;
     const refresh = () => {
@@ -160,7 +176,8 @@ export function ConnectorSetup({
     const current = ++generation.current;
     setBusy(true);
     setError(null);
-    // Private fields live only in this component and the request body, never a Query mutation/cache.
+    setDirty(false);
+    // Private values stay in component/request memory, never Query caches or browser storage.
     const submitted = values as Record<string, Json>;
     if (schema) setValues(clearSecrets(schema, values));
     try {
@@ -177,16 +194,10 @@ export function ConnectorSetup({
       );
       if (!mounted.current || current !== generation.current) return;
       setSnapshot(next);
-      if (next.step.key !== snapshot.step.key && next.step.form) {
-        const form = next.step.form as FormSchema;
-        setValues({
-          ...(defaultValue(form) as Record<string, Json>),
-          ...(next.step.values as Record<string, Json>),
-        });
-      }
-      void cache.invalidateQueries({ queryKey: ["connectors"] });
+      if (next.step.key !== snapshot.step.key) setValues(stepValues(next.step));
+      await cache.invalidateQueries({ queryKey: ["connectors"] });
     } catch (failure) {
-      if (mounted.current) {
+      if (mounted.current && current === generation.current) {
         setError(failure);
         setUncertain(true);
       }
@@ -201,162 +212,231 @@ export function ConnectorSetup({
       }
     }
   }
-
+  function requestClose() {
+    if (dirty) setDiscard("close");
+    else onClose();
+  }
+  const retry = (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={busy}
+      onClick={() => setAttempt((value) => value + 1)}
+    >
+      {t("Start again")}
+    </Button>
+  );
   return (
-    <section className={styles.setup} aria-label={t("Connection setup")}>
-      <header className={styles.header}>
-        <h3>
-          {snapshot ? t(snapshot.step.title) : t("Opening connection setup…")}
-        </h3>
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-          {t("Close")}
-        </Button>
-      </header>
-      <ErrorNotice error={error} />
-      {snapshot && (
-        <>
-          <p className={styles.description}>
-            {t(snapshot.step.description ?? "")}
-          </p>
-          {snapshot.step.error && (
-            <p role="alert" className={styles.error}>
-              {t(snapshot.step.error)}
-            </p>
-          )}
-          {snapshot.step.wait && !terminal && (
-            <p role="status">
-              {t(snapshot.step.wait.message)}{" "}
-              <span className={styles.description}>
-                {t("Expires at {{time}}", {
-                  time: new Date(
-                    snapshot.step.wait.expires_at,
-                  ).toLocaleTimeString(),
-                })}
-              </span>
-            </p>
-          )}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              const action = (
-                event.nativeEvent as SubmitEvent
-              ).submitter?.getAttribute("value");
-              if (action) void act(action);
-            }}
-          >
-            {schema && !terminal && (
-              <SchemaForm
-                schema={schema}
-                value={values}
-                onChange={setValues}
-                disabled={busy || uncertain}
-              />
+    <>
+      <ModalFrame
+        open
+        bottomStickOnMobile
+        keepVisibleWhenNested
+        title={
+          <span tabIndex={-1} ref={heading}>
+            {snapshot ? t(snapshot.step.title) : t("Opening connection setup…")}
+          </span>
+        }
+        description={name}
+        closeLabel={t("Close connection setup")}
+        onOpenChange={(open, details) => {
+          if (!open) {
+            details.cancel();
+            if (!busy) requestClose();
+          }
+        }}
+        footer={
+          <>
+            {terminal || !snapshot ? (
+              <Button variant="outline" disabled={busy} onClick={requestClose}>
+                {t("Close")}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelling || uncertain}
+                onClick={() => {
+                  if (dirty) setDiscard("cancel");
+                  else void act("cancel");
+                }}
+              >
+                {t(cancelling ? "Cancelling…" : "Cancel setup")}
+              </Button>
             )}
-            <div className={styles.actions}>
-              {!terminal &&
-                !uncertain &&
-                snapshot.step.actions?.map((action, index) =>
-                  action.kind === "open_url" ? (
-                    <Button
-                      key={action.id}
-                      variant="outline"
-                      render={
-                        <a
-                          href={action.url ?? undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                        />
-                      }
-                    >
-                      {t(action.label)}
-                    </Button>
-                  ) : action.kind === "copy" ? (
-                    <Button
-                      key={action.id}
-                      variant="outline"
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(action.value ?? "");
-                      }}
-                    >
-                      {t(action.label)}
-                    </Button>
-                  ) : (
-                    <Button
-                      key={action.id}
-                      type="submit"
-                      value={action.id}
-                      variant={
-                        index === (snapshot.step.actions?.length ?? 0) - 1
-                          ? "outline"
-                          : "default"
-                      }
-                      disabled={busy}
-                      onClick={
-                        action.kind === "confirm"
-                          ? (event) => {
-                              if (!window.confirm(t(action.label)))
-                                event.preventDefault();
-                            }
-                          : undefined
-                      }
-                    >
-                      {t(action.label)}
-                    </Button>
-                  ),
-                )}
-              {!terminal && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={cancelling || uncertain}
-                  onClick={() => {
-                    void act("cancel");
-                  }}
-                >
-                  {t("Cancel setup")}
-                </Button>
+            {(uncertain || !!error) && snapshot && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  void read();
+                }}
+              >
+                {t("Refresh status")}
+              </Button>
+            )}
+            {((terminal && snapshot.step.state !== "completed") ||
+              (!snapshot && !!error)) &&
+              retry}
+            {!terminal &&
+              !uncertain &&
+              submitActions.map((action) => {
+                const button = (
+                  <Button
+                    key={action.id}
+                    type={action.kind === "confirm" ? "button" : "submit"}
+                    form={formId}
+                    value={action.id}
+                    variant={action.id === primary?.id ? "default" : "outline"}
+                    disabled={busy}
+                  >
+                    {t(action.label)}
+                  </Button>
+                );
+                return action.kind === "confirm" ? (
+                  <ConfirmAction
+                    key={action.id}
+                    trigger={button}
+                    title={t(action.label)}
+                    description={t("Continue with this action?")}
+                    confirmLabel={t(action.label)}
+                    onConfirm={() => {
+                      void act(action.id);
+                    }}
+                  />
+                ) : (
+                  button
+                );
+              })}
+          </>
+        }
+      >
+        <section className={styles.setup} aria-label={t("Connection setup")}>
+          {uncertain && (
+            <p role="status" className={styles.warning}>
+              {t(
+                "The action outcome is unknown. Refresh status before taking another action; it will not be replayed.",
               )}
-              {(uncertain || !!error) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    void read();
-                  }}
-                >
-                  {t("Refresh status")}
-                </Button>
-              )}
-              {terminal && snapshot.step.state !== "completed" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setAttempt((value) => value + 1)}
-                >
-                  {t("Start again")}
-                </Button>
-              )}
-            </div>
-          </form>
-        </>
-      )}
-      {!snapshot && !!error && (
-        <Button
-          variant="outline"
-          onClick={() => setAttempt((value) => value + 1)}
-        >
-          {t("Start again")}
-        </Button>
-      )}
-      {uncertain && (
-        <p role="status" className={styles.description}>
-          {t(
-            "The action outcome is unknown. Refresh status before taking another action; it will not be replayed.",
+            </p>
           )}
-        </p>
-      )}
-    </section>
+          <ErrorNotice error={error} />
+          {snapshot && (
+            <>
+              <p className={styles.description} role="status">
+                {t(snapshot.step.description ?? "")}
+              </p>
+              {snapshot.step.error && (
+                <p role="alert" className={styles.error}>
+                  {t(snapshot.step.error)}
+                </p>
+              )}
+              {snapshot.step.wait && !terminal && (
+                <p role="status">
+                  {t(snapshot.step.wait.message)}{" "}
+                  <span className={styles.description}>
+                    {t("Expires at {{time}}", {
+                      time: new Date(
+                        snapshot.step.wait.expires_at,
+                      ).toLocaleTimeString(),
+                    })}
+                  </span>
+                </p>
+              )}
+              <form
+                id={formId}
+                ref={formElement}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const action =
+                    (event.nativeEvent as SubmitEvent).submitter?.getAttribute(
+                      "value",
+                    ) ?? (primary?.kind === "submit" ? primary.id : undefined);
+                  if (action && !busy && !terminal) void act(action);
+                }}
+              >
+                {schema && !terminal && (
+                  <SchemaForm
+                    schema={schema}
+                    value={values}
+                    onChange={(next) => {
+                      setValues(next);
+                      setDirty(true);
+                    }}
+                    disabled={busy || uncertain}
+                  />
+                )}
+              </form>
+              <div className={styles.actions}>
+                {!terminal &&
+                  snapshot.step.actions
+                    ?.filter(
+                      (action) =>
+                        action.kind === "open_url" || action.kind === "copy",
+                    )
+                    .map((action) =>
+                      action.kind === "open_url" ? (
+                        <Button
+                          key={action.id}
+                          variant="link"
+                          size="sm"
+                          render={
+                            <a
+                              href={action.url ?? undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                            />
+                          }
+                        >
+                          {t(action.label)}
+                        </Button>
+                      ) : (
+                        <Button
+                          key={action.id}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(
+                              action.value ?? "",
+                            );
+                          }}
+                        >
+                          {t(action.label)}
+                        </Button>
+                      ),
+                    )}
+              </div>
+            </>
+          )}
+        </section>
+      </ModalFrame>
+      <ModalFrame
+        open={discard !== null}
+        title={t("Discard unsaved changes?")}
+        description={t(
+          "Private values and unsaved changes will be discarded. Saved configuration is kept.",
+        )}
+        closeLabel={t("Close confirmation")}
+        onOpenChange={(open) => {
+          if (!open) setDiscard(null);
+        }}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDiscard(null)}>
+              {t("Keep editing")}
+            </Button>
+            <Button
+              onClick={() => {
+                const action = discard;
+                setDiscard(null);
+                if (action === "cancel") void act("cancel");
+                else onClose();
+              }}
+            >
+              {t("Discard changes")}
+            </Button>
+          </>
+        }
+      />
+    </>
   );
 }

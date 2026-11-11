@@ -53,6 +53,7 @@ class _Session:
     action_scope: CancelScope | None = None
     active_operation: str | None = None
     observed: Step | None = None
+    error: str | None = None
 
 
 class Connectors:
@@ -335,7 +336,8 @@ class Connectors:
         # Setup observation must not hold the configuration lock: actions hold
         # their session lock while committing configuration through save().
         async with self._setup_lock:
-            for session in self._sessions.values():
+            self.require_owner()
+            for session in tuple(self._sessions.values()):
                 if (
                     session.connector_id == connector_id
                     and session.intent == intent
@@ -428,13 +430,14 @@ class Connectors:
             step = step.model_copy(update={"values": safe_values(step.form, step.values)})
         if session.observed is not None and step != session.observed:
             session.version += 1
+            session.error = None
         session.observed = step
         return SetupSnapshot(
             session_id=session.session_id,
             connector_id=session.connector_id,
             version=session.version,
             expires_at=session.expires_at,
-            step=step,
+            step=step.model_copy(update={"error": session.error}) if session.error else step,
         )
 
     def _session(self, session_id: str) -> _Session:
@@ -512,6 +515,7 @@ class Connectors:
                     state="failed",
                     error="Inspect the saved connection before starting again.",
                 )
+                session.error = None
                 with CancelScope(shield=True) as action_scope:
                     session.action_scope = action_scope
                     session.active_operation = command.operation_id
@@ -519,11 +523,12 @@ class Connectors:
                         with fail_after(min(30, max(0.01, (session.expires_at - datetime.now(UTC)).total_seconds()))):
                             step = await session.flow.act(command.action, command.values)
                     except (ValidationError, ValueError):
-                        step = snapshot.step.model_copy(
-                            update={"error": "Check the form values and try again with a new action."}
-                        )
+                        # Validation exceptions may contain private submitted values.
+                        session.error = "Check the form values and try again with a new action."
+                        step = snapshot.step.model_copy(update={"error": session.error})
                     except HarnessUiError as exc:
-                        step = snapshot.step.model_copy(update={"error": str(exc)})
+                        session.error = str(exc)
+                        step = snapshot.step.model_copy(update={"error": session.error})
                     except Exception as exc:
                         step = Step(
                             key="failed",
@@ -555,7 +560,8 @@ class Connectors:
                         )
                     }
                 )
-            session.observed = result.step
+            if session.error is None:
+                session.observed = result.step
             session.operations[command.operation_id] = (digest, result)
             if session.terminal is not None and session.worker is not None:
                 session.worker.scope.cancel()
@@ -577,7 +583,7 @@ class Connectors:
 
     async def stop(self) -> None:
         self._sealed = True
-        for session in self._sessions.values():
+        for session in tuple(self._sessions.values()):
             await self._finish_session(session, "cancelled")
         for connector_id in tuple(self._workers):
             await self._stop_worker(connector_id)

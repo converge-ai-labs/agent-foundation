@@ -4173,7 +4173,11 @@ async def open_harness_ui_app(
                         ]
                     )
                 )
-            connector_resources = await resources.enter_async_context(create_task_group())
+            connector_resources = create_task_group()
+            await connector_resources.__aenter__()
+            # Join owned controller tasks without feeding an unrelated surface
+            # failure through a second TaskGroup exception boundary.
+            resources.push_async_callback(connector_resources.__aexit__, None, None, None)
             if app._connectors is not None:
                 resources.push_async_callback(app._connectors.close)
             try:

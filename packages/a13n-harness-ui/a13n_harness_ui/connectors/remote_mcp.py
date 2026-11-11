@@ -51,10 +51,21 @@ class RemoteSettings(BaseModel):
         return self
 
 
+class GitHubSettings(RemoteSettings):
+    @model_validator(mode="after")
+    def official_endpoint(self):
+        if self.url and (self.url != GITHUB_ENDPOINT or self.header_names != ("Authorization",)):
+            raise ValueError("GitHub connections must use the official endpoint and Authorization header")
+        if not self.url and self.header_names:
+            raise ValueError("An unconfigured GitHub connection cannot have headers")
+        return self
+
+
 class HeaderInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str
+    name: str = Field(title="Header name")
     value: str = Field(
+        title="Header value",
         default="",
         json_schema_extra={"writeOnly": True},
         description="Leave blank to retain the saved value for this header.",
@@ -67,10 +78,20 @@ class RemoteForm(BaseModel):
         title="Remote MCP endpoint", description="HTTPS URL, or plaintext literal loopback for local development."
     )
     headers: list[HeaderInput] = Field(
-        default_factory=list, description="Private HTTP headers. Remove a row to clear that header."
+        default_factory=list,
+        title="Headers",
+        description="Private HTTP headers. Remove a row to clear that header.",
+        json_schema_extra={"x-a13n-add-label": "Add header"},
     )
     tools: list[str] | None = Field(
-        default=None, description="All upstream tools when unset; an empty list disables every tool."
+        default=None,
+        title="Tools",
+        json_schema_extra={
+            "x-a13n-null-label": "All tools",
+            "x-a13n-selected-label": "Only selected tools",
+            "x-a13n-empty-label": "No tools will be available",
+            "x-a13n-add-label": "Add tool",
+        },
     )
     init_timeout_seconds: float = Field(default=30, gt=0, le=300, title="Initialization timeout (seconds)")
 
@@ -83,9 +104,25 @@ class GitHubForm(BaseModel):
         json_schema_extra={"writeOnly": True},
         description="Stored only in this instance's private database. Leave blank to keep the current token.",
     )
-    clear_token: bool = Field(default=False, title="Clear the saved token")
+    clear_token: bool = Field(default=False, title="Remove saved token")
+
+    @model_validator(mode="after")
+    def token_action(self):
+        if self.clear_token and self.token:
+            raise HarnessUiError(
+                "Choose either a replacement token or removal, not both.", code="connector_input_invalid"
+            )
+        return self
+
     tools: list[str] | None = Field(
-        default=None, description="All upstream tools when unset; an empty list disables every tool."
+        default=None,
+        title="Tools",
+        json_schema_extra={
+            "x-a13n-null-label": "All tools",
+            "x-a13n-selected-label": "Only selected tools",
+            "x-a13n-empty-label": "No tools will be available",
+            "x-a13n-add-label": "Add tool",
+        },
     )
     init_timeout_seconds: float = Field(default=30, gt=0, le=300, title="Initialization timeout (seconds)")
 
@@ -102,7 +139,8 @@ class RemoteMcp(Definition):
             key=self.key,
             name=self.name,
             description=self.description,
-            configuration_schema=RemoteSettings.model_json_schema(),
+            configuration_schema={**self.configuration_model.model_json_schema(), "readOnly": True},
+            setup_intents=("configure", "test"),
         )
 
     @asynccontextmanager
@@ -111,6 +149,7 @@ class RemoteMcp(Definition):
 
 
 class GitHub(RemoteMcp):
+    configuration_model = GitHubSettings
     key = "github"
     name = "GitHub"
     description = "Use GitHub's official remote MCP server with your personal access token. Tool access follows your GitHub permissions."
@@ -193,7 +232,7 @@ class RemoteController(Controller):
         return HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard)
 
     async def begin_setup(self, intent: str) -> SetupFlow:
-        return RemoteSetup(self)
+        return RemoteSetup(self, intent=intent)
 
 
 class RemoteMcpService:
@@ -231,8 +270,9 @@ class RemoteMcpService:
 
 
 class RemoteSetup(SetupFlow):
-    def __init__(self, controller: RemoteController) -> None:
+    def __init__(self, controller: RemoteController, *, intent: str = "configure") -> None:
         self.controller = controller
+        self.intent = intent
         self._step: Step | None = None
         self._configuration_version: int | None = None
 
@@ -241,6 +281,9 @@ class RemoteSetup(SetupFlow):
             return self._step
         current = await self.controller.context.configuration()
         self._configuration_version = current.version
+        if self.intent == "test":
+            self._step = await self._saved_step()
+            return self._step
         settings = RemoteSettings.model_validate(current.settings)
         values: dict[str, JsonValue] = {
             "tools": list(settings.tools) if settings.tools is not None else None,
@@ -251,10 +294,21 @@ class RemoteSetup(SetupFlow):
             values.update(
                 {"url": settings.url, "headers": [{"name": name, "value": ""} for name in settings.header_names]}
             )
-        actions = [
-            SetupAction(id="save", label="Save connection"),
-            SetupAction(id="test", label="Test saved connection"),
-        ]
+        actions = [SetupAction(id="save", label="Save connection")]
+        schema = self.controller.definition.form_model.model_json_schema()
+        saved_fields = []
+        if github:
+            if current.credentials.get("Authorization"):
+                saved_fields.append("/token")
+            else:
+                schema["properties"].pop("clear_token")
+        else:
+            saved_fields.extend(
+                f"/headers/{index}/value"
+                for index, name in enumerate(settings.header_names)
+                if current.credentials.get(name)
+            )
+        schema["x-a13n-saved"] = saved_fields
         if github:
             actions.insert(
                 0,
@@ -275,7 +329,7 @@ class RemoteSetup(SetupFlow):
             )
             if github
             else "Header values are write-only. Saving does not contact the upstream server.",
-            form=self.controller.definition.form_model.model_json_schema(),
+            form=schema,
             values=values,
             actions=tuple(actions),
         )
@@ -288,10 +342,17 @@ class RemoteSetup(SetupFlow):
             raise HarnessUiError(
                 "Connection settings changed; close this setup and start again.", code="connector_conflict"
             )
+        if action == "done":
+            self._step = Step(key="completed", title="Connection saved", state="completed")
+            return self._step
+        if action == "edit":
+            self.intent = "configure"
+            self._step = None
+            return await self.read()
         if action == "test":
             binding = await self.controller.capture()
             if binding is None:
-                raise ValueError("Save a complete connection before testing")
+                raise HarnessUiError("Save a complete connection before testing.", code="connector_input_invalid")
             recipe = ResolvedMcpRecipe.model_validate(binding["mcp"])
             transport, _, timeout = await prepare_mcp_transport(
                 recipe, None, private_values=self.controller._private_value
@@ -299,13 +360,17 @@ class RemoteSetup(SetupFlow):
             try:
                 async with Client(transport, mode=recipe.protocol, init_timeout=timeout) as client:
                     tools = await client.list_tools()
-            except Exception as exc:
+            except Exception:
                 raise HarnessUiError(
-                    f"MCP connection test failed ({type(exc).__name__}). Check endpoint, credentials and upstream permissions.",
+                    "MCP connection test failed. Check endpoint, credentials and upstream permissions.",
                     code="connector_connection_failed",
                 ) from None
             self._step = (await self.read()).model_copy(
-                update={"description": f"Connected. The server advertised {len(tools)} tools."}
+                update={
+                    "description": "Connection test succeeded.",
+                    "values": {"advertised_tools": [tool.name for tool in tools]},
+                    "error": None,
+                }
             )
             return self._step
         if action != "save":
@@ -317,7 +382,7 @@ class RemoteSetup(SetupFlow):
                 credentials.pop("Authorization", None)
             elif form.token:
                 if any(ord(char) < 32 or ord(char) == 127 for char in form.token):
-                    raise ValueError("Token must contain no control characters")
+                    raise HarnessUiError("Token must contain no control characters.", code="connector_input_invalid")
                 credentials["Authorization"] = f"Bearer {form.token}"
             settings = RemoteSettings(
                 url=GITHUB_ENDPOINT,
@@ -331,7 +396,7 @@ class RemoteSetup(SetupFlow):
             if any(
                 not value or any(ord(char) < 32 or ord(char) == 127 for char in value) for value in credentials.values()
             ):
-                raise ValueError("Every header needs a single-line value")
+                raise HarnessUiError("Every header needs a single-line value.", code="connector_input_invalid")
             settings = RemoteSettings(
                 url=form.url,
                 header_names=tuple(credentials),
@@ -339,11 +404,19 @@ class RemoteSetup(SetupFlow):
                 init_timeout_seconds=form.init_timeout_seconds,
             )
         candidate = current.model_copy(update={"settings": settings.model_dump(mode="json")})
-        await context.configure(candidate, expected_version=current.version, credentials=credentials)
-        self._step = Step(
+        saved = await context.configure(candidate, expected_version=current.version, credentials=credentials)
+        self._configuration_version = saved.version
+        self._step = await self._saved_step()
+        return self._step
+
+    async def _saved_step(self) -> Step:
+        actions = [SetupAction(id="edit", label="Edit connection")]
+        if (await self.controller.status()).state == "ready":
+            actions.append(SetupAction(id="test", label="Test connection"))
+        actions.append(SetupAction(id="done", label="Done"))
+        return Step(
             key="saved",
             title="Connection saved",
-            state="completed",
-            description="The next deliberate Run can capture this connection's tools. No blocked operation was replayed.",
+            description="Send a new message to use it. No operation was replayed.",
+            actions=tuple(actions),
         )
-        return self._step

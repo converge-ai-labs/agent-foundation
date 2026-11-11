@@ -470,6 +470,31 @@ async def serve(root: Path, port: int):
                 ConnectorConfiguration(connector_id="connector-github-review", kind="github", name="GitHub · Personal"),
                 expected_version=None,
             )
+            # Fictional saved account for list/management review. Seeding and
+            # saving never contact GitHub; do not test this illustrative token.
+            from a13n_harness_ui.connectors.models import SetupCommand
+
+            await app.configure_connector(
+                ConnectorConfiguration(connector_id="connector-github-work", kind="github", name="GitHub · Work"),
+                expected_version=None,
+            )
+            setup = await app.begin_connector_setup("connector-github-work")
+            saved = await app.act_connector_setup(
+                setup.session_id,
+                SetupCommand(
+                    operation_id="fixture-save",
+                    version=setup.version,
+                    action="save",
+                    values={"token": "fictional-review-token"},
+                ),
+            )
+            await app.act_connector_setup(
+                setup.session_id, SetupCommand(operation_id="fixture-done", version=saved.version, action="done")
+            )
+            await app.configure_connector(
+                ConnectorConfiguration(connector_id="connector-remote-review", kind="remote-mcp", name="Research MCP"),
+                expected_version=None,
+            )
             connection_chat = await app.create_thread(
                 title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")
             )

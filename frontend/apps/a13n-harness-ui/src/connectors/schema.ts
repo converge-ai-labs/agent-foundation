@@ -13,6 +13,12 @@ export type FormSchema = {
   anyOf?: FormSchema[];
   default?: Json;
   writeOnly?: boolean;
+  readOnly?: boolean;
+  "x-a13n-saved"?: string[];
+  "x-a13n-add-label"?: string;
+  "x-a13n-null-label"?: string;
+  "x-a13n-selected-label"?: string;
+  "x-a13n-empty-label"?: string;
   minimum?: number;
   maximum?: number;
   minLength?: number;

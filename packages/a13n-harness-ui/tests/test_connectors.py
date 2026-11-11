@@ -95,8 +95,10 @@ async def save_remote(app, connector_id="connector-test", *, kind="remote-mcp", 
     result = await app.act_connector_setup(
         setup.session_id, SetupCommand(operation_id="save", version=setup.version, action="save", values=values)
     )
-    assert result.step.state == "completed", result.step.error
-    return result
+    assert result.step.key == "saved", result.step.error
+    return await app.act_connector_setup(
+        setup.session_id, SetupCommand(operation_id="done", version=result.version, action="done")
+    )
 
 
 async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_path):
@@ -480,7 +482,7 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
                     await wait_all_tasks_blocked()
                     requests.start_soon(reopen)
                     await wait_all_tasks_blocked()
-        assert completed[0].step.state == "completed"
+        assert completed[0].step.key == "saved"
         assert (await runtime.instance("connector-test")).settings["url"] == "https://example.test/mcp"
 
 
@@ -602,7 +604,7 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
         assert (await client.post(path, headers=guest, json=command)).status_code == 401
         saved = await client.post(path, headers=owner, json=command)
         assert saved.status_code == 200, saved.text
-        assert saved.json()["step"]["state"] == "completed"
+        assert saved.json()["step"]["key"] == "saved"
         assert (await client.post(path, headers=owner, json=command)).json() == saved.json()
         instances = await client.get("/api/connectors", headers=owner)
         assert "fixture-private-token" not in saved.text + instances.text
@@ -614,3 +616,132 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
             )
         ).status_code == 204
         assert (await client.get("/api/connectors/connector-http", headers=owner)).status_code == 404
+
+
+@pytest.mark.parametrize("error_type", [ValueError, HarnessUiError])
+async def test_setup_corrected_submission_uses_returned_error_version_without_get(tmp_path, error_type):
+    from a13n_harness_ui.connectors import SetupAction, SetupFlow, Step
+
+    calls = []
+
+    class Flow(SetupFlow):
+        async def read(self):
+            return Step(key="configure", title="Configure", actions=(SetupAction(id="save", label="Save"),))
+
+        async def act(self, action, values):
+            calls.append(values)
+            if not values.get("valid"):
+                if error_type is HarnessUiError:
+                    raise HarnessUiError("Correct the input.", code="connector_input_invalid")
+                raise ValueError("Unsafe private input must not escape")
+            return Step(key="done", title="Done", state="completed")
+
+    class SetupController(SampleController):
+        async def begin_setup(self, intent):
+            return Flow()
+
+    class SetupDefinition(SampleDefinition):
+        @asynccontextmanager
+        async def open(self, context):
+            yield SetupController(context, self)
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "data"),
+        host_mode="webui",
+        integrations=HarnessUiIntegrations(connectors=(SetupDefinition(),)),
+    ) as app:
+        await app.configure_connector(
+            ConnectorConfiguration(connector_id="connector-error", kind="sample"), expected_version=None
+        )
+        setup = await app.begin_connector_setup("connector-error")
+        invalid = SetupCommand(operation_id="invalid", version=setup.version, action="save")
+        failed = await app.act_connector_setup(setup.session_id, invalid)
+        assert failed.step.error
+        assert "Unsafe private" not in failed.model_dump_json()
+        assert await app.act_connector_setup(setup.session_id, invalid) == failed
+        corrected = await app.act_connector_setup(
+            setup.session_id,
+            SetupCommand(operation_id="corrected", version=failed.version, action="save", values={"valid": True}),
+        )
+        assert corrected.step.state == "completed"
+        assert len(calls) == 2
+
+
+async def test_shutdown_rejects_setup_queued_before_sealing_and_keeps_session_iteration_stable(tmp_path, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from anyio import wait_all_tasks_blocked
+
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await create_remote(app)
+        runtime = app.connectors()
+        setup = await app.begin_connector_setup("connector-test")
+        original = runtime._sessions[setup.session_id]
+        # Fill the bounded registry with expired sessions: a queued admission
+        # would evict these while shutdown awaits the first flow's cleanup.
+        from dataclasses import replace
+
+        for index in range(127):
+            session = replace(
+                original, session_id=f"expired-{index}", expires_at=datetime.now(UTC) - timedelta(seconds=1)
+            )
+            runtime._sessions[session.session_id] = session
+        stopping, release = Event(), Event()
+        finish = runtime._finish_session
+        first = True
+
+        async def blocked_finish(session, state):
+            nonlocal first
+            if first:
+                first = False
+                stopping.set()
+                await release.wait()
+            await finish(session, state)
+
+        monkeypatch.setattr(runtime, "_finish_session", blocked_finish)
+        failures = []
+
+        async def queued_setup():
+            try:
+                await runtime.begin_setup("connector-test")
+            except HarnessUiError as exc:
+                failures.append(exc.code)
+
+        async with create_task_group() as group:
+            async with runtime._setup_lock:
+                group.start_soon(queued_setup)
+                await wait_all_tasks_blocked()
+                group.start_soon(runtime.stop)
+                await stopping.wait()
+            await wait_all_tasks_blocked()
+            release.set()
+        assert failures == ["connector_runtime_unavailable"]
+        assert len(runtime._sessions) == 128
+        assert not runtime._workers
+
+
+async def test_github_rejects_raw_endpoint_change_and_setup_exposes_saved_test_done(tmp_path):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        await create_remote(app, kind="github")
+        initial = await app.begin_connector_setup("connector-test")
+        assert "test" not in {action.id for action in initial.step.actions}
+        assert "clear_token" not in initial.step.form["properties"]
+        saved = await app.act_connector_setup(
+            initial.session_id,
+            SetupCommand(operation_id="save", version=initial.version, action="save", values={"token": "fake-token"}),
+        )
+        assert saved.step.key == "saved"
+        assert {action.id for action in saved.step.actions} == {"edit", "test", "done"}
+        edited = await app.act_connector_setup(
+            initial.session_id, SetupCommand(operation_id="edit", version=saved.version, action="edit")
+        )
+        assert edited.step.form["x-a13n-saved"] == ["/token"]
+        assert "clear_token" in edited.step.form["properties"]
+        current = await app._store.connectors.configuration("connector-test")
+        with pytest.raises(HarnessUiError) as failure:
+            await app.configure_connector(
+                current.model_copy(update={"settings": {**current.settings, "url": "https://other.example/mcp"}}),
+                expected_version=current.version,
+            )
+        assert failure.value.code == "connector_configuration_invalid"
+        assert (await app._store.connectors.configuration("connector-test")).settings["url"] == GITHUB_ENDPOINT

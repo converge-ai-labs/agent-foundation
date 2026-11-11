@@ -182,6 +182,7 @@ export function ConnectionsPage() {
         kinds={["mcp_server"]}
         headingLevel={2}
         title={t("MCP servers")}
+        description={t("Defined in configuration files, selected per Agent.")}
       />
       <SourcesPage
         kinds={["harness_plugin"]}

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { useState } from "react";
+import userEvent from "@testing-library/user-event";
 import {
   act,
   cleanup,
@@ -9,6 +11,8 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
+import { SchemaForm } from "./form";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { i18n } from "../i18n";
 import type { Schema } from "../transport/client";
@@ -75,7 +79,9 @@ const catalog: Schema<"CatalogItem">[] = [
 ];
 function mount(children: React.ReactNode) {
   return render(
-    <QueryClientProvider client={cache}>{children}</QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={cache}>{children}</QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 beforeEach(() => {
@@ -114,7 +120,7 @@ it("clears private fields on dispatch, preserves other drafts and reconciles unk
   ).toBe("private-test-value");
   expect(transport.client.POST).toHaveBeenCalledTimes(1);
   transport.client.POST.mockRejectedValueOnce(new TypeError("Offline"));
-  fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+  await userEvent.click(screen.getByRole("button", { name: "保存连接" }));
   await screen.findByText(/操作结果未知/);
   expect(
     (screen.getByLabelText("GitHub 个人访问令牌") as HTMLInputElement).value,
@@ -131,7 +137,7 @@ it("clears private fields on dispatch, preserves other drafts and reconciles unk
   expect(
     JSON.stringify(localStorage) + JSON.stringify(sessionStorage),
   ).not.toContain("private-test-value");
-  fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+  await userEvent.click(screen.getByRole("button", { name: "刷新状态" }));
   await waitFor(() => expect(screen.queryByText(/操作结果未知/)).toBeNull());
   expect(transport.client.POST).toHaveBeenCalledTimes(2);
   expect(
@@ -141,7 +147,12 @@ it("clears private fields on dispatch, preserves other drafts and reconciles unk
 
 it("preserves settings drafts when another tab or setup changes the saved version", async () => {
   mount(<ConnectorsSection />);
-  fireEvent.click(await screen.findByRole("button", { name: "Manage" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Actions for Work account" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Manage" }),
+  );
   fireEvent.change(screen.getByLabelText("Connection name"), {
     target: { value: "My draft" },
   });
@@ -161,7 +172,7 @@ it("preserves settings drafts when another tab or setup changes the saved versio
         .hasAttribute("disabled"),
     ).toBe(true),
   );
-  fireEvent.click(
+  await userEvent.click(
     screen.getByRole("button", { name: "Reload saved settings" }),
   );
   expect(
@@ -232,7 +243,9 @@ it("cancels an in-flight setup action and ignores its late response", async () =
         finish = resolve;
       }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Save connection" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save connection" }),
+  );
   expect(
     screen
       .getByRole("button", { name: "Save connection" })
@@ -245,7 +258,7 @@ it("cancels an in-flight setup action and ignores its late response", async () =
       step: { key: "cancelled", title: "Setup cancelled", state: "cancelled" },
     },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Cancel setup" }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel setup" }));
   await screen.findByText("Setup cancelled");
   expect(transport.client.POST.mock.calls[2][1].body.action).toBe("cancel");
   await act(async () => {
@@ -253,4 +266,242 @@ it("cancels an in-flight setup action and ignores its late response", async () =
   });
   expect(screen.getByText("Setup cancelled")).toBeTruthy();
   expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
+});
+
+it("confirms a dirty cancellation and sends the explicit cancel action", async () => {
+  const onClose = vi.fn();
+  mount(<ConnectorSetup connectorId="connector-one" onClose={onClose} />);
+  fireEvent.change(
+    await screen.findByLabelText("GitHub personal access token"),
+    { target: { value: "fictional-private-value" } },
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Cancel setup" }));
+  expect(transport.client.POST).toHaveBeenCalledTimes(1);
+  transport.client.POST.mockResolvedValueOnce({
+    data: {
+      ...snapshot,
+      version: 2,
+      step: { key: "cancelled", title: "Setup cancelled", state: "cancelled" },
+    },
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Discard changes" }),
+  );
+  await screen.findByText("Setup cancelled");
+  expect(transport.client.POST.mock.calls[1][1].body.action).toBe("cancel");
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it("rebases clean account drafts without reporting a conflict against setup saves", async () => {
+  mount(<ConnectorsSection />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Actions for Work account" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Manage" }),
+  );
+  await screen.findByLabelText("Connection name");
+  act(() =>
+    cache.setQueryData(
+      ["connectors", "instances"],
+      [{ ...instance, version: 2, name: "Updated by setup" }],
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("Connection name") as HTMLInputElement).value,
+    ).toBe("Updated by setup"),
+  );
+  expect(screen.queryByText(/Saved settings changed/)).toBeNull();
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "My account" },
+  });
+  transport.client.PUT.mockResolvedValueOnce({
+    data: { ...instance, name: "My account", version: 3 },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() => expect(transport.client.PUT).toHaveBeenCalledOnce());
+  expect(transport.client.PUT.mock.calls[0][1].body.expected_version).toBe(2);
+});
+
+it("names new accounts before persistence and offers cleanup for incomplete setup", async () => {
+  transport.client.GET.mockImplementation(async (url: string) => ({
+    data: url.endsWith("catalog")
+      ? catalog
+      : url === "/api/connectors"
+        ? [{ ...instance, name: "GitHub" }]
+        : snapshot,
+  }));
+  mount(<ConnectorsSection />);
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "Add connection" })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Add connection" }));
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: /GitHub/ }),
+  );
+  expect(
+    (screen.getByLabelText("Connection name") as HTMLInputElement).value,
+  ).toBe("GitHub 2");
+  expect(transport.client.PUT).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(transport.client.PUT).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Add connection" }));
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: /GitHub/ }),
+  );
+  transport.client.PUT.mockResolvedValueOnce({
+    data: {
+      ...instance,
+      connector_id: "connector-new",
+      name: "GitHub 2",
+      status: {
+        state: "unconfigured",
+        summary: "Complete connection setup to use its tools.",
+      },
+    },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByLabelText("GitHub personal access token");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close connection setup" }),
+  );
+  await screen.findByText("Keep this connection for later?");
+  expect(screen.getByRole("button", { name: "Keep for later" })).toBeTruthy();
+  transport.client.DELETE.mockResolvedValueOnce({ data: {} });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Remove connection" }),
+  );
+  await waitFor(() => expect(transport.client.DELETE).toHaveBeenCalledOnce());
+});
+
+it("keeps saved connection actions reachable in the dialog and supports implicit primary submission", async () => {
+  const saved: Schema<"SetupSnapshot"> = {
+    ...snapshot,
+    version: 2,
+    step: {
+      key: "saved",
+      title: "Connection saved",
+      state: "input",
+      actions: [
+        { id: "test", label: "Test connection", kind: "submit" },
+        { id: "done", label: "Done", kind: "submit" },
+      ],
+    },
+  };
+  mount(
+    <ConnectorSetup
+      connectorId="connector-one"
+      name="Work account"
+      onClose={() => {}}
+    />,
+  );
+  const token = await screen.findByLabelText("GitHub personal access token");
+  expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  fireEvent.change(token, { target: { value: "fictional-private-value" } });
+  transport.client.POST.mockResolvedValueOnce({ data: saved });
+  fireEvent.submit(token.closest("form")!);
+  await screen.findByText("Connection saved");
+  expect(transport.client.POST.mock.calls[1][1].body.action).toBe("save");
+  expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy();
+  transport.client.POST.mockResolvedValueOnce({
+    data: {
+      ...saved,
+      version: 3,
+      step: {
+        ...saved.step,
+        error:
+          "MCP connection test failed. Check endpoint, credentials and upstream permissions.",
+      },
+    },
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Test connection" }),
+  );
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
+});
+
+it("shows saved secret hints and explicit nullable tool selection without a native select", async () => {
+  const toolForm: FormSchema = {
+    type: "object",
+    "x-a13n-saved": ["/token"],
+    properties: {
+      token: form.properties!.token,
+      tools: {
+        title: "Tools",
+        default: null,
+        "x-a13n-null-label": "All tools",
+        "x-a13n-selected-label": "Only selected tools",
+        "x-a13n-empty-label": "No tools will be available",
+        anyOf: [{ type: "array", items: { type: "string" } }, { type: "null" }],
+      },
+    },
+  };
+  function Editor() {
+    const [value, setValue] = useState({
+      token: "",
+      tools: null,
+    } as import("./schema").Json);
+    return <SchemaForm schema={toolForm} value={value} onChange={setValue} />;
+  }
+  mount(<Editor />);
+  expect(screen.getByText("Saved")).toBeTruthy();
+  expect(screen.getByText("All tools")).toBeTruthy();
+  await userEvent.click(screen.getByRole("combobox", { name: "Tools" }));
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Only selected tools" }),
+  );
+  await screen.findByText("No tools will be available");
+  expect(document.querySelector("select")).toBeNull();
+});
+
+it("resolves chat offers from saved readiness without opening a form inline or starting work", async () => {
+  transport.client.GET.mockImplementation(async (url: string) => ({
+    data: url.endsWith("catalog")
+      ? catalog
+      : [
+          {
+            ...instance,
+            status: {
+              state: "unconfigured",
+              summary: "Complete connection setup to use its tools.",
+            },
+          },
+        ],
+  }));
+  mount(
+    <ConnectorOffer
+      offer={{
+        offer_id: "offer-one",
+        thread_id: "thread-one",
+        connector_key: "github",
+        connector_id: instance.connector_id,
+        created_at: "2026-11-11T00:00:00Z",
+      }}
+    />,
+  );
+  const region = screen.getByRole("region", { name: "Connector setup offer" });
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Continue setup" }),
+  );
+  await screen.findByRole("dialog");
+  expect(
+    within(region).queryByLabelText("GitHub personal access token"),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Close connection setup" }),
+  );
+  act(() => cache.setQueryData(["connectors", "instances"], [instance]));
+  await screen.findByText("Work account is connected");
+  expect(
+    screen.getByRole("link", { name: "Manage" }).getAttribute("href"),
+  ).toBe("/settings/connections");
+  expect(screen.queryByRole("button", { name: "Continue setup" })).toBeNull();
+  expect(transport.client.POST).toHaveBeenCalledTimes(1);
 });

@@ -11,17 +11,21 @@
   min-width: 0;
 }
 .header h2,
-.header h3,
-.fields h4 {
+.fields h3 {
   margin: 0;
-  font-size: var(--a13n-font-interface, 14px);
+  font-size: 16px;
   font-weight: 500;
 }
-.header h2 {
-  font-size: 16px;
+.header > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header > button {
+  flex-shrink: 0;
 }
 .description {
-  margin: 4px 0 0;
+  margin: 0;
   color: var(--a13n-secondary);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -29,73 +33,56 @@
 .description:empty {
   display: none;
 }
-.types {
-  display: grid;
-  gap: 8px;
-}
-.type,
-.instance {
-  padding: 16px;
+.empty {
+  padding: 24px 16px;
   border-radius: 16px;
   background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  margin: 0;
 }
-.type {
+.rowActions {
   display: flex;
-  gap: 16px;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
 }
-.type > div,
-.header > div {
-  min-width: 0;
+.catalogMenu {
+  width: 320px;
+  max-width: calc(100vw - 32px);
 }
-.type button,
-.header > button {
-  flex-shrink: 0;
+.menuDescription {
+  display: block;
+  white-space: normal;
+  color: var(--a13n-secondary);
+  line-height: 1.5;
+  margin-top: 4px;
 }
-.editor {
-  display: grid;
-  gap: 24px;
-  padding-top: 24px;
-}
-.setup {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-.setup form {
-  display: grid;
-  gap: 24px;
-}
+.editor,
+.setup,
 .fields {
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+.editor {
+  gap: 32px;
+}
+.setup form:empty {
+  display: none;
 }
 .field {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
-.field > label {
-  font-weight: 500;
-}
 .field small,
 .array small {
   color: var(--a13n-secondary);
   line-height: 1.6;
 }
-.field input,
-.field textarea,
-.select {
-  width: 100%;
-  min-width: 0;
-}
 .toggle {
   display: flex;
   gap: 8px;
   align-items: center;
-  font-weight: 400;
 }
 .array {
   border: 0;
@@ -116,7 +103,7 @@
 .arrayRow {
   display: flex;
   gap: 8px;
-  align-items: start;
+  align-items: end;
 }
 .arrayRow > :first-child {
   flex: 1;
@@ -131,17 +118,23 @@
   flex-wrap: wrap;
   align-items: center;
 }
-.select {
-  border: 1px solid var(--a13n-input-border);
-  border-radius: 8px;
-  background: var(--a13n-elevated);
-  color: var(--a13n-text);
-  min-height: 32px;
-  padding: 4px 8px;
+.actions:empty {
+  display: none;
 }
 .error {
   color: var(--destructive);
   margin: 0;
+}
+.warning {
+  color: var(--a13n-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+.summaryValue {
+  max-width: 250px;
+  overflow-wrap: anywhere;
+  text-align: end;
+  user-select: text;
 }
 .offer {
   display: grid;
@@ -152,19 +145,43 @@
   margin-block: 16px;
   font-size: var(--a13n-font-interface, 14px);
 }
+.accountPicker {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.accountPicker legend {
+  margin-bottom: 8px;
+}
+.accountChoice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 8px;
+  cursor: pointer;
+}
+.accountChoice > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 600px) {
-  .type {
-    align-items: start;
-    flex-direction: column;
-    gap: 12px;
-  }
   .header {
     gap: 8px;
   }
-}
-@media (pointer: coarse) {
-  .select {
-    min-height: 44px;
-    font-size: 16px;
+  .summaryValue {
+    max-width: 170px;
+  }
+  .rowActions {
+    gap: 2px;
+    flex-wrap: wrap;
+    justify-content: end;
+  }
+  .rowActions > button {
+    order: 1;
+  }
+  .offer .header {
+    align-items: start;
   }
 }

@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261111_ab7f852de318_add_connector_plugin_state_and_.py").unlink()
     (newer / "versions/20261111_2e9f82450690_add_notification_scope_and_language.py").unlink()
     (newer / "versions/20261111_2444030a5191_retain_configured_routes_for_chat_usage.py").unlink()
     (newer / "versions/20261110_7147a04d1d58_add_bot_notes_and_unified_automatic_.py").unlink()
@@ -111,6 +112,8 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "bot_input",
                 "bot_message",
                 "connector_configuration",
+                "connector_state",
+                "connector_setup_offer",
                 "bot_inbox",
                 "bot_note",
                 "deleted_thread",
