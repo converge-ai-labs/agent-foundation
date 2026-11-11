@@ -118,6 +118,24 @@ flowchart TD
 
 用 `app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；用 `app.cancel_tool_execution(thread_id, execution_id)` 请求取消工具。取消对话和取消工具是两件事。取消对话还会禁止完成事件自动唤醒，直到收到新的用户输入。保留的记录和已完成结果跨 App 重启存续。结果在首次消费后一小时过期，且不超过完成后一天。原外部 daemon 和 Session 存活时，Envd Shell 工作可以恢复；其他未完成的进程内调用标为 `lost`，不重放。
 
+## 持久保留外部业务上下文
+
+可信集成可以独立于对话历史保存 JSON 业务元数据和请求头：
+
+```python
+from a13n_harness_ui.external_context import ExternalContext
+
+await app.set_thread_external_context(
+    thread_id=thread_id,
+    context=ExternalContext(metadata={"tenant": "acme"}, headers={"x-trace-id": "trace-123"}),
+)
+receipt = await app.submit_thread(thread_id=thread_id, prompt="Continue")
+```
+
+更新完整替换原值，并独立于输入提交完成持久化。后续 Run，包括空闲时的工具完成唤醒和 App 重启后的运行，使用最新保存值。即使运行期间更新，活动 Run 仍保留受理时的快照。不更新则保留；传入 `ExternalContext()` 则清空。清除对话历史不会清除此独立业务上下文。
+
+可信 Capability 和适配器通过 `ctx.deps.metadata` 与 `ctx.deps.request_context.headers` 读取。上下文不会自动进入提示词、检查结果、Shell 环境或已配置的 MCP 请求。凭据继续通过原有凭据 API 管理。新委派的异步子线程继承父 Run 的快照，随后拥有自己的线程级上下文；用子线程 ID 更新其后续 Run 的值。
+
 ## Thread 查询与修改
 
 围绕以下方法构建 Thread 选择和历史查看功能：

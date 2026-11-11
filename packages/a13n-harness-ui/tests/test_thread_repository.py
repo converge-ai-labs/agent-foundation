@@ -173,3 +173,27 @@ async def test_project_recency_aggregates_all_non_archived_root_and_child_thread
         recency = await store.threads.project_recency()
 
     assert recency == {"project-a": start + timedelta(seconds=5)}
+
+
+async def test_external_context_is_a_private_durable_head_independent_of_checkpoints(tmp_path: Path) -> None:
+    from a13n_harness_ui.external_context import ExternalContext
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_local_store(settings) as store:
+        created = await store.threads.create(
+            thread_id="thread-context", configuration=_configuration(), initial_state=_initial()
+        )
+        assert await store.threads.external_context(created.thread_id) == ExternalContext()
+        supplied = ExternalContext(metadata={"tenant": "one", "nested": {"items": [1]}}, headers={"X-Tenant": "one"})
+        await store.threads.replace_external_context(created.thread_id, supplied)
+        supplied.metadata["nested"]["items"].append(2)
+        captured = await store.threads.external_context(created.thread_id)
+        assert captured.metadata == {"tenant": "one", "nested": {"items": [1]}}
+        await store.threads.replace_external_context(created.thread_id, ExternalContext(metadata={"tenant": "two"}))
+        assert captured.headers == {"x-tenant": "one"}
+        assert await store.threads.get(created.thread_id) == created
+    async with open_local_store(settings) as store:
+        assert await store.threads.external_context(created.thread_id) == ExternalContext(metadata={"tenant": "two"})
+        await store.threads.replace_external_context(created.thread_id, ExternalContext())
+    async with open_local_store(settings) as store:
+        assert await store.threads.external_context(created.thread_id) == ExternalContext()

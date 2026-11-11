@@ -14,6 +14,7 @@ from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, tru
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
+from a13n_harness_ui.external_context import ExternalContext
 
 from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
@@ -200,6 +201,27 @@ class ConfigurationRepository:
 class ThreadRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
+
+    async def external_context(self, thread_id: str) -> ExternalContext:
+        """Read a detached latest value without loading or changing a checkpoint."""
+        async with short_session(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            return ExternalContext.model_validate_json(record.external_context_json or "{}")
+
+    async def replace_external_context(self, thread_id: str, value: ExternalContext) -> None:
+        """Replace only business data; never modify configuration or execution authority."""
+        encoded = value.model_dump_json()
+        async with transaction(self._sessions) as session:
+            result = await session.scalar(
+                update(ThreadRecord)
+                .where(ThreadRecord.thread_id == thread_id)
+                .values(external_context_json=encoded)
+                .returning(ThreadRecord.thread_id)
+            )
+            if result is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
 
     async def create(
         self,

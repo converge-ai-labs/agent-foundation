@@ -8,6 +8,7 @@ import a13n_harness_ui.subagent_operator as subagent_module
 import pytest
 from a13n_harness import SafeFailure
 from a13n_harness_ui.errors import RunCoordinationError
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ChildExecutionHead, CompactChildDisplay, ObjectKind, ObjectRef, open_local_store
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
@@ -304,6 +305,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
         state=state,
         environment=cast(Any, SimpleNamespace(finalization=finalized)),
         stream=stream,
+        external_context=ExternalContext(),
         agent_instance_id="child-agent",
         display=CompactChildDisplay(),
     )
@@ -376,7 +378,12 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
     reporter = SimpleNamespace(report=AsyncMock())
     usage = SimpleNamespace(reporter=Mock(return_value=reporter))
     operator = HarnessUiSubagentOperator(
-        store=cast(Any, SimpleNamespace(usage=usage)),
+        store=cast(
+            Any,
+            SimpleNamespace(
+                usage=usage, threads=SimpleNamespace(external_context=AsyncMock(return_value=ExternalContext()))
+            ),
+        ),
         configurations=unavailable,
         compositions=unavailable,
         agent_reconstructor=unavailable,
@@ -387,7 +394,7 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
         model_resolver=HarnessUiModelResolver({}),
         definition_capability_ids=frozenset(),
     )
-    stream = operator._new_stream(
+    stream, _ = await operator._new_stream(
         reconstructed=reconstructed,
         input="new continuation instruction",
         usage_limits=None,
