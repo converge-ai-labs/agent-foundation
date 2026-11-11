@@ -179,6 +179,45 @@ async def test_rejects_unsupported_root_schema_version(tmp_path: Path, version: 
     assert invalid.value.code == "settings_invalid"
 
 
+@pytest.mark.parametrize("onboarding", [False, True])
+async def test_generation_digest_tracks_normalized_defaults_without_source_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, onboarding: bool
+) -> None:
+    from a13n_harness_ui.configuration.models import HarnessUiDocument, WebUiConfiguration
+    from pydantic import Field
+
+    class HistoricalDocument(HarnessUiDocument):
+        webui: WebUiConfiguration = Field(
+            default_factory=lambda: WebUiConfiguration.model_validate({"bot": {"run_timeout_seconds": 180}})
+        )
+
+    config = _write_source_tree(tmp_path)
+
+    async def load():
+        if onboarding:
+            return configuration_loader.empty_harness_ui_configuration()
+        return await load_harness_ui_configuration(config)
+
+    current = await load()
+    with monkeypatch.context() as patch:
+        patch.setattr(configuration_loader, "HarnessUiDocument", HistoricalDocument)
+        historical = await load()
+    assert current.sources == historical.sources
+    assert current.root_digest == historical.root_digest
+    assert current.source_digest != historical.source_digest
+    assert (await load()).source_digest == current.source_digest
+
+
+async def test_obsolete_bot_field_is_preserved_without_rewriting_sources(tmp_path: Path, caplog) -> None:
+    config = _write_source_tree(tmp_path, root='schema_version: "1"\nwebui:\n  bot:\n    run_timeout_seconds: 180\n')
+    original = config.read_bytes()
+    loaded = await load_harness_ui_configuration(config)
+    assert loaded.document.webui.bot.model_extra == {"run_timeout_seconds": 180}
+    assert "preserved but not applied" in caplog.text
+    assert config.read_bytes() == original
+    assert (await load_harness_ui_configuration(config)).source_digest == loaded.source_digest
+
+
 async def test_global_agents_guidance_is_generation_owned_and_only_loads_agents_md(tmp_path: Path) -> None:
     config = _write_source_tree(tmp_path)
     (tmp_path / "RULES.md").write_text("Ignored legacy filename")

@@ -10,7 +10,6 @@ from anyio import Lock, to_thread
 from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
-from a13n_harness_ui.errors import StoreIntegrityError
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -55,22 +54,11 @@ class CompositionAcceptanceService:
     ) -> AcceptedComposition:
         warnings: list[str] = []
         self._resolver.validate_generation(source, warnings=warnings)
-        reference = await self._store.configurations.reference(source.source_digest)
-        if reference is not None:
-            # Compatible input aliases can change serialization without changing
-            # the accepted source. Preserve the original immutable representation.
-            retained = await self._store.objects.read_model(reference, LoadedHarnessUiConfiguration)
-            if canonical_digest(retained) != canonical_digest(source):
-                raise StoreIntegrityError(
-                    "Accepted generation digest maps to different normalized content.",
-                    code="configuration_digest_collision",
-                )
-        else:
-            envelope = await self._store.objects.publish_model(
-                object_kind=ObjectKind.configuration_generation,
-                value=source,
-            )
-            reference = envelope.ref
+        envelope = await self._store.objects.publish_model(
+            object_kind=ObjectKind.configuration_generation,
+            value=source,
+        )
+        reference = envelope.ref
         source_rows = tuple(
             (item.relative_path, item.source_digest, item.resource_kind, item.resource_id) for item in source.sources
         )

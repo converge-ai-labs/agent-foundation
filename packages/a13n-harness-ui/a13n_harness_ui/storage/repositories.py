@@ -115,35 +115,39 @@ class ConfigurationRepository:
                         accepted_at=now,
                     )
                 )
-                for relative_path, source_digest, resource_kind, resource_id in sources:
-                    session.add(
-                        ConfigurationSourceRecord(
-                            generation_digest=generation_digest,
-                            relative_path=relative_path,
-                            source_digest=source_digest,
-                            resource_kind=resource_kind,
-                            resource_id=resource_id,
-                        )
+            else:
+                record.object_schema_version = generation.object_schema_version
+                record.object_digest = generation.logical_digest
+                record.accepted_at = now
+                await session.execute(
+                    delete(ConfigurationSourceRecord).where(
+                        ConfigurationSourceRecord.generation_digest == generation_digest
                     )
-                for item in resources:
-                    session.add(
-                        ResourceIndexRecord(
-                            generation_digest=generation_digest,
-                            relative_path=item.relative_path,
-                            resource_kind=item.resource_kind,
-                            resource_id=item.resource_id,
-                            name=item.name,
-                            source_digest=item.source_digest,
-                            normalized_digest=item.normalized_digest,
-                        )
+                )
+                await session.execute(
+                    delete(ResourceIndexRecord).where(ResourceIndexRecord.generation_digest == generation_digest)
+                )
+            for relative_path, source_digest, resource_kind, resource_id in sources:
+                session.add(
+                    ConfigurationSourceRecord(
+                        generation_digest=generation_digest,
+                        relative_path=relative_path,
+                        source_digest=source_digest,
+                        resource_kind=resource_kind,
+                        resource_id=resource_id,
                     )
-            elif (
-                record.object_schema_version != generation.object_schema_version
-                or record.object_digest != generation.logical_digest
-            ):
-                raise StoreIntegrityError(
-                    "Accepted generation digest maps to different immutable content.",
-                    code="configuration_digest_collision",
+                )
+            for item in resources:
+                session.add(
+                    ResourceIndexRecord(
+                        generation_digest=generation_digest,
+                        relative_path=item.relative_path,
+                        resource_kind=item.resource_kind,
+                        resource_id=item.resource_id,
+                        name=item.name,
+                        source_digest=item.source_digest,
+                        normalized_digest=item.normalized_digest,
+                    )
                 )
             if current is None:
                 session.add(CurrentConfigurationRecord(singleton_id=1, generation_digest=generation_digest))

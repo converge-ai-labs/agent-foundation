@@ -84,12 +84,51 @@ async def test_legacy_context_window_survives_upgrade_and_webui_status(tmp_path)
         assert await store.objects.read(envelope.ref) == envelope
         restored = await store.objects.read_model(envelope.ref, LoadedHarnessUiConfiguration)
         assert restored.models["model-primary"].model_characteristics.context_window_tokens == 128000
-        assert await store.configurations.reference(legacy.source_digest) == envelope.ref
+        selected = await store.configurations.reference(legacy.source_digest)
+        assert selected is not None
+        assert (await store.objects.read(selected)).payload == legacy.model_dump(mode="json")
     assert model_path.read_bytes() == original_yaml
     # Repeated startup must not collide on the same source-generation digest.
     async with open_harness_ui_app(settings, configuration_path=root) as app:
         assert (await app.status()).candidate_error_code is None
         assert (await app.get_thread(thread_id)).thread.thread_id == thread_id
+
+
+async def test_startup_uses_loaded_configuration_instead_of_stale_accepted_snapshot(tmp_path):
+    from a13n_harness_ui.storage import open_local_store
+
+    root = _write_configuration(tmp_path)
+    source = await load_harness_ui_configuration(root)
+    original_yaml = root.read_bytes()
+    payload = source.model_dump(mode="json")
+    payload["document"]["webui"]["bot"]["run_timeout_seconds"] = 180
+    settings = _settings(tmp_path / "state").model_copy(update={"pricing_auto_update": False})
+    async with open_local_store(settings.storage) as store:
+        historical = await store.objects.publish(
+            object_kind=ObjectKind.configuration_generation, object_schema_version="1", payload=payload
+        )
+        await store.configurations.accept(
+            generation_digest=source.source_digest,
+            generation=historical.ref,
+            sources=(),
+            resources=(),
+            expected_current_digest=None,
+        )
+    for _ in range(2):
+        async with open_harness_ui_app(settings, configuration_path=root) as app:
+            status = await app.status()
+            assert status.candidate_error_code is None
+            assert status.accepted_generation_digest == source.source_digest
+            current = await app.current_configuration()
+            assert current == source
+            assert "run_timeout_seconds" not in current.document.webui.bot.model_dump()
+    async with open_local_store(settings.storage) as store:
+        reference = await store.configurations.current_reference()
+        assert reference != historical.ref
+        assert await store.objects.read_model(reference, LoadedHarnessUiConfiguration) == source
+        assert await store.objects.read(historical.ref) == historical
+        assert await store.configurations.resources(source.source_digest)
+    assert root.read_bytes() == original_yaml
 
 
 async def test_legacy_run_composition_reads_context_window_without_rewriting_object(tmp_path):
