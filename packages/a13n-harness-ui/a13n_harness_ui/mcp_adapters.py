@@ -88,6 +88,7 @@ class HarnessUiMCP(MCP[AgentContext]):
                 client_transport,
                 binding=repr((self._recipe.transport.model_dump_json(), self._recipe.protocol, self._apps is not None)),
                 protocol=self._recipe.protocol,
+                init_timeout=init_timeout,
                 client_factory=None if self._apps is not None else HostClient,
                 extensions=None if self._apps is not None else (),
             )
@@ -127,7 +128,7 @@ async def prepare_mcp_transport(
     configuration_root: Path | None,
     *,
     configuration: RunConfiguration | None = None,
-) -> tuple[ClientTransport, str, int]:
+) -> tuple[ClientTransport, str, float]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
     transport = recipe.transport
     configuration = configuration or RunConfiguration()
@@ -139,7 +140,7 @@ async def prepare_mcp_transport(
             headers=values or None,
             httpx_client_factory=partial(_no_redirect_client, configuration=configuration),
         )
-        init_timeout = 5
+        init_timeout = transport.init_timeout_seconds or (30 if recipe.host_owned or recipe.apps_enabled else 5)
     elif isinstance(transport, McpCommandTransport):
         values = await resolve_mcp_values(transport.environment, configuration_root)
         client_transport = StdioTransport(

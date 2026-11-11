@@ -26,6 +26,7 @@ Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the roo
    name: Documentation service
    transport:
      url: https://mcp.example.com/mcp
+     init_timeout_seconds: 20
      headers:
        Authorization:
          env: DOCS_MCP_AUTHORIZATION
@@ -36,6 +37,8 @@ Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the roo
 4. [Enable the server](#enable-a-server) and test a documented read-only tool.
 
 Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loopback host with no configured headers. The client does not follow redirects; configure the final MCP endpoint directly. Remote transport is Streamable HTTP, not legacy SSE, and this configuration does not provide an OAuth login flow.
+
+Set `transport.init_timeout_seconds` to a positive number of seconds to allow a slower handshake. For example, `20` gives the server up to 20 seconds to negotiate the protocol, including any fallback. The default is 5 seconds for Run-local connections and Settings tool discovery, and 30 seconds for Host-owned connections and MCP Apps. Tool calls have separate deadlines.
 
 ## Choose tools
 
@@ -105,10 +108,10 @@ Set `DOCS_MCP_TOKEN`, then select `mcp-docs` as below. This example inserts only
 
 A wrapper can contain several servers. Names normalize to `mcp-` IDs: `My_Server` becomes `mcp-my-server`. Duplicate IDs across files reject the configuration.
 
-| Wrapper entry | Fields                                                                |
-| ------------- | --------------------------------------------------------------------- |
-| Command       | `command`, optional `args`, optional `env`; optional `type: stdio`    |
-| Remote        | `url`, optional `headers`; optional `type: http` or `streamable-http` |
+| Wrapper entry | Fields                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Command       | `command`, optional `args`, optional `env`; optional `type: stdio`                            |
+| Remote        | `url`, optional `headers`, `init_timeout_seconds`; optional `type: http` or `streamable-http` |
 
 Both `.yaml` and `.json` accept the wrapper or the single-resource format. Use strict JSON: comments and trailing commas are invalid. Remove unsupported client-specific fields such as `disabled`.
 
@@ -193,10 +196,10 @@ Cancellation, expiry, connection closure, or shutdown ends the request. If answe
 
 Use `schema_version: "2"` for MCP resources and wrappers. A single-resource file also requires `kind: mcp_server`, a unique `mcp-` `id`, a display `name`, and exactly one transport form:
 
-| Transport | Required  | Optional                           |
-| --------- | --------- | ---------------------------------- |
-| Command   | `command` | `arguments: []`, `environment: {}` |
-| Remote    | `url`     | `headers: {}`                      |
+| Transport | Required  | Optional                              |
+| --------- | --------- | ------------------------------------- |
+| Command   | `command` | `arguments: []`, `environment: {}`    |
+| Remote    | `url`     | `headers: {}`, `init_timeout_seconds` |
 
 Environment and header values accept strings or `{env: VARIABLE}`. In a `mcpServers` wrapper, use `args` and `env` instead of `arguments` and `environment`. Optional `tools` follows the [tool selection rules](#choose-tools).
 
