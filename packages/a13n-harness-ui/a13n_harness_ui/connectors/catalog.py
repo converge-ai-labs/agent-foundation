@@ -24,10 +24,10 @@ class Catalog:
     def __init__(
         self, definitions: tuple[Definition, ...] = (), *, installed: tuple[EntryPoint, ...] | None = None
     ) -> None:
-        from .remote_mcp import GitHub, RemoteMcp
+        from .github import GitHub
 
         candidates: dict[str, list[tuple[Definition | None, CatalogItem]]] = {}
-        for definition in (RemoteMcp(), GitHub(), *definitions):
+        for definition in (GitHub(), *definitions):
             declaration = definition.declaration()
             implementation = f"{type(definition).__module__}:{type(definition).__qualname__}"
             try:

@@ -14,7 +14,7 @@ description: 为 Agent 添加工具，检查工具是否生效，并选择合适
 | 改变执行机器或隔离方式          | Environment 配置                 | [Environment](environments-and-projects.md)              |
 | 添加已安装的 Python 中间件      | Harness Plugin 资源              | [插件文件](#harness-plugin-and-run-extension-files)      |
 
-要在 WebUI 中共用实例级账户，使用 [Connector](connectors.md)。Remote MCP 和 GitHub 连接提供私有配置表单，并自动加入新的 WebUI 根 Run。文件定义的 MCP 服务器仍是显式选择的 Agent 资源，也适用于终端。
+要在 WebUI 中共用实例级账户，使用 [Connector](connectors.md)。GitHub 等具体服务集成提供私有账户配置，并自动加入新的 WebUI 根 Run。Connector SDK 的 Remote MCP 能力是开发者代码库；任意 MCP 服务仍通过独立的 MCP 配置管理。文件定义的 MCP 服务器仍是显式选择的 Agent 资源，也适用于终端。
 
 ## Agent Capability
 

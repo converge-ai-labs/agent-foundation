@@ -10,8 +10,8 @@ from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorIn
 from a13n_harness_ui.connectors import Controller, Declaration, Definition, EventDeclaration, Status
 from a13n_harness_ui.connectors.catalog import Catalog
 from a13n_harness_ui.connectors.forms import safe_values, validate_form
+from a13n_harness_ui.connectors.github import GITHUB_ENDPOINT
 from a13n_harness_ui.connectors.models import SetupCommand
-from a13n_harness_ui.connectors.remote_mcp import GITHUB_ENDPOINT
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import resolve_mcp_values
 from anyio import Event, create_task_group, get_current_task
@@ -78,20 +78,16 @@ class SampleController(Controller):
             self.definition.stopped.append(configuration.version)
 
 
-async def create_remote(app, *, kind="remote-mcp", connector_id="connector-test"):
+async def create_github(app, *, connector_id="connector-test"):
     return await app.configure_connector(
-        ConnectorConfiguration(connector_id=connector_id, kind=kind), expected_version=None
+        ConnectorConfiguration(connector_id=connector_id, kind="github"), expected_version=None
     )
 
 
-async def save_remote(app, connector_id="connector-test", *, kind="remote-mcp", headers=None):
-    await create_remote(app, kind=kind, connector_id=connector_id)
+async def save_github(app, connector_id="connector-test"):
+    await create_github(app, connector_id=connector_id)
     setup = await app.begin_connector_setup(connector_id)
-    values = (
-        {"token": "test-private-token"}
-        if kind == "github"
-        else {"url": "https://mcp.example.test/mcp", "headers": headers or []}
-    )
+    values = {"token": "test-private-token"}
     result = await app.act_connector_setup(
         setup.session_id, SetupCommand(operation_id="save", version=setup.version, action="save", values=values)
     )
@@ -105,22 +101,23 @@ async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_p
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         await ready(app)
-        setup = await save_remote(app, kind="github")
+        setup = await save_github(app)
         instance = await app.connectors().instance("connector-test")
         assert instance.status.state == "ready"
-        assert instance.settings["url"] == GITHUB_ENDPOINT
+        assert instance.settings == {}
         assert "test-private-token" not in instance.model_dump_json() + setup.model_dump_json()
         captures = await app.connectors().capture()
         assert len(captures) == 1
         assert "test-private-token" not in json.dumps([capture.model_dump(mode="json") for capture in captures])
         source = app.connectors().capabilities(captures)["connector-test"]
+        assert source._recipe.transport.url == GITHUB_ENDPOINT
         values = await resolve_mcp_values(source._recipe.transport.headers, None, private_values=source._private_values)
         assert values == {"Authorization": "Bearer test-private-token"}
         current = await app._store.connectors.configuration("connector-test")
         await app._store.connectors.save_credentials(
             "connector-test",
             expected_version=current.credential_version,
-            credentials={"Authorization": "Bearer rotated"},
+            credentials={"token": "Bearer rotated"},
         )
         # Private rotation does not invalidate a human form or captured identity.
         assert (await app.connectors().instance("connector-test")).version == instance.version
@@ -136,7 +133,7 @@ async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_p
 async def test_remote_setup_exact_retry_stale_step_and_omitted_secret(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
         await ready(app)
-        await save_remote(app, kind="github")
+        await save_github(app)
         setup = await app.begin_connector_setup("connector-test")
         assert "token" not in setup.step.values
         command = SetupCommand(operation_id="second", version=setup.version, action="save", values={})
@@ -145,7 +142,7 @@ async def test_remote_setup_exact_retry_stale_step_and_omitted_secret(tmp_path):
         with pytest.raises(HarnessUiError, match="different content"):
             await app.act_connector_setup(setup.session_id, command.model_copy(update={"values": {"token": "changed"}}))
         private = await app._store.connectors.configuration("connector-test")
-        assert private.credentials["Authorization"] == "Bearer test-private-token"
+        assert private.credentials["token"] == "Bearer test-private-token"
         with pytest.raises(HarnessUiError) as exc:
             await app.act_connector_setup(setup.session_id, command.model_copy(update={"operation_id": "another"}))
         assert exc.value.code == "connector_setup_conflict"
@@ -154,7 +151,7 @@ async def test_remote_setup_exact_retry_stale_step_and_omitted_secret(tmp_path):
 
 async def test_setup_reopen_does_not_create_another_session_and_conflicts_retain_state(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await create_remote(app)
+        await create_github(app)
         setup = await app.begin_connector_setup("connector-test")
         assert (await app.begin_connector_setup("connector-test")).session_id == setup.session_id
         current = await app._store.connectors.configuration("connector-test")
@@ -162,18 +159,18 @@ async def test_setup_reopen_does_not_create_another_session_and_conflicts_retain
         result = await app.act_connector_setup(
             setup.session_id,
             SetupCommand(
-                operation_id="stale", version=setup.version, action="save", values={"url": "https://example.test/mcp"}
+                operation_id="stale", version=setup.version, action="save", values={"token": "test-private-token"}
             ),
         )
         assert "changed" in result.step.error
-        assert (await app.connectors().instance("connector-test")).settings["url"] == ""
+        assert not (await app._store.connectors.configuration("connector-test")).credentials
 
 
 async def test_shared_owner_keeps_bot_and_connector_authority_in_one_app(tmp_path):
     settings = _settings(tmp_path / "data")
     async with open_harness_ui_app(settings, host_mode="webui") as first:
         await ready(first)
-        await create_remote(first)
+        await create_github(first)
         async with open_harness_ui_app(settings, host_mode="webui") as second:
             assert not (await second.bot().snapshot()).available
             assert (await second.connectors().instance("connector-test")).status.state == "runtime_unavailable"
@@ -276,9 +273,16 @@ async def test_atomic_state_and_input_bounds_dedup_rules_and_generation(tmp_path
 
 
 async def test_form_profile_keeps_secret_bytes_out_of_nested_safe_values():
-    from a13n_harness_ui.connectors.remote_mcp import RemoteForm
+    from pydantic import Field
 
-    schema = RemoteForm.model_json_schema()
+    class SecretRow(BaseModel):
+        name: str
+        value: str = Field(json_schema_extra={"writeOnly": True})
+
+    class Form(BaseModel):
+        headers: list[SecretRow]
+
+    schema = Form.model_json_schema()
     validate_form(schema)
     safe = safe_values(
         schema, {"url": "https://example.test", "headers": [{"name": "Authorization", "value": "secret"}]}
@@ -293,7 +297,7 @@ async def test_catalog_collision_is_unavailable_without_hiding_other_types():
     sample = SampleDefinition()
     catalog = Catalog((sample, SampleDefinition()), installed=())
     assert not catalog.items["sample"].available
-    assert catalog.items["remote-mcp"].available
+    assert "remote-mcp" not in catalog.items
     assert catalog.items["github"].available
     assert catalog.items["github"].declaration.events == ()
     assert not catalog.items["github"].declaration.bot_delivery
@@ -413,14 +417,9 @@ async def test_form_profile_rejects_cycles_unsupported_unions_and_secret_default
             validate_form(schema)
 
 
-async def test_remote_settings_reject_header_bearing_plain_http_and_token_controls(tmp_path):
-    from a13n_harness_ui.connectors.remote_mcp import RemoteSettings
-
-    with pytest.raises(ValueError):
-        RemoteSettings(url="http://127.0.0.1:8000/mcp", header_names=("Authorization",))
-    assert RemoteSettings(url="http://127.0.0.1:8000/mcp").url
+async def test_github_setup_rejects_token_controls(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await create_remote(app, kind="github")
+        await create_github(app)
         setup = await app.begin_connector_setup("connector-test")
         result = await app.act_connector_setup(
             setup.session_id,
@@ -434,7 +433,7 @@ async def test_remote_settings_reject_header_bearing_plain_http_and_token_contro
 
 async def test_deleted_identity_never_rebinds_old_mcp_capture(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await save_remote(app, headers=[{"name": "Authorization", "value": "old-private-value"}])
+        await save_github(app)
         runtime = app.connectors()
         captures = await runtime.capture()
         source = runtime.capabilities(captures)["connector-test"]
@@ -442,7 +441,7 @@ async def test_deleted_identity_never_rebinds_old_mcp_capture(tmp_path):
         await app.delete_connector("connector-test", expected_version=current.version)
         assert await runtime.instances() == ()
         with pytest.raises(HarnessUiError) as exc:
-            await create_remote(app)
+            await create_github(app)
         assert exc.value.code == "connector_identity_retired"
         with pytest.raises(HarnessUiError):
             await source._operation_guard()
@@ -454,7 +453,7 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
     from anyio import fail_after, wait_all_tasks_blocked
 
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await create_remote(app)
+        await create_github(app)
         runtime = app.connectors()
         setup = await app.begin_connector_setup("connector-test")
         completed = []
@@ -469,7 +468,7 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
                                 operation_id="save",
                                 version=setup.version,
                                 action="save",
-                                values={"url": "https://example.test/mcp"},
+                                values={"token": "test-private-token"},
                             ),
                         )
                     )
@@ -483,12 +482,15 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
                     requests.start_soon(reopen)
                     await wait_all_tasks_blocked()
         assert completed[0].step.key == "saved"
-        assert (await runtime.instance("connector-test")).settings["url"] == "https://example.test/mcp"
+        assert (await runtime.instance("connector-test")).status.state == "ready"
 
 
 async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, monkeypatch):
     import hashlib
 
+    from a13n_harness_ui.composition.models import ResolvedMcpRecipe
+    from a13n_harness_ui.configuration.models import McpRemoteTransport
+    from a13n_harness_ui.connectors.remote_mcp import RemoteMcp, RemoteMcpService
     from a13n_harness_ui.model_runtime import HarnessUiModelResolver
     from fastmcp import FastMCP
     from pydantic_ai.messages import ToolReturnPart
@@ -535,13 +537,47 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    # A developer supplies the service endpoint and native tool policy in code.
+    # Neither is a built-in Connector configuration field or catalog type.
+    tools_by_account = {"connector-first": None, "connector-empty": ()}
+
+    class DocumentTools(RemoteMcp):
+        def connection(self, configuration):
+            return ResolvedMcpRecipe(
+                server_id=configuration.connector_id,
+                transport=McpRemoteTransport(url=url),
+                tools=tools_by_account[configuration.connector_id],
+            )
+
+    class DocumentSettings(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    class DocumentService(Definition):
+        configuration_model = DocumentSettings
+
+        def declaration(self):
+            return Declaration(
+                key="documents",
+                name="Documents",
+                description="Find documents",
+                configuration_schema=DocumentSettings.model_json_schema(),
+            )
+
+        @asynccontextmanager
+        async def open(self, context):
+            yield DocumentTools(context)
+
     async with _http_mcp(server) as url:
-        async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
-            for connector_id, tools in (("connector-first", None), ("connector-empty", [])):
+        async with open_harness_ui_app(
+            _settings(tmp_path / "data"),
+            configuration_path=root,
+            host_mode="webui",
+            integrations=HarnessUiIntegrations(connectors=(DocumentService(),)),
+        ) as app:
+            assert "remote-mcp" not in app.connectors().catalog.items
+            for connector_id in tools_by_account:
                 await app.configure_connector(
-                    ConnectorConfiguration(
-                        connector_id=connector_id, kind="remote-mcp", settings={"url": url, "tools": tools}
-                    ),
+                    ConnectorConfiguration(connector_id=connector_id, kind="documents"),
                     expected_version=None,
                 )
             thread = await app.create_thread(title="Native Connector")
@@ -555,8 +591,6 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
             assert len(offers) == 1 and offers[0].tool_call_id == "connector-call-3"
             assert offers[0].connector_key == "github"
             assert len(await app.connectors().instances()) == 2  # Offering creates no connection.
-
-            from a13n_harness_ui.connectors.remote_mcp import RemoteMcpService
 
             service = app.connectors().service("connector-first", "mcp", api_version=1, expected_type=RemoteMcpService)
             assert [tool.name for tool in await service.list_tools()] == ["lookup"]
@@ -587,6 +621,12 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
             assert (await client.get(path)).status_code == 401
             assert (await client.get(path, headers=guest)).status_code == 401
             assert (await client.get(prefix + path.removeprefix("/api"), headers=guest)).status_code == 404
+        catalog = (await client.get("/api/connectors/catalog", headers=owner)).json()
+        assert "remote-mcp" not in {item["key"] for item in catalog}
+        rejected = await client.put("/api/connectors/connector-generic", headers=owner, json={"kind": "remote-mcp"})
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "connector_plugin_unavailable"
+        assert await app.connectors().instances() == ()
         response = await client.put("/api/connectors/connector-http", headers=owner, json={"kind": "github"})
         assert response.status_code == 200, response.text
         assert response.json()["version"] == 1
@@ -608,7 +648,7 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
         assert (await client.post(path, headers=owner, json=command)).json() == saved.json()
         instances = await client.get("/api/connectors", headers=owner)
         assert "fixture-private-token" not in saved.text + instances.text
-        assert instances.json()[0]["configured_secrets"] == ["Authorization"]
+        assert instances.json()[0]["configured_secrets"] == ["token"]
         version = instances.json()[0]["version"]
         assert (
             await client.request(
@@ -673,7 +713,7 @@ async def test_shutdown_rejects_setup_queued_before_sealing_and_keeps_session_it
     from anyio import wait_all_tasks_blocked
 
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await create_remote(app)
+        await create_github(app)
         runtime = app.connectors()
         setup = await app.begin_connector_setup("connector-test")
         original = runtime._sessions[setup.session_id]
@@ -720,10 +760,11 @@ async def test_shutdown_rejects_setup_queued_before_sealing_and_keeps_session_it
         assert not runtime._workers
 
 
-async def test_github_rejects_raw_endpoint_change_and_setup_exposes_saved_test_done(tmp_path):
+async def test_github_rejects_transport_settings_and_setup_exposes_saved_test_done(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
-        await create_remote(app, kind="github")
+        await create_github(app)
         initial = await app.begin_connector_setup("connector-test")
+        assert set(initial.step.form["properties"]) == {"token"}
         assert "test" not in {action.id for action in initial.step.actions}
         assert "clear_token" not in initial.step.form["properties"]
         saved = await app.act_connector_setup(
@@ -738,10 +779,16 @@ async def test_github_rejects_raw_endpoint_change_and_setup_exposes_saved_test_d
         assert edited.step.form["x-a13n-saved"] == ["/token"]
         assert "clear_token" in edited.step.form["properties"]
         current = await app._store.connectors.configuration("connector-test")
-        with pytest.raises(HarnessUiError) as failure:
-            await app.configure_connector(
-                current.model_copy(update={"settings": {**current.settings, "url": "https://other.example/mcp"}}),
-                expected_version=current.version,
-            )
-        assert failure.value.code == "connector_configuration_invalid"
-        assert (await app._store.connectors.configuration("connector-test")).settings["url"] == GITHUB_ENDPOINT
+        for settings in (
+            {"url": "https://other.example/mcp"},
+            {"headers": {"X-Custom": "value"}},
+            {"protocol": "2025-03-26"},
+            {"init_timeout_seconds": 60},
+            {"tools": ["search"]},
+        ):
+            with pytest.raises(HarnessUiError) as failure:
+                await app.configure_connector(
+                    current.model_copy(update={"settings": settings}), expected_version=current.version
+                )
+            assert failure.value.code == "connector_configuration_invalid"
+        assert (await app._store.connectors.configuration("connector-test")).settings == {}

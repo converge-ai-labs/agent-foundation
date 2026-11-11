@@ -101,7 +101,7 @@ Submission and resume/configuration changes signal an immediate coalesced delive
 
 Native prompt or steering acceptance consumes exactly the selected inbox IDs. Model acknowledgement, tool success, final output, and task completion are not prerequisites for consumption. Other/new inbox rows remain. Rejected attempts retain the batch for a later periodic opportunity. Loss between native acceptance and local deletion can redeliver external content; adapters and working Threads must reconcile uncertain external writes rather than assuming exactly-once execution.
 
-The [Connector setup surface](13-connectors.md#setup-interactions) builds on the same configuration and inbox boundary. GitHub's built-in Remote MCP preset contributes native tools and no automatic event producer. Bot setup cards are intentional typed publications, not a reason to expose the tool stream in its chat.
+The [Connector setup surface](13-connectors.md#setup-interactions) builds on the same configuration and inbox boundary. The built-in GitHub provider uses the developer-facing Remote MCP library to contribute native tools and no automatic event producer. Bot setup cards are intentional typed publications, not a reason to expose the tool stream in its chat.
 
 ## API and Compatibility
 

@@ -1,6 +1,6 @@
 ---
 title: 连接器
-description: 为 WebUI 对话和 Bot 统一连接账户与 Remote MCP 工具。
+description: 为 WebUI 对话和 Bot 统一连接服务账户。
 ---
 
 连接器为 WebUI 对话和 [Bot](bot.md) 提供实例级账户和工具。每个连接都有独立配置、私密凭据和状态。同一种类型可以连接多个账户。终端对话、Live 和子 agent 不会自动获得连接器工具。
@@ -15,19 +15,17 @@ description: 为 WebUI 对话和 Bot 统一连接账户与 Remote MCP 工具。
 
 连接页首先列出已保存账户，分别显示就绪状态。如果新账户的配置尚未完成就离开，可以选择**保留以便稍后继续**或**移除连接**。保留的账户可以**继续配置**。
 
-GitHub 使用官方 Remote MCP 地址 `https://api.githubcopilot.com/mcp/`。令牌类型、组织审批和 GitHub 权限决定上游工具是否可用。保存只写入本地配置，不会连接 GitHub 或验证权限。在保存后的页面或账户菜单选择**测试连接**，即可明确发起连接检查。GitHub 预设始终使用官方地址和 Authorization 请求头。
+令牌类型、组织审批和 GitHub 权限决定哪些 GitHub 操作可用。保存只写入本地配置，不会连接 GitHub 或验证权限。在保存后的页面或账户菜单选择**测试连接**，即可明确发起连接检查。GitHub 的连接细节由 provider 内置；配置时只需填写令牌。
 
 令牌字段留空会保留已保存令牌。**已保存**提示表示已有令牌；**移除已保存令牌**会删除它。不能同时提交替换令牌和移除操作。凭据以明文保存在此实例的私有数据库中，由 Host 文件系统访问权限保护。不要把令牌粘贴到聊天、Agent 指令或工具调用中。
 
 GitHub 连接器提供 MCP 工具，不轮询通知、不自动向 Bot 提交输入，也不实现单独的 GitHub OAuth 应用。
 
-## 连接其他 Remote MCP 服务
+## 连接器与 MCP 服务
 
-添加 **Remote MCP** 连接并填写 Streamable HTTP 地址。除无请求头的本地回环开发地址外，必须使用 HTTPS。通过可重复添加的行填写私密身份验证请求头。请求头值留空会保留已保存值；移除整行会清除该请求头。
+连接器展示 GitHub 等具体服务，账户配置由该服务的 provider 定义。添加连接菜单列出已安装的具体服务集成。
 
-选择**全部工具**允许全部上游工具。选择**仅选定工具**并添加名称后，只允许指定的上游原生工具。空选择会明确提示没有可用工具。初始化超时控制 MCP 连接建立过程。
-
-Remote MCP 与[文件定义的 MCP 服务](mcp.md)使用相同的原生客户端和传输规则。连接器账户属于实例，在 WebUI 中管理。文件定义的服务仍是由 Agent 选择的资源，也可在 TUI 中使用。
+任意 MCP 服务仍通过独立的 [MCP 服务](mcp.md)设置配置，是由 Agent 选择的资源，也可在 TUI 中使用。连接器 SDK 的 Remote MCP 能力是供开发者实现具体服务集成的代码库，不是另一套通用 MCP 配置界面。
 
 ## 从对话中配置
 
@@ -49,7 +47,7 @@ agent 可以提供连接配置卡片。邀请本身不接收凭据，不创建�
 
 插件可以声明事件、条件和可选的**将外部输入交给 Bot**能力。设置页把插件条件渲染成结构化字段。由插件判断匹配，Host 不解释通用规则语言。
 
-采集和匹配独立于 Bot 的激活与暂停状态。已接受输入进入 Bot 共用的有界收件箱。Bot 关闭、暂停、缺少 Model 或等待人工决定时会保留输入。修改规则保留已接受的匹配；禁用会暂停，删除会清除。GitHub 和通用 Remote MCP 都不声明事件源。
+采集和匹配独立于 Bot 的激活与暂停状态。已接受输入进入 Bot 共用的有界收件箱。Bot 关闭、暂停、缺少 Model 或等待人工决定时会保留输入。修改规则保留已接受的匹配；禁用会暂停，删除会清除。GitHub provider 不声明事件源。
 
 ## 开发可信连接器
 
@@ -66,7 +64,13 @@ example = "example_connector:Example"
 
 Controller 持有共享资源，直到已接纳的根运行完成清理。原生工具仍是每次运行的 Capability。后台采集器在配置变化后重启。配置 action 必须显式执行并串行处理；读取只观察当前 Step，可选流程 worker 用于推进外部等待。取消后关闭流程资源。插件是可信 Host Python 代码，不是沙箱脚本。
 
-Remote MCP 提供不导出凭据的类型化编程服务：
+### 用 Remote MCP 实现具体服务
+
+继承 `a13n_harness_ui.connectors.remote_mcp.RemoteMcp`，复用原生工具和类型化编程访问。这是 Controller 基类，不是已注册的 Definition。你的 Definition 负责具体服务的名称、配置模型和配置流程，其 `open()` 产出你的 Controller。实现 `connection(configuration)`，返回安全的 `ResolvedMcpRecipe`，账户配置未完成时返回 `None`。服务地址与传输策略由代码确定，私密请求头使用 `McpPrivateValueSource` 引用，不能把凭据值放入 recipe。
+
+代码库提供原生 MCP capture、Capability 创建、凭据解析，以及配置代际与启用状态检查。provider 可以在 recipe 中选择原生工具（`None` 允许全部，空元组不允许任何工具），无需在前端展示 MCP 传输参数。[GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py)提供了具体实现。
+
+Controller 同时发布版本 1 的类型化 `mcp` 服务，不导出凭据：
 
 ```python
 from a13n_harness_ui.connectors.remote_mcp import RemoteMcpService

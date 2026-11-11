@@ -125,9 +125,7 @@ export function ConnectorsSection() {
       <ErrorNotice error={error || instances.error || catalog.error} />
       {!instances.data?.length && !instances.isPending && (
         <p className={styles.empty}>
-          {t(
-            "No connections yet. Add an account or a remote MCP server to get started.",
-          )}
+          {t("No connections yet. Add a service account to get started.")}
         </p>
       )}
       {!!instances.data?.length && (

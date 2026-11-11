@@ -491,10 +491,6 @@ async def serve(root: Path, port: int):
             await app.act_connector_setup(
                 setup.session_id, SetupCommand(operation_id="fixture-done", version=saved.version, action="done")
             )
-            await app.configure_connector(
-                ConnectorConfiguration(connector_id="connector-remote-review", kind="remote-mcp", name="Research MCP"),
-                expected_version=None,
-            )
             connection_chat = await app.create_thread(
                 title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")
             )

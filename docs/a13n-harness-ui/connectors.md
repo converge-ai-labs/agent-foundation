@@ -1,6 +1,6 @@
 ---
 title: Connectors
-description: Connect accounts and Remote MCP tools once for WebUI conversations and Bot.
+description: Connect service accounts once for WebUI conversations and Bot.
 ---
 
 Connectors add instance-wide accounts and tools to WebUI conversations and [Bot](bot.md). Each connection has its own configuration, private credentials and status. You can connect several accounts of the same type. Terminal conversations, Live and child agents do not automatically receive Connector tools.
@@ -15,19 +15,17 @@ Connectors add instance-wide accounts and tools to WebUI conversations and [Bot]
 
 Connections lists your saved accounts first, with separate readiness states. If you leave a new account's setup incomplete, choose **Keep for later** or **Remove connection**. A kept account offers **Continue setup**.
 
-GitHub uses its official Remote MCP endpoint, `https://api.githubcopilot.com/mcp/`. Token type, organization approval and GitHub permissions determine which upstream tools work. Saving stores configuration locally; it does not contact GitHub or verify permissions. Choose **Test connection** in the saved view or the account menu for an explicit connectivity check. The GitHub preset always uses the official endpoint and Authorization header.
+Token type, organization approval and GitHub permissions determine which GitHub operations work. Saving stores configuration locally; it does not contact GitHub or verify permissions. Choose **Test connection** in the saved view or the account menu for an explicit connectivity check. GitHub's connection details are built into the provider; setup only asks for your token.
 
 A blank token field retains the saved token. The **Saved** hint confirms a stored token; **Remove saved token** removes it. A replacement token and removal cannot be submitted together. Credentials are plaintext in this instance's private database, protected by Host filesystem access. Never paste a token into chat, Agent instructions or a tool call.
 
 The GitHub Connector provides MCP tools. It does not poll notifications, create automatic Bot inputs or implement a separate GitHub OAuth application.
 
-## Connect another Remote MCP server
+## Connectors and MCP servers
 
-Add a **Remote MCP** connection and enter its Streamable HTTP endpoint. HTTPS is required outside header-free local loopback development. Add private authentication headers as repeatable rows. Leave a header value blank to keep its saved value; remove the row to clear that header.
+Connectors present concrete services such as GitHub, with account setup defined by that service's provider. The Add connection chooser lists installed service integrations.
 
-Choose **All tools** to allow all upstream tools. Choose **Only selected tools**, then add names to allow only those native upstream tools. An empty selection explicitly warns that no tools will be available. The initialization timeout controls MCP connection setup.
-
-Remote MCP uses the same native MCP client and transport rules as [file-defined MCP servers](mcp.md). Connector accounts are instance-wide and managed in WebUI. File-defined servers remain Agent-selected resources usable through the TUI as well.
+Configure an arbitrary MCP server through the separate [MCP servers](mcp.md) settings. These remain Agent-selected resources usable through the TUI as well. Remote MCP support in the Connector SDK is a code library for developers implementing concrete service integrations, not another generic MCP setup screen.
 
 ## Configure from a conversation
 
@@ -49,7 +47,7 @@ Only one WebUI App owns the data root's Bot and Connector runtime. Another App c
 
 A plugin may declare events, conditions and optional **Deliver external input to Bot**. Settings renders the plugin's conditions as structured fields. The plugin decides what matches; the Host does not interpret a universal rule language.
 
-Collection and matching are independent of Bot's activation and pause state. Accepted input uses Bot's shared bounded inbox. Bot off, pause, missing Model and pending human decisions hold delivery. Rule edits preserve already-retained matches; disabling holds them and deletion clears them. GitHub and generic Remote MCP declare no event source.
+Collection and matching are independent of Bot's activation and pause state. Accepted input uses Bot's shared bounded inbox. Bot off, pause, missing Model and pending human decisions hold delivery. Rule edits preserve already-retained matches; disabling holds them and deletion clears them. The GitHub provider declares no event source.
 
 ## Develop a trusted Connector
 
@@ -66,7 +64,13 @@ The form profile supports objects, strings/passwords, booleans, numbers, enums, 
 
 Controllers own shared resources until admitted root users drain. Native tools remain per-Run Capabilities. A background producer is restarted on configuration changes. Setup actions are explicit and serialized; reads observe the current Step, and an optional flow worker advances external waits. Close optional flow resources after cancellation. Plugins are trusted Host Python code, not sandboxed scripts.
 
-Remote MCP exposes a typed programmatic service without exporting credentials:
+### Implement a service using Remote MCP
+
+Subclass `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` to reuse native tools and typed programmatic access. This is a Controller base, not a registered Definition. Your Definition owns the concrete service's name, configuration model and setup. Its `open()` yields your Controller. Implement `connection(configuration)` to return a safe `ResolvedMcpRecipe`, or `None` while the account is incomplete. Fix the service endpoint and transport policy in code, and use `McpPrivateValueSource` for private headers. Never put credential values in the recipe.
+
+The library supplies native MCP capture, Capability creation, credential resolution and generation/enabled-state checks. A provider can select native tools in its recipe (`None` permits all; an empty tuple permits none) without exposing MCP transport controls in the frontend. See the [GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py) for a concrete implementation.
+
+The Controller also publishes version 1 of a typed `mcp` service without exporting credentials:
 
 ```python
 from a13n_harness_ui.connectors.remote_mcp import RemoteMcpService

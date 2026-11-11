@@ -36,7 +36,7 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 
 [Bot and Connector Ingress](12-bot-and-connector-ingress.md) owns the built-in personal assistant, heartbeat scheduling, intentional messages, coordination workspace, cross-Project memory reads, and shared Connector database/inbox boundaries.
 
-[WebUI Connectors](13-connectors.md) owns the trusted Connector plugin plane, backend-driven setup shared by Settings and chat, private account/state lifecycle, generation-fenced Bot ingress, captured native tools, and the generic Remote MCP/GitHub preset.
+[WebUI Connectors](13-connectors.md) owns the trusted Connector plugin plane, backend-driven setup shared by Settings and chat, private account/state lifecycle, generation-fenced Bot ingress, captured native tools, and the developer-facing Remote MCP library used by the concrete GitHub provider.
 
 [Live Mode](10-live-mode.md) owns root Live configuration, the built-in projectless executor, persistent voice transcript, browser media ownership, and online-only Thread reporting.
 
