@@ -6,7 +6,7 @@ from typing import Literal
 from .envd_release import download_command
 
 Profile = Literal["headless", "desktop"]
-SOURCE_REVISION = "9d5ae301051f4faea8ac7a2cfed7c6d61d598bff"
+SOURCE_REVISION = "3674db454385101566bc4fd50644edf4f3dda03a"
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 HEADLESS_FILES = (
     (

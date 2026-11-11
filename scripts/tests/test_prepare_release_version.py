@@ -216,12 +216,14 @@ def test_logging_and_service_release_independently(tmp_path: Path, logging_versi
 def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path) -> None:
     import tomllib
 
+    from packaging.requirements import Requirement
+
     copy_release_files(tmp_path)
     releases = (
-        ("a13n-envd", "0.7.2"),
+        ("a13n-envd", "0.8.0"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.31.0"),
-        ("a13n-harness-ui", "0.31.0"),
+        ("a13n-harness", "0.32.0"),
+        ("a13n-harness-ui", "0.32.0"),
         ("a13n-service", "0.0.101"),
     )
     for component, version in releases:
@@ -231,6 +233,9 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
         checked = run_script(CHECKER, tmp_path, component, version)
         assert checked.returncode == 0, checked.stderr
 
+    released_versions = dict(releases)
+    released_versions["a13n-envd-client"] = released_versions["a13n-envd"]
+    released_versions["a13n-stream-protocol"] = released_versions["a13n-harness"]
     for package, envd_requirement in (
         ("a13n-harness", ">=0.8.0,<0.9.0"),
         ("a13n-harness-ui", ">=0.8.0,<0.9.0"),
@@ -239,9 +244,13 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
         manifest = tomllib.loads((tmp_path / f"packages/{package}/pyproject.toml").read_text())
         assert f"a13n-envd-client{envd_requirement}" in manifest["project"]["dependencies"]
         assert "a13n-logging>=0.2.0,<0.3.0" in manifest["project"]["dependencies"]
+        for dependency in manifest["project"]["dependencies"]:
+            requirement = Requirement(dependency)
+            if requirement.name in released_versions:
+                assert released_versions[requirement.name] in requirement.specifier, dependency
         if package in {"a13n-harness-ui", "a13n-service"}:
             harness = next(dep for dep in manifest["project"]["dependencies"] if dep.startswith("a13n-harness"))
-            pin = "==0.31.0"
+            pin = "==0.32.0"
             assert harness.endswith(pin)
             assert f"a13n-stream-protocol{pin}" in manifest["project"]["dependencies"]
 
@@ -551,8 +560,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", "==0.31.0"),
-        ("a13n-harness-ui", "0.31.0", "==0.31.0"),
+        ("a13n-service", "0.1.0", "==0.32.0"),
+        ("a13n-harness-ui", "0.32.0", "==0.32.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
