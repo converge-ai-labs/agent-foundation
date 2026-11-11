@@ -529,6 +529,7 @@ function Reasoning({
   }[];
 }) {
   const { t } = useTranslation();
+  const running = segments.some((part) => part.running);
   const duration = executionTime(
     segments.every((segment) => segment.durationMs != null)
       ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
@@ -541,10 +542,8 @@ function Reasoning({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary
-        data-running-label={segments.some((part) => part.running) || undefined}
-      >
-        {t("Thought")}
+      <summary data-running-label={running || undefined}>
+        {running ? t("Thinking", { context: "active" }) : t("Thought")}
         {duration && (
           <span className={styles.executionDuration}>
             {t("for {{duration}}", { duration })}
@@ -1381,6 +1380,8 @@ function ExecutionSegment({
 }) {
   const { t } = useTranslation();
   const latest = rows.at(-1);
+  const thinking =
+    latest?.kind === "thinking" && latest.segments.some((part) => part.running);
   const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
   const toolInfo = latestTool ? describeTool(latestTool) : undefined;
   const duration = executionTime(durationMs);
@@ -1391,18 +1392,15 @@ function ExecutionSegment({
     : toolInfo
       ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` - ${toolPhase(toolInfo.phase, t)}` : ""}`
       : latest?.kind === "thinking"
-        ? t("Thought")
+        ? thinking
+          ? t("Thinking", { context: "active" })
+          : t("Thought")
         : t("View the available execution steps");
   return (
     <ExecutionDetails
       complete={complete}
       preview={preview}
-      running={
-        !complete &&
-        (toolInfo?.running ||
-          (latest?.kind === "thinking" &&
-            latest.segments.some((part) => part.running)))
-      }
+      running={!complete && (toolInfo?.running || thinking)}
     >
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
@@ -1544,16 +1542,18 @@ function GapNotice() {
 export function LiveOutput({
   blocks,
   gap,
+  running = false,
   threadId,
   label,
 }: {
   label?: string;
   blocks: DisplayBlock[];
   gap: boolean;
+  running?: boolean;
   threadId?: string;
 }) {
   const { t } = useTranslation();
-  const rows = liveRows(blocks, false, threadId);
+  const rows = liveRows(blocks, running, threadId);
   return (
     <section
       className={styles.liveOutput}

@@ -861,6 +861,7 @@ export class FocusDisplay {
         if (
           !object(record) ||
           record.kind !== "model" ||
+          record.usage_status === "unavailable" ||
           (record.source ?? "agent") !== "agent" ||
           (record.run_id !== this.runId && !resumedScope) ||
           record.parent_agent_instance_id != null ||

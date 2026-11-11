@@ -198,7 +198,7 @@ export function ComposerStatus({
                   {label === "Context" && (
                     <HelpTip label={t("About context")}>
                       {t(
-                        "Tokens in the latest request. Chat totals are in Usage. The context limit depends on the model.",
+                        "Tokens in the latest main model request with reported usage. Chat totals are in Usage. The context limit depends on the model.",
                       )}
                       {context.data?.context_breakdown &&
                         ` ${t("Prompt estimates divide input tokens in proportion to the measured characters in each category.")}`}
