@@ -134,7 +134,7 @@ receipt = await app.submit_thread(thread_id=thread_id, prompt="Continue")
 
 更新完整替换原值，并独立于输入提交完成持久化。后续 Run，包括空闲时的工具完成唤醒和 App 重启后的运行，使用最新保存值。即使运行期间更新，活动 Run 仍保留受理时的快照。不更新则保留；传入 `ExternalContext()` 则清空。清除对话历史不会清除此独立业务上下文。
 
-可信 Capability 和适配器通过 `ctx.deps.metadata` 与 `ctx.deps.request_context.headers` 读取。上下文不会自动进入提示词、检查结果、Shell 环境或已配置的 MCP 请求。凭据继续通过原有凭据 API 管理。新委派的异步子线程继承父 Run 的快照，随后拥有自己的线程级上下文；用子线程 ID 更新其后续 Run 的值。
+可信 Capability 和适配器通过 `ctx.deps.metadata` 与 `ctx.deps.request_context.headers` 读取。上下文不会自动进入提示词、检查结果、Shell 环境或已配置的 MCP 请求。凭据继续通过原有凭据 API 管理。新委派的异步子线程继承父 Run 的快照，随后拥有自己的线程级上下文；用子线程 ID 更新其后续 Run 的值。异步子线程的快照以单个流执行段为界：显式恢复、工具完成后续运行和计划重启都会打开新执行段，读取该子线程最新保存的上下文；活动执行段内部的模型重试继续使用原快照。
 
 ## Thread 查询与修改
 

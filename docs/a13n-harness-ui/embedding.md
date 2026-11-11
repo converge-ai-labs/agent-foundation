@@ -134,7 +134,7 @@ receipt = await app.submit_thread(thread_id=thread_id, prompt="Continue")
 
 The update replaces the complete value and commits independently of input submission. Later Runs, including idle tool-completion wakes and App restarts, use the latest saved value. An active Run keeps its admitted snapshot even if you update the head while it is running. Omitting an update preserves context; passing `ExternalContext()` clears it. Clearing conversation history leaves this separate business context intact.
 
-Trusted capabilities and adapters read `ctx.deps.metadata` and `ctx.deps.request_context.headers`. Context is not automatically included in prompts, inspection results, shell environments or configured MCP requests. Store credentials through their existing credential APIs. A newly delegated async child inherits the parent Run's snapshot and then has its own Thread-local context; use the child's Thread ID to update its future Runs.
+Trusted capabilities and adapters read `ctx.deps.metadata` and `ctx.deps.request_context.headers`. Context is not automatically included in prompts, inspection results, shell environments or configured MCP requests. Store credentials through their existing credential APIs. A newly delegated async child inherits the parent Run's snapshot and then has its own Thread-local context; use the child's Thread ID to update its future Runs. For an async child, the snapshot lasts for one stream segment: explicit resume, tool-completion continuation and planned restart each open a new segment and read the child's latest saved context. Internal model retries within the active segment keep its snapshot.
 
 ## Thread queries and mutations
 

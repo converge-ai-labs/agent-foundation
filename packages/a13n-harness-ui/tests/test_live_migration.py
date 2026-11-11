@@ -33,7 +33,10 @@ def test_live_upgrade_preserves_existing_configuration_and_state(tmp_path):
         migrator.upgrade()
         migrator.verify_current()
         with engine.begin() as connection:
-            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == before_thread
+            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
+                **before_thread,
+                "external_context_json": None,
+            }
             assert (
                 dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()) == before_config
             )
