@@ -1801,6 +1801,7 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  await user.click(screen.getByTitle("/test"));
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/changed" },
   });

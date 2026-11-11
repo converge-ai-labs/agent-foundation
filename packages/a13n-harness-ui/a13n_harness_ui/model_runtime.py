@@ -38,7 +38,7 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
 from a13n_harness_ui.model_accounts.routing import AccountSelectionEvent, SubscriptionGroupModel
 from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
-from a13n_harness_ui.model_presets import pricing_provider
+from a13n_harness_ui.model_presets import configured_price_entry
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
@@ -109,18 +109,17 @@ class HarnessUiModelResolver:
         self._subscription_sources = MappingProxyType(dict(subscription_sources or {}))
 
     @property
-    def configured_models(self) -> dict[str, str]:
-        return {key: recipe.model_id for key, recipe in self._recipes.items()}
+    def configured_models(self) -> Mapping[str, ResolvedModelRecipe]:
+        return self._recipes
 
     def pricing(self, catalog: PricingCatalog | None) -> TokenPricingCapability:
         if catalog is None:
             catalog = get_current_pricing_catalog()
         entries = {}
         for key, recipe in self._recipes.items():
-            provider, _, model = recipe.route.partition(":")
-            entry = catalog.resolve(model, provider=pricing_provider(provider))
+            entry = configured_price_entry(catalog, recipe.route)
             # A Developer API tariff is not an explicit Vertex price.
-            if provider == "google-vertex" and entry is not None and entry.provider == "google":
+            if recipe.route.startswith("google-vertex:") and entry is not None and entry.provider == "google":
                 continue
             entries[key] = entry
         return TokenPricingCapability(entries)

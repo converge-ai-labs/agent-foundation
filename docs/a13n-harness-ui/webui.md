@@ -124,7 +124,7 @@ Select the context ring above the composer to inspect the latest main Agent requ
 
 Totals include retained archived conversations, Memory, Live, child agents, auxiliary calls, and Coordinator workers. Project attribution follows the root Thread's current Project. Provider receipts remain in Thread details.
 
-New Runs look up prices using the selected Model’s configured route. In chat usage, expand a Model to inspect the names reported by the provider. Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
+New Runs look up prices using the selected Model’s configured route. In chat usage, **By model** shows the provider and model from the configured route (for example, `anthropic/claude-opus-5-5`). Expand a model to inspect the names reported by the provider. Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
 
 ## Agent and Model settings
 
@@ -403,7 +403,7 @@ For later changes:
 
 Forms/YAML share one draft. **Save changes** validates and replaces the complete file. Tab navigation preserves unsaved edits; reload does not. Detected external changes retain your dirty draft, while file saves remain last-write-wins. Hidden MCP source text means a replacement also replaces unseen fields and all resources in that file. Active Runs keep captured configuration. Follow [configuration recipes](configuration-recipes.md) for complete file-based setups.
 
-Open **Project settings** to edit server directories and creation defaults. **Browse → Use this directory** changes only the draft; save to apply. With computer sharing off, enter Host paths manually. New Threads use saved defaults; existing Threads retain selections unless explicitly changed. Default, None, and Custom differ; previews show saved values/sources rather than testing a Model.
+Open **Project settings** to edit server directories and creation defaults. With computer sharing enabled, **Add folder** opens a system folder picker on a directly connected local Mac or Windows desktop. Other connections can browse directories on the server. With sharing off, enter a server path. Save to apply your selection. New Threads use saved defaults; existing Threads retain selections unless explicitly changed. Default, None, and Custom differ; previews show saved values/sources rather than testing a Model.
 
 Click the generated collaboration name in the top-right header and **Save name** to change this browser's label. The online indicator opens the per-tab participant directory. Names and presence are live collaboration metadata, not provider identities. Background tabs are distinguishable from foreground attention.
 

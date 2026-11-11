@@ -2313,6 +2313,32 @@
         }
       }
     },
+    "/api/host/files/pick-directory": {
+      "post": {
+        "summary": "Pick Host Directory",
+        "operationId": "pick_host_directory_api_host_files_pick_directory_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Pick Host Directory Api Host Files Pick Directory Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/files/reveal": {
       "post": {
         "summary": "Reveal Host File",

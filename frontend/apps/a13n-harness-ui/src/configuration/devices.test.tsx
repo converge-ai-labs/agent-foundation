@@ -205,7 +205,9 @@ it("connects inline, waits for the approved resource ID, and saves a remote-only
     screen.getByRole("textbox", { name: "Project name" }),
     "Remote work",
   );
-  await user.click(screen.getByRole("button", { name: "Add environment" }));
+  await user.click(
+    screen.getByRole("button", { name: "Add remote environment" }),
+  );
   expect(
     screen.getByRole("combobox", { name: "Device" }).hasAttribute("disabled"),
   ).toBe(true);

@@ -264,17 +264,17 @@ export function EnvironmentBindings({
           </section>
         );
       })}
-      <div>
+
+      <div className={styles.remoteHeading}>
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className={styles.addEnvironment}
           disabled={bindings.length >= 64}
           onClick={() => setEditing({})}
         >
           <PlusIcon />
-          {t("Add environment")}
+          {t("Add remote environment")}
         </Button>
       </div>
       <ModalFrame

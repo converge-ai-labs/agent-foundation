@@ -9,11 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import cache
 from time import monotonic
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from a13n_harness import HarnessRunResultEvent, HarnessState
 from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
+from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import (
     ModelUsageRecord,
     ProviderUsageRecord,
@@ -31,9 +33,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from a13n_harness_ui.errors import StoreIntegrityError
+from a13n_harness_ui.model_presets import configured_price_entry
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadRecord, ThreadUsageRecord, UsageModelRecord
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.composition.models import ResolvedModelRecipe
 
 logger = get_logger(__name__)
 
@@ -379,7 +385,7 @@ def _contributions(root_id: str | Select[tuple[str]], *, root_only: bool = False
 class ThreadUsageReporter:
     repository: ThreadUsageRepository
     thread_id: str
-    configured: Mapping[str, str] = field(default_factory=dict)
+    configured: Mapping[str, ResolvedModelRecipe] = field(default_factory=dict)
 
     async def report(self, snapshot: UsageSnapshot) -> None:
         """Own transient storage retries; queueing is cancellable, admitted commits settle."""
@@ -453,11 +459,13 @@ class ThreadUsageRepository:
         for start in range(0, len(records), _BATCH):
             await self.append(thread_id=thread_id, records=records[start : start + _BATCH])
 
-    def reporter(self, thread_id: str, configured: Mapping[str, str] | None = None) -> ThreadUsageReporter:
+    def reporter(
+        self, thread_id: str, configured: Mapping[str, ResolvedModelRecipe] | None = None
+    ) -> ThreadUsageReporter:
         return ThreadUsageReporter(self, thread_id, configured or {})
 
     async def save(
-        self, *, thread_id: str, snapshot: UsageSnapshot, configured: Mapping[str, str] | None = None
+        self, *, thread_id: str, snapshot: UsageSnapshot, configured: Mapping[str, ResolvedModelRecipe] | None = None
     ) -> None:
         """Prepare outside the writer queue, then compare and publish atomically."""
         async with short_session(self._sessions) as session:
@@ -523,14 +531,16 @@ class ThreadUsageRepository:
             return
 
     @staticmethod
-    async def index_models(session: AsyncSession, models: Mapping[str, str]) -> None:
-        values = [{"recipe_id": key, "model_id": model} for key, model in models.items()]
+    async def index_models(session: AsyncSession, models: Mapping[str, ResolvedModelRecipe]) -> None:
+        values = [
+            {"recipe_id": key, "model_id": recipe.model_id, "route": recipe.route} for key, recipe in models.items()
+        ]
         stmt = insert(UsageModelRecord)
         await session.execute(
             stmt.on_conflict_do_update(
                 index_elements=["recipe_id"],
-                set_={"model_id": stmt.excluded.model_id},
-                where=UsageModelRecord.model_id.is_(None),
+                set_={"model_id": stmt.excluded.model_id, "route": stmt.excluded.route},
+                where=UsageModelRecord.route.is_(None),
             ),
             values,
         )
@@ -632,6 +642,13 @@ class ThreadUsageRepository:
 
     async def snapshot(self, *, thread_id: str) -> ThreadUsageView:
         """Rebuild bounded groups in a pinned read transaction; no stale cross-process cache."""
+        catalog = await to_thread.run_sync(get_current_pricing_catalog)
+
+        @cache
+        def display_name(route: str) -> str:
+            entry = configured_price_entry(catalog, route)
+            return (entry.key if entry else route).replace(":", "/", 1)
+
         async with short_session(self._sessions) as session:
             # aiosqlite's legacy transaction mode does not BEGIN for SELECT statements.
             await session.execute(text("BEGIN"))
@@ -659,7 +676,7 @@ class ThreadUsageRepository:
                     facts.c.observed_at,
                     facts.c.observed_through,
                     recent.c.last_sequence,
-                    UsageModelRecord.model_id,
+                    UsageModelRecord.route,
                 )
                 .outerjoin(recent, run_id == recent.c.run_id)
                 .outerjoin(
@@ -669,7 +686,8 @@ class ThreadUsageRepository:
             )
             async for batch in rows.partitions(_BATCH):
                 for row in batch:
-                    aggregate.add(*row)
+                    *fact, route = row
+                    aggregate.add(*fact, configured=display_name(route) if route else None)
             return aggregate.view(thread_id)
 
     @staticmethod

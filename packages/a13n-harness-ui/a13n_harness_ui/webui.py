@@ -28,7 +28,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     credential_digest,
 )
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, sleep
+from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, run_process, sleep
 from anyio.abc import TaskStatus
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -1373,6 +1373,37 @@ def create_webui(
             pass
         finally:
             session.detach(participant)
+
+    @server.post("/api/host/files/pick-directory")
+    async def pick_host_directory(request: Request) -> str | None:
+        manager = local_file_manager(request)
+        if not manager:
+            raise HarnessUiError("Local file manager unavailable.", code="host_files_permission_denied")
+        if manager == "finder":
+            command = [
+                "/usr/bin/osascript",
+                "-e",
+                'try\nactivate\nreturn POSIX path of (choose folder)\non error number -128\nreturn ""\nend try',
+            ]
+        else:
+            command = [
+                str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"),
+                "-NoProfile",
+                "-STA",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.Windows.Forms; "
+                "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "if ($dialog.ShowDialog() -eq 'OK') { [Console]::Write($dialog.SelectedPath) }",
+            ]
+        try:
+            selection = await run_process(command, check=False)
+        except OSError as exc:
+            raise HarnessUiError("Could not open the folder picker.", code="host_files_io_error") from exc
+        if selection.returncode:
+            raise HarnessUiError("Could not open the folder picker.", code="host_files_io_error")
+        path = selection.stdout.decode().removesuffix("\n")
+        return str(Path(path)) if path else None
 
     @server.post("/api/host/files/reveal", status_code=204)
     async def reveal_host_file(request: Request, path: NativePath) -> Response:

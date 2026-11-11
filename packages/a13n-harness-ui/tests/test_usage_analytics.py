@@ -313,7 +313,7 @@ async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, 
         usage = await app.thread_usage(thread_id=thread.thread_id)
         assert usage.combined.model_requests == 2
         assert usage.combined.unknown_model_costs == 0 and usage.combined.model_cost_usd > 0
-        assert [model.name for model in usage.model_scopes] == ["model-primary"]
+        assert [model.name for model in usage.model_scopes] == ["anthropic/claude-opus-5-5"]
         assert {alias for group in usage.groups for alias in group.reported_models} == {
             "anthropic/claude-opus-5.5",
             "gateway-deployment-42",
@@ -321,8 +321,8 @@ async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, 
         today = datetime.now(UTC).date()
         analytics = await app.usage_analytics(UsageQuery(start=today, end=today + timedelta(days=1), group_by="model"))
         assert [(group.label, group.totals.model_requests) for group in analytics.groups] == [("model-primary", 2)]
-        # An upgrade seeds the old recipe key without a configured ID.
+        # Simulate an upgraded index that already knows the resource but lacks its captured route.
         async with transaction(app._store.database.sessions) as session:
-            await session.execute(update(UsageModelRecord).values(model_id=None))
+            await session.execute(update(UsageModelRecord).values(route=None))
         await app._store.repair_usage_models()
         assert await app.thread_usage(thread_id=thread.thread_id) == usage
