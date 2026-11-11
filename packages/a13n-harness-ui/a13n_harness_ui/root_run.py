@@ -82,6 +82,8 @@ class _RootOperation:
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
     input_files: RootInputFiles | None = None
+    branch_base: ObjectRef | None = None
+    continuing_turn: bool = False
     composition: ObjectRef | None = None
     run_id: str | None = None
     started_at: datetime | None = None
@@ -287,9 +289,25 @@ class RootRunCoordinator:
                     code="thread_run_active",
                 )
             yield
-            pending = self._interaction_waits.pop(thread_id, None)
-            if pending is not None:
+            if (pending := self._interaction_waits.pop(thread_id, None)) is not None:
                 pending.cancelled.set()
+
+    @asynccontextmanager
+    async def message_branch_source(
+        self, thread_id: str, *, editing: bool = False
+    ) -> AsyncGenerator[tuple[ObjectRef | None, bool]]:
+        """An active operation can only branch from history that preceded admission."""
+        async with self._thread_fence(thread_id):
+            receipt = self._active_by_thread.get(thread_id)
+            if receipt is None:
+                yield None, False
+            else:
+                if editing:
+                    raise RunCoordinationError(
+                        "Wait for the active run to finish before editing a message.", code="thread_run_active"
+                    )
+                operation = self._operations[receipt]
+                yield operation.branch_base, operation.continuing_turn
 
     async def submit_prompt(
         self,
@@ -450,6 +468,8 @@ class RootRunCoordinator:
                     raise RunCoordinationError(
                         "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
                     )
+                operation.branch_base = admission.thread.continuation or admission.thread.initial_state
+                operation.continuing_turn = admission.prompt is None or admission.response is not None
                 operation.composition = admission.published.reference
                 if (
                     pending is not None

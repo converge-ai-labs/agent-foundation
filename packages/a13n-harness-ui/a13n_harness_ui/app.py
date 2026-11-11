@@ -288,6 +288,8 @@ from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surface_context import append_surface_provenance
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
+    BranchPoints,
+    BranchRequest,
     ChildControlResult,
     ChildExecutionPage,
     ConfigurationProvenance,
@@ -1304,6 +1306,22 @@ class HarnessUiApp:
         """Copy an independent ordinary Thread without admitting a Run."""
         async with self._operation():
             thread = await self._threads.fork(thread_id, files=self._thread_files)
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
+    async def branch_points(self, thread_id: str) -> BranchPoints:
+        async with self._operation(), self._root_runs.message_branch_source(thread_id) as (base, continuing):
+            return await self._threads.branch_points(thread_id, base, continuing)
+
+    async def branch_thread(self, thread_id: str, request: BranchRequest) -> ThreadSummary:
+        async with self._operation():
+            async with self._root_runs.message_branch_source(thread_id, editing=request.side == "before") as (
+                base,
+                continuing,
+            ):
+                thread = await self._threads.fork(
+                    thread_id, files=self._thread_files, branch=request, base=base, continuing=continuing
+                )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 

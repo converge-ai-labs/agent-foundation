@@ -2128,6 +2128,40 @@ export interface paths {
         patch: operations["set_auto_followup_api_threads__thread_id__coordinator_patch"];
         trace?: never;
     };
+    "/api/threads/{thread_id}/branch-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Branch Points */
+        get: operations["branch_points_api_threads__thread_id__branch_points_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Branch Thread */
+        post: operations["branch_thread_api_threads__thread_id__branch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/fork": {
         parameters: {
             query?: never;
@@ -3481,6 +3515,22 @@ export interface components {
             last_error?: string | null;
             /** Heartbeat Interval Seconds */
             heartbeat_interval_seconds?: number | null;
+        };
+        /** BranchPoint */
+        BranchPoint: {
+            /** Edit */
+            edit: boolean;
+            /** Branch */
+            branch: boolean;
+        };
+        /** BranchPoints */
+        BranchPoints: {
+            /** Source */
+            source: string;
+            /** Points */
+            points: {
+                [key: string]: components["schemas"]["BranchPoint"];
+            };
         };
         /** BrowserAccess */
         BrowserAccess: {
@@ -9730,6 +9780,18 @@ export interface components {
             /** Defaults Digest */
             defaults_digest: string;
         };
+        /** BranchRequest */
+        BranchRequest: {
+            /** Expected Continuation Id */
+            expected_continuation_id: string;
+            /** Turn Key */
+            turn_key: string;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "before" | "after";
+        };
         /** ApprovalDecision */
         ApprovalDecision: {
             /**
@@ -14131,6 +14193,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CoordinatorUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    branch_points_api_threads__thread_id__branch_points_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchPoints"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    branch_thread_api_threads__thread_id__branch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BranchRequest"];
             };
         };
         responses: {

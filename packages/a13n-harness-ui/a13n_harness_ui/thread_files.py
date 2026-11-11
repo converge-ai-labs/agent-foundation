@@ -248,7 +248,9 @@ class ThreadFiles:
             return await to_thread.run_sync(self._touch, thread_id)
 
     @asynccontextmanager
-    async def fork(self, source_id: str, destination_id: str) -> AsyncGenerator[None]:
+    async def fork(
+        self, source_id: str, destination_id: str, *, attachments: set[str] | None = None
+    ) -> AsyncGenerator[None]:
         """Copy owned files before publishing the destination Thread.
 
         Keep scratch protected from pruning. Preserve symlinks as links rather
@@ -258,11 +260,17 @@ class ThreadFiles:
         destination = self.directory(destination_id)
         await to_thread.run_sync(lambda: destination.mkdir())
         try:
-            await to_thread.run_sync(
-                lambda: shutil.copytree(
-                    source, destination, symlinks=True, dirs_exist_ok=True, copy_function=_copy_file
+            if attachments is None:
+                await to_thread.run_sync(
+                    lambda: shutil.copytree(
+                        source, destination, symlinks=True, dirs_exist_ok=True, copy_function=_copy_file
+                    )
                 )
-            )
+            else:
+                for attachment_id in attachments:
+                    attachment, data = await self.read(source_id, attachment_id)
+                    await to_thread.run_sync(self._stage, destination, attachment, data)
+                    await self.retain(destination_id, attachment_id)
             yield
         except BaseException:
             with CancelScope(shield=True):

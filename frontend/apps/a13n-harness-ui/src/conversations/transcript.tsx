@@ -38,6 +38,7 @@ import {
 } from "./tool-presentation";
 import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
+import { MessageActionButton, MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 import { FailureNotice } from "./failure-notice";
@@ -120,6 +121,7 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
+  timestamp?: DisplayBlock["timestamp"];
   id: string;
   subagentRunId?: string;
   anchor?: string;
@@ -281,6 +283,7 @@ function savedRows(
       });
     }
     for (let index = start; index < rows.length; index++) {
+      rows[index].timestamp = entry.timestamp ?? undefined;
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
     }
@@ -397,8 +400,10 @@ function liveRows(
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
     }
-    for (let index = firstRow; index < rows.length; index++)
+    for (let index = firstRow; index < rows.length; index++) {
       rows[index].subagentRunId = block.subagentRunId;
+      rows[index].timestamp = block.timestamp;
+    }
   }
   return rows;
 }
@@ -571,13 +576,23 @@ function Rows({
   threadId,
   continuation = false,
   output = [],
+  turn,
+  messageActions = false,
 }: {
   rows: Row[];
   threadId?: string;
   continuation?: boolean;
+  turn?: Schema<"TranscriptTurn">;
+  messageActions?: boolean;
   output?: Extract<Row, { kind: "assistant" }>[];
 }) {
   const { t } = useTranslation();
+  const actions = useContext(MessageBranches);
+  const key =
+    turn?.turn_id.startsWith("entry:") && turn.timestamp != null
+      ? `${turn.turn_id}@${turn.timestamp}`
+      : turn?.turn_id;
+  const point = key && actions?.points?.[key];
   const notificationTitle = useNotificationTitle();
   const copyText = output
     .map((row) => row.text)
@@ -595,8 +610,16 @@ function Rows({
     >
       {row.kind === "input" ? (
         <InputContent
+          branchKey={
+            messageActions &&
+            !row.subagentRunId &&
+            row.position === turn?.input_position
+              ? (key ?? "")
+              : undefined
+          }
           threadId={threadId}
           parts={row.parts}
+          timestamp={row.timestamp}
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
         />
@@ -632,9 +655,27 @@ function Rows({
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
           )}
-          {row === output.at(-1) && copyText.trim() && (
+          {(row.timestamp != null ||
+            (row === output.at(-1) && copyText.trim())) && (
             <CopyMessage
-              text={copyText}
+              action={
+                messageActions &&
+                actions &&
+                !row.subagentRunId &&
+                (row === output.at(-1) || row.live) && (
+                  <MessageActionButton
+                    kind="branch"
+                    disabled={
+                      !point || !point.branch || actions.pending || !!row.live
+                    }
+                    onClick={() => {
+                      if (key) void actions.create(key);
+                    }}
+                  />
+                )
+              }
+              timestamp={row.timestamp}
+              text={row === output.at(-1) ? copyText : undefined}
               truncated={output.some((part) => part.truncated)}
             />
           )}
@@ -1301,6 +1342,8 @@ function TurnSegments({
               rows={segment.rows}
               threadId={threadId}
               output={output}
+              turn={turn}
+              messageActions
             />
           );
         return (

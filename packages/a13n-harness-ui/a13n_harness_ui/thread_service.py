@@ -26,6 +26,7 @@ from a13n_harness_ui.storage import (
     Continuation,
     LocalStore,
     ObjectKind,
+    ObjectRef,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
@@ -36,6 +37,8 @@ from a13n_harness_ui.storage.continuations import publish_continuation, read_con
 from a13n_harness_ui.storage.contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
+    BranchPoints,
+    BranchRequest,
     ConfigurationOrigin,
     ConfigurationProvenance,
     ProjectDefaultsPatch,
@@ -43,6 +46,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadMetadataMutation,
 )
+from a13n_harness_ui.thread_branch import availability, branch_state
 from a13n_harness_ui.thread_files import ThreadFiles
 
 
@@ -178,35 +182,79 @@ class ThreadService:
             raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
         return thread
 
-    async def fork(self, thread_id: str, *, files: ThreadFiles) -> Thread:
-        """Fork the complete saved conversation without borrowing execution authority."""
+    async def _fork_source(self, thread_id: str) -> Thread:
+        source = await self.get(thread_id)
+        if (
+            thread_id == BOT_THREAD_ID
+            or source.parent_thread_id is not None
+            or source.memory_scope is not None
+            or source.configuration.agent_source.kind != "agent"
+            or await self._store.threads.is_coordinator(thread_id)
+            or await self._store.threads.worker_owners((thread_id,))
+        ):
+            raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
+        return source
+
+    @staticmethod
+    def _source_id(ref: ObjectRef) -> str:
+        return (
+            f"initial:{ref.logical_digest}"
+            if ref.object_kind is ObjectKind.thread_initial_state
+            else ref.logical_digest
+        )
+
+    async def branch_points(self, thread_id: str, base: ObjectRef | None, continuing: bool) -> BranchPoints:
         async with checkpoint_lock(self._store.layout.root, thread_id):
-            source = await self.get(thread_id)
-            if (
-                thread_id == BOT_THREAD_ID
-                or source.parent_thread_id is not None
-                or source.memory_scope is not None
-                or source.configuration.agent_source.kind != "agent"
-                or await self._store.threads.is_coordinator(thread_id)
-                or await self._store.threads.worker_owners((thread_id,))
-            ):
-                raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
+            source = await self._fork_source(thread_id)
+            ref = base or source.continuation or source.initial_state
+            saved = (
+                await read_continuation(self._store.objects, ref)
+                if ref.object_kind is ObjectKind.continuation
+                else await self._store.objects.read_model(ref, StoredThreadInitialState)
+            )
+        return BranchPoints(
+            source=self._source_id(ref), points=await to_thread.run_sync(availability, saved.harness_state, continuing)
+        )
+
+    async def fork(
+        self,
+        thread_id: str,
+        *,
+        files: ThreadFiles,
+        branch: BranchRequest | None = None,
+        base: ObjectRef | None = None,
+        continuing: bool = False,
+    ) -> Thread:
+        """Copy the saved continuation, or start fresh from a selected message prefix."""
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            source = await self._fork_source(thread_id)
+            ref = base or source.continuation or source.initial_state
+            if branch and self._source_id(ref) != branch.expected_continuation_id:
+                raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
             baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
             stored = (
-                await read_continuation(self._store.objects, source.continuation, include_display=True)
-                if source.continuation is not None
+                await read_continuation(self._store.objects, ref, include_display=branch is None)
+                if ref.object_kind is ObjectKind.continuation
                 else baseline
             )
             if stored.harness_state.thread_id != thread_id:
                 raise ThreadError(
                     "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
                 )
-            state = await to_thread.run_sync(stored.harness_state.fork)
-            initial_state = (
-                await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
-                if source.continuation is not None
-                else state
-            )
+            excerpt = source.excerpt
+            attachments = None
+            if branch:
+                state, excerpt, attachments = await to_thread.run_sync(
+                    branch_state, stored.harness_state, branch, continuing
+                )
+                initial_state = state
+            else:
+                state = await to_thread.run_sync(stored.harness_state.fork)
+                initial_state = (
+                    await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    if source.continuation is not None
+                    else state
+                )
         now = datetime.now(UTC)
         copied: Thread | None = None
         with CancelScope(shield=True):
@@ -216,13 +264,15 @@ class ThreadService:
             )
             continuation = None
             read_model = None
-            if isinstance(stored, Continuation):
+            if branch is None and isinstance(stored, Continuation):
                 replacement = stored.model_copy(update={"harness_state": state, "created_at": now})
                 continuation = await publish_continuation(self._store.objects, replacement)
                 read_model = await to_thread.run_sync(project_continuation, replacement)
-            async with files.fork(thread_id, state.thread_id):
+            async with files.fork(thread_id, state.thread_id, attachments=attachments):
                 copied = await self._store.threads.fork(
                     source=source,
+                    excerpt=excerpt,
+                    historical=base is not None,
                     thread_id=state.thread_id,
                     initial_state=initial.ref,
                     continuation=continuation,

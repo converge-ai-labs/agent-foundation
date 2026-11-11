@@ -854,7 +854,7 @@ it("forks a saved chat and its attachments through the real HTTP boundary", asyn
     }),
   );
   expect(copied.thread_id).not.toBe(source.thread_id);
-  expect(copied.title).toBe("Fork this title");
+  expect(copied.title).toBe("Fork this title (2)");
   expect(copied.configuration).toEqual(before.thread.configuration);
   expect(copied.root_activity.state).toBe("inactive");
   const copyPath = { thread_id: copied.thread_id };

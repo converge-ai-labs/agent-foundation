@@ -13,6 +13,7 @@ import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import type { DisplayBlock } from "./stream";
 import { ConversationTranscript } from "./transcript";
+import { MessageBranches } from "./message-branch";
 import { useHistory } from "./queries";
 import { previewInput, type LocalInput } from "./local-input";
 
@@ -58,6 +59,36 @@ const props = {
 };
 const readingAnchor = (node: HTMLElement) =>
   node.closest<HTMLElement>("[data-reading-anchor]")?.dataset.readingAnchor;
+
+it("branches from an imported reply without a timestamp", () => {
+  const create = vi.fn();
+  const imported = {
+    ...turn,
+    turn_id: "entry:0",
+    timestamp: null,
+    end_position: 2,
+    output_position: 1,
+  };
+  render(
+    <MessageBranches
+      value={{
+        busy: false,
+        pending: false,
+        create,
+        points: { "entry:0": { edit: true, branch: true } },
+      }}
+    >
+      <ConversationTranscript
+        {...props}
+        entries={[input, output]}
+        turns={[imported]}
+        blocks={[]}
+      />
+    </MessageBranches>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Branch in new chat" }));
+  expect(create).toHaveBeenCalledWith("entry:0");
+});
 
 it("retains live output nodes and reading anchors through repeated saves", () => {
   const view = render(
