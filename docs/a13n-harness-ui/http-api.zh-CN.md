@@ -270,6 +270,14 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 查询不会启动工作。新的人类消息会立即启动空闲 Run，或向确切的当前 Run 发起 immediate steer，不经过自动 inbox，也不受全局 steering 模式影响。steering 被拒绝时会返回错误，不排队或启动替代 Run。输入提交结果不确定时，显式使用相同 ID 和文本重试；精确重试只返回保留结果，不重复执行；相同 ID 配不同内容会失败。打开 `/threads/thread_bot` 查看活动，并使用现有决策 API 回答人类决策。配置位于 `webui.bot`；私有 Connector 配置既不是 YAML 资源，也不是提供方管理 API。
 
+## Connector
+
+持实例密钥的客户端通过 `/api/connectors` 管理 [Connector](connectors.md)，受限访客无法使用这些路由。`GET /api/connectors/catalog` 列出声明；`GET /api/connectors` 列出安全的实例视图。`PUT /api/connectors/{connector_id}` 创建时使用 `expected_version: null`，更新时使用当前版本。`DELETE` 要求当前 `expected_version`，并永久停用该 ID。
+
+向 `POST /api/connectors/{connector_id}/setup` 提交 `{"intent":"configure"}`，开始或重新打开配置交互。显式操作前先读取 `/api/connector-setups/{session_id}`。向 `/api/connector-setups/{session_id}/actions` POST `operation_id`、已观察的 `version`、`action` 和私有 `values`。精确重试返回保留结果；相同 ID 配不同内容会失败。投递结果不确定时，先观察状态，再决定下一步。配置操作不启动 agent Run。
+
+`GET /api/threads/{thread_id}/connector-setup-offers` 返回不含凭据的持久化普通聊天卡片。私有值只通过配置操作请求体传输，不出现在响应、组合捕获或卡片中。
+
 ## Coordinator
 
 通过 `POST /api/threads` 和 `{"defaults":{"project_id":"project-main"},"coordinator":true}` 创建所有者。使用可用的 Project ID。创建会保存角色并启用自动后续处理；输入另行提交。提交失败不会删除已创建的 Thread。

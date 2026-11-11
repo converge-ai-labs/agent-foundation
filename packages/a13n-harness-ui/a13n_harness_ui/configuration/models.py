@@ -649,7 +649,15 @@ class McpFileValueSource(StrictModel):
     path: tuple[str, ...] = Field(min_length=1, max_length=8)
 
 
-type McpValueSource = EnvironmentVariableSource | McpFileValueSource
+class McpPrivateValueSource(StrictModel):
+    """Opaque Connector credential locator, resolved only at the transport boundary."""
+
+    connector_id: str = Field(min_length=1, max_length=128)
+    configuration_version: int = Field(ge=1)
+    key: str = Field(min_length=1, max_length=256)
+
+
+type McpValueSource = EnvironmentVariableSource | McpFileValueSource | McpPrivateValueSource
 
 
 class McpCommandTransport(StrictModel):

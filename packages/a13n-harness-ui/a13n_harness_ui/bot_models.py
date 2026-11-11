@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from a13n_harness_ui.connectors.models import SetupOffer
+
 
 class BotModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -36,6 +38,7 @@ class BotState(BotModel):
 
 
 class BotMessage(BotModel):
+    connector_setups: tuple[SetupOffer, ...] = ()
     message_id: str
     role: Literal["user", "assistant"]
     text: str

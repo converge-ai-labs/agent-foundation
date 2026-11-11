@@ -14,6 +14,8 @@ description: 为 Agent 添加工具，检查工具是否生效，并选择合适
 | 改变执行机器或隔离方式          | Environment 配置                 | [Environment](environments-and-projects.md)              |
 | 添加已安装的 Python 中间件      | Harness Plugin 资源              | [插件文件](#harness-plugin-and-run-extension-files)      |
 
+要在 WebUI 中共用实例级账户，使用 [Connector](connectors.md)。Remote MCP 和 GitHub 连接提供私有配置表单，并自动加入新的 WebUI 根 Run。文件定义的 MCP 服务器仍是显式选择的 Agent 资源，也适用于终端。
+
 ## Agent Capability
 
 使用已有 [Agent](agents-and-subagents.md#create-an-agent-from-files)。运行 `a13n-harness-ui config path` 找到配置树。在 `configuration_path` 所示根 YAML 旁的 `agents/` 中编辑对应文件。

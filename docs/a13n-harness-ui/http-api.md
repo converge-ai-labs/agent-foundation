@@ -270,6 +270,14 @@ Instance-key clients can use the shared [Bot](bot.md) without creating another T
 
 Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
 
+## Connectors
+
+Instance-key clients manage [Connectors](connectors.md) through `/api/connectors`. Scoped guests cannot use these routes. `GET /api/connectors/catalog` lists declarations; `GET /api/connectors` lists safe instance views. `PUT /api/connectors/{connector_id}` creates with `expected_version: null` or updates with the current version. `DELETE` requires the current `expected_version` and permanently retires the ID.
+
+`POST /api/connectors/{connector_id}/setup` with `{"intent":"configure"}` begins or reopens a setup interaction. Read `/api/connector-setups/{session_id}` before an explicit action. POST `/api/connector-setups/{session_id}/actions` with `operation_id`, observed `version`, `action` and private `values`. Exact operation retries return the retained outcome; different content under that ID fails. After uncertain delivery, observe before deciding what to do next. Setup actions do not start agent Runs.
+
+`GET /api/threads/{thread_id}/connector-setup-offers` returns durable ordinary-chat offers without credentials. Private values travel only in setup action bodies and are omitted from responses, composition captures and offers.
+
 ## Coordinator
 
 Create an owner with `POST /api/threads` and `{"defaults":{"project_id":"project-main"},"coordinator":true}`. Use an available Project ID. Creation saves the role and enables automatic follow-up; submit input separately. A failed submission leaves the created Thread in place.

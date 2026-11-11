@@ -140,6 +140,34 @@ class ConnectorConfigurationRecord(Base):
     selected_events: Mapped[str] = mapped_column(Text, nullable=False)
     settings: Mapped[str] = mapped_column(Text, nullable=False)
     credentials: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, server_default=text("''"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    rules: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+
+
+class ConnectorStateRecord(Base):
+    __tablename__ = "connector_state"
+
+    connector_id: Mapped[str] = mapped_column(
+        String(_ID), ForeignKey("connector_configuration.connector_id", ondelete="CASCADE"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+
+
+class ConnectorSetupOfferRecord(Base):
+    __tablename__ = "connector_setup_offer"
+
+    offer_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class BotInboxRecord(Base):

@@ -8,6 +8,8 @@ description: 从 Python 运行已配置的 Agent，检查结果，并基于已�
 
 如果应用自己负责配置和持久化，请[直接使用 Harness](../a13n-harness/hosting.md)。需要能由其他 worker 恢复的托管执行时，选择 [Service](../a13n-service/index.md)。
 
+可信 WebUI 集成可通过 `HarnessUiIntegrations(connectors=(definition,))` 注册 Connector 定义，并传给 `open_harness_ui_app(..., integrations=...)`。[Connector](connectors.md#develop-a-trusted-connector) 介绍 SDK、配置生命周期和事件入站。Connector 所有权随 WebUI 生命周期启动；单独嵌入 App 不会激活后台运行时。
+
 ## 打开、提交与等待
 
 运行脚本前：

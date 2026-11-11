@@ -50,6 +50,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/connectors/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector Catalog */
+        get: operations["connector_catalog_api_connectors_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector Instances */
+        get: operations["connector_instances_api_connectors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/{connector_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector Instance */
+        get: operations["connector_instance_api_connectors__connector_id__get"];
+        /** Save Connector */
+        put: operations["save_connector_api_connectors__connector_id__put"];
+        post?: never;
+        /** Delete Connector */
+        delete: operations["delete_connector_api_connectors__connector_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/{connector_id}/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Begin Connector Setup */
+        post: operations["begin_connector_setup_api_connectors__connector_id__setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connector-setups/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector Setup */
+        get: operations["connector_setup_api_connector_setups__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connector-setups/{session_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connector Setup Action */
+        post: operations["connector_setup_action_api_connector_setups__session_id__actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/connector-setup-offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connector Setup Offers */
+        get: operations["connector_setup_offers_api_threads__thread_id__connector_setup_offers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bot": {
         parameters: {
             query?: never;
@@ -3459,6 +3580,11 @@ export interface components {
         };
         /** BotMessage */
         BotMessage: {
+            /**
+             * Connector Setups
+             * @default []
+             */
+            connector_setups?: components["schemas"]["SetupOffer"][];
             /** Message Id */
             message_id: string;
             /**
@@ -3900,6 +4026,24 @@ export interface components {
              *     ]
              */
             omitted_fields?: string[];
+        };
+        /** CatalogItem */
+        CatalogItem: {
+            /** Key */
+            key: string;
+            declaration?: components["schemas"]["Declaration"] | null;
+            /**
+             * Implementation
+             * @default
+             */
+            implementation?: string;
+            /**
+             * Available
+             * @default true
+             */
+            available?: boolean;
+            /** Diagnostic */
+            diagnostic?: string | null;
         };
         CatalogKey: string;
         /** CatalogModel */
@@ -4356,6 +4500,22 @@ export interface components {
             /** Udp Sockets */
             udp_sockets?: number | null;
         };
+        /** ConnectorRule */
+        ConnectorRule: {
+            /** Id */
+            id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Event */
+            event: string;
+            /** Conditions */
+            conditions?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
         /** ConsumptionTotals */
         ConsumptionTotals: {
             /** Model Requests */
@@ -4616,6 +4776,42 @@ export interface components {
             server_time?: string | null;
         };
         DecisionRequestView: components["schemas"]["StructuredQuestionRequestView"] | components["schemas"]["ApprovalRequestView"] | components["schemas"]["ExternalRequestView"];
+        /** Declaration */
+        Declaration: {
+            /**
+             * Api Version
+             * @default 1
+             * @constant
+             */
+            api_version?: 1;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Configuration Schema */
+            configuration_schema: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Events
+             * @default []
+             */
+            events?: components["schemas"]["EventDeclaration"][];
+            /**
+             * Bot Delivery
+             * @default false
+             */
+            bot_delivery?: boolean;
+            /**
+             * Setup Intents
+             * @default [
+             *       "configure"
+             *     ]
+             */
+            setup_intents?: string[];
+        };
         /** DeferredRequestView */
         DeferredRequestView: {
             /** Request Id */
@@ -5049,6 +5245,22 @@ export interface components {
              * @default https://a13n.dev/docs/a13n-envd/
              */
             documentation_url?: string;
+        };
+        /** EventDeclaration */
+        EventDeclaration: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            /** Conditions Schema */
+            conditions_schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /** ExecutionIdentity */
         ExecutionIdentity: {
@@ -5572,6 +5784,36 @@ export interface components {
              * @default true
              */
             support_gif?: boolean;
+        };
+        /** Instance */
+        Instance: {
+            /** Connector Id */
+            connector_id: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Deliver To Bot */
+            deliver_to_bot: boolean;
+            /** Settings */
+            settings: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Rules
+             * @default []
+             */
+            rules?: components["schemas"]["ConnectorRule"][];
+            /**
+             * Configured Secrets
+             * @default []
+             */
+            configured_secrets?: string[];
+            status: components["schemas"]["Status"];
         };
         JsonValue: unknown;
         /** LimitedCpuLimit */
@@ -6944,6 +7186,48 @@ export interface components {
             /** Max Lifetime Ms */
             max_lifetime_ms?: number | null;
         };
+        /** SetupAction */
+        SetupAction: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Kind
+             * @default submit
+             * @enum {string}
+             */
+            kind?: "submit" | "open_url" | "copy" | "confirm";
+            /** Url */
+            url?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /** SetupOffer */
+        SetupOffer: {
+            /** Offer Id */
+            offer_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Connector Key */
+            connector_key: string;
+            /** Connector Id */
+            connector_id?: string | null;
+            /**
+             * Text
+             * @default
+             */
+            text?: string;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** SetupPreview */
         SetupPreview: {
             /** Files */
@@ -7034,6 +7318,21 @@ export interface components {
             shell_review_model?: string | null;
             /** Include Default Subagents */
             include_default_subagents?: boolean | null;
+        };
+        /** SetupSnapshot */
+        SetupSnapshot: {
+            /** Session Id */
+            session_id: string;
+            /** Connector Id */
+            connector_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            step: components["schemas"]["Step"];
         };
         /** SetupStatus */
         SetupStatus: {
@@ -7272,6 +7571,50 @@ export interface components {
             used_percent: number;
             /** Reset At */
             reset_at: number;
+        };
+        /** Status */
+        Status: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unconfigured" | "ready" | "disabled" | "degraded" | "plugin_unavailable" | "runtime_unavailable";
+            /** Summary */
+            summary: string;
+        };
+        /** Step */
+        Step: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            /**
+             * State
+             * @default input
+             * @enum {string}
+             */
+            state?: "input" | "working" | "waiting" | "completed" | "failed" | "cancelled" | "expired";
+            /** Form */
+            form?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Values */
+            values?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Actions
+             * @default []
+             */
+            actions?: components["schemas"]["SetupAction"][];
+            wait?: components["schemas"]["Wait"] | null;
+            /** Error */
+            error?: string | null;
         };
         /**
          * StoreKind
@@ -8692,6 +9035,18 @@ export interface components {
              */
             occurred_at: string;
         };
+        /** Wait */
+        Wait: {
+            /** Message */
+            message: string;
+            /** Poll After Ms */
+            poll_after_ms: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /** WorkbenchPage */
         WorkbenchPage: {
             /**
@@ -9358,6 +9713,63 @@ export interface components {
         /** ErrorEnvelope */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
+        };
+        /** Save */
+        Save: {
+            /** Kind */
+            kind: string;
+            /**
+             * Name
+             * @default
+             */
+            name?: string;
+            /** Expected Version */
+            expected_version?: number | null;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /**
+             * Deliver To Bot
+             * @default false
+             */
+            deliver_to_bot?: boolean;
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Rules
+             * @default []
+             */
+            rules?: components["schemas"]["ConnectorRule"][];
+        };
+        /** Delete */
+        Delete: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** Begin */
+        Begin: {
+            /**
+             * Intent
+             * @default configure
+             */
+            intent?: string;
+        };
+        /** SetupCommand */
+        SetupCommand: {
+            /** Operation Id */
+            operation_id: string;
+            /** Version */
+            version: number;
+            /** Action */
+            action: string;
+            /** Values */
+            values?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
         };
         /** BotSubmit */
         BotSubmit: {
@@ -10107,6 +10519,277 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VoiceSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connector_catalog_api_connectors_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogItem"][];
+                };
+            };
+        };
+    };
+    connector_instances_api_connectors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Instance"][];
+                };
+            };
+        };
+    };
+    connector_instance_api_connectors__connector_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Instance"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_connector_api_connectors__connector_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Save"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Instance"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connector_api_connectors__connector_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Delete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    begin_connector_setup_api_connectors__connector_id__setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Begin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connector_setup_api_connector_setups__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connector_setup_action_api_connector_setups__session_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connector_setup_offers_api_threads__thread_id__connector_setup_offers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOffer"][];
                 };
             };
             /** @description Validation Error */
