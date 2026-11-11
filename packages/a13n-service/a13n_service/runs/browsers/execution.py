@@ -21,6 +21,7 @@ from a13n_harness.capabilities.browser import (
 from a13n_harness.capabilities.browser.actions import Action, Clip, Condition
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from a13n_harness.tools import current_invocation_scope
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
@@ -320,6 +321,12 @@ class Backend:
                 kind, target=target, revision=revision, frame_index=frame_index, offset=offset, limit=limit
             ),
         )
+
+    async def js(self, expression: str) -> JsonValue:
+        return await self._call("js", lambda native: native.js(expression))
+
+    async def cdp(self, method: str, params: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]:
+        return await self._call("cdp", lambda native: native.cdp(method, params))
 
     async def screenshot(self, *, full_page: bool = False, clip: Clip | None = None) -> BrowserScreenshot:
         return await self._call("screenshot", lambda native: native.screenshot(full_page=full_page, clip=clip))

@@ -217,6 +217,8 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 ("dialog", "Inspect, accept, or dismiss a browser dialog"),
                 ("files", "Inspect downloads or upload files through the browser binding"),
                 ("screenshot", "Capture the selected page or a viewport region"),
+                ("js", "Evaluate selected-page JavaScript and return its JSON value"),
+                ("cdp", "Send a selected-page CDP command through the current browser binding"),
             )
         ),
         description="Native browser tools on the Thread's managed Browser binding.",

@@ -24,7 +24,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturnPart
 from .test_codeact_state import _code, _run
 
 pytestmark = pytest.mark.anyio
-BROWSER_KEYS = ("observe", "read", "navigate", "act", "wait", "tabs", "dialog", "files", "screenshot")
+BROWSER_KEYS = ("observe", "read", "navigate", "act", "wait", "tabs", "dialog", "files", "screenshot", "js", "cdp")
 
 
 @pytest.fixture
@@ -39,6 +39,8 @@ def backend():
     backend.tabs.return_value = (BrowserTab("page-a", "Page A", "about:blank", True),)
     backend.wait.return_value = '{"verification":"passed"}'
     backend.dialog.return_value = "No dialog"
+    backend.js.return_value = {"items": ["Alpha", "Beta"]}
+    backend.cdp.return_value = {"nodes": []}
     backend.downloads.return_value = '{"downloads":[]}'
     image = BytesIO()
     Image.new("RGB", (8, 8), "red").save(image, format="JPEG")
@@ -73,6 +75,8 @@ read = json.loads(await browser_read(kind='links'))
 await browser_dialog()
 await browser_files()
 shot = await browser_screenshot()
+await browser_js(expression='document.title')
+await browser_cdp(method='Accessibility.getFullAXTree', params={})
 {'count': len(read['items']), 'shot': shot['screenshot']}
 """)
         ],
@@ -92,6 +96,8 @@ shot = await browser_screenshot()
         "browser_dialog",
         "browser_files",
         "browser_screenshot",
+        "browser_js",
+        "browser_cdp",
     ]
     assert backend.interact.call_args.kwargs["revision"] == "revision-a"
     assert backend.interact.call_args.args[0].target.ref == "opaque-button"
@@ -269,4 +275,58 @@ async def test_nested_browser_action_uses_original_typed_validation(backend):
         bindings=RunBindings.embedded(browser_backend=backend),
     )
     assert seen[0].outcome == "failed"
+    backend.interact.assert_not_awaited()
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+async def test_programming_tools_keep_selection_and_permissions_in_codeact(backend, tool):
+    source = "await browser_js(expression='1')" if tool == "js" else "await browser_cdp(method='DOM.getDocument')"
+    _, seen, contexts = await _run(
+        [_code(source)],
+        capabilities=(BrowserUseCapability(enabled_tools=frozenset({"read"})),),
+        bindings=RunBindings.embedded(browser_backend=backend),
+    )
+    assert f"### `browser_{tool}`" not in contexts[0]
+    assert seen[0].outcome == "failed"
+    getattr(backend, tool).assert_not_awaited()
+    _, seen, _ = await _run(
+        [_code(source)],
+        capabilities=(
+            BrowserUseCapability(),
+            ToolPermissionsCapability(ToolPermissions(default="allow", rules={f"browser.{tool}": "deny"})),
+        ),
+        bindings=RunBindings.embedded(browser_backend=backend),
+    )
+    assert seen[0].outcome == "failed"
+    getattr(backend, tool).assert_not_awaited()
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+@pytest.mark.parametrize("failure", [False, True])
+async def test_programming_expires_native_refs_and_screenshots_across_call_paths(backend, tool, failure):
+    from a13n_harness.capabilities.browser import BrowserError
+
+    if failure:
+        getattr(backend, tool).side_effect = BrowserError("Unknown outcome", dispatch="unknown")
+    source = "await browser_js(expression='1')" if tool == "js" else "await browser_cdp(method='DOM.getDocument')"
+    _, seen, _ = await _run(
+        [
+            ("browser_observe", {}),
+            ("browser_screenshot", {}),
+            _code(source),
+            ("browser_act", {"action": {"kind": "click", "target": {"kind": "ref", "ref": "e1"}}}),
+            _code(
+                "await browser_act(action={'kind':'click','target':{'kind':'visual','screenshot':'s1','x':0.5,'y':0.5}})"
+            ),
+            (
+                "browser_act",
+                {"action": {"kind": "click", "target": {"kind": "visual", "screenshot": "s1", "x": 0.5, "y": 0.5}}},
+            ),
+        ],
+        capabilities=(BrowserUseCapability(),),
+        bindings=RunBindings.embedded(browser_backend=backend),
+    )
+    assert "Unknown browser reference" in str(seen[3].content)
+    assert seen[4].outcome == "failed" and "ModelRetry" in str(seen[4].content)
+    assert "Unknown screenshot" in str(seen[5].content)
     backend.interact.assert_not_awaited()

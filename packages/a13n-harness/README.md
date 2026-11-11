@@ -55,7 +55,7 @@ Reuse a backend across Runs, supplying fresh authorization through each Run bind
 
 Before human input, await `scope.pause()` for every scope on the controlled browser and prevent new scope admission. After revoking viewer input, call `scope.resume()`. Pending tools return a fresh-observation instruction without replaying their original action. `scope.retire()` revokes access; `await scope.close()` also closes owned tabs; `await runtime.close()` disconnects without destroying Chromium. Run completion performs none of these Host lifecycle operations.
 
-The model receives nine tools: `browser_observe`, `browser_read`, `browser_navigate`, `browser_act`, `browser_wait`, `browser_tabs`, `browser_files`, `browser_dialog`, and `browser_screenshot`.
+The model receives eleven tools: `browser_observe`, `browser_read`, `browser_navigate`, `browser_act`, `browser_wait`, `browser_tabs`, `browser_files`, `browser_dialog`, `browser_screenshot`, `browser_js`, and `browser_cdp`. Select a subset with `BrowserUseCapability(enabled_tools=frozenset({...}))`.
 
 A typical task navigates, observes a focused region, acts on an `eN` reference or a unique semantic locator, and reads or waits to verify the outcome. `browser_act` takes one action at a time, including fill/type, click/hover, key chords, check, native select, and scroll. For example, its arguments can be:
 
@@ -66,6 +66,8 @@ A typical task navigates, observes a focused region, acts on an `eN` reference o
 Observation filters and pagination keep large pages manageable; reading text, links, tables, or forms preserves the existing refs. Both support same-process and out-of-process frames. State values distinguish disabled, readonly, checked, selected, and expanded controls; password values are redacted. Inspect `dispatch` separately from `verification`: input delivery alone does not establish that a form submitted or a purchase succeeded.
 
 Screenshots return JPEG content plus an `sN` identifier and CSS dimensions. For visual-only controls, click or hover accepts normalized coordinates in the latest viewport/clip screenshot; the reference is consumed once and checked for stale page/viewport state. Prefer semantic targets for moving content. Full-page screenshots are for observation. Use `browser_files` for Host-path uploads and accessible tracked download status, and `browser_dialog` for JavaScript prompts.
+
+Use `browser_js(expression)` for task-specific page JavaScript and JSON extraction. It awaits Promises in the selected page's main world. `browser_cdp(method, params)` sends supported page-domain commands through that page's session; its description lists the domains and exclusions. Browser/target administration and file transfer retain their existing owners. Both tools expire element/screenshot references and can leave page effects after errors, timeout or cancellation. Human control drains tool requests, not installed timers or listeners. Custom backends implement `js` and `cdp` to provide these tools. With `CodeActCapability()` enabled, the same browser tools are callable from restricted Python without another mode or runtime; see [Compose Browser Tools](../../docs/a13n-harness/delegation-and-codeact.md#compose-browser-tools).
 
 Browser access is outside the Agent Environment's sandbox and cannot enforce restrictive `allowed_hosts`. The Host must authorize the captured Run rather than relying on its Thread's defaults. See the [browser contract](../../spec/a13n-harness/23-browser-use.md).
 

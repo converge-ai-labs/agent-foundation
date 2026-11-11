@@ -396,3 +396,122 @@ async def test_global_and_owned_bindings_share_pages_but_not_cleanup(native_brow
         assert process.returncode is None
     finally:
         await runtime.close()
+
+
+async def test_js_and_cdp_are_composable_in_existing_codeact_on_real_chromium(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness import RunBindings
+    from a13n_harness.tools._output import tool_execution_value
+
+    from .test_codeact_state import _code, _run
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        _, seen, _ = await _run(
+            [
+                _code(
+                    f"await browser_navigate(url={'data:text/html,' + quote(HTML.decode())!r})\nawait browser_observe()"
+                ),
+                _code("""
+await browser_js(expression="document.querySelector('input').focus(); undefined")
+await browser_cdp(method='Input.insertText', params={'text':'Native programming'})
+value = await browser_js(expression="Promise.resolve({message:document.querySelector('input').value})")
+root = await browser_cdp(method='DOM.getDocument', params={'depth':0})
+{'message':value['message'], 'node':root['root']['nodeName']}
+"""),
+                ("browser_js", {"expression": "document.title='Changed before failure'; throw Error('later')"}),
+                ("browser_js", {"expression": "document.title"}),
+                ("browser_js", {"expression": "NaN"}),
+                ("browser_cdp", {"method": "Target.getTargets"}),
+                ("browser_cdp", {"method": "Runtime.evaluate", "params": {}}),
+                ("browser_js", {"expression": "2 + 2"}),
+            ],
+            capabilities=(BrowserUseCapability(),),
+            bindings=RunBindings.embedded(browser_backend=backend),
+        )
+        assert seen[1].outcome == "success", seen[1].content
+        assert tool_execution_value(seen[1].content, seen[1].metadata) == {
+            "message": "Native programming",
+            "node": "#document",
+        }
+        assert "earlier effects" in str(seen[2].content)
+        assert tool_execution_value(seen[3].content, seen[3].metadata) == "Changed before failure"
+        assert "JSON value" in str(seen[4].content)
+        assert "outside the selected-page" in str(seen[5].content)
+        assert "Correct the request" in str(seen[6].content)
+        assert tool_execution_value(seen[7].content, seen[7].metadata) == 4
+
+
+@pytest.mark.parametrize(
+    ("method", "params", "dispatch"),
+    [
+        ("DOM.getOuterHTML", {"nodeId": 999999}, "dispatched"),
+        ("Runtime.getProperties", {"objectId": "stale-object"}, "dispatched"),
+        ("Page.handleJavaScriptDialog", {"accept": True}, "not_dispatched"),
+    ],
+)
+async def test_cdp_error_replies_allow_followup_on_real_chromium(native_browser, method, params, dispatch):
+    from a13n_harness.capabilities.browser import BrowserError
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate("data:text/html,<title>Protocol errors</title>")
+        with pytest.raises(BrowserError) as error:
+            await backend.cdp(method, params)
+        assert error.value.dispatch == dispatch
+        assert await backend.js("2+2") == 4
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+async def test_programming_dialog_can_be_handled_without_replaying(native_browser, tool):
+    from a13n_harness.capabilities.browser import BrowserError
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate("data:text/html,<title>Programming dialogs</title>")
+        expression = "alert('programming'); window.dialogEffects=(window.dialogEffects||0)+1"
+        with pytest.raises(BrowserError, match="Use browser_dialog") as error:
+            async with asyncio.timeout(2):
+                if tool == "js":
+                    await backend.js(expression)
+                else:
+                    await backend.cdp("Runtime.evaluate", {"expression": expression})
+        assert error.value.dispatch == "dispatched"
+        with pytest.raises(BrowserError, match="dialog is pending") as blocked:
+            await backend.cdp("Runtime.evaluate", {"expression": "42"})
+        assert blocked.value.dispatch == "not_dispatched"
+        if tool == "js":
+            await backend.dialog("accept")
+        else:
+            await backend.cdp("Page.handleJavaScriptDialog", {"accept": True})
+        async with asyncio.timeout(2):
+            assert await backend.js("window.dialogEffects") == 1
+            assert await backend.js("2+2") == 4
+
+
+async def test_cdp_drag_rejects_host_files_but_delivers_text(native_browser, tmp_path):
+    from urllib.parse import quote
+
+    from a13n_harness.capabilities.browser import BrowserError
+
+    host_file = tmp_path / "private-host-file.txt"
+    host_file.write_text("not an authorized browser upload")
+    markup = """<body style="height:500px" ondragover="event.preventDefault()"><script>
+    window.dropped=null;
+    document.body.ondrop=async event=>{event.preventDefault();window.dropped={
+        text:event.dataTransfer.getData('text/plain'),
+        files:await Promise.all([...event.dataTransfer.files].map(file=>file.text()))
+    }};</script>"""
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate("data:text/html," + quote(markup))
+        data = {"items": [], "files": [str(host_file)], "dragOperationsMask": 1}
+        with pytest.raises(BrowserError, match="browser_files") as error:
+            await backend.cdp("Input.dispatchDragEvent", {"type": "dragEnter", "x": 20, "y": 20, "data": data})
+        assert error.value.dispatch == "not_dispatched"
+        assert await backend.js("window.dropped") is None
+        data = {"items": [{"mimeType": "text/plain", "data": "allowed drag"}], "dragOperationsMask": 1}
+        for event in ("dragEnter", "dragOver", "drop"):
+            await backend.cdp("Input.dispatchDragEvent", {"type": event, "x": 20, "y": 20, "data": data})
+        assert await backend.js("window.dropped") == {"text": "allowed drag", "files": []}

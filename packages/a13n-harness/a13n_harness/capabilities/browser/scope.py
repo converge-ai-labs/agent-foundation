@@ -8,6 +8,8 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Literal
 
+from pydantic import JsonValue
+
 from . import (
     BrowserError,
     BrowserHumanControl,
@@ -278,6 +280,32 @@ class CdpBrowserBackend:
                 return await self.browser.read(
                     page, kind, target=target, revision=revision, frame_index=frame_index, offset=offset, limit=limit
                 )
+
+    async def js(self, expression: str) -> JsonValue:
+        from .programming import evaluate
+
+        async with self._operation():
+            page = await self._selected_page()
+            async with self._page_operation(page):
+                if page.requires_observation:
+                    raise BrowserError("Observe after handback before continuing.")
+                try:
+                    return await evaluate(self.browser, page, expression)
+                finally:
+                    page.invalidate()
+
+    async def cdp(self, method: str, params: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]:
+        from .programming import command
+
+        async with self._operation():
+            page = await self._selected_page()
+            async with self._page_operation(page):
+                if page.requires_observation:
+                    raise BrowserError("Observe after handback before continuing.")
+                try:
+                    return await command(self.browser, page, method, params)
+                finally:
+                    page.invalidate()
 
     async def screenshot(self, *, full_page: bool = False, clip: Clip | None = None) -> BrowserScreenshot:
         from .visual import capture

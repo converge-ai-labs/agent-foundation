@@ -23,7 +23,7 @@ The Host authorizes browser access using the captured current Run, including any
 
 A restrictive `allowed_hosts` configuration is rejected: native browser traffic cannot be reliably constrained by the Harness HTTP allowlist. Network isolation belongs to the browser Host. Internal Chromium pages and Host file URLs are accepted. Upload paths refer to the browser Host filesystem, not a remote user's computer or the Agent's sandbox.
 
-A Host may select an explicit `enabled_tools` subset on `BrowserUseCapability`; omitted selection exposes all nine native tools. Disabled names are absent from tool discovery and invocation. This is composition policy, independent of backend authorization.
+A Host may select an explicit `enabled_tools` subset on `BrowserUseCapability`; omitted selection exposes all eleven tools, including JavaScript and selected-page CDP commands. Disabled names are absent from tool discovery and invocation. This is composition policy, independent of backend authorization.
 
 ## Tab Access, Ownership, and Selection
 
@@ -44,7 +44,7 @@ Operations serialize within a binding and on each shared Page. After waiting for
 
 ## Observation and Tools
 
-The Capability exposes nine tools with distinct discovery, reading, and action responsibilities:
+The Capability exposes eleven tools with distinct discovery, reading, action, and page-programming responsibilities:
 
 | Tool                 | Contract                                                                                                                                                                                    |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -56,6 +56,8 @@ The Capability exposes nine tools with distinct discovery, reading, and action r
 | `browser_tabs`       | List, create, select, or close accessible tabs.                                                                                                                                             |
 | `browser_files`      | Upload Host paths to a referenced file input, or inspect accessible tracked downloads.                                                                                                      |
 | `browser_dialog`     | Inspect, accept, or dismiss the selected page's JavaScript dialog.                                                                                                                          |
+| `browser_js`         | Evaluate a JavaScript expression in the selected page's main world, await its Promise, and return a JSON value.                                                                             |
+| `browser_cdp`        | Send a protocol method and JSON parameters to the selected page session and return its protocol result.                                                                                     |
 | `browser_screenshot` | Return a JPEG of the viewport, a viewport clip, or the full page, with screenshot identity and CSS dimensions.                                                                              |
 
 When `CodeActCapability` is also enabled, the exposed browser tools are eligible for the existing restricted runners under the [CodeAct dispatch contract](18-codeact.md#final-tool-directory-and-nested-dispatch). Direct and nested calls share the current Run's backend and compact references. The Host's tool subset, normal tool validation and permissions, live backend admission, and human-control policy apply to both paths. Code receives screenshot metadata; the image reaches the model with the outer runner result. Browser operations on one binding or shared Page remain serialized, including waits.
@@ -71,6 +73,20 @@ Actions accept a reference or a semantic locator combining role, name, text, and
 Click and hover also accept a one-shot reference to the latest actionable screenshot and normalized image coordinates. The runtime maps these through the screenshot's CSS clip and viewport, independently of device pixel ratio. Navigation, tab changes, handback, a new capture, or an intervening action expire the screenshot. Viewport changes are checked before dispatch, including between clicks of a double-click. Full-page screenshots are observation-only. A screenshot does not freeze moving page content; semantic references are preferred when available.
 
 Interaction results distinguish `dispatch` (`not_dispatched`, `dispatched`, or `unknown`) from `verification` (`unverified`, `passed`, or `failed`). Navigation and waits also report `timed_out` when their total deadline, including scope admission and readiness, expires. An acknowledged input is not proof of a business outcome. Partial gestures are not replayed; the Agent reads or observes to verify the result before deciding the next action. Tool guidance accompanies the tools and honors `toolset_instructions`. Website content is untrusted model input. When the Host configures browser-level download tracking, owned-tab bindings report their owned targets' records, including downloads initiated by uncommitted subframes and owned popups. Global bindings can inspect all records tracked by the runtime, including records for closed targets. Tracking covers attached pages and known owned popup roots; it is not a historical inventory of downloads before attachment. The result contains `downloads` and an `omitted` count. The 100-record retention limit applies separately to each owner (or each attached unowned target); global access does not merge retention buckets or acquire history-cleanup ownership. Overflow is explicitly counted.
+
+## Page Programming
+
+JavaScript and CDP are ordinary Browser Use tools selected through the same `enabled_tools` keys (`js` and `cdp`) and tool permissions as other browser operations. They are callable directly or through existing CodeAct. They introduce no alternate browser mode, code-only presentation, or Python runtime. Custom `BrowserBackend` implementations supply `js(expression)` and `cdp(method, params)` to support these tools.
+
+`browser_js(expression)` runs in the selected page's default main-world execution context. It awaits Promises and requests by-value results. JSON values return directly; JavaScript `undefined` returns null. Handles, functions, non-finite values and other non-JSON results fail explicitly. A script exception is a completed, dispatched operation: effects before the exception can remain. Evaluation requests a 10-second synchronous renderer execution limit; awaiting a Promise can continue until the existing 15-second CDP transport deadline. Transport timeout or cancellation does not establish that page execution stopped. Expressions that need a known asynchronous deadline can implement their own Promise timeout.
+
+`browser_cdp(method, params)` fixes the protocol envelope to the selected page session. It accepts no endpoint or session override and supplies no browser-level transport. Supported domains are `Accessibility`, `Animation`, `CSS`, `DOM`, `DOMDebugger`, `DOMSnapshot`, `Debugger`, `Emulation`, `Input`, `Log`, `Network`, `Overlay`, `Page`, `Performance` and `Runtime`. Browser and target management remain Host-owned or use `browser_tabs`. `DOM.setFileInputFiles` and `DOM.getFileInfo` are unavailable, and `Input.dispatchDragEvent` rejects nonempty `DragData.files`, so Host-authorized file transfer and path projection remain with `browser_files`. File-free drag commands remain available. `Page.setDownloadBehavior` cannot replace runtime download tracking. `Page.disable` and `Runtime.disable` cannot turn off events required by the native runtime. Protocol results, including `Runtime.evaluate` exception details, return without semantic action verification. This is a selected-page command surface, not unrestricted CDP or an event subscription API.
+
+A JavaScript dialog opened during a programming command yields a known dispatched interruption, allowing `browser_dialog` to recover without an unsettled Host permit. The command's result is abandoned; as with native input, its protocol reply can wait in the background and page effects can continue after the dialog closes. The interrupted command is not replayed. While a dialog is pending, programming commands are rejected before dispatch except `Page.handleJavaScriptDialog`, which remains available alongside `browser_dialog`.
+
+Both tools use the same live admission, binding lock, selected Page lock and post-wait access check as native operations. They expire element and screenshot references, including failure and cancellation paths. Consecutive programming calls do not require a redundant observation; reference-based native actions need fresh references. The existing fresh-observation requirement after handback or a binding switch still applies. Raw input commands do not acquire typed actions' hit testing, focus verification or key-release guarantees.
+
+Page code runs with the selected document's authority, not in a security sandbox. Owned-tab dispatch does not isolate shared profile state or same-origin windows reachable by JavaScript. Pausing blocks new tool requests and drains admitted calls; it does not uninstall timers, listeners, scripts or other page effects. Neither tool claims rollback or automatic retry after an uncertain mutation.
 
 ## Human Control and Lifecycle
 
@@ -90,7 +106,7 @@ The lifecycle boundaries are independent:
 
 ## Failure and Recovery
 
-CDP calls are bounded. A timeout, disconnect, or cancellation after dispatch can leave an unknown side effect. Tools do not automatically replay mutations; callers observe and reconcile before retrying. Cleanup failures remain explicit. Scope retirement is irreversible; a replacement binding must be deliberately authorized by the Host.
+CDP calls are bounded. For a single page-programming command, a structured CDP error response settles the Host operation. Explicit method-not-found (`-32601`) and invalid-parameters (`-32602`) responses are known rejections before operation dispatch. Other error responses are completed, dispatched failures; earlier page effects may remain. Native composite actions retain conservative uncertainty when an earlier subcommand may already have executed. A timeout, disconnect, or cancellation after dispatch can leave an unknown side effect. Tools do not automatically replay mutations; callers observe and reconcile before retrying. Cleanup failures remain explicit. Scope retirement is irreversible; a replacement binding must be deliberately authorized by the Host.
 
 The Host owns best-effort reattachment across Runs or lost connections. It verifies the browser and exact surviving target identities, attaches a new scope, and obtains fresh observations. Runtime membership and references are process-local observations, not a `HarnessState` checkpoint. Instance restart continuity is not guaranteed and requires no durable browser replay subsystem in Harness.
 
