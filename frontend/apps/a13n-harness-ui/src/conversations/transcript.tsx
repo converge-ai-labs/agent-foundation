@@ -744,7 +744,7 @@ export const SavedEntry = memo(function SavedEntry({
 });
 
 // Intentional publications use the same message rendering as native history.
-// Host heartbeat and working output remain available in the separate activity view.
+// Host heartbeat and working output stay in execution history rather than chat.
 export function PublishedTranscript({
   messages,
 }: {

@@ -49,11 +49,11 @@ Agents manage one short Markdown handoff per ordinary root Thread. A working Thr
 
 Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. On the next legitimate input, Bot can inspect saved results, follow up, update notes and clear handled items.
 
-## Messages, activity, and decisions
+## Messages and decisions
 
-The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
+The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while the underlying execution history is retained. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
 
-Use the **Activity** icon to inspect the ordinary Bot Thread history and answer pending human decisions. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
+Answer pending human decisions directly in the Bot conversation. Bot has one chat view; notification actions and old Bot Thread links open that chat. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 
 The text draft stays in the current tab. Reloading can lose an unsent draft. If a submission's response is uncertain, keep the retained command and use its explicit retry action. Retrying reuses the same input ID and text; it does not create another input. An accepted input is queued work, not proof that a Run started or finished.
 
@@ -63,7 +63,7 @@ Use the pause icon to hold automatic processing. Heartbeat ticks and selected Co
 
 Turn off Bot in Settings to stop new ticks and delivery. History, settings, Notes and pending inputs are retained; already admitted work and other Threads continue. The conversation becomes read-only. Re-enable in Settings; a later normal delivery opportunity can process retained input. Pending human decisions can resume only after re-enable.
 
-Queued inputs survive server restart. An input interrupted during admission or execution is retained for inspection and pauses automation. Bot does not automatically replay it: tools may already have changed files or external systems. Inspect Activity and working Thread results, then send an explicit follow-up. A Run timeout uses the same pause-and-inspect behavior. Missed heartbeat intervals coalesce into one opportunity instead of replaying every missed tick.
+Queued inputs survive server restart. An input interrupted during admission or execution is retained for inspection and pauses automation. Bot does not automatically replay it: tools may already have changed files or external systems. Review the reported error and working Thread results, then send an explicit follow-up. A Run timeout uses the same pause-and-inspect behavior. Missed heartbeat intervals coalesce into one opportunity instead of replaying every missed tick.
 
 ## Connector ingress foundation
 
