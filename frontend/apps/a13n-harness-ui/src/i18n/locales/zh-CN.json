@@ -3231,5 +3231,10 @@
   "Search base models…": "搜索基础模型…",
   "Automatic (use request model)": "自动（按请求模型）",
   "This base model is missing from the current catalog.": "当前目录中找不到此基础模型。",
-  "No matching models": "没有匹配的模型"
+  "No matching models": "没有匹配的模型",
+  "Call {{count}} tools_other": "调用 {{count}} 个工具",
+  "Read {{count}} files_other": "读取 {{count}} 个文件",
+  "Run {{count}} commands_other": "运行 {{count}} 条命令",
+  "Edit {{count}} files_other": "编辑 {{count}} 个文件",
+  "Run {{count}} searches_other": "执行 {{count}} 次搜索"
 }

@@ -22,13 +22,7 @@ import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
-import {
-  QuestionInteraction,
-  ToolActivity,
-  toolLabel,
-  toolSummary,
-  toolPhase,
-} from "./tool-call";
+import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
   activityKind,
   describeTool,
@@ -44,6 +38,9 @@ import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 import { FailureNotice } from "./failure-notice";
 
+const TerminalTurn = createContext<
+  { id: string; time: string; notice?: ReactNode } | undefined
+>(undefined);
 const CurrentFailureRun = createContext<string | null | undefined>(undefined);
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
@@ -783,8 +780,10 @@ export function ConversationTranscript({
   pending,
   activity,
   currentFailureRunId,
+  terminalTurn,
   running = false,
 }: {
+  terminalTurn?: { id: string; time: string; notice?: ReactNode };
   running?: boolean;
   currentFailureRunId?: string | null;
   activity?: ReactNode;
@@ -843,21 +842,23 @@ export function ConversationTranscript({
       });
   }
   return (
-    <CurrentFailureRun value={currentFailureRunId}>
-      <TurnRows
-        rows={rows}
-        entries={entries}
-        turns={turns}
-        localInputs={localInputs}
-        threadId={threadId}
-        loadDetails={loadDetails}
-        onSavedEntries={onSavedEntries}
-        continuation={continuation}
-        pending={pending}
-      />
-      {activity}
-      {gap && <GapNotice />}
-    </CurrentFailureRun>
+    <TerminalTurn value={terminalTurn}>
+      <CurrentFailureRun value={currentFailureRunId}>
+        <TurnRows
+          rows={rows}
+          entries={entries}
+          turns={turns}
+          localInputs={localInputs}
+          threadId={threadId}
+          loadDetails={loadDetails}
+          onSavedEntries={onSavedEntries}
+          continuation={continuation}
+          pending={pending}
+        />
+        {activity}
+        {gap && <GapNotice />}
+      </CurrentFailureRun>
+    </TerminalTurn>
   );
 }
 
@@ -1192,7 +1193,22 @@ function TurnSegments({
   const complete =
     turn?.final_position != null &&
     rows.every((row) => row.position !== undefined);
-  const outputPosition = turn?.output_position ?? turn?.final_position;
+  const stopped = useContext(TerminalTurn);
+  const stoppedAt =
+    stopped && stopped.id === turn?.turn_id ? stopped.time : undefined;
+  const actions = useContext(MessageBranches);
+  const lastProse =
+    stoppedAt && !missing
+      ? rows.findLast(
+          (row) =>
+            row.kind === "assistant" &&
+            !row.subagentRunId &&
+            !row.live &&
+            row.text.trim(),
+        )
+      : undefined;
+  const outputPosition =
+    lastProse?.position ?? turn?.output_position ?? turn?.final_position;
   const output = rows.flatMap((row) =>
     outputPosition != null &&
     row.kind === "assistant" &&
@@ -1319,7 +1335,7 @@ function TurnSegments({
               key={segment.id}
               rows={segment.rows}
               threadId={threadId}
-              output={output}
+              output={stoppedAt ? [] : output}
               turn={turn}
               messageActions
             />
@@ -1339,6 +1355,25 @@ function TurnSegments({
           />
         );
       })}
+      {turn && stoppedAt && (
+        <div className={styles.assistantMessage}>
+          {stopped?.notice}
+          <CopyMessage
+            timestamp={stoppedAt}
+            text={output.map((row) => row.text).join("\n\n")}
+            truncated={output.some((row) => row.truncated)}
+            action={
+              actions?.points?.[turn.turn_id]?.branch && (
+                <MessageActionButton
+                  kind="branch"
+                  disabled={actions.pending}
+                  onClick={() => void actions.create(turn.turn_id)}
+                />
+              )
+            }
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -1355,28 +1390,74 @@ function ExecutionSegment({
   complete: boolean;
 }) {
   const { t } = useTranslation();
-  const latest = rows.at(-1);
-  const thinking =
-    latest?.kind === "thinking" && latest.segments.some((part) => part.running);
-  const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
-  const toolInfo = latestTool ? describeTool(latestTool) : undefined;
-  const duration = executionTime(durationMs);
-  const preview = complete
-    ? duration
-      ? t("Worked for {{duration}}", { duration })
-      : t("Worked")
-    : toolInfo
-      ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` - ${toolPhase(toolInfo.phase, t)}` : ""}`
-      : latest?.kind === "thinking"
-        ? thinking
-          ? t("Thinking", { context: "active" })
-          : t("Thought")
-        : t("View the available execution steps");
+  const counts = new Map<string, Set<string>>();
+  let running = false;
+  let thinking = false;
+  let activeThought = false;
+  let notices = 0;
+  const otherActivities = new Set<string>();
+  for (const row of rows) {
+    if (row.kind === "tools") {
+      for (const tool of row.tools) {
+        const info = describeTool(tool);
+        running ||= info.running;
+        const action =
+          info.kind === "file"
+            ? "Read {{count}} files"
+            : info.kind === "edit"
+              ? "Edit {{count}} files"
+              : tool.name === "shell_exec"
+                ? "Run {{count}} commands"
+                : info.kind === "search"
+                  ? "Run {{count}} searches"
+                  : "Call {{count}} tools";
+        const id =
+          (info.kind === "file" || info.kind === "edit") && info.path
+            ? info.path
+            : tool.id;
+        const members = counts.get(action);
+        if (members) members.add(id);
+        else counts.set(action, new Set([id]));
+      }
+    } else if (row.kind === "thinking") {
+      thinking = true;
+      activeThought ||= row.segments.some((part) => part.running);
+    } else if (row.kind === "notifications") notices += row.notices.length;
+    else if (row.kind === "context")
+      otherActivities.add(
+        row.context === "handoff" ? t("Summary") : t("Compact Summary"),
+      );
+    else if (
+      row.kind === "origin" ||
+      (row.kind === "activity" && row.childName)
+    )
+      otherActivities.add(t("Subagents"));
+    else if (row.kind === "activity")
+      otherActivities.add(row.name || t("Activity"));
+  }
+  const labels = Array.from(counts, ([action, members]) =>
+    t(action, { count: members.size }),
+  );
+  labels.push(...otherActivities);
+  if (notices) labels.push(t("System update count", { count: notices }));
+  if (complete) {
+    const duration = executionTime(durationMs);
+    labels.unshift(
+      duration ? t("Worked for {{duration}}", { duration }) : t("Worked"),
+    );
+  }
+  const preview = labels.length
+    ? labels.join(", ")
+    : thinking
+      ? activeThought
+        ? t("Thinking", { context: "active" })
+        : t("Thought")
+      : t("View the available execution steps");
   return (
     <ExecutionDetails
       complete={complete}
       preview={preview}
-      running={!complete && (toolInfo?.running || thinking)}
+      running={!complete && (running || activeThought)}
     >
       {(open) => (
         <ExecutionReader open={open} complete={complete}>

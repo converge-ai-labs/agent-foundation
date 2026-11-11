@@ -450,16 +450,16 @@ it("translates an incomplete saved execution preview without changing its open r
     />,
   );
   const heading = screen.getByRole("button", {
-    name: /Read.*\/tmp\/Read.*No result recorded.*Work log/,
+    name: /Read 1 file.*Work log/,
   });
   fireEvent.click(heading);
   expect(heading.getAttribute("aria-expanded")).toBe("true");
   await act(() => i18n.changeLanguage("zh-CN"));
   expect(
     screen.getByRole("button", {
-      name: /读取.*\/tmp\/Read.*未记录结果.*工作日志/,
+      name: /读取 1 个文件.*工作日志/,
     }),
   ).toBe(heading);
   expect(heading.getAttribute("aria-expanded")).toBe("true");
-  expect(heading.textContent).toContain("/tmp/Read");
+  expect(heading.textContent).not.toContain("/tmp/Read");
 });
