@@ -1172,6 +1172,28 @@
       "title": "DynamicSubagents",
       "type": "object"
     },
+    "EgressConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SecretReference"
+          },
+          "maxItems": 64,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "destinations"
+      ],
+      "title": "EgressConfiguration",
+      "type": "object"
+    },
     "EgressDestinations": {
       "discriminator": {
         "mapping": {
@@ -1370,58 +1392,6 @@
       "title": "EntryView",
       "type": "object"
     },
-    "EnvdEgressConfiguration": {
-      "additionalProperties": false,
-      "properties": {
-        "destinations": {
-          "$ref": "#/$defs/EgressDestinations"
-        },
-        "secrets": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/EnvdSecretReference"
-          },
-          "maxItems": 64,
-          "title": "Secrets",
-          "type": "array"
-        }
-      },
-      "required": [
-        "destinations"
-      ],
-      "title": "EnvdEgressConfiguration",
-      "type": "object"
-    },
-    "EnvdSecretReference": {
-      "additionalProperties": false,
-      "properties": {
-        "env": {
-          "maxLength": 128,
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-          "title": "Env",
-          "type": "string"
-        },
-        "inject_hosts": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 256,
-          "minItems": 1,
-          "title": "Inject Hosts",
-          "type": "array"
-        },
-        "source": {
-          "$ref": "#/$defs/EnvironmentCredentialSource"
-        }
-      },
-      "required": [
-        "env",
-        "source",
-        "inject_hosts"
-      ],
-      "title": "EnvdSecretReference",
-      "type": "object"
-    },
     "EnvironmentAction": {
       "description": "Exact authorization values in the locked first-party catalog.",
       "enum": [
@@ -1558,27 +1528,6 @@
       ],
       "title": "EnvironmentAction",
       "type": "string"
-    },
-    "EnvironmentCredentialSource": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "environment",
-          "title": "Kind",
-          "type": "string"
-        },
-        "name": {
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-          "title": "Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "name"
-      ],
-      "title": "EnvironmentCredentialSource",
-      "type": "object"
     },
     "EnvironmentMount": {
       "additionalProperties": false,
@@ -2068,6 +2017,14 @@
       ],
       "title": "HistoricalDesktopPending",
       "type": "object"
+    },
+    "Hosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
     },
     "InitialRun": {
       "additionalProperties": false,
@@ -4021,6 +3978,33 @@
       ],
       "type": "string"
     },
+    "SecretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Credential Id",
+          "type": "string"
+        },
+        "env": {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "$ref": "#/$defs/Hosts"
+        }
+      },
+      "required": [
+        "env",
+        "credential_id",
+        "inject_hosts"
+      ],
+      "title": "SecretReference",
+      "type": "object"
+    },
     "SessionConfiguration": {
       "additionalProperties": false,
       "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
@@ -4040,7 +4024,7 @@
         "egress": {
           "anyOf": [
             {
-              "$ref": "#/$defs/EnvdEgressConfiguration"
+              "$ref": "#/$defs/EgressConfiguration"
             },
             {
               "type": "null"

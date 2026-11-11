@@ -473,7 +473,7 @@ async def test_semantic_wait_preserves_refs_and_observes_future_controls(native_
     endpoint, _ = native_browser
     async with CdpBrowserBackend.connect(endpoint) as backend:
         tools = BrowserUseCapability(backend).get_toolset().tools
-        assert len(tools) == 9
+        assert len(tools) == 11
 
         async def call(name, /, **kwargs):
             schema = tools[name].function_schema

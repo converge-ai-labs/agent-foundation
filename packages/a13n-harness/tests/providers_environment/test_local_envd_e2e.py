@@ -404,6 +404,49 @@ async def test_session_replacement_requires_retirement_and_never_resurrects(bina
         assert not device._sessions
 
 
+async def test_host_configuration_identity_survives_detach_and_restart(binary, tmp_path):
+    from a13n_envd_client import EIPSessionStateError
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery, EnvdSessionState
+
+    async with LocalEnvdProviderRuntime(
+        executable=binary,
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        configuration=LocalEnvdLaunchConfiguration(default_working_directory=tmp_path),
+    ) as runtime:
+        device = await runtime.acquire_device()
+        recovery = EnvdSessionRecovery()
+
+        def borrow(owner, identity):
+            return owner.borrow(
+                device,
+                target=device.descriptor.device_id,
+                expected_device_id=device.descriptor.device_id,
+                configuration=SessionConfiguration(),
+                configuration_identity=identity,
+                required_methods=frozenset(),
+                expected_boundary=None,
+            )
+
+        async with borrow(recovery, "selection-a") as first:
+            session_id = first.session_id
+            async with borrow(recovery, "selection-a") as shared:
+                assert shared is first
+            with pytest.raises(EIPSessionStateError, match="incompatible"):
+                async with borrow(recovery, "selection-b"):
+                    pytest.fail("an active borrower must not change the binding identity")
+        assert recovery.state is not None
+        restored = EnvdSessionRecovery(state=EnvdSessionState.model_validate_json(recovery.state.model_dump_json()))
+        async with borrow(restored, "selection-a") as attached:
+            assert attached.session_id == session_id
+            assert attached.descriptor.owner_epoch > recovery.state.descriptor.owner_epoch
+        with pytest.raises(EIPSessionStateError, match="retire"):
+            async with borrow(restored, "selection-b"):
+                pytest.fail("a changed selection requires explicit retirement")
+        await restored.retire(device, target=device.descriptor.device_id)
+        async with borrow(restored, "selection-b") as replacement:
+            assert replacement.session_id != session_id
+
+
 async def test_exact_restore_rejects_a_reloaded_successor_before_taking_ownership(binary, tmp_path):
     from a13n_harness.environment.attachments import DeviceEIPSessionSource
     from a13n_harness.environment.models import EnvironmentError

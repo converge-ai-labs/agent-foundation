@@ -2,9 +2,9 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Annotated, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, runtime_checkable
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 from pydantic_ai import BinaryContent, ModelRetry, RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
@@ -15,6 +15,17 @@ from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMe
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset
 
 from .actions import Action, Clip, Condition, ElementCondition, Ref, Visual
+
+if TYPE_CHECKING:
+    from a13n_harness.toolsets.codeact import CodeActToolPolicy
+
+
+class _BrowserToolset(InstructionFunctionToolset):
+    @property
+    def codeact_policy(self) -> "CodeActToolPolicy":
+        from a13n_harness.toolsets.codeact import CodeActToolPolicy
+
+        return CodeActToolPolicy(default=True)
 
 
 @dataclass(frozen=True)
@@ -105,6 +116,10 @@ class BrowserBackend(Protocol):
         limit: int = 100,
     ) -> str: ...
 
+    async def js(self, expression: str) -> JsonValue: ...
+
+    async def cdp(self, method: str, params: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]: ...
+
     async def screenshot(self, *, full_page: bool = False, clip: Clip | None = None) -> BrowserScreenshot: ...
 
     async def tabs(self, action: BrowserTabAction, *, target: str = "", url: str = "") -> tuple[BrowserTab, ...]: ...
@@ -149,6 +164,8 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             "dialog",
             "files",
             "screenshot",
+            "js",
+            "cdp",
         }:
             raise ValueError("Unknown browser tool key.")
         self.enabled_tools = enabled_tools
@@ -201,7 +218,15 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             "browser_wait for explicit conditions, and browser_dialog for JavaScript dialogs. "
             "For browser_files: " + self.file_instructions + " "
             "Prefer human takeover or saved-password autofill for credentials. "
-            "The Host browser is outside the Agent Environment's isolation."
+            "The Host browser is outside the Agent Environment's isolation. "
+            "In CodeAct, await browser steps in order: operations on the same binding or page serialize, "
+            "so do not gather a wait with the action meant to satisfy it. "
+            "Screenshot calls return metadata to code; the model sees the image when the runner returns. "
+            "End the feed after capture when the next action needs visual inspection. "
+            "Use browser_js for task-specific page extraction or JavaScript, and browser_cdp for lower-level "
+            "selected-page protocol commands. Both expire element and screenshot refs, including on failure; "
+            "observe again before reference-based actions. They do not verify business outcomes or undo page effects. "
+            "Human control blocks new tool requests; it does not remove timers or listeners installed by page code."
         )
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
@@ -214,7 +239,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         backend = self.backend
         if backend is None:
             return DynamicToolset(self._toolset_for_run, per_run_step=False)
-        tools = InstructionFunctionToolset(instructions=self._instructions())
+        tools = _BrowserToolset(instructions=self._instructions())
 
         def metadata(name: str, read: bool = False) -> dict[str, object]:
             effects: set[ToolEffect] = {"read"} if read else {"execute", "external_communication"}
@@ -326,6 +351,33 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
                     limit=limit,
                 )
             )
+
+        @tools.tool_plain(metadata=metadata("js"))
+        async def browser_js(expression: Annotated[str, Field(min_length=1, max_length=65536)]) -> JsonValue:
+            """Evaluate JavaScript in the selected page's main world, await its Promise and return a JSON value.
+            Use an expression or an invoked function. Undefined returns null; non-JSON results fail explicitly.
+            Expires element/screenshot refs even on failure. Effects may persist after failure or cancellation.
+            """
+            try:
+                return await guarded(backend.js(expression))
+            finally:
+                self._references.clear()
+                self._revision = ""
+                self._screenshot = None
+
+        from .programming import CDP_DESCRIPTION
+
+        @tools.tool_plain(metadata=metadata("cdp"), description=CDP_DESCRIPTION)
+        async def browser_cdp(
+            method: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*$", max_length=160)],
+            params: dict[str, JsonValue] | None = None,
+        ) -> JsonValue:
+            try:
+                return await guarded(backend.cdp(method, params))
+            finally:
+                self._references.clear()
+                self._revision = ""
+                self._screenshot = None
 
         @tools.tool_plain(metadata=metadata("navigate"))
         async def browser_navigate(

@@ -208,7 +208,8 @@ button.metric {
 .breakdown > summary::-webkit-details-marker {
   display: none;
 }
-.breakdown > summary::before {
+.breakdown > summary::before,
+.modelHeader::before {
   content: "";
   width: 5px;
   height: 5px;
@@ -218,7 +219,8 @@ button.metric {
   transform: rotate(-45deg);
   color: var(--a13n-secondary);
 }
-.breakdown[open] > summary::before {
+.breakdown[open] > summary::before,
+.modelDetails[open] > .modelHeader::before {
   transform: rotate(45deg);
 }
 .breakdown > summary > span {

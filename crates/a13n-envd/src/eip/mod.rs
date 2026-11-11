@@ -39,6 +39,18 @@ mod tests {
     }
 
     #[test]
+    fn empty_allowlist_keeps_its_discriminator_when_default_fields_are_omitted() {
+        let decoded: super::EgressDestinations = decode(r#"{"mode":"allowlist"}"#).unwrap();
+        assert!(
+            matches!(&decoded, super::EgressDestinations::Allowlist(policy) if policy.hosts.is_empty())
+        );
+        assert_eq!(encode(&decoded).unwrap(), br#"{"mode":"allowlist"}"#);
+        let public: super::EgressDestinations = decode(r#"{"mode":"public"}"#).unwrap();
+        assert!(matches!(public, super::EgressDestinations::Public(_)));
+        assert!(decode::<super::EgressDestinations>(r#"{"mode":"unknown"}"#).is_err());
+    }
+
+    #[test]
     fn accessibility_helper_json_preserves_discriminators_and_defaults() {
         use super::EipExpandedJson;
         let read: super::AccessibilityRead = decode(r#"{"kind":"text"}"#).unwrap();

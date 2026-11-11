@@ -307,8 +307,8 @@ async def test_browser_tool_effects_cover_network_and_host_upload_reads():
     from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 
     tools = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset().tools
-    assert len(tools) == 9
-    for name in ("navigate", "act", "files", "tabs", "dialog"):
+    assert len(tools) == 11
+    for name in ("navigate", "act", "files", "tabs", "dialog", "js", "cdp"):
         metadata = tools[f"browser_{name}"].metadata[HARNESS_TOOL_METADATA_KEY]
         assert {"execute", "external_communication"} <= metadata.effects
         assert metadata.idempotency == "none"
@@ -328,6 +328,8 @@ async def test_browser_tool_effects_cover_network_and_host_upload_reads():
         ("browser_tabs", {}, "tabs"),
         ("browser_dialog", {}, "dialog"),
         ("browser_files", {}, "downloads"),
+        ("browser_js", {"expression": "1"}, "js"),
+        ("browser_cdp", {"method": "DOM.getDocument"}, "cdp"),
     ],
 )
 async def test_host_can_return_takeover_guidance_without_waiting_or_replaying(name, args, method):

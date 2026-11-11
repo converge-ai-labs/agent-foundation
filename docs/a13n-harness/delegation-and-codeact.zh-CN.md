@@ -153,6 +153,25 @@ sum(values)
 
 对于设置了 `defer_loading=True` 的工具，先发现工具或加载其 Capability，再调用 runner。大型工具集合可使用 [ToolSearch 分组](tool-search.md#use-with-codeact)，在 runner 内发现工具。ToolSearch 代理调用始终顺序执行，包括放在 `asyncio.gather` 中时。
 
+### 组合浏览器工具
+
+嵌入式 Host 可以同时组合 `BrowserUseCapability()` 与 `CodeActCapability()`，通过 `RunBindings.embedded(browser_backend=backend)` 提供已授权的 `BrowserBackend`。同一组浏览器工具仍可直接调用。用 `BrowserUseCapability(enabled_tools=frozenset({"observe", "js", "cdp"}))` 选择工具子集，无需另设浏览器模式。自定义 backend 通过实现 `js(expression)` 和 `cdp(method, params)` 支持这两个编程工具。
+
+在 `run_code` 中组合任务专用页面提取与协议查询：
+
+```python
+await browser_observe()
+cards = await browser_js(
+    expression="[...document.querySelectorAll('.card')].map(el => el.textContent)"
+)
+tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
+{"cards": cards, "accessibility_nodes": len(tree["nodes"])}
+```
+
+`browser_js` 在选中页的主世界执行，等待 Promise，并返回 JSON 值。Undefined 返回 `None`，非 JSON 结果明确报错。`browser_cdp` 返回选中页 session 的协议结果。工具说明列出支持的页面协议域与排除的方法。浏览器和 target 管理、Host 文件路径及运行时事件订阅保留在现有责任边界中；相应操作使用 `browser_tabs` 与 `browser_files`。
+
+两个工具都会使元素和截图引用失效，包括执行失败时。使用原生引用前重新观察。同一页面上的连续操作应顺序等待。如果命令打开 JavaScript 对话框，工具会放弃该命令的结果并交还控制权：使用 `browser_dialog`，再观察结果，不要重放原命令。关闭对话框后，页面效果仍可能继续。脚本抛错前可能已经完成部分修改。超时、取消和人接管不会回滚页面效果，也不会卸载已安装的 timer 和 listener。同步 renderer 执行有时间限制，但 Promise 等待仍可能达到传输期限；需要确定的异步截止时间时，在表达式中实现 Promise 超时。每次工具请求仍遵循 Host 现有的准入与人接管检查。
+
 ### 复用程序
 
 将 UTF-8 文件保存到可读的 Environment 挂载。定义一个不带装饰器的 `async def main(inputs)`，返回 JSON 兼容结果：

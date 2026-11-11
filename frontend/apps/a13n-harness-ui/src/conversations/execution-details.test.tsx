@@ -132,6 +132,17 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(trigger.textContent).toContain("Run 2 commands, Read 1 file");
+  view.rerender(
+    <ConversationTranscript
+      {...base}
+      running
+      blocks={[
+        { ...tool, result: "checked" },
+        { id: "thought", kind: "thinking", text: "Next step" },
+      ]}
+    />,
+  );
+  expect(trigger.textContent).toBe("ThinkingWork log");
 });
 
 it.each([
@@ -417,7 +428,7 @@ it("folds completed progress, thoughts and tools together while keeping the fina
   expect(screen.getByText("I will inspect the submit handler.")).toBeTruthy();
   view.rerender(<ConversationTranscript {...props} />);
   const trigger = screen.getByRole("button", {
-    name: /Worked for 1m 5s/,
+    name: /^Worked for 1m 5s\s*Work log$/,
     expanded: false,
   });
   expect(screen.queryByText("I will inspect the submit handler.")).toBeNull();

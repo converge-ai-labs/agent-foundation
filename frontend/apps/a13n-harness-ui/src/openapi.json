@@ -18439,6 +18439,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "model_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Identity"
           }
         },
         "type": "object",

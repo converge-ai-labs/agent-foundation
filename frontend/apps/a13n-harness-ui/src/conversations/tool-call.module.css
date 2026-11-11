@@ -116,7 +116,10 @@
   margin: 0;
   color: var(--muted-foreground);
   font-size: var(--a13n-text-body);
-  height: 1.5rem;
+  height: var(--tool-row);
+  min-height: var(--tool-row);
+  padding-block: 0;
+  line-height: 20px;
 }
 .details {
   overflow: visible;
@@ -312,7 +315,7 @@
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
-  min-height: 2.25rem;
+  min-height: var(--tool-row);
 }
 .threadLink {
   display: inline-flex;
@@ -335,7 +338,7 @@
    semantic details, when it has any, follow directly beneath. */
 .operations {
   display: grid;
-  gap: 4px;
+  gap: 0;
 }
 .operation {
   min-width: 0;
@@ -354,16 +357,25 @@
   color: var(--foreground);
 }
 .operationSummary {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--a13n-text-supporting, var(--muted-foreground));
 }
+.operation > header .phase {
+  flex: none;
+  white-space: nowrap;
+}
+.operation > .details:has(> .recordedDisclosure:only-child) {
+  padding-block: 0;
+}
 .operation > header .actions {
   flex: none;
   flex-wrap: nowrap;
+  margin-inline-start: auto;
+  padding-inline-start: 0;
   min-height: 0;
   gap: 4px;
 }

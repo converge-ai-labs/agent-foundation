@@ -123,6 +123,45 @@ async def test_run_only_selection_inherits_named_policy_and_refuses_conflicting_
     ]
 
 
+async def test_run_policy_override_preserves_desired_binding_and_next_run_returns_to_it(env, runs_kit):
+    first = await start(env)
+    thread_id, environment_id = first["thread"]["id"], primary(first["run"])
+    binding_path = f"{env.api}/threads/{thread_id}/session-bindings/{environment_id}/default"
+    desired = (await env.client.get(binding_path)).json()
+    await interrupt(env, first["run"]["id"])
+    response = await runs_kit.submit(
+        env,
+        thread_id,
+        runs_kit.message(
+            env.agent,
+            "Temporary policy",
+            options={
+                "environment": {
+                    "mode": "existing",
+                    "environment_id": environment_id,
+                    "session_configuration": {"commands": False},
+                }
+            },
+        ),
+    )
+    assert response.status_code == 201, response.text
+    temporary = response.json()["run"]
+    assert temporary is not None, response.text
+    assert temporary["environment_mounts"][0]["session_configuration"]["commands"] is False
+    assert (await env.client.get(binding_path)).json() == desired
+    await interrupt(env, temporary["id"])
+    response = await runs_kit.submit(env, thread_id, runs_kit.message(env.agent, "Default policy"))
+    assert response.status_code == 201, response.text
+    restored = response.json()["run"]
+    assert restored is not None, response.text
+    assert (
+        restored["environment_mounts"][0]["session_configuration"]
+        == first["run"]["environment_mounts"][0]["session_configuration"]
+    )
+    assert restored["environment_mounts"][0]["session_version"] > temporary["environment_mounts"][0]["session_version"]
+    assert (await env.client.get(binding_path)).json() == desired
+
+
 async def test_resume_reuses_the_run_only_primary(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     review = {"name": "review", "description": "Review", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(env, scripted_model, client_tools=[review])

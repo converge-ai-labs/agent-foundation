@@ -8,6 +8,84 @@ import {
 
 const signal = new AbortController().signal;
 
+it("remaps Session credential references while preserving policy and checks active workspace resources", async () => {
+  const config = {
+    ...initialConfig(),
+    model: "local",
+    default_session_configuration: {
+      working_directory: "/workspace",
+      egress_mode: "controlled" as const,
+      egress: {
+        destinations: { mode: "public" as const },
+        secrets: [
+          {
+            env: "GH_TOKEN",
+            credential_id: "ecred_source",
+            inject_hosts: ["api.github.com"],
+          },
+        ],
+      },
+    },
+  };
+  const reference = agentDependencies(config).find(
+    (item) => item.kind === "credential",
+  )!;
+  const replaced = reference.replace("ecred_local");
+  expect(
+    config.default_session_configuration.egress.secrets[0].credential_id,
+  ).toBe("ecred_source");
+  expect(replaced.default_session_configuration).toEqual({
+    ...config.default_session_configuration,
+    egress: {
+      ...config.default_session_configuration.egress,
+      secrets: [
+        {
+          ...config.default_session_configuration.egress.secrets[0],
+          credential_id: "ecred_local",
+        },
+      ],
+    },
+  });
+  const { client } = clientFor((url) =>
+    url.pathname.endsWith("/models")
+      ? { items: [{ key: "local", name: "Local model", enabled: true }] }
+      : {
+          items: [
+            {
+              id: "ecred_source",
+              name: "Revoked",
+              state: "revoked",
+              allowed_hosts: ["api.github.com"],
+            },
+            {
+              id: "ecred_local",
+              name: "GitHub",
+              state: "active",
+              allowed_hosts: ["api.github.com"],
+            },
+          ],
+        },
+  );
+  const checks = await inspectAgentDependencies(
+    client,
+    "ws_target",
+    config,
+    signal,
+  );
+  expect(checks.find((item) => item.path === reference.path)).toMatchObject({
+    available: false,
+    options: [{ value: "ecred_local" }],
+  });
+  const remapped = await inspectAgentDependencies(
+    client,
+    "ws_target",
+    replaced,
+    signal,
+  );
+  expect(remapped.every((item) => item.available)).toBe(true);
+  client.close();
+});
+
 function clientFor(read: (url: URL) => object) {
   const fetch = vi.fn<typeof globalThis.fetch>(
     async (input, init) =>

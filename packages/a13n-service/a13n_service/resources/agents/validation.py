@@ -24,6 +24,7 @@ from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import ScrapeConfiguration, SearchConfiguration
 from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
+from a13n_service.resources.egress_credentials.service import validate_references
 from a13n_service.resources.environment_instances.access import lock_environments
 from a13n_service.resources.environment_templates.service import resolve_template
 from a13n_service.resources.memories.service import resolve_memory
@@ -132,6 +133,16 @@ async def validate_config(
     except ValidationError:
         raise invalid("connection_tools", "declares more tool permissions than an agent may have") from None
     await _check_web(session, actor, scope, config, registry=registry, verb=verb, authority=authority)
+    if config.default_session_configuration is not None:
+        with at_field("default_session_configuration"):
+            await validate_references(
+                session,
+                actor,
+                scope,
+                config.default_session_configuration.credential_references,
+                verb=verb,
+                authority=authority,
+            )
     templates = {"default_environment_template_id": config.default_environment_template_id} | {
         f"subagents.named.{name}.environment.template_id": edge.environment.template_id
         for name, edge in config.subagents.named.items()

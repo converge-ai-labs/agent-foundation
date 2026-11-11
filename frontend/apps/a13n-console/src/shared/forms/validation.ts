@@ -14,6 +14,24 @@ export const validateAgentConfig = ajv.compile<Schema["AgentConfig-Input"]>({
 export const validateRunOverride = ajv.compile<Schema["AgentOverride-Input"]>({
   $ref: "service#/components/schemas/AgentOverride-Input",
 });
+const validateSessionConfiguration = ajv.compile<
+  Schema["SessionConfiguration"]
+>({
+  $ref: "service#/components/schemas/SessionConfiguration",
+});
+export function sessionConfiguration(
+  text: string,
+): Schema["SessionConfiguration"] {
+  const value: unknown = JSON.parse(text);
+  if (!validateSessionConfiguration(value))
+    throw new Error(
+      ajv.errorsText(validateSessionConfiguration.errors, {
+        separator: "\n",
+        dataVar: "configuration",
+      }),
+    );
+  return value;
+}
 export function runOverride(value: unknown): Schema["AgentOverride-Input"] {
   if (!validateRunOverride(value))
     throw new Error(

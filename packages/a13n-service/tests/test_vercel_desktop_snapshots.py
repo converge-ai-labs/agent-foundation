@@ -529,15 +529,22 @@ async def test_authored_startup_lost_reply_then_failure_allows_explicit_recovery
         row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
         assert not lifecycle.settled(row) and Handle.model_validate(row.handle).state is not None
         row.next_operation_at = None
-    second = await lifecycle.claim(service.runtime, identity, owner="reconcile")
-    assert second.operation_id == first.operation_id
-    await lifecycle.publish(service.runtime, second, await lifecycle.perform(service.runtime, second))
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
-        assert lifecycle.settled(row) and row.failure["code"] == "envd_startup_failed"
-        assert row.failure["permanent"] and row.failure["certainty"] == "known"
-        before = Handle.model_validate(row.handle)
-        row.next_operation_at = None
+    # The guest writes its failure status before exiting and releasing the install lock.
+    async with asyncio.timeout(5):
+        while True:
+            second = await lifecycle.claim(service.runtime, identity, owner="reconcile")
+            assert second.operation_id == first.operation_id
+            await lifecycle.publish(service.runtime, second, await lifecycle.perform(service.runtime, second))
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, identity, with_for_update=True)
+                assert row.status == phase
+                row.next_operation_at = None
+                if row.failure is not None:
+                    assert lifecycle.settled(row) and row.failure["code"] == "envd_startup_failed"
+                    assert row.failure["permanent"] and row.failure["certainty"] == "known"
+                    before = Handle.model_validate(row.handle)
+                    break
+            await asyncio.sleep(0.01)
     assert await lifecycle.claim(service.runtime, identity, owner="no-replay") is None
     assert effects.read_text() == "x"
     progress = await service.client.get(url + "/creation")

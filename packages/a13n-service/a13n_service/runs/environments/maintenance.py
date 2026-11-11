@@ -22,6 +22,7 @@ from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
 from a13n_service.runs.environments import vercel_snapshots
+from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.lifecycle import (
     LOST,
     PHASES,
@@ -175,6 +176,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     mounts = mounts & (ThreadEnvironmentRow.name != PRIMARY)
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.provider_identity is None:
+                await retire_environment(session, environment.id)
                 environment.status = "deleted"
                 environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
                 environment.next_operation_at = None

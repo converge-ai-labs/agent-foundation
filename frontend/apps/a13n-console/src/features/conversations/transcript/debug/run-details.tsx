@@ -24,6 +24,7 @@ import { UNKNOWN } from "../../../../shared/unknown";
 import { AgentLink } from "../../../agents/link";
 import { useAgent } from "../../../agents/queries";
 import { EnvironmentReference } from "../../../environments/reference";
+import { CapturedSessionPolicy } from "../../../credentials/captured-policy";
 import { MemoryMountRows } from "../../../memories/mounts";
 import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
@@ -211,6 +212,7 @@ function RunDetails({ selected }: { selected: Run }) {
                   {run.environment_mounts.map((mount) => (
                     <ListRow
                       key={mount.name}
+                      className="flex-wrap"
                       icon={<MonitorIcon size={16} />}
                       name={mount.name}
                       secondary={mount.working_directory ?? undefined}
@@ -228,7 +230,11 @@ function RunDetails({ selected }: { selected: Run }) {
                           <EnvironmentReference id={mount.environment_id} />
                         </div>
                       }
-                    />
+                    >
+                      <div className="order-last w-full pt-2">
+                        <CapturedSessionPolicy mount={mount} />
+                      </div>
+                    </ListRow>
                   ))}
                 </ListRows>
               </div>

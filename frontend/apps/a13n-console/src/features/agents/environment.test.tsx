@@ -8,7 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
 import { AgentEditor } from "./editor";
 
@@ -43,7 +43,10 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("preserves collapsed model settings and saves them with the environment choice", async () => {
+const submit = vi.fn();
+let cloudName = "Sandbox";
+
+beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -56,7 +59,7 @@ it("preserves collapsed model settings and saves them with the environment choic
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
   HTMLElement.prototype.scrollIntoView = () => {};
-  let cloudName = "Sandbox";
+  cloudName = "Sandbox";
   http.GET.mockImplementation(async (path: string) => ({
     data: {
       items:
@@ -86,12 +89,21 @@ it("preserves collapsed model settings and saves them with the environment choic
                   { id: "provider_local", type: "local" },
                   { id: "provider_cloud", type: "e2b" },
                 ]
-              : [{ type: "e2b", display_name: "E2B" }],
+              : path === "/api/v1/egress-credentials"
+                ? [
+                    {
+                      id: "ecred_0123456789abcdef0123",
+                      name: "GitHub automation",
+                      state: "active",
+                      credential_version: 2,
+                      allowed_hosts: ["api.github.com"],
+                    },
+                  ]
+                : [{ type: "e2b", display_name: "E2B" }],
       next_cursor: null,
     },
     response: new Response(null, { status: 200 }),
   }));
-  const submit = vi.fn();
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -103,6 +115,7 @@ it("preserves collapsed model settings and saves them with the environment choic
             ...initialConfig(),
             model: "model-0123456789abcdef0123",
             instructions: "Check the evidence.",
+            default_session_configuration: { working_directory: "/workspace" },
           }}
           version={7}
           etag='"agent-v1"'
@@ -113,6 +126,9 @@ it("preserves collapsed model settings and saves them with the environment choic
       </MemoryRouter>
     </QueryClientProvider>,
   );
+});
+
+it("preserves collapsed model settings and saves them with the environment choice", async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /^Model settings/ }));
   await user.type(
@@ -183,6 +199,7 @@ it("preserves collapsed model settings and saves them with the environment choic
       instructions: "Check the evidence. Keep the draft.",
       model_settings: { max_tokens: 2048, temperature: 0.4 },
       default_environment_template_id: "envtpl_1234567890abcdef1234",
+      default_session_configuration: { working_directory: "/workspace" },
     }),
     '"agent-v1"',
     null,
@@ -209,6 +226,61 @@ it("preserves collapsed model settings and saves them with the environment choic
     expect.objectContaining({
       default_environment_template_id: null,
       default_environment_id: null,
+    }),
+    '"agent-v1"',
+    null,
+  );
+});
+
+it("saves credential bindings with the selected environment and preserves other Session settings", async () => {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(await screen.findByRole("option", { name: "Sandbox E2B" }));
+  await user.click(screen.getByRole("combobox", { name: "Outbound network" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Controlled HTTPS egress" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Allowed destinations" }),
+    "API.GITHUB.COM.",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Add credential binding" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Credential" }));
+  await user.click(
+    await screen.findByRole("option", { name: "GitHub automation" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Variable name" }),
+    "GH_TOKEN",
+  );
+  await user.click(screen.getByRole("checkbox", { name: "api.github.com" }));
+  await user.click(screen.getByRole("button", { name: /Agent usage preview/ }));
+  expect(
+    screen.getByText(
+      'curl -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/',
+    ),
+  ).toBeTruthy();
+  expect(submit).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      default_environment_template_id: "envtpl_1234567890abcdef1234",
+      default_session_configuration: {
+        working_directory: "/workspace",
+        egress_mode: "controlled",
+        egress: {
+          destinations: { mode: "allowlist", hosts: ["api.github.com"] },
+          secrets: [
+            {
+              env: "GH_TOKEN",
+              credential_id: "ecred_0123456789abcdef0123",
+              inject_hosts: ["api.github.com"],
+            },
+          ],
+        },
+      },
     }),
     '"agent-v1"',
     null,

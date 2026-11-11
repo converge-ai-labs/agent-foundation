@@ -167,7 +167,7 @@ it("selects headless installation for outbound WebSocket and retains a chosen te
   await user.click(
     screen.getByRole("combobox", { name: "Execution transport" }),
   );
-  await user.click(screen.getByRole("option", { name: "Envd ws" }));
+  await user.click(await screen.findByRole("option", { name: "Envd ws" }));
   expect(configuration()).toMatchObject({
     template: "base",
     preparation: "headless",
