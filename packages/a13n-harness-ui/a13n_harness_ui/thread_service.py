@@ -207,13 +207,15 @@ class ThreadService:
         )
 
     async def _branch_boundaries(self, source: Thread, ref: ObjectRef, continuing: bool):
-        terminal = (
-            ref == source.continuation
+        terminal_run_id = (
+            source.last_execution.run_id
+            if ref == source.continuation
             and source.last_execution is not None
             and source.last_execution.status in {"cancelled", "failed"}
+            else None
         )
         saved = (
-            await read_continuation(self._store.objects, ref, include_display=terminal)
+            await read_continuation(self._store.objects, ref, include_display=terminal_run_id is not None)
             if ref.object_kind is ObjectKind.continuation
             else await self._store.objects.read_model(ref, StoredThreadInitialState)
         )
@@ -229,9 +231,10 @@ class ThreadService:
                         result.setdefault((key, side), (messages, cut))
 
         add_native(history, await to_thread.run_sync(boundaries, history, continuing))
-        display = saved.display_history if isinstance(saved, Continuation) else None
+        display_archive = saved.display if isinstance(saved, Continuation) else None
+        display = display_archive.tail if display_archive else None
         terminal_key = None
-        if terminal and not continuing and display and display.run_id == source.last_execution.run_id:
+        if terminal_run_id and not continuing and display and display.run_id == terminal_run_id:
             item = next((item for item in reversed(display.items) if ordinary_input(item)), None)
             if item is not None:
                 terminal_key = str(item.content.get("input_group") or item.id)
@@ -260,25 +263,29 @@ class ThreadService:
                 )
             prior = previous.harness_state.message_history
             add_native(prior, await to_thread.run_sync(boundaries, prior, False))
-            if terminal_key and (terminal_key, "before") not in result and previous.display_history and saved.display:
+            if terminal_key and (terminal_key, "before") not in result and previous.display_history and display_archive:
                 # The durable display spans compaction. The previous completion is an exact
                 # edit prefix only for the immediately following ordinary input.
-                archive = await read_display(self._store.objects, saved.display)
+                archive = await read_display(self._store.objects, display_archive)
                 marks = set(previous.display_history.completed)
                 last = next((i for i in range(len(archive.items) - 1, -1, -1) if archive.items[i].id in marks), None)
                 if last is not None:
                     inputs = [item for item in archive.items[last + 1 :] if ordinary_input(item)]
                     if len(inputs) == 1:
                         item = inputs[0]
-                        meta = item.content.get("metadata") or {}
-                        ui = meta.get("harness_ui") or {}
+                        meta = item.content.get("metadata", {})
+                        ui = meta.get("harness_ui", {}) if isinstance(meta, dict) else None
+                        composer = ui.get("composer", {}) if isinstance(ui, dict) else None
                         if (
                             str(item.content.get("input_group") or item.id) == terminal_key
                             and item.kind == "text_message"
                             and item.content.get("text")
+                            and isinstance(meta, dict)
                             and not meta.get("media")
+                            and isinstance(ui, dict)
                             and not (ui.keys() - {"composer"})
-                            and not (ui.get("composer") or {}).get("skills")
+                            and isinstance(composer, dict)
+                            and not composer.get("skills")
                         ):
                             result[terminal_key, "before"] = (prior, len(prior))
         return result
