@@ -52,6 +52,7 @@ import {
   type NavigationRow,
 } from "./navigation-observations";
 import { DraftNavigation } from "./draft-navigation";
+import { BotNavigation } from "../bot";
 import { ChatSearch } from "./chat-search";
 
 import { NavigationDragContext, useNavigationDrag } from "./navigation-drag";
@@ -229,6 +230,7 @@ export function ConversationNavigation() {
             }}
           />
           <DraftNavigation />
+          <BotNavigation />
         </nav>
         <div className={styles.navigationHeading}>
           <span>{view === "recent" ? t("Recent") : t("Projects")}</span>
