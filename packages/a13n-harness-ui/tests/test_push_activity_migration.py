@@ -25,6 +25,8 @@ def test_push_activity_upgrade_preserves_subscription_and_signing_key(tmp_path):
         with engine.connect() as connection:
             row = connection.execute(text("SELECT * FROM web_push_subscription")).mappings().one()
             assert row["last_active_at"] is None
+            assert row["scope"] == "all"
+            assert row["language"] == "en"
             assert row["endpoint"] == "endpoint"
             assert row["p256dh"] == "public-key"
             assert row["auth"] == "auth"

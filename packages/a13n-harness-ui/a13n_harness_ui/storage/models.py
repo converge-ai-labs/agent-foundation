@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     Boolean,
@@ -228,6 +229,8 @@ class WebPushSubscriptionRecord(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[Literal["all", "bot"]] = mapped_column(String(8), nullable=False, server_default="all")
+    language: Mapped[Literal["en", "zh-CN"]] = mapped_column(String(8), nullable=False, server_default="en")
     last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 

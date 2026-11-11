@@ -432,6 +432,10 @@ Follow/read state belongs to this browser/site address and synchronizes across t
 
 ## Task notifications
 
+Choose **All** or **Bot only** under **Notify me about** in Notifications settings. The default is All. This browser-local choice filters both in-app notices and background notifications without affecting other devices, unread markers, or the explicit delivery test. Bot only includes Bot messages and requests for your input, while excluding ordinary Chat results.
+
+Bot publications show **New message from Bot** and a preview of the actual message. Choose **View message**, or click the system notification, to open Bot. Different messages from the same Run remain distinct. Bot input requests use **Bot needs your response** and open the decision in Activity. System notification titles follow the display language last synchronized by that browser; authored message text stays unchanged.
+
 1. On the receiving device, open **Settings → General → Notifications** at a stable HTTPS address.
 2. Choose **Allow notifications** or **Enable background notifications** and accept the browser prompt.
 3. Check **Enabled on this device**, then choose **Send test notification**.

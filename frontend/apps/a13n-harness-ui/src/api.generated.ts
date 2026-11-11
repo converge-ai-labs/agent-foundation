@@ -8928,6 +8928,11 @@ export interface components {
             /** Receipt Id */
             receipt_id: string;
             /**
+             * Message Id
+             * @default null
+             */
+            message_id?: string | null;
+            /**
              * Status
              * @enum {string}
              */
@@ -9357,6 +9362,18 @@ export interface components {
             keys: components["schemas"]["PushKeys"];
             /** Origin */
             origin: string;
+            /**
+             * Scope
+             * @default all
+             * @enum {string}
+             */
+            scope?: "all" | "bot";
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language?: "en" | "zh-CN";
         };
         /** ShareCreate */
         ShareCreate: {

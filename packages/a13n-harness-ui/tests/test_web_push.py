@@ -318,3 +318,90 @@ async def test_activity_cutoff_is_strict_server_time_and_reconciliation_is_not_a
         await repository.remove(devices[2].subscription_id)
         assert not await repository.mark_active(devices[2].subscription_id)
         assert await repository.get(devices[2].subscription_id) is None
+
+
+@pytest.mark.parametrize("language,title", [("en", "New message from Bot"), ("zh-CN", "Bot 给你发了消息")])
+def test_bot_message_payload_identifies_the_message_and_preserves_preview(language, title):
+    from a13n_harness_ui.bot_models import BOT_THREAD_ID
+    from a13n_harness_ui.web_push import notice_payload
+
+    notice = RootOperationNotice(
+        receipt_id="same-run", message_id="message-one", status="completed", brief="Actual message"
+    )
+    payload = notice_payload(BOT_THREAD_ID, "Internal activity", notice, language=language)
+    assert payload == {"title": title, "body": "Actual message", "path": "/bot", "tag": "a13n-harness-ui.message-one"}
+    other = notice_payload(
+        BOT_THREAD_ID, "Internal activity", notice.model_copy(update={"message_id": "message-two"}), language=language
+    )
+    assert other["tag"] != payload["tag"]
+    attention = notice_payload(
+        BOT_THREAD_ID,
+        "Bot",
+        RootOperationNotice(receipt_id="decision", status="suspended", brief="Approve changes?"),
+        language=language,
+    )
+    assert attention["title"] == ("Bot 需要你的回应" if language == "zh-CN" else "Bot needs your response")
+    assert attention["path"] == f"/threads/{BOT_THREAD_ID}"
+
+
+@pytest.mark.anyio
+async def test_push_scope_is_per_device_and_rechecked_for_queued_delivery(tmp_path):
+    from a13n_harness_ui.bot_models import BOT_THREAD_ID
+
+    from .test_bot import _write_configuration as bot_configuration
+
+    configuration = bot_configuration(tmp_path)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=configuration,
+        host_mode="webui",
+    ) as app:
+        ordinary = await app.create_thread(title="Work")
+        await app._threads.bot_thread()
+        sent = []
+        delivered = Event()
+
+        async def capture(request):
+            sent.append(
+                (
+                    str(request.url),
+                    json.loads(
+                        http_ece.decrypt(
+                            request.content, private_key=receiver, auth_secret=decode_key(bot_device.keys.auth)
+                        )
+                    ),
+                )
+            )
+            if len(sent) == 3:
+                delivered.set()
+            return httpx2.Response(201)
+
+        receiver, template = subscription()
+        all_device = template.model_copy(update={"scope": "all"})
+        bot_device = template.model_copy(
+            update={"endpoint": "https://fcm.googleapis.com/fcm/send/bot", "scope": "bot", "language": "zh-CN"}
+        )
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(capture)) as client:
+            push = WebPush(app._store, client)
+            for device in (all_device, bot_device):
+                await push.repository.save(device)
+                await push.repository.mark_active(device.subscription_id)
+            notice = RootOperationNotice(receipt_id="work", status="completed", brief="Done")
+            push.enqueue(ordinary.thread_id, notice)
+            push.enqueue(BOT_THREAD_ID, notice.model_copy(update={"message_id": "bot-message"}))
+            async with create_task_group() as tasks:
+                tasks.start_soon(push.run)
+                with fail_after(5):
+                    await delivered.wait()
+                tasks.cancel_scope.cancel()
+            assert len(sent) == 3
+            bot_deliveries = [payload for endpoint, payload in sent if endpoint == bot_device.endpoint]
+            assert len(bot_deliveries) == 1
+            assert bot_deliveries[0]["title"] == "Bot 给你发了消息"
+            assert bot_deliveries[0]["body"] == "Done"
+            assert bot_deliveries[0]["path"] == "/bot"
+            changed = all_device.model_copy(update={"scope": "bot"})
+            await push.repository.save(changed)
+            assert (await push.repository.get(changed.subscription_id)).scope == "bot"
+            assert not await push._deliver(all_device, {"path": f"/threads/{ordinary.thread_id}", "tag": "stale"})
+            assert len(sent) == 3
