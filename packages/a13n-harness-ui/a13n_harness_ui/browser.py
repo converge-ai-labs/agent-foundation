@@ -23,7 +23,7 @@ from a13n_harness.capabilities.browser import (
 from a13n_harness.capabilities.browser.actions import Action, Clip, Condition
 from a13n_harness.capabilities.browser.cdp import Chromium, Page
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from a13n_harness_ui.browser_capture import WindowPreview, window_ids
 from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
@@ -1060,6 +1060,14 @@ class HostBrowserBackend:
             return await scope.read(
                 kind, target=target, revision=revision, frame_index=frame_index, offset=offset, limit=limit
             )
+
+    async def js(self, expression: str) -> JsonValue:
+        async with self.operation() as scope:
+            return await scope.js(expression)
+
+    async def cdp(self, method: str, params: dict[str, JsonValue] | None = None) -> dict[str, JsonValue]:
+        async with self.operation() as scope:
+            return await scope.cdp(method, params)
 
     async def screenshot(self, *, full_page: bool = False, clip: Clip | None = None) -> BrowserScreenshot:
         async with self.operation() as scope:

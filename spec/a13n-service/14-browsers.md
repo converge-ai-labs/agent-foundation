@@ -20,6 +20,8 @@ A Thread has at most one desired Browser binding:
 
 [Run acceptance](05-runs.md) freezes the binding alongside the execution authority ceiling. Editing or detaching the desired binding affects future Runs; an accepted Run does not silently switch Browsers. A handback continuation uses the originating Run's binding and authority. Child and forked Threads have no implicit Browser binding; callers bind them explicitly. This avoids silently widening a child's target visibility or transferring a parent's tab ownership.
 
+Page JavaScript (`js`) and selected-page CDP (`cdp`) are ordinary entries in the existing browser toolset. Service forwards them through the same per-tool grants, frozen Run binding, selected-target permit and durable operation accounting as native browser operations. Completed script exceptions can settle their permit; unknown outcomes and cancellations cannot. Host file transfer and path projection remain with `browser_files`. No programmable-mode field or separate browser runtime is introduced.
+
 The Browser's lifetime is independent of its borrowers. Run exit and binding detachment disconnect borrowed clients without closing tabs or terminating the supplier allocation. Providers advertising retained-profile stop/start keep a private profile owned directly by the Browser. Stopping ends its runtime and viewer input while retaining the identity, binding and profile; the next authorized preparation or use starts a new runtime generation. Profiles are not independent resources and are not migrated between hosts. Release terminally removes the owned runtime and profile. Releasing an external attachment only unregisters Service access.
 
 ## External CDP attachment

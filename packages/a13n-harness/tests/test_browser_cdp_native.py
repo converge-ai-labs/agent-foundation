@@ -396,3 +396,48 @@ async def test_global_and_owned_bindings_share_pages_but_not_cleanup(native_brow
         assert process.returncode is None
     finally:
         await runtime.close()
+
+
+async def test_js_and_cdp_are_composable_in_existing_codeact_on_real_chromium(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness import RunBindings
+    from a13n_harness.tools._output import tool_execution_value
+
+    from .test_codeact_state import _code, _run
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        _, seen, _ = await _run(
+            [
+                _code(
+                    f"await browser_navigate(url={'data:text/html,' + quote(HTML.decode())!r})\nawait browser_observe()"
+                ),
+                _code("""
+await browser_js(expression="document.querySelector('input').focus(); undefined")
+await browser_cdp(method='Input.insertText', params={'text':'Native programming'})
+value = await browser_js(expression="Promise.resolve({message:document.querySelector('input').value})")
+root = await browser_cdp(method='DOM.getDocument', params={'depth':0})
+{'message':value['message'], 'node':root['root']['nodeName']}
+"""),
+                ("browser_js", {"expression": "document.title='Changed before failure'; throw Error('later')"}),
+                ("browser_js", {"expression": "document.title"}),
+                ("browser_js", {"expression": "NaN"}),
+                ("browser_cdp", {"method": "Target.getTargets"}),
+                ("browser_cdp", {"method": "Runtime.evaluate", "params": {}}),
+                ("browser_js", {"expression": "2 + 2"}),
+            ],
+            capabilities=(BrowserUseCapability(),),
+            bindings=RunBindings.embedded(browser_backend=backend),
+        )
+        assert seen[1].outcome == "success", seen[1].content
+        assert tool_execution_value(seen[1].content, seen[1].metadata) == {
+            "message": "Native programming",
+            "node": "#document",
+        }
+        assert "earlier effects" in str(seen[2].content)
+        assert tool_execution_value(seen[3].content, seen[3].metadata) == "Changed before failure"
+        assert "JSON value" in str(seen[4].content)
+        assert "outside the selected-page" in str(seen[5].content)
+        assert "Correct the request" in str(seen[6].content)
+        assert tool_execution_value(seen[7].content, seen[7].metadata) == 4

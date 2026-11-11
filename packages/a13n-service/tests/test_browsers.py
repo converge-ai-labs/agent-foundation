@@ -356,6 +356,8 @@ async def test_agent_native_tools_allocate_lazily_and_leave_tabs_alive(service, 
     request = await scripted_model.request()
     names = {tool["function"]["name"] for tool in request["tools"]}
     assert ("browser_tabs" in names) is not on_demand
+    assert ("browser_js" in names) is not on_demand
+    assert ("browser_cdp" in names) is not on_demand
     assert "browser_screenshot" not in names
     assert "browser_notify_on_handback" in names
     assert "<browser-context>" in str(request["messages"])
@@ -945,3 +947,60 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     assert ("Human control ended" in state.harness.model_dump_json()) is not retake_first
     assert summary.await_count == (0 if retake_first else 1)
     assert bool(fallback_calls) is (background and not retake_first)
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+@pytest.mark.parametrize("outcome", ["success", "script_error", "unknown", "invalid_params"])
+async def test_programming_retains_selected_page_grants_and_unknown_permits(
+    service, runs_kit, scripted_model, invocation, tool, outcome
+):
+    supplier, browser = await setup(service, runs_kit)
+    lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
+    async with execution.open_backend(
+        service.runtime, lease, binding, invocation, frozenset({"tabs", tool})
+    ) as backend:
+        await backend.tabs("new")
+        native = backend.native
+        native.page.requires_observation = False
+        original = supplier.send
+
+        async def send(method, params, session):
+            if method in {"Runtime.evaluate", "DOM.getDocument"}:
+                assert session == "session-new-1"
+                if outcome == "unknown":
+                    raise TimeoutError("outcome is unknown")
+                if outcome == "invalid_params":
+                    raise RuntimeError({"code": -32602, "message": "Invalid parameters"})
+                if outcome == "script_error":
+                    return {"exceptionDetails": {"text": "Uncaught"}}
+                return {"result": {"value": {"title": "page"}}}
+            return await original(method, params, session)
+
+        native.browser.client.send_raw.side_effect = send
+        if outcome in {"unknown", "invalid_params"} or (outcome == "script_error" and tool == "js"):
+            with pytest.raises(BrowserError) as error:
+                if tool == "js":
+                    await backend.js("document.title")
+                else:
+                    await backend.cdp("DOM.getDocument")
+            assert (
+                error.value.dispatch
+                == {"unknown": "unknown", "invalid_params": "not_dispatched", "script_error": "dispatched"}[outcome]
+            )
+        elif tool == "js":
+            assert await backend.js("document.title") == {"title": "page"}
+        else:
+            assert await backend.cdp("DOM.getDocument")
+        async with transaction(service.runtime.storage) as session:
+            unsettled = list(
+                await session.scalars(select(BrowserOperationRow).where(BrowserOperationRow.settled_at.is_(None)))
+            )
+            assert bool(unsettled) is (outcome == "unknown")
+        if outcome == "invalid_params":
+            assert await backend.tabs("list")  # Correctable requests must not strand the Browser.
+        other = "cdp" if tool == "js" else "js"
+        with pytest.raises(BrowserError, match="disabled"):
+            if other == "js":
+                await backend.js("1")
+            else:
+                await backend.cdp("DOM.getDocument")

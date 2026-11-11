@@ -543,6 +543,8 @@ async def test_every_added_tool_respects_global_human_takeover(browsers):
         backend.dialog("inspect"),
         backend.upload("ref", ("/private/file",), revision="revision"),
         backend.downloads(),
+        backend.js("document.title"),
+        backend.cdp("DOM.getDocument"),
     )
     for operation in calls:
         with pytest.raises(BrowserHumanControl):
@@ -1419,3 +1421,25 @@ async def test_admission_does_not_capture_binding_during_retirement(browsers):
     item.closed.set()
     assert await browsers.admit("thread-a") is None
     assert browsers.bindings["thread-a"] is item
+
+
+@pytest.mark.parametrize("tool", ["js", "cdp"])
+async def test_programming_forwarding_keeps_thread_page_and_live_authorization(browsers, tool):
+    backend = browsers.backend("thread-a", browsers.state("thread-a").session_id)
+    page = browsers.bindings["thread-a"].page
+    browsers.runtime.send.return_value = {"result": {"value": "ok"}}
+    browsers.runtime.send.side_effect = None
+    if tool == "js":
+        assert await backend.js("document.title") == "ok"
+    else:
+        assert await backend.cdp("DOM.getDocument", {"depth": 0}) == {"result": {"value": "ok"}}
+    assert browsers.runtime.send.call_args.args[-1] is page
+    browsers.authorize.assert_awaited_with("thread-a")
+    browsers.authorize.side_effect = BrowserError("Revoked")
+    before = browsers.runtime.send.await_count
+    with pytest.raises(BrowserError, match="Revoked"):
+        if tool == "js":
+            await backend.js("1")
+        else:
+            await backend.cdp("DOM.getDocument")
+    assert browsers.runtime.send.await_count == before

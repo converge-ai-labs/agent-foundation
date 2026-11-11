@@ -153,6 +153,25 @@ Keep the runner as the only tool call in its Model response. Compose the needed 
 
 For tools with `defer_loading=True`, discover the tool or load its Capability before calling the runner. For large collections, [grouped ToolSearch](tool-search.md#use-with-codeact) supports discovery inside the runner. ToolSearch proxy calls remain sequential, including inside `asyncio.gather`.
 
+### Compose Browser Tools
+
+An embedded Host can compose `BrowserUseCapability()` with `CodeActCapability()` and supply its authorized `BrowserBackend` through `RunBindings.embedded(browser_backend=backend)`. The same browser tools remain callable directly. Use `BrowserUseCapability(enabled_tools=frozenset({"observe", "js", "cdp"}))` to select a subset; no separate browser mode is needed. Custom backends implement `js(expression)` and `cdp(method, params)` for the two programming tools.
+
+Inside `run_code`, combine task-specific page extraction with protocol queries:
+
+```python
+await browser_observe()
+cards = await browser_js(
+    expression="[...document.querySelectorAll('.card')].map(el => el.textContent)"
+)
+tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
+{"cards": cards, "accessibility_nodes": len(tree["nodes"])}
+```
+
+`browser_js` runs in the selected page's main world, awaits Promises, and returns JSON values. Undefined returns `None`; non-JSON results fail explicitly. `browser_cdp` returns the selected page session's protocol result. Its tool description lists supported page domains and excluded methods. Browser/target management, Host file paths, and runtime event subscriptions stay with their existing owners; use `browser_tabs` and `browser_files` for those operations.
+
+Both tools expire element and screenshot references, including on failure. Observe again before using native references. Await consecutive page operations in order. A thrown script can leave earlier changes applied. Timeout, cancellation and human handback do not roll back page effects or remove installed timers and listeners. The Host's ordinary admission and human-control checks still apply to each tool request.
+
 ### Reuse a Program
 
 Save a UTF-8 file in a readable Environment mount. Define one undecorated `async def main(inputs)` and return a JSON-compatible result:
