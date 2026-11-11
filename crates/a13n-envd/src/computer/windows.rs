@@ -67,7 +67,7 @@ fn session_ready(info: &WTSINFOEXW) -> bool {
 }
 
 // A successful OpenInputDesktop is not sufficient: it also succeeds while disconnected.
-pub(super) fn ready() -> Result<(), EIPError> {
+pub(crate) fn ready() -> Result<(), EIPError> {
     unsafe {
         let mut session = 0;
         if ProcessIdToSessionId(GetCurrentProcessId(), &mut session) == 0 || session == 0 {
@@ -108,9 +108,9 @@ pub(super) fn ready() -> Result<(), EIPError> {
     Ok(())
 }
 
-struct Dpi(DPI_AWARENESS_CONTEXT);
+pub(crate) struct Dpi(DPI_AWARENESS_CONTEXT);
 impl Dpi {
-    fn enter() -> Result<Self, EIPError> {
+    pub(crate) fn enter() -> Result<Self, EIPError> {
         let previous =
             unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
         if previous.is_null() {

@@ -34,7 +34,7 @@ mod x11_clipboard;
 #[cfg(target_os = "linux")]
 use x11 as native;
 #[cfg(target_os = "windows")]
-mod windows;
+pub(crate) mod windows;
 #[cfg(target_os = "windows")]
 mod windows_clipboard;
 #[cfg(target_os = "windows")]
