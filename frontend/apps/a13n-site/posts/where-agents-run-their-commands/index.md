@@ -22,6 +22,8 @@ We call the target where an agent reads and writes files, runs programs, or inte
 
 For CSV analysis, the environment determines where the data lives, which versions of Python and its libraries are available, and where the chart is saved. For coding tasks, it also contains source code, build tools, and background services.
 
+![An agent requests CSV analysis; the execution environment uses CPU resources to run Python and a filesystem to hold the input, script, and generated chart](environment-capabilities.svg "Figure 1. The environment supplies compute and storage for the task. The interface shown does not imply that execution must happen remotely.")
+
 Once tasks need to install dependencies, start services, or reuse files in a later run, the application has more decisions to make: how to prepare the environment, which tasks may share it, and what to retain or clean up afterward.
 
 ## What should an environment restrict?
@@ -46,7 +48,7 @@ The guarantees depend on the mechanisms and configuration. A container with exce
 
 With the required capabilities and restrictions in mind, the next decision is how to deploy the agent runtime and its command execution environment. Three common arrangements are to execute commands directly on the agent's host, place each agent run and its commands together in a sandbox, or have the runtime connect to a separate environment. Each makes different trade-offs in permissions, resource management, lifecycles, and communication overhead.
 
-![Three arrangements: two agents executing directly on one host, each agent and its commands in a separate sandbox on one host, and a runtime connected to a separate execution environment](cover.svg "Figure 1. Three ways to deploy the agent runtime and its commands. A separate execution environment can be on the same machine or a different one; isolation depends on its configuration.")
+![Three arrangements: two agents executing directly on one host, each agent and its commands in a separate sandbox on one host, and a runtime connected to a separate execution environment](deployment-options.svg "Figure 2. Three ways to deploy the agent runtime and its commands. A separate execution environment can be on the same machine or a different one; isolation depends on its configuration.")
 
 ### Execute commands directly on the agent's host
 
@@ -103,6 +105,8 @@ In a13n, environments are resources that can be selected and managed independent
 We distinguish managing an environment from using it. Creating, starting, stopping, renewing, and destroying a target are resource-management responsibilities. Reading and writing files or executing commands on a selected target are execution capabilities.
 
 This distinction makes lifecycles explicit. Closing an execution connection releases the connection and execution resources it owns without destroying the target itself.
+
+![Agent run A disconnects while a retained environment and its files remain available; a later agent run B reconnects to reuse them](environment-lifecycle.svg "Figure 3. When retention is configured, the environment can outlive an individual agent run. Process survival and restoration of agent state require separate arrangements.")
 
 An environment does not have to belong permanently to one agent instance. A task can use a dedicated environment, a later run can reuse an existing one, and authorized agents can share an environment for collaborative work.
 

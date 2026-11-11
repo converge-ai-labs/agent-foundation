@@ -1,54 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 784 294" role="img" aria-label="Two agents executing directly on one host; two agents each sharing a separate sandbox with their own commands on one host; and an agent runtime connected to a separate execution environment.">
-  <text class="pt ink" x="136.5" y="29.4" text-anchor="middle">Direct execution</text>
-  <text class="pt ink" x="402.5" y="21" text-anchor="middle">Agent + commands in a</text>
-  <text class="pt ink" x="402.5" y="36.4" text-anchor="middle">sandbox</text>
-  <text class="pt ink" x="665" y="29.4" text-anchor="middle">Separate environment</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" role="img" aria-label="An agent sends execution requests to an environment containing a terminal, compute resources, project files, and a generated chart, and receives results back.">
+  <rect class="pl" x="36" y="128" width="210" height="228" rx="4" />
+  <path class="pf" d="M36 162H246" />
+  <circle class="fi" cx="52" cy="145" r="2" />
+  <circle class="ff" cx="64" cy="145" r="2" />
+  <circle class="ff" cx="76" cy="145" r="2" />
+  <text class="pt ink" x="141" y="110" text-anchor="middle">agent runtime</text>
+  <path class="pa" d="M58 188l8 6-8 6M74 200H92" />
+  <path class="pf" d="M58 220H220M58 252H220M58 284H220" />
+  <rect class="pa thin" x="58" y="231" width="12" height="12" rx="1" />
+  <path class="pa thin" d="m60 236 3 3 5-6" />
+  <rect class="pa thin" x="58" y="263" width="12" height="12" rx="1" />
+  <path class="pa thin" d="m60 268 3 3 5-6" />
+  <rect class="pa thin" x="58" y="295" width="12" height="12" rx="1" />
+  <path class="pf" d="M82 237H184M82 269H204M82 301H166" />
+  <text class="pt" x="58" y="337">read / run / inspect</text>
 
-  <rect class="pf" x="14" y="54.6" width="245" height="193.2" rx="2" />
-  <text class="pt" x="26.6" y="72.8" text-anchor="start">host</text>
-  <rect class="pl" x="28" y="107.8" width="91" height="43.4" rx="2" />
-  <text class="pt ink" x="73.5" y="125.3" text-anchor="middle">agent</text>
-  <text class="pt ink" x="73.5" y="140" text-anchor="middle">runtime</text>
-  <path class="pa" d="M73.5 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
-  <rect class="pl" x="28" y="189" width="91" height="33.6" rx="2" />
-  <text class="pt ink" x="73.5" y="210" text-anchor="middle">commands</text>
-  <rect class="pl" x="147" y="107.8" width="91" height="43.4" rx="2" />
-  <text class="pt ink" x="192.5" y="125.3" text-anchor="middle">agent</text>
-  <text class="pt ink" x="192.5" y="140" text-anchor="middle">runtime</text>
-  <path class="pa" d="M192.5 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
-  <rect class="pl" x="147" y="189" width="91" height="33.6" rx="2" />
-  <text class="pt ink" x="192.5" y="210" text-anchor="middle">commands</text>
+  <rect class="pf" x="338" y="54" width="426" height="374" rx="4" />
+  <text class="pt ink" x="360" y="84">execution environment</text>
+  <path class="pa" d="M246 206H364m-7-5 7 5-7 5M364 242H246m7-5-7 5 7 5" />
+  <text class="pt acc" x="290" y="192" text-anchor="middle">request</text>
+  <text class="pt" x="290" y="264" text-anchor="middle">result</text>
 
-  <rect class="pf" x="280" y="54.6" width="245" height="193.2" rx="2" />
-  <text class="pt" x="292.6" y="72.8" text-anchor="start">host</text>
-  <rect class="pa dash" x="289.8" y="84" width="107.8" height="154" rx="2" />
-  <text class="pt acc" x="298.2" y="99.4" text-anchor="start">sandbox</text>
-  <rect class="pl" x="298.2" y="107.8" width="91" height="43.4" rx="2" />
-  <text class="pt ink" x="343.7" y="125.3" text-anchor="middle">agent</text>
-  <text class="pt ink" x="343.7" y="140" text-anchor="middle">runtime</text>
-  <path class="pa" d="M343.7 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
-  <rect class="pl" x="298.2" y="189" width="91" height="33.6" rx="2" />
-  <text class="pt ink" x="343.7" y="210" text-anchor="middle">commands</text>
-  <rect class="pa dash" x="407.4" y="84" width="107.8" height="154" rx="2" />
-  <text class="pt acc" x="415.8" y="99.4" text-anchor="start">sandbox</text>
-  <rect class="pl" x="415.8" y="107.8" width="91" height="43.4" rx="2" />
-  <text class="pt ink" x="461.3" y="125.3" text-anchor="middle">agent</text>
-  <text class="pt ink" x="461.3" y="140" text-anchor="middle">runtime</text>
-  <path class="pa" d="M461.3 151.2V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
-  <rect class="pl" x="415.8" y="189" width="91" height="33.6" rx="2" />
-  <text class="pt ink" x="461.3" y="210" text-anchor="middle">commands</text>
+  <rect class="pl" x="364" y="106" width="374" height="148" rx="3" />
+  <path class="pf" d="M364 132H738" />
+  <circle class="fi" cx="378" cy="119" r="2" />
+  <path class="pa" d="M382 152l8 6-8 6M398 164H414" />
+  <text class="pt ink" x="428" y="164">python analyze.py</text>
+  <path class="pf" d="M382 184H612M382 198H558M382 212H586" />
+  <path class="pa thin" d="M382 232H472" />
+  <text class="pt" x="496" y="236">Python + dependencies</text>
+  <rect class="pa thin" x="676" y="152" width="36" height="36" rx="2" />
+  <rect class="band" x="684" y="160" width="20" height="20" />
+  <path class="pa thin" d="M684 146V152M694 146V152M704 146V152M684 188V194M694 188V194M704 188V194M670 160H676M670 170H676M670 180H676M712 160H718M712 170H718M712 180H718" />
+  <text class="pt" x="694" y="214" text-anchor="middle">CPU</text>
 
-  <rect class="pl" x="616" y="70" width="98" height="43.4" rx="2" />
-  <text class="pt ink" x="665" y="87.5" text-anchor="middle">agent</text>
-  <text class="pt ink" x="665" y="102.2" text-anchor="middle">runtime</text>
-  <rect class="pa dash" x="567" y="158.2" width="196" height="89.6" rx="2" />
-  <rect class="pl" x="616" y="189" width="98" height="33.6" rx="2" />
-  <text class="pt ink" x="665" y="210" text-anchor="middle">commands</text>
-  <text class="pt acc" x="665" y="238" text-anchor="middle">environment</text>
-  <path class="pa" d="M653.8 113.4V189m-3.5 -4.9 3.5 4.9 3.5 -4.9" />
-  <path class="pa" d="M676.2 189V113.4m-3.5 4.9 3.5 -4.9 3.5 4.9" />
-  <text class="pt" x="689.5" y="144.9" text-anchor="start">API</text>
-
-  <path class="pf thin" d="M14 268.8H770" />
-  <text class="pt" x="392" y="286.3" text-anchor="middle">Same task. Different placement, permissions and lifecycles.</text>
+  <path class="pa thin" d="M452 254V278m-4-6 4 6 4-6M652 254V278m-4-6 4 6 4-6" />
+  <path class="pl" d="M364 300V288H418l12 12H526V398H364Z" />
+  <path class="pf" d="M364 312H526M382 337H508M382 363H508" />
+  <rect class="pa thin" x="380" y="322" width="9" height="10" />
+  <rect class="pf" x="380" y="348" width="9" height="10" />
+  <rect class="pa thin" x="380" y="374" width="9" height="10" />
+  <text class="pt" x="400" y="332">data.csv</text>
+  <text class="pt" x="400" y="358">analyze.py</text>
+  <text class="pt" x="400" y="384">chart.png</text>
+  <rect class="pl" x="554" y="288" width="184" height="110" rx="3" />
+  <path class="pf" d="M574 308V380H720M574 332H720M574 356H720" />
+  <rect class="band" x="588" y="352" width="24" height="28" />
+  <rect class="band" x="634" y="328" width="24" height="52" />
+  <rect class="fa" x="680" y="308" width="24" height="72" />
+  <path class="pa thin" d="M588 352H612M634 328H658" />
+  <text class="pt" x="445" y="419" text-anchor="middle">project files</text>
+  <text class="pt" x="646" y="419" text-anchor="middle">generated output</text>
 </svg>
