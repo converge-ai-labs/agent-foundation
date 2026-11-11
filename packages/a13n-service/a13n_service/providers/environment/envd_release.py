@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 
 VERSION = "0.8.0"
 TARGET = "x86_64-unknown-linux-gnu"
-SOURCE_REVISION = "9d5ae301051f4faea8ac7a2cfed7c6d61d598bff"
+SOURCE_REVISION = "3674db454385101566bc4fd50644edf4f3dda03a"
 INSTALLER_SHA256 = "a9b2be3131bb182f35bcdedd3e0cf763dac5f87aa36ba22d03216d138285d88d"
 
 
