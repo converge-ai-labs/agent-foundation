@@ -215,6 +215,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "name": mount.name,
                 "root": _preferred_mount_path(mount, snapshot.default_mount),
                 "operations": cast(JsonValue, operations),
+                "operations_source": "configured" if mount.descriptor.generation == "unprepared" else "execution",
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
             }

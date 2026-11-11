@@ -24,12 +24,16 @@ from a13n_harness.environment.computer import (
     ComputerZoomImage,
 )
 from a13n_harness.environment.models import (
-    COMPUTER_ACTIONS,
+    ACCESSIBILITY_MUTATION_ACTIONS,
+    ACCESSIBILITY_READ_ACTIONS,
     FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentOperationReceipt,
     EnvironmentPermissionSet,
+)
+from a13n_harness.environment.models import (
+    COMPUTER_ACTIONS as ALL_COMPUTER_ACTIONS,
 )
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.toolsets.computer import ComputerToolset
@@ -38,6 +42,8 @@ from pydantic_ai import BinaryContent, ToolReturn
 from .test_environment_core import _Binding, _instance
 
 pytestmark = pytest.mark.anyio
+
+COMPUTER_ACTIONS = ALL_COMPUTER_ACTIONS - ACCESSIBILITY_READ_ACTIONS - ACCESSIBILITY_MUTATION_ACTIONS
 
 
 class Computer:

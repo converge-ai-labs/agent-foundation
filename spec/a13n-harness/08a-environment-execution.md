@@ -100,7 +100,7 @@ The Harness coordinates reopening with admitted operations and cleanup. Referenc
 
 ## Operations and Observations
 
-`EnvironmentDescriptor` describes target identity evidence, execution generation, execution boundary, default working directory, operation families, permission support, and limits. `EnvironmentAvailability` reports status, ready families, and a bounded reason. `EnvironmentOperations` exposes typed file, shell, process, output, port, and computer facets independently; unsupported guarantees fail before dispatch rather than degrading silently.
+`EnvironmentDescriptor` describes target identity evidence, execution generation, execution boundary, default working directory, operation families, permission support, and limits. `EnvironmentAvailability` reports status, ready families, and a bounded reason. `EnvironmentOperations` exposes typed file, shell, process, output, port, physical computer, and accessibility facets independently; unsupported guarantees fail before dispatch rather than degrading silently.
 
 `EnvironmentDescriptor.environment_case_sensitive` defaults to true; native Windows reports false, and Envd adapters use the connected Device's path style to preserve the target's semantics. This describes command variable matching, not filesystem routing.
 
@@ -178,4 +178,4 @@ An `EnvironmentMount` may provide an `operation_guard(action)` asynchronous cont
 
 `EnvironmentMount.computer_guard(call)` adds typed admission for the Computer channel inside ordinary operation admission. Its `ComputerCall` identifies the action and any pointer observation. The facade supplies the validated typed result before leaving the guard, including unsuccessful results returned normally. Provider errors and cancellation propagate through the context manager. Hosts can reject subsequent calls before dispatch and register successful observations after dispatch. The hook supplies no operation-drain or native-execution recovery lifecycle.
 
-The Computer guard covers observation, description, zoom, clipboard and bounded input. It supplies no shell, file or process exclusion, and does not change Environment execution generation. A Host may enforce target-control episodes and calling-Agent observation/model-decision freshness using this boundary.
+The Computer guard covers observation, description, zoom, clipboard, bounded input, all accessibility reads, and every native semantic mutation. Accessibility remains a facet of the same Computer family even when a Provider exposes it independently of physical capture/input. It supplies no shell, file or process exclusion, and does not change Environment execution generation. A Host may enforce target-control episodes and calling-Agent observation/model-decision freshness using this boundary.

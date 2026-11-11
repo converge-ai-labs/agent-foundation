@@ -1,30 +1,46 @@
 # Environment templates
 
+Use this reference to configure future instances. Read the deployed Provider recipe schema from the instance catalog; runtime tools, native operation support and operating instructions come from the selected Run's Environment instead.
+
+## Create and update
+
 All built-in managed recipes support `environment`, a string-to-string map of ordinary command defaults. Use the deployed schema; names must be portable identifiers and platform bootstrap, desktop and telemetry variables are reserved. Values are readable configuration, not secret storage. Local defaults must also satisfy `allowed_environment_keys`. Defaults freeze with the recipe on the first create claim and persist across supported lifecycle transitions; template changes do not update existing instances. Explicit command values override defaults, and supported unsets remove them. Agent `config.execution.environment`, Thread `execution.environment`, and Run `options.execution.environment` overlay recipe defaults per key, in that order, before explicit command values. These layers apply at command dispatch and never modify the shared sandbox or template.
 
 Templates describe how later Environment instances are created. Query the authorized environment Providers and use their deployed recipe schema from the instance catalog. Use `get_environment_template` to obtain its version. `update_environment_template` takes `template_id`, `expected_version` as `id:version`, and only intended lifecycle or metadata changes. Omitted recipe and lifecycle values survive. `create_environment_template` and explicit recipe replacements use a typed `{type, configuration}` recipe. A provider change requires a complete recipe for that provider; do not merge incompatible recipes. A template update does not create, start or reconfigure an existing instance. Explain which future instances use it. Agent default environment selection and lazy startup have their existing lifecycle rules; preserve unrelated values. Instance start/stop/delete, shell and file access are outside this platform tool selection.
 
 Service reads the default mount's working-directory `AGENTS.md` and discovers project-local guidance paths before inference. Child `AGENTS.md` and `.agents/skills` entries are path-only hints, not loaded bodies or additional selected Skills. The default is `workspace` when present, otherwise the sole user mount. This preparation can activate that Environment even when the model uses no tools; other mounts remain lazy unless `lazy_environment: false` requests eager instance preparation. Guidance discovery grants no additional permissions.
 
+## Execution route
+
 Native Execution provides Files & Shell through Local direct access, Docker containerization, or E2B remote sandboxes for quick deployment and basic applications. Envd is the general execution path for OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Each vendor's Environment Provider retains resource management and connection preparation.
+
+## Kubernetes
 
 For Kubernetes, select an operator-approved cluster profile and namespace. The catalog is available only when the operator configures trusted profiles. Author a native `pod_template` and select its `execution_container`; keep image, init containers, sidecars, resource requests/limits, scheduling, security context and referenced ConfigMaps/Secrets in native Kubernetes fields. Service injects its private Envd credential only into the execution container and owns its ServiceAccount binding. Use an Envd-compatible image or an operator-approved init-container recipe that copies the matching daemon into a shared volume; the selected execution image still owns its users, workspace and native boot command. Headless bootstrap needs POSIX utilities, not Python. `direct` requires Pod networking reachable from Service; local `port_forward` requires explicit operator permission and kubectl. Never accept tenant kubeconfig or place credentials in the recipe.
 
 Kubernetes uses create, reuse and delete. It has no stop/resume operation. Set `config.reclamation` with `idle_delete_seconds`, `preparation_seconds`, and `failed_retention_seconds`; these settings are copied to each reserved instance. Storage bindings distinguish a new `claim_template` from an `existing_claim`, with explicit `retain` or `delete` disposition; borrowed claims and shared directories remain after retirement. Native scheduling, image-pull, init-container and Envd readiness are separate stages. Use the authorized diagnostics and bounded logs to identify the failing stage rather than guessing that a Running Pod is ready. Console can set a bounded debug hold while investigating. A Pod UID change is target loss, not permission to adopt the replacement.
 
+## Docker
+
 Native Docker does not expose port inspection/wait or Computer operations; select the explicit Envd route for those capabilities. Changing a template does not install Envd in an existing native container.
 
 For Docker Computer use, select a compatible desktop variant of `a13n-sandbox` with `execution: envd_http` and `desktop: true`. The Provider's `docker_host` selects the Engine; its separate `envd_http` settings select the reachable host and port-publication interface. Service discovers the container's published EIP port and attaches to the image-managed daemon. Preserve the image's user, display, and envd settings. Configure Agent tools and mount permissions separately.
 
+## E2B
+
 For Computer use on an E2B target, select automatic desktop preparation or supply a custom template containing compatible Envd and desktop runtimes. E2B's provider manages the sandbox and desktop resources; Native E2B execution remains Files & Shell. Check the deployed schema and negotiated EIP methods before selecting the route, then configure Agent Computer tools and mount action ceilings.
 
-Automatic E2B desktop templates include CJK fonts. For a custom desktop template, install CJK fonts at build time (for example, `fonts-noto-cjk`). The official `desktop` template may lack these fonts; Service does not install them during connection or input. Create a new environment after selecting the custom template. Envd owns Agent text-input semantics. Confirm focus before typing, split long text, and reconcile uncertain input before continuing.
+Automatic E2B desktop templates include CJK fonts. For a custom desktop template, install CJK fonts at build time (for example, `fonts-noto-cjk`). The official `desktop` template may lack these fonts; Service does not install them during connection or input. Create a new environment after selecting the custom template.
 
 For automatic E2B desktops, set the recipe's `desktop` to true; omitted execution and template values select Envd HTTP and `auto`. The first Environment creation prepares a private template in the selected account; later creations reuse it within the same workspace, provider, credential version and build recipe. Saving a template does not build it. Observe durable creation stages through the Console rather than inferring readiness from elapsed time; instance-management calls are outside these tools. The initial build can take minutes. Retry a failed creation through the trusted instance-management workflow only after its outcome is confirmed; do not create replacement instances to bypass unresolved cleanup. Console offers a refreshable read-only desktop snapshot when ready; interactive takeover remains attached to a conversation.
+
+## Daytona
 
 For Daytona Computer use, select a snapshot with compatible Envd, desktop packages, and required CJK fonts. The Daytona provider prepares resources and the EIP connection during create/start; execution attachment checks the retained target. Agent operations use Envd/EIP. Enable the Agent's Computer toolset and matching mount permissions separately.
 
 Daytona defaults to `snapshot: auto`, preparing and reusing a credential-scoped headless or desktop snapshot on first instance creation. Automatic builds need Snapshot read/write/delete authority and the account's default region. Desktop preparation enables human assistance by default; explicit custom snapshots must preinstall the selected Envd/desktop/access components. A runtime-only key can use an already prepared custom snapshot. Saving a template and runtime attachment never build a snapshot. Template changes apply to new instances.
+
+## Modal
 
 Modal defaults to `image: auto`, preparing and reusing a credential-scoped headless or desktop image on first instance creation. Its preparation may create the configured App; an explicit compatible registry image or Modal image ID (`im-...`) requires an existing App. Headless images omit desktop and guest Python dependencies. Desktop preparation enables human assistance by default; custom preinstalled images require explicit `startup_command` argv and supply their own launcher plus any desktop/access components. Service preserves this argv on allocation and snapshot resume. Agent operations use EIP on TLS port 8888; human grants use a separate tunnel to port 6081. Stop preserves files through a snapshot; resume changes native identity and desktop generation. Agent tools and mount permissions remain separate.
 
@@ -40,7 +56,11 @@ Upgrades use the existing durable preparation operation and fresh authenticated 
 
 External service managers start `a13n-envd daemon` and own replacement. Without one, prepared runtimes use `a13n-envd supervise`; Service installs the release and requests a version-selected native restart. Managed launchers bound daemon crash replacement and keep desktop/display ownership separate. Execution attachment and human grants only check the recorded runtime; they never install, repair or replay work. A fresh connection after a daemon restart has a new Session; callers must inspect the new state before acting.
 
-Human access retains the `desktop_assistance` recipe key but adds no Agent tool. Service has no built-in `request_desktop_assistance` tool or assistance card. Users open the Desktop side panel from an interactive conversation for automatic read-only viewing, take control in one action, explicitly renew when needed, then return it. Closing the panel leaves the control lease unchanged. Each normal model request includes current admission for known native desktop mounts. During human control, use `computer_notify(alias="workspace")` to register for handback, then continue other work or finish without polling. Blocked Computer calls register the same notice automatically. Registration deduplicates for the current takeover and returns `already_available` if control has already returned. Eligible registered callers receive an inbox notice and must observe afresh before a new model decision authorizes input.
+## Agent access and human viewing
+
+Configure Agent tool selection and mount permissions separately from the desktop recipe. Grant the seven `environment.computer.a11y_*` reads independently from exact `environment.computer.ax_*`, `environment.computer.uia_*` or `environment.computer.atspi_*` mutations. Grouped tool selection grants no additional actions. Envd's negotiated methods narrow the runtime tools and operation schemas; actual native backend readiness remains an operation result. Saving a template neither probes nor upgrades an existing daemon.
+
+`desktop_assistance` enables supported human-viewing infrastructure, not an Agent tool. Users view or take control through an interactive conversation's Desktop panel. Current takeover admission and handback instructions are projected with the Run; they do not belong to the template's recipe.
 
 ## Client environments
 

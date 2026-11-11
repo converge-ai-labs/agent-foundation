@@ -1,0 +1,1776 @@
+syntax = "proto3";
+
+package a13n.agent_envd.eip.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "a13n-envd/eip/v1/common.proto";
+import "a13n-envd/eip/v1/computer.proto";
+import "a13n-envd/eip/v1/options.proto";
+
+// Session-local accessibility handles. No Harness execution identity crosses EIP.
+// Native units, protected values and cross-field limits are checked before native dispatch.
+// google.protobuf.Value is limited to scalar native values: bool, integer, finite number, string.
+// State maps accept bool or string only. Containers and null are invalid in these fields.
+
+enum AccessibilityCapabilitySupported {
+  ACCESSIBILITY_CAPABILITY_SUPPORTED_UNSPECIFIED = 0;
+  ACCESSIBILITY_CAPABILITY_SUPPORTED_YES = 1 [(eip_enum_value).json_name = "yes"];
+  ACCESSIBILITY_CAPABILITY_SUPPORTED_CANDIDATE = 2 [(eip_enum_value).json_name = "candidate"];
+}
+
+enum AccessibilityCompletenessReason {
+  ACCESSIBILITY_COMPLETENESS_REASON_UNSPECIFIED = 0;
+  ACCESSIBILITY_COMPLETENESS_REASON_NODE_LIMIT = 1 [(eip_enum_value).json_name = "node_limit"];
+  ACCESSIBILITY_COMPLETENESS_REASON_ITEM_LIMIT = 2 [(eip_enum_value).json_name = "item_limit"];
+  ACCESSIBILITY_COMPLETENESS_REASON_BYTE_LIMIT = 3 [(eip_enum_value).json_name = "byte_limit"];
+  ACCESSIBILITY_COMPLETENESS_REASON_CALL_LIMIT = 4 [(eip_enum_value).json_name = "call_limit"];
+  ACCESSIBILITY_COMPLETENESS_REASON_DEADLINE = 5 [(eip_enum_value).json_name = "deadline"];
+  ACCESSIBILITY_COMPLETENESS_REASON_TOTAL_LIMIT = 6 [(eip_enum_value).json_name = "total_limit"];
+}
+
+enum AccessibilityDescriptionBackend {
+  ACCESSIBILITY_DESCRIPTION_BACKEND_UNSPECIFIED = 0;
+  ACCESSIBILITY_DESCRIPTION_BACKEND_AX = 1 [(eip_enum_value).json_name = "ax"];
+  ACCESSIBILITY_DESCRIPTION_BACKEND_UIA = 2 [(eip_enum_value).json_name = "uia"];
+  ACCESSIBILITY_DESCRIPTION_BACKEND_ATSPI = 3 [(eip_enum_value).json_name = "atspi"];
+}
+
+enum AccessibilityDescriptionReason {
+  ACCESSIBILITY_DESCRIPTION_REASON_UNSPECIFIED = 0;
+  ACCESSIBILITY_DESCRIPTION_REASON_READY = 1 [(eip_enum_value).json_name = "ready"];
+  ACCESSIBILITY_DESCRIPTION_REASON_PERMISSION_REQUIRED = 2 [(eip_enum_value).json_name = "permission_required"];
+  ACCESSIBILITY_DESCRIPTION_REASON_DESKTOP_UNAVAILABLE = 3 [(eip_enum_value).json_name = "desktop_unavailable"];
+  ACCESSIBILITY_DESCRIPTION_REASON_BUS_UNAVAILABLE = 4 [(eip_enum_value).json_name = "bus_unavailable"];
+  ACCESSIBILITY_DESCRIPTION_REASON_UNSUPPORTED = 5 [(eip_enum_value).json_name = "unsupported"];
+}
+
+enum AccessibilityDescriptionFrames {
+  ACCESSIBILITY_DESCRIPTION_FRAMES_UNSPECIFIED = 0;
+  ACCESSIBILITY_DESCRIPTION_FRAMES_AX_SCREEN = 1 [(eip_enum_value).json_name = "ax_screen"];
+  ACCESSIBILITY_DESCRIPTION_FRAMES_UIA_PHYSICAL_SCREEN = 2 [(eip_enum_value).json_name = "uia_physical_screen"];
+  ACCESSIBILITY_DESCRIPTION_FRAMES_ATSPI_SCREEN = 3 [(eip_enum_value).json_name = "atspi_screen"];
+  ACCESSIBILITY_DESCRIPTION_FRAMES_ATSPI_WINDOW = 4 [(eip_enum_value).json_name = "atspi_window"];
+  ACCESSIBILITY_DESCRIPTION_FRAMES_ATSPI_PARENT = 5 [(eip_enum_value).json_name = "atspi_parent"];
+}
+
+enum AccessibilityFieldErrorReason {
+  ACCESSIBILITY_FIELD_ERROR_REASON_UNSPECIFIED = 0;
+  ACCESSIBILITY_FIELD_ERROR_REASON_UNSUPPORTED = 1 [(eip_enum_value).json_name = "unsupported"];
+  ACCESSIBILITY_FIELD_ERROR_REASON_DENIED = 2 [(eip_enum_value).json_name = "denied"];
+  ACCESSIBILITY_FIELD_ERROR_REASON_STALE = 3 [(eip_enum_value).json_name = "stale"];
+  ACCESSIBILITY_FIELD_ERROR_REASON_UNAVAILABLE = 4 [(eip_enum_value).json_name = "unavailable"];
+  ACCESSIBILITY_FIELD_ERROR_REASON_TIMEOUT = 5 [(eip_enum_value).json_name = "timeout"];
+  ACCESSIBILITY_FIELD_ERROR_REASON_PROTECTED = 6 [(eip_enum_value).json_name = "protected"];
+}
+
+enum AccessibilityFindNameMatch {
+  ACCESSIBILITY_FIND_NAME_MATCH_UNSPECIFIED = 0;
+  ACCESSIBILITY_FIND_NAME_MATCH_EXACT = 1 [(eip_enum_value).json_name = "exact"];
+  ACCESSIBILITY_FIND_NAME_MATCH_SUBSTRING_CASEFOLD = 2 [(eip_enum_value).json_name = "substring_casefold"];
+}
+
+enum AccessibilityItemReadSource {
+  ACCESSIBILITY_ITEM_READ_SOURCE_UNSPECIFIED = 0;
+  ACCESSIBILITY_ITEM_READ_SOURCE_UIA_ITEM_CONTAINER = 1 [(eip_enum_value).json_name = "uia_item_container"];
+  ACCESSIBILITY_ITEM_READ_SOURCE_UIA_SPREADSHEET = 2 [(eip_enum_value).json_name = "uia_spreadsheet"];
+}
+
+enum AccessibilityMutationResultNativeStatus {
+  ACCESSIBILITY_MUTATION_RESULT_NATIVE_STATUS_UNSPECIFIED = 0;
+  ACCESSIBILITY_MUTATION_RESULT_NATIVE_STATUS_RETURNED_SUCCESS = 1 [(eip_enum_value).json_name = "returned_success"];
+  ACCESSIBILITY_MUTATION_RESULT_NATIVE_STATUS_RETURNED_FALSE = 2 [(eip_enum_value).json_name = "returned_false"];
+  ACCESSIBILITY_MUTATION_RESULT_NATIVE_STATUS_ERROR = 3 [(eip_enum_value).json_name = "error"];
+  ACCESSIBILITY_MUTATION_RESULT_NATIVE_STATUS_NO_REPLY = 4 [(eip_enum_value).json_name = "no_reply"];
+}
+
+enum AccessibilityNativeReadGroup {
+  ACCESSIBILITY_NATIVE_READ_GROUP_UNSPECIFIED = 0;
+  ACCESSIBILITY_NATIVE_READ_GROUP_AX_ATTRIBUTES = 1 [(eip_enum_value).json_name = "ax_attributes"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_AX_PARAMETERIZED_ATTRIBUTES = 2 [(eip_enum_value).json_name = "ax_parameterized_attributes"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_PATTERNS = 3 [(eip_enum_value).json_name = "uia_patterns"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_ANNOTATION = 4 [(eip_enum_value).json_name = "uia_annotation"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_STYLES = 5 [(eip_enum_value).json_name = "uia_styles"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_DRAG = 6 [(eip_enum_value).json_name = "uia_drag"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_DROP_TARGET = 7 [(eip_enum_value).json_name = "uia_drop_target"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_LEGACY = 8 [(eip_enum_value).json_name = "uia_legacy"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_TRANSFORM = 9 [(eip_enum_value).json_name = "uia_transform"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_VIEWS = 10 [(eip_enum_value).json_name = "uia_views"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_UIA_SPREADSHEET_ITEM = 11 [(eip_enum_value).json_name = "uia_spreadsheet_item"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_ATSPI_INTERFACES = 12 [(eip_enum_value).json_name = "atspi_interfaces"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_ATSPI_IMAGE = 13 [(eip_enum_value).json_name = "atspi_image"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_ATSPI_HYPERTEXT = 14 [(eip_enum_value).json_name = "atspi_hypertext"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_ATSPI_COMPONENT = 15 [(eip_enum_value).json_name = "atspi_component"];
+  ACCESSIBILITY_NATIVE_READ_GROUP_ATSPI_ACTIONS = 16 [(eip_enum_value).json_name = "atspi_actions"];
+}
+
+enum AccessibilityNavigateReadDirection {
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_UNSPECIFIED = 0;
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_PARENT = 1 [(eip_enum_value).json_name = "parent"];
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_NEXT_SIBLING = 2 [(eip_enum_value).json_name = "next_sibling"];
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_PREVIOUS_SIBLING = 3 [(eip_enum_value).json_name = "previous_sibling"];
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_FIRST_CHILD = 4 [(eip_enum_value).json_name = "first_child"];
+  ACCESSIBILITY_NAVIGATE_READ_DIRECTION_LAST_CHILD = 5 [(eip_enum_value).json_name = "last_child"];
+}
+
+enum AccessibilityPropertyReadGroups {
+  ACCESSIBILITY_PROPERTY_READ_GROUPS_UNSPECIFIED = 0;
+  ACCESSIBILITY_PROPERTY_READ_GROUPS_IDENTITY = 1 [(eip_enum_value).json_name = "identity"];
+  ACCESSIBILITY_PROPERTY_READ_GROUPS_STATE = 2 [(eip_enum_value).json_name = "state"];
+  ACCESSIBILITY_PROPERTY_READ_GROUPS_VALUE = 3 [(eip_enum_value).json_name = "value"];
+  ACCESSIBILITY_PROPERTY_READ_GROUPS_WINDOW = 4 [(eip_enum_value).json_name = "window"];
+}
+
+enum AccessibilityRangeCompareEndpoint {
+  ACCESSIBILITY_RANGE_COMPARE_ENDPOINT_UNSPECIFIED = 0;
+  ACCESSIBILITY_RANGE_COMPARE_ENDPOINT_START = 1 [(eip_enum_value).json_name = "start"];
+  ACCESSIBILITY_RANGE_COMPARE_ENDPOINT_END = 2 [(eip_enum_value).json_name = "end"];
+}
+
+enum AccessibilityRangeMoveExpandUnit {
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_UNSPECIFIED = 0;
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_CHARACTER = 1 [(eip_enum_value).json_name = "character"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_FORMAT = 2 [(eip_enum_value).json_name = "format"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_WORD = 3 [(eip_enum_value).json_name = "word"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_LINE = 4 [(eip_enum_value).json_name = "line"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_PARAGRAPH = 5 [(eip_enum_value).json_name = "paragraph"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_PAGE = 6 [(eip_enum_value).json_name = "page"];
+  ACCESSIBILITY_RANGE_MOVE_EXPAND_UNIT_DOCUMENT = 7 [(eip_enum_value).json_name = "document"];
+}
+
+enum AccessibilityRangeReferenceUnit {
+  ACCESSIBILITY_RANGE_REFERENCE_UNIT_UNSPECIFIED = 0;
+  ACCESSIBILITY_RANGE_REFERENCE_UNIT_AX_NATIVE = 1 [(eip_enum_value).json_name = "ax_native"];
+  ACCESSIBILITY_RANGE_REFERENCE_UNIT_ATSPI_CHARACTER = 2 [(eip_enum_value).json_name = "atspi_character"];
+  ACCESSIBILITY_RANGE_REFERENCE_UNIT_UIA_OPAQUE = 3 [(eip_enum_value).json_name = "uia_opaque"];
+}
+
+enum AccessibilityRootScopeKind {
+  ACCESSIBILITY_ROOT_SCOPE_KIND_UNSPECIFIED = 0;
+  ACCESSIBILITY_ROOT_SCOPE_KIND_DESKTOP = 1 [(eip_enum_value).json_name = "desktop"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_APPLICATIONS = 2 [(eip_enum_value).json_name = "applications"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_WINDOWS = 3 [(eip_enum_value).json_name = "windows"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_FOCUSED = 4 [(eip_enum_value).json_name = "focused"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_APPLICATION = 5 [(eip_enum_value).json_name = "application"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_AT_POINT = 6 [(eip_enum_value).json_name = "at_point"];
+  ACCESSIBILITY_ROOT_SCOPE_KIND_SCREENSHOT_POINT = 7 [(eip_enum_value).json_name = "screenshot_point"];
+}
+
+enum AccessibilityTextContentStatus {
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_UNSPECIFIED = 0;
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_TEXT = 1 [(eip_enum_value).json_name = "text"];
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_EMPTY = 2 [(eip_enum_value).json_name = "empty"];
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_UNSUPPORTED = 3 [(eip_enum_value).json_name = "unsupported"];
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_PROTECTED = 4 [(eip_enum_value).json_name = "protected"];
+  ACCESSIBILITY_TEXT_CONTENT_STATUS_UNAVAILABLE = 5 [(eip_enum_value).json_name = "unavailable"];
+}
+
+enum AtspiRangeScrollAlignment {
+  ATSPI_RANGE_SCROLL_ALIGNMENT_UNSPECIFIED = 0;
+  ATSPI_RANGE_SCROLL_ALIGNMENT_TOP_LEFT = 1 [(eip_enum_value).json_name = "top_left"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_BOTTOM_RIGHT = 2 [(eip_enum_value).json_name = "bottom_right"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_TOP_EDGE = 3 [(eip_enum_value).json_name = "top_edge"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_BOTTOM_EDGE = 4 [(eip_enum_value).json_name = "bottom_edge"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_LEFT_EDGE = 5 [(eip_enum_value).json_name = "left_edge"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_RIGHT_EDGE = 6 [(eip_enum_value).json_name = "right_edge"];
+  ATSPI_RANGE_SCROLL_ALIGNMENT_ANYWHERE = 7 [(eip_enum_value).json_name = "anywhere"];
+}
+
+enum ComputerA11yFindParamsView {
+  COMPUTER_A11Y_FIND_PARAMS_VIEW_UNSPECIFIED = 0;
+  COMPUTER_A11Y_FIND_PARAMS_VIEW_CONTROL = 1 [(eip_enum_value).json_name = "control"];
+  COMPUTER_A11Y_FIND_PARAMS_VIEW_CONTENT = 2 [(eip_enum_value).json_name = "content"];
+  COMPUTER_A11Y_FIND_PARAMS_VIEW_RAW = 3 [(eip_enum_value).json_name = "raw"];
+}
+
+enum AccessibilityNativeSpanUnit {
+  ACCESSIBILITY_NATIVE_SPAN_UNIT_UNSPECIFIED = 0;
+  ACCESSIBILITY_NATIVE_SPAN_UNIT_AX_NATIVE = 1 [(eip_enum_value).json_name = "ax_native"];
+  ACCESSIBILITY_NATIVE_SPAN_UNIT_ATSPI_CHARACTER = 2 [(eip_enum_value).json_name = "atspi_character"];
+}
+
+enum UIADockPosition {
+  UIA_DOCK_POSITION_UNSPECIFIED = 0;
+  UIA_DOCK_POSITION_TOP = 1 [(eip_enum_value).json_name = "top"];
+  UIA_DOCK_POSITION_LEFT = 2 [(eip_enum_value).json_name = "left"];
+  UIA_DOCK_POSITION_BOTTOM = 3 [(eip_enum_value).json_name = "bottom"];
+  UIA_DOCK_POSITION_RIGHT = 4 [(eip_enum_value).json_name = "right"];
+  UIA_DOCK_POSITION_FILL = 5 [(eip_enum_value).json_name = "fill"];
+  UIA_DOCK_POSITION_NONE = 6 [(eip_enum_value).json_name = "none"];
+}
+
+enum UIALegacySelectSelection {
+  UIA_LEGACY_SELECT_SELECTION_UNSPECIFIED = 0;
+  UIA_LEGACY_SELECT_SELECTION_NONE = 1 [(eip_enum_value).json_name = "none"];
+  UIA_LEGACY_SELECT_SELECTION_TAKE = 2 [(eip_enum_value).json_name = "take"];
+  UIA_LEGACY_SELECT_SELECTION_EXTEND = 3 [(eip_enum_value).json_name = "extend"];
+  UIA_LEGACY_SELECT_SELECTION_ADD = 4 [(eip_enum_value).json_name = "add"];
+  UIA_LEGACY_SELECT_SELECTION_REMOVE = 5 [(eip_enum_value).json_name = "remove"];
+}
+
+enum UIAScrollAmountHorizontal {
+  UIA_SCROLL_AMOUNT_HORIZONTAL_UNSPECIFIED = 0;
+  UIA_SCROLL_AMOUNT_HORIZONTAL_LARGE_DECREMENT = 1 [(eip_enum_value).json_name = "large_decrement"];
+  UIA_SCROLL_AMOUNT_HORIZONTAL_SMALL_DECREMENT = 2 [(eip_enum_value).json_name = "small_decrement"];
+  UIA_SCROLL_AMOUNT_HORIZONTAL_NO_AMOUNT = 3 [(eip_enum_value).json_name = "no_amount"];
+  UIA_SCROLL_AMOUNT_HORIZONTAL_LARGE_INCREMENT = 4 [(eip_enum_value).json_name = "large_increment"];
+  UIA_SCROLL_AMOUNT_HORIZONTAL_SMALL_INCREMENT = 5 [(eip_enum_value).json_name = "small_increment"];
+}
+
+enum UIAWindowStateState {
+  UIA_WINDOW_STATE_STATE_UNSPECIFIED = 0;
+  UIA_WINDOW_STATE_STATE_NORMAL = 1 [(eip_enum_value).json_name = "normal"];
+  UIA_WINDOW_STATE_STATE_MAXIMIZED = 2 [(eip_enum_value).json_name = "maximized"];
+  UIA_WINDOW_STATE_STATE_MINIMIZED = 3 [(eip_enum_value).json_name = "minimized"];
+}
+
+enum UIAZoomUnitUnit {
+  UIA_ZOOM_UNIT_UNIT_UNSPECIFIED = 0;
+  UIA_ZOOM_UNIT_UNIT_NO_AMOUNT = 1 [(eip_enum_value).json_name = "no_amount"];
+  UIA_ZOOM_UNIT_UNIT_LARGE_DECREMENT = 2 [(eip_enum_value).json_name = "large_decrement"];
+  UIA_ZOOM_UNIT_UNIT_SMALL_DECREMENT = 3 [(eip_enum_value).json_name = "small_decrement"];
+  UIA_ZOOM_UNIT_UNIT_LARGE_INCREMENT = 4 [(eip_enum_value).json_name = "large_increment"];
+  UIA_ZOOM_UNIT_UNIT_SMALL_INCREMENT = 5 [(eip_enum_value).json_name = "small_increment"];
+}
+
+message AXAction {
+  string op = 1 [(eip_field).const_string = "perform_action", (eip_field).default_string = "perform_action"];
+  AccessibilityActionReference action = 2;
+}
+
+message AXBooleanDisclosingSet {
+  string op = 1 [(eip_field).const_string = "disclosing_set", (eip_field).default_string = "disclosing_set"];
+  bool value = 2;
+}
+
+message AXBooleanExpandedSet {
+  string op = 1 [(eip_field).const_string = "expanded_set", (eip_field).default_string = "expanded_set"];
+  bool value = 2;
+}
+
+message AXBooleanMainSet {
+  string op = 1 [(eip_field).const_string = "main_set", (eip_field).default_string = "main_set"];
+  bool value = 2;
+}
+
+message AXBooleanMinimizedSet {
+  string op = 1 [(eip_field).const_string = "minimized_set", (eip_field).default_string = "minimized_set"];
+  bool value = 2;
+}
+
+message AXBooleanSelectedSet {
+  string op = 1 [(eip_field).const_string = "selected_set", (eip_field).default_string = "selected_set"];
+  bool value = 2;
+}
+
+message AXChildrenSelectedChildrenSet {
+  string op = 1 [(eip_field).const_string = "selected_children_set", (eip_field).default_string = "selected_children_set"];
+  repeated AccessibilityNodeReference children = 2 [(eip_field).max_length = 512, (eip_field).required = true];
+}
+
+message AXChildrenSelectedColumnsSet {
+  string op = 1 [(eip_field).const_string = "selected_columns_set", (eip_field).default_string = "selected_columns_set"];
+  repeated AccessibilityNodeReference children = 2 [(eip_field).max_length = 512, (eip_field).required = true];
+}
+
+message AXChildrenSelectedRowsSet {
+  string op = 1 [(eip_field).const_string = "selected_rows_set", (eip_field).default_string = "selected_rows_set"];
+  repeated AccessibilityNodeReference children = 2 [(eip_field).max_length = 512, (eip_field).required = true];
+}
+
+message AXFocus {
+  string op = 1 [(eip_field).const_string = "focus", (eip_field).default_string = "focus"];
+}
+
+message AXFocusedWindow {
+  string op = 1 [(eip_field).const_string = "focused_window_set", (eip_field).default_string = "focused_window_set"];
+  AccessibilityNodeReference window = 2;
+}
+
+message AXNumberValue {
+  string op = 1 [(eip_field).const_string = "value_number_set", (eip_field).default_string = "value_number_set"];
+  double value = 2;
+}
+
+message AXPosition {
+  string op = 1 [(eip_field).const_string = "position_set", (eip_field).default_string = "position_set"];
+  double x = 2;
+  double y = 3;
+}
+
+message AXRangeTextRangeSelect {
+  string op = 1 [(eip_field).const_string = "text_range_select", (eip_field).default_string = "text_range_select"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AXRangeVisibleTextRangeSet {
+  string op = 1 [(eip_field).const_string = "visible_text_range_set", (eip_field).default_string = "visible_text_range_set"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AXRanges {
+  string op = 1 [(eip_field).const_string = "text_ranges_select", (eip_field).default_string = "text_ranges_select"];
+  repeated AccessibilityRangeReference ranges = 2 [(eip_field).max_length = 256, (eip_field).required = true];
+}
+
+message AXSelectedText {
+  string op = 1 [(eip_field).const_string = "selected_text_set", (eip_field).default_string = "selected_text_set"];
+  string text = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message AXSize {
+  string op = 1 [(eip_field).const_string = "size_set", (eip_field).default_string = "size_set"];
+  double width = 2 [(eip_field).exclusive_minimum = 0];
+  double height = 3 [(eip_field).exclusive_minimum = 0];
+}
+
+message AXStringValue {
+  string op = 1 [(eip_field).const_string = "value_string_set", (eip_field).default_string = "value_string_set"];
+  string value = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message AccessibilityActionReference {
+  AccessibilityNodeReference node = 1;
+  string action_handle = 2 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  string native_identifier = 3 [(eip_field).min_length = 1, (eip_field).max_length = 1024];
+}
+
+message AccessibilityAttributeRun {
+  AccessibilityRangeReference range = 1;
+  repeated AccessibilityProperty properties = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityBoundsValue {
+  string kind = 1 [(eip_field).const_string = "bounds", (eip_field).default_string = "bounds"];
+  repeated AccessibilityNativeBounds values = 2 [(eip_field).max_length = 512];
+}
+
+message AccessibilityCapability {
+  string operation = 1 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  AccessibilityCapabilitySupported supported = 2;
+  string source = 3 [(eip_field).max_length = 128];
+  optional AccessibilityActionReference action = 4;
+  optional string label = 5;
+  optional string description = 6;
+}
+
+message AccessibilityCompleteness {
+  bool complete = 1;
+  optional AccessibilityCompletenessReason reason = 2;
+  optional AccessibilityCursor continuation = 3;
+  string consistency = 4 [(eip_field).const_string = "live", (eip_field).default_string = "live"];
+}
+
+message AccessibilityAttributeMetadata {
+  string name = 1 [(eip_field).min_length = 1, (eip_field).max_length = 1024];
+  bool parameterized = 2;
+  optional bool writable = 3;
+}
+
+message AccessibilityContent {
+  AccessibilityNodeReference node = 1;
+  google.protobuf.Timestamp sampled_at = 2;
+  AccessibilityCompleteness completeness = 3;
+  optional AccessibilityTextContent text = 4;
+  repeated AccessibilityProperty properties = 5 [(eip_field).max_length = 512];
+  repeated AccessibilityNode nodes = 6 [(eip_field).max_length = 512];
+  repeated AccessibilityRangeReference ranges = 7 [(eip_field).max_length = 256];
+  repeated AccessibilityFieldError field_errors = 8 [(eip_field).max_length = 128];
+  repeated AtspiDocumentSelection document_selections = 9 [(eip_field).max_length = 256];
+  repeated AccessibilityAttributeMetadata attributes = 10 [(eip_field).max_length = 512];
+}
+
+message AccessibilityCursor {
+  AccessibilityNodeReference root = 1;
+  string cursor_handle = 2 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+}
+
+message AccessibilityDescription {
+  AccessibilityDescriptionBackend backend = 1;
+  optional string backend_epoch = 2;
+  bool ready = 3;
+  AccessibilityDescriptionReason reason = 4;
+  string desktop_identity = 5 [(eip_field).max_length = 1024];
+  repeated string methods = 6 [(eip_field).max_length = 128];
+  repeated AccessibilityDescriptionFrames frames = 7;
+  AccessibilityLimits limits = 8 [(eip_field).default_message = true];
+}
+
+message AccessibilityFieldError {
+  string field = 1 [(eip_field).max_length = 128];
+  AccessibilityFieldErrorReason reason = 2;
+  optional sint32 native_code = 3;
+}
+
+message AccessibilityFind {
+  optional string role = 1;
+  optional string native_role = 2;
+  optional string name = 3;
+  AccessibilityFindNameMatch name_match = 4 [(eip_field).default_string = "exact"];
+  optional string identifier = 5;
+  map<string, google.protobuf.Value> states = 6 [(eip_field).max_length = 128, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_BOOLEAN, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_STRING];
+  optional string operation = 7;
+}
+
+message AccessibilityIdleRead {
+  string kind = 1 [(eip_field).const_string = "wait_for_input_idle", (eip_field).default_string = "wait_for_input_idle"];
+  uint32 timeout_ms = 2 [(eip_field).minimum = 0, (eip_field).maximum = 15000, (eip_field).default_uint = 1000];
+}
+
+message AccessibilityItemRead {
+  string kind = 1 [(eip_field).const_string = "item", (eip_field).default_string = "item"];
+  AccessibilityItemReadSource source = 2;
+  string name = 3 [(eip_field).max_length = 4096];
+  optional AccessibilityNodeReference after = 4;
+}
+
+message AccessibilityLimits {
+  uint32 depth = 1 [(eip_field).minimum = 0, (eip_field).maximum = 12, (eip_field).default_uint = 2];
+  uint32 max_nodes = 2 [(eip_field).minimum = 1, (eip_field).maximum = 2048, (eip_field).default_uint = 256];
+  uint32 max_matches = 3 [(eip_field).minimum = 1, (eip_field).maximum = 256, (eip_field).default_uint = 64];
+  uint32 max_items = 4 [(eip_field).minimum = 1, (eip_field).maximum = 512, (eip_field).default_uint = 128];
+  uint32 max_text_bytes = 5 [(eip_field).minimum = 1, (eip_field).maximum = 65536, (eip_field).default_uint = 16384];
+  uint32 max_result_bytes = 6 [(eip_field).minimum = 1, (eip_field).maximum = 1048576, (eip_field).default_uint = 262144];
+  uint32 max_native_calls = 7 [(eip_field).minimum = 1, (eip_field).maximum = 8192, (eip_field).default_uint = 1024];
+  uint32 timeout_ms = 8 [(eip_field).minimum = 1, (eip_field).maximum = 15000, (eip_field).default_uint = 5000];
+}
+
+message AccessibilityMutationResult {
+  OperationReceipt receipt = 1;
+  ComputerEffect effect = 2;
+  AccessibilityMutationResultNativeStatus native_status = 3;
+  bool dispatch_complete = 4;
+  optional AccessibilityNode observation = 5;
+  string application_outcome = 6 [(eip_field).const_string = "unverified", (eip_field).default_string = "unverified"];
+}
+
+message AccessibilityNativeRead {
+  string kind = 1 [(eip_field).const_string = "native_details", (eip_field).default_string = "native_details"];
+  AccessibilityNativeReadGroup group = 2;
+}
+
+message AccessibilityNavigateRead {
+  string kind = 1 [(eip_field).const_string = "navigate", (eip_field).default_string = "navigate"];
+  AccessibilityNavigateReadDirection direction = 2;
+}
+
+enum AccessibilityImageProjectionStatus {
+  ACCESSIBILITY_IMAGE_PROJECTION_STATUS_UNSPECIFIED = 0;
+  ACCESSIBILITY_IMAGE_PROJECTION_STATUS_PROJECTED = 1 [(eip_enum_value).json_name = "projected"];
+  ACCESSIBILITY_IMAGE_PROJECTION_STATUS_UNAVAILABLE = 2 [(eip_enum_value).json_name = "unavailable"];
+}
+
+message AccessibilityImageProjection {
+  string source_observation_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  AccessibilityImageProjectionStatus status = 2;
+  optional double left = 3;
+  optional double top = 4;
+  optional double right = 5;
+  optional double bottom = 6;
+}
+
+message AccessibilityNode {
+  AccessibilityNodeReference reference = 1;
+  string native_role = 2 [(eip_field).max_length = 1024];
+  optional string role = 3;
+  optional string name = 4;
+  optional string description = 5;
+  optional string identifier = 6;
+  map<string, google.protobuf.Value> states = 7 [(eip_field).max_length = 128, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_BOOLEAN, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_STRING];
+  optional AccessibilityNativeBounds bounds = 8;
+  optional AccessibilityNodeReference parent = 9;
+  optional uint32 child_count = 10;
+  repeated AccessibilityNodeReference children = 11 [(eip_field).max_length = 2048];
+  repeated AccessibilityCapability capabilities = 12 [(eip_field).max_length = 128];
+  google.protobuf.Timestamp sampled_at = 13;
+  repeated AccessibilityFieldError field_errors = 14 [(eip_field).max_length = 128];
+  optional AccessibilityImageProjection image_projection = 15;
+}
+
+message AccessibilityNodeReference {
+  AccessibilityDescriptionBackend backend = 1;
+  string backend_epoch = 2 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  string node_handle = 3 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+}
+
+message AccessibilityNodesValue {
+  string kind = 1 [(eip_field).const_string = "nodes", (eip_field).default_string = "nodes"];
+  repeated AccessibilityNodeReference values = 2 [(eip_field).max_length = 512];
+}
+
+message AccessibilityProperty {
+  string name = 1 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  string source = 2 [(eip_field).max_length = 128];
+  AccessibilityValue value = 3;
+}
+
+message AccessibilityPropertyRead {
+  string kind = 1 [(eip_field).const_string = "properties", (eip_field).default_string = "properties"];
+  repeated AccessibilityPropertyReadGroups groups = 2 [(eip_field).min_length = 1, (eip_field).max_length = 4];
+}
+
+message AccessibilityRangeAcquireActiveComposition {
+  string kind = 1 [(eip_field).const_string = "active_composition", (eip_field).default_string = "active_composition"];
+}
+
+message AccessibilityRangeAcquireCaret {
+  string kind = 1 [(eip_field).const_string = "caret", (eip_field).default_string = "caret"];
+}
+
+message AccessibilityRangeAcquireConversionTarget {
+  string kind = 1 [(eip_field).const_string = "conversion_target", (eip_field).default_string = "conversion_target"];
+}
+
+message AccessibilityRangeAcquireDocument {
+  string kind = 1 [(eip_field).const_string = "document", (eip_field).default_string = "document"];
+}
+
+message AccessibilityRangeAcquireSelection {
+  string kind = 1 [(eip_field).const_string = "selection", (eip_field).default_string = "selection"];
+}
+
+message AccessibilityRangeAcquireVisible {
+  string kind = 1 [(eip_field).const_string = "visible", (eip_field).default_string = "visible"];
+}
+
+message AccessibilityRangeChild {
+  string kind = 1 [(eip_field).const_string = "child", (eip_field).default_string = "child"];
+  AccessibilityNodeReference child = 2;
+}
+
+message AccessibilityRangeCompare {
+  string kind = 1 [(eip_field).const_string = "compare", (eip_field).default_string = "compare"];
+  AccessibilityRangeReference other = 2;
+  optional AccessibilityRangeCompareEndpoint endpoint = 3;
+  optional AccessibilityRangeCompareEndpoint other_endpoint = 4;
+}
+
+message AccessibilityRangeCompose {
+  string kind = 1 [(eip_field).const_string = "endpoint_by_range", (eip_field).default_string = "endpoint_by_range"];
+  AccessibilityRangeCompareEndpoint endpoint = 2;
+  AccessibilityRangeReference other = 3;
+  AccessibilityRangeCompareEndpoint other_endpoint = 4;
+}
+
+message AccessibilityRangeFind {
+  string kind = 1 [(eip_field).const_string = "find_text", (eip_field).default_string = "find_text"];
+  string text = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+  bool backward = 3 [(eip_field).default_bool = false];
+  bool ignore_case = 4 [(eip_field).default_bool = false];
+}
+
+message AccessibilityRangeFindAttribute {
+  string kind = 1 [(eip_field).const_string = "find_attribute", (eip_field).default_string = "find_attribute"];
+  uint32 attribute_id = 2 [(eip_field).minimum = 0];
+  AccessibilityScalar value = 3;
+  bool backward = 4 [(eip_field).default_bool = false];
+}
+
+message AccessibilityRangeIndexIndex {
+  string kind = 1 [(eip_field).const_string = "index", (eip_field).default_string = "index"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AccessibilityRangeIndexLine {
+  string kind = 1 [(eip_field).const_string = "line", (eip_field).default_string = "line"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AccessibilityRangeIndexLineForIndex {
+  string kind = 1 [(eip_field).const_string = "line_for_index", (eip_field).default_string = "line_for_index"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AccessibilityRangeMoveExpand {
+  string kind = 1 [(eip_field).const_string = "expand", (eip_field).default_string = "expand"];
+  AccessibilityRangeMoveExpandUnit unit = 2;
+  sint32 count = 3 [(eip_field).signed_minimum = -10000, (eip_field).maximum = 10000, (eip_field).default_uint = 0];
+  optional AccessibilityRangeCompareEndpoint endpoint = 4;
+}
+
+message AccessibilityRangeMoveMove {
+  string kind = 1 [(eip_field).const_string = "move", (eip_field).default_string = "move"];
+  AccessibilityRangeMoveExpandUnit unit = 2;
+  sint32 count = 3 [(eip_field).signed_minimum = -10000, (eip_field).maximum = 10000, (eip_field).default_uint = 0];
+  optional AccessibilityRangeCompareEndpoint endpoint = 4;
+}
+
+message AccessibilityRangeMoveMoveEndpoint {
+  string kind = 1 [(eip_field).const_string = "move_endpoint", (eip_field).default_string = "move_endpoint"];
+  AccessibilityRangeMoveExpandUnit unit = 2;
+  sint32 count = 3 [(eip_field).signed_minimum = -10000, (eip_field).maximum = 10000, (eip_field).default_uint = 0];
+  optional AccessibilityRangeCompareEndpoint endpoint = 4;
+}
+
+message AccessibilityRangePoint {
+  string kind = 1 [(eip_field).const_string = "point", (eip_field).default_string = "point"];
+  AccessibilityNativePoint point = 2;
+}
+
+message AccessibilityRangeQuery {
+  option (eip_message).discriminated_union = true;
+  oneof variant {
+    AccessibilityRangeAcquireActiveComposition accessibility_range_acquire_active_composition = 1;
+    AccessibilityRangeAcquireCaret accessibility_range_acquire_caret = 2;
+    AccessibilityRangeChild accessibility_range_child = 3;
+    AccessibilityRangeAcquireConversionTarget accessibility_range_acquire_conversion_target = 4;
+    AccessibilityRangeAcquireDocument accessibility_range_acquire_document = 5;
+    AccessibilityRangeCompose accessibility_range_compose = 6;
+    AccessibilityRangeMoveExpand accessibility_range_move_expand = 7;
+    AccessibilityRangeFindAttribute accessibility_range_find_attribute = 8;
+    AccessibilityRangeFind accessibility_range_find = 9;
+    AccessibilityRangeIndexIndex accessibility_range_index_index = 10;
+    AccessibilityRangeIndexLine accessibility_range_index_line = 11;
+    AccessibilityRangeIndexLineForIndex accessibility_range_index_line_for_index = 12;
+    AccessibilityRangeMoveMove accessibility_range_move_move = 13;
+    AccessibilityRangeMoveMoveEndpoint accessibility_range_move_move_endpoint = 14;
+    AccessibilityRangePoint accessibility_range_point = 15;
+    AccessibilityRangeAcquireSelection accessibility_range_acquire_selection = 16;
+    AccessibilityRangeSpan accessibility_range_span = 17;
+    AccessibilityRangeAcquireVisible accessibility_range_acquire_visible = 18;
+  }
+}
+
+message AccessibilityRangeReadAttributes {
+  string kind = 1 [(eip_field).const_string = "attributes", (eip_field).default_string = "attributes"];
+  repeated sint32 attribute_ids = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeReadBounds {
+  string kind = 1 [(eip_field).const_string = "bounds", (eip_field).default_string = "bounds"];
+  repeated sint32 attribute_ids = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeReadChildren {
+  string kind = 1 [(eip_field).const_string = "children", (eip_field).default_string = "children"];
+  repeated sint32 attribute_ids = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeReadEnclosingElement {
+  string kind = 1 [(eip_field).const_string = "enclosing_element", (eip_field).default_string = "enclosing_element"];
+  repeated sint32 attribute_ids = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeReadRequest {
+  option (eip_message).discriminated_union = true;
+  oneof variant {
+    AccessibilityRangeReadAttributes accessibility_range_read_attributes = 1;
+    AccessibilityRangeReadBounds accessibility_range_read_bounds = 2;
+    AccessibilityRangeReadChildren accessibility_range_read_children = 3;
+    AccessibilityRangeCompare accessibility_range_compare = 4;
+    AccessibilityRangeReadEnclosingElement accessibility_range_read_enclosing_element = 5;
+    AccessibilityRangeReadText accessibility_range_read_text = 6;
+  }
+}
+
+message AccessibilityRangeReadText {
+  string kind = 1 [(eip_field).const_string = "text", (eip_field).default_string = "text"];
+  repeated sint32 attribute_ids = 2 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeReference {
+  AccessibilityNodeReference node = 1;
+  string range_handle = 2 [(eip_field).min_length = 1, (eip_field).max_length = 128];
+  AccessibilityRangeReferenceUnit unit = 3;
+}
+
+message AccessibilityRangeResult {
+  AccessibilityNodeReference node = 1;
+  google.protobuf.Timestamp sampled_at = 2;
+  AccessibilityCompleteness completeness = 3;
+  repeated AccessibilityRangeReference ranges = 4 [(eip_field).max_length = 256];
+  optional sint32 actual_movement = 5;
+  optional sint32 native_index = 6;
+  optional google.protobuf.Value comparison = 7 [(eip_field).json_primitives = EIP_JSON_PRIMITIVE_BOOLEAN, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_INTEGER];
+  optional AccessibilityTextContent text = 8;
+  repeated AccessibilityNativeBounds bounds = 9 [(eip_field).max_length = 512];
+  repeated AccessibilityProperty properties = 10 [(eip_field).max_length = 128];
+  repeated AccessibilityAttributeRun attribute_runs = 11 [(eip_field).max_length = 512];
+  repeated AccessibilityNode nodes = 12 [(eip_field).max_length = 512];
+  repeated AccessibilityFieldError field_errors = 13 [(eip_field).max_length = 128];
+}
+
+message AccessibilityRangeSpan {
+  string kind = 1 [(eip_field).const_string = "span", (eip_field).default_string = "span"];
+  AccessibilityNativeSpan span = 2;
+}
+
+message AccessibilityRangesValue {
+  string kind = 1 [(eip_field).const_string = "ranges", (eip_field).default_string = "ranges"];
+  repeated AccessibilityRangeReference values = 2 [(eip_field).max_length = 256];
+}
+
+message AccessibilityRead {
+  option (eip_message).discriminated_union = true;
+  oneof variant {
+    AccessibilitySimpleReadDocument accessibility_simple_read_document = 1;
+    AccessibilityItemRead accessibility_item_read = 2;
+    AccessibilityNativeRead accessibility_native_read = 3;
+    AccessibilityNavigateRead accessibility_navigate_read = 4;
+    AccessibilitySimpleReadNumericValue accessibility_simple_read_numeric_value = 5;
+    AccessibilityPropertyRead accessibility_property_read = 6;
+    AccessibilityRelationsRead accessibility_relations_read = 7;
+    AccessibilitySimpleReadScroll accessibility_simple_read_scroll = 8;
+    AccessibilitySimpleReadSelection accessibility_simple_read_selection = 9;
+    AccessibilityTableRead accessibility_table_read = 10;
+    AccessibilityTextRead accessibility_text_read = 11;
+    AccessibilityIdleRead accessibility_idle_read = 12;
+    AccessibilityDocumentSelectionsRead accessibility_document_selections_read = 13;
+  }
+}
+
+message AccessibilityRelationsRead {
+  string kind = 1 [(eip_field).const_string = "relations", (eip_field).default_string = "relations"];
+  repeated string relations = 2 [(eip_field).max_length = 64];
+}
+
+message AccessibilityRootScope {
+  AccessibilityRootScopeKind kind = 1 [(eip_field).default_string = "windows"];
+  optional sint32 process_id = 2;
+  optional AccessibilityNativePoint point = 3;
+  optional string observation_id = 4 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  optional ComputerPoint image_point = 5;
+}
+
+message AccessibilityScalar {
+  string kind = 1 [(eip_field).const_string = "scalar", (eip_field).default_string = "scalar"];
+  google.protobuf.Value value = 2 [(eip_field).json_primitives = EIP_JSON_PRIMITIVE_BOOLEAN, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_INTEGER, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_NUMBER, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_STRING];
+}
+
+message AccessibilityScalarsValue {
+  string kind = 1 [(eip_field).const_string = "scalars", (eip_field).default_string = "scalars"];
+  repeated google.protobuf.Value values = 2 [(eip_field).max_length = 512, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_BOOLEAN, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_INTEGER, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_NUMBER, (eip_field).json_primitives = EIP_JSON_PRIMITIVE_STRING];
+}
+
+message AccessibilityDocumentSelectionsRead {
+  string kind = 1 [(eip_field).const_string = "document_selections", (eip_field).default_string = "document_selections"];
+}
+
+message AccessibilitySimpleReadDocument {
+  string kind = 1 [(eip_field).const_string = "document", (eip_field).default_string = "document"];
+}
+
+message AccessibilitySimpleReadNumericValue {
+  string kind = 1 [(eip_field).const_string = "numeric_value", (eip_field).default_string = "numeric_value"];
+}
+
+message AccessibilitySimpleReadScroll {
+  string kind = 1 [(eip_field).const_string = "scroll", (eip_field).default_string = "scroll"];
+}
+
+message AccessibilitySimpleReadSelection {
+  string kind = 1 [(eip_field).const_string = "selection", (eip_field).default_string = "selection"];
+}
+
+message AccessibilitySpecialValueMixed {
+  string kind = 1 [(eip_field).const_string = "mixed", (eip_field).default_string = "mixed"];
+}
+
+message AccessibilitySpecialValueProtected {
+  string kind = 1 [(eip_field).const_string = "protected", (eip_field).default_string = "protected"];
+}
+
+message AccessibilitySpecialValueUnavailable {
+  string kind = 1 [(eip_field).const_string = "unavailable", (eip_field).default_string = "unavailable"];
+}
+
+message AccessibilitySpecialValueUnsupported {
+  string kind = 1 [(eip_field).const_string = "unsupported", (eip_field).default_string = "unsupported"];
+}
+
+message AccessibilityTableRead {
+  string kind = 1 [(eip_field).const_string = "table", (eip_field).default_string = "table"];
+  uint32 row = 2 [(eip_field).minimum = 0, (eip_field).default_uint = 0];
+  uint32 column = 3 [(eip_field).minimum = 0, (eip_field).default_uint = 0];
+  uint32 rows = 4 [(eip_field).minimum = 1, (eip_field).maximum = 512, (eip_field).default_uint = 1];
+  uint32 columns = 5 [(eip_field).minimum = 1, (eip_field).maximum = 512, (eip_field).default_uint = 1];
+  bool include_headers = 6 [(eip_field).default_bool = true];
+  bool include_selection = 7 [(eip_field).default_bool = false];
+}
+
+message AccessibilityTextContent {
+  AccessibilityTextContentStatus status = 1;
+  string source = 2 [(eip_field).max_length = 128];
+  optional string text = 3;
+  optional AccessibilityNativeSpan span = 4;
+}
+
+message AccessibilityTextRead {
+  string kind = 1 [(eip_field).const_string = "text", (eip_field).default_string = "text"];
+  optional AccessibilityNativeSpan span = 2;
+}
+
+message AccessibilityTree {
+  AccessibilityDescriptionBackend backend = 1;
+  google.protobuf.Timestamp sampled_at = 2;
+  repeated AccessibilityNode nodes = 3 [(eip_field).max_length = 2048];
+  AccessibilityCompleteness completeness = 4;
+}
+
+message AccessibilityValue {
+  option (eip_message).discriminated_union = true;
+  oneof variant {
+    AccessibilityBoundsValue accessibility_bounds_value = 1;
+    AccessibilitySpecialValueMixed accessibility_special_value_mixed = 2;
+    AccessibilityNodesValue accessibility_nodes_value = 3;
+    AccessibilitySpecialValueProtected accessibility_special_value_protected = 4;
+    AccessibilityRangesValue accessibility_ranges_value = 5;
+    AccessibilityScalar accessibility_scalar = 6;
+    AccessibilityScalarsValue accessibility_scalars_value = 7;
+    AccessibilitySpecialValueUnavailable accessibility_special_value_unavailable = 8;
+    AccessibilitySpecialValueUnsupported accessibility_special_value_unsupported = 9;
+  }
+}
+
+message AtspiAction {
+  string op = 1 [(eip_field).const_string = "do_action", (eip_field).default_string = "do_action"];
+  AccessibilityActionReference action = 2;
+}
+
+message AtspiChildSelectionSelectionAddChild {
+  string op = 1 [(eip_field).const_string = "selection_add_child", (eip_field).default_string = "selection_add_child"];
+  AccessibilityNodeReference child = 2;
+}
+
+message AtspiChildSelectionSelectionRemoveChild {
+  string op = 1 [(eip_field).const_string = "selection_remove_child", (eip_field).default_string = "selection_remove_child"];
+  AccessibilityNodeReference child = 2;
+}
+
+message AtspiChildSelectionSelectionRemoveSelected {
+  string op = 1 [(eip_field).const_string = "selection_remove_selected", (eip_field).default_string = "selection_remove_selected"];
+  AccessibilityNodeReference child = 2;
+}
+
+message AtspiCommandFocus {
+  string op = 1 [(eip_field).const_string = "focus", (eip_field).default_string = "focus"];
+}
+
+message AtspiCommandSelectionAll {
+  string op = 1 [(eip_field).const_string = "selection_all", (eip_field).default_string = "selection_all"];
+}
+
+message AtspiCommandSelectionClear {
+  string op = 1 [(eip_field).const_string = "selection_clear", (eip_field).default_string = "selection_clear"];
+}
+
+message AtspiDocumentSelection {
+  AccessibilityNodeReference start = 1;
+  uint32 start_offset = 2 [(eip_field).minimum = 0];
+  AccessibilityNodeReference end = 3;
+  uint32 end_offset = 4 [(eip_field).minimum = 0];
+  bool start_is_active = 5;
+}
+
+message AtspiDocumentSelections {
+  string op = 1 [(eip_field).const_string = "document_selections_set", (eip_field).default_string = "document_selections_set"];
+  repeated AtspiDocumentSelection selections = 2 [(eip_field).max_length = 256, (eip_field).required = true];
+}
+
+message AtspiExtents {
+  string op = 1 [(eip_field).const_string = "component_extents_set", (eip_field).default_string = "component_extents_set"];
+  AccessibilityNativePoint point = 2;
+  sint32 width = 3 [(eip_field).minimum = 1];
+  sint32 height = 4 [(eip_field).minimum = 1];
+}
+
+message AtspiRangeScroll {
+  string op = 1 [(eip_field).const_string = "range_scroll_to", (eip_field).default_string = "range_scroll_to"];
+  AccessibilityRangeReference range = 2;
+  AtspiRangeScrollAlignment alignment = 3;
+}
+
+message AtspiRangeScrollPoint {
+  string op = 1 [(eip_field).const_string = "range_scroll_to_point", (eip_field).default_string = "range_scroll_to_point"];
+  AccessibilityRangeReference range = 2;
+  AccessibilityNativePoint point = 3;
+}
+
+message AtspiScroll {
+  string op = 1 [(eip_field).const_string = "scroll_to", (eip_field).default_string = "scroll_to"];
+  AtspiRangeScrollAlignment alignment = 2;
+}
+
+message AtspiScrollPointComponentPositionSet {
+  string op = 1 [(eip_field).const_string = "component_position_set", (eip_field).default_string = "component_position_set"];
+  AccessibilityNativePoint point = 2;
+}
+
+message AtspiScrollPointScrollToPoint {
+  string op = 1 [(eip_field).const_string = "scroll_to_point", (eip_field).default_string = "scroll_to_point"];
+  AccessibilityNativePoint point = 2;
+}
+
+message AtspiSelectionRemove {
+  string op = 1 [(eip_field).const_string = "text_selection_remove", (eip_field).default_string = "text_selection_remove"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiSelectionSet {
+  string op = 1 [(eip_field).const_string = "text_selection_set", (eip_field).default_string = "text_selection_set"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+  AccessibilityRangeReference range = 3;
+}
+
+message AtspiSize {
+  string op = 1 [(eip_field).const_string = "component_size_set", (eip_field).default_string = "component_size_set"];
+  sint32 width = 2 [(eip_field).minimum = 1];
+  sint32 height = 3 [(eip_field).minimum = 1];
+}
+
+message AtspiTableSelectionTableColumnSelect {
+  string op = 1 [(eip_field).const_string = "table_column_select", (eip_field).default_string = "table_column_select"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTableSelectionTableColumnUnselect {
+  string op = 1 [(eip_field).const_string = "table_column_unselect", (eip_field).default_string = "table_column_unselect"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTableSelectionTableRowSelect {
+  string op = 1 [(eip_field).const_string = "table_row_select", (eip_field).default_string = "table_row_select"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTableSelectionTableRowUnselect {
+  string op = 1 [(eip_field).const_string = "table_row_unselect", (eip_field).default_string = "table_row_unselect"];
+  uint32 index = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTextContents {
+  string op = 1 [(eip_field).const_string = "text_contents_set", (eip_field).default_string = "text_contents_set"];
+  string text = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message AtspiTextInsert {
+  string op = 1 [(eip_field).const_string = "text_insert", (eip_field).default_string = "text_insert"];
+  uint32 position = 2 [(eip_field).minimum = 0];
+  string text = 3 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message AtspiTextPositionCaretSet {
+  string op = 1 [(eip_field).const_string = "caret_set", (eip_field).default_string = "caret_set"];
+  uint32 position = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTextPositionTextPaste {
+  string op = 1 [(eip_field).const_string = "text_paste", (eip_field).default_string = "text_paste"];
+  uint32 position = 2 [(eip_field).minimum = 0];
+}
+
+message AtspiTextRangeTextCopy {
+  string op = 1 [(eip_field).const_string = "text_copy", (eip_field).default_string = "text_copy"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AtspiTextRangeTextCut {
+  string op = 1 [(eip_field).const_string = "text_cut", (eip_field).default_string = "text_cut"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AtspiTextRangeTextDelete {
+  string op = 1 [(eip_field).const_string = "text_delete", (eip_field).default_string = "text_delete"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AtspiTextRangeTextSelectionAdd {
+  string op = 1 [(eip_field).const_string = "text_selection_add", (eip_field).default_string = "text_selection_add"];
+  AccessibilityRangeReference range = 2;
+}
+
+message AtspiValue {
+  string op = 1 [(eip_field).const_string = "value_set", (eip_field).default_string = "value_set"];
+  double value = 2;
+}
+
+message ComputerA11yDescribeParams {
+  EIPCallContext context = 1;
+}
+
+message ComputerA11yFindParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AccessibilityLimits limits = 3 [(eip_field).default_message = true];
+  ComputerA11yFindParamsView view = 4 [(eip_field).default_string = "control"];
+  optional AccessibilityCursor cursor = 5;
+  AccessibilityFind query = 6;
+}
+
+message ComputerA11yInspectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AccessibilityLimits limits = 3 [(eip_field).default_message = true];
+  ComputerA11yFindParamsView view = 4 [(eip_field).default_string = "control"];
+  optional AccessibilityCursor cursor = 5;
+  optional string projection_observation_id = 6 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+}
+
+message ComputerA11yRangeParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AccessibilityRangeQuery query = 3;
+  optional AccessibilityRangeReference source = 4;
+  AccessibilityLimits limits = 5 [(eip_field).default_message = true];
+}
+
+message ComputerA11yRangeReadParams {
+  EIPCallContext context = 1;
+  AccessibilityRangeReference reference = 2;
+  AccessibilityRangeReadRequest request = 3;
+  AccessibilityLimits limits = 4 [(eip_field).default_message = true];
+}
+
+message ComputerA11yReadParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AccessibilityRead request = 3;
+  AccessibilityLimits limits = 4 [(eip_field).default_message = true];
+}
+
+message ComputerA11yRootsParams {
+  EIPCallContext context = 1;
+  AccessibilityRootScope scope = 2;
+  AccessibilityLimits limits = 3 [(eip_field).default_message = true];
+}
+
+message ComputerAXDisclosingSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXBooleanDisclosingSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXExpandedSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXBooleanExpandedSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXFocusParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXFocus request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXFocusedWindowSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXFocusedWindow request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXMainSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXBooleanMainSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXMinimizedSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXBooleanMinimizedSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXPerformActionParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXAction request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXPositionSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXPosition request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSelectedChildrenSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXChildrenSelectedChildrenSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSelectedColumnsSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXChildrenSelectedColumnsSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSelectedRowsSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXChildrenSelectedRowsSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSelectedSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXBooleanSelectedSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSelectedTextSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXSelectedText request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXSizeSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXSize request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXTextRangeSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXRangeTextRangeSelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXTextRangesSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXRanges request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXValueNumberSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXNumberValue request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXValueStringSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXStringValue request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAXVisibleTextRangeSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AXRangeVisibleTextRangeSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiCaretSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextPositionCaretSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiComponentExtentsSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiExtents request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiComponentPositionSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiScrollPointComponentPositionSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiComponentSizeSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiSize request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiDoActionParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiAction request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiDocumentSelectionsSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiDocumentSelections request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiFocusParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiCommandFocus request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiRangeScrollToParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiRangeScroll request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiRangeScrollToPointParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiRangeScrollPoint request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiScrollToParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiScroll request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiScrollToPointParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiScrollPointScrollToPoint request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiSelectionAddChildParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiChildSelectionSelectionAddChild request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiSelectionAllParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiCommandSelectionAll request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiSelectionClearParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiCommandSelectionClear request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiSelectionRemoveChildParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiChildSelectionSelectionRemoveChild request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiSelectionRemoveSelectedParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiChildSelectionSelectionRemoveSelected request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTableColumnSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTableSelectionTableColumnSelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTableColumnUnselectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTableSelectionTableColumnUnselect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTableRowSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTableSelectionTableRowSelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTableRowUnselectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTableSelectionTableRowUnselect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextContentsSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextContents request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextCopyParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextRangeTextCopy request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextCutParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextRangeTextCut request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextDeleteParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextRangeTextDelete request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextInsertParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextInsert request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextPasteParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextPositionTextPaste request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextSelectionAddParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiTextRangeTextSelectionAdd request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextSelectionRemoveParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiSelectionRemove request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiTextSelectionSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiSelectionSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerAtspiValueSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  AtspiValue request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIACollapseParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandCollapse request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIADockSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIADock request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAExpandParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandExpand request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAFocusParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandFocus request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAInvokeParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandInvoke request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIALegacyDefaultActionParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandLegacyDefaultAction request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIALegacySelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIALegacySelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIALegacyValueSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAStringValueLegacyValueSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeAddSelectionParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARangeRangeAddSelection request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeRemoveSelectionParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARangeRangeRemoveSelection request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeScrollIntoViewParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARangeScroll request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARangeRangeSelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeShowContextMenuParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARangeRangeShowContextMenu request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARangeValueSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIANumberValue request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIARealizeParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandRealize request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAScrollAmountParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAScrollAmount request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAScrollIntoViewParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandScrollIntoView request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAScrollPercentParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAScrollPercent request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIASelectionAddParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandSelectionAdd request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIASelectionRemoveParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandSelectionRemove request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIASelectionSelectParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandSelectionSelect request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAShowContextMenuParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandShowContextMenu request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAToggleParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandToggle request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIATransformMoveParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAMove request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIATransformResizeParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAResize request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIATransformRotateParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIARotate request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIATransformZoomParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAZoom request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIATransformZoomUnitParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAZoomUnit request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAValueSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAStringValueValueSet request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAViewSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAView request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAWindowCloseParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIACommandWindowClose request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message ComputerUIAWindowStateSetParams {
+  EIPCallContext context = 1;
+  AccessibilityNodeReference node = 2;
+  UIAWindowState request = 3;
+  bool readback = 4 [(eip_field).default_bool = false];
+}
+
+message AccessibilityNativeBounds {
+  AccessibilityDescriptionFrames frame = 1;
+  double x = 2;
+  double y = 3;
+  double width = 4 [(eip_field).minimum = 0];
+  double height = 5 [(eip_field).minimum = 0];
+  optional string display_id = 6;
+}
+
+message AccessibilityNativePoint {
+  AccessibilityDescriptionFrames frame = 1;
+  double x = 2;
+  double y = 3;
+}
+
+message AccessibilityNativeSpan {
+  AccessibilityNativeSpanUnit unit = 1;
+  uint32 start = 2 [(eip_field).minimum = 0];
+  uint32 end = 3 [(eip_field).minimum = 0];
+}
+
+message UIACommandCollapse {
+  string op = 1 [(eip_field).const_string = "collapse", (eip_field).default_string = "collapse"];
+}
+
+message UIACommandExpand {
+  string op = 1 [(eip_field).const_string = "expand", (eip_field).default_string = "expand"];
+}
+
+message UIACommandFocus {
+  string op = 1 [(eip_field).const_string = "focus", (eip_field).default_string = "focus"];
+}
+
+message UIACommandInvoke {
+  string op = 1 [(eip_field).const_string = "invoke", (eip_field).default_string = "invoke"];
+}
+
+message UIACommandLegacyDefaultAction {
+  string op = 1 [(eip_field).const_string = "legacy_default_action", (eip_field).default_string = "legacy_default_action"];
+}
+
+message UIACommandRealize {
+  string op = 1 [(eip_field).const_string = "realize", (eip_field).default_string = "realize"];
+}
+
+message UIACommandScrollIntoView {
+  string op = 1 [(eip_field).const_string = "scroll_into_view", (eip_field).default_string = "scroll_into_view"];
+}
+
+message UIACommandSelectionAdd {
+  string op = 1 [(eip_field).const_string = "selection_add", (eip_field).default_string = "selection_add"];
+}
+
+message UIACommandSelectionRemove {
+  string op = 1 [(eip_field).const_string = "selection_remove", (eip_field).default_string = "selection_remove"];
+}
+
+message UIACommandSelectionSelect {
+  string op = 1 [(eip_field).const_string = "selection_select", (eip_field).default_string = "selection_select"];
+}
+
+message UIACommandShowContextMenu {
+  string op = 1 [(eip_field).const_string = "show_context_menu", (eip_field).default_string = "show_context_menu"];
+}
+
+message UIACommandToggle {
+  string op = 1 [(eip_field).const_string = "toggle", (eip_field).default_string = "toggle"];
+}
+
+message UIACommandWindowClose {
+  string op = 1 [(eip_field).const_string = "window_close", (eip_field).default_string = "window_close"];
+}
+
+message UIADock {
+  string op = 1 [(eip_field).const_string = "dock_set", (eip_field).default_string = "dock_set"];
+  UIADockPosition position = 2;
+}
+
+message UIALegacySelect {
+  string op = 1 [(eip_field).const_string = "legacy_select", (eip_field).default_string = "legacy_select"];
+  UIALegacySelectSelection selection = 2 [(eip_field).default_string = "none"];
+  bool take_focus = 3 [(eip_field).default_bool = false];
+}
+
+message UIAMove {
+  string op = 1 [(eip_field).const_string = "transform_move", (eip_field).default_string = "transform_move"];
+  double x = 2;
+  double y = 3;
+}
+
+message UIANumberValue {
+  string op = 1 [(eip_field).const_string = "range_value_set", (eip_field).default_string = "range_value_set"];
+  double value = 2;
+}
+
+message UIARangeRangeAddSelection {
+  string op = 1 [(eip_field).const_string = "range_add_selection", (eip_field).default_string = "range_add_selection"];
+  AccessibilityRangeReference range = 2;
+}
+
+message UIARangeRangeRemoveSelection {
+  string op = 1 [(eip_field).const_string = "range_remove_selection", (eip_field).default_string = "range_remove_selection"];
+  AccessibilityRangeReference range = 2;
+}
+
+message UIARangeRangeSelect {
+  string op = 1 [(eip_field).const_string = "range_select", (eip_field).default_string = "range_select"];
+  AccessibilityRangeReference range = 2;
+}
+
+message UIARangeRangeShowContextMenu {
+  string op = 1 [(eip_field).const_string = "range_show_context_menu", (eip_field).default_string = "range_show_context_menu"];
+  AccessibilityRangeReference range = 2;
+}
+
+message UIARangeScroll {
+  string op = 1 [(eip_field).const_string = "range_scroll_into_view", (eip_field).default_string = "range_scroll_into_view"];
+  AccessibilityRangeReference range = 2;
+  bool align_top = 3 [(eip_field).default_bool = true];
+}
+
+message UIAResize {
+  string op = 1 [(eip_field).const_string = "transform_resize", (eip_field).default_string = "transform_resize"];
+  double width = 2 [(eip_field).exclusive_minimum = 0];
+  double height = 3 [(eip_field).exclusive_minimum = 0];
+}
+
+message UIARotate {
+  string op = 1 [(eip_field).const_string = "transform_rotate", (eip_field).default_string = "transform_rotate"];
+  double degrees = 2;
+}
+
+message UIAScrollAmount {
+  string op = 1 [(eip_field).const_string = "scroll_amount", (eip_field).default_string = "scroll_amount"];
+  UIAScrollAmountHorizontal horizontal = 2 [(eip_field).default_string = "no_amount"];
+  UIAScrollAmountHorizontal vertical = 3 [(eip_field).default_string = "no_amount"];
+}
+
+message UIAScrollPercent {
+  string op = 1 [(eip_field).const_string = "scroll_percent", (eip_field).default_string = "scroll_percent"];
+  optional double horizontal = 2 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+  optional double vertical = 3 [(eip_field).minimum = 0, (eip_field).maximum = 100];
+}
+
+message UIAStringValueLegacyValueSet {
+  string op = 1 [(eip_field).const_string = "legacy_value_set", (eip_field).default_string = "legacy_value_set"];
+  string value = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message UIAStringValueValueSet {
+  string op = 1 [(eip_field).const_string = "value_set", (eip_field).default_string = "value_set"];
+  string value = 2 [(eip_field).max_utf8_bytes = 65536, (eip_field).no_nul = true];
+}
+
+message UIAView {
+  string op = 1 [(eip_field).const_string = "view_set", (eip_field).default_string = "view_set"];
+  sint32 view_id = 2;
+}
+
+message UIAWindowState {
+  string op = 1 [(eip_field).const_string = "window_state_set", (eip_field).default_string = "window_state_set"];
+  UIAWindowStateState state = 2;
+}
+
+message UIAZoom {
+  string op = 1 [(eip_field).const_string = "transform_zoom", (eip_field).default_string = "transform_zoom"];
+  double percent = 2 [(eip_field).exclusive_minimum = 0];
+}
+
+message UIAZoomUnit {
+  string op = 1 [(eip_field).const_string = "transform_zoom_unit", (eip_field).default_string = "transform_zoom_unit"];
+  UIAZoomUnitUnit unit = 2;
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_harness.environment.accessibility_operations import ProviderAccessibilityOperations
 from a13n_harness.environment.commands import ProviderPortOperations, ProviderProcessOperations, ProviderShellOperations
 from a13n_harness.environment.computer import ProviderComputerOperations
 from a13n_harness.environment.files import FileOperator
@@ -18,3 +19,4 @@ class EnvironmentOperations:
     ports: ProviderPortOperations | None = None
     outputs: ProviderOutputOperations | None = None
     computer: ProviderComputerOperations | None = None
+    accessibility: ProviderAccessibilityOperations | None = None

@@ -6,7 +6,7 @@ EIP has one language-neutral protocol source that generates the daemon wire surf
 
 The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `a13n-envd`. Envd-backed execution Providers in Harness implement Environment connector and provider-neutral Environment execution over this EIP client; Harness opens those Environment executions and adds Run-local mounts, routing, tools, and context.
 
-The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The deployment baseline is daemon/client `0.7.0`; Envd `0.6.x` peers are unsupported and must be upgraded together. The EIP source identifier remains `0.4` for this baseline and is not a cross-release compatibility guarantee; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
+The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The deployment baseline is daemon/client `0.7.0`; Envd `0.6.x` peers are unsupported and must be upgraded together. The EIP source identifier is `0.5` and is not a cross-release compatibility guarantee; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
 
 ## Boundaries
 
@@ -47,7 +47,7 @@ The client package is lower-level than Harness and Service and is reusable by pr
 
 ## Canonical IDL Profile
 
-Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.4 selects data-frame profile 1, including explicit Session routing. Device initialization returns the descriptor; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers validate the current schemas and reject unsupported frame profiles. EIP-specific method options declare at least:
+Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.5 selects data-frame profile 1, including explicit Session routing. Device initialization returns the descriptor; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers validate the current schemas and reject unsupported frame profiles. EIP-specific method options declare at least:
 
 - exact JSON-RPC method name;
 - whether the method opens, closes, commits, or aborts a typed file transfer and the permitted direction;

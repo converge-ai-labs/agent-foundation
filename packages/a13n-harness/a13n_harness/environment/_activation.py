@@ -240,6 +240,8 @@ def _validate_operation_facets(
         for family in ("files", "shell", "processes", "ports", "outputs", "computer")
         if getattr(operations, family) is not None
     }
+    if operations.accessibility is not None:
+        facet_families.add("computer")
     advertised_facets = set(descriptor.operation_families)
     required_facets = availability.ready_families if availability.status == "preparing" else advertised_facets
     if not facet_families <= advertised_facets or not required_facets <= facet_families:
@@ -249,9 +251,10 @@ def _validate_operation_facets(
         )
     for action in descriptor.permissions.operations:
         dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
-        if dispatch.facet not in facet_families:
+        if dispatch.family not in facet_families:
             continue
-        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
+        facet = getattr(operations, dispatch.facet, None)
+        method = getattr(facet, dispatch.method, None)
         if not callable(method):
             raise EnvironmentError(
                 "Provider permission has no executable semantic method.",

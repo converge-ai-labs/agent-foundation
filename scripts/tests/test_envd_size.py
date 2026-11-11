@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import tarfile
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,11 @@ SPEC = importlib.util.spec_from_file_location("envd_size", ROOT / "scripts/envd_
 assert SPEC and SPEC.loader
 size = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(size)
+
+
+def test_release_artifacts_strip_symbols_before_size_measurement():
+    manifest = tomllib.loads((ROOT / "Cargo.toml").read_text())
+    assert manifest["profile"]["release"]["strip"] is True
 
 
 @pytest.mark.parametrize("variant", ["default", "vm"])

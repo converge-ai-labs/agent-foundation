@@ -54,8 +54,14 @@ pub(crate) fn receive<const N: usize>(socket: &UnixStream) -> io::Result<[OwnedF
     let mut descriptors = Vec::new();
     unsafe {
         let count = libc::recvmsg(socket.as_raw_fd(), &mut message, libc::MSG_CMSG_CLOEXEC);
-        if count != 1 {
-            return Err(io::Error::other("namespace bootstrap disconnected"));
+        if count < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "namespace bootstrap disconnected",
+            ));
         }
         let mut header = libc::CMSG_FIRSTHDR(&message);
         while !header.is_null() {
@@ -77,4 +83,36 @@ pub(crate) fn receive<const N: usize>(socket: &UnixStream) -> io::Result<[OwnedF
     descriptors
         .try_into()
         .map_err(|_| io::Error::other("invalid bootstrap descriptor count"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_descriptors_round_trip() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let file = std::fs::File::open("/dev/null").unwrap();
+        send(&sender, &[file.as_raw_fd()]).unwrap();
+        let [received] = receive::<1>(&receiver).unwrap();
+        assert!(received.as_raw_fd() >= 0);
+    }
+
+    #[test]
+    fn bootstrap_peer_close_reports_eof() {
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        drop(sender);
+        let error = receive::<1>(&receiver).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert_eq!(error.to_string(), "namespace bootstrap disconnected");
+    }
+
+    #[test]
+    fn bootstrap_receive_preserves_os_error() {
+        let (_sender, receiver) = UnixStream::pair().unwrap();
+        receiver.set_nonblocking(true).unwrap();
+        let error = receive::<1>(&receiver).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(error.raw_os_error(), Some(libc::EAGAIN));
+    }
 }

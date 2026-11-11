@@ -1,5 +1,3104 @@
 {
   "$defs": {
+    "AXAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AccessibilityActionReference"
+        },
+        "op": {
+          "const": "perform_action",
+          "default": "perform_action",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "AXAction",
+      "type": "object"
+    },
+    "AXBooleanDisclosingSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "disclosing_set",
+          "default": "disclosing_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXBooleanDisclosingSet",
+      "type": "object"
+    },
+    "AXBooleanExpandedSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "expanded_set",
+          "default": "expanded_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXBooleanExpandedSet",
+      "type": "object"
+    },
+    "AXBooleanMainSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "main_set",
+          "default": "main_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXBooleanMainSet",
+      "type": "object"
+    },
+    "AXBooleanMinimizedSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "minimized_set",
+          "default": "minimized_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXBooleanMinimizedSet",
+      "type": "object"
+    },
+    "AXBooleanSelectedSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selected_set",
+          "default": "selected_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXBooleanSelectedSet",
+      "type": "object"
+    },
+    "AXChildrenSelectedChildrenSet": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/AccessibilityNodeReference"
+          },
+          "maxItems": 512,
+          "title": "Children",
+          "type": "array"
+        },
+        "op": {
+          "const": "selected_children_set",
+          "default": "selected_children_set",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "children"
+      ],
+      "title": "AXChildrenSelectedChildrenSet",
+      "type": "object"
+    },
+    "AXChildrenSelectedColumnsSet": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/AccessibilityNodeReference"
+          },
+          "maxItems": 512,
+          "title": "Children",
+          "type": "array"
+        },
+        "op": {
+          "const": "selected_columns_set",
+          "default": "selected_columns_set",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "children"
+      ],
+      "title": "AXChildrenSelectedColumnsSet",
+      "type": "object"
+    },
+    "AXChildrenSelectedRowsSet": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/AccessibilityNodeReference"
+          },
+          "maxItems": 512,
+          "title": "Children",
+          "type": "array"
+        },
+        "op": {
+          "const": "selected_rows_set",
+          "default": "selected_rows_set",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "children"
+      ],
+      "title": "AXChildrenSelectedRowsSet",
+      "type": "object"
+    },
+    "AXFocus": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "focus",
+          "default": "focus",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "AXFocus",
+      "type": "object"
+    },
+    "AXFocusedWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "focused_window_set",
+          "default": "focused_window_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "title": "AXFocusedWindow",
+      "type": "object"
+    },
+    "AXNumberValue": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "value_number_set",
+          "default": "value_number_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXNumberValue",
+      "type": "object"
+    },
+    "AXPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "position_set",
+          "default": "position_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "AXPosition",
+      "type": "object"
+    },
+    "AXRangeTextRangeSelect": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_range_select",
+          "default": "text_range_select",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AXRangeTextRangeSelect",
+      "type": "object"
+    },
+    "AXRangeVisibleTextRangeSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "visible_text_range_set",
+          "default": "visible_text_range_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AXRangeVisibleTextRangeSet",
+      "type": "object"
+    },
+    "AXRanges": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_ranges_select",
+          "default": "text_ranges_select",
+          "title": "Op",
+          "type": "string"
+        },
+        "ranges": {
+          "items": {
+            "$ref": "#/$defs/AccessibilityRangeReference"
+          },
+          "maxItems": 256,
+          "title": "Ranges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ranges"
+      ],
+      "title": "AXRanges",
+      "type": "object"
+    },
+    "AXSelectedText": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selected_text_set",
+          "default": "selected_text_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Text",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AXSelectedText",
+      "type": "object"
+    },
+    "AXSize": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0.0,
+          "title": "Height",
+          "type": "number"
+        },
+        "op": {
+          "const": "size_set",
+          "default": "size_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0.0,
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "title": "AXSize",
+      "type": "object"
+    },
+    "AXStringValue": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "value_string_set",
+          "default": "value_string_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Value",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AXStringValue",
+      "type": "object"
+    },
+    "AccessibilityActionReference": {
+      "additionalProperties": false,
+      "properties": {
+        "action_handle": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Action Handle",
+          "type": "string"
+        },
+        "native_identifier": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Native Identifier",
+          "type": "string"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        }
+      },
+      "required": [
+        "node",
+        "action_handle",
+        "native_identifier"
+      ],
+      "title": "AccessibilityActionReference",
+      "type": "object"
+    },
+    "AccessibilityAttributeMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "parameterized": {
+          "title": "Parameterized",
+          "type": "boolean"
+        },
+        "writable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Writable"
+        }
+      },
+      "required": [
+        "name",
+        "parameterized"
+      ],
+      "title": "AccessibilityAttributeMetadata",
+      "type": "object"
+    },
+    "AccessibilityAttributeRun": {
+      "additionalProperties": false,
+      "properties": {
+        "properties": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityProperty"
+          },
+          "maxItems": 128,
+          "title": "Properties",
+          "type": "array"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AccessibilityAttributeRun",
+      "type": "object"
+    },
+    "AccessibilityBoundsValue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "bounds",
+          "default": "bounds",
+          "title": "Kind",
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNativeBounds"
+          },
+          "maxItems": 512,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "title": "AccessibilityBoundsValue",
+      "type": "object"
+    },
+    "AccessibilityCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityActionReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "operation": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 128,
+          "title": "Source",
+          "type": "string"
+        },
+        "supported": {
+          "$ref": "#/$defs/AccessibilityCapabilitySupported"
+        }
+      },
+      "required": [
+        "operation",
+        "supported",
+        "source"
+      ],
+      "title": "AccessibilityCapability",
+      "type": "object"
+    },
+    "AccessibilityCapabilitySupported": {
+      "enum": [
+        "yes",
+        "candidate"
+      ],
+      "title": "AccessibilityCapabilitySupported",
+      "type": "string"
+    },
+    "AccessibilityCompleteness": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "consistency": {
+          "const": "live",
+          "default": "live",
+          "title": "Consistency",
+          "type": "string"
+        },
+        "continuation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityCursor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityCompletenessReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "complete"
+      ],
+      "title": "AccessibilityCompleteness",
+      "type": "object"
+    },
+    "AccessibilityCompletenessReason": {
+      "enum": [
+        "node_limit",
+        "item_limit",
+        "byte_limit",
+        "call_limit",
+        "deadline",
+        "total_limit"
+      ],
+      "title": "AccessibilityCompletenessReason",
+      "type": "string"
+    },
+    "AccessibilityContent": {
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityAttributeMetadata"
+          },
+          "maxItems": 512,
+          "title": "Attributes",
+          "type": "array"
+        },
+        "completeness": {
+          "$ref": "#/$defs/AccessibilityCompleteness"
+        },
+        "document_selections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AtspiDocumentSelection"
+          },
+          "maxItems": 256,
+          "title": "Document Selections",
+          "type": "array"
+        },
+        "field_errors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityFieldError"
+          },
+          "maxItems": 128,
+          "title": "Field Errors",
+          "type": "array"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNode"
+          },
+          "maxItems": 512,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "properties": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityProperty"
+          },
+          "maxItems": 512,
+          "title": "Properties",
+          "type": "array"
+        },
+        "ranges": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityRangeReference"
+          },
+          "maxItems": 256,
+          "title": "Ranges",
+          "type": "array"
+        },
+        "sampled_at": {
+          "format": "date-time",
+          "title": "Sampled At",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityTextContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node",
+        "sampled_at",
+        "completeness"
+      ],
+      "title": "AccessibilityContent",
+      "type": "object"
+    },
+    "AccessibilityCursor": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor_handle": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Cursor Handle",
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        }
+      },
+      "required": [
+        "root",
+        "cursor_handle"
+      ],
+      "title": "AccessibilityCursor",
+      "type": "object"
+    },
+    "AccessibilityDescription": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/AccessibilityDescriptionBackend"
+        },
+        "backend_epoch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backend Epoch"
+        },
+        "desktop_identity": {
+          "maxLength": 1024,
+          "title": "Desktop Identity",
+          "type": "string"
+        },
+        "frames": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityDescriptionFrames"
+          },
+          "title": "Frames",
+          "type": "array"
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Methods",
+          "type": "array"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "reason": {
+          "$ref": "#/$defs/AccessibilityDescriptionReason"
+        }
+      },
+      "required": [
+        "backend",
+        "ready",
+        "reason",
+        "desktop_identity"
+      ],
+      "title": "AccessibilityDescription",
+      "type": "object"
+    },
+    "AccessibilityDescriptionBackend": {
+      "enum": [
+        "ax",
+        "uia",
+        "atspi"
+      ],
+      "title": "AccessibilityDescriptionBackend",
+      "type": "string"
+    },
+    "AccessibilityDescriptionFrames": {
+      "enum": [
+        "ax_screen",
+        "uia_physical_screen",
+        "atspi_screen",
+        "atspi_window",
+        "atspi_parent"
+      ],
+      "title": "AccessibilityDescriptionFrames",
+      "type": "string"
+    },
+    "AccessibilityDescriptionReason": {
+      "enum": [
+        "ready",
+        "permission_required",
+        "desktop_unavailable",
+        "bus_unavailable",
+        "unsupported"
+      ],
+      "title": "AccessibilityDescriptionReason",
+      "type": "string"
+    },
+    "AccessibilityDocumentSelectionsRead": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "document_selections",
+          "default": "document_selections",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityDocumentSelectionsRead",
+      "type": "object"
+    },
+    "AccessibilityFieldError": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "maxLength": 128,
+          "title": "Field",
+          "type": "string"
+        },
+        "native_code": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Code"
+        },
+        "reason": {
+          "$ref": "#/$defs/AccessibilityFieldErrorReason"
+        }
+      },
+      "required": [
+        "field",
+        "reason"
+      ],
+      "title": "AccessibilityFieldError",
+      "type": "object"
+    },
+    "AccessibilityFieldErrorReason": {
+      "enum": [
+        "unsupported",
+        "denied",
+        "stale",
+        "unavailable",
+        "timeout",
+        "protected"
+      ],
+      "title": "AccessibilityFieldErrorReason",
+      "type": "string"
+    },
+    "AccessibilityFind": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identifier"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "name_match": {
+          "$ref": "#/$defs/AccessibilityFindNameMatch",
+          "default": "exact"
+        },
+        "native_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Role"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "states": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "maxProperties": 128,
+          "title": "States",
+          "type": "object"
+        }
+      },
+      "title": "AccessibilityFind",
+      "type": "object"
+    },
+    "AccessibilityFindNameMatch": {
+      "enum": [
+        "exact",
+        "substring_casefold"
+      ],
+      "title": "AccessibilityFindNameMatch",
+      "type": "string"
+    },
+    "AccessibilityIdleRead": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "wait_for_input_idle",
+          "default": "wait_for_input_idle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 1000,
+          "maximum": 15000,
+          "minimum": 0,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "title": "AccessibilityIdleRead",
+      "type": "object"
+    },
+    "AccessibilityImageProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom"
+        },
+        "left": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Left"
+        },
+        "right": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Right"
+        },
+        "source_observation_id": {
+          "minLength": 1,
+          "title": "Source Observation Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AccessibilityImageProjectionStatus"
+        },
+        "top": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top"
+        }
+      },
+      "required": [
+        "source_observation_id",
+        "status"
+      ],
+      "title": "AccessibilityImageProjection",
+      "type": "object"
+    },
+    "AccessibilityImageProjectionStatus": {
+      "enum": [
+        "projected",
+        "unavailable"
+      ],
+      "title": "AccessibilityImageProjectionStatus",
+      "type": "string"
+    },
+    "AccessibilityItemRead": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNodeReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "item",
+          "default": "item",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 4096,
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/AccessibilityItemReadSource"
+        }
+      },
+      "required": [
+        "source",
+        "name"
+      ],
+      "title": "AccessibilityItemRead",
+      "type": "object"
+    },
+    "AccessibilityItemReadSource": {
+      "enum": [
+        "uia_item_container",
+        "uia_spreadsheet"
+      ],
+      "title": "AccessibilityItemReadSource",
+      "type": "string"
+    },
+    "AccessibilityLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": 2,
+          "maximum": 12,
+          "minimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 128,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "max_matches": {
+          "default": 64,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Max Matches",
+          "type": "integer"
+        },
+        "max_native_calls": {
+          "default": 1024,
+          "maximum": 8192,
+          "minimum": 1,
+          "title": "Max Native Calls",
+          "type": "integer"
+        },
+        "max_nodes": {
+          "default": 256,
+          "maximum": 2048,
+          "minimum": 1,
+          "title": "Max Nodes",
+          "type": "integer"
+        },
+        "max_result_bytes": {
+          "default": 262144,
+          "maximum": 1048576,
+          "minimum": 1,
+          "title": "Max Result Bytes",
+          "type": "integer"
+        },
+        "max_text_bytes": {
+          "default": 16384,
+          "maximum": 65536,
+          "minimum": 1,
+          "title": "Max Text Bytes",
+          "type": "integer"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "maximum": 15000,
+          "minimum": 1,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "title": "AccessibilityLimits",
+      "type": "object"
+    },
+    "AccessibilityMutationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "application_outcome": {
+          "const": "unverified",
+          "default": "unverified",
+          "title": "Application Outcome",
+          "type": "string"
+        },
+        "dispatch_complete": {
+          "title": "Dispatch Complete",
+          "type": "boolean"
+        },
+        "effect": {
+          "$ref": "#/$defs/ComputerEffect"
+        },
+        "native_status": {
+          "$ref": "#/$defs/AccessibilityMutationResultNativeStatus"
+        },
+        "observation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "receipt": {
+          "$ref": "#/$defs/OperationReceipt"
+        }
+      },
+      "required": [
+        "receipt",
+        "effect",
+        "native_status",
+        "dispatch_complete"
+      ],
+      "title": "AccessibilityMutationResult",
+      "type": "object"
+    },
+    "AccessibilityMutationResultNativeStatus": {
+      "enum": [
+        "returned_success",
+        "returned_false",
+        "error",
+        "no_reply"
+      ],
+      "title": "AccessibilityMutationResultNativeStatus",
+      "type": "string"
+    },
+    "AccessibilityNativeBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "display_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Id"
+        },
+        "frame": {
+          "$ref": "#/$defs/AccessibilityDescriptionFrames"
+        },
+        "height": {
+          "minimum": 0.0,
+          "title": "Height",
+          "type": "number"
+        },
+        "width": {
+          "minimum": 0.0,
+          "title": "Width",
+          "type": "number"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "frame",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "AccessibilityNativeBounds",
+      "type": "object"
+    },
+    "AccessibilityNativePoint": {
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/AccessibilityDescriptionFrames"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "frame",
+        "x",
+        "y"
+      ],
+      "title": "AccessibilityNativePoint",
+      "type": "object"
+    },
+    "AccessibilityNativeRead": {
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/AccessibilityNativeReadGroup"
+        },
+        "kind": {
+          "const": "native_details",
+          "default": "native_details",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "title": "AccessibilityNativeRead",
+      "type": "object"
+    },
+    "AccessibilityNativeReadGroup": {
+      "enum": [
+        "ax_attributes",
+        "ax_parameterized_attributes",
+        "uia_patterns",
+        "uia_annotation",
+        "uia_styles",
+        "uia_drag",
+        "uia_drop_target",
+        "uia_legacy",
+        "uia_transform",
+        "uia_views",
+        "uia_spreadsheet_item",
+        "atspi_interfaces",
+        "atspi_image",
+        "atspi_hypertext",
+        "atspi_component",
+        "atspi_actions"
+      ],
+      "title": "AccessibilityNativeReadGroup",
+      "type": "string"
+    },
+    "AccessibilityNativeSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "start": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessibilityNativeSpanUnit"
+        }
+      },
+      "required": [
+        "unit",
+        "start",
+        "end"
+      ],
+      "title": "AccessibilityNativeSpan",
+      "type": "object"
+    },
+    "AccessibilityNativeSpanUnit": {
+      "enum": [
+        "ax_native",
+        "atspi_character"
+      ],
+      "title": "AccessibilityNativeSpanUnit",
+      "type": "string"
+    },
+    "AccessibilityNavigateRead": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/AccessibilityNavigateReadDirection"
+        },
+        "kind": {
+          "const": "navigate",
+          "default": "navigate",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "title": "AccessibilityNavigateRead",
+      "type": "object"
+    },
+    "AccessibilityNavigateReadDirection": {
+      "enum": [
+        "parent",
+        "next_sibling",
+        "previous_sibling",
+        "first_child",
+        "last_child"
+      ],
+      "title": "AccessibilityNavigateReadDirection",
+      "type": "string"
+    },
+    "AccessibilityNode": {
+      "additionalProperties": false,
+      "properties": {
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNativeBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "capabilities": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityCapability"
+          },
+          "maxItems": 128,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "child_count": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Child Count"
+        },
+        "children": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNodeReference"
+          },
+          "maxItems": 2048,
+          "title": "Children",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "field_errors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityFieldError"
+          },
+          "maxItems": 128,
+          "title": "Field Errors",
+          "type": "array"
+        },
+        "identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identifier"
+        },
+        "image_projection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityImageProjection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "native_role": {
+          "maxLength": 1024,
+          "title": "Native Role",
+          "type": "string"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNodeReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "sampled_at": {
+          "format": "date-time",
+          "title": "Sampled At",
+          "type": "string"
+        },
+        "states": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "maxProperties": 128,
+          "title": "States",
+          "type": "object"
+        }
+      },
+      "required": [
+        "reference",
+        "native_role",
+        "sampled_at"
+      ],
+      "title": "AccessibilityNode",
+      "type": "object"
+    },
+    "AccessibilityNodeReference": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/AccessibilityDescriptionBackend"
+        },
+        "backend_epoch": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Backend Epoch",
+          "type": "string"
+        },
+        "node_handle": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Node Handle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backend",
+        "backend_epoch",
+        "node_handle"
+      ],
+      "title": "AccessibilityNodeReference",
+      "type": "object"
+    },
+    "AccessibilityNodesValue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "nodes",
+          "default": "nodes",
+          "title": "Kind",
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNodeReference"
+          },
+          "maxItems": 512,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "title": "AccessibilityNodesValue",
+      "type": "object"
+    },
+    "AccessibilityProperty": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 128,
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/AccessibilityValue"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "value"
+      ],
+      "title": "AccessibilityProperty",
+      "type": "object"
+    },
+    "AccessibilityPropertyRead": {
+      "additionalProperties": false,
+      "properties": {
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/AccessibilityPropertyReadGroups"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Groups",
+          "type": "array"
+        },
+        "kind": {
+          "const": "properties",
+          "default": "properties",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "groups"
+      ],
+      "title": "AccessibilityPropertyRead",
+      "type": "object"
+    },
+    "AccessibilityPropertyReadGroups": {
+      "enum": [
+        "identity",
+        "state",
+        "value",
+        "window"
+      ],
+      "title": "AccessibilityPropertyReadGroups",
+      "type": "string"
+    },
+    "AccessibilityRangeAcquireActiveComposition": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "active_composition",
+          "default": "active_composition",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireActiveComposition",
+      "type": "object"
+    },
+    "AccessibilityRangeAcquireCaret": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "caret",
+          "default": "caret",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireCaret",
+      "type": "object"
+    },
+    "AccessibilityRangeAcquireConversionTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "conversion_target",
+          "default": "conversion_target",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireConversionTarget",
+      "type": "object"
+    },
+    "AccessibilityRangeAcquireDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "document",
+          "default": "document",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireDocument",
+      "type": "object"
+    },
+    "AccessibilityRangeAcquireSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "selection",
+          "default": "selection",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireSelection",
+      "type": "object"
+    },
+    "AccessibilityRangeAcquireVisible": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "visible",
+          "default": "visible",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeAcquireVisible",
+      "type": "object"
+    },
+    "AccessibilityRangeChild": {
+      "additionalProperties": false,
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "kind": {
+          "const": "child",
+          "default": "child",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "child"
+      ],
+      "title": "AccessibilityRangeChild",
+      "type": "object"
+    },
+    "AccessibilityRangeCompare": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "compare",
+          "default": "compare",
+          "title": "Kind",
+          "type": "string"
+        },
+        "other": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        },
+        "other_endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "other"
+      ],
+      "title": "AccessibilityRangeCompare",
+      "type": "object"
+    },
+    "AccessibilityRangeCompareEndpoint": {
+      "enum": [
+        "start",
+        "end"
+      ],
+      "title": "AccessibilityRangeCompareEndpoint",
+      "type": "string"
+    },
+    "AccessibilityRangeCompose": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+        },
+        "kind": {
+          "const": "endpoint_by_range",
+          "default": "endpoint_by_range",
+          "title": "Kind",
+          "type": "string"
+        },
+        "other": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        },
+        "other_endpoint": {
+          "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+        }
+      },
+      "required": [
+        "endpoint",
+        "other",
+        "other_endpoint"
+      ],
+      "title": "AccessibilityRangeCompose",
+      "type": "object"
+    },
+    "AccessibilityRangeFind": {
+      "additionalProperties": false,
+      "properties": {
+        "backward": {
+          "default": false,
+          "title": "Backward",
+          "type": "boolean"
+        },
+        "ignore_case": {
+          "default": false,
+          "title": "Ignore Case",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "find_text",
+          "default": "find_text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Text",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AccessibilityRangeFind",
+      "type": "object"
+    },
+    "AccessibilityRangeFindAttribute": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_id": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Attribute Id",
+          "type": "integer"
+        },
+        "backward": {
+          "default": false,
+          "title": "Backward",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "find_attribute",
+          "default": "find_attribute",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/AccessibilityScalar"
+        }
+      },
+      "required": [
+        "attribute_id",
+        "value"
+      ],
+      "title": "AccessibilityRangeFindAttribute",
+      "type": "object"
+    },
+    "AccessibilityRangeIndexIndex": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "index",
+          "default": "index",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AccessibilityRangeIndexIndex",
+      "type": "object"
+    },
+    "AccessibilityRangeIndexLine": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "line",
+          "default": "line",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AccessibilityRangeIndexLine",
+      "type": "object"
+    },
+    "AccessibilityRangeIndexLineForIndex": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "line_for_index",
+          "default": "line_for_index",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AccessibilityRangeIndexLineForIndex",
+      "type": "object"
+    },
+    "AccessibilityRangeMoveExpand": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Count",
+          "type": "integer"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "expand",
+          "default": "expand",
+          "title": "Kind",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessibilityRangeMoveExpandUnit"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "AccessibilityRangeMoveExpand",
+      "type": "object"
+    },
+    "AccessibilityRangeMoveExpandUnit": {
+      "enum": [
+        "character",
+        "format",
+        "word",
+        "line",
+        "paragraph",
+        "page",
+        "document"
+      ],
+      "title": "AccessibilityRangeMoveExpandUnit",
+      "type": "string"
+    },
+    "AccessibilityRangeMoveMove": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Count",
+          "type": "integer"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "move",
+          "default": "move",
+          "title": "Kind",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessibilityRangeMoveExpandUnit"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "AccessibilityRangeMoveMove",
+      "type": "object"
+    },
+    "AccessibilityRangeMoveMoveEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": -10000,
+          "title": "Count",
+          "type": "integer"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeCompareEndpoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "move_endpoint",
+          "default": "move_endpoint",
+          "title": "Kind",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessibilityRangeMoveExpandUnit"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "AccessibilityRangeMoveMoveEndpoint",
+      "type": "object"
+    },
+    "AccessibilityRangePoint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "point",
+          "default": "point",
+          "title": "Kind",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/AccessibilityNativePoint"
+        }
+      },
+      "required": [
+        "point"
+      ],
+      "title": "AccessibilityRangePoint",
+      "type": "object"
+    },
+    "AccessibilityRangeQuery": {
+      "discriminator": {
+        "mapping": {
+          "active_composition": "#/$defs/AccessibilityRangeAcquireActiveComposition",
+          "caret": "#/$defs/AccessibilityRangeAcquireCaret",
+          "child": "#/$defs/AccessibilityRangeChild",
+          "conversion_target": "#/$defs/AccessibilityRangeAcquireConversionTarget",
+          "document": "#/$defs/AccessibilityRangeAcquireDocument",
+          "endpoint_by_range": "#/$defs/AccessibilityRangeCompose",
+          "expand": "#/$defs/AccessibilityRangeMoveExpand",
+          "find_attribute": "#/$defs/AccessibilityRangeFindAttribute",
+          "find_text": "#/$defs/AccessibilityRangeFind",
+          "index": "#/$defs/AccessibilityRangeIndexIndex",
+          "line": "#/$defs/AccessibilityRangeIndexLine",
+          "line_for_index": "#/$defs/AccessibilityRangeIndexLineForIndex",
+          "move": "#/$defs/AccessibilityRangeMoveMove",
+          "move_endpoint": "#/$defs/AccessibilityRangeMoveMoveEndpoint",
+          "point": "#/$defs/AccessibilityRangePoint",
+          "selection": "#/$defs/AccessibilityRangeAcquireSelection",
+          "span": "#/$defs/AccessibilityRangeSpan",
+          "visible": "#/$defs/AccessibilityRangeAcquireVisible"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireActiveComposition"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireCaret"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeChild"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireConversionTarget"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireDocument"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeCompose"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeMoveExpand"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeFindAttribute"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeFind"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeIndexIndex"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeIndexLine"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeIndexLineForIndex"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeMoveMove"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeMoveMoveEndpoint"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangePoint"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireSelection"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeSpan"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeAcquireVisible"
+        }
+      ]
+    },
+    "AccessibilityRangeReadAttributes": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_ids": {
+          "default": [],
+          "items": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "maxItems": 128,
+          "title": "Attribute Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "attributes",
+          "default": "attributes",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeReadAttributes",
+      "type": "object"
+    },
+    "AccessibilityRangeReadBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_ids": {
+          "default": [],
+          "items": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "maxItems": 128,
+          "title": "Attribute Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "bounds",
+          "default": "bounds",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeReadBounds",
+      "type": "object"
+    },
+    "AccessibilityRangeReadChildren": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_ids": {
+          "default": [],
+          "items": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "maxItems": 128,
+          "title": "Attribute Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "children",
+          "default": "children",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeReadChildren",
+      "type": "object"
+    },
+    "AccessibilityRangeReadEnclosingElement": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_ids": {
+          "default": [],
+          "items": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "maxItems": 128,
+          "title": "Attribute Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "enclosing_element",
+          "default": "enclosing_element",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeReadEnclosingElement",
+      "type": "object"
+    },
+    "AccessibilityRangeReadRequest": {
+      "discriminator": {
+        "mapping": {
+          "attributes": "#/$defs/AccessibilityRangeReadAttributes",
+          "bounds": "#/$defs/AccessibilityRangeReadBounds",
+          "children": "#/$defs/AccessibilityRangeReadChildren",
+          "compare": "#/$defs/AccessibilityRangeCompare",
+          "enclosing_element": "#/$defs/AccessibilityRangeReadEnclosingElement",
+          "text": "#/$defs/AccessibilityRangeReadText"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessibilityRangeReadAttributes"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeReadBounds"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeReadChildren"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeCompare"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeReadEnclosingElement"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangeReadText"
+        }
+      ]
+    },
+    "AccessibilityRangeReadText": {
+      "additionalProperties": false,
+      "properties": {
+        "attribute_ids": {
+          "default": [],
+          "items": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "maxItems": 128,
+          "title": "Attribute Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilityRangeReadText",
+      "type": "object"
+    },
+    "AccessibilityRangeReference": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "range_handle": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Range Handle",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessibilityRangeReferenceUnit"
+        }
+      },
+      "required": [
+        "node",
+        "range_handle",
+        "unit"
+      ],
+      "title": "AccessibilityRangeReference",
+      "type": "object"
+    },
+    "AccessibilityRangeReferenceUnit": {
+      "enum": [
+        "ax_native",
+        "atspi_character",
+        "uia_opaque"
+      ],
+      "title": "AccessibilityRangeReferenceUnit",
+      "type": "string"
+    },
+    "AccessibilityRangeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_movement": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Movement"
+        },
+        "attribute_runs": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityAttributeRun"
+          },
+          "maxItems": 512,
+          "title": "Attribute Runs",
+          "type": "array"
+        },
+        "bounds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNativeBounds"
+          },
+          "maxItems": 512,
+          "title": "Bounds",
+          "type": "array"
+        },
+        "comparison": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comparison"
+        },
+        "completeness": {
+          "$ref": "#/$defs/AccessibilityCompleteness"
+        },
+        "field_errors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityFieldError"
+          },
+          "maxItems": 128,
+          "title": "Field Errors",
+          "type": "array"
+        },
+        "native_index": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Native Index"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNode"
+          },
+          "maxItems": 512,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "properties": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityProperty"
+          },
+          "maxItems": 128,
+          "title": "Properties",
+          "type": "array"
+        },
+        "ranges": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityRangeReference"
+          },
+          "maxItems": 256,
+          "title": "Ranges",
+          "type": "array"
+        },
+        "sampled_at": {
+          "format": "date-time",
+          "title": "Sampled At",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityTextContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node",
+        "sampled_at",
+        "completeness"
+      ],
+      "title": "AccessibilityRangeResult",
+      "type": "object"
+    },
+    "AccessibilityRangeSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "span",
+          "default": "span",
+          "title": "Kind",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/AccessibilityNativeSpan"
+        }
+      },
+      "required": [
+        "span"
+      ],
+      "title": "AccessibilityRangeSpan",
+      "type": "object"
+    },
+    "AccessibilityRangesValue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "ranges",
+          "default": "ranges",
+          "title": "Kind",
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityRangeReference"
+          },
+          "maxItems": 256,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "title": "AccessibilityRangesValue",
+      "type": "object"
+    },
+    "AccessibilityRead": {
+      "discriminator": {
+        "mapping": {
+          "document": "#/$defs/AccessibilitySimpleReadDocument",
+          "document_selections": "#/$defs/AccessibilityDocumentSelectionsRead",
+          "item": "#/$defs/AccessibilityItemRead",
+          "native_details": "#/$defs/AccessibilityNativeRead",
+          "navigate": "#/$defs/AccessibilityNavigateRead",
+          "numeric_value": "#/$defs/AccessibilitySimpleReadNumericValue",
+          "properties": "#/$defs/AccessibilityPropertyRead",
+          "relations": "#/$defs/AccessibilityRelationsRead",
+          "scroll": "#/$defs/AccessibilitySimpleReadScroll",
+          "selection": "#/$defs/AccessibilitySimpleReadSelection",
+          "table": "#/$defs/AccessibilityTableRead",
+          "text": "#/$defs/AccessibilityTextRead",
+          "wait_for_input_idle": "#/$defs/AccessibilityIdleRead"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessibilitySimpleReadDocument"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityItemRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityNativeRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityNavigateRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySimpleReadNumericValue"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityPropertyRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRelationsRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySimpleReadScroll"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySimpleReadSelection"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityTableRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityTextRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityIdleRead"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityDocumentSelectionsRead"
+        }
+      ]
+    },
+    "AccessibilityRelationsRead": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "relations",
+          "default": "relations",
+          "title": "Kind",
+          "type": "string"
+        },
+        "relations": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Relations",
+          "type": "array"
+        }
+      },
+      "title": "AccessibilityRelationsRead",
+      "type": "object"
+    },
+    "AccessibilityRootScope": {
+      "additionalProperties": false,
+      "properties": {
+        "image_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComputerPoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "$ref": "#/$defs/AccessibilityRootScopeKind",
+          "default": "windows"
+        },
+        "observation_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Id"
+        },
+        "point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNativePoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "process_id": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Process Id"
+        }
+      },
+      "title": "AccessibilityRootScope",
+      "type": "object"
+    },
+    "AccessibilityRootScopeKind": {
+      "enum": [
+        "desktop",
+        "applications",
+        "windows",
+        "focused",
+        "application",
+        "at_point",
+        "screenshot_point"
+      ],
+      "title": "AccessibilityRootScopeKind",
+      "type": "string"
+    },
+    "AccessibilityScalar": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scalar",
+          "default": "scalar",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AccessibilityScalar",
+      "type": "object"
+    },
+    "AccessibilityScalarsValue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scalars",
+          "default": "scalars",
+          "title": "Kind",
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 512,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "title": "AccessibilityScalarsValue",
+      "type": "object"
+    },
+    "AccessibilitySimpleReadDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "document",
+          "default": "document",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySimpleReadDocument",
+      "type": "object"
+    },
+    "AccessibilitySimpleReadNumericValue": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "numeric_value",
+          "default": "numeric_value",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySimpleReadNumericValue",
+      "type": "object"
+    },
+    "AccessibilitySimpleReadScroll": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySimpleReadScroll",
+      "type": "object"
+    },
+    "AccessibilitySimpleReadSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "selection",
+          "default": "selection",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySimpleReadSelection",
+      "type": "object"
+    },
+    "AccessibilitySpecialValueMixed": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mixed",
+          "default": "mixed",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySpecialValueMixed",
+      "type": "object"
+    },
+    "AccessibilitySpecialValueProtected": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "protected",
+          "default": "protected",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySpecialValueProtected",
+      "type": "object"
+    },
+    "AccessibilitySpecialValueUnavailable": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "unavailable",
+          "default": "unavailable",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySpecialValueUnavailable",
+      "type": "object"
+    },
+    "AccessibilitySpecialValueUnsupported": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "unsupported",
+          "default": "unsupported",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AccessibilitySpecialValueUnsupported",
+      "type": "object"
+    },
+    "AccessibilityTableRead": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "default": 0,
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Column",
+          "type": "integer"
+        },
+        "columns": {
+          "default": 1,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "include_headers": {
+          "default": true,
+          "title": "Include Headers",
+          "type": "boolean"
+        },
+        "include_selection": {
+          "default": false,
+          "title": "Include Selection",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "table",
+          "default": "table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "row": {
+          "default": 0,
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Row",
+          "type": "integer"
+        },
+        "rows": {
+          "default": 1,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Rows",
+          "type": "integer"
+        }
+      },
+      "title": "AccessibilityTableRead",
+      "type": "object"
+    },
+    "AccessibilityTextContent": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "maxLength": 128,
+          "title": "Source",
+          "type": "string"
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNativeSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/AccessibilityTextContentStatus"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "status",
+        "source"
+      ],
+      "title": "AccessibilityTextContent",
+      "type": "object"
+    },
+    "AccessibilityTextContentStatus": {
+      "enum": [
+        "text",
+        "empty",
+        "unsupported",
+        "protected",
+        "unavailable"
+      ],
+      "title": "AccessibilityTextContentStatus",
+      "type": "string"
+    },
+    "AccessibilityTextRead": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityNativeSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "AccessibilityTextRead",
+      "type": "object"
+    },
+    "AccessibilityTree": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/AccessibilityDescriptionBackend"
+        },
+        "completeness": {
+          "$ref": "#/$defs/AccessibilityCompleteness"
+        },
+        "nodes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AccessibilityNode"
+          },
+          "maxItems": 2048,
+          "title": "Nodes",
+          "type": "array"
+        },
+        "sampled_at": {
+          "format": "date-time",
+          "title": "Sampled At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backend",
+        "sampled_at",
+        "completeness"
+      ],
+      "title": "AccessibilityTree",
+      "type": "object"
+    },
+    "AccessibilityValue": {
+      "discriminator": {
+        "mapping": {
+          "bounds": "#/$defs/AccessibilityBoundsValue",
+          "mixed": "#/$defs/AccessibilitySpecialValueMixed",
+          "nodes": "#/$defs/AccessibilityNodesValue",
+          "protected": "#/$defs/AccessibilitySpecialValueProtected",
+          "ranges": "#/$defs/AccessibilityRangesValue",
+          "scalar": "#/$defs/AccessibilityScalar",
+          "scalars": "#/$defs/AccessibilityScalarsValue",
+          "unavailable": "#/$defs/AccessibilitySpecialValueUnavailable",
+          "unsupported": "#/$defs/AccessibilitySpecialValueUnsupported"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessibilityBoundsValue"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySpecialValueMixed"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityNodesValue"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySpecialValueProtected"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityRangesValue"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityScalar"
+        },
+        {
+          "$ref": "#/$defs/AccessibilityScalarsValue"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySpecialValueUnavailable"
+        },
+        {
+          "$ref": "#/$defs/AccessibilitySpecialValueUnsupported"
+        }
+      ]
+    },
     "AllowlistDestinations": {
       "additionalProperties": false,
       "properties": {
@@ -49,6 +3148,686 @@
         "executable_spec"
       ],
       "title": "ArgvCommand",
+      "type": "object"
+    },
+    "AtspiAction": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AccessibilityActionReference"
+        },
+        "op": {
+          "const": "do_action",
+          "default": "do_action",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "AtspiAction",
+      "type": "object"
+    },
+    "AtspiChildSelectionSelectionAddChild": {
+      "additionalProperties": false,
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "op": {
+          "const": "selection_add_child",
+          "default": "selection_add_child",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "child"
+      ],
+      "title": "AtspiChildSelectionSelectionAddChild",
+      "type": "object"
+    },
+    "AtspiChildSelectionSelectionRemoveChild": {
+      "additionalProperties": false,
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "op": {
+          "const": "selection_remove_child",
+          "default": "selection_remove_child",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "child"
+      ],
+      "title": "AtspiChildSelectionSelectionRemoveChild",
+      "type": "object"
+    },
+    "AtspiChildSelectionSelectionRemoveSelected": {
+      "additionalProperties": false,
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "op": {
+          "const": "selection_remove_selected",
+          "default": "selection_remove_selected",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "child"
+      ],
+      "title": "AtspiChildSelectionSelectionRemoveSelected",
+      "type": "object"
+    },
+    "AtspiCommandFocus": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "focus",
+          "default": "focus",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "AtspiCommandFocus",
+      "type": "object"
+    },
+    "AtspiCommandSelectionAll": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selection_all",
+          "default": "selection_all",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "AtspiCommandSelectionAll",
+      "type": "object"
+    },
+    "AtspiCommandSelectionClear": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selection_clear",
+          "default": "selection_clear",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "AtspiCommandSelectionClear",
+      "type": "object"
+    },
+    "AtspiDocumentSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "end_offset": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "End Offset",
+          "type": "integer"
+        },
+        "start": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "start_is_active": {
+          "title": "Start Is Active",
+          "type": "boolean"
+        },
+        "start_offset": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "start_offset",
+        "end",
+        "end_offset",
+        "start_is_active"
+      ],
+      "title": "AtspiDocumentSelection",
+      "type": "object"
+    },
+    "AtspiDocumentSelections": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "document_selections_set",
+          "default": "document_selections_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "selections": {
+          "items": {
+            "$ref": "#/$defs/AtspiDocumentSelection"
+          },
+          "maxItems": 256,
+          "title": "Selections",
+          "type": "array"
+        }
+      },
+      "required": [
+        "selections"
+      ],
+      "title": "AtspiDocumentSelections",
+      "type": "object"
+    },
+    "AtspiExtents": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "op": {
+          "const": "component_extents_set",
+          "default": "component_extents_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/AccessibilityNativePoint"
+        },
+        "width": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "point",
+        "width",
+        "height"
+      ],
+      "title": "AtspiExtents",
+      "type": "object"
+    },
+    "AtspiRangeScroll": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/AtspiRangeScrollAlignment"
+        },
+        "op": {
+          "const": "range_scroll_to",
+          "default": "range_scroll_to",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range",
+        "alignment"
+      ],
+      "title": "AtspiRangeScroll",
+      "type": "object"
+    },
+    "AtspiRangeScrollAlignment": {
+      "enum": [
+        "top_left",
+        "bottom_right",
+        "top_edge",
+        "bottom_edge",
+        "left_edge",
+        "right_edge",
+        "anywhere"
+      ],
+      "title": "AtspiRangeScrollAlignment",
+      "type": "string"
+    },
+    "AtspiRangeScrollPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_scroll_to_point",
+          "default": "range_scroll_to_point",
+          "title": "Op",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/AccessibilityNativePoint"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range",
+        "point"
+      ],
+      "title": "AtspiRangeScrollPoint",
+      "type": "object"
+    },
+    "AtspiScroll": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/AtspiRangeScrollAlignment"
+        },
+        "op": {
+          "const": "scroll_to",
+          "default": "scroll_to",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alignment"
+      ],
+      "title": "AtspiScroll",
+      "type": "object"
+    },
+    "AtspiScrollPointComponentPositionSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "component_position_set",
+          "default": "component_position_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/AccessibilityNativePoint"
+        }
+      },
+      "required": [
+        "point"
+      ],
+      "title": "AtspiScrollPointComponentPositionSet",
+      "type": "object"
+    },
+    "AtspiScrollPointScrollToPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "scroll_to_point",
+          "default": "scroll_to_point",
+          "title": "Op",
+          "type": "string"
+        },
+        "point": {
+          "$ref": "#/$defs/AccessibilityNativePoint"
+        }
+      },
+      "required": [
+        "point"
+      ],
+      "title": "AtspiScrollPointScrollToPoint",
+      "type": "object"
+    },
+    "AtspiSelectionRemove": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "text_selection_remove",
+          "default": "text_selection_remove",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AtspiSelectionRemove",
+      "type": "object"
+    },
+    "AtspiSelectionSet": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "text_selection_set",
+          "default": "text_selection_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "index",
+        "range"
+      ],
+      "title": "AtspiSelectionSet",
+      "type": "object"
+    },
+    "AtspiSize": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "op": {
+          "const": "component_size_set",
+          "default": "component_size_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "width": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "title": "AtspiSize",
+      "type": "object"
+    },
+    "AtspiTableSelectionTableColumnSelect": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "table_column_select",
+          "default": "table_column_select",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AtspiTableSelectionTableColumnSelect",
+      "type": "object"
+    },
+    "AtspiTableSelectionTableColumnUnselect": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "table_column_unselect",
+          "default": "table_column_unselect",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AtspiTableSelectionTableColumnUnselect",
+      "type": "object"
+    },
+    "AtspiTableSelectionTableRowSelect": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "table_row_select",
+          "default": "table_row_select",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AtspiTableSelectionTableRowSelect",
+      "type": "object"
+    },
+    "AtspiTableSelectionTableRowUnselect": {
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "op": {
+          "const": "table_row_unselect",
+          "default": "table_row_unselect",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AtspiTableSelectionTableRowUnselect",
+      "type": "object"
+    },
+    "AtspiTextContents": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_contents_set",
+          "default": "text_contents_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Text",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AtspiTextContents",
+      "type": "object"
+    },
+    "AtspiTextInsert": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_insert",
+          "default": "text_insert",
+          "title": "Op",
+          "type": "string"
+        },
+        "position": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Position",
+          "type": "integer"
+        },
+        "text": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Text",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "position",
+        "text"
+      ],
+      "title": "AtspiTextInsert",
+      "type": "object"
+    },
+    "AtspiTextPositionCaretSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "caret_set",
+          "default": "caret_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "position": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Position",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "position"
+      ],
+      "title": "AtspiTextPositionCaretSet",
+      "type": "object"
+    },
+    "AtspiTextPositionTextPaste": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_paste",
+          "default": "text_paste",
+          "title": "Op",
+          "type": "string"
+        },
+        "position": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Position",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "position"
+      ],
+      "title": "AtspiTextPositionTextPaste",
+      "type": "object"
+    },
+    "AtspiTextRangeTextCopy": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_copy",
+          "default": "text_copy",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AtspiTextRangeTextCopy",
+      "type": "object"
+    },
+    "AtspiTextRangeTextCut": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_cut",
+          "default": "text_cut",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AtspiTextRangeTextCut",
+      "type": "object"
+    },
+    "AtspiTextRangeTextDelete": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_delete",
+          "default": "text_delete",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AtspiTextRangeTextDelete",
+      "type": "object"
+    },
+    "AtspiTextRangeTextSelectionAdd": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "text_selection_add",
+          "default": "text_selection_add",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "AtspiTextRangeTextSelectionAdd",
+      "type": "object"
+    },
+    "AtspiValue": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "value_set",
+          "default": "value_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "AtspiValue",
       "type": "object"
     },
     "CgroupMetrics": {
@@ -411,6 +4190,712 @@
         }
       ]
     },
+    "ComputerA11yDescribeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "ComputerA11yDescribeParams",
+      "type": "object"
+    },
+    "ComputerA11yFindParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityCursor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "query": {
+          "$ref": "#/$defs/AccessibilityFind"
+        },
+        "view": {
+          "$ref": "#/$defs/ComputerA11yFindParamsView",
+          "default": "control"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "query"
+      ],
+      "title": "ComputerA11yFindParams",
+      "type": "object"
+    },
+    "ComputerA11yFindParamsView": {
+      "enum": [
+        "control",
+        "content",
+        "raw"
+      ],
+      "title": "ComputerA11yFindParamsView",
+      "type": "string"
+    },
+    "ComputerA11yInspectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityCursor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "projection_observation_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projection Observation Id"
+        },
+        "view": {
+          "$ref": "#/$defs/ComputerA11yFindParamsView",
+          "default": "control"
+        }
+      },
+      "required": [
+        "context",
+        "node"
+      ],
+      "title": "ComputerA11yInspectParams",
+      "type": "object"
+    },
+    "ComputerA11yRangeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "query": {
+          "$ref": "#/$defs/AccessibilityRangeQuery"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessibilityRangeReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "query"
+      ],
+      "title": "ComputerA11yRangeParams",
+      "type": "object"
+    },
+    "ComputerA11yRangeReadParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "reference": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        },
+        "request": {
+          "$ref": "#/$defs/AccessibilityRangeReadRequest"
+        }
+      },
+      "required": [
+        "context",
+        "reference",
+        "request"
+      ],
+      "title": "ComputerA11yRangeReadParams",
+      "type": "object"
+    },
+    "ComputerA11yReadParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "request": {
+          "$ref": "#/$defs/AccessibilityRead"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerA11yReadParams",
+      "type": "object"
+    },
+    "ComputerA11yRootsParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "limits": {
+          "$ref": "#/$defs/AccessibilityLimits"
+        },
+        "scope": {
+          "$ref": "#/$defs/AccessibilityRootScope"
+        }
+      },
+      "required": [
+        "context",
+        "scope"
+      ],
+      "title": "ComputerA11yRootsParams",
+      "type": "object"
+    },
+    "ComputerAXDisclosingSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXBooleanDisclosingSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXDisclosingSetParams",
+      "type": "object"
+    },
+    "ComputerAXExpandedSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXBooleanExpandedSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXExpandedSetParams",
+      "type": "object"
+    },
+    "ComputerAXFocusParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXFocus"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXFocusParams",
+      "type": "object"
+    },
+    "ComputerAXFocusedWindowSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXFocusedWindow"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXFocusedWindowSetParams",
+      "type": "object"
+    },
+    "ComputerAXMainSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXBooleanMainSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXMainSetParams",
+      "type": "object"
+    },
+    "ComputerAXMinimizedSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXBooleanMinimizedSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXMinimizedSetParams",
+      "type": "object"
+    },
+    "ComputerAXPerformActionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXAction"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXPerformActionParams",
+      "type": "object"
+    },
+    "ComputerAXPositionSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXPosition"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXPositionSetParams",
+      "type": "object"
+    },
+    "ComputerAXSelectedChildrenSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXChildrenSelectedChildrenSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSelectedChildrenSetParams",
+      "type": "object"
+    },
+    "ComputerAXSelectedColumnsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXChildrenSelectedColumnsSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSelectedColumnsSetParams",
+      "type": "object"
+    },
+    "ComputerAXSelectedRowsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXChildrenSelectedRowsSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSelectedRowsSetParams",
+      "type": "object"
+    },
+    "ComputerAXSelectedSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXBooleanSelectedSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSelectedSetParams",
+      "type": "object"
+    },
+    "ComputerAXSelectedTextSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXSelectedText"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSelectedTextSetParams",
+      "type": "object"
+    },
+    "ComputerAXSizeSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXSize"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXSizeSetParams",
+      "type": "object"
+    },
+    "ComputerAXTextRangeSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXRangeTextRangeSelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXTextRangeSelectParams",
+      "type": "object"
+    },
+    "ComputerAXTextRangesSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXRanges"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXTextRangesSelectParams",
+      "type": "object"
+    },
+    "ComputerAXValueNumberSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXNumberValue"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXValueNumberSetParams",
+      "type": "object"
+    },
+    "ComputerAXValueStringSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXStringValue"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXValueStringSetParams",
+      "type": "object"
+    },
+    "ComputerAXVisibleTextRangeSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AXRangeVisibleTextRangeSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAXVisibleTextRangeSetParams",
+      "type": "object"
+    },
     "ComputerActionResult": {
       "additionalProperties": false,
       "properties": {
@@ -431,6 +4916,786 @@
         "input_cleanup_complete"
       ],
       "title": "ComputerActionResult",
+      "type": "object"
+    },
+    "ComputerAtspiCaretSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextPositionCaretSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiCaretSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiComponentExtentsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiExtents"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiComponentExtentsSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiComponentPositionSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiScrollPointComponentPositionSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiComponentPositionSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiComponentSizeSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiSize"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiComponentSizeSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiDoActionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiAction"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiDoActionParams",
+      "type": "object"
+    },
+    "ComputerAtspiDocumentSelectionsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiDocumentSelections"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiDocumentSelectionsSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiFocusParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiCommandFocus"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiFocusParams",
+      "type": "object"
+    },
+    "ComputerAtspiRangeScrollToParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiRangeScroll"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiRangeScrollToParams",
+      "type": "object"
+    },
+    "ComputerAtspiRangeScrollToPointParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiRangeScrollPoint"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiRangeScrollToPointParams",
+      "type": "object"
+    },
+    "ComputerAtspiScrollToParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiScroll"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiScrollToParams",
+      "type": "object"
+    },
+    "ComputerAtspiScrollToPointParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiScrollPointScrollToPoint"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiScrollToPointParams",
+      "type": "object"
+    },
+    "ComputerAtspiSelectionAddChildParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiChildSelectionSelectionAddChild"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiSelectionAddChildParams",
+      "type": "object"
+    },
+    "ComputerAtspiSelectionAllParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiCommandSelectionAll"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiSelectionAllParams",
+      "type": "object"
+    },
+    "ComputerAtspiSelectionClearParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiCommandSelectionClear"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiSelectionClearParams",
+      "type": "object"
+    },
+    "ComputerAtspiSelectionRemoveChildParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiChildSelectionSelectionRemoveChild"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiSelectionRemoveChildParams",
+      "type": "object"
+    },
+    "ComputerAtspiSelectionRemoveSelectedParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiChildSelectionSelectionRemoveSelected"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiSelectionRemoveSelectedParams",
+      "type": "object"
+    },
+    "ComputerAtspiTableColumnSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTableSelectionTableColumnSelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTableColumnSelectParams",
+      "type": "object"
+    },
+    "ComputerAtspiTableColumnUnselectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTableSelectionTableColumnUnselect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTableColumnUnselectParams",
+      "type": "object"
+    },
+    "ComputerAtspiTableRowSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTableSelectionTableRowSelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTableRowSelectParams",
+      "type": "object"
+    },
+    "ComputerAtspiTableRowUnselectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTableSelectionTableRowUnselect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTableRowUnselectParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextContentsSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextContents"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextContentsSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextCopyParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextRangeTextCopy"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextCopyParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextCutParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextRangeTextCut"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextCutParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextDeleteParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextRangeTextDelete"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextDeleteParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextInsertParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextInsert"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextInsertParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextPasteParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextPositionTextPaste"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextPasteParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextSelectionAddParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiTextRangeTextSelectionAdd"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextSelectionAddParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextSelectionRemoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiSelectionRemove"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextSelectionRemoveParams",
+      "type": "object"
+    },
+    "ComputerAtspiTextSelectionSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiSelectionSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiTextSelectionSetParams",
+      "type": "object"
+    },
+    "ComputerAtspiValueSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/AtspiValue"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerAtspiValueSetParams",
       "type": "object"
     },
     "ComputerButton": {
@@ -945,6 +6210,838 @@
         "text"
       ],
       "title": "ComputerTypeTextParams",
+      "type": "object"
+    },
+    "ComputerUIACollapseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandCollapse"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIACollapseParams",
+      "type": "object"
+    },
+    "ComputerUIADockSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIADock"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIADockSetParams",
+      "type": "object"
+    },
+    "ComputerUIAExpandParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandExpand"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAExpandParams",
+      "type": "object"
+    },
+    "ComputerUIAFocusParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandFocus"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAFocusParams",
+      "type": "object"
+    },
+    "ComputerUIAInvokeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandInvoke"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAInvokeParams",
+      "type": "object"
+    },
+    "ComputerUIALegacyDefaultActionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandLegacyDefaultAction"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIALegacyDefaultActionParams",
+      "type": "object"
+    },
+    "ComputerUIALegacySelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIALegacySelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIALegacySelectParams",
+      "type": "object"
+    },
+    "ComputerUIALegacyValueSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAStringValueLegacyValueSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIALegacyValueSetParams",
+      "type": "object"
+    },
+    "ComputerUIARangeAddSelectionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARangeRangeAddSelection"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeAddSelectionParams",
+      "type": "object"
+    },
+    "ComputerUIARangeRemoveSelectionParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARangeRangeRemoveSelection"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeRemoveSelectionParams",
+      "type": "object"
+    },
+    "ComputerUIARangeScrollIntoViewParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARangeScroll"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeScrollIntoViewParams",
+      "type": "object"
+    },
+    "ComputerUIARangeSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARangeRangeSelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeSelectParams",
+      "type": "object"
+    },
+    "ComputerUIARangeShowContextMenuParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARangeRangeShowContextMenu"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeShowContextMenuParams",
+      "type": "object"
+    },
+    "ComputerUIARangeValueSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIANumberValue"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARangeValueSetParams",
+      "type": "object"
+    },
+    "ComputerUIARealizeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandRealize"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIARealizeParams",
+      "type": "object"
+    },
+    "ComputerUIAScrollAmountParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAScrollAmount"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAScrollAmountParams",
+      "type": "object"
+    },
+    "ComputerUIAScrollIntoViewParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandScrollIntoView"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAScrollIntoViewParams",
+      "type": "object"
+    },
+    "ComputerUIAScrollPercentParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAScrollPercent"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAScrollPercentParams",
+      "type": "object"
+    },
+    "ComputerUIASelectionAddParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandSelectionAdd"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIASelectionAddParams",
+      "type": "object"
+    },
+    "ComputerUIASelectionRemoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandSelectionRemove"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIASelectionRemoveParams",
+      "type": "object"
+    },
+    "ComputerUIASelectionSelectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandSelectionSelect"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIASelectionSelectParams",
+      "type": "object"
+    },
+    "ComputerUIAShowContextMenuParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandShowContextMenu"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAShowContextMenuParams",
+      "type": "object"
+    },
+    "ComputerUIAToggleParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandToggle"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAToggleParams",
+      "type": "object"
+    },
+    "ComputerUIATransformMoveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAMove"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIATransformMoveParams",
+      "type": "object"
+    },
+    "ComputerUIATransformResizeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAResize"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIATransformResizeParams",
+      "type": "object"
+    },
+    "ComputerUIATransformRotateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIARotate"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIATransformRotateParams",
+      "type": "object"
+    },
+    "ComputerUIATransformZoomParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAZoom"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIATransformZoomParams",
+      "type": "object"
+    },
+    "ComputerUIATransformZoomUnitParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAZoomUnit"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIATransformZoomUnitParams",
+      "type": "object"
+    },
+    "ComputerUIAValueSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAStringValueValueSet"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAValueSetParams",
+      "type": "object"
+    },
+    "ComputerUIAViewSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAView"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAViewSetParams",
+      "type": "object"
+    },
+    "ComputerUIAWindowCloseParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIACommandWindowClose"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAWindowCloseParams",
+      "type": "object"
+    },
+    "ComputerUIAWindowStateSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        },
+        "node": {
+          "$ref": "#/$defs/AccessibilityNodeReference"
+        },
+        "readback": {
+          "default": false,
+          "title": "Readback",
+          "type": "boolean"
+        },
+        "request": {
+          "$ref": "#/$defs/UIAWindowState"
+        }
+      },
+      "required": [
+        "context",
+        "node",
+        "request"
+      ],
+      "title": "ComputerUIAWindowStateSetParams",
       "type": "object"
     },
     "ComputerWriteClipboardParams": {
@@ -6796,6 +12893,649 @@
       "title": "TerminationReason",
       "type": "string"
     },
+    "UIACommandCollapse": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "collapse",
+          "default": "collapse",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandCollapse",
+      "type": "object"
+    },
+    "UIACommandExpand": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "expand",
+          "default": "expand",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandExpand",
+      "type": "object"
+    },
+    "UIACommandFocus": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "focus",
+          "default": "focus",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandFocus",
+      "type": "object"
+    },
+    "UIACommandInvoke": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "invoke",
+          "default": "invoke",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandInvoke",
+      "type": "object"
+    },
+    "UIACommandLegacyDefaultAction": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "legacy_default_action",
+          "default": "legacy_default_action",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandLegacyDefaultAction",
+      "type": "object"
+    },
+    "UIACommandRealize": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "realize",
+          "default": "realize",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandRealize",
+      "type": "object"
+    },
+    "UIACommandScrollIntoView": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "scroll_into_view",
+          "default": "scroll_into_view",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandScrollIntoView",
+      "type": "object"
+    },
+    "UIACommandSelectionAdd": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selection_add",
+          "default": "selection_add",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandSelectionAdd",
+      "type": "object"
+    },
+    "UIACommandSelectionRemove": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selection_remove",
+          "default": "selection_remove",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandSelectionRemove",
+      "type": "object"
+    },
+    "UIACommandSelectionSelect": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "selection_select",
+          "default": "selection_select",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandSelectionSelect",
+      "type": "object"
+    },
+    "UIACommandShowContextMenu": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "show_context_menu",
+          "default": "show_context_menu",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandShowContextMenu",
+      "type": "object"
+    },
+    "UIACommandToggle": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "toggle",
+          "default": "toggle",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandToggle",
+      "type": "object"
+    },
+    "UIACommandWindowClose": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "window_close",
+          "default": "window_close",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "title": "UIACommandWindowClose",
+      "type": "object"
+    },
+    "UIADock": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "dock_set",
+          "default": "dock_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/UIADockPosition"
+        }
+      },
+      "required": [
+        "position"
+      ],
+      "title": "UIADock",
+      "type": "object"
+    },
+    "UIADockPosition": {
+      "enum": [
+        "top",
+        "left",
+        "bottom",
+        "right",
+        "fill",
+        "none"
+      ],
+      "title": "UIADockPosition",
+      "type": "string"
+    },
+    "UIALegacySelect": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "legacy_select",
+          "default": "legacy_select",
+          "title": "Op",
+          "type": "string"
+        },
+        "selection": {
+          "$ref": "#/$defs/UIALegacySelectSelection",
+          "default": "none"
+        },
+        "take_focus": {
+          "default": false,
+          "title": "Take Focus",
+          "type": "boolean"
+        }
+      },
+      "title": "UIALegacySelect",
+      "type": "object"
+    },
+    "UIALegacySelectSelection": {
+      "enum": [
+        "none",
+        "take",
+        "extend",
+        "add",
+        "remove"
+      ],
+      "title": "UIALegacySelectSelection",
+      "type": "string"
+    },
+    "UIAMove": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "transform_move",
+          "default": "transform_move",
+          "title": "Op",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "UIAMove",
+      "type": "object"
+    },
+    "UIANumberValue": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_value_set",
+          "default": "range_value_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "UIANumberValue",
+      "type": "object"
+    },
+    "UIARangeRangeAddSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_add_selection",
+          "default": "range_add_selection",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "UIARangeRangeAddSelection",
+      "type": "object"
+    },
+    "UIARangeRangeRemoveSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_remove_selection",
+          "default": "range_remove_selection",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "UIARangeRangeRemoveSelection",
+      "type": "object"
+    },
+    "UIARangeRangeSelect": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_select",
+          "default": "range_select",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "UIARangeRangeSelect",
+      "type": "object"
+    },
+    "UIARangeRangeShowContextMenu": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "range_show_context_menu",
+          "default": "range_show_context_menu",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "UIARangeRangeShowContextMenu",
+      "type": "object"
+    },
+    "UIARangeScroll": {
+      "additionalProperties": false,
+      "properties": {
+        "align_top": {
+          "default": true,
+          "title": "Align Top",
+          "type": "boolean"
+        },
+        "op": {
+          "const": "range_scroll_into_view",
+          "default": "range_scroll_into_view",
+          "title": "Op",
+          "type": "string"
+        },
+        "range": {
+          "$ref": "#/$defs/AccessibilityRangeReference"
+        }
+      },
+      "required": [
+        "range"
+      ],
+      "title": "UIARangeScroll",
+      "type": "object"
+    },
+    "UIAResize": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "exclusiveMinimum": 0.0,
+          "title": "Height",
+          "type": "number"
+        },
+        "op": {
+          "const": "transform_resize",
+          "default": "transform_resize",
+          "title": "Op",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0.0,
+          "title": "Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "title": "UIAResize",
+      "type": "object"
+    },
+    "UIARotate": {
+      "additionalProperties": false,
+      "properties": {
+        "degrees": {
+          "title": "Degrees",
+          "type": "number"
+        },
+        "op": {
+          "const": "transform_rotate",
+          "default": "transform_rotate",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "degrees"
+      ],
+      "title": "UIARotate",
+      "type": "object"
+    },
+    "UIAScrollAmount": {
+      "additionalProperties": false,
+      "properties": {
+        "horizontal": {
+          "$ref": "#/$defs/UIAScrollAmountHorizontal",
+          "default": "no_amount"
+        },
+        "op": {
+          "const": "scroll_amount",
+          "default": "scroll_amount",
+          "title": "Op",
+          "type": "string"
+        },
+        "vertical": {
+          "$ref": "#/$defs/UIAScrollAmountHorizontal",
+          "default": "no_amount"
+        }
+      },
+      "title": "UIAScrollAmount",
+      "type": "object"
+    },
+    "UIAScrollAmountHorizontal": {
+      "enum": [
+        "large_decrement",
+        "small_decrement",
+        "no_amount",
+        "large_increment",
+        "small_increment"
+      ],
+      "title": "UIAScrollAmountHorizontal",
+      "type": "string"
+    },
+    "UIAScrollPercent": {
+      "additionalProperties": false,
+      "properties": {
+        "horizontal": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Horizontal"
+        },
+        "op": {
+          "const": "scroll_percent",
+          "default": "scroll_percent",
+          "title": "Op",
+          "type": "string"
+        },
+        "vertical": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vertical"
+        }
+      },
+      "title": "UIAScrollPercent",
+      "type": "object"
+    },
+    "UIAStringValueLegacyValueSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "legacy_value_set",
+          "default": "legacy_value_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Value",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "UIAStringValueLegacyValueSet",
+      "type": "object"
+    },
+    "UIAStringValueValueSet": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "value_set",
+          "default": "value_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^[^\\x00]*$",
+          "title": "Value",
+          "type": "string",
+          "x-max-utf8-bytes": 65536
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "UIAStringValueValueSet",
+      "type": "object"
+    },
+    "UIAView": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "view_set",
+          "default": "view_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "view_id": {
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "title": "View Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "view_id"
+      ],
+      "title": "UIAView",
+      "type": "object"
+    },
+    "UIAWindowState": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "window_state_set",
+          "default": "window_state_set",
+          "title": "Op",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/UIAWindowStateState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "UIAWindowState",
+      "type": "object"
+    },
+    "UIAWindowStateState": {
+      "enum": [
+        "normal",
+        "maximized",
+        "minimized"
+      ],
+      "title": "UIAWindowStateState",
+      "type": "string"
+    },
+    "UIAZoom": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "transform_zoom",
+          "default": "transform_zoom",
+          "title": "Op",
+          "type": "string"
+        },
+        "percent": {
+          "exclusiveMinimum": 0.0,
+          "title": "Percent",
+          "type": "number"
+        }
+      },
+      "required": [
+        "percent"
+      ],
+      "title": "UIAZoom",
+      "type": "object"
+    },
+    "UIAZoomUnit": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "transform_zoom_unit",
+          "default": "transform_zoom_unit",
+          "title": "Op",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/UIAZoomUnitUnit"
+        }
+      },
+      "required": [
+        "unit"
+      ],
+      "title": "UIAZoomUnit",
+      "type": "object"
+    },
+    "UIAZoomUnitUnit": {
+      "enum": [
+        "no_amount",
+        "large_decrement",
+        "small_decrement",
+        "large_increment",
+        "small_increment"
+      ],
+      "title": "UIAZoomUnitUnit",
+      "type": "string"
+    },
     "UnlimitedCpuLimit": {
       "additionalProperties": false,
       "properties": {
@@ -6910,5 +13650,5 @@
   },
   "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Environment Interaction Protocol 0.4"
+  "title": "Environment Interaction Protocol 0.5"
 }

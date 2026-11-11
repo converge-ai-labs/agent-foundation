@@ -44,6 +44,14 @@ API clients update a mount with `PATCH /api/v1/threads/{thread_id}/environments/
 
 The action list replaces the entire permission set. Include file and execution actions you want to retain; Console's presets preserve them. Computer permissions govern Computer tools, while shell and other tools keep their separate authority.
 
+### Native accessibility permissions
+
+The Computer toolset includes semantic reads and grouped `computer_ax`, `computer_uia` and `computer_atspi` mutation tools. Discover the backend with `computer_accessibility_describe`, inspect a target's actual capabilities, then verify any change through readback or a screenshot. Native backend readiness is independent of permissions.
+
+Observation permission includes the seven `environment.computer.a11y_*` read actions. Exact mutation ceilings use platform actions such as `environment.computer.uia_invoke` or `environment.computer.atspi_do_action`; selecting a grouped tool does not authorize every operation. Retained node and text-range references stay bound to their original mount and execution. Inspect bounded-result completeness before treating a missing node as absent.
+
+Semantic reads and mutations use the same Computer takeover admission. After handback, a fresh screenshot and a later model decision are required before native mutation; semantic reads, projections and mutation readback do not satisfy screenshot freshness. An unknown native mutation outcome requires state reconciliation before another attempt.
+
 ### Computer coordinate mode
 
 If the model returns relative positions, add this agent configuration fragment:

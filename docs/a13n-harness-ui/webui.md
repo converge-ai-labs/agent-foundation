@@ -97,9 +97,13 @@ Open **Details** for operation status, child executions, tasks, notes, usage, an
 
 ### Shared drafts
 
-People viewing the same saved conversation edit one shared draft in the running App. Reconnect to the same instance to synchronize again. Server restart creates a replacement draft: explicitly rejoin it and choose whether to restore this browser's text.
+People viewing the same saved conversation share its input, uploaded attachment references, Model/Thinking/Speed/Reasoning mode, Environment, and Goal choices. Acknowledged edits are saved on the server and restored across browsers, devices, and server restarts. Prompt guests share text and attachments but cannot read or change owner Run choices.
 
-Unsynchronized edits can be lost on reload or browser crash. Synchronized text remains while the server runs. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.
+When upgrading, your browser's previous Model/control choices initialize an untouched shared composer if they still match its Agent and effective Model. Existing shared choices or an explicit reset take precedence. The old browser record is removed only after synchronization confirms the saved state.
+
+Each composer retains at most 512 KiB of current editing state and expires after 30 days without input or option changes, even when nonempty; attached editors are skipped. Deleting the conversation deletes its saved composer. Referenced unsubmitted attachments remain protected from ordinary scratch cleanup while the nonempty draft is retained. After expiry or replacement, explicitly rejoin before restoring browser input.
+
+Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.
 
 ### Skills and work inspection
 
@@ -126,7 +130,9 @@ Costs are recorded USD model estimates: **—** means unknown, **$0** is a known
 
 Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.
 
-For a persistent Model choice, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
+To change the Thread's default Model, including for the terminal UI, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
+
+A fresh chat starts with its creation defaults. The unfinished New draft remembers choices in this browser; existing chats restore their shared composer choices from the server. For the same Agent, an explicit composer Model takes precedence even if the conversation’s default model changes. Clear the composer Model override to follow the current conversation default, falling back to the Agent’s Model.
 
 Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
@@ -138,7 +144,7 @@ Use **Chat options → Clear context** to start the next message without prior m
 
 Choices depend on the Model and installed adapter. Off appears only where supported; minimal effort need not mean Off. Unknown models retain Default with an explanation. Resolve disabled budgets or custom-setting conflicts in Model configuration. Thinking does not change the output-token limit.
 
-The override is private to this tab, applies to subsequent Runs until changed, and clears when you change Agent or Model. It does not edit the Model resource or affect steering and already-running work.
+The shared composer remembers the selected effort for this conversation across browsers and server restarts. Refresh the page or reopen the chat to use it on the next Send. Changing the Agent or effective Model clears the override. It does not edit the Model resource or affect steering and already-running work.
 
 ### Environments for subsequent Runs
 
@@ -149,15 +155,15 @@ The override is private to this tab, applies to subsequent Runs until changed, a
 
 Full Control uses the server account. Sandbox requires a supported Host isolation launcher and native runtime; a failed preparation stays an error rather than switching to Full Control. Device working directories route operations but do not confine the daemon's filesystem authority.
 
-A tab's explicit Environment selection accompanies later Sends until reset. It leaves saved Thread defaults, other participants, and the active Run unchanged. **Steer** and deferred answers retain the active or suspended Run's Environment. New subagents inherit the captured Environment; resumed subagents retain their own conversation configuration.
+The shared composer's applied Environment selection accompanies later Sends until reset or draft expiry. Other instance-key participants see the same choice; saved Thread defaults and the active Run stay unchanged. **Steer** and deferred answers retain the active or suspended Run's Environment. New subagents inherit the captured Environment; resumed subagents retain their own conversation configuration.
 
-Use **Configuration** to compare saved defaults with a Run's captured Environment. Replace unavailable profiles explicitly. New-conversation drafts retain choices across reload; existing-conversation overrides are tab-local. Changing modes does not copy or isolate existing Project files or history.
+Use **Configuration** to compare saved defaults with a Run's captured Environment. Replace unavailable profiles explicitly. New-conversation drafts retain choices locally across reload; existing-conversation choices are saved and shared. Changing modes does not copy or isolate existing Project files or history.
 
 ## Fast mode
 
 Choose **Fast** in **Agent & Model settings**, or **Ultrafast** where the selected Codex connection supports it. Click the selected button again to request Off. **Use model setting** inherits Model settings; **Provider default** is distinct from Off.
 
-The choice applies to later Sends in this tab and clears on Agent/Model change. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
+The shared composer remembers the choice for later Sends in this conversation. Changing the Agent or effective Model clears it. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
 
 The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Provider eligibility and charges determine the outcome; requesting a speed mode does not guarantee faster execution.
 

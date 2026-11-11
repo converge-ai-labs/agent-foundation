@@ -29,6 +29,26 @@ export function replica(update?: Uint8Array): Y.Doc {
   if (update) Y.applyUpdate(doc, update);
   return doc;
 }
+export type ComposerModelOptions = ModelControlValues & {
+  model_id?: string;
+  agent?: string;
+  effective_model?: string;
+};
+export function optionsReplica(update?: Uint8Array): Y.Doc {
+  const doc = new Y.Doc();
+  doc.getMap("options");
+  if (update) Y.applyUpdate(doc, update);
+  return doc;
+}
+export function composerOptions(doc: Y.Doc) {
+  const options = doc.getMap("options");
+  return {
+    model: options.get("model") as ComposerModelOptions | undefined,
+    environment: options.get("environment") as
+      Schema<"EnvironmentSelectionPatch"> | undefined,
+    mode: (options.get("mode") ?? "normal") as "normal" | "goal",
+  };
+}
 export function values(doc: Y.Doc) {
   return {
     prompt: doc.getText("text").toString().replace(inlinePattern, ""),
@@ -59,6 +79,8 @@ export function covers(accepted: Y.Snapshot, local: Y.Snapshot): boolean {
 }
 export type DraftCapture = {
   doc: Y.Doc;
+  optionsDoc: Y.Doc;
+  options: ReturnType<typeof composerOptions>;
   draftId: string;
   snapshot: Schema<"DraftCapture">;
   input: ReturnType<typeof values>;
@@ -82,6 +104,7 @@ export type Submission =
 
 export class ThreadDraft {
   doc = replica();
+  optionsDoc = optionsReplica();
   undo = new Y.UndoManager(this.doc.getText("text"));
   // Retained IDs are a registry, not undoable editor content. In particular,
   // finishing an asynchronous upload must not revive a pending upload on undo.
@@ -107,17 +130,61 @@ export class ThreadDraft {
     this.annotations = notes;
     this.notify();
   }
-  // A private, in-tab Send choice, not shared input or sticky Thread configuration.
-  mode: "normal" | "goal" = "normal";
+  get optionsUninitialized() {
+    return this.sharedOptions && Y.snapshot(this.optionsDoc).sv.size === 0;
+  }
+  get modelOptions() {
+    return composerOptions(this.optionsDoc).model;
+  }
+  set modelOptions(value: ComposerModelOptions | undefined) {
+    this.setOption(
+      "model",
+      value &&
+        Object.fromEntries(
+          Object.entries(value).filter(([, item]) => item !== undefined),
+        ),
+    );
+  }
+  get modelId() {
+    return this.modelOptions?.model_id;
+  }
+  set modelId(value: string | undefined) {
+    this.modelOptions = { ...this.modelOptions, model_id: value };
+  }
+  get controls(): ModelControlValues {
+    const { thinking, fast, reasoning_mode } = this.modelOptions ?? {};
+    return { thinking, fast, reasoning_mode };
+  }
+  set controls(value: ModelControlValues) {
+    const { model_id, agent, effective_model } = this.modelOptions ?? {};
+    this.modelOptions = { model_id, agent, effective_model, ...value };
+  }
+  get environment() {
+    return composerOptions(this.optionsDoc).environment;
+  }
+  set environment(value: Schema<"EnvironmentSelectionPatch"> | undefined) {
+    this.setOption("environment", value);
+  }
+  get mode() {
+    return composerOptions(this.optionsDoc).mode;
+  }
+  set mode(value: "normal" | "goal") {
+    this.setOption("mode", value);
+  }
+  private setOption(key: string, value: unknown) {
+    const options = this.optionsDoc.getMap("options");
+    if (value === undefined) options.delete(key);
+    else options.set(key, value);
+  }
   // Private intent: establish the durable Coordinator role before the next Send.
   coordinator = false;
   coordinatorUncertain = false;
-  modelId: string | undefined;
-  environment: Schema<"EnvironmentSelectionPatch"> | undefined;
-  controls: ModelControlValues = {};
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;
   private acceptedUpdate: string | undefined;
+  private acceptedOptions: Y.Snapshot | undefined;
+  private acceptedOptionsUpdate: string | undefined;
+  private sharedOptions = false;
   private listeners = new Set<() => void>();
   private version = 0;
   private send: (() => void) | undefined;
@@ -131,6 +198,7 @@ export class ThreadDraft {
   };
   constructor() {
     this.doc.on("update", this.documentChanged);
+    this.optionsDoc.on("update", this.documentChanged);
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -189,30 +257,44 @@ export class ThreadDraft {
       !this.replacement &&
       !this.error &&
       !!this.accepted &&
-      covers(this.accepted, Y.snapshot(this.doc))
+      covers(this.accepted, Y.snapshot(this.doc)) &&
+      (!this.sharedOptions ||
+        (!!this.acceptedOptions &&
+          covers(this.acceptedOptions, Y.snapshot(this.optionsDoc))))
     );
   }
   capture(): DraftCapture {
     if (!this.synchronized || !this.draftId)
       throw new Error("Synchronize your edits before sending.");
     const doc = replica(Y.encodeStateAsUpdate(this.doc));
+    const optionsDoc = optionsReplica(Y.encodeStateAsUpdate(this.optionsDoc));
     try {
       return {
         doc,
+        optionsDoc,
+        options: composerOptions(optionsDoc),
         draftId: this.draftId,
         snapshot: {
           draft_id: this.draftId,
           update_base64: encode(Y.encodeStateAsUpdate(doc)),
+          ...(this.sharedOptions
+            ? {
+                options_update_base64: encode(
+                  Y.encodeStateAsUpdate(optionsDoc),
+                ),
+              }
+            : {}),
         },
         input: values(doc),
         parts: orderedInput(doc),
       };
     } catch (error) {
       doc.destroy();
+      optionsDoc.destroy();
       throw error;
     }
   }
-  clear(captured: DraftCapture) {
+  clear(captured: DraftCapture, resetMode = false) {
     // Never apply an old incarnation's deletion to a replacement draft.
     if (captured.draftId !== this.draftId || this.replacement) return;
     captured.doc.transact(() => {
@@ -224,6 +306,14 @@ export class ThreadDraft {
     });
     this.undo.stopCapturing();
     Y.applyUpdate(this.doc, Y.encodeStateAsUpdate(captured.doc), captureClear);
+    if (resetMode) {
+      captured.optionsDoc.getMap("options").delete("mode");
+      Y.applyUpdate(
+        this.optionsDoc,
+        Y.encodeStateAsUpdate(captured.optionsDoc),
+        captureClear,
+      );
+    }
     this.undo.clear();
     for (const key of this.uploads.keys())
       if (!this.doc.getMap("attachments").has(key)) this.uploads.delete(key);
@@ -246,6 +336,18 @@ export class ThreadDraft {
       Y.applyUpdate(this.doc, update, remote);
       this.acceptedUpdate = frame.update_base64;
     }
+    this.sharedOptions = frame.options_update_base64 != null;
+    if (
+      frame.options_update_base64 != null &&
+      frame.options_update_base64 !== this.acceptedOptionsUpdate
+    ) {
+      const update = decode(frame.options_update_base64);
+      const server = optionsReplica(update);
+      this.acceptedOptions = Y.snapshot(server);
+      server.destroy();
+      Y.applyUpdate(this.optionsDoc, update, remote);
+      this.acceptedOptionsUpdate = frame.options_update_base64;
+    }
     this.status = frame.closed ? "Disconnected" : "Connected";
     this.notify();
   }
@@ -253,12 +355,19 @@ export class ThreadDraft {
     const frame = this.replacement;
     if (!frame) return;
     const oldText = this.doc.getText("text").toString();
+    const oldOptions = this.optionsDoc.getMap("options").toJSON();
     const oldAttachments = [
       ...this.doc.getMap<string>("attachments").entries(),
     ];
     this.doc.off("update", this.documentChanged);
     this.undo.destroy();
     this.doc.destroy();
+    this.optionsDoc.off("update", this.documentChanged);
+    this.optionsDoc.destroy();
+    this.optionsDoc = optionsReplica();
+    this.optionsDoc.on("update", this.documentChanged);
+    this.acceptedOptions = undefined;
+    this.acceptedOptionsUpdate = undefined;
     this.doc = replica();
     this.undo = new Y.UndoManager(this.doc.getText("text"));
     this.doc.on("update", this.documentChanged);
@@ -276,6 +385,11 @@ export class ThreadDraft {
           .insert(this.doc.getText("text").length, oldText);
         for (const [key, id] of oldAttachments)
           this.doc.getMap("attachments").set(key, id);
+      });
+    if (restore && this.sharedOptions)
+      this.optionsDoc.transact(() => {
+        for (const [key, value] of Object.entries(oldOptions))
+          this.optionsDoc.getMap("options").set(key, value);
       });
     this.send?.();
     this.notify();
@@ -313,7 +427,7 @@ export class ThreadDraft {
     // Keep one complete update in flight. Edits remain in the local CRDT and
     // the next accepted snapshot flushes their latest merged state, not a queue
     // of obsolete full documents. Deletions participate in acknowledgement.
-    let inFlight: Y.Snapshot | undefined;
+    let inFlight: { input: Y.Snapshot; options?: Y.Snapshot } | undefined;
     let latestPresence: Schema<"DraftPresence"> | undefined;
     let presenceUpdated = 0;
     const sendPresence = () => {
@@ -347,19 +461,28 @@ export class ThreadDraft {
       )
         return;
       const update = Y.encodeStateAsUpdate(this.doc);
-      if (update.length > 512 * 1024) {
+      const optionsUpdate = this.sharedOptions
+        ? Y.encodeStateAsUpdate(this.optionsDoc)
+        : undefined;
+      if (update.length + (optionsUpdate?.length ?? 0) > 512 * 1024) {
         this.errorRaw = false;
         this.error =
           "This draft is over the 512 KiB limit. Copy your text before joining a new draft.";
         this.notify();
         return;
       }
-      inFlight = Y.snapshot(this.doc);
+      inFlight = {
+        input: Y.snapshot(this.doc),
+        options: optionsUpdate ? Y.snapshot(this.optionsDoc) : undefined,
+      };
       socket.send(
         JSON.stringify({
           kind: "sync",
           draft_id: this.draftId,
           update_base64: encode(update),
+          ...(optionsUpdate
+            ? { options_update_base64: encode(optionsUpdate) }
+            : {}),
         } satisfies Schema<"DraftCommand">),
       );
     };
@@ -409,7 +532,14 @@ export class ThreadDraft {
           joined = true;
           if (frame.draft_id !== this.draftId) inFlight = undefined;
           this.receive(frame as Schema<"DraftFrame">);
-          if (inFlight && this.accepted && covers(this.accepted, inFlight)) {
+          if (
+            inFlight &&
+            this.accepted &&
+            covers(this.accepted, inFlight.input) &&
+            (!inFlight.options ||
+              (this.acceptedOptions &&
+                covers(this.acceptedOptions, inFlight.options)))
+          ) {
             inFlight = undefined;
             if (!this.error) this.send?.();
           }

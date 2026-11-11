@@ -349,3 +349,371 @@ async def test_server_rejects_unsynchronized_or_invalid_capture_before_clearing(
     with pytest.raises((HarnessUiError, ValueError)):
         draft.prepare_clear(captured)
     assert draft.document.get_update() == before
+
+
+async def test_persistence_precedes_publication_and_failures_leave_the_room_unchanged() -> None:
+    saved = []
+    fail = False
+
+    async def persist(value):
+        if fail:
+            raise OSError("database unavailable")
+        assert draft.document.get_update() != value.document_update
+        saved.append(value)
+
+    draft = SharedDraft(thread_id="thread-one", persist=persist)
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "saved")
+    await draft.command(participant, sync(draft, authored), valid)
+    assert len(saved) == 1 and saved[0].document_update == draft.document.get_update()
+    before = draft.frame(participant)
+    changed = draft.changed
+    fail = True
+    authored.get("text", type=Text).insert(0, "not acknowledged ")
+    with pytest.raises(OSError, match="unavailable"):
+        await draft.command(participant, sync(draft, authored), valid)
+    assert draft.frame(participant) == before
+    assert not changed.is_set()
+
+
+async def test_shared_options_validate_atomically_and_guests_cannot_supply_option_updates() -> None:
+    from a13n_harness_ui.shared_drafts import composer_options, options_document
+
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "shared")
+    options = options_document()
+    options.get("options", type=Map)["model"] = {"model_id": "model-one", "thinking": "high", "fast": False}
+    command = sync(draft, authored).model_copy(
+        update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+    )
+    before = draft.frame(participant)
+    with pytest.raises(HarnessUiError, match="cannot change"):
+        await draft.command(participant, command, valid, edit_options=False)
+    assert draft.frame(participant) == before
+    await draft.command(participant, command, valid)
+    assert composer_options(draft.options).model.thinking == "high"
+    # Even replayed or losing option history is rejected by the separate write boundary.
+    with pytest.raises(HarnessUiError, match="cannot change"):
+        await draft.command(participant, command, valid, edit_options=False)
+    authored.get("text", type=Text).insert(0, "guest ")
+    await draft.command(participant, sync(draft, authored), valid, edit_options=False)
+    assert str(draft.document["text"]) == "guest shared"
+    assert draft.frame(participant, include_options=False).options_update_base64 is None
+    options.get("options", type=Map)["model"] = {"thinking": "invalid"}
+    before = draft.frame(participant)
+    with pytest.raises(ValueError):
+        await draft.command(
+            participant,
+            sync(draft, authored).model_copy(
+                update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+            ),
+            valid,
+        )
+    assert draft.frame(participant) == before
+
+
+async def test_captured_options_clear_only_the_observed_goal_choice() -> None:
+    from a13n_harness_ui.shared_drafts import composer_options, options_document
+
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "send")
+    options = options_document()
+    options.get("options", type=Map)["mode"] = "goal"
+    options.get("options", type=Map)["model"] = {"thinking": "low"}
+    await draft.command(
+        participant,
+        sync(draft, authored).model_copy(
+            update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+        ),
+        valid,
+    )
+    captured = capture(draft, authored).model_copy(
+        update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+    )
+    clear = draft.prepare_clear(captured, reset_mode=True)
+    options.get("options", type=Map)["mode"] = "goal"
+    options.get("options", type=Map)["model"] = {"thinking": "high"}
+    await draft.command(
+        participant,
+        sync(draft, authored).model_copy(
+            update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+        ),
+        valid,
+    )
+    await draft.clear(clear)
+    assert composer_values(draft.document) == ("", ())
+    assert composer_options(draft.options).mode == "goal"
+    assert composer_options(draft.options).model.thinking == "high"
+
+
+async def test_saved_composer_restarts_with_choices_and_protects_unsubmitted_attachments(tmp_path) -> None:
+    import os
+    import time
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.shared_drafts import composer_options, options_document
+    from a13n_harness_ui.thread_files import AttachmentUpload
+
+    from .test_app import _settings, _write_configuration
+
+    settings, root = _settings(tmp_path), _write_configuration(tmp_path)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        attachment = await app.stage_thread_attachment(
+            thread_id=thread.thread_id, upload=AttachmentUpload(name="draft.txt", data=b"draft")
+        )
+        draft = await app.shared_draft(thread.thread_id)
+        draft_id = draft.draft_id
+        participant = draft.attach()
+        authored = composer_document()
+        key = "inline-" + "a" * 36
+        authored.get("attachments", type=Map[str])[key] = attachment.attachment_id
+        authored.get("text", type=Text).insert(0, f"unsent\ufffc{key}\ufffc")
+        options = options_document()
+        options.get("options", type=Map)["model"] = {"thinking": "high", "fast": False}
+        options.get("options", type=Map)["mode"] = "goal"
+        await app.edit_shared_draft(
+            thread.thread_id,
+            participant,
+            sync(draft, authored).model_copy(
+                update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+            ),
+        )
+        assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
+    scratch = settings.storage.data_root / "threads" / thread.thread_id / "tmp"
+    old = time.time() - 4 * 86400
+    os.utime(scratch, (old, old))
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        assert (await app.list_unsent_drafts())[0].draft_id == draft_id
+        assert thread.thread_id not in await app.prune_thread_files()
+        restored = await app.shared_draft(thread.thread_id)
+        assert restored.draft_id == draft_id
+        assert composer_values(restored.document)[0].startswith("unsent")
+        assert composer_options(restored.options).model.fast is False
+        assert composer_options(restored.options).mode == "goal"
+        metadata, data = await app.read_thread_attachment(
+            thread_id=thread.thread_id, attachment_id=attachment.attachment_id
+        )
+        assert data == b"draft" and metadata.name == "draft.txt"
+
+
+async def test_draft_retention_expires_disconnected_documents_but_not_active_editors(tmp_path) -> None:
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.app import open_harness_ui_app
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "expires")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(draft, authored))
+        stored = await app._store.drafts.get(thread.thread_id)
+        await app._store.drafts.save(replace(stored, updated_at=datetime.now(UTC) - timedelta(days=31)))
+        await app._prune_drafts()
+        assert await app._store.drafts.get(thread.thread_id) is not None
+        draft.detach(participant)
+        await app._prune_drafts()
+        assert await app._store.drafts.get(thread.thread_id) is None
+        assert draft.closed
+        restored = await app.shared_draft(thread.thread_id)
+        assert restored.draft_id != draft.draft_id
+        assert composer_values(restored.document) == ("", ())
+
+
+@pytest.mark.parametrize("cancel_join", [False, True])
+async def test_editor_registration_protects_draft_before_operation_exit(tmp_path, monkeypatch, cancel_join):
+    from contextlib import asynccontextmanager
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from anyio import CancelScope, Event, create_task_group, fail_after
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "Keep this editor's input")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(draft, authored))
+        draft.detach(participant)
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        await app._store.drafts.save(replace(stored, updated_at=datetime.now(UTC) - timedelta(days=31)))
+        operation = app._operation
+        exiting, release, finished = Event(), Event(), Event()
+        scope = CancelScope()
+
+        @asynccontextmanager
+        async def pause_operation_exit():
+            async with operation():
+                yield
+            exiting.set()
+            await release.wait()
+
+        async def join_editor():
+            try:
+                with scope:
+                    async with app.shared_draft_editor(thread.thread_id) as (joined, editor):
+                        assert joined is draft and editor in draft.participants
+                        assert not draft.closed
+            finally:
+                finished.set()
+
+        with monkeypatch.context() as patch, fail_after(10):
+            patch.setattr(app, "_operation", pause_operation_exit)
+            async with create_task_group() as group:
+                group.start_soon(join_editor)
+                await exiting.wait()
+                # Loading has finished and the draft lock is released. Even if
+                # operation cleanup suspends here, pruning must see the editor.
+                assert draft.participants
+                await app._prune_drafts()
+                assert await app._store.drafts.get(thread.thread_id) is not None
+                assert app._shared_drafts[thread.thread_id] is draft and not draft.closed
+                if cancel_join:
+                    scope.cancel()
+                else:
+                    release.set()
+                await finished.wait()
+        assert not draft.participants
+        await app._prune_drafts()
+        assert draft.closed and await app._store.drafts.get(thread.thread_id) is None
+
+
+async def test_editor_waits_for_inflight_pruning_then_joins_a_live_draft(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from datetime import UTC, datetime, timedelta
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from anyio import Event, create_task_group, fail_after, wait_all_tasks_blocked
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        previous = await app.shared_draft(thread.thread_id)
+        participant = previous.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "expired")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(previous, authored))
+        previous.detach(participant)
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        await app._store.drafts.save(replace(stored, updated_at=datetime.now(UTC) - timedelta(days=31)))
+        pruning, release, joined = Event(), Event(), Event()
+        prune = app._store.drafts.prune
+
+        async def paused_prune(*, active, limit=100):
+            assert thread.thread_id not in active
+            pruning.set()
+            await release.wait()
+            return await prune(active=active, limit=limit)
+
+        async def join_editor():
+            async with app.shared_draft_editor(thread.thread_id) as (draft, editor):
+                assert draft is not previous and not draft.closed
+                assert editor in draft.participants
+                authored = composer_document()
+                authored.get("text", type=Text).insert(0, "new input")
+                await app.edit_shared_draft(thread.thread_id, editor, sync(draft, authored))
+                assert await app._store.drafts.get(thread.thread_id) is not None
+                joined.set()
+
+        with monkeypatch.context() as patch, fail_after(10):
+            patch.setattr(app._store.drafts, "prune", paused_prune)
+            async with create_task_group() as group:
+                group.start_soon(app._prune_drafts)
+                await pruning.wait()
+                group.start_soon(join_editor)
+                await wait_all_tasks_blocked()
+                assert not previous.participants and not joined.is_set()
+                release.set()
+                await joined.wait()
+        assert previous.closed
+
+
+@pytest.mark.parametrize("corruption", ["content", "options", "unsupported_options"])
+async def test_draft_restore_failure_preserves_saved_input_and_reports_store_error(tmp_path, corruption):
+    from dataclasses import replace
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.errors import StoreIntegrityError
+    from a13n_harness_ui.shared_drafts import options_document
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        async with app.shared_draft_editor(thread.thread_id) as (draft, editor):
+            authored = composer_document()
+            authored.get("text", type=Text).insert(0, "preserve saved input")
+            await app.edit_shared_draft(thread.thread_id, editor, sync(draft, authored))
+        stored = await app._store.drafts.get(thread.thread_id)
+        assert stored is not None
+        if corruption == "content":
+            broken = replace(stored, document_update=b"bad")
+        elif corruption == "options":
+            broken = replace(stored, options_update=b"bad")
+        else:
+            options = options_document()
+            options.get("options", type=Map)["model"] = {"thinking": "unsupported"}
+            broken = replace(stored, options_update=options.get_update())
+        await app._store.drafts.save(broken)
+        app._shared_drafts.pop(thread.thread_id)
+        with pytest.raises(StoreIntegrityError, match="stored input was preserved") as error:
+            async with app.shared_draft_editor(thread.thread_id):
+                pytest.fail("A corrupt saved draft must not become an empty editor")
+        assert error.value.code == "draft_restore_failed"
+        assert thread.thread_id not in app._shared_drafts
+        assert await app._store.drafts.get(thread.thread_id) == broken
+
+
+async def test_accepted_submission_returns_receipt_when_draft_cleanup_cannot_save(tmp_path, monkeypatch, caplog):
+    from datetime import UTC, datetime
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.errors import StoreError
+    from a13n_harness_ui.surfaces import RootRunReceipt
+
+    from .test_app import _settings, _write_configuration
+
+    async with open_harness_ui_app(_settings(tmp_path), configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        draft = await app.shared_draft(thread.thread_id)
+        participant = draft.attach()
+        authored = composer_document()
+        authored.get("text", type=Text).insert(0, "Accepted exactly once by this test")
+        await app.edit_shared_draft(thread.thread_id, participant, sync(draft, authored))
+        receipt = RootRunReceipt(
+            receipt_id="receipt-accepted", thread_id=thread.thread_id, submitted_at=datetime.now(UTC)
+        )
+        admitted = []
+
+        async def admit(**kwargs):
+            admitted.append(kwargs)
+            return receipt
+
+        async def fail_save(_value):
+            raise StoreError("Disk unavailable", code="draft_save_failed")
+
+        monkeypatch.setattr(app._root_runs, "submit_prompt", admit)
+        draft._persist = fail_save
+        result = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="Accepted exactly once by this test", draft=capture(draft, authored)
+        )
+        assert result == receipt and len(admitted) == 1
+        assert str(draft.document["text"]) == "Accepted exactly once by this test"
+        assert "Accepted input draft cleanup failed" in caplog.text
