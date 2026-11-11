@@ -794,10 +794,7 @@ async def test_acceptance_publishes_complete_generation_before_atomic_selection(
 @pytest.mark.parametrize(
     "capabilities", list(permutations(("image_understanding", "video_understanding", "audio_understanding")))
 )
-async def test_reacceptance_preserves_legacy_capability_order_without_rewriting_snapshot(tmp_path, capabilities):
-    from a13n_harness import HarnessModelCharacteristics, ModelCapability
-    from a13n_harness_ui.errors import StoreIntegrityError
-
+async def test_reacceptance_uses_current_content_without_rewriting_legacy_snapshot(tmp_path, capabilities):
     root = _write_source(tmp_path)
     model_path = tmp_path / "models/primary.yaml"
     model_path.write_text(
@@ -822,27 +819,64 @@ async def test_reacceptance_preserves_legacy_capability_order_without_rewriting_
         service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
         for _ in range(2):
             accepted = await service.accept(source, expected_current_digest=source.source_digest)
-            assert accepted.generation == envelope.ref
             assert await service.current() == source
+            assert (await store.objects.read(accepted.generation)).payload == source.model_dump(mode="json")
         assert await store.objects.read(envelope.ref) == envelope
-        assert len(await store.objects.references()) == 1
-
-        model = source.models["model-primary"].model_copy(
-            update={
-                "model_characteristics": HarnessModelCharacteristics(
-                    capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})
-                )
-            }
+        assert await store.configurations.reference(source.source_digest) == accepted.generation
+        assert len(await store.objects.references()) == len(
+            {envelope.ref.logical_digest, accepted.generation.logical_digest}
         )
-        changed = source.model_copy(update={"models": {**source.models, model.id: model}})
-        with pytest.raises(StoreIntegrityError) as collision:
-            await service.accept(changed, expected_current_digest=source.source_digest)
-        assert collision.value.code == "configuration_digest_collision"
-        assert await store.configurations.reference(source.source_digest) == envelope.ref
 
 
-async def test_reacceptance_preserves_digest_collisions_and_compare_and_select(tmp_path: Path) -> None:
-    from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
+@pytest.mark.parametrize("bot_defaults", [{"run_timeout_seconds": 180}, {"interval_seconds": 1800}])
+async def test_acceptance_after_normalized_defaults_change_preserves_historical_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bot_defaults: dict[str, int]
+) -> None:
+    import a13n_harness_ui.configuration.loader as loader
+    from a13n_harness_ui.configuration import canonical_digest
+    from a13n_harness_ui.configuration.models import BotConfiguration, HarnessUiDocument, WebUiConfiguration
+    from pydantic import Field
+
+    class HistoricalDocument(HarnessUiDocument):
+        webui: WebUiConfiguration = Field(
+            default_factory=lambda: WebUiConfiguration(bot=BotConfiguration.model_validate(bot_defaults))
+        )
+
+    root = _write_source(tmp_path)
+    original = root.read_bytes()
+    with monkeypatch.context() as patch:
+        patch.setattr(loader, "HarnessUiDocument", HistoricalDocument)
+        historical = await load_harness_ui_configuration(root)
+    # Releases before normalized content participated in generation identity used
+    # only this provenance fingerprint. Keep that exact historical input.
+    legacy_digest = canonical_digest(
+        (
+            "2",
+            tuple((item.relative_path, item.source_digest) for item in historical.sources),
+            historical.content_plugin_diagnostics,
+            tuple((key, tuple(entry.path for entry in project.roots)) for key, project in historical.projects.items()),
+        )
+    )
+    historical = historical.model_copy(update={"source_digest": legacy_digest})
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
+        previous = await service.accept(historical, expected_current_digest=None)
+        envelope = await store.objects.read(previous.generation)
+        current = await load_harness_ui_configuration(root)
+        assert current.sources == historical.sources
+        assert current.root_digest == historical.root_digest
+        assert current.source_digest != historical.source_digest
+        accepted = await service.accept(current, expected_current_digest=historical.source_digest)
+        assert await service.current() == current
+        assert canonical_digest(await service.load(historical.source_digest)) == canonical_digest(historical)
+        assert await store.objects.read(previous.generation) == envelope
+        assert await service.accept(current, expected_current_digest=current.source_digest) == accepted
+        assert len(await store.objects.references()) == 2
+    assert root.read_bytes() == original
+
+
+async def test_reacceptance_selects_new_content_and_preserves_compare_and_select(tmp_path: Path) -> None:
+    from a13n_harness_ui.errors import StoreConflictError
 
     root = _write_source(tmp_path)
     source = await load_harness_ui_configuration(root)
@@ -852,11 +886,10 @@ async def test_reacceptance_preserves_digest_collisions_and_compare_and_select(t
         assert await service.accept(source, expected_current_digest=source.source_digest) == first
         assert len(await store.objects.references()) == 1
         altered = source.model_copy(update={"content_plugin_diagnostics": ("Different content",)})
-        with pytest.raises(StoreIntegrityError) as collision:
-            await service.accept(altered, expected_current_digest=source.source_digest)
-        assert collision.value.code == "configuration_digest_collision"
-        assert await service.current() == source
-        assert len(await store.objects.references()) == 1
+        replacement = await service.accept(altered, expected_current_digest=source.source_digest)
+        assert replacement.generation != first.generation
+        assert await service.current() == altered
+        assert len(await store.objects.references()) == 2
         root.write_text(root.read_text() + "display: {logo: false}\n")
         changed = await load_harness_ui_configuration(root)
         await service.accept(changed, expected_current_digest=source.source_digest)
@@ -864,17 +897,16 @@ async def test_reacceptance_preserves_digest_collisions_and_compare_and_select(t
             await service.accept(source, expected_current_digest=source.source_digest)
         assert conflict.value.code == "configuration_selection_conflict"
         assert await service.current() == changed
-        assert await store.configurations.reference(source.source_digest) == first.generation
+        assert await store.configurations.reference(source.source_digest) == replacement.generation
 
 
 @pytest.mark.parametrize(("retained_value", "candidate_value"), [(False, 0), (1, 1.0)])
-async def test_reacceptance_rejects_equal_python_values_with_different_json_types(
+async def test_reacceptance_uses_new_json_types_and_refreshes_resource_indexes(
     tmp_path: Path, retained_value: bool | int, candidate_value: int | float
 ) -> None:
     import json
 
-    from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
-    from a13n_harness_ui.errors import StoreIntegrityError
+    from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 
     root = _write_source(tmp_path)
     payload = (await load_harness_ui_configuration(root)).model_dump(mode="json")
@@ -887,14 +919,18 @@ async def test_reacceptance_rejects_equal_python_values_with_different_json_type
     async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
         service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
         accepted = await service.accept(source, expected_current_digest=None)
-        with pytest.raises(StoreIntegrityError) as collision:
-            await service.accept(candidate, expected_current_digest=source.source_digest)
-        assert collision.value.code == "configuration_digest_collision"
-        retained = await service.current()
-        assert retained is not None
-        assert type(retained.models["model-primary"].settings["provider_option"]) is type(retained_value)
-        assert await store.configurations.reference(source.source_digest) == accepted.generation
-        assert len(await store.objects.references()) == 1
+        original = await store.objects.read(accepted.generation)
+        replacement = await service.accept(candidate, expected_current_digest=source.source_digest)
+        current = await service.current()
+        assert current is not None
+        assert type(current.models["model-primary"].settings["provider_option"]) is type(candidate_value)
+        assert await store.configurations.reference(source.source_digest) == replacement.generation
+        assert replacement.generation != accepted.generation
+        assert await store.objects.read(accepted.generation) == original
+        resources = await store.configurations.resources(source.source_digest)
+        model_index = next(item for item in resources if item.resource_id == "model-primary")
+        assert model_index.normalized_digest == canonical_digest(candidate.models["model-primary"])
+        assert len(await store.objects.references()) == 2
 
 
 def test_plugin_layout_routes_skills_inside_the_full_plugin_mount(tmp_path: Path) -> None:
