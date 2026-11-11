@@ -18,8 +18,10 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
 
 from .loader import _parse_mcp_resources, _read_bounded_stable
-from .models import LoadedHarnessUiConfiguration, McpServerResource, McpToolName, SourceDocument
+from .models import LoadedHarnessUiConfiguration, McpRemoteTransport, McpServerResource, McpToolName, SourceDocument
 from .mutation import ResourceMutationRequest, _select_target
+
+_DISCOVERY_TIMEOUT_SECONDS = 30
 
 
 class McpToolSelection(BaseModel):
@@ -136,13 +138,18 @@ async def discover_tools(
         transport=resource.transport,
         protocol=source.document.mcp.protocol_overrides.get(server_id, "auto"),
     )
+    # Keep the existing discovery deadline unless the server requests a handshake budget of its own.
+    handshake_budget = (
+        resource.transport.init_timeout_seconds if isinstance(resource.transport, McpRemoteTransport) else None
+    )
     try:
-        with fail_after(30):
+        with fail_after(_DISCOVERY_TIMEOUT_SECONDS + (handshake_budget or 0)):
             transport, _, timeout = await prepare_mcp_transport(
                 recipe, configuration_root, configuration=source.document.run_configuration
             )
             async with Client(transport, mode=recipe.protocol, init_timeout=timeout) as client:
-                discovered = await client.list_tools()
+                with fail_after(_DISCOVERY_TIMEOUT_SECONDS):
+                    discovered = await client.list_tools()
         return tuple(
             McpToolDescriptor(name=tool.name, description=tool.description or "", input_schema=tool.input_schema)
             for tool in discovered

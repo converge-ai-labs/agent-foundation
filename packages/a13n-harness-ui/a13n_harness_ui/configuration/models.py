@@ -675,6 +675,7 @@ class McpCommandTransport(StrictModel):
 
 class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
+    init_timeout_seconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     headers: dict[str, McpValueSource] = Field(default_factory=dict)
 
     @model_validator(mode="after")

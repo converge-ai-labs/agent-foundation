@@ -26,6 +26,7 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
    name: Documentation service
    transport:
      url: https://mcp.example.com/mcp
+     init_timeout_seconds: 20
      headers:
        Authorization:
          env: DOCS_MCP_AUTHORIZATION
@@ -36,6 +37,8 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 4. [启用服务器](#enable-a-server)，测试其文档列出的一个只读工具。
 
 使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE；此配置不提供 OAuth 登录流程。
+
+如果服务器握手较慢，可将 `transport.init_timeout_seconds` 设为大于零的秒数。例如，`20` 表示整个协议协商（包括回退）最多等待 20 秒。Run 内的连接和设置页的工具发现默认等待 5 秒，Host 跨 Run 保留的连接和 MCP Apps 默认等待 30 秒。工具调用有单独的超时。
 
 ## 选择工具
 
@@ -105,10 +108,10 @@ Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外
 
 一个包装对象可包含多个服务器。名称会规范化为 `mcp-` ID：`My_Server` 变成 `mcp-my-server`。不同文件中的重复 ID 会导致配置被拒绝。
 
-| 包装对象中的条目 | 字段                                                          |
-| ---------------- | ------------------------------------------------------------- |
-| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`             |
-| 远程             | `url`，可选 `headers`；可选 `type: http` 或 `streamable-http` |
+| 包装对象中的条目 | 字段                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                     |
+| 远程             | `url`，可选 `headers`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
 
 `.yaml` 和 `.json` 都接受包装对象或单资源格式。使用严格 JSON：注释和末尾逗号无效。移除 `disabled` 等不支持的客户端专用字段。
 
@@ -193,10 +196,10 @@ mcp:
 
 MCP 资源和包装对象使用 `schema_version: "2"`。单资源文件还需要 `kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
 
-| 传输 | 必需      | 可选                               |
-| ---- | --------- | ---------------------------------- |
-| 命令 | `command` | `arguments: []`、`environment: {}` |
-| 远程 | `url`     | `headers: {}`                      |
+| 传输 | 必需      | 可选                                  |
+| ---- | --------- | ------------------------------------- |
+| 命令 | `command` | `arguments: []`、`environment: {}`    |
+| 远程 | `url`     | `headers: {}`、`init_timeout_seconds` |
 
 Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。可选的 `tools` 遵循[工具选择规则](#choose-tools)。
 

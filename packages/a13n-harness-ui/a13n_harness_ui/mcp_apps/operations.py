@@ -116,7 +116,7 @@ class AppOperations:
         owner = await self.owners.resolve(reference.thread_id)
         owner.require_tool(reference.tool_name, reference.server_id)
         recipe = owner.recipe(reference.server_id)
-        transport, effective, _ = await prepare_mcp_transport(recipe, self.configuration_root)
+        transport, effective, init_timeout = await prepare_mcp_transport(recipe, self.configuration_root)
         connection = await self.snapshots.connections.acquire(
             reference.thread_id,
             reference.server_id,
@@ -125,6 +125,7 @@ class AppOperations:
             binding=repr((recipe.transport.model_dump_json(), recipe.protocol, True)),
             activate=True,
             protocol=recipe.protocol,
+            init_timeout=init_timeout,
         )
         value = AppView(
             view_id=f"view_{uuid4().hex}",
