@@ -88,6 +88,43 @@ async def native_browser(request, browser_executable):
                         await connection.close()
 
 
+async def test_codeact_browser_flow_uses_native_cdp_and_returns_screenshot(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness import RunBindings
+    from a13n_harness.tools._output import tool_execution_value
+    from pydantic_ai.messages import BinaryContent
+
+    from .test_codeact_state import _code, _run
+
+    endpoint, _ = native_browser
+    url = "data:text/html," + quote(HTML.decode())
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        _, seen, _ = await _run(
+            [
+                _code(f"""
+await browser_navigate(url={url!r})
+observation = await browser_observe(role='textbox', name='Message')
+field = [line.strip().split(']')[0][1:] for line in observation.splitlines() if '[e' in line][0]
+await browser_act(action={{'kind':'fill','target':{{'kind':'ref','ref':field}},'text':'CodeAct native'}})
+observation = await browser_observe(role='button', name='Submit')
+submit = [line.strip().split(']')[0][1:] for line in observation.splitlines() if '[e' in line][0]
+await browser_act(action={{'kind':'click','target':{{'kind':'ref','ref':submit}}}})
+await browser_wait(condition={{'kind':'text','text':'clicked'}})
+await browser_screenshot()
+""")
+            ],
+            capabilities=(BrowserUseCapability(),),
+            bindings=RunBindings.embedded(browser_backend=backend),
+        )
+        assert seen[0].outcome == "success", seen[0].content
+        assert tool_execution_value(seen[0].content, seen[0].metadata)["screenshot"] == "s1"
+        images = [item for item in seen[0].content if isinstance(item, BinaryContent)]
+        assert len(images) == 1 and images[0].data.startswith(b"\xff\xd8")
+        assert await backend.browser.evaluate(backend.page, "document.querySelector('input').value") == "CodeAct native"
+        assert await backend.browser.evaluate(backend.page, "document.querySelector('output').textContent") == "clicked"
+
+
 async def test_url_only_capability_works_and_disconnect_preserves_existing_browser(native_browser):
     endpoint, process = native_browser
 
