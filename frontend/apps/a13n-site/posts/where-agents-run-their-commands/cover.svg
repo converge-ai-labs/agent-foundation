@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 360" role="img" aria-label="Commands on the agent host, agent and commands together in a sandbox, and an agent runtime connected to a separate execution environment.">
+  <text class="pt ink" x="140" y="42" text-anchor="middle">Direct execution</text>
+  <text class="pt ink" x="390" y="42" text-anchor="middle">Shared sandbox</text>
+  <text class="pt ink" x="640" y="42" text-anchor="middle">Separate environment</text>
+
+  <rect class="pf" x="40" y="66" width="200" height="238" rx="3" />
+  <text class="pt" x="58" y="91">host</text>
+  <rect class="pl" x="70" y="112" width="140" height="52" rx="2" />
+  <text class="pt ink" x="140" y="143" text-anchor="middle">agent runtime</text>
+  <path class="pa" d="M140 164V212m-5-7 5 7 5-7" />
+  <rect class="pl" x="70" y="212" width="140" height="52" rx="2" />
+  <text class="pt ink" x="140" y="243" text-anchor="middle">commands</text>
+
+  <rect class="pa dash" x="290" y="66" width="200" height="238" rx="3" />
+  <text class="pt acc" x="308" y="91">sandbox</text>
+  <rect class="pl" x="320" y="112" width="140" height="52" rx="2" />
+  <text class="pt ink" x="390" y="143" text-anchor="middle">agent runtime</text>
+  <path class="pa" d="M390 164V212m-5-7 5 7 5-7" />
+  <rect class="pl" x="320" y="212" width="140" height="52" rx="2" />
+  <text class="pt ink" x="390" y="243" text-anchor="middle">commands</text>
+
+  <rect class="pl" x="570" y="76" width="140" height="52" rx="2" />
+  <text class="pt ink" x="640" y="107" text-anchor="middle">agent runtime</text>
+  <path class="pa" d="M628 128V212m-5-7 5 7 5-7M652 212V128m-5 7 5-7 5 7" />
+  <text class="pt" x="666" y="166">API</text>
+  <rect class="pa dash" x="540" y="182" width="200" height="122" rx="3" />
+  <rect class="pl" x="570" y="212" width="140" height="52" rx="2" />
+  <text class="pt ink" x="640" y="243" text-anchor="middle">commands</text>
+  <text class="pt acc" x="640" y="287" text-anchor="middle">environment</text>
+
+  <path class="pf thin" d="M40 330H740" />
+  <text class="pt" x="390" y="352" text-anchor="middle">Same task. Different placement, permissions and lifecycles.</text>
+</svg>
