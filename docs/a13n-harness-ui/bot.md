@@ -24,12 +24,11 @@ webui:
     heartbeat_enabled: true
     interval_seconds: 3600
     connector_interval_seconds: 60
-    run_timeout_seconds: 180
 ```
 
 Use an existing Model ID. Null or omitted `model` follows only the Model of the global default Agent. Its Agent instructions, children, Plugins, and MCP selections are not inherited. A missing effective Model prevents execution. Model and instruction changes apply to later Runs.
 
-Heartbeat intervals accept 60–86,400 seconds. Connector delivery intervals accept 1–86,400 seconds. Run timeouts accept 10–3,600 seconds. Custom instructions accept up to 1,048,576 characters. Validate file edits with `a13n-harness-ui config validate`.
+Heartbeat intervals accept 60–86,400 seconds. Connector delivery intervals accept 1–86,400 seconds. Custom instructions accept up to 1,048,576 characters. Validate file edits with `a13n-harness-ui config validate`.
 
 ## Coordinate work and memory
 
@@ -47,11 +46,11 @@ Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF
 
 ## Messages, activity, and decisions
 
-The Bot conversation shows your messages, direct replies, and intentional proactive messages. Routine heartbeat output stays quiet. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
+The Bot conversation shows your messages, all ordinary final text replies, and intentional proactive messages. The same rule applies to human, Heartbeat and Connector inputs, whether they start or steer a Run. Tool calls and intermediate text stay out of this conversation; open Activity to inspect execution details. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
 
 Use the **Activity** icon to inspect the ordinary Bot Thread history and answer pending human decisions. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 
-The text draft stays in the current tab. Reloading can lose an unsent draft. If a submission's response is uncertain, keep the retained command and use its explicit retry action. Retrying reuses the same input ID and text; it does not create another input. An accepted input is queued work, not proof that a Run started or finished.
+The text draft stays in the current tab. Reloading can lose an unsent draft. If a submission's response is uncertain, keep the retained command and use its explicit retry action. Retrying reuses the same input ID and text; it does not create another input. A new message starts a native Run immediately when Bot is idle. While Bot is running, it uses native immediate steering of that exact Run, including a Run started by Heartbeat or Connector input. The final text reply is visible in the conversation. A preparing, cancelling, or stale Run can reject steering; the draft remains available to send again. Rejection never queues the message or starts a replacement Run. Acceptance is not proof of completion.
 
 ## Pause and recover
 
@@ -59,7 +58,7 @@ Use the pause icon to hold automatic processing. Heartbeat ticks and selected Co
 
 Turn off Bot in Settings to stop new ticks and delivery. History, settings, Notes and pending inputs are retained; already admitted work and other Threads continue. The conversation becomes read-only. Re-enable in Settings; a later normal delivery opportunity can process retained input. Pending human decisions can resume only after re-enable.
 
-Queued inputs survive server restart. An input interrupted during admission or execution is retained for inspection and pauses automation. Bot does not automatically replay it: tools may already have changed files or external systems. Inspect Activity and working Thread results, then send an explicit follow-up. A Run timeout uses the same pause-and-inspect behavior. Missed heartbeat intervals coalesce into one opportunity instead of replaying every missed tick.
+Inputs interrupted during admission or execution are retained across server restart for inspection and pause automation. Legacy queued human inputs are also marked interrupted; they are not scheduled automatically. Bot does not automatically replay it: tools may already have changed files or external systems. Inspect Activity and working Thread results, then send an explicit follow-up. Bot has no separate Run time limit. Provider failures and manual cancellation still use the native execution lifecycle. The obsolete `webui.bot.run_timeout_seconds` key has no effect. Existing files remain loadable under the normal additive-field policy; remove the key when updating your configuration. Missed heartbeat intervals coalesce into one opportunity instead of replaying every missed tick.
 
 ## Connector ingress foundation
 

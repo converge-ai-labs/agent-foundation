@@ -63,10 +63,11 @@ async def test_bot_is_lazy_singleton_and_direct_chat_is_retained(tmp_path: Path)
         assert (await app.list_threads()).total == 0
         assert not (await bot.snapshot()).state.activated
         command = BotSubmit(input_id="input-first", text="Track this objective")
-        # Compare queued retries before background delivery can advance the retained input.
-        async with bot._dispatch_lock, bot._settlement_lock:
+        # Native admission completes before submit returns, independently of settlement.
+        async with bot._settlement_lock:
             first = await bot.submit(command)
-            assert first.state == "queued"
+            assert first.state == "admitted"
+            assert first.receipt_id is not None
             assert await bot.submit(command) == first
         item = await consumed(app, command.input_id)
         assert item.state == "completed", item.error
@@ -88,7 +89,7 @@ async def test_bot_is_lazy_singleton_and_direct_chat_is_retained(tmp_path: Path)
         assert (await app._store.bot.inputs())[0].state == "completed"
 
 
-async def test_heartbeat_is_coalesced_quiet_and_pause_still_allows_chat(tmp_path: Path) -> None:
+async def test_heartbeat_is_coalesced_text_is_visible_and_pause_still_allows_chat(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
@@ -103,8 +104,9 @@ async def test_heartbeat_is_coalesced_quiet_and_pause_still_allows_chat(tmp_path
         assert len(snapshot.inputs) == 2
         assert snapshot.inputs[-1].source == "automatic"
         assert snapshot.inputs[-1].state == "completed"
-        assert len(snapshot.messages) == 2
-        assert (await app._threads.get(BOT_THREAD_ID)).completion == completion
+        assert len(snapshot.messages) == 3
+        assert snapshot.messages[-1].text == "root complete"
+        assert (await app._threads.get(BOT_THREAD_ID)).completion != completion
         await deliver_tick(bot, now=future)
         assert len((await bot.snapshot()).inputs) == 2
         await bot.pause(True)
@@ -112,25 +114,7 @@ async def test_heartbeat_is_coalesced_quiet_and_pause_still_allows_chat(tmp_path
         assert len((await bot.snapshot()).inputs) == 2
         await bot.submit(BotSubmit(input_id="input-paused", text="Still here"))
         assert (await consumed(app, "input-paused")).state == "completed"
-        assert len((await bot.snapshot()).messages) == 4
-
-
-async def test_due_heartbeat_does_not_starve_a_full_user_queue(tmp_path: Path) -> None:
-    root = _write_configuration(tmp_path)
-    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
-        app._root_runs._executor._agents = _CompletedReconstructor()
-        bot = await ready(app)
-        # Hold the dispatcher while filling the bounded ingress through its public API.
-        async with bot._dispatch_lock, bot._settlement_lock:
-            for index in range(16):
-                await bot.submit(BotSubmit(input_id=f"full-{index}", text=f"Message {index}"))
-        await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
-        items = await app._store.bot.inputs()
-        await consumed(app, "full-0")
-        items = await app._store.bot.inputs()
-        assert any(item.source == "user" and item.state == "completed" for item in items)
-        assert not any(item.source == "heartbeat" for item in items)
-        assert len(await app._store.bot.inputs(pending_only=True)) < 16
+        assert len((await bot.snapshot()).messages) == 5
 
 
 @pytest.mark.parametrize("state", ["dispatching", "admitted"])
@@ -138,7 +122,7 @@ async def test_pending_limit_includes_active_inputs_and_allows_idempotent_retry(
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
-        async with bot._dispatch_lock, bot._settlement_lock:
+        async with bot._settlement_lock:
             repository = app._store.bot
             active = await repository.retain(
                 BotInput(
@@ -162,7 +146,8 @@ async def test_pending_limit_includes_active_inputs_and_allows_idempotent_retry(
             assert len(await repository.inputs(pending_only=True)) == 16
 
 
-async def test_restart_never_replays_uncertain_input(tmp_path: Path) -> None:
+@pytest.mark.parametrize("retained_state", ["queued", "dispatching", "admitted"])
+async def test_restart_never_replays_uncertain_input(tmp_path: Path, retained_state) -> None:
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         await ready(app)
@@ -175,7 +160,7 @@ async def test_restart_never_replays_uncertain_input(tmp_path: Path) -> None:
                 source="user",
                 text="Do once",
                 created_at=datetime.now(UTC),
-                state="admitted",
+                state=retained_state,
                 receipt_id="receipt-lost",
             )
         )
@@ -306,6 +291,7 @@ async def test_heartbeat_never_resolves_a_pending_human_decision(tmp_path: Path)
         assert (await consumed(app, "question")).state == "completed"
         detail = await app.get_thread(BOT_THREAD_ID)
         assert detail.deferred_requests
+        assert (await bot.submit(BotSubmit(input_id="question", text="Ask before proceeding"))).state == "completed"
         await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
         after = await app.get_thread(BOT_THREAD_ID)
         assert after.deferred_requests == detail.deferred_requests
@@ -487,7 +473,7 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
                 assert "call finish_silently" in str(messages) + (info.instructions or "")
                 yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet-direct")}
             elif requests == 2:
-                assert "Then call finish_silently" in str(messages)
+                assert "call finish_silently with no arguments" in str(messages)
                 assert any(
                     isinstance(part, ToolReturnPart) and part.tool_call_id == "quiet-direct"
                     for message in messages
@@ -587,3 +573,202 @@ async def test_unknown_decision_admission_is_interrupted_without_stranding_dispa
         with fail_after(5):
             while any(item.state == "admitted" for item in await app._store.bot.inputs()):
                 await sleep(0.01)
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_human_input_immediately_steers_and_settles_the_exact_receipt(
+    tmp_path: Path, monkeypatch, automatic: bool, cancel: bool
+) -> None:
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from anyio import Event, sleep_forever
+    from pydantic_ai.models.function import FunctionModel
+
+    started, release = Event(), Event()
+    calls = 0
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            nonlocal calls
+            calls += 1
+            if "answer-now" not in str(messages):
+                started.set()
+                await sleep_forever()
+            await release.wait()
+            yield "Human answer"
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        if automatic:
+            await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
+            await bot.deliver_automatic_inputs()
+        else:
+            await bot.submit(BotSubmit(input_id="initial", text="Keep working"))
+        with fail_after(5):
+            await started.wait()
+        original = (await bot.snapshot()).inputs[0]
+        command = BotSubmit(input_id="steering", text="answer-now")
+        with fail_after(5):
+            steered = await bot.submit(command)
+            assert steered.state == "admitted"
+            assert steered.receipt_id == original.receipt_id
+            assert await bot.submit(command) == steered
+            second = await bot.submit(BotSubmit(input_id="second-steering", text="Include details"))
+            assert second.receipt_id == original.receipt_id
+        if cancel:
+            await app.cancel_root_operation(original.receipt_id)
+        else:
+            release.set()
+        expected = "interrupted" if cancel else "completed"
+        assert (await consumed(app, "steering")).state == expected
+        assert (await consumed(app, "second-steering")).state == expected
+        assert (await consumed(app, original.input_id)).state == expected
+        snapshot = await bot.snapshot()
+        replies = [message.text for message in snapshot.messages if message.role == "assistant"]
+        assert replies == ([] if cancel else ["Human answer"])
+        if not cancel:
+            assert calls >= 2  # The first request never completes without immediate steering.
+        assert not any(item.state in {"queued", "dispatching", "admitted"} for item in snapshot.inputs)
+
+
+async def test_rejected_human_steering_never_queues_or_admits_a_replacement(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness_ui.surfaces import RootControlResult
+    from anyio import Event
+
+    from .test_app import _SlowReconstructor
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        started = Event()
+        app._root_runs._executor._agents = _SlowReconstructor(started)
+        original = await bot.submit(BotSubmit(input_id="initial", text="Keep working"))
+        with fail_after(5):
+            await started.wait()
+        attempts = []
+
+        async def reject(**kwargs):
+            attempts.append(kwargs)
+            return RootControlResult(receipt_id=original.receipt_id, accepted=False)
+
+        monkeypatch.setattr(app._root_runs, "steer", reject)
+        command = BotSubmit(input_id="rejected", text="Change direction")
+        for _ in range(2):
+            with pytest.raises(HarnessUiError) as error:
+                await bot.submit(command)
+            assert error.value.code == "bot_input_rejected"
+        assert len(attempts) == 1
+        assert attempts[0]["immediate"] is True
+        assert attempts[0]["receipt_id"] == original.receipt_id
+        await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
+        assert (await app._root_runs.active(BOT_THREAD_ID)).receipt.receipt_id == original.receipt_id
+        assert (await bot.snapshot()).inputs[-1].state == "discarded"
+        assert [message.text for message in (await bot.snapshot()).messages] == ["Keep working"]
+        await app.cancel_root_operation(original.receipt_id)
+
+
+async def test_obsolete_bot_timeout_is_uninterpreted_configuration_extra() -> None:
+    from a13n_harness_ui.configuration.models import BotConfiguration
+
+    assert "run_timeout_seconds" not in BotConfiguration.model_fields
+    policy = BotConfiguration.model_validate({"run_timeout_seconds": 180})
+    assert policy.__pydantic_extra__ == {"run_timeout_seconds": 180}
+    assert policy.interval_seconds == 3600
+
+
+@pytest.mark.parametrize("steering", [False, True])
+async def test_uncertain_human_acceptance_is_retained_and_never_replayed(tmp_path: Path, monkeypatch, steering) -> None:
+    from anyio import Event
+
+    from .test_app import _SlowReconstructor
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        started = Event()
+        app._root_runs._executor._agents = _SlowReconstructor(started)
+        if steering:
+            await bot.submit(BotSubmit(input_id="original", text="Keep working"))
+            with fail_after(5):
+                await started.wait()
+        method = "steer" if steering else "submit_prompt"
+        original = getattr(app._root_runs, method)
+        attempts = 0
+
+        async def accept_then_lose_ack(**kwargs):
+            nonlocal attempts
+            attempts += 1
+            await original(**kwargs)
+            raise RuntimeError("Lost native acknowledgement")
+
+        monkeypatch.setattr(app._root_runs, method, accept_then_lose_ack)
+        command = BotSubmit(input_id="uncertain", text="Do this once")
+        with pytest.raises(RuntimeError, match="Lost native acknowledgement"):
+            await bot.submit(command)
+        assert (await bot.submit(command)).state == "interrupted"
+        assert attempts == 1
+        assert (await bot.snapshot()).state.paused
+        active = await app._root_runs.active(BOT_THREAD_ID)
+        if active is not None:
+            await app.cancel_root_operation(active.receipt.receipt_id)
+
+
+async def test_early_automatic_publication_waits_for_receipt_correlation(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from anyio import Event
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    publishing = Event()
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            published = any(
+                isinstance(part, ToolReturnPart) and part.tool_name == "publish_bot_message"
+                for message in messages
+                for part in message.parts
+            )
+            if published:
+                yield {0: DeltaToolCall(name="finish_silently", json_args="{}", tool_call_id="quiet")}
+            else:
+                publishing.set()
+                yield {
+                    0: DeltaToolCall(
+                        name="publish_bot_message",
+                        tool_call_id="publish",
+                        json_args='{"text":"Verified progress"}',
+                    )
+                }
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        original = app._root_runs.submit_prompt
+
+        async def delay_native_return(**kwargs):
+            receipt = await original(**kwargs)
+            with fail_after(5):
+                await publishing.wait()
+                # The real publication tool has started before admission returns.
+                while bot._lock.statistics().tasks_waiting == 0:
+                    await sleep(0.01)
+            assert not await app._store.bot.messages()
+            return receipt
+
+        monkeypatch.setattr(app._root_runs, "submit_prompt", delay_native_return)
+        await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
+        await bot.deliver_automatic_inputs()
+        item = (await bot.snapshot()).inputs[0]
+        assert (await consumed(app, item.input_id)).state == "completed"
+        snapshot = await bot.snapshot()
+        assert len(snapshot.messages) == 1
+        assert snapshot.messages[0].input_id == item.input_id
+        assert snapshot.messages[0].text == "Verified progress"
+        assert snapshot.thread.completion is not None

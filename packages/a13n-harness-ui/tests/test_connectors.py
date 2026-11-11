@@ -122,7 +122,7 @@ async def test_connector_cursor_and_inbox_share_a_short_transaction(tmp_path: Pa
         }
 
 
-async def test_selected_connector_batch_activates_idle_bot_without_publishing_internal_output(tmp_path: Path) -> None:
+async def test_selected_connector_batch_activates_idle_bot_and_publishes_final_text(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
@@ -135,7 +135,9 @@ async def test_selected_connector_batch_activates_idle_bot_without_publishing_in
         assert not await app._store.bot_inbox.pending()
         item = snapshot.inputs[0]
         assert (await consumed(app, item.input_id)).state == "completed"
-        assert not (await bot.snapshot()).messages
+        snapshot = await bot.snapshot()
+        assert [message.text for message in snapshot.messages] == ["root complete"]
+        assert snapshot.thread.completion is not None
         assert "private-test" not in (await bot.snapshot()).model_dump_json()
         count = len((await bot.snapshot()).inputs)
         await bot.deliver_automatic_inputs()

@@ -194,25 +194,6 @@ export function BotFields({
               )}
             </>
           )}
-          {!setup && (
-            <details className={styles.details}>
-              <summary>{t("Advanced")}</summary>
-              <SettingsChoice
-                label={t("Turn time limit")}
-                value={String(get("run_timeout_seconds") ?? 180)}
-                description={t(
-                  "How long Bot may work on one input before automation pauses.",
-                )}
-                options={[60, 180, 300, 600, 1800, 3600].map((value) => ({
-                  value: String(value),
-                  label: t("{{count}} minutes", { count: value / 60 }),
-                }))}
-                onValueChange={(value) =>
-                  set("run_timeout_seconds", Number(value))
-                }
-              />
-            </details>
-          )}
         </>
       )}
     </SettingsSection>

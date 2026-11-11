@@ -197,11 +197,7 @@ export function BotPage({
             ? t("Automation paused · You can still chat")
             : busy
               ? t("Working…")
-              : data?.heartbeat_enabled
-                ? t("Heartbeat every {{minutes}} minutes", {
-                    minutes: data.interval_seconds / 60,
-                  })
-                : t("Ready when you are");
+              : t("Ready when you are");
   return (
     <Conversation
       threadId={BOT_THREAD_ID}
@@ -249,7 +245,7 @@ export function BotPage({
               profile={profile}
               unauthorized={unauthorized}
               reconcile={() => void bot.refetch()}
-              controls={() => <Link to="/settings#bot">{t("Model")}</Link>}
+              controls={() => null}
               feedback={
                 <>
                   <ErrorNotice
@@ -266,11 +262,6 @@ export function BotPage({
                         "Check Bot's model in Settings. Another app may also own Bot processing.",
                       )}{" "}
                       <Link to="/settings#bot">{t("Bot settings")}</Link>
-                    </p>
-                  )}
-                  {busy && !data?.pending_decision && (
-                    <p role="status">
-                      {t("Messages sent while Bot is working will be queued.")}
                     </p>
                   )}
                   {data?.pending_decision && (
