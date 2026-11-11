@@ -36,6 +36,29 @@ Use the selected worktree explicitly for file paths, command working directories
 
 Implement the requested task and validate according to [Local Validation](../../../CONTRIBUTING.md#local-validation). Prepare only the dependencies needed for the work; do not automatically copy private `.env` files or link another checkout's `.venv` or `node_modules`. Service work follows [its development guide](../../../dev/service/README.md), including `make dev-status` for checkout-specific URLs and ports.
 
+## Frontend Screenshot Evidence
+
+For frontend changes, include screenshots of the affected rendered UI in the PR body. Capture representative states and relevant viewport sizes from the task worktree after the final UI changes; inspect the images for correctness and sensitive data. Keep capture files outside the repository and reuse valid screenshots when their visible inputs have not changed.
+
+Upload screenshots as GitHub-native attachments through `gh`, not browser automation or external image hosting. A browser login is not required. After the repository and CLI authentication checks owned by commit-push-pr, the following PNG upload works with `gh api`:
+
+```bash
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+repository_id=$(gh api "repos/$repo" --jq .id)
+screenshot=/absolute/path/to/screenshot.png
+upload_result=/absolute/path/to/screenshot-upload.json
+
+gh api --method POST \
+  -H 'Content-Type: application/octet-stream' \
+  -H 'Accept: application/vnd.github+json' \
+  "https://uploads.github.com/user-attachments/assets?name=screenshot.png&content_type=image/png&repository_id=$repository_id" \
+  --input "$screenshot" > "$upload_result"
+```
+
+Read the returned JSON `url` and retain it. Add `![Descriptive screenshot caption](<returned-url>)` beside the behavior it demonstrates in the PR body, then create or update the PR through `gh` using the temporary body file. Preserve existing PR content and verify the saved body references the returned attachment URLs. For multiple screenshots, upload each once and give each a distinct caption; the endpoint filename and content type must match the submitted file, with query values URL-encoded when necessary. This endpoint is for GitHub.com; do not assume an Enterprise host supports it.
+
+If an upload fails, report the actual CLI/API error and resolve the authentication or repository permission problem. Do not infer failure from an unsigned browser session, silently substitute another host, commit screenshots as source assets, or block unrelated authorized work. Reuse successful upload URLs rather than repeating an upload when only the PR edit failed. Keep all GitHub operations in `gh`; browser tools are for validating the application UI.
+
 ## Hand Off to commit-push-pr
 
 Read and follow [commit-push-pr](../commit-push-pr/SKILL.md) in the same worktree. Carry forward the selected path, branch, starting commit, intended repository, PR base `main`, change scope, validation results, and authorized stages. Reuse valid checks rather than repeating them for handoff.

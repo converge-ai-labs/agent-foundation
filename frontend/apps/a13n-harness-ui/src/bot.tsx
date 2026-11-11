@@ -9,7 +9,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink } from "react-router";
 import { Button } from "a13n-ui";
-import { Robot, ListBullets, Pause, Play, Gear } from "@phosphor-icons/react";
+import { Robot, Pause, Play, Gear } from "@phosphor-icons/react";
 import { useTranslation } from "./i18n";
 import { ApiError, result, type Schema } from "./transport/client";
 import { useTransport } from "./transport/context";
@@ -125,17 +125,6 @@ export function BotActions() {
     return null;
   return (
     <>
-      {data?.thread && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t("Activity")}
-          title={t("Activity")}
-          render={<Link to={`/threads/${BOT_THREAD_ID}`} />}
-        >
-          <ListBullets />
-        </Button>
-      )}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -192,7 +181,7 @@ export function BotPage({
       : !data?.available && data
         ? t("Bot processing is unavailable")
         : data?.pending_decision
-          ? t("Bot needs your decision in Activity")
+          ? t("Bot needs your decision")
           : data?.state.paused
             ? t("Automation paused · You can still chat")
             : busy
@@ -272,11 +261,6 @@ export function BotPage({
                     <p role="status">
                       {t("Messages sent while Bot is working will be queued.")}
                     </p>
-                  )}
-                  {data?.pending_decision && (
-                    <Link to={`/threads/${BOT_THREAD_ID}`}>
-                      {t("Open Activity to respond")}
-                    </Link>
                   )}
                 </>
               }

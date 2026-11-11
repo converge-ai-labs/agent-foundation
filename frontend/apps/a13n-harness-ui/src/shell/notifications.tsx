@@ -378,9 +378,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name = detail?.thread.title || detail?.thread.excerpt?.first_input;
-      const path = message
-        ? "/bot"
-        : `/threads/${encodeURIComponent(threadId)}`;
+      const path = bot ? "/bot" : `/threads/${encodeURIComponent(threadId)}`;
       current.current.toast.add({
         id,
         title: (
