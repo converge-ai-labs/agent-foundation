@@ -45,6 +45,7 @@ class BotSnapshot(SurfaceModel):
     thread: ThreadSummary | None = None
     available: bool
     enabled: bool
+    agent_id: str | None = None
     model_id: str | None = None
     heartbeat_enabled: bool
     interval_seconds: int
@@ -147,6 +148,7 @@ class BotController:
             thread=detail.thread if detail is not None else None,
             available=self._owned and model_id is not None,
             enabled=policy.enabled,
+            agent_id=source.bot_agent_id if source is not None else None,
             model_id=model_id,
             heartbeat_enabled=policy.heartbeat_enabled,
             interval_seconds=policy.interval_seconds,

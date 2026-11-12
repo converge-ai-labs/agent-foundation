@@ -3858,6 +3858,8 @@ export interface components {
             available: boolean;
             /** Enabled */
             enabled: boolean;
+            /** Agent Id */
+            agent_id?: string | null;
             /** Model Id */
             model_id?: string | null;
             /** Heartbeat Enabled */
@@ -4195,6 +4197,8 @@ export interface components {
             source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
             /** Source Id */
             source_id: string;
+            /** Base Agent Id */
+            base_agent_id?: string | null;
             /** Model Id */
             model_id: string;
             /** Thinking Summary */

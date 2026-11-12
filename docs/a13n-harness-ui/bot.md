@@ -7,7 +7,7 @@ Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing obj
 
 ## Start and configure Bot
 
-1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup, or follow the default Agent's Model. Bot uses the default Agent's execution settings with built-in Bot instructions.
+1. Open **Bot** in the sidebar. Bot is off by default. Its inline setup has independent Agent and Model selectors, both set to **Default** initially. Agent follows the global default Agent; Model follows the selected Agent's Model.
 2. Optionally add custom instructions, such as your preferred coordination style. Custom instructions are appended alongside the built-in instructions and do not replace them. Captured global `AGENTS.md` guidance also applies.
 3. Choose **Turn on Bot**. On first usable enable, the server sends a visible preset user message asking Bot to discover and explain your workspace. This uses an ordinary Model request and may incur cost. You can continue the conversation immediately. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
 
@@ -19,14 +19,15 @@ Merge these fields into the selected root YAML's existing `webui` mapping:
 webui:
   bot:
     enabled: true
-    model: model-coordinator
+    agent: null # Follow defaults.agent; an existing Agent ID selects its execution settings
+    model: null # Follow the selected Agent's Model; an existing Model ID overrides it
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
     interval_seconds: 3600
     connector_interval_seconds: 60
 ```
 
-Bot inherits the global default Agent's execution settings: Capabilities (including compaction and handoff), tools and permissions, subagents, Plugins and MCP selections. It replaces that Agent's role instructions with built-in Bot policy and your optional Bot instructions. File tools remain enabled; Shell, Computer and structured `ask_user_question` stay disabled. Null or omitted `model` follows the default Agent's Model; an explicit existing Model ID overrides it. Without a default Agent, an explicit Bot Model uses the minimal built-in settings. A missing effective Model prevents execution. Changes apply to later Runs; captured Runs keep their original configuration.
+Bot inherits the selected Agent's execution settings: Capabilities (including compaction and handoff), tools and permissions, subagents, Plugins and MCP selections. It replaces that Agent's role instructions with built-in Bot policy and your optional Bot instructions. File tools remain enabled; Shell, Computer and structured `ask_user_question` stay disabled. Null or omitted `agent` follows `defaults.agent`; an explicit existing Agent ID selects a different execution base. Null or omitted `model` follows that selected Agent's Model; an explicit existing Model ID overrides it independently. Changing Agent preserves an explicit Model choice. Without an effective Agent, an explicit Bot Model uses the minimal built-in settings. Invalid Agent or Model references reject the configuration update, retaining the previous accepted configuration. A missing effective Model prevents execution. Changes apply to later Runs; captured Runs keep their original configuration.
 
 Heartbeat intervals accept 60–86,400 seconds. Connector delivery intervals accept 1–86,400 seconds. Custom instructions accept up to 1,048,576 characters. Validate file edits with `a13n-harness-ui config validate`.
 

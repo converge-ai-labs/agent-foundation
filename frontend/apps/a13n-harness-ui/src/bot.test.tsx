@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotActions, BotComposerProvider, BotPage, BOT_THREAD_ID } from "./bot";
@@ -246,12 +247,23 @@ beforeEach(() => {
               model_id: "model-primary",
               name: "Assistant",
             },
+            {
+              agent_id: "agent-coordinator",
+              name: "Coordinator",
+              model_id: "model-alternate",
+            },
+            { agent_id: "agent-no-model", name: "No model", model_id: null },
           ],
           models: [
             {
               model_id: "model-primary",
               name: "Primary",
               route: "openai:gpt-5",
+            },
+            {
+              model_id: "model-alternate",
+              name: "Alternate",
+              route: "openai:alternate",
             },
           ],
         });
@@ -1241,4 +1253,69 @@ it("preserves actionable Bot failures outside Debug", async () => {
     "Provider rejected the request: account unavailable";
   mount();
   expect(await screen.findByText(snapshot.state.last_error)).toBeTruthy();
+});
+
+it("enables Bot with an independent Agent and default Model through one source publication", async () => {
+  snapshot.enabled = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Bot agent" }));
+  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
+  expect(
+    screen.getByRole("combobox", { name: "Bot model" }).textContent,
+  ).toContain("Default (Alternate)");
+  await user.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  const document = readDocument(configurationWrites[0])!.toJS();
+  expect(document.webui.bot.agent).toBe("agent-coordinator");
+  expect(document.webui.bot.model).toBeUndefined();
+  expect(configurationWrites).toHaveLength(1);
+  expect(requests).toHaveLength(0);
+});
+
+it("requires a usable selected Agent Model or explicit override and preserves that override on Agent changes", async () => {
+  snapshot.enabled = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  const user = userEvent.setup();
+  const agent = screen.getByRole("combobox", { name: "Bot agent" });
+  const model = screen.getByRole("combobox", { name: "Bot model" });
+  await user.click(agent);
+  await user.click(await screen.findByRole("option", { name: "No model" }));
+  expect(enable.hasAttribute("disabled")).toBe(true);
+  expect(model.textContent).toContain("Default (no model)");
+  await user.click(model);
+  await user.click(await screen.findByRole("option", { name: "Primary" }));
+  expect(enable.hasAttribute("disabled")).toBe(false);
+  await user.click(agent);
+  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
+  expect(model.textContent).toContain("Primary");
+  await user.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  const document = readDocument(configurationWrites[0])!.toJS();
+  expect(document.webui.bot).toMatchObject({
+    agent: "agent-coordinator",
+    model: "model-primary",
+  });
+});
+
+it("does not enable an unavailable explicit Bot Agent even with a valid explicit Model", async () => {
+  snapshot.enabled = false;
+  rootSource = rootSource.replace(
+    "bot: {enabled: false}",
+    "bot: {enabled: false, agent: agent-missing, model: model-primary}",
+  );
+  mount();
+  expect(
+    (await screen.findByRole("combobox", { name: "Bot agent" })).textContent,
+  ).toContain("agent-missing (unavailable)");
+  expect(
+    screen
+      .getByRole("button", { name: "Turn on Bot" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(configurationWrites).toHaveLength(0);
 });

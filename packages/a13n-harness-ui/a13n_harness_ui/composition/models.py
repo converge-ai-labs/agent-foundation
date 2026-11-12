@@ -136,6 +136,8 @@ class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
+    # Bot retains its built-in identity while recording its execution-policy source.
+    base_agent_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     system_prompt: tuple[str, ...] = Field(default=(), max_length=16)
     instructions: tuple[str, ...] = Field(default=(), max_length=16)
     # None preserves legacy captures; an empty tuple explicitly clears global guidance.

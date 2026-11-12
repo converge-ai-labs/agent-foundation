@@ -11232,6 +11232,17 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
           "model_id": {
             "anyOf": [
               {
@@ -11955,6 +11966,17 @@
           "source_id": {
             "type": "string",
             "title": "Source Id"
+          },
+          "base_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Id"
           },
           "model_id": {
             "type": "string",
