@@ -216,6 +216,7 @@ from a13n_harness_ui.thread_files import (
     AttachmentUpload,
     ComposerAttachmentReference,
     ComposerInput,
+    InputAttachmentReference,
     ThreadAttachment,
 )
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
@@ -259,10 +260,6 @@ class CreateThreadRequest(SurfaceModel):
     thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
-
-
-class InputAttachmentReference(SurfaceModel):
-    attachment_id: str = Field(min_length=1, max_length=100)
 
 
 class PromptRequest(SurfaceModel):

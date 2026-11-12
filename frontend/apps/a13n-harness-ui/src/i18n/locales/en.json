@@ -3415,5 +3415,12 @@
   "Microphone unavailable": "Microphone unavailable",
   "Recording limit reached": "Recording limit reached",
   "Microphone disconnected": "Microphone disconnected",
-  "Clear annotations": "Clear annotations"
+  "Clear annotations": "Clear annotations",
+  "Not confirmed": "Not confirmed",
+  "Not sent": "Not sent",
+  "Didn't finish": "Didn't finish",
+  "Bot is starting. Your draft is kept; send when it is working.": "Bot is starting. Your draft is kept; send when it is working.",
+  "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.": "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.",
+  "This message was not sent. Edit it or discard it before continuing.": "This message was not sent. Edit it or discard it before continuing.",
+  "Retry exactly": "Retry exactly"
 }

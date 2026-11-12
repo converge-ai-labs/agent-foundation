@@ -1087,9 +1087,7 @@ function ConversationContent({
         {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
-            connectionStatus={
-              publication ? publication.status : connectionStatus
-            }
+            connectionStatus={publication?.status ?? connectionStatus}
             status={
               !guest && thread && !thread.archived ? (
                 <ComposerStatus

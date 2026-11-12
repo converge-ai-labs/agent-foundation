@@ -36,9 +36,10 @@ class BotRepository:
             row = await session.get(BotInputRecord, item.input_id)
             if row is not None:
                 previous = BotInput.model_validate_json(row.payload)
-                if (previous.source, previous.text, previous.source_id, previous.causation_id) != (
+                if (previous.source, previous.text, previous.parts, previous.source_id, previous.causation_id) != (
                     item.source,
                     item.text,
+                    item.parts,
                     item.source_id,
                     item.causation_id,
                 ):

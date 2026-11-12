@@ -10645,6 +10645,21 @@
             "maxLength": 65536,
             "title": "Text"
           },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Parts",
+            "default": []
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -10754,6 +10769,21 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Parts",
+            "default": []
           },
           "created_at": {
             "type": "string",
@@ -27802,6 +27832,23 @@
         "title": "SetupCommand",
         "type": "object"
       },
+      "InputAttachmentReference": {
+        "additionalProperties": false,
+        "description": "An ordered input reference to a file staged in the same Thread.",
+        "properties": {
+          "attachment_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Attachment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id"
+        ],
+        "title": "InputAttachmentReference",
+        "type": "object"
+      },
       "BotSubmit": {
         "properties": {
           "input_id": {
@@ -27814,15 +27861,30 @@
           "text": {
             "type": "string",
             "maxLength": 65536,
-            "minLength": 1,
-            "title": "Text"
+            "title": "Text",
+            "default": ""
+          },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "type": "array",
+            "maxItems": 1024,
+            "title": "Parts",
+            "default": []
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "input_id",
-          "text"
+          "input_id"
         ],
         "title": "BotSubmit"
       },
@@ -29829,22 +29891,6 @@
             "type": "string"
           }
         ]
-      },
-      "InputAttachmentReference": {
-        "additionalProperties": false,
-        "properties": {
-          "attachment_id": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Attachment Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "attachment_id"
-        ],
-        "title": "InputAttachmentReference",
-        "type": "object"
       },
       "ReasoningMode": {
         "enum": [
