@@ -513,6 +513,9 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.error_type = type(result).__name__
                 else:
                     nested_boundary = "tool_output"
+                    from a13n_harness.capabilities.image_reuse import image_result_projection
+
+                    result = image_result_projection(ctx, result)
                     result = await _unwrap_tool_return(result, ordinal=ordinal, budget=budget)
                     result_bytes = bounded_json_size(result, self.config.max_output_bytes)
                     await budget.add_bytes(result_bytes, label="nested result")

@@ -859,7 +859,9 @@ async def _prepare_invocation(
 ) -> _PreparedInvocation:
     try:
         typed_arguments = deepcopy(tool_args)
-        projected = project_json(typed_arguments)
+        from a13n_harness.capabilities.image_reuse import image_argument_projection
+
+        projected = image_argument_projection(ctx, project_json(typed_arguments))
         normalized = _JSON_OBJECT_ADAPTER.validate_python(projected, strict=True)
         encoded = dump_json_bytes(normalized, sort_keys=True)
     except (TypeError, ValueError, ValidationError) as exc:

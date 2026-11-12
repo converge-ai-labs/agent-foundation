@@ -37,6 +37,8 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 
 ## Optional Capability Roles
 
+`ImageReuseCapability` retains byte-backed native input/tool images and binds their Run-scoped references to base64 string parameters through the existing target ToolManager. `ImageReuseLimits` bounds retention; [Native Image Argument Binding](07-tool-execution.md#native-image-argument-binding) owns provenance, policy, persistence, and scope. Service enables this capability in its built-in Run composition; embedded Harness applications select it explicitly.
+
 `DetectLoops` is the upstream opt-in repeated-action detector, supported through both native code-first composition and declarative configuration. [Native loop detection](04-capability-model.md#opt-in-native-loop-detection) owns its attempt scope and failure behavior.
 
 `BrowserUseCapability` contributes Chromium browser tools over a Host-authorized `RunBindings.browser_backend` or trusted embedded backend. The core owns global/owned tab access, cleanup ownership, and fresh references; Hosts own browser processes, profiles, and viewer access. [Browser Use](23-browser-use.md) owns binding, lifecycle, concurrency, and recovery.

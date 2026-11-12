@@ -178,6 +178,29 @@ Keep provider objects in the current `RunBindings`. `WebBinding` and `TaskStateB
 
 For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
+## Reuse Images in Tool Arguments
+
+Add `ImageReuseCapability()` to an embedded Agent's `capabilities` to pass native input or tool-return images to another tool's base64 string parameter. Service enables this capability by default.
+
+```python
+from a13n_harness.capabilities import ImageReuseCapability, ImageReuseLimits
+
+image_reuse = ImageReuseCapability(
+    ImageReuseLimits(max_images=64, max_image_bytes=10 * 1024 * 1024, max_total_bytes=32 * 1024 * 1024)
+)
+# Include image_reuse in AgentDefinition.capabilities or HarnessBuilder.build(capabilities=...).
+```
+
+1. Supply an image as native `BinaryContent`, or call a tool that returns a native image. Standard locally executed MCP image returns work through the same path.
+2. Read the image directory in context or call `list_images`. Select an occurrence by its input or producing tool-call provenance, not its short file identifier.
+3. Pass the exact `base64_reference` string as the whole value of the consumer's base64 parameter, including nested object/list values. The Host replaces it with base64 of the original bytes before the target's validation and policy checks.
+
+The model does not reproduce base64. Permissions, reviews, approvals and managed policy see image metadata and a byte digest. Native images remain native model content; display projections continue to omit their payloads. Original bytes survive request resizing and same-Run compaction through existing checkpoint storage. Hosts recovering the same logical Run reuse its `RunBindings.context_recovery_scope_id`; Service supplies its Run ID automatically. A new Run or fork rejects old references; approved pending calls retain only their captured target binding.
+
+When CodeAct is also selected, image results become JSON descriptors with the same `base64_reference`. A `ToolReturn` carrying supplemental images exposes `{"return_value": ..., "images": [...]}` to code. Forward the reference to an eligible tool; CodeAct remains subject to its normal budgets.
+
+Only Host-held image bytes are reusable. URL/provider-only handles receive no reference and are not fetched by this capability. Images beyond the configured count or byte limits are reported as omitted. No public URL, Environment mount or image re-generation is required.
+
 ## Native Image Generation with Saving
 
 Use `NativeImageGenerationCapability` when an image-generation result must become a saved file or URL. It combines the provider-native tool with your async saver.

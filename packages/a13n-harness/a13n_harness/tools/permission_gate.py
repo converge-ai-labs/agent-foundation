@@ -93,7 +93,9 @@ async def check_permission(
     mode = permission_mode(ctx, tool_def)
     if mode == "deny":
         raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
-    arguments = _arguments(args)
+    from a13n_harness.capabilities.image_reuse import image_argument_projection
+
+    arguments = _arguments(image_argument_projection(ctx, args))
     binding = _binding(tool_def, arguments)
     identity = tool_identity(tool_def)
     approval = resolve_tool_approval(ctx, tool_id=identity.tool_id)
@@ -365,6 +367,8 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                 ctx.deps._tool_executions.unblock_handoff(call_id)
 
     async def validate_authorized(ctx: RunContext[AgentContext], **args: Any) -> None:
+        from a13n_harness.capabilities.image_reuse import image_argument_projection
+
         check = await check_permission(ctx, tool.tool_def, args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
         with tool_approval_scope(ctx.deps, check.approval), tool_call_source_scope(ctx):
@@ -379,12 +383,16 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                         check.approval,
                         metadata={
                             **(exc.metadata or {}),
-                            APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
+                            APPROVAL_PRESENTATION_KEY: approval_presentation(
+                                image_argument_projection(ctx, args), tool_id=check.approval.tool_id
+                            ),
                         },
                     ) from exc
             if tool.tool_def.kind == "unapproved" and not ctx.tool_call_approved:
                 ctx.deps._tool_pending_approvals[check.approval.tool_call_id] = {
-                    APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
+                    APPROVAL_PRESENTATION_KEY: approval_presentation(
+                        image_argument_projection(ctx, args), tool_id=check.approval.tool_id
+                    ),
                 }
 
     return replace(tool, args_validator_func=validate)

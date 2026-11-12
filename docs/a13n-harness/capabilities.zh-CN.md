@@ -178,6 +178,29 @@ provider 对象放在当前 `RunBindings` 中。`WebBinding` 和 `TaskStateBindi
 
 内联子 Agent 的 `SubagentDefinition.run_bindings_factory` 接收子 Agent 基础 `RunBindings`，返回携带其协作对象的替代绑定。必须保留子实例、借用环境和继承的调用策略。父功能绑定不会自动继承；显式共享任务状态策略提供借用状态单元，并拒绝与工厂绑定冲突。
 
+## 在工具参数中复用图像
+
+在嵌入式 Agent 的 `capabilities` 中加入 `ImageReuseCapability()`，即可将原生输入或工具返回的图像传给另一工具的 base64 字符串参数。Service 默认启用此能力。
+
+```python
+from a13n_harness.capabilities import ImageReuseCapability, ImageReuseLimits
+
+image_reuse = ImageReuseCapability(
+    ImageReuseLimits(max_images=64, max_image_bytes=10 * 1024 * 1024, max_total_bytes=32 * 1024 * 1024)
+)
+# Include image_reuse in AgentDefinition.capabilities or HarnessBuilder.build(capabilities=...).
+```
+
+1. 以原生 `BinaryContent` 提供图像，或调用返回原生图像的工具。本地执行的标准 MCP 图像返回走同一条路径。
+2. 读取上下文中的图像目录，或调用 `list_images`。根据输入来源或产出工具调用的来源选择具体图像，不使用短文件标识符查找。
+3. 将准确的 `base64_reference` 字符串作为消费工具 base64 参数的完整值，也支持嵌套对象和列表中的值。Host 在目标工具校验和策略检查前将引用替换为原始字节的 base64。
+
+模型无需复述 base64。权限、风险审查、审批和托管调用策略看到图像元数据与字节摘要。图像仍是模型的原生内容；展示投影继续省略负载。原始字节通过现有检查点存储保留，不受请求图像缩放和同一 Run 内压缩的影响。Host 恢复同一逻辑 Run 时复用其 `RunBindings.context_recovery_scope_id`；Service 自动提供自身的 Run ID。新 Run 或分叉拒绝旧引用；获批的待续跑调用只保留其捕获目标的绑定。
+
+同时选择 CodeAct 时，图像结果转换为包含同一 `base64_reference` 的 JSON 描述符。携带补充图像的 `ToolReturn` 在代码中表现为 `{"return_value": ..., "images": [...]}`。将引用传给允许调用的工具即可，CodeAct 的常规预算仍然适用。
+
+只有 Host 持有字节的图像可复用。仅有 URL 或 provider 句柄的图像不会获得引用，此能力也不抓取它们。超过数量或字节限制的图像会报告为已省略。此功能无需公开 URL、Environment 挂载或重新生成图像。
+
 ## 原生图像生成与保存
 
 生成图像需要保存为文件或 URL 时，使用 `NativeImageGenerationCapability`。它将 provider 原生工具与你的异步 saver 组合。

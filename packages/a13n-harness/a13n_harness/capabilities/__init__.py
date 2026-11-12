@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         DocumentsCapability,
         DocumentsConfiguration,
     )
+    from .image_reuse import ImageReuseCapability, ImageReuseLimits
     from .interaction import (
         AskUserQuestionRequest,
         UserInteractionCapability,
@@ -196,6 +197,7 @@ _EXPORTS = {
         "DocumentsCapability",
         "DocumentsConfiguration",
     ),
+    "a13n_harness.capabilities.image_reuse": ("ImageReuseCapability", "ImageReuseLimits"),
     "a13n_harness.capabilities.interaction": (
         "AskUserQuestionRequest",
         "UserInteractionCapability",

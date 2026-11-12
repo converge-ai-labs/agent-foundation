@@ -39,6 +39,7 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     FileContextCapability,
     HandoffCapability,
+    ImageReuseCapability,
     SubagentCapability,
     SubagentOperator,
     UserInteractionCapability,
@@ -354,6 +355,7 @@ class _Host:
             *self.capabilities(agent),
             environment,
             FileContextCapability(),
+            ImageReuseCapability(),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
             CompactionCapability(
