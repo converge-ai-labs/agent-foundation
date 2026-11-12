@@ -158,8 +158,10 @@ def test_localized_pages_are_not_bundled(tmp_path: Path) -> None:
     assert (output / "docs/settings.md").read_bytes() == (source / "settings.md").read_bytes()
 
 
-def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_files(tmp_path: Path) -> None:
+def test_operations_index_copies_only_reference_targets_verbatim_and_removes_stale_files(tmp_path: Path) -> None:
     package, repository = _source(tmp_path)
+    guidance = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"
+    (guidance / "delegate.md").write_text("<subagents>\n{available_subagents}\n</subagents>\n")
     build_skills(package, repository)
     output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
     original = _files(output)
@@ -171,6 +173,10 @@ def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_f
         ("ui", package / "a13n_harness_ui/assets/guidance"),
     ):
         for path in source.glob("*.md"):
+            if b"<!-- reference -->" not in path.read_bytes():
+                assert not (output / owner / path.name).exists()
+                assert f"{owner}/{path.name}" not in original["SKILL.md"].decode()
+                continue
             assert (output / owner / path.name).read_bytes() == path.read_bytes()
             assert (
                 f"({owner}/{path.name}) — lines 1-{len(path.read_bytes().splitlines())}"
@@ -178,6 +184,7 @@ def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_f
             )
     build_skills(package, repository)
     assert _files(output) == original
+    assert b"{available_subagents}" not in b"".join(original.values())
     (package / "a13n_harness_ui/assets/guidance/threads.md").rename(
         package / "a13n_harness_ui/assets/guidance/coordination.md"
     )

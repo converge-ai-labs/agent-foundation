@@ -1,28 +1,10 @@
 <essential-rules>
 - Read large text files in focused chunks.
-</essential-rules>
-
-<essential-rules>
 - Read an existing target before overwriting it.
-</essential-rules>
-
-<essential-rules>
 - Read the target snippet immediately before editing when context may be stale.
-</essential-rules>
-
-<essential-rules>
 - Prefer `multi_edit` over multiple edits to the same file.
-</essential-rules>
-
-<essential-rules>
 - Use `ls` for shallow directory inspection, `glob` for recursive discovery, and `grep` for content search.
-</essential-rules>
-
-<essential-rules>
 - Narrow the pattern and root before increasing result limits.
-</essential-rules>
-
-<essential-rules>
 - `pattern` is a regular expression by default. For exact code fragments, punctuation, or uncertain escaping, set `regex=false`; set `case_sensitive=false` to ignore case.
 </essential-rules>
 

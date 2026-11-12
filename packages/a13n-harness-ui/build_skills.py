@@ -97,7 +97,7 @@ def _online_url(path: str, fragment: str) -> str:
 
 
 def _build_operations(package_root: Path, repository_root: Path) -> Path:
-    """Reuse matching output or copy owned Markdown and regenerate its navigation."""
+    """Reuse matching output or bundle reference-bearing Markdown and its navigation."""
     sources = {
         "harness": repository_root / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance",
         "ui": package_root / "a13n_harness_ui/assets/guidance",
@@ -111,9 +111,12 @@ def _build_operations(package_root: Path, repository_root: Path) -> Path:
             raise ValueError(f"Missing {owner} operation guidance: {source}")
         overview.extend([f"### {owner.title()}", ""])
         for page in pages:
+            content = page.read_bytes()
+            if b"<!-- reference -->" not in content:
+                continue
             relative = f"{owner}/{page.name}"
-            contents[relative] = page.read_bytes()
-            overview.append(f"- [{page.stem}]({relative}) — lines 1-{len(contents[relative].splitlines())}")
+            contents[relative] = content
+            overview.append(f"- [{page.stem}]({relative}) — lines 1-{len(content.splitlines())}")
         overview.append("")
     contents["SKILL.md"] = ("\n".join(overview).rstrip() + "\n").encode("utf-8")
     output = package_root / BUNDLE_PATH / OPERATIONS_SKILL_NAME
