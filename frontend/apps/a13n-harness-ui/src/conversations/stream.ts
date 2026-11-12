@@ -148,6 +148,7 @@ export class FocusDisplay {
   recovery?: {
     id: string;
     state: "retrying" | "resumed" | "ended";
+    reason?: "output_token_limit";
     retries: number;
   };
   terminalFailure?: string;
@@ -833,7 +834,9 @@ export class FocusDisplay {
       this.recovery = {
         id: `${this.runId}:retry:${payload.attempt}`,
         state: "retrying",
-        // Attempt 1 is the original model request, not a reconnection.
+        reason:
+          payload.reason === "output_token_limit" ? payload.reason : undefined,
+        // Attempt 1 is the original model request, not a retry.
         retries: typeof payload.attempt === "number" ? payload.attempt - 1 : 1,
       };
       return;

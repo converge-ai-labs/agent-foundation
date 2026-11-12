@@ -277,6 +277,10 @@ class InterruptedResponseTracker:
         parts = [part for part in parts if not isinstance(part, ToolCallPart)]
         if not _native_parts_are_balanced(parts):
             parts = [part for part in parts if not isinstance(part, NativeToolCallPart | NativeToolReturnPart)]
+        # Reasoning items need a surviving assistant successor on replay. Removing
+        # rejected calls can leave a finalized reasoning item at the tail.
+        while parts and isinstance(parts[-1], ThinkingPart):
+            parts.pop()
         return (*messages[:-1], replace(tail, parts=parts, state="interrupted")) if parts else tuple(messages[:-1])
 
     def sanitize(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:

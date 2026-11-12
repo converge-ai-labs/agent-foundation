@@ -6,21 +6,33 @@ from copy import deepcopy
 
 import httpx2
 import pytest
-from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, HarnessState, ModelRecoveryPolicy, RunBindings
+from a13n_harness import (
+    AgentContext,
+    ContextRecoveryPolicy,
+    HarnessBuilder,
+    HarnessEvent,
+    HarnessState,
+    ModelRecoveryPolicy,
+    RunBindings,
+)
 from a13n_harness.capabilities import CodeActCapability, HandoffCapability
 from a13n_harness.capabilities.lifecycle import LifecycleEventCapability
 from a13n_harness.events import HarnessExtensionEvent, ModelRetryScheduledPayload
-from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
+from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT, InterruptedResponseTracker
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
-from pydantic_ai.exceptions import OutputTokenLimitExceeded
+from pydantic_ai.exceptions import ModelContextWindowExceededError, OutputTokenLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
+    PartEndEvent,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -39,9 +51,10 @@ pytestmark = pytest.mark.anyio
 class FinishReasonModel(WrapperModel):
     """Use real native part events with scripted provider finish reasons."""
 
-    def __init__(self, model, reasons):
+    def __init__(self, model, reasons, *, raw_reason: str | None = None):
         super().__init__(model)
         self.reasons = iter(reasons)
+        self.raw_reason = raw_reason
 
     @asynccontextmanager
     async def request_stream(
@@ -54,6 +67,8 @@ class FinishReasonModel(WrapperModel):
         reason = next(self.reasons)
         async with super().request_stream(messages, model_settings, model_request_parameters, run_context) as response:
             response.finish_reason = reason
+            if self.raw_reason is not None:
+                response.provider_details = {"finish_reason": self.raw_reason}
             yield response
 
 
@@ -111,6 +126,98 @@ async def test_length_continues_inside_one_run_without_concatenating_output(stre
                 "reason": "output_token_limit",
             }
         ]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("exhausted", [False, True])
+@pytest.mark.parametrize("args", ["{}", '{"unfinished":'])
+async def test_explicit_context_finish_reason_uses_context_recovery_without_dispatch(enabled, exhausted, args) -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+
+    histories = []
+    invoked = []
+    notices = []
+
+    def action() -> str:
+        invoked.append(True)
+        return "executed"
+
+    async def stream(messages, info):
+        if any(isinstance(p, UserPromptPart) and p.content == _COMPACTION_PROMPT for m in messages for p in m.parts):
+            raise ModelContextWindowExceededError("test", "summary overflow")
+        histories.append(deepcopy(messages))
+        if len(histories) == 1 or exhausted:
+            yield "rejected partial"
+            yield {0: DeltaToolCall(name="action", json_args=args, tool_call_id="context-cut")}
+        else:
+            yield "resumed"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        capabilities=(Capability(tools=[action]),),
+        model=FinishReasonModel(
+            FunctionModel(stream_function=stream),
+            ["length", "stop", "length" if exhausted else "stop"],
+            raw_reason="model_context_window_exceeded",
+        ),
+        model_recovery=policy(max_attempts=5),
+        context_recovery=ContextRecoveryPolicy(enabled=enabled, preserve_history=False),
+    )
+    async with executable.stream("finish task", bindings=RunBindings.embedded()) as run:
+        async for event in run:
+            if isinstance(event, HarnessEvent) and isinstance(event.event, HarnessExtensionEvent):
+                if event.event.kind == "recovery":
+                    notices.append(event.event.payload)
+        result = run.result
+    assert result is not None and result.state is not None
+    assert invoked == []
+    assert not any(notice.get("type") == "model_retry_scheduled" for notice in notices)
+    assert not any(isinstance(p, ToolCallPart | ToolReturnPart) for m in result.all_messages() for p in m.parts)
+    if not enabled:
+        assert result.status == "failed" and result.usage.requests == 1
+        assert len(histories) == 1
+    else:
+        assert len(histories) == 2 and result.usage.requests == 3
+        assert "Latest task-start input" in str(histories[-1])
+        assert "rejected partial" not in str(histories[-1])
+        marker = result.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
+        assert marker is not None
+        assert marker.data["outcome"] == ("overflow" if exhausted else "resumed")
+        if exhausted:
+            assert result.failure is not None and result.failure.code == "context_recovery_exhausted"
+        else:
+            assert result.output_or_raise() == "resumed"
+
+
+@pytest.mark.parametrize("successor", ["none", "text", "native", "unbalanced-native", "text-then-thinking"])
+def test_output_limit_trims_only_orphan_trailing_thinking(successor: str) -> None:
+    thinking = ThinkingPart("reasoning", id="rs_mock", provider_name="openai")
+    parts = [thinking]
+    if successor in ("text", "text-then-thinking"):
+        parts.append(TextPart("safe partial"))
+    if successor in ("native", "unbalanced-native"):
+        parts.append(NativeToolCallPart("web_search", {}, tool_call_id="native"))
+        if successor == "native":
+            parts.append(NativeToolReturnPart("web_search", "result", tool_call_id="native"))
+    if successor == "text-then-thinking":
+        parts.append(ThinkingPart("orphan tail"))
+    parts.append(ToolCallPart("action", "{}", tool_call_id="cut"))
+    tracker = InterruptedResponseTracker()
+    for index, part in enumerate(parts):
+        tracker.observe(PartEndEvent(index=index, part=part), response_history_count=0)
+    sanitized = tracker.sanitize_output_limit([ModelResponse(parts=parts, finish_reason="length")])
+    if successor in ("none", "unbalanced-native"):
+        assert sanitized == ()
+    else:
+        assert len(sanitized) == 1
+        response = sanitized[0]
+        assert isinstance(response, ModelResponse) and response.state == "interrupted"
+        assert response.parts[0] == thinking
+        assert not isinstance(response.parts[-1], ThinkingPart)
+        assert not any(isinstance(part, ToolCallPart) for part in response.parts)
+        assert any(isinstance(part, NativeToolReturnPart) for part in response.parts) is (successor == "native")
 
 
 @pytest.mark.parametrize("mixed", [False, True])

@@ -102,8 +102,18 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
         try:
             result = await handler(node)
             if isinstance(result, CallToolsNode) and is_primary_output_limit(ctx, result.model_response):
-                error = OutputTokenLimitExceeded("The primary model response reached its output token limit.")
-                recovery.output_limit_error = error
+                response = result.model_response
+                if (response.provider_details or {}).get("finish_reason") == "model_context_window_exceeded":
+                    # Context recovery reads canonical history before this node unwinds.
+                    # Exclude the rejected response, including calls never dispatched.
+                    if ctx.messages and ctx.messages[-1] is response:
+                        ctx.messages.pop()
+                    error = ModelContextWindowExceededError(
+                        response.model_name or "unknown", "The primary model response exhausted its context window."
+                    )
+                else:
+                    error = OutputTokenLimitExceeded("The primary model response reached its output token limit.")
+                    recovery.output_limit_error = error
                 raise error
         except BaseException as exc:
             if primary_request:
