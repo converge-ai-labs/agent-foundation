@@ -36,9 +36,31 @@ Run `a13n-harness-ui config path`. Save server files under `mcp/` beside the roo
 
 4. [Enable the server](#enable-a-server) and test a documented read-only tool.
 
-Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loopback host with no configured headers. The client does not follow redirects; configure the final MCP endpoint directly. Remote transport is Streamable HTTP, not legacy SSE, and this configuration does not provide an OAuth login flow.
+Use a credential-free HTTPS URL. Plain HTTP is supported only for a literal loopback host with no configured headers. The client does not follow redirects; configure the final MCP endpoint directly. Remote transport is Streamable HTTP, not legacy SSE. Servers supporting DCR can use [OAuth](#oauth-authorization) instead of an Authorization header.
 
 Set `transport.init_timeout_seconds` to a positive number of seconds to allow a slower handshake. For example, `20` gives the server up to 20 seconds to negotiate the protocol, including any fallback. The default is 5 seconds for Run-local connections and Settings tool discovery, and 30 seconds for Host-owned connections and MCP Apps. Tool calls have separate deadlines.
+
+## OAuth authorization
+
+For a server supporting OAuth dynamic client registration (DCR), omit the Authorization header and add `oauth` to the remote transport:
+
+```yaml title="mcp/docs.yaml — replace transport"
+transport:
+  url: https://mcp.example.com/mcp
+  oauth:
+    registration: dcr
+    scope: read
+```
+
+`registration` defaults to `dcr`, the only supported mode. Omit `scope` to use the server's discovered scopes; an explicit scope limits the requested and accepted permissions. In a `mcpServers` entry, put `oauth` beside `url`. OAuth always requires HTTPS, including loopback servers.
+
+Open **Settings → Connections**, select the server and choose **Connect** under **Authorization**. Harness UI discovers the authorization server and automatically registers this instance's client. Complete consent in the browser; use **Continue authorization** if the popup was blocked. No project-wide OAuth application or manually supplied client secret is needed. Successful consent saves authorization; **Load tools** separately checks the MCP connection.
+
+Login uses the existing WebUI listener. Local access uses the listener's actual loopback port. For remote access, configure the exact public HTTPS origin in `webui.allowed_origins` and route `/oauth/mcp/callback` to the same listener. A wildcard does not authorize OAuth callbacks. The callback requires the browser that started login. Pending attempts expire after ten minutes and are lost on App restart; completed grants survive. Use **Cancel authorization** before restarting an unfinished attempt.
+
+Tokens, registration and absolute expiry stay in this instance's private database. Runtime requests refresh expired access without opening a browser, including TUI use with the same configuration and data roots. An uncertain or rejected refresh requires **Reconnect**; ordinary tool calls are never automatically replayed after a 401. **Disconnect** clears local authorization. Changing the transport or reconnecting invalidates old captured account bindings; start a new Run afterward.
+
+OAuth discovery, DCR and token HTTP use the Host network independently of Run `allowed_hosts`. MCP business requests keep their existing network policy. Providers requiring manual application registration or CIMD are unsupported.
 
 ## Choose tools
 
@@ -108,10 +130,10 @@ Set `DOCS_MCP_TOKEN`, then select `mcp-docs` as below. This example inserts only
 
 A wrapper can contain several servers. Names normalize to `mcp-` IDs: `My_Server` becomes `mcp-my-server`. Duplicate IDs across files reject the configuration.
 
-| Wrapper entry | Fields                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| Command       | `command`, optional `args`, optional `env`; optional `type: stdio`                            |
-| Remote        | `url`, optional `headers`, `init_timeout_seconds`; optional `type: http` or `streamable-http` |
+| Wrapper entry | Fields                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| Command       | `command`, optional `args`, optional `env`; optional `type: stdio`                                     |
+| Remote        | `url`, optional `headers`, `oauth`, `init_timeout_seconds`; optional `type: http` or `streamable-http` |
 
 Both `.yaml` and `.json` accept the wrapper or the single-resource format. Use strict JSON: comments and trailing commas are invalid. Remove unsupported client-specific fields such as `disabled`.
 
@@ -196,10 +218,10 @@ Cancellation, expiry, connection closure, or shutdown ends the request. If answe
 
 Use `schema_version: "2"` for MCP resources and wrappers. A single-resource file also requires `kind: mcp_server`, a unique `mcp-` `id`, a display `name`, and exactly one transport form:
 
-| Transport | Required  | Optional                              |
-| --------- | --------- | ------------------------------------- |
-| Command   | `command` | `arguments: []`, `environment: {}`    |
-| Remote    | `url`     | `headers: {}`, `init_timeout_seconds` |
+| Transport | Required  | Optional                                       |
+| --------- | --------- | ---------------------------------------------- |
+| Command   | `command` | `arguments: []`, `environment: {}`             |
+| Remote    | `url`     | `headers: {}`, `oauth`, `init_timeout_seconds` |
 
 Environment and header values accept strings or `{env: VARIABLE}`. In a `mcpServers` wrapper, use `args` and `env` instead of `arguments` and `environment`. Optional `tools` follows the [tool selection rules](#choose-tools).
 

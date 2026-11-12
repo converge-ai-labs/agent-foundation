@@ -1986,6 +1986,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mcp-authorization/status/{kind}/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Oauth Status */
+        get: operations["mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Oauth Start */
+        post: operations["mcp_oauth_start_api_mcp_authorization_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/attempts/{attempt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Oauth Login Status */
+        get: operations["mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get"];
+        put?: never;
+        post?: never;
+        /** Mcp Oauth Cancel */
+        delete: operations["mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Oauth Disconnect */
+        post: operations["mcp_oauth_disconnect_api_mcp_authorization_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcp/{server_id}/tools": {
         parameters: {
             query?: never;
@@ -3607,6 +3676,22 @@ export interface components {
         };
         /** @enum {string} */
         AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
+        /** AuthorizationStatus */
+        AuthorizationStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "disconnected" | "connected" | "expired" | "reconnect_required";
+            login?: components["schemas"]["OAuthLoginStatus"] | null;
+            /**
+             * Scopes
+             * @default []
+             */
+            scopes?: string[];
+            /** Expires At */
+            expires_at?: number | null;
+        };
         /**
          * Availability
          * @enum {string}
@@ -6278,6 +6363,11 @@ export interface components {
             server_id: string;
             /** Name */
             name: string;
+            /**
+             * Oauth
+             * @default false
+             */
+            oauth?: boolean;
         };
         /**
          * MemoryAgentSource
@@ -6731,6 +6821,20 @@ export interface components {
              */
             total?: number;
             page?: components["schemas"]["NotePage"] | null;
+        };
+        /** OAuthLoginStatus */
+        OAuthLoginStatus: {
+            /** Attempt Id */
+            attempt_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "connecting" | "waiting" | "connected" | "failed" | "cancelled";
+            /** Authorization Url */
+            authorization_url?: string | null;
+            /** Error */
+            error?: string | null;
         };
         /**
          * ObjectKind
@@ -7406,7 +7510,7 @@ export interface components {
              * @default submit
              * @enum {string}
              */
-            kind?: "submit" | "open_url" | "copy" | "confirm";
+            kind?: "submit" | "open_url" | "copy" | "confirm" | "oauth";
             /** Url */
             url?: string | null;
             /** Value */
@@ -10408,6 +10512,16 @@ export interface components {
              * Format: password
              */
             callback_url: string;
+        };
+        /** AuthorizationTarget */
+        AuthorizationTarget: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "connector";
+            /** Id */
+            id: string;
         };
         /** McpToolSelection */
         McpToolSelection: {
@@ -14461,6 +14575,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "mcp" | "connector";
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_start_api_mcp_authorization_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizationTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthLoginStatus"];
+                };
+            };
+        };
+    };
+    mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthLoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_disconnect_api_mcp_authorization_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizationTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

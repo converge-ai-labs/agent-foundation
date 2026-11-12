@@ -58,6 +58,7 @@ from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.guardian_credits import GuardianParentCapability, GuardianReviewCapability
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.mcp_apps.connections import Connections
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
@@ -207,9 +208,11 @@ class AgentReconstructor:
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         mcp_apps: Connections | None = None,
         mcp_connections: HostConnections | None = None,
+        mcp_oauth: McpOAuth | None = None,
     ) -> None:
         self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
         self._mcp_apps = mcp_apps
+        self._mcp_oauth = mcp_oauth
         self._mcp_connections = mcp_connections or mcp_apps
         self._api_keys = api_keys
         self._configuration_root = configuration_root
@@ -424,6 +427,7 @@ class AgentReconstructor:
             item.server_id: HarnessUiMCP(
                 item,
                 configuration_root=self._configuration_root,
+                oauth=self._mcp_oauth,
                 apps=self._mcp_apps if item.apps_enabled else None,
                 connections=self._mcp_connections,
             )

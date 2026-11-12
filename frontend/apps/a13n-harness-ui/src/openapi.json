@@ -4979,6 +4979,186 @@
         }
       }
     },
+    "/api/mcp-authorization/status/{kind}/{target_id}": {
+      "get": {
+        "summary": "Mcp Oauth Status",
+        "operationId": "mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "mcp",
+                "connector"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/start": {
+      "post": {
+        "summary": "Mcp Oauth Start",
+        "operationId": "mcp_oauth_start_api_mcp_authorization_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/attempts/{attempt_id}": {
+      "get": {
+        "summary": "Mcp Oauth Login Status",
+        "operationId": "mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Mcp Oauth Cancel",
+        "operationId": "mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/disconnect": {
+      "post": {
+        "summary": "Mcp Oauth Disconnect",
+        "operationId": "mcp_oauth_disconnect_api_mcp_authorization_disconnect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mcp/{server_id}/tools": {
       "get": {
         "summary": "Mcp Tools Settings",
@@ -10590,6 +10770,54 @@
           "grok_subscription",
           "copilot_subscription"
         ]
+      },
+      "AuthorizationStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "disconnected",
+              "connected",
+              "expired",
+              "reconnect_required"
+            ],
+            "title": "State"
+          },
+          "login": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthLoginStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes",
+            "default": []
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AuthorizationStatus"
       },
       "Availability": {
         "type": "string",
@@ -18012,6 +18240,11 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "oauth": {
+            "type": "boolean",
+            "title": "Oauth",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -19326,6 +19559,53 @@
         "additionalProperties": false,
         "type": "object",
         "title": "NoteWorkSummary"
+      },
+      "OAuthLoginStatus": {
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "title": "Attempt Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "waiting",
+              "connected",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State"
+          },
+          "authorization_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_id",
+          "state"
+        ],
+        "title": "OAuthLoginStatus"
       },
       "ObjectKind": {
         "description": "Immutable payload families owned by the Harness UI store.",
@@ -21332,7 +21612,8 @@
               "submit",
               "open_url",
               "copy",
-              "confirm"
+              "confirm",
+              "oauth"
             ],
             "title": "Kind",
             "default": "submit"
@@ -29079,6 +29360,31 @@
         ],
         "title": "LoginCallbackInput",
         "type": "object"
+      },
+      "AuthorizationTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mcp",
+              "connector"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "AuthorizationTarget"
       },
       "McpToolSelection": {
         "additionalProperties": false,

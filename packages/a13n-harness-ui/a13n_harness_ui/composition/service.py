@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -115,13 +116,16 @@ class CompositionAcceptanceService:
 class RunCompositionService:
     """Resolve and publish the exact immutable composition for one admitted Run."""
 
-    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver) -> None:
+    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver, *, oauth: McpOAuth | None = None) -> None:
         self._store = store
         self._resolver = resolver
+        self._oauth = oauth
         self.connector_capture: Callable[[], Awaitable[tuple[ConnectorCapture, ...]]] | None = None
 
     async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:
         value = self._resolver.resolve_memory(source, thread)
+        if self._oauth is not None:
+            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
         envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=value)
         return PublishedRunComposition(value=value, reference=envelope.ref)
 
@@ -147,6 +151,8 @@ class RunCompositionService:
             and value.root.source_kind not in {"live", "memory"}
         ):
             value = value.model_copy(update={"connectors": await self.connector_capture()})
+        if self._oauth is not None and parent_node is None:
+            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
         envelope = await self._store.objects.publish_model(
             object_kind=ObjectKind.run_composition,
             value=value,

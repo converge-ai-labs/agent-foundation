@@ -36,9 +36,31 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 
 4. [启用服务器](#enable-a-server)，测试其文档列出的一个只读工具。
 
-使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE；此配置不提供 OAuth 登录流程。
+使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE。支持 DCR 的服务可以使用 [OAuth](#oauth-authorization) 代替 Authorization header。
 
 如果服务器握手较慢，可将 `transport.init_timeout_seconds` 设为大于零的秒数。例如，`20` 表示整个协议协商（包括回退）最多等待 20 秒。Run 内的连接和设置页的工具发现默认等待 5 秒，Host 跨 Run 保留的连接和 MCP Apps 默认等待 30 秒。工具调用有单独的超时。
+
+## OAuth 授权
+
+对于支持 OAuth 动态客户端注册（DCR）的服务，移除 Authorization header，并在远程传输中添加 `oauth`：
+
+```yaml title="mcp/docs.yaml — replace transport"
+transport:
+  url: https://mcp.example.com/mcp
+  oauth:
+    registration: dcr
+    scope: read
+```
+
+`registration` 默认为 `dcr`，也是唯一支持的模式。省略 `scope` 时使用服务发现的权限；显式 scope 限制请求和接受的权限。在 `mcpServers` 条目中，将 `oauth` 放在 `url` 同级。OAuth 始终要求 HTTPS，包括回环服务。
+
+打开**设置 → 连接**，选择服务，在**授权**下点击**连接**。Harness UI 发现授权服务器，并自动注册本实例的客户端。在浏览器中完成同意；弹窗受阻时使用**继续授权**。无需项目统一维护 OAuth 应用，也无需手动提供客户端密钥。成功授权会保存凭据；**加载工具**单独验证 MCP 连接。
+
+登录复用现有 WebUI listener。本地访问使用 listener 的实际回环端口；远程访问需在 `webui.allowed_origins` 配置精确的公开 HTTPS origin，并将 `/oauth/mcp/callback` 路由到同一 listener。通配符不赋予 OAuth 回调权限。回调必须来自发起登录的浏览器。待完成尝试十分钟后过期，App 重启会丢失；已完成授权会保留。重新开始前可**取消授权**。
+
+令牌、注册信息和绝对过期时间保存在此实例的私有数据库中。运行时自动刷新过期访问令牌，不打开浏览器；使用相同配置和数据根目录的 TUI 也可使用和刷新授权。刷新结果不确定或被拒绝时需**重新连接**；普通工具调用收到 401 后不会自动重放。**断开连接**清除本地授权。修改传输或重新连接会使旧运行捕获的账户绑定失效，之后请启动新 Run。
+
+OAuth 发现、DCR 和令牌请求使用 Host 网络，不受 Run `allowed_hosts` 限制；MCP 业务请求保留现有网络策略。不支持要求手动注册应用或 CIMD 的服务。
 
 ## 选择工具
 
@@ -108,10 +130,10 @@ Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外
 
 一个包装对象可包含多个服务器。名称会规范化为 `mcp-` ID：`My_Server` 变成 `mcp-my-server`。不同文件中的重复 ID 会导致配置被拒绝。
 
-| 包装对象中的条目 | 字段                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                     |
-| 远程             | `url`，可选 `headers`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
+| 包装对象中的条目 | 字段                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                              |
+| 远程             | `url`，可选 `headers`、`oauth`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
 
 `.yaml` 和 `.json` 都接受包装对象或单资源格式。使用严格 JSON：注释和末尾逗号无效。移除 `disabled` 等不支持的客户端专用字段。
 
@@ -196,10 +218,10 @@ mcp:
 
 MCP 资源和包装对象使用 `schema_version: "2"`。单资源文件还需要 `kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
 
-| 传输 | 必需      | 可选                                  |
-| ---- | --------- | ------------------------------------- |
-| 命令 | `command` | `arguments: []`、`environment: {}`    |
-| 远程 | `url`     | `headers: {}`、`init_timeout_seconds` |
+| 传输 | 必需      | 可选                                           |
+| ---- | --------- | ---------------------------------------------- |
+| 命令 | `command` | `arguments: []`、`environment: {}`             |
+| 远程 | `url`     | `headers: {}`、`oauth`、`init_timeout_seconds` |
 
 Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。可选的 `tools` 遵循[工具选择规则](#choose-tools)。
 
