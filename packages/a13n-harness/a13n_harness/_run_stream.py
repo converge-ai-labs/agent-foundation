@@ -22,6 +22,7 @@ from pydantic_ai.exceptions import (
     AgentRunError,
     ModelContextWindowExceededError,
     ModelHTTPError,
+    OutputTokenLimitExceeded,
     RunCancelled,
     UsageLimitExceeded,
     UserError,
@@ -1234,7 +1235,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return result
 
     async def _normalize_interrupted_history(
-        self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
+        self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker | None
     ) -> tuple[tuple[ModelMessage, ...], int]:
         self._deferred_input.reconcile(messages)
         executions = self.context._tool_executions
@@ -1380,6 +1381,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 recovery=attempt_index > 0,
             )
             recovery.request_error = None
+            recovery.output_limit_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
             manager = self._executable._agent.run_stream_events(
@@ -1474,9 +1476,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         return
                     except Exception as error:
                         self._refresh_live_messages()
+                        output_limit = (
+                            recovery.request_error is error
+                            and recovery.output_limit_error is error
+                            and isinstance(error, OutputTokenLimitExceeded)
+                        )
+                        if output_limit:
+                            self._latest_messages = response_tracker.sanitize_output_limit(self._latest_messages)
                         messages, _ = await self._normalize_interrupted_history(
                             self._latest_messages,
-                            response_tracker=response_tracker,
+                            response_tracker=None if output_limit else response_tracker,
                         )
                         self._attempt_events = None
                         self._latest_messages = messages
@@ -1524,7 +1533,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 return
 
                         model_failure = recovery.request_error is error and not isinstance(error, HarnessError)
-                        retryable = policy.enabled and model_failure and is_recoverable_model_failure(error)
+                        retryable = (
+                            policy.enabled
+                            and model_failure
+                            and ((output_limit and policy.retry_output_limit) or is_recoverable_model_failure(error))
+                        )
                         if retryable:
                             recovery.consecutive_failures += 1
                         retrying = retryable and recovery.consecutive_failures < max_attempts
@@ -1571,19 +1584,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 self._attempt_events = None
                 recovery.attempt_id = None
                 recovery.request_error = None
+                recovery.output_limit_error = None
                 if attempt_token is not None:
                     _LogicalRunObservation.reset_model_attempt(attempt_token)
 
             assert retry_error is not None
             retry_index = recovery.consecutive_failures
-            delay = policy.delay(retry_index)
+            output_limit = isinstance(retry_error, OutputTokenLimitExceeded)
+            delay = 0 if output_limit else policy.delay(retry_index)
             retry_event = HarnessExtensionEvent(
                 kind="recovery",
                 payload=ModelRetryScheduledPayload(
                     attempt=retry_index + 1,
                     max_attempts=max_attempts,
                     delay_seconds=delay,
-                ).model_dump(mode="json"),
+                    reason="output_token_limit" if output_limit else None,
+                ).model_dump(mode="json", exclude_none=True),
             )
             self._emitter.observe(retry_event)
             yield self._adapt_extension_event(retry_event)

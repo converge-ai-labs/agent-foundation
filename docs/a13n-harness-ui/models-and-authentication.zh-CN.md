@@ -178,6 +178,17 @@ model_configuration:
 
 保存 `key-gateway`，填写网关模型 ID 和端点，验证后测试请求。SDK 添加版本/资源路径；追加 `/v1beta` 或 `/v1beta1` 不会切换传输。`google-gla:`、`google-vertex:` 和 `gemini:` 是 Cloud 别名。该路由提供 API 密钥认证，不配置 Cloud IAM/服务账户。
 
+### Chat Completions 未映射字段诊断
+
+对于使用 `OpenAIChatModel` 的 Chat Completions Model，将以下显式开启设置合并到 Model 文件：
+
+```yaml
+settings:
+  openai_include_unmapped_response_data: true
+```
+
+未知响应字段保存在原生 `ModelResponse.provider_details.unmapped` 中；流式响应存放在 `unmapped.chunks` 下。捕获的 Model recipe 和保存的 Thread 历史会保留这些值，适配器不会在后续请求中回传。该选项默认关闭，不是 Responses API 设置，也不会新增诊断面板。原始值可能敏感，并会增大保存的历史；分享状态前应检查。提供方历史修复可能随其他原生元数据一起丢弃这些字段。
+
 ### OpenAI 12 小时提示缓存
 
 对于支持该功能的 Responses API Model，将以下字段合并到 Model 文件：

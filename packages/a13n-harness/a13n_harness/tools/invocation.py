@@ -23,7 +23,7 @@ from pydantic_ai.capabilities import (
     ValidatedToolArgs,
     WrapToolExecuteHandler,
 )
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, OutputTokenLimitExceeded, ToolFailed
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
@@ -330,8 +330,17 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         from a13n_harness._capability_contract import _validate_finalized_capability_provenance
 
         _validate_finalized_capability_provenance(ctx)
-        async for event in stream:
-            yield event
+        try:
+            async for event in stream:
+                yield event
+        except OutputTokenLimitExceeded as error:
+            # Native stream failures surface here; auxiliary requests in model
+            # hooks are outside this producer boundary. The lifecycle observer
+            # separately fences recovery to failed primary model-request nodes.
+            recovery = ctx.deps._model_recovery
+            if ctx.run_id == recovery.attempt_id:
+                recovery.output_limit_error = error
+            raise
 
 
 @dataclass

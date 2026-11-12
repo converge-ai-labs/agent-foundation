@@ -11,7 +11,7 @@ from typing import Any
 from pydantic_ai import RunContext
 from pydantic_ai.agent import CallToolsNode, ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ModelContextWindowExceededError, ModelHTTPError
+from pydantic_ai.exceptions import ModelContextWindowExceededError, ModelHTTPError, OutputTokenLimitExceeded
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, HarnessError
@@ -22,6 +22,7 @@ from a13n_harness.events import (
     ModelRequestStartedPayload,
     emit_harness_event,
 )
+from a13n_harness.recovery import is_primary_output_limit
 
 LIFECYCLE_EVENT_CAPABILITY_ID = "a13n.lifecycle-events"
 
@@ -97,8 +98,13 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
         primary_request = recovery.attempt_id is not None and ctx.run_id == recovery.attempt_id
         if primary_request:
             recovery.request_error = None
+            recovery.output_limit_error = None
         try:
             result = await handler(node)
+            if isinstance(result, CallToolsNode) and is_primary_output_limit(ctx, result.model_response):
+                error = OutputTokenLimitExceeded("The primary model response reached its output token limit.")
+                recovery.output_limit_error = error
+                raise error
         except BaseException as exc:
             if primary_request:
                 recovery.request_error = exc

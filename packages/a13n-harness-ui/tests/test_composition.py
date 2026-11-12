@@ -1918,3 +1918,20 @@ async def test_retained_markdown_model_override_disables_incompatible_guardian_l
     assert child_review.guardian_credits is False
     assert child_review.model == parent_review.model
     assert child_review.configuration == parent_review.configuration
+
+
+async def test_unmapped_response_setting_survives_capture_and_reconstruction(tmp_path: Path) -> None:
+    root = _write_source(tmp_path)
+    model_path = tmp_path / "models/primary.yaml"
+    model_path.write_text(
+        model_path.read_text().replace(
+            "settings: {temperature: 0}",
+            "settings: {temperature: 0, openai_include_unmapped_response_data: true}",
+        )
+    )
+    source = await load_harness_ui_configuration(root)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    captured = type(composition).model_validate_json(composition.model_dump_json())
+    assert captured.root.model.settings["openai_include_unmapped_response_data"] is True
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(captured, subagent_operator=_UnusedOperator())
+    assert reconstructed.executable.definition.agent.model_settings["openai_include_unmapped_response_data"] is True

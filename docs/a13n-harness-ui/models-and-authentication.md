@@ -178,6 +178,17 @@ model_configuration:
 
 Save `key-gateway`, use the gateway's model ID and endpoint, validate, then test a request. The SDK appends version/resource paths; appending `/v1beta` or `/v1beta1` does not switch transports. `google-gla:`, `google-vertex:`, and `gemini:` are Cloud aliases. This route supplies API-key authentication, not Cloud IAM/service accounts.
 
+### Unmapped Chat Completions diagnostics
+
+For a Chat Completions Model using `OpenAIChatModel`, merge this opt-in setting into its Model file:
+
+```yaml
+settings:
+  openai_include_unmapped_response_data: true
+```
+
+Unknown response fields are retained in native `ModelResponse.provider_details.unmapped`; streaming stores them under `unmapped.chunks`. Captured Model recipes and saved Thread history preserve them. The adapter does not echo them in later requests. The default is off, and this is not a Responses API setting or a new diagnostics panel. Raw values may be sensitive and increase saved history size; inspect them before sharing state. Provider-history repair may discard them together with other provider-native metadata.
+
 ### OpenAI 12-hour prompt caching
 
 For a supported Responses API Model, merge these fields into its Model file:
