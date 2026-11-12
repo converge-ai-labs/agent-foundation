@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from a13n_harness.environment.envd_settings import EnvdLimits, EnvdSettings
 from a13n_harness.environment.models import EnvironmentTargetState
 from a13n_harness.environment.variables import EnvironmentVariables
 
@@ -133,20 +134,56 @@ class DockerEnvironmentConfiguration(BaseModel):
             raise ValueError("Docker mount destinations must be unique")
         if any(not key or "=" in key or "\x00" in key + value for key, value in self.environment.items()):
             raise ValueError("Invalid container environment variables")
-        if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
+        if self.execution == "native" and self.max_output_preview_bytes > self.max_output_bytes_per_stream:
             raise ValueError("Output preview exceeds the per-stream capture limit")
         if self.desktop and self.execution == "native":
             raise ValueError("Desktop capability requires envd_http or envd_ws execution")
         if self.execution != "native":
+            self.launch_limits()
             if self.disable_network:
                 raise ValueError("Envd execution requires networking")
-            if self.max_spool_bytes < 2 * self.max_output_bytes_per_stream:
-                raise ValueError("Envd spool capacity must hold both output streams")
             if self.user is not None:
                 raise ValueError("Envd images own daemon and Session identities; do not override user")
             if any(key.startswith("A13N_ENVD_") or key in {"DISPLAY", "XAUTHORITY"} for key in self.environment):
                 raise ValueError("Envd execution owns daemon configuration and display variables")
         return self
+
+    envd: EnvdSettings = Field(
+        default_factory=EnvdSettings,
+        exclude_if=lambda value: not value.overrides(),
+        description="Envd startup settings. Applies to new instances; existing instances keep their frozen settings.",
+    )
+
+    @field_validator("envd", mode="before")
+    @classmethod
+    def validate_envd_settings(cls, value: Any, info: ValidationInfo) -> Any:
+        # Saved Envd overrides keep the same Docker fallbacks across execution modes.
+        defaults = {
+            "max_file_bytes": info.data.get("max_file_bytes", cls.model_fields["max_file_bytes"].default),
+            "max_output_preview_bytes": info.data.get(
+                "max_output_preview_bytes", cls.model_fields["max_output_preview_bytes"].default
+            ),
+            "max_output_bytes_per_stream": info.data.get(
+                "max_output_bytes_per_stream", cls.model_fields["max_output_bytes_per_stream"].default
+            ),
+            "max_spool_bytes": info.data.get("max_spool_bytes", cls.model_fields["max_spool_bytes"].default),
+            "max_processes": info.data.get(
+                "max_concurrent_processes", cls.model_fields["max_concurrent_processes"].default
+            ),
+        }
+        return EnvdSettings.model_validate(value, context={"envd_limit_defaults": defaults})
+
+    def launch_limits(self) -> dict[str, int]:
+        limits = {
+            "max_file_bytes": self.max_file_bytes,
+            "max_output_preview_bytes": self.max_output_preview_bytes,
+            "max_output_bytes_per_stream": self.max_output_bytes_per_stream,
+            "max_spool_bytes": self.max_spool_bytes,
+            "max_processes": self.max_concurrent_processes,
+            **self.envd.limits.overrides(),
+        }
+        EnvdLimits.model_validate(limits)
+        return limits
 
 
 class DockerProviderStateData(EnvironmentTargetState):

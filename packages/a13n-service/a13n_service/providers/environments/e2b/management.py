@@ -24,6 +24,7 @@ from a13n_harness.providers.environment.remote_envd.managed import ManagedCreden
 from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.metrics import (
@@ -149,7 +150,7 @@ class E2BManagement(E2BReference, ManagementBackend):
                 template=config.template,
                 envs=self._envd_environment()
                 if config.envd_management == "preinstalled" and config.execution != "native"
-                else config.environment,
+                else envd_environment(dict(config.environment), config.envd),
                 timeout=config.timeout_seconds,
                 metadata=metadata,
                 allow_internet_access=config.allow_internet_access,
@@ -290,7 +291,8 @@ class E2BManagement(E2BReference, ManagementBackend):
                 "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
                 "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                 "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
-            }
+            },
+            self._configuration.envd,
         )
 
     async def _check_envd(self) -> None:

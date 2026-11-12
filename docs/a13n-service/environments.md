@@ -393,3 +393,28 @@ Relative files, the mount route and command cwd use that directory. Two threads 
 <span id="create-a-docker-desktop"></span> <span id="automatic-vercel-desktops"></span> <span id="enable-observation-and-interaction"></span> <span id="computer-coordinate-mode"></span> <span id="desktop-access-prerequisites"></span> <span id="get-and-return-desktop-control"></span> <span id="upgrade-desktop-control"></span> <span id="automatic-sprites-desktops"></span>
 
 - [Work with a desktop](computer-use.md)
+
+## Envd settings
+
+Every environment template has a shared **Envd settings** panel. Configure Device totals and per-Session budgets, file/output sizes, retention and transfer cleanup, operation/startup deadlines, Session lifetime defaults and advanced protocol sizes. Byte inputs use bytes; duration inputs use seconds and save milliseconds. Leave an input empty to inherit its displayed default. The capacity summary identifies the budgets limiting independent Session workers; it is an accounting bound, not a CPU, memory or disk guarantee.
+
+For example, Envd defaults reserve 64 transfer slots per worker Session out of 128 Device slots. Set **Max concurrent file transfers** to `32` to permit more than two workers. Other default reservations still bound admission to four. Raise Device totals, lower per-Session allowances, or combine both to fit the intended workload.
+
+API callers use the same typed recipe object:
+
+```json
+{
+  "envd": {
+    "limits": {
+      "max_concurrent_file_transfers": 32
+    },
+    "idle_timeout_ms": 3600000
+  }
+}
+```
+
+Service injects these overrides through `A13N_ENVD_CONFIG_JSON`. Do not add reserved `A13N_ENVD_*` names to the ordinary Environment variables section. Provider connection, identity, credentials and execution policy retain their own controls; Metrics Data Sources retain monitoring and export configuration. Daemon precedence, from lowest to highest, is built-in defaults, JSON file, JSON environment overlay, individual daemon variables, then explicit CLI arguments.
+
+Settings apply when a new environment is created and stay frozen for create retries and snapshot resume. To change an existing environment, save the template, create a new instance, switch the relevant bindings, and retire the old instance when its files and work are no longer needed. Native execution choices can retain these settings without starting a daemon. Local directory allocation does not start Envd; Sprites applies settings when preparing its Envd launcher. External targets remain configured by their deployment owner.
+
+Session idle timeout and maximum lifetime are daemon defaults used when the Host omits an explicit Session lifecycle. They do not control environment idle stop/deletion or override Thread Session bindings.

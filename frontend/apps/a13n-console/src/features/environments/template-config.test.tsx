@@ -432,7 +432,7 @@ it("resets advanced JSON drafts and their validation state", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "E2B");
   await user.click(
-    screen.getByRole("button", { name: "Advanced environment configuration" }),
+    screen.getByRole("button", { name: "Advanced platform settings" }),
   );
   const metadata = screen.getByRole("textbox", { name: "Metadata" });
   await user.clear(metadata);
@@ -442,7 +442,7 @@ it("resets advanced JSON drafts and their validation state", async () => {
   expect((metadata as HTMLTextAreaElement).validity.valid).toBe(false);
   await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
   await user.click(
-    screen.getByRole("button", { name: "Advanced environment configuration" }),
+    screen.getByRole("button", { name: "Advanced platform settings" }),
   );
   const reset = screen.getByRole("textbox", {
     name: "Metadata",

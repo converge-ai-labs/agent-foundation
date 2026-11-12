@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
 
+from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.models import EnvironmentTargetState
 from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -121,7 +122,7 @@ class E2BEnvironmentConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        fields = {"template", "root", "user", "allow_internet_access"}
+        fields = {"template", "root", "user", "allow_internet_access", "envd"}
         if self.environment:
             fields.add("environment")
         # Preserve the historical digest byte-for-byte for non-desktop instances.
@@ -131,6 +132,12 @@ class E2BEnvironmentConfiguration(BaseModel):
             fields.add("preparation")
         target = self.model_dump_json(include=fields)
         return hashlib.sha256(target.encode()).hexdigest()
+
+    envd: EnvdSettings = Field(
+        default_factory=EnvdSettings,
+        exclude_if=lambda value: not value.overrides(),
+        description="Envd startup settings. Applies to new instances; existing instances keep their frozen settings.",
+    )
 
 
 class E2BProviderStateData(EnvironmentTargetState):

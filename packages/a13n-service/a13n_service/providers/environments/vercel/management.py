@@ -24,6 +24,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment import envd_assets, envd_install, envd_upgrade
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.envd_readiness import wait_until_ready
 from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
@@ -59,6 +60,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         if response is None:
             if self.target is not None:
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+            environment = envd_environment(dict(self.config.environment), self.config.envd)
             raw = await self.transport().request(
                 "POST",
                 "/v3/sandboxes" if self.config.execution != "native" else "/v2/sandboxes",
@@ -84,7 +86,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                     **(
                         {"env": self._envd_environment()}
                         if self.config.execution != "native"
-                        else ({"env": self.config.environment} if self.config.environment else {})
+                        else ({"env": environment} if environment else {})
                     ),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
@@ -151,7 +153,8 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                 "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
                 "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                 "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-            }
+            },
+            self.config.envd,
         )
 
     async def _ready(self, response: SandboxResponse) -> Pending | None:
