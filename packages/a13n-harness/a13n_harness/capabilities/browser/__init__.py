@@ -206,10 +206,11 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         )
         return (
             tool_instruction("browser", reference_root=reference_root)
-            + "\n"
+            + "\n<essential-rules>\n"
             + takeover
             + "For browser_files: "
             + self.file_instructions
+            + "\n</essential-rules>"
         )
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
