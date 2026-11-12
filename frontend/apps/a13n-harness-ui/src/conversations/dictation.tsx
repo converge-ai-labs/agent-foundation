@@ -4,7 +4,11 @@ import { Microphone, Stop, X, CircleNotch } from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { dictationContext, type DictationTarget } from "./dictation-context";
+import {
+  dictationSnapshot,
+  type DictationDraft,
+  type DictationTarget,
+} from "./dictation-context";
 import type { ReplyQuote } from "./reply-quote";
 import { recordAudio, encodeAudio } from "./dictation-audio";
 import styles from "./dictation.module.css";
@@ -17,12 +21,14 @@ export function Dictation({
   quote,
   disabled,
   onActive,
+  readDraft,
   insert,
 }: {
   target: DictationTarget;
   quote?: ReplyQuote;
   disabled?: boolean;
   onActive: (active: boolean) => void;
+  readDraft: () => DictationDraft | undefined;
   insert: (text: string) => void;
 }) {
   const { t } = useTranslation();
@@ -49,6 +55,7 @@ export function Dictation({
     return () => cancelAnimationFrame(frame);
   }, [phase]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const controller = useRef<AbortController | null>(null);
   const finish = useRef<() => Promise<void>>(undefined);
   const pending = useRef<Schema<"DictationInput">>(undefined);
@@ -70,13 +77,15 @@ export function Dictation({
     setPhase("transcribing");
     setError("");
     try {
-      const text = await result(
+      const response = await result(
         client.POST("/api/dictation", { body, signal: ctl.signal }),
       );
       if (ctl.signal.aborted) return;
-      if (!text.trim()) throw new Error(t("No speech detected."));
+      if (!response.text.trim()) throw new Error(t("No speech detected."));
       reset();
-      insert(text);
+      insert(response.text);
+      if (response.warning)
+        setNotice(t("Cleanup unavailable; using the original transcript."));
     } catch (e) {
       if (!ctl.signal.aborted) {
         setError(e instanceof Error ? e.message : t("Voice input failed."));
@@ -92,12 +101,15 @@ export function Dictation({
     pending.current = undefined;
     sending.current = false;
     setError("");
+    setNotice("");
     finish.current = undefined;
     setPhase("idle");
     onActive(false);
   }
   async function start() {
     if (controller.current) return;
+    const draft = readDraft();
+    if (!draft) return;
     const ctl = new AbortController();
     controller.current = ctl;
     const fail = (e: unknown) => {
@@ -112,12 +124,13 @@ export function Dictation({
       );
     };
     setError("");
+    setNotice("");
     setLevels([]);
     firstSampleAt.current = undefined;
     onActive(true);
     setPhase("requesting");
     try {
-      const context = dictationContext(target, quote);
+      const context = dictationSnapshot(target, quote, draft);
       let sequence = 0;
       let smoothedLevel = 0;
       const stop = await recordAudio(
@@ -142,7 +155,7 @@ export function Dictation({
             audio,
             title: target.title ?? "",
             thread_id: target.threadId,
-            context,
+            ...context,
           };
           await transcribe();
         } catch (e) {
@@ -172,6 +185,11 @@ export function Dictation({
         {error && (
           <span role="alert" className={styles.error}>
             {error}
+          </span>
+        )}
+        {notice && (
+          <span role="status" className={styles.failed}>
+            {notice}
           </span>
         )}
       </>

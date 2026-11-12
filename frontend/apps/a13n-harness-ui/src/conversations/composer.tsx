@@ -1410,6 +1410,17 @@ export function Composer({
                 target={dictation}
                 disabled={preparing || pending || queuedInput?.locked}
                 onActive={setDictating}
+                readDraft={() => {
+                  const view = editor.current;
+                  if (!view) return;
+                  const { doc, selection } = view.state;
+                  const { from, to } = selection.main;
+                  return {
+                    before: doc.sliceString(0, from),
+                    selected: doc.sliceString(from, to),
+                    after: doc.sliceString(to),
+                  };
+                }}
                 insert={(text) => {
                   const view = editor.current;
                   if (!view) return;

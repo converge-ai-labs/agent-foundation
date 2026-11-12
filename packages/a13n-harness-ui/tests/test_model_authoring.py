@@ -216,7 +216,15 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
         wizard.accept("new")
     wizard.accept("codex")
     assert wizard.question.key == "model"
-    assert wizard.question.choices == ("gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol")
+    assert wizard.question.choices == (
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-5.6-terra",
+        "gpt-6-sol",
+        "gpt-5.6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-luna",
+    )
     assert wizard.question.default == "gpt-6.1-sol"
     wizard.accept("")
     while wizard.question is not None:
