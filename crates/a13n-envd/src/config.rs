@@ -1326,6 +1326,22 @@ mod tests {
     use super::{Config, parse_reverse_websocket_config};
 
     #[test]
+    fn template_settings_share_defaults_and_validation() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/template-settings.json")).unwrap();
+        assert_eq!(
+            serde_json::to_value(super::default_limits()).unwrap(),
+            fixture["defaults"]
+        );
+        for case in fixture["cases"].as_array().unwrap() {
+            let valid = serde_json::from_value::<super::DaemonLimits>(case["limits"].clone())
+                .map(|limits| super::validate_limits(&limits).is_ok())
+                .unwrap_or(false);
+            assert_eq!(valid, case["valid"].as_bool().unwrap(), "{case}");
+        }
+    }
+
+    #[test]
     fn startup_booleans_accept_only_explicit_values() {
         for value in ["0", "false"] {
             assert!(!super::parse_bool(value, "flag").unwrap());

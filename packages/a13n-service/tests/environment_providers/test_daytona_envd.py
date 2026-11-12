@@ -50,6 +50,7 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         {
             "snapshot": "envd-snapshot",
             "environment": {"APP_MODE": "agent-default"},
+            "envd": {"limits": {"max_concurrent_file_transfers": 32}},
             "desktop": True,
             "request_timeout_seconds": 1,
         }
@@ -81,6 +82,7 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         state = await manage("create")
         assert cloud.target["env"]["A13N_ENVD_DEVICE_ID"] == "env-fixture"
         assert cloud.target["env"]["APP_MODE"] == "agent-default"
+        assert json.loads(cloud.target["env"]["A13N_ENVD_CONFIG_JSON"]) == recipe.envd.overrides()
         assert cloud.target["env"]["A13N_DESKTOP"] == "true"
         assert cloud.target["env"]["A13N_DESKTOP_ACCESS"] == "false"
         assert not any("computeruse" in path for _, path in cloud.calls)

@@ -23,6 +23,7 @@ from a13n_harness.providers.environment.remote_envd.managed import ManagedCreden
 
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.metrics import (
     DeviceObservation,
     MetricsLaunch,
@@ -133,7 +134,7 @@ class E2BManagement(E2BReference, ManagementBackend):
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
-                envs=config.environment,
+                envs=envd_environment(dict(config.environment), config.envd),
                 timeout=config.timeout_seconds,
                 metadata=metadata,
                 allow_internet_access=config.allow_internet_access,
@@ -217,7 +218,8 @@ class E2BManagement(E2BReference, ManagementBackend):
                     "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
                     "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                     "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
-                }
+                },
+                self._configuration.envd,
             ),
         )
         if self._configuration.execution == "envd_ws":

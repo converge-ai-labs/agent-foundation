@@ -1,5 +1,6 @@
 """Native resource reconciliation contracts; real cluster coverage lives in the kind workflow."""
 
+import json
 from copy import deepcopy
 from importlib import import_module
 from types import SimpleNamespace
@@ -99,6 +100,7 @@ async def allocated(native, config):
 
 def test_native_recipe_preserves_settings_and_injects_only_owned_bindings(native):
     config = recipe(
+        envd={"limits": {"max_concurrent_file_transfers": 32}},
         pod_template={
             "metadata": {"labels": {"app": "agent"}},
             "spec": {
@@ -116,12 +118,14 @@ def test_native_recipe_preserves_settings_and_injects_only_owned_bindings(native
                 ],
                 "volumes": [{"name": "temporary", "emptyDir": {"medium": "Memory"}}],
             },
-        }
+        },
     )
     before = config.model_dump()
     state = initial(config, native.runtime.connection, "env_test")
     pod = render(config, native.runtime.profile, state, state.resources[-1])
     assert pod["spec"]["nodeSelector"] == {"gpu": "true"}
+    variables = {entry["name"]: entry["value"] for entry in pod["spec"]["containers"][0]["env"]}
+    assert json.loads(variables["A13N_ENVD_CONFIG_JSON"]) == config.envd.overrides()
     assert pod["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] == "1"
     assert pod["spec"]["containers"][1] == {"name": "sidecar", "image": "helper"}
     assert pod["spec"]["automountServiceAccountToken"] is False

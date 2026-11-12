@@ -2,6 +2,7 @@
 
 import asyncio
 import functools
+import json
 import shutil
 import sys
 from unittest.mock import AsyncMock
@@ -188,6 +189,7 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
                 "desktop": desktop,
                 "desktop_assistance": desktop,
                 "environment": {"APP_MODE": "agent-default"},
+                "envd": {"limits": {"max_concurrent_file_transfers": 32}, "idle_timeout_ms": 90000},
             }
         )
         provider = await definition.open_provider(
@@ -238,6 +240,9 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             assert cloud.created == 2
             assert len(cloud.environments) == 2
             assert all(item["APP_MODE"] == "agent-default" for item in cloud.environments)
+            assert all(
+                json.loads(item["A13N_ENVD_CONFIG_JSON"]) == config.envd.overrides() for item in cloud.environments
+            )
             assert "TaskSnapshotFilesystem" in cloud.calls
             assert "ImageDelete" in cloud.calls
             await provider.close()

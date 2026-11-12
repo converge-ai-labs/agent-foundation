@@ -20,6 +20,7 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.vercel import VercelRecipe
 
@@ -48,6 +49,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         if response is None:
             if self.target is not None:
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+            environment = envd_environment(dict(self.config.environment), self.config.envd)
             raw = await self.transport().request(
                 "POST",
                 "/v3/sandboxes" if self.config.execution != "native" else "/v2/sandboxes",
@@ -66,7 +68,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
-                    **({"env": self.config.environment} if self.config.environment else {}),
+                    **({"env": environment} if environment else {}),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
                     "snapshotExpiration": 0,
@@ -128,7 +130,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             program = "a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"
             # A snapshot retains disk, including stale X11 socket paths, but not
             # processes. The per-session marker fences duplicate bootstrap attempts.
-            settings = self.bootstrap_environment(settings)
+            settings = self.bootstrap_environment(settings, self.config.envd)
             script = """import json,os,subprocess,sys
 from pathlib import Path
 session,program=sys.argv[1:]

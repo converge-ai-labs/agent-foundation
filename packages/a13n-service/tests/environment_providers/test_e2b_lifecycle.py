@@ -377,7 +377,9 @@ async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, expo
 
     monkeypatch.setattr(api, "sandbox", sandbox)
     monkeypatch.setattr(E2BManagement, "_check_envd", AsyncMock())
-    config = E2BRecipe(execution="envd_http", template="team-envd")
+    config = E2BRecipe(
+        execution="envd_http", template="team-envd", envd={"limits": {"max_concurrent_file_transfers": 32}}
+    )
     values = {"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "authorization=private-write-token"} if exporter else {}
     metrics = MetricsLaunch(values)
     async with await E2B.open_provider(credential={"api_key": "test-key"}) as provider:
@@ -387,6 +389,7 @@ async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, expo
             "OTEL_EXPORTER_OTLP_METRICS_HEADERS"
         )
         assert json.loads(options["envs"]["A13N_ENVD_CONFIG_JSON"])["monitoring"] == {"sample_interval_ms": 10_000}
+        assert json.loads(options["envs"]["A13N_ENVD_CONFIG_JSON"])["limits"]["max_concurrent_file_transfers"] == 32
         if not exporter:
             assert not any(key.startswith("OTEL_") for key in options["envs"])
         assert options["envs"]["A13N_ENVD_DEVICE_ID"] == "env_metrics"

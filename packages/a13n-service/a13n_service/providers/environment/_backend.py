@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Literal
 
+from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._backend import BackendReference
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from .desktop_access import Reply, Request
+from .envd import envd_environment
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 from .websocket import WebSocketBootstrap
 
@@ -18,7 +20,8 @@ class ManagementBackend(BackendReference):
 
     websocket: WebSocketBootstrap | None = None
 
-    def bootstrap_environment(self, values: dict[str, str]) -> dict[str, str]:
+    def bootstrap_environment(self, values: dict[str, str], settings: EnvdSettings) -> dict[str, str]:
+        values = envd_environment(values, settings)
         return self.websocket.environment(values) if self.websocket is not None else values
 
     def _cache_state(self, state: EnvironmentState | None) -> None:

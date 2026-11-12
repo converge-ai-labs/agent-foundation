@@ -5,11 +5,14 @@ import {
   SettingsRow,
   Switch,
 } from "a13n-ui";
-import { Fragment, useId, useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { ConfigurationGroup } from "./configuration-group";
+import { EnvdSettings } from "./envd-settings";
 import { KubernetesConfiguration } from "./kubernetes-configuration";
 import { SPRITES_DESKTOP_NOTICE } from "./creation-progress";
 import styles from "./environments.module.css";
+import { fieldSchema } from "../../shared/forms/schema-definition";
 import { EnvironmentVariables } from "../../shared/forms/environment-variables";
 import {
   applyDockerPreset,
@@ -62,6 +65,7 @@ export function ProviderConfiguration({
   const desktopId = useId();
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
+  const [variablesOpen, setVariablesOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const [daytonaCustom, setDaytonaCustom] = useState(false);
   const daytonaDraft = useRef<string | undefined>(undefined);
@@ -129,6 +133,13 @@ export function ProviderConfiguration({
     schema?.properties && typeof schema.properties === "object"
       ? Object.entries(schema.properties)
       : [];
+  const effectiveExecution =
+    value?.execution ??
+    fieldSchema(
+      properties.find(([key]) => key === "execution")?.[1],
+      schema ?? {},
+    ).default ??
+    "native";
   const primary = schema?.["x-primary-fields"];
   const image: typeof properties = [];
   const e2bTemplate = properties.find(([key]) => key === "template")?.[1];
@@ -137,9 +148,53 @@ export function ProviderConfiguration({
   const mounts: typeof properties = [];
   const common: typeof properties = [];
   const advanced: typeof properties = [];
+  const features: typeof properties = [];
+  const integration: typeof properties = [];
+  const nativeFields = new Set([
+    "max_file_bytes",
+    "max_query_entries",
+    "max_output_preview_bytes",
+    "max_output_bytes_per_stream",
+    "max_output_bytes",
+    "max_spool_bytes",
+    "max_concurrent_processes",
+    "max_observation_bytes",
+    "max_active_observations",
+    "max_retained_output_bytes",
+    "max_value_bytes",
+    "max_buffer_bytes",
+    "max_wall_time_seconds",
+    "terminate_grace_seconds",
+  ]);
+  const integrationFields = new Set([
+    "request_timeout_seconds",
+    "python",
+    "shell",
+    "shell_profiles",
+    "allowed_executables",
+    "inherit_environment",
+    "allowed_environment_keys",
+    "allowed_ports",
+  ]);
   for (const property of properties) {
     const key = property[0];
-    if (key === "environment") continue;
+    if (["environment", "envd"].includes(key)) continue;
+    if (nativeFields.has(key)) {
+      if (
+        !String(effectiveExecution).startsWith("envd_") &&
+        value?.desktop !== true
+      )
+        integration.push(property);
+      continue;
+    }
+    if (integrationFields.has(key)) {
+      integration.push(property);
+      continue;
+    }
+    if (["desktop_assistance", "desktop_viewer_url"].includes(key)) {
+      if (value?.desktop === true) features.push(property);
+      continue;
+    }
     if (
       variant === "e2b" &&
       e2bRequiresEnvd &&
@@ -216,6 +271,210 @@ export function ProviderConfiguration({
     );
   const fieldsAvailable = !!schema && !!value;
   const jsonMode = mode === "json" || !fieldsAvailable;
+  function desktopControls() {
+    if (!value) return null;
+    return (
+      <>
+        {variant === "sprites" && (
+          <SettingsRow
+            label={t("Desktop environment")}
+            controlId={desktopId}
+            stackOnNarrow={false}
+            description={t(
+              "Install Envd, desktop dependencies and human control on each new sandbox.",
+            )}
+          >
+            <Switch
+              id={desktopId}
+              checked={value.desktop === true}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  desktop_assistance: enabled,
+                  execution: enabled
+                    ? value.execution === "envd_ws"
+                      ? "envd_ws"
+                      : "envd_http"
+                    : "native",
+                })
+              }
+            />
+          </SettingsRow>
+        )}
+        {variant === "modal" && (
+          <SettingsRow
+            label={t("Desktop environment")}
+            controlId={desktopId}
+            stackOnNarrow={false}
+            description={t(
+              "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+            )}
+          >
+            <Switch
+              id={desktopId}
+              checked={value.desktop === true}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  desktop_assistance: enabled,
+                  ...(enabled && !modalUsesCustom
+                    ? {
+                        image: "auto",
+                        cpu: value.cpu ?? 2,
+                        memory: value.memory ?? 4096,
+                        timeout_seconds: value.timeout_seconds ?? 3600,
+                      }
+                    : {}),
+                })
+              }
+            />
+          </SettingsRow>
+        )}
+        {variant === "daytona" && (
+          <SettingsRow
+            label={t("Desktop environment")}
+            controlId={desktopId}
+            stackOnNarrow={false}
+            description={t(
+              "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+            )}
+          >
+            <Switch
+              id={desktopId}
+              checked={value.desktop === true}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  desktop_assistance: enabled,
+                  ...(enabled && !daytonaUsesCustom
+                    ? {
+                        snapshot: "auto",
+                      }
+                    : {}),
+                })
+              }
+            />
+          </SettingsRow>
+        )}
+        {variant === "vercel" && (
+          <SettingsRow
+            label={t("Desktop environment")}
+            controlId={desktopId}
+            stackOnNarrow={false}
+            description={t(
+              "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+            )}
+          >
+            <Switch
+              id={desktopId}
+              checked={value.desktop === true}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  execution: enabled
+                    ? value.execution === "envd_ws"
+                      ? "envd_ws"
+                      : "envd_http"
+                    : "native",
+                  ...(enabled && value.timeout_seconds === undefined
+                    ? { timeout_seconds: 2700 }
+                    : {}),
+                  snapshot: enabled ? (value.snapshot ?? "auto") : null,
+                  desktop_assistance: enabled,
+                  ...(enabled && !vercelUsesCustom
+                    ? {
+                        snapshot: "auto",
+                      }
+                    : {}),
+                })
+              }
+            />
+          </SettingsRow>
+        )}
+        {!builtIn && variant === "docker" && desktop && (
+          <SettingsRow
+            label={t("Desktop capability")}
+            description={t(
+              "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.",
+            )}
+            controlId={desktopId}
+            stackOnNarrow={false}
+          >
+            <Switch
+              id={desktopId}
+              checked={
+                (value.desktop ??
+                  (desktop as Record<string, unknown>).default) === true
+              }
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  ...(enabled
+                    ? {
+                        execution:
+                          value.execution === "envd_ws"
+                            ? "envd_ws"
+                            : "envd_http",
+                      }
+                    : {}),
+                })
+              }
+              disabled={readOnly}
+            />
+          </SettingsRow>
+        )}
+        {variant === "e2b" && desktop && (
+          <SettingsRow
+            label={t("Desktop environment")}
+            description={t(
+              "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.",
+            )}
+            controlId={desktopId}
+            stackOnNarrow={false}
+          >
+            <Switch
+              id={desktopId}
+              checked={value.desktop === true}
+              disabled={readOnly}
+              onCheckedChange={(enabled) =>
+                change({
+                  ...value,
+                  desktop: enabled,
+                  ...(enabled
+                    ? {
+                        execution:
+                          value.execution === "envd_ws"
+                            ? "envd_ws"
+                            : "envd_http",
+                      }
+                    : { desktop_assistance: false }),
+                  ...(enabled &&
+                  (!value.template ||
+                    ["base", "desktop"].includes(String(value.template)))
+                    ? { template: "auto", desktop_assistance: true }
+                    : !enabled && value.template === "auto"
+                      ? { template: "base", execution: "native" }
+                      : {}),
+                })
+              }
+            />
+          </SettingsRow>
+        )}
+        {variant === "sprites" && value.desktop === true && (
+          <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>
+        )}
+      </>
+    );
+  }
   return (
     <FormSection
       title={t("Configuration")}
@@ -242,6 +501,7 @@ export function ProviderConfiguration({
               variant="ghost"
               onClick={() => {
                 onChange("{}");
+                setVariablesOpen(false);
                 setCustom(false);
                 setE2bCustom(false);
                 setDaytonaCustom(false);
@@ -262,41 +522,6 @@ export function ProviderConfiguration({
         </>
       }
     >
-      {presets && !jsonMode && (
-        <fieldset disabled={readOnly} className={styles.environmentKinds}>
-          <legend>{t("Environment type")}</legend>
-          <div className={styles.environmentKindChoices}>
-            {(["standard", "desktop", "custom"] as const).map((kind) => (
-              <button
-                type="button"
-                key={kind}
-                aria-pressed={selected === kind}
-                className={styles.runtimeChoice}
-                onClick={() => chooseEnvironment(kind)}
-              >
-                <span>
-                  {t(
-                    kind === "standard"
-                      ? "Standard environment"
-                      : kind === "desktop"
-                        ? "Desktop environment"
-                        : "Custom image",
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
-          <p className={styles.environmentKindDescription}>
-            {t(
-              selected === "standard"
-                ? "Run commands and work with files. The standard image and execution method are configured automatically."
-                : selected === "desktop"
-                  ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate."
-                  : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.",
-            )}
-          </p>
-        </fieldset>
-      )}
       {jsonMode || !value ? (
         <TextAreaField
           readOnly={readOnly}
@@ -308,72 +533,46 @@ export function ProviderConfiguration({
           rows={8}
         />
       ) : (
-        <Fragment key={reset}>
-          <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
-            {variant === "sprites" && (
-              <>
-                <SettingsRow
-                  label={t("Desktop environment")}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                  description={t(
-                    "Install Envd, desktop dependencies and human control on each new sandbox.",
-                  )}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={value.desktop === true}
-                    disabled={readOnly}
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        desktop_assistance: enabled,
-                        execution: enabled
-                          ? value.execution === "envd_ws"
-                            ? "envd_ws"
-                            : "envd_http"
-                          : "native",
-                      })
-                    }
-                  />
-                </SettingsRow>
-                {value.desktop === true && (
-                  <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>
+        <ConfigurationGroup key={reset} title={t("Provider platform settings")}>
+          {presets && !jsonMode && (
+            <fieldset disabled={readOnly} className={styles.environmentKinds}>
+              <legend>{t("Environment type")}</legend>
+              <div className={styles.environmentKindChoices}>
+                {(["standard", "desktop", "custom"] as const).map((kind) => (
+                  <button
+                    type="button"
+                    key={kind}
+                    aria-pressed={selected === kind}
+                    className={styles.runtimeChoice}
+                    onClick={() => chooseEnvironment(kind)}
+                  >
+                    <span>
+                      {t(
+                        kind === "standard"
+                          ? "Standard environment"
+                          : kind === "desktop"
+                            ? "Desktop environment"
+                            : "Custom image",
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className={styles.environmentKindDescription}>
+                {t(
+                  selected === "standard"
+                    ? "Run commands and work with files. The standard image and execution method are configured automatically."
+                    : selected === "desktop"
+                      ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate."
+                      : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.",
                 )}
-              </>
-            )}
+              </p>
+            </fieldset>
+          )}
+
+          <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
             {variant === "modal" && (
               <>
-                <SettingsRow
-                  label={t("Desktop environment")}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                  description={t(
-                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
-                  )}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={value.desktop === true}
-                    disabled={readOnly}
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        desktop_assistance: enabled,
-                        ...(enabled && !modalUsesCustom
-                          ? {
-                              image: "auto",
-                              cpu: value.cpu ?? 2,
-                              memory: value.memory ?? 4096,
-                              timeout_seconds: value.timeout_seconds ?? 3600,
-                            }
-                          : {}),
-                      })
-                    }
-                  />
-                </SettingsRow>
                 {value.desktop === true && (
                   <SegmentedControl
                     label={t("Modal image")}
@@ -428,32 +627,6 @@ export function ProviderConfiguration({
             )}
             {variant === "daytona" && (
               <>
-                <SettingsRow
-                  label={t("Desktop environment")}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                  description={t(
-                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
-                  )}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={value.desktop === true}
-                    disabled={readOnly}
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        desktop_assistance: enabled,
-                        ...(enabled && !daytonaUsesCustom
-                          ? {
-                              snapshot: "auto",
-                            }
-                          : {}),
-                      })
-                    }
-                  />
-                </SettingsRow>
                 {value.desktop === true && (
                   <SegmentedControl
                     label={t("Daytona snapshot")}
@@ -512,41 +685,6 @@ export function ProviderConfiguration({
             )}
             {variant === "vercel" && (
               <>
-                <SettingsRow
-                  label={t("Desktop environment")}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                  description={t(
-                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
-                  )}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={value.desktop === true}
-                    disabled={readOnly}
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        execution: enabled
-                          ? value.execution === "envd_ws"
-                            ? "envd_ws"
-                            : "envd_http"
-                          : "native",
-                        ...(enabled && value.timeout_seconds === undefined
-                          ? { timeout_seconds: 2700 }
-                          : {}),
-                        snapshot: enabled ? (value.snapshot ?? "auto") : null,
-                        desktop_assistance: enabled,
-                        ...(enabled && !vercelUsesCustom
-                          ? {
-                              snapshot: "auto",
-                            }
-                          : {}),
-                      })
-                    }
-                  />
-                </SettingsRow>
                 {value.desktop === true && (
                   <SegmentedControl
                     label={t("Vercel snapshot")}
@@ -610,109 +748,9 @@ export function ProviderConfiguration({
                 onChange={change}
               />
             )}
-            {!builtIn && execution.length > 0 && (
-              <SchemaFields
-                schema={{
-                  ...schema,
-                  properties: Object.fromEntries(execution),
-                }}
-                value={value}
-                onChange={(next) =>
-                  change({
-                    ...next,
-                    ...(next.execution === "native"
-                      ? { desktop: false, desktop_assistance: false }
-                      : {}),
-                    ...(variant === "vercel" && next.execution === "native"
-                      ? { snapshot: null }
-                      : {}),
-                    ...(variant === "e2b" &&
-                    (next.execution === "envd_http" ||
-                      next.execution === "envd_ws") &&
-                    ["base", "desktop"].includes(
-                      String(next.template ?? "base"),
-                    )
-                      ? { template: "" }
-                      : {}),
-                  })
-                }
-              />
-            )}
-            {!builtIn && variant === "docker" && desktop && (
-              <div className={styles.desktopSettings}>
-                <SettingsRow
-                  label={t("Desktop capability")}
-                  description={t(
-                    "Requires a desktop image and Envd HTTP or outbound WebSocket execution. Agent tools and mount permissions are configured separately.",
-                  )}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={
-                      (value.desktop ??
-                        (desktop as Record<string, unknown>).default) === true
-                    }
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        ...(enabled
-                          ? {
-                              execution:
-                                value.execution === "envd_ws"
-                                  ? "envd_ws"
-                                  : "envd_http",
-                            }
-                          : {}),
-                      })
-                    }
-                    disabled={readOnly}
-                  />
-                </SettingsRow>
-              </div>
-            )}
             <div
               className={variant === "e2b" ? styles.e2bSettings : "contents"}
             >
-              {variant === "e2b" && desktop && (
-                <SettingsRow
-                  label={t("Desktop environment")}
-                  description={t(
-                    "Screenshots, mouse and physical keyboard input through Envd. Literal text input is not supported on Linux.",
-                  )}
-                  controlId={desktopId}
-                  stackOnNarrow={false}
-                >
-                  <Switch
-                    id={desktopId}
-                    checked={value.desktop === true}
-                    disabled={readOnly}
-                    onCheckedChange={(enabled) =>
-                      change({
-                        ...value,
-                        desktop: enabled,
-                        ...(enabled
-                          ? {
-                              execution:
-                                value.execution === "envd_ws"
-                                  ? "envd_ws"
-                                  : "envd_http",
-                            }
-                          : { desktop_assistance: false }),
-                        ...(enabled &&
-                        (!value.template ||
-                          ["base", "desktop"].includes(String(value.template)))
-                          ? { template: "auto", desktop_assistance: true }
-                          : !enabled && value.template === "auto"
-                            ? { template: "base", execution: "native" }
-                            : {}),
-                      })
-                    }
-                  />
-                </SettingsRow>
-              )}
               {variant === "e2b" && e2bTemplate && (
                 <div className={styles.e2bTemplate}>
                   <div className={styles.e2bTemplateHeading}>
@@ -822,27 +860,14 @@ export function ProviderConfiguration({
               onChange={change}
             />
           </fieldset>
-          {properties.some(([key]) => key === "environment") && (
-            <EnvironmentVariables
-              value={
-                value.environment &&
-                typeof value.environment === "object" &&
-                !Array.isArray(value.environment) &&
-                Object.values(value.environment).every(
-                  (item) => typeof item === "string",
-                )
-                  ? (value.environment as Record<string, string>)
-                  : {}
-              }
-              readOnly={readOnly}
-              onChange={(environment) => change({ ...value, environment })}
-            />
-          )}
           {mounts.length > 0 && (
             <DisclosureSection title={t("Mounts")}>
               <fieldset disabled={readOnly}>
                 <SchemaFields
-                  schema={{ ...schema, properties: Object.fromEntries(mounts) }}
+                  schema={{
+                    ...schema,
+                    properties: Object.fromEntries(mounts),
+                  }}
                   value={value}
                   onChange={change}
                 />
@@ -851,7 +876,7 @@ export function ProviderConfiguration({
           )}
           {!builtIn && advanced.length > 0 && (
             <DisclosureSection
-              title={t("Advanced environment configuration")}
+              title={t("Advanced platform settings")}
               {...(error ? { open: true } : {})}
             >
               <fieldset disabled={readOnly}>
@@ -866,14 +891,115 @@ export function ProviderConfiguration({
               </fieldset>
             </DisclosureSection>
           )}
+          {properties.some(([key]) => key === "environment") && (
+            <DisclosureSection
+              title={t("Environment variables")}
+              keepMounted
+              open={variablesOpen}
+              onOpenChange={setVariablesOpen}
+              onInvalidCapture={() => setVariablesOpen(true)}
+            >
+              <EnvironmentVariables
+                hideLabel
+                value={
+                  value.environment &&
+                  typeof value.environment === "object" &&
+                  !Array.isArray(value.environment) &&
+                  Object.values(value.environment).every(
+                    (item) => typeof item === "string",
+                  )
+                    ? (value.environment as Record<string, string>)
+                    : {}
+                }
+                readOnly={readOnly}
+                onChange={(environment) => change({ ...value, environment })}
+              />
+            </DisclosureSection>
+          )}
           {error && (
             <p role="alert" className="text-destructive-foreground text-xs">
               {error}
             </p>
           )}
-        </Fragment>
+        </ConfigurationGroup>
       )}
-      {children}
+      {!jsonMode && (
+        <ConfigurationGroup
+          key={`runtime-${reset}`}
+          title={t("Runtime settings")}
+        >
+          {value && (
+            <>
+              <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
+                {desktopControls()}
+                {!builtIn && execution.length > 0 && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: Object.fromEntries(execution),
+                    }}
+                    value={value}
+                    onChange={(next) =>
+                      change({
+                        ...next,
+                        ...(next.execution === "native"
+                          ? { desktop: false, desktop_assistance: false }
+                          : {}),
+                        ...(variant === "vercel" && next.execution === "native"
+                          ? { snapshot: null }
+                          : {}),
+                        ...(variant === "e2b" &&
+                        (next.execution === "envd_http" ||
+                          next.execution === "envd_ws") &&
+                        ["base", "desktop"].includes(
+                          String(next.template ?? "base"),
+                        )
+                          ? { template: "" }
+                          : {}),
+                      })
+                    }
+                  />
+                )}
+
+                <SchemaFields
+                  schema={{
+                    ...schema,
+                    properties: Object.fromEntries(features),
+                  }}
+                  value={value}
+                  onChange={change}
+                />
+              </fieldset>
+              {integration.length > 0 && (
+                <DisclosureSection
+                  title={t("Advanced environment configuration")}
+                >
+                  <fieldset disabled={readOnly}>
+                    <SchemaFields
+                      schema={{
+                        ...schema,
+                        properties: Object.fromEntries(integration),
+                      }}
+                      value={value}
+                      onChange={change}
+                    />
+                  </fieldset>
+                </DisclosureSection>
+              )}
+            </>
+          )}
+          {children}
+        </ConfigurationGroup>
+      )}
+      {!jsonMode && value && schema && (
+        <EnvdSettings
+          schema={schema}
+          recipe={value}
+          onChange={change}
+          readOnly={readOnly}
+        />
+      )}
+      {jsonMode && children}
     </FormSection>
   );
 }
