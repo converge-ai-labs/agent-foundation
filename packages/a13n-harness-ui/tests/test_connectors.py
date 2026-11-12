@@ -652,11 +652,12 @@ await call_connector_tool(group={group!r}, tool='lookup', arguments={{'query': '
         assert "call_connector_tool" in names
         assert "lookup" not in names
         if codeact:
-            assert "async def call_connector_tool" in info.instructions
-            assert "async def describe_connector_tool" in info.instructions
-            assert "async def list_connector_tools" in info.instructions
-            assert "async def list_connectors" in info.instructions
-            assert "async def lookup" not in info.instructions
+            # The CodeAct catalog is a name index: one backticked callable name per line.
+            assert "\n`call_connector_tool`" in info.instructions
+            assert "\n`describe_connector_tool`" in info.instructions
+            assert "\n`list_connector_tools`" in info.instructions
+            assert "\n`list_connectors`" in info.instructions
+            assert "\n`lookup`" not in info.instructions
             assert f"{group}__lookup" not in info.instructions
         returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
         if returns:
