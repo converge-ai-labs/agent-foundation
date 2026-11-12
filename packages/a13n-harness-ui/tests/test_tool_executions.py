@@ -260,6 +260,9 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
     calls = 0
     stage = 0
     execution_id = None
+    from a13n_harness_ui.external_context import ExternalContext
+
+    observed_contexts = []
 
     async def slow() -> int:
         nonlocal calls
@@ -307,11 +310,17 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
             yield "Result received."
 
     async def resolve(self, context, model_id):
+        observed_contexts.append(
+            (context.deps.run_id, dict(context.deps.metadata), dict(context.deps.request_context.headers))
+        )
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         thread = await app.create_thread()
+        await app.set_thread_external_context(
+            thread_id=thread.thread_id, context=ExternalContext(metadata={"tenant": "one"}, headers={"X-Tenant": "one"})
+        )
         original_deliver = app._tool_executions.deliver
 
         async def observe_delivery(thread_id, prompt, execution_ids):
@@ -331,6 +340,9 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         assert execution_id is not None
         record = await app._tool_executions.runtime.info(thread.thread_id, execution_id)
         assert record.status == "running" and record.foreground_released
+        await app.set_thread_external_context(
+            thread_id=thread.thread_id, context=ExternalContext(metadata={"tenant": "two"}, headers={"X-Tenant": "two"})
+        )
         finish.set()
         with fail_after(10):
             await delivered.wait()
@@ -344,6 +356,12 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         result = await app._tool_executions.runtime.result(thread.thread_id, execution_id)
         assert result.record.delivery_acknowledged
         assert calls == 1 and stage == 4
+        contexts_by_run = {run_id: (metadata, headers) for run_id, metadata, headers in observed_contexts}
+        assert list(contexts_by_run.values()) == (
+            [({"tenant": "one"}, {"x-tenant": "one"})]
+            if complete_while_active
+            else [({"tenant": "one"}, {"x-tenant": "one"}), ({"tenant": "two"}, {"x-tenant": "two"})]
+        )
         transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
         hints = [
             part
@@ -434,6 +452,9 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
     resume_results = []
     continuation_authority = []
     execution_id = None
+    from a13n_harness_ui.external_context import ExternalContext
+
+    observed_contexts = []
 
     async def slow() -> int:
         await finish.wait()
@@ -508,11 +529,17 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             yield "Child received result."
 
     async def resolve(self, context, model_id):
+        observed_contexts.append(
+            (context.deps.thread_id, dict(context.deps.metadata), dict(context.deps.request_context.headers))
+        )
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        await app.set_thread_external_context(
+            thread_id=thread.thread_id, context=ExternalContext(metadata={"tenant": "one"}, headers={"X-Tenant": "one"})
+        )
         if change == "stop_deferred":
             from a13n_harness import DeferredToolCall, DeferredToolRequests, HarnessRunResult
             from a13n_harness.state import encode_messages
@@ -582,6 +609,10 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
         assert await app.tool_executions(thread.thread_id) == ()
         assert len(await app.tool_executions(child_id)) == 1
         retained = app._subagent_operator._completion_continuations[child_id]
+        assert any(item == (child_id, {"tenant": "one"}, {"x-tenant": "one"}) for item in observed_contexts)
+        await app.set_thread_external_context(
+            thread_id=child_id, context=ExternalContext(metadata={"tenant": "two"}, headers={"X-Tenant": "two"})
+        )
         if change == "source":
             agent = tmp_path / "agents/main.yaml"
             agent.write_text(agent.read_text() + "instructions: Changed authority.\n")
@@ -621,6 +652,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             assert len(page.executions) == 2
             assert {item.child_thread_id for item in page.executions} == {child_id}
             assert continuation_authority == [(retained.identity, retained.usage_limits)]
+            assert observed_contexts[-1] == (child_id, {"tenant": "two"}, {"x-tenant": "two"})
             assert child_id not in app._subagent_operator._completion_continuations
             assert (await app._tool_executions.runtime.info(child_id, execution_id)).delivery_acknowledged
         else:
@@ -674,6 +706,9 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, offered, resumed = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}
+    from a13n_harness_ui.external_context import ExternalContext
+
+    observed_contexts = []
 
     async def slow() -> int:
         await finish.wait()
@@ -701,6 +736,9 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
             yield "Finished."
 
     async def resolve(self, context, model_id):
+        observed_contexts.append(
+            (context.deps.thread_id, dict(context.deps.metadata), dict(context.deps.request_context.headers))
+        )
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
@@ -713,6 +751,9 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
 
         app._tool_executions.deliver = defer_delivery
         parent = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        await app.set_thread_external_context(
+            thread_id=parent.thread_id, context=ExternalContext(metadata={"tenant": "one"}, headers={"X-Tenant": "one"})
+        )
         receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Delegate")
         with fail_after(10):
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
@@ -722,6 +763,10 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
         head = await app._store.child_executions.get(first.execution_id)
         checkpoint = await app._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
         assert checkpoint.authority is not None
+        assert observed_contexts[-1] == (child_id, {"tenant": "one"}, {"x-tenant": "one"})
+        await app.set_thread_external_context(
+            thread_id=child_id, context=ExternalContext(metadata={"tenant": "two"}, headers={"X-Tenant": "two"})
+        )
         if change == "cache_replaced":
             operator = app._subagent_operator
             admitted = operator._completion_continuations.pop(child_id)
@@ -797,6 +842,7 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
             restored = await successor._store.objects.read_model(latest.selected_checkpoint, StoredChildCheckpoint)
             assert latest.execution_id != first.execution_id
             assert restored.authority == checkpoint.authority
+            assert observed_contexts[-1] == (child_id, {"tenant": "two"}, {"x-tenant": "two"})
             assert not await successor._store.tool_executions.pending(child_id)
         else:
             if change in {"archive_during_prepare", "parent_during_prepare", "child_during_prepare"}:

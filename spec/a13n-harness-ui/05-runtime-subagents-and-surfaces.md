@@ -88,6 +88,16 @@ When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's backgr
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
+## External Runtime Context
+
+Trusted Python integrations use `HarnessUiApp.set_thread_external_context(thread_id=..., context=ExternalContext(...))` to replace a Thread's durable business data. `ExternalContext.metadata` accepts JSON values for runtime consumers; `headers` uses the shared Harness `RequestContext` normalization. `ExternalContext()` explicitly clears both maps. This is a Host integration API, not an agent tool or a browser configuration control.
+
+Root admission captures the latest head once, independently of its selected `HarnessState`; execution uses that detached value in `RunBindings.metadata` and `RunBindings.request_context`. Each new async child stream, including explicit resume, tool-completion wake and planned restart, reads its own Thread's latest head. Initial delegation seeds that head from the parent Run's admitted snapshot. Inline children retain Harness's normal parent-snapshot inheritance.
+
+Updates affect future Runs. Active Runs, their internal model retries and steered completion inputs retain their current bindings. A stale tool or child completion can select its retained execution authority but cannot restore the originating Run's context over the latest head. Existing generation, identity, roster, configuration and usage guards remain in force. Storage and lifecycle ownership belong to [External Business Context](03-local-storage-and-recovery.md#external-business-context).
+
+Headers and metadata are available to trusted capabilities and adapters. They are not automatically rendered into model input, copied into shell environments or forwarded through configured UI MCP transports; an adapter's forwarding policy remains separate.
+
 ## Retained Tool Executions
 
 The App holds Harness's `ToolExecutionRuntime` across root and child Runs and supplies a durable store for execution records, results, native recovery state and completion hints. The UI adapter owns local execution/Session ownership locks, recovery scheduling, observation invalidation and completion eligibility through the existing root/child execution lifecycle; it does not implement another executor. Each Run captures `tools.execution.mode` (default `inline`) and `foreground_wait_seconds` (default five seconds, used by process-backed Shell in both modes and by other eligible tools in opt-in `auto` mode). The App supplies the runtime binding for immediate steering even when automatic background execution is disabled. Older saved compositions without this field reconstruct the inline default. Original operations keep their captured configuration and exact Thread authority.
