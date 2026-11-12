@@ -146,6 +146,7 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.file_context import (
     context_text,
 )
@@ -2397,6 +2398,17 @@ class HarnessUiApp:
                 )
             )
         return parts
+
+    async def set_thread_external_context(self, *, thread_id: str, context: ExternalContext) -> None:
+        """Replace durable business context for future Runs, including async wakes.
+
+        Existing Runs retain their admitted snapshot. This trusted integration API
+        does not alter Thread configuration, credentials or authorization.
+        """
+        context = context.model_copy(deep=True)
+        async with self._operation():
+            await self._threads.get(thread_id)
+            await self._store.threads.replace_external_context(thread_id, context)
 
     async def submit_thread(
         self,

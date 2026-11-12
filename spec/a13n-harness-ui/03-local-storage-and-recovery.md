@@ -21,6 +21,7 @@ The store supports local restart, inspection and native Shell supervision recove
 | Thread scratch and submitted attachments                                        | Data-root Thread directories          | Disposable working files and retained input files                                              |
 | Accepted configuration generation and resource indexes                          | SQLite plus immutable object          | Current complete validated file and plugin generation                                          |
 | Thread metadata head, sticky configuration head, and initial-state reference    | SQLite                                | Identity, mutable presentation, defaults, and first-Run bootstrap                              |
+| Thread external business context head                                           | SQLite                                | Latest private runtime metadata and headers, independent of history and execution authority    |
 | Empty initial `HarnessState`                                                    | Immutable object                      | Harness-generated Thread identity before any selected Run                                      |
 | Resolved Run composition                                                        | Immutable object                      | Exact behavior and dependency provenance captured for one Run                                  |
 | Root or child continuation bundle                                               | Immutable object                      | Exact selected `HarnessState` resume authority                                                 |
@@ -40,6 +41,14 @@ The store supports local restart, inspection and native Shell supervision recove
 Host-local API keys and native Copilot OAuth grants have independent private files outside SQLite and immutable objects. Copilot's file also owns its nonsecret account/source binding; shared CLI tokens remain in the selected external source. [Model Authentication](02a-model-authentication-and-account-stores.md) owns their schemas, publication, logout, and durable grant-coordination semantics. Live credential objects remain process-local; neither native nor shared secrets enter continuation storage.
 
 [Live Mode](10-live-mode.md#persistence-and-api) adds a unique configuration-root Live Thread scope and independent immutable voice-transcript head. Speech history remains separate from Harness continuation and never authorizes task or report replay.
+
+## External Business Context
+
+Each Thread has one private SQLite `ExternalContext` head containing JSON `metadata` and string `headers`. Legacy rows without a head read as empty. The trusted App integration API replaces the complete value; an empty value clears it. Omitting an update preserves the latest value across Runs and App restarts. A successful context update commits independently of prompt admission and can occur while a Run is active.
+
+This head is independent of presentation metadata versions, sticky configuration, selected history and execution authority. Clearing or selecting a Harness checkpoint does not clear or restore external context. Ordinary Thread projections, model prompts and inspection results do not expose it automatically. Credentials, identity and authorization retain their existing owners.
+
+The runtime binds a detached snapshot to each new root or child Run as described in [External Runtime Context](05-runtime-subagents-and-surfaces.md#external-runtime-context). Completion and checkpoint publication never write this head. A newly delegated child starts with its parent Run's snapshot and then owns its own Thread-local context; later parent updates do not mutate an already-created child. Removing the Thread removes its context with the row.
 
 ## Latest Root Execution
 

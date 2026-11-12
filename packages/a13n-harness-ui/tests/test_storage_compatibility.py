@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261111_f196302d868f_retain_latest_thread_external_context.py").unlink()
     (newer / "versions/20261111_2e9f82450690_add_notification_scope_and_language.py").unlink()
     (newer / "versions/20261111_2444030a5191_retain_configured_routes_for_chat_usage.py").unlink()
     (newer / "versions/20261110_7147a04d1d58_add_bot_notes_and_unified_automatic_.py").unlink()
@@ -104,6 +105,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_schema_version VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN last_execution_json TEXT"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN external_context_json TEXT"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
@@ -262,7 +264,10 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
         migrator.upgrade()
         migrator.verify_current()
         with engine.connect() as connection:
-            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == before
+            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
+                **before,
+                "external_context_json": None,
+            }
             assert "output_comment" not in inspect(connection).get_table_names()
             assert "output_comment_tombstone" not in inspect(connection).get_table_names()
         with monkeypatch.context() as patch:
@@ -311,6 +316,7 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
                 **before,
                 "memory_scope": None,
                 "last_execution_json": None,
+                "external_context_json": None,
             }
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:
