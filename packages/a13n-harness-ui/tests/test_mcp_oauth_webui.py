@@ -202,8 +202,17 @@ async def test_oauth_reconciliation_holds_configuration_acceptance_lock(tmp_path
         assert (await app.mcp_authorization_recipe(target)).oauth_binding == recipe.oauth_binding
 
 
-@pytest.mark.parametrize("kind", ["linear", "notion"])
-async def test_thin_oauth_provider_native_and_typed_paths_share_account(tmp_path, monkeypatch, kind):
+@pytest.mark.parametrize(
+    ("kind", "settings", "endpoint", "scope"),
+    [
+        ("linear", {}, "/mcp", None),
+        ("linear", {"access": "read_only"}, "/mcp/readonly", "read"),
+        ("notion", {}, "/mcp", None),
+    ],
+)
+async def test_thin_oauth_provider_native_and_typed_paths_share_account(
+    tmp_path, monkeypatch, kind, settings, endpoint, scope
+):
     import hashlib
     import time
 
@@ -219,7 +228,6 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(tmp_path
 
     root = _write_configuration(tmp_path)
     root.write_text(root.read_text() + "tools: {enable_codeact: false, execution: {mode: inline}}\n")
-    endpoint = "/mcp/readonly" if kind == "linear" else "/mcp"
     server = FastMCP("oauth-native")
     calls = []
     authenticated = []
@@ -266,7 +274,7 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(tmp_path
         async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
             await ready(app)
             await app.configure_connector(
-                ConnectorConfiguration(connector_id=connector_id, kind=kind), expected_version=None
+                ConnectorConfiguration(connector_id=connector_id, kind=kind, settings=settings), expected_version=None
             )
             controller = app.connectors()._controllers[connector_id]
             assert await controller.capture() is None
@@ -274,7 +282,7 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(tmp_path
             assert setup.step.actions[0].kind == "oauth"
             recipe = await controller.authorization_recipe()
             assert recipe.transport.url.endswith(endpoint)
-            assert recipe.transport.oauth.scope == ("read" if kind == "linear" else None)
+            assert recipe.transport.oauth.scope == scope
             private = bundle(expires_at=time.time() + 600).model_copy(update={"resource_url": recipe.transport.url})
             private.tokens.access_token = "fictional-native-access"
             await app._mcp_oauth.repository.save(recipe.oauth_binding, private, expected_version=0)
@@ -295,3 +303,52 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(tmp_path
             await app.delete_connector(connector_id, expected_version=1)
             with pytest.raises(OAuthError):
                 await app._mcp_oauth.repository.get(recipe.oauth_binding)
+
+
+@pytest.mark.parametrize("initial", ["read_write", "read_only"])
+async def test_linear_access_change_requires_fresh_authorization(tmp_path, initial):
+    import time
+
+    from a13n_harness_ui.connector_models import ConnectorConfiguration
+    from a13n_harness_ui.connectors.linear import Settings
+
+    from .test_mcp_oauth import bundle
+
+    assert Settings().access == "read_write"
+    assert Settings.model_json_schema()["properties"]["access"]["default"] == "read_write"
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        await ready(app)
+        candidate = ConnectorConfiguration(connector_id="connector-linear", kind="linear", settings={"access": initial})
+        await app.configure_connector(candidate, expected_version=None)
+        controller = app.connectors()._controllers[candidate.connector_id]
+        recipe = await controller.authorization_recipe()
+        private = bundle(expires_at=time.time() + 600).model_copy(update={"resource_url": recipe.transport.url})
+        await app._mcp_oauth.repository.save(recipe.oauth_binding, private, expected_version=0)
+        assert (await controller.status()).state == "ready"
+        assert await controller.capture() is not None
+
+        selected = "read_only" if initial == "read_write" else "read_write"
+        await app.configure_connector(
+            candidate.model_copy(update={"settings": {"access": selected}}), expected_version=1
+        )
+        controller = app.connectors()._controllers[candidate.connector_id]
+        replacement = await controller.authorization_recipe()
+        assert replacement.transport.url == (
+            "https://mcp.linear.app/mcp/readonly" if selected == "read_only" else "https://mcp.linear.app/mcp"
+        )
+        assert replacement.transport.oauth.scope == ("read" if selected == "read_only" else None)
+        assert replacement.oauth_binding != recipe.oauth_binding
+        with pytest.raises(OAuthError):
+            await app._mcp_oauth.repository.get(recipe.oauth_binding)
+        assert (await controller.status()).state == "unconfigured"
+        assert await controller.capture() is None
+        setup = await app.begin_connector_setup(candidate.connector_id)
+        assert setup.step.actions[0].kind == "oauth"
+        assert setup.step.actions[0].label == "Connect"
+        assert ("Read-only" if selected == "read_only" else "Read and write") in setup.step.description
+
+        private = private.model_copy(update={"resource_url": replacement.transport.url})
+        await app._mcp_oauth.repository.save(replacement.oauth_binding, private, expected_version=0)
+        assert (await controller.status()).state == "ready"
+        assert await controller.capture() is not None

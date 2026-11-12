@@ -1,4 +1,4 @@
-"""Linear's official Remote MCP with read-only access by default."""
+"""Linear's official Remote MCP with selectable read/write or read-only access."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -19,7 +19,7 @@ from .sdk import Context, Controller, Definition, SetupFlow
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     access: Literal["read_only", "read_write"] = Field(
-        default="read_only", title="Access", description="Changing access requires reconnecting."
+        default="read_write", title="Access", description="Changing access requires reconnecting."
     )
 
 
@@ -31,7 +31,7 @@ class Linear(Definition):
             key="linear",
             name="Linear",
             brand="linear",
-            description="Issues, projects and teams. Read-only by default.",
+            description="Issues, projects and teams. Read and write by default.",
             configuration_schema=Settings.model_json_schema(),
             setup_intents=("configure", "test"),
         )
