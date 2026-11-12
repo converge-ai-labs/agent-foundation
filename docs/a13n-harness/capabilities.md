@@ -199,7 +199,7 @@ The model does not reproduce base64. Permissions, reviews, approvals and managed
 
 When CodeAct is also selected, image results become JSON descriptors with the same `base64_reference`. A `ToolReturn` carrying supplemental images exposes `{"return_value": ..., "images": [...]}` to code. Forward the reference to an eligible tool; CodeAct remains subject to its normal budgets.
 
-Only Host-held image bytes are reusable. URL/provider-only handles receive no reference and are not fetched by this capability. Images beyond the configured count or byte limits are reported as omitted. No public URL, Environment mount or image re-generation is required.
+Only Host-held image bytes are reusable. URL/provider-only handles receive no reference and are not fetched by this capability. Admission considers current/newest prompts before older history, preserving image order within each prompt. Already issued references in the same logical Run and approved pending bindings retain their capacity; newer content does not evict them. Images beyond the configured count or byte limits are reported as omitted. No public URL, Environment mount or image re-generation is required.
 
 ## Native Image Generation with Saving
 

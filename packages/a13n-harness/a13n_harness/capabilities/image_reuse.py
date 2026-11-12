@@ -197,11 +197,14 @@ class ImageReuseCapability(AbstractModelContextCapability):
         # Native approval dispatch precedes the next model decision. Unconsumed
         # exceptions must never authorize a later model-generated call ID.
         self._resume_calls.clear()
-        # ctx.messages is canonical history, not an adapter's resized/pruned projection.
-        for message_index, message in enumerate(ctx.messages):
+        # Admit current/newest canonical prompts before older history. Retained
+        # same-Run and approved-pending images stay in place; never evict issued refs.
+        for message_index in reversed(range(len(ctx.messages))):
+            message = ctx.messages[message_index]
             if not isinstance(message, ModelRequest):
                 continue
-            for part_index, part in enumerate(message.parts):
+            for part_index in reversed(range(len(message.parts))):
+                part = message.parts[part_index]
                 if not isinstance(part, UserPromptPart):
                     continue
                 items = prompt_content(message, part_index)

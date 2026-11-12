@@ -685,6 +685,75 @@ async def test_image_count_and_aggregate_retention_bounds(limits) -> None:
     assert len(state["images"]) == 1 and state["omitted"] == 1
 
 
+@pytest.mark.parametrize("limits", [ImageReuseLimits(max_images=1), ImageReuseLimits(max_total_bytes=len(_DATA))])
+async def test_fresh_run_admits_current_input_before_older_history(limits) -> None:
+    async def finish(messages, info):
+        yield "done"
+
+    first, _, _ = _build(limits=limits, model=FunctionModel(stream_function=finish))
+    saved = await first.run([BinaryContent(_DATA, media_type="image/png")])
+    old_reference = saved.state.agent_context_state.entries["a13n.image-reuse"].data["images"][0]["reference"]
+    current = b"x" * len(_DATA)
+    second, _, sinks = _build(limits=limits, model=_single_call_model(lambda messages: {"image": _refs(messages)[-1]}))
+    result = await second.run([BinaryContent(current, media_type="image/png")], previous_state=saved.state)
+    assert result.status == "completed" and sinks == [current]
+    state = result.state.agent_context_state.entries["a13n.image-reuse"].data
+    assert len(state["images"]) == 1 and state["omitted"] is True
+    assert state["images"][0]["reference"] != old_reference
+
+
+async def test_fresh_run_admits_newest_history_when_current_input_has_no_image() -> None:
+    async def finish(messages, info):
+        yield "done"
+
+    first, _, _ = _build(model=FunctionModel(stream_function=finish))
+    oldest = await first.run([BinaryContent(_DATA, media_type="image/png")])
+    newest_bytes = b"x" * len(_DATA)
+    newest = await first.run([BinaryContent(newest_bytes, media_type="image/png")], previous_state=oldest.state)
+    next_run, _, sinks = _build(
+        limits=ImageReuseLimits(max_images=1),
+        model=_single_call_model(lambda messages: {"image": _refs(messages)[-1]}),
+    )
+    result = await next_run.run("send the newest image", previous_state=newest.state)
+    assert result.status == "completed" and sinks == [newest_bytes]
+    state = result.state.agent_context_state.entries["a13n.image-reuse"].data
+    assert len(state["images"]) == 1 and state["omitted"] is True
+
+
+@pytest.mark.parametrize("limits", [ImageReuseLimits(max_images=1), ImageReuseLimits(max_total_bytes=len(_DATA))])
+async def test_same_logical_run_keeps_issued_reference_when_new_input_exceeds_capacity(limits) -> None:
+    async def finish(messages, info):
+        yield "done"
+
+    bindings = RunBindings.embedded(context_recovery_scope_id="image-priority-same-run")
+    first, _, _ = _build(limits=limits, model=FunctionModel(stream_function=finish))
+    saved = await first.run([BinaryContent(_DATA, media_type="image/png")], bindings=bindings)
+    reference = saved.state.agent_context_state.entries["a13n.image-reuse"].data["images"][0]["reference"]
+    resumed, _, sinks = _build(limits=limits, model=_single_call_model({"image": reference}))
+    result = await resumed.run(
+        [BinaryContent(b"x" * len(_DATA), media_type="image/png")], previous_state=saved.state, bindings=bindings
+    )
+    assert result.status == "completed" and sinks == [_DATA]
+    state = result.state.agent_context_state.entries["a13n.image-reuse"].data
+    assert len(state["images"]) == 1 and state["omitted"] is True
+    assert state["images"][0]["reference"] == reference
+
+
+async def test_approved_successor_keeps_pending_image_when_retention_is_full() -> None:
+    executable, _, sinks = _build(approval=True, limits=ImageReuseLimits(max_images=1))
+    pending = await executable.run(
+        [BinaryContent(_DATA, media_type="image/png"), BinaryContent(b"other", media_type="image/png")]
+    )
+    assert pending.status == "suspended" and not sinks
+    assert pending.state.agent_context_state.entries["a13n.image-reuse"].data["omitted"] is True
+    restored = HarnessState.model_validate_json(pending.state.model_dump_json())
+    resumed = await executable.run(
+        previous_state=restored,
+        deferred_resume=DeferredToolResume(pending.deferred, pending.deferred.build_results(approve_all=True)),
+    )
+    assert resumed.status == "completed" and sinks == [_DATA]
+
+
 async def test_same_logical_run_restores_reference_after_original_leaves_active_history() -> None:
     from pydantic_ai.messages import ModelResponse, TextPart
 
