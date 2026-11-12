@@ -108,7 +108,6 @@ async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
     [
         ({"model": "model-unknown"}, "allowed_models"),
         ({"thinking": "max"}, "thinking"),
-        ({"instructions": " "}, "blank"),
     ],
 )
 async def test_spawn_rejects_invalid_admission(tmp_path, monkeypatch, arguments, error):
@@ -451,17 +450,18 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
         )
         child_head = await app._store.child_executions.get(child_id)
         assert child_head.status == "succeeded" and grandchild_id is not None
-        original = app._subagent_operator.deliver_subagent_input
+        original = app._subagent_operator._deliver_parent
         delivered = []
 
-        async def observe(target, prompt, **kwargs):
-            handled = await original(target, prompt, **kwargs)
-            delivered.append((target, str(prompt)))
-            if "GRANDCHILD_RESULT" in str(prompt):
-                result_routed.set()
+        async def observe(target, prompt, execution_ids):
+            handled = await original(target, prompt, execution_ids)
+            if grandchild_id in execution_ids:
+                delivered.append((target, str(prompt)))
+                if "GRANDCHILD_RESULT" in str(prompt):
+                    result_routed.set()
             return handled
 
-        monkeypatch.setattr(app._subagent_operator, "deliver_subagent_input", observe)
+        monkeypatch.setattr(app._subagent_operator, "_deliver_parent", observe)
         release.set()
         with fail_after(10):
             await result_routed.wait()

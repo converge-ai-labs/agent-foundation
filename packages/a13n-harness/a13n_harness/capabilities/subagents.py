@@ -245,11 +245,8 @@ class SubagentOperatorContext:
     parent_run_id: str
     parent_agent_instance_id: str
     host_refs: Mapping[str, str]
-    result_delivery: SubagentResultDelivery = "automatic"
 
     def __post_init__(self) -> None:
-        if self.result_delivery not in {"automatic", "manual"}:
-            raise ValueError("result_delivery must be automatic or manual")
         values = (self.parent_thread_id, self.parent_run_id, self.parent_agent_instance_id)
         if any(not isinstance(value, str) or not value.strip() for value in values):
             raise ValueError("subagent operator parent correlation must be non-blank")
@@ -443,7 +440,7 @@ class SubagentCapability(AbstractCapability[AgentContext]):
             )
         else:
             state = _inline_subagents(await ctx.deps.state.snapshot()) or InlineSubagentCollectionState()
-            replacement = _InlineSubagentCapability(context=ctx.deps, state=state, result_delivery=self.result_delivery)
+            replacement = _InlineSubagentCapability(context=ctx.deps, state=state)
         ctx.deps._record_run_capability(SUBAGENT_CAPABILITY_ID, replacement)
         return replacement
 
@@ -472,12 +469,10 @@ class _SubagentActiveCapability(SubagentCapability):
 
 @dataclass(init=False)
 class _InlineSubagentCapability(_SubagentActiveCapability):
-    def __init__(
-        self, *, context: AgentContext, state: InlineSubagentCollectionState, result_delivery: SubagentResultDelivery
-    ) -> None:
+    def __init__(self, *, context: AgentContext, state: InlineSubagentCollectionState) -> None:
         from a13n_harness.toolsets.delegation import DelegationToolset
 
-        super().__init__(context=context, async_enabled=False, operator=None, result_delivery=result_delivery)
+        super().__init__(context=context, async_enabled=False, operator=None)
         self._toolset = DelegationToolset(owner=self, context=context, state=state)
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:

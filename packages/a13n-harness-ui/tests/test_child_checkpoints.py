@@ -310,5 +310,5 @@ async def test_unavailable_and_recorded_terminal_child_keep_readable_progress(tm
                     child_run_id="rejected-run",
                     run_composition=head.run_composition,
                 )
-            with pytest.raises(ThreadError, match="unavailable"):
-                await successor.saved_child_outputs(parent.thread_id, head.execution_id)
+            saved = await successor.saved_child_outputs(parent.thread_id, head.execution_id)
+            assert "SURVIVING_PROGRESS" in saved.model_dump_json()

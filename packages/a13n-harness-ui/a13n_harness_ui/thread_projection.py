@@ -88,6 +88,9 @@ type RootActivityLookup = Callable[[str], Awaitable[RootActivityView]]
 type RootActivityBatchLookup = Callable[[tuple[str, ...]], Awaitable[Mapping[str, RootActivityView]]]
 
 
+_ACTIVITY_SOURCES = {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
+
+
 class _ThreadCursor(SurfaceModel):
     memory: bool = False
     version: Literal["1"] = "1"
@@ -456,41 +459,11 @@ class ThreadProjectionService:
             next_cursor=next_cursor,
         )
 
-    async def tool_execution_input(
-        self, thread_id: str, execution_id: str, tool_call_id: str
-    ) -> tuple[str | None, bool]:
-        """Find the original call paired with this exact retained foreground receipt."""
+    async def tool_execution_input(self, thread_id: str, tool_call_id: str) -> tuple[str | None, bool]:
+        """Read the latest retained call with the execution tool-call identity."""
         thread = await self._required_thread(thread_id)
         header = await self._inspection_header(thread)
-        candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, execution_id)
-        entries = await to_thread.run_sync(
-            lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
-        )
-        position: int | None = None
-        for entry in entries:
-            for part in entry.parts:
-                if part.kind != "tool_result" or part.tool_call_id != tool_call_id:
-                    continue
-                value = part.value
-                if isinstance(value, str):
-                    try:
-                        value = json.loads(value)
-                    except ValueError:
-                        continue
-                if (
-                    isinstance(value, dict)
-                    and value.get("type") == "tool_execution_receipt"
-                    and value.get("execution_id") == execution_id
-                ):
-                    position = entry.position
-                    break
-            if position is not None:
-                break
-        if position is None:
-            return None, False
-        candidates = await self._store.inspections.matching_entries(
-            thread_id, header.source_id, tool_call_id, through=position
-        )
+        candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, tool_call_id)
         entries = await to_thread.run_sync(
             lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
         )
@@ -918,8 +891,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source")
-            in {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
+            or metadata.get("a13n.steering-source") in _ACTIVITY_SOURCES
         ):
             continue
         visible = [
@@ -927,8 +899,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             for item in request_input_content(message)
             if (projected := project_input_content(item)) is not None
             and projected[1].display
-            and (projected[1].model_extra or {}).get("a13n.steering-source")
-            not in {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
+            and (projected[1].model_extra or {}).get("a13n.steering-source") not in _ACTIVITY_SOURCES
         ]
         if not visible:
             continue

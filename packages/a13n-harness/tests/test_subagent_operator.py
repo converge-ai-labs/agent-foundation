@@ -595,7 +595,7 @@ async def test_host_resume_is_opt_in_and_declared_wire_shape_is_unchanged() -> N
 
 
 @pytest.mark.parametrize("mode", ["automatic", "manual"])
-async def test_result_delivery_reaches_run_guidance_and_host_context(mode):
+async def test_result_delivery_reaches_run_guidance(mode):
     operator = RecordingSubagentOperator()
     capability = SubagentCapability(async_enabled=True, operator=operator, result_delivery=mode)
 
@@ -618,4 +618,4 @@ async def test_result_delivery_reaches_run_guidance_and_host_context(mode):
     result = await executable.run("start", bindings=_bindings())
     assert result.output_or_raise() == "done"
     assert capability.result_delivery == mode
-    assert operator.plans[0].parent.result_delivery == mode
+    assert not hasattr(operator.plans[0].parent, "result_delivery")

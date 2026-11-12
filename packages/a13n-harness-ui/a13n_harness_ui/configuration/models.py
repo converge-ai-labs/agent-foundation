@@ -1047,7 +1047,10 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
         for model_id in self.document.subagents.dynamic.allowed_models:
-            _require_reference(model_id, self.models, "subagents.dynamic.allowed_models")
+            if model_id not in self.models:
+                raise _MissingModelReferenceError(
+                    path=self.sources[0].relative_path, field="subagents.dynamic.allowed_models", model_id=model_id
+                )
         for model in self.models.values():
             auth = model.authentication
             if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):

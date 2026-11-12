@@ -203,7 +203,6 @@ class ResolvedRunComposition(CompositionModel):
     )
     tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
-    is_subagent: bool = False
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None

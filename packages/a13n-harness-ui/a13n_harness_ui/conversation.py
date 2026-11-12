@@ -63,6 +63,7 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
             "background_process",
             "async_subagent",
             "envd_session",
+            "tool_execution",
         }:
             continue
         attachment = extra.get("harness_ui")

@@ -528,7 +528,6 @@ class HarnessUiApp:
         tool_executions.deliver_subagent = self._deliver_subagent_input
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
-        subagent_operator.deliver = self._deliver_subagent_input
         self._live_hub = live_hub
         self._summary_hub = summary_hub
         self._copilot_account = copilot_account
@@ -2747,9 +2746,7 @@ class HarnessUiApp:
                     "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
                 )
             record = saved.record
-            input_text, input_truncated = await self._projections.tool_execution_input(
-                thread_id, execution_id, record.tool_call_id
-            )
+            input_text, input_truncated = await self._projections.tool_execution_input(thread_id, record.tool_call_id)
             value = saved.result
             live = False
             if not record.terminal and record.tool_name == "shell_exec":
@@ -2849,7 +2846,6 @@ class HarnessUiApp:
                 prompt,
                 ContentMetadata.model_validate(
                     {
-                        "display": False,
                         "source_id": "tool_execution.completion"
                         if source == "tool_execution"
                         else "a13n.async_subagent",
@@ -2860,10 +2856,6 @@ class HarnessUiApp:
             ),
         )
         if detail.thread.parent_thread_id is not None:
-            if source == "async_subagent":
-                return await self._subagent_operator.deliver_subagent_input(
-                    thread_id, content, before_accept=before_accept
-                )
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept
             )

@@ -14,12 +14,12 @@ from a13n_harness_ui.errors import ThreadError
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import (
-    ChildExecutionRecord,
     ThreadInspectionRecord,
     ThreadRecord,
     TranscriptEntryRecord,
     TranscriptTurnRecord,
 )
+from .repositories import latest_child_checkpoint_query
 
 INSPECTION_VERSION = 7
 
@@ -51,16 +51,10 @@ class InspectionData:
 
 async def _selected_source(session: AsyncSession, thread: ThreadRecord) -> str:
     if thread.parent_thread_id is not None:
-        selected = await session.scalar(
-            select(ChildExecutionRecord.selected_checkpoint_digest)
-            .where(
-                ChildExecutionRecord.child_thread_id == thread.thread_id,
-                ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
-            )
-            .order_by(ChildExecutionRecord.segment_index.desc())
-            .limit(1)
-        )
-        return selected or f"initial:{thread.initial_state_digest}"
+        selected = await session.scalar(latest_child_checkpoint_query(thread.thread_id))
+        return (
+            selected.selected_checkpoint_digest if selected is not None else None
+        ) or f"initial:{thread.initial_state_digest}"
     return thread.continuation_digest or f"initial:{thread.initial_state_digest}"
 
 
@@ -245,10 +239,8 @@ class InspectionRepository:
             raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
         return values
 
-    async def matching_entries(
-        self, thread_id: str, source_id: str, reference: str, *, through: int | None = None
-    ) -> tuple[str, ...]:
-        """Bounded candidate rows for an exact tool receipt/call correlation."""
+    async def matching_entries(self, thread_id: str, source_id: str, reference: str) -> tuple[str, ...]:
+        """Bounded retained rows containing a tool-call reference."""
         async with short_session(self._sessions) as session:
             query = (
                 select(TranscriptEntryRecord.value_json)
@@ -259,8 +251,6 @@ class InspectionRepository:
                     func.instr(TranscriptEntryRecord.value_json, reference) > 0,
                 )
             )
-            if through is not None:
-                query = query.where(TranscriptEntryRecord.position <= through)
             return tuple(await session.scalars(query.order_by(TranscriptEntryRecord.position.desc()).limit(20)))
 
     async def turns(

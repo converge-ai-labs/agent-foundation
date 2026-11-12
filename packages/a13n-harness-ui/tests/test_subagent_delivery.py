@@ -47,7 +47,7 @@ async def test_subagent_delivery_does_not_wake_ineligible_parent(status, archive
     app._root_runs.submit_prompt.assert_not_awaited()
 
 
-async def test_active_delivery_keeps_hidden_source_and_execution_references():
+async def test_active_delivery_keeps_displayable_source_and_execution_references():
     app = object.__new__(HarnessUiApp)
     app._state = AppState.ready
     app._projections = SimpleNamespace(
@@ -68,7 +68,7 @@ async def test_active_delivery_keeps_hidden_source_and_execution_references():
     call = steer.call_args.kwargs
     assert call["receipt_id"] == "receipt-parent" and not call["immediate"]
     item = call["message"][0]
-    assert not item.metadata.display
+    assert item.metadata.display
     assert item.metadata.model_extra["a13n.steering-source"] == "async_subagent"
     assert item.metadata.model_extra["execution_ids"] == ["sa_1"]
 
@@ -107,11 +107,10 @@ async def test_reminder_is_bounded_mode_aware_and_appends_on_change(mode):
     rows = [{"name": f"role-{i}", "execution_id": f"sa_{i}", "state": "running"} for i in range(21)]
     operator = SimpleNamespace(reminder=AsyncMock(return_value=rows))
     composition = SimpleNamespace(
-        is_subagent=False,
         root=SimpleNamespace(children=("child",)),
         subagents=SimpleNamespace(result_delivery=mode, dynamic=SimpleNamespace(enabled=False)),
     )
-    capability = SubagentTools(operator, composition)
+    capability = SubagentTools(operator, composition, subagent=False, has_children=True)
     ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="parent"))
 
     async def handler(request):
@@ -178,19 +177,18 @@ async def test_admission_fences_isolate_conversations_and_release_cancelled_wait
             group.start_soon(waiter)
             await waiter_started.wait()
             fence = operator._admission_locks["root-a"]
-            assert fence.users == 2
             group.start_soon(other)
             await other_entered.wait()  # root-b does not wait for root-a's preparation.
             waiting.cancel()
             await waiter_done.wait()
-            assert operator._admission_locks["root-a"] is fence and fence.users == 1
+            assert operator._admission_locks["root-a"] is fence
             release.set()
             await first_done.wait()
-    assert not operator._admission_locks
+    assert set(operator._admission_locks) == {"root-a", "root-b"}
     with pytest.raises(_SubagentRequestError, match="max_concurrent"):
         async with operator._admission(scope("root-a")):
             pytest.fail("The conversation's registered child must count against its limit")
-    assert not operator._admission_locks
+    assert set(operator._admission_locks) == {"root-a", "root-b"}
 
 
 async def test_model_steer_into_child_is_marked_parent_agent():
@@ -237,19 +235,10 @@ async def test_grandchild_delivery_steers_active_child_and_consumes_idle_wake(ki
         return_value=SubagentSteerResult(execution_id="child-execution", accepted=True)
     )
     operator._resume_child = AsyncMock()
-    app = object.__new__(HarnessUiApp)
-    app._state = AppState.ready
-    app._subagent_operator = operator
-    app._projections = SimpleNamespace(
-        detail=AsyncMock(
-            return_value=SimpleNamespace(
-                thread=SimpleNamespace(archived=False, memory_scope=None, parent_thread_id="root"), deferred_requests=()
-            )
-        )
-    )
-    app._root_runs = SimpleNamespace(submit_prompt=AsyncMock())
+    operator._store.threads = SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(parent_thread_id="root")))
+    operator._tool_executions = SimpleNamespace(offer_subagent_input=AsyncMock())
     prompt = f"{kind} · explorer · execution_id=grandchild-execution · running"
-    assert await app._deliver_subagent_input("child-thread", prompt, ("grandchild-execution",))
+    await operator._deliver_parent("child-thread", prompt, ("grandchild-execution",))
     if active:
         call = operator.steer_execution.call_args.kwargs
         assert call["execution_id"] == "child-execution" and call["parent_thread_id"] == "root"
@@ -260,4 +249,15 @@ async def test_grandchild_delivery_steers_active_child_and_consumes_idle_wake(ki
     else:
         operator.steer_execution.assert_not_awaited()
     operator._resume_child.assert_not_awaited()
-    app._root_runs.submit_prompt.assert_not_awaited()
+    operator._tool_executions.offer_subagent_input.assert_not_called()
+
+
+@pytest.mark.parametrize("source", ["async_subagent", "tool_execution"])
+async def test_displayable_host_notices_are_excluded_from_composer_recall(source):
+    from a13n_harness.content import ContentItem, ContentMetadata
+    from a13n_harness_ui.conversation import input_excerpt
+
+    notice = ContentItem("Background result", ContentMetadata.model_validate({"a13n.steering-source": source}))
+    assert notice.metadata.display
+    assert input_excerpt((notice,)) == ""
+    assert input_excerpt((notice, ContentItem("Human task"))) == "Human task"

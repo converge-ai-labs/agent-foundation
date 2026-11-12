@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
+from sqlalchemy import ColumnElement, Select, and_, case, delete, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
@@ -1236,15 +1236,7 @@ class ChildExecutionRepository:
     async def latest_checkpoint_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
         """The newest segment with a selected checkpoint, including progress checkpoints."""
         async with short_session(self._sessions) as session:
-            record = await session.scalar(
-                select(ChildExecutionRecord)
-                .where(
-                    ChildExecutionRecord.child_thread_id == child_thread_id,
-                    ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
-                )
-                .order_by(ChildExecutionRecord.segment_index.desc())
-                .limit(1)
-            )
+            record = await session.scalar(latest_child_checkpoint_query(child_thread_id))
             return None if record is None else _child_value(record)
 
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
@@ -1375,6 +1367,18 @@ class EnvironmentStateRepository:
                 record.updated_at = now
             await session.flush()
             return _binding_value(record)
+
+
+def latest_child_checkpoint_query(child_thread_id: str) -> Select[tuple[ChildExecutionRecord]]:
+    return (
+        select(ChildExecutionRecord)
+        .where(
+            ChildExecutionRecord.child_thread_id == child_thread_id,
+            ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
+        )
+        .order_by(ChildExecutionRecord.segment_index.desc())
+        .limit(1)
+    )
 
 
 def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadConfigurationRecord:

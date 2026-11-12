@@ -13,7 +13,7 @@ from a13n_harness_ui.saved_output_models import (
     SavedOutputTarget,
     SavedOutputView,
 )
-from a13n_harness_ui.storage import LocalStore
+from a13n_harness_ui.storage import LocalStore, StoredChildCheckpoint
 from a13n_harness_ui.storage.objects import ObjectRef
 from a13n_harness_ui.thread_projection import _decode_cursor, _encode_cursor
 
@@ -66,10 +66,6 @@ class SavedOutputs:
                 "Saved child output is unavailable in this parent scope.", code="saved_output_source_unavailable"
             )
         checkpoint = await self._store.read_child_checkpoint(head)
-        if not checkpoint.terminal:
-            raise ThreadError(
-                "Saved child output is unavailable before terminal publication.", code="saved_output_source_unavailable"
-            )
         if checkpoint.execution_id != execution_id or checkpoint.child_thread_id != head.child_thread_id:
             raise ThreadError("Saved child output identity is invalid.", code="saved_output_source_unavailable")
         position = 0
@@ -191,14 +187,7 @@ class SavedOutputs:
                     if isinstance(part, TextPart):
                         return part.content
         else:
-            head = await self._store.child_executions.get(location.execution_id)
-            if head is None or head.selected_checkpoint != source:
-                raise StoreConflictError("Child output selection changed.", code="saved_output_target_stale")
-            checkpoint = await self._store.read_child_checkpoint(head)
-            if not checkpoint.terminal:
-                raise ThreadError(
-                    "Saved child output requires a terminal checkpoint.", code="saved_output_source_unavailable"
-                )
+            checkpoint = await self._store.objects.read_model(source, StoredChildCheckpoint)
             if (
                 checkpoint.execution_id == location.execution_id
                 and checkpoint.child_thread_id == target.producing_thread_id

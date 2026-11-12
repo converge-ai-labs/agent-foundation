@@ -24,7 +24,7 @@ Construction rejects async mode without an operator and rejects an operator in i
 
 The Capability owns standard tool names, schemas, guidance, authored child resolution, context and identity ceilings, usage-limit intersection, and bounded model-facing projections. The Host operator owns every complete asynchronous use case and every lifecycle fact behind it. This boundary is part of the [Hosting Contract](13-hosting-contract.md); cross-Run consequences follow [Async Subagent Lifecycle](20-async-components-and-lifecycle.md).
 
-`result_delivery` selects final async subagent result delivery and defaults to `automatic`. It applies to declared, built-in, and Host-defined children; it has no effect on inline execution. The Capability exposes the effective value as a read-only property, preserves it in its Run replacement, and includes it in detached `SubagentOperatorContext` (also through `SubagentDelegationPlan.parent`). The Host reads this value to implement delivery; Harness owns no delivery task.
+`result_delivery` selects final async subagent result delivery and defaults to `automatic`. It applies to declared, built-in, and Host-defined children; it has no effect on inline execution. The Capability exposes the effective value as a read-only property and preserves it in its async Run replacement for parent guidance. The Host uses its own configured mode to implement delivery; Harness owns no delivery task.
 
 In `automatic` mode the Host delivers final results to the parent through its input boundary. In `manual` mode the parent collects them with `wait_subagent` or `subagent_info`. Explicit child-to-parent messages are independent of this switch and remain deliverable in either mode. The Host owns active-parent routing, idle wake eligibility, admission, and restart suppression. Enabling delivery does not authorize waking a stopped, failed, suspended, interrupted, or otherwise ineligible parent.
 
@@ -112,7 +112,6 @@ class SubagentOperatorContext:
     parent_run_id: str
     parent_agent_instance_id: str
     host_refs: Mapping[str, str]
-    result_delivery: Literal["automatic", "manual"] = "automatic"
 
 
 @dataclass(frozen=True, slots=True)

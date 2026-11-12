@@ -271,11 +271,7 @@ class AgentCompositionResolver:
         """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
         if selection.agent_source_kind == "dynamic":
-            if (
-                dynamic_node is None
-                or dynamic_node.source_kind != "dynamic"
-                or dynamic_node.source_id != selection.agent_source_id
-            ):
+            if dynamic_node is None:
                 raise CompositionError(
                     "Dynamic children resume through their retained execution.", code="subagent_resume_required"
                 )
@@ -361,7 +357,6 @@ class AgentCompositionResolver:
                 run_configuration=source.document.run_configuration,
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
                 subagents=source.document.subagents,
-                is_subagent=parent_node is not None,
                 root=self._live_node(source),
                 environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
@@ -399,7 +394,6 @@ class AgentCompositionResolver:
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
             subagents=source.document.subagents,
-            is_subagent=parent_node is not None,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,

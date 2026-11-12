@@ -7,7 +7,7 @@ from importlib.resources import files
 from typing import TYPE_CHECKING, Annotated, Any
 
 from a13n_harness import AgentContext
-from a13n_harness.capabilities import SubagentCapability, SubagentOperatorContext
+from a13n_harness.capabilities import SubagentOperatorContext
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -18,7 +18,6 @@ from a13n_harness.model_context import (
 )
 from pydantic import Field
 from pydantic_ai import FunctionToolset, RunContext
-from pydantic_ai.exceptions import ToolFailed
 
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
@@ -34,19 +33,24 @@ def guidance(name: str) -> str:
 class SubagentTools(AbstractModelContextCapability):
     id = "a13n-harness-ui.subagent-tools"
 
-    def __init__(self, operator: HarnessUiSubagentOperator, composition: ResolvedRunComposition) -> None:
+    def __init__(
+        self,
+        operator: HarnessUiSubagentOperator,
+        composition: ResolvedRunComposition,
+        *,
+        subagent: bool,
+        has_children: bool,
+    ) -> None:
         self.operator = operator
         self.composition = composition
-        self.has_children = bool(composition.root.children) or (
-            not composition.is_subagent and composition.subagents.dynamic.enabled
-        )
+        self.subagent = subagent
+        self.has_children = has_children
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = []
         instructions = []
-        if self.composition.is_subagent:
+        if self.subagent:
             tools.append(self.send_parent_message)
-            instructions.extend((guidance("child"), *self.composition.root.instructions))
         elif self.composition.subagents.dynamic.enabled:
             tools.append(self.spawn_subagent)
         if self.has_children:
@@ -63,16 +67,11 @@ class SubagentTools(AbstractModelContextCapability):
         thinking: ThinkingSelection | None = None,
     ) -> Any:
         """Start a task-specific leaf subagent. Return its execution receipt after admission."""
-        from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
-
-        capability = ctx.capabilities[SUBAGENT_CAPABILITY_ID]
-        assert isinstance(capability, SubagentCapability)
         context = SubagentOperatorContext(
             parent_thread_id=ctx.deps.thread_id,
             parent_run_id=ctx.deps.run_id,
             parent_agent_instance_id=ctx.deps.instance.agent_instance_id,
             host_refs=ctx.deps.instance.host_refs,
-            result_delivery=capability.result_delivery,
         )
         return (
             await self.operator.spawn(
@@ -90,9 +89,8 @@ class SubagentTools(AbstractModelContextCapability):
     ) -> dict[str, bool]:
         """Send one message to the main agent and continue without waiting for a reply."""
         execution_id = ctx.deps.instance.delegation_id
-        if not self.composition.is_subagent or execution_id is None or not message.strip():
-            raise ToolFailed("A non-blank parent message requires an active child execution.")
-        return await self.operator.send_parent_message(ctx.deps.thread_id, execution_id, message)
+        assert execution_id is not None
+        return await self.operator.send_parent_message(execution_id, message)
 
     async def wrap_model_context(
         self,

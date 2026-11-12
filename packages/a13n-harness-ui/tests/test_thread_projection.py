@@ -233,33 +233,11 @@ def test_operator_instruction_bookkeeping_does_not_become_activity():
 
 
 @pytest.mark.anyio
-async def test_original_background_input_matches_exact_receipt_before_reused_call_id() -> None:
+async def test_background_input_reads_latest_matching_tool_call() -> None:
     from types import SimpleNamespace
 
     thread = SimpleNamespace(thread_id="thread-one")
     header = SimpleNamespace(source_id="source-one")
-    receipt = TranscriptEntry(
-        position=7,
-        message_kind="request",
-        parts=(
-            TranscriptPart(
-                kind="tool_result",
-                tool_call_id="reused",
-                value={"type": "tool_execution_receipt", "execution_id": "exec-one"},
-            ),
-        ),
-    )
-    unrelated = TranscriptEntry(
-        position=9,
-        message_kind="request",
-        parts=(
-            TranscriptPart(
-                kind="tool_result",
-                tool_call_id="reused",
-                value={"type": "tool_execution_receipt", "execution_id": "exec-two"},
-            ),
-        ),
-    )
     call = TranscriptEntry(
         position=6,
         message_kind="response",
@@ -271,13 +249,11 @@ async def test_original_background_input_matches_exact_receipt_before_reused_cal
     )
     store = Mock(spec=LocalStore)
     store.inspections = Mock()
-    store.inspections.matching_entries = AsyncMock(
-        side_effect=[(unrelated.model_dump_json(), receipt.model_dump_json()), (call.model_dump_json(),)]
-    )
+    store.inspections.matching_entries = AsyncMock(return_value=(call.model_dump_json(),))
     projection = object.__new__(ThreadProjectionService)
     projection._store = store
     projection._required_thread = AsyncMock(return_value=thread)
     projection._inspection_header = AsyncMock(return_value=header)
-    value, truncated = await projection.tool_execution_input("thread-one", "exec-one", "reused")
+    value, truncated = await projection.tool_execution_input("thread-one", "reused")
     assert value == '{"command": "pnpm test --watch"}' and truncated
-    assert store.inspections.matching_entries.await_args_list[1].kwargs == {"through": 7}
+    store.inspections.matching_entries.assert_awaited_once_with("thread-one", "source-one", "reused")

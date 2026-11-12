@@ -9,7 +9,7 @@ import re
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from functools import partial, wraps
 from types import CoroutineType
@@ -43,7 +43,6 @@ from a13n_harness.capabilities import (
     SubagentInfoResult,
     SubagentOperator,
     SubagentOperatorContext,
-    SubagentResultDelivery,
     SubagentSteerRequest,
     SubagentSteerResult,
     SubagentToolCallContext,
@@ -194,7 +193,6 @@ class ParentRunScope:
     instance: AgentInstanceContext
     composition: ResolvedRunComposition
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
-    result_delivery: SubagentResultDelivery = "automatic"
 
     @property
     def agent_instance_id(self) -> str:
@@ -206,12 +204,6 @@ class _ChildCursor(SurfaceModel):
     parent_thread_id: str
     created_at: datetime
     execution_id: str
-
-
-@dataclass(slots=True)
-class _AdmissionLock:
-    lock: Lock = field(default_factory=Lock)
-    users: int = 0
 
 
 @dataclass(slots=True)
@@ -308,12 +300,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._summary_hub = summary_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._lock = Lock()
-        self._admission_locks: dict[str, _AdmissionLock] = {}
-        self.deliver: Callable[[str, str, tuple[str, ...]], Awaitable[bool]] | None = None
+        self._admission_locks: dict[str, Lock] = {}
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
         self._completion_continuations: dict[str, _CompletionContinuation] = {}
-        self._execution_identities: OrderedDict[tuple[str, ObjectRef], tuple[str, str]] = OrderedDict()
+        self._execution_identities: OrderedDict[tuple[str, ObjectRef], tuple[str, str, Literal["declared", "host"]]] = (
+            OrderedDict()
+        )
         self._changed = Event()
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
@@ -438,7 +431,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=run_id,
             instance=instance,
             composition=composition,
-            result_delivery=composition.subagents.result_delivery,
             external_context=(external_context or ExternalContext()).model_copy(deep=True),
         )
         async with self._lock:
@@ -488,62 +480,30 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child definition changed after parent admission.",
                 code="subagent_plan_invalid",
             )
-        return await self._admit_child(
-            scope=scope,
-            published=published,
-            configuration=configuration,
-            state=state,
-            subagent_name=request.subagent_name,
-            input=plan.context.input,
-            identity_policy=plan.child.declaration.identity,
-            usage_limits=plan.usage_limits,
-        )
-
-    @asynccontextmanager
-    async def _admission(self, scope: ParentRunScope) -> AsyncGenerator[None]:
-        # Count holders and waiters before awaiting, so cancellation cannot remove
-        # a conversation's fence while another admission still references it.
-        fence = self._admission_locks.setdefault(scope.root_thread_id, _AdmissionLock())
-        fence.users += 1
-        try:
-            async with fence.lock:
-                async with self._lock:
-                    self._require_started_locked()
-                    running = sum(item.root_thread_id == scope.root_thread_id for item in self._active.values())
-                if running >= scope.composition.subagents.max_concurrent:
-                    raise _SubagentRequestError(
-                        "The conversation has reached subagents.max_concurrent; wait for a child to finish before starting another.",
-                        code="subagent_concurrency_limit",
-                    )
-                yield
-        finally:
-            fence.users -= 1
-            if not fence.users:
-                self._admission_locks.pop(scope.root_thread_id)
-
-    async def _admit_child(
-        self,
-        *,
-        scope: ParentRunScope,
-        published: PublishedRunComposition,
-        configuration: ThreadConfiguration,
-        state: HarnessState,
-        subagent_name: str,
-        input: RunInputValue,
-        identity_policy: SubagentIdentityPolicy,
-        usage_limits: UsageLimits | None,
-    ) -> AsyncExecutionView:
         async with self._admission(scope):
             return await self._prepare_child(
                 scope=scope,
                 published=published,
                 configuration=configuration,
                 state=state,
-                subagent_name=subagent_name,
-                input=input,
-                identity_policy=identity_policy,
-                usage_limits=usage_limits,
+                subagent_name=request.subagent_name,
+                input=plan.context.input,
+                identity_policy=plan.child.declaration.identity,
+                usage_limits=plan.usage_limits,
             )
+
+    @asynccontextmanager
+    async def _admission(self, scope: ParentRunScope) -> AsyncGenerator[None]:
+        async with self._admission_locks.setdefault(scope.root_thread_id, Lock()):
+            async with self._lock:
+                self._require_started_locked()
+                running = sum(item.root_thread_id == scope.root_thread_id for item in self._active.values())
+            if running >= scope.composition.subagents.max_concurrent:
+                raise _SubagentRequestError(
+                    "The conversation has reached subagents.max_concurrent; wait for a child to finish before starting another.",
+                    code="subagent_concurrency_limit",
+                )
+            yield
 
     async def _prepare_child(
         self,
@@ -562,6 +522,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             published.value,
             pricing_catalog=pricing_catalog,
             subagent_operator=self,
+            subagent=True,
             subscription_sources=self._subscription_sources,
             root_capabilities=self._checkpoint_capabilities(state.thread_id),
         )
@@ -637,7 +598,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             head,
             subagent_name=subagent_name,
             child_definition_id=reconstructed.executable.definition.definition_id,
-            source="host" if published.value.root.source_kind == "dynamic" else "declared",
+            source=_execution_source(published.value.root),
         )
 
     @_subagent_tool
@@ -653,12 +614,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         scope = await self._require_parent(context)
         policy = scope.composition.subagents.dynamic
-        if scope.parent_thread_id is not None or not policy.enabled:
-            raise _SubagentRequestError("Dynamic subagents are disabled for this Run.", code="subagent_spawn_disabled")
-        if not name.strip() or not instructions.strip() or not prompt.strip():
-            raise _SubagentRequestError(
-                "name, instructions and prompt must not be blank.", code="subagent_input_invalid"
-            )
         recipe = scope.composition.root.model
         if model is not None:
             if model not in policy.allowed_models:
@@ -682,6 +637,22 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "instructions": (instructions,),
                 "model": recipe,
                 "children": (),
+                "tools": None
+                if scope.composition.root.tools is None
+                else tuple(
+                    tool
+                    for tool in scope.composition.root.tools
+                    if tool
+                    not in {
+                        "delegate",
+                        "resume_subagent",
+                        "spawn_subagent",
+                        "subagent_info",
+                        "wait_subagent",
+                        "steer_subagent",
+                        "cancel_subagent",
+                    }
+                ),
             }
         )
         composition = scope.composition.model_copy(
@@ -689,7 +660,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "thread_id": state.thread_id,
                 "thread_configuration_version": 1,
                 "root": root,
-                "is_subagent": True,
             }
         )
         envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=composition)
@@ -706,16 +676,17 @@ class HarnessUiSubagentOperator(SubagentOperator):
             environment_run_extension_ids=tuple(item.extension_id for item in composition.environment_run_extensions),
             mcp_server_ids=tuple(item.server_id for item in root.mcp_servers if item.generic_selected),
         )
-        return await self._admit_child(
-            scope=scope,
-            published=published,
-            configuration=configuration,
-            state=state,
-            subagent_name=name,
-            input=prompt,
-            identity_policy=SubagentIdentityPolicy(),
-            usage_limits=None,
-        )
+        async with self._admission(scope):
+            return await self._prepare_child(
+                scope=scope,
+                published=published,
+                configuration=configuration,
+                state=state,
+                subagent_name=name,
+                input=prompt,
+                identity_policy=SubagentIdentityPolicy(),
+                usage_limits=None,
+            )
 
     @_subagent_tool
     async def resume_host(
@@ -728,13 +699,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         scope = await self._require_parent(context)
         previous = await self._require_execution(scope, request.execution_id)
         composition = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
-        thread = await self._require_child_thread(previous)
-        if (
-            composition.root.source_kind != "dynamic"
-            or not previous.resumable
-            or thread.configuration.agent_source.kind != "dynamic"
-            or thread.configuration.agent_source.id != composition.root.source_id
-        ):
+        if composition.root.source_kind != "dynamic" or not previous.resumable:
             raise _SubagentRequestError("The Host-defined child is not resumable.", code="subagent_resume_incompatible")
         identity = derive_child_identity(
             scope.instance.identity, _definition_id(composition.root), SubagentIdentityPolicy()
@@ -743,11 +708,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             scope=scope, previous=previous, input=request.prompt, identity=identity, usage_limits=None
         )
 
-    async def send_parent_message(self, child_thread_id: str, execution_id: str, message: str) -> dict[str, bool]:
+    async def send_parent_message(self, execution_id: str, message: str) -> dict[str, bool]:
         head = await self._store.child_executions.get(execution_id)
-        if head is None or head.child_thread_id != child_thread_id or head.status != "running":
+        if head is None:
             raise ToolFailed("This child execution is no longer active.")
-        name, _ = await self._execution_identity(head)
+        name, _, _ = await self._execution_identity(head)
         text = format_execution_header("Subagent message", name, execution_id, head.status)
         text += "\nReply with steer_subagent while this child is running.\n\n" + message
         if self._task_group is None:
@@ -757,10 +722,29 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
     async def _deliver_parent(self, thread_id: str, text: str, execution_ids: tuple[str, ...]) -> None:
         try:
-            if self._tool_executions is not None:
+            parent = await self._store.threads.get(thread_id)
+            if parent is not None and parent.parent_thread_id is not None:
+                head = await self._store.child_executions.latest_for_child(thread_id)
+                if head is not None and await self._active_segment(head) is not None:
+                    await self.steer_execution(
+                        parent_thread_id=head.parent_thread_id,
+                        execution_id=head.execution_id,
+                        message=(
+                            ContentItem(
+                                text,
+                                ContentMetadata.model_validate(
+                                    {
+                                        "source_id": "a13n.async_subagent",
+                                        "execution_ids": list(execution_ids),
+                                        "a13n.steering-source": "async_subagent",
+                                    }
+                                ),
+                            ),
+                        ),
+                        immediate=False,
+                    )
+            elif self._tool_executions is not None:
                 self._tool_executions.offer_subagent_input(thread_id, text, execution_ids)
-            elif self.deliver is not None:
-                await self.deliver(thread_id, text, execution_ids)
         except Exception:
             get_logger(__name__).warning("Could not deliver subagent input: %s", thread_id, exc_info=True)
 
@@ -785,7 +769,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         heads = await self._store.child_executions.attention_for_parent(parent_thread_id, limit=21)
         values = []
         for head in heads:
-            name, _ = await self._execution_identity(head)
+            name, _, _ = await self._execution_identity(head)
             values.append({"name": name, "execution_id": head.execution_id, "state": head.status})
         return values
 
@@ -1103,7 +1087,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         del tool_call
         scope = await self._require_parent(plan.parent)
         previous = await self._require_execution(scope, request.execution_id)
-        subagent_name, _previous_definition_id = await self._execution_identity(previous)
+        subagent_name, _previous_definition_id, _ = await self._execution_identity(previous)
         _require_edge(scope.composition.root, subagent_name)
         if subagent_name != plan.child.declaration.name or not previous.resumable:
             raise _SubagentRequestError(
@@ -1147,7 +1131,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     agent_instance_id=_public_id("agent"),
                 ),
                 composition=composition,
-                result_delivery=composition.subagents.result_delivery,
             ),
             identity=AgentIdentityRef(
                 issuer=authority.identity.issuer, subject=authority.identity.subject, **authority.identity.claims
@@ -1158,27 +1141,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             configuration_version=authority.configuration_version,
         )
         return self._completion_continuations.setdefault(thread_id, retained)
-
-    async def deliver_subagent_input(
-        self, thread_id: str, prompt: RunInputValue, *, before_accept: Callable[[], None] | None = None
-    ) -> bool:
-        """Offer a grandchild update only to the target's current child Run.
-
-        True also consumes an idle/rejected wake: no update is retried into a
-        later child segment. Final results remain in the operator's saved heads.
-        """
-        if not self._accepting:
-            return False
-        head = await self._store.child_executions.latest_for_child(thread_id)
-        if head is not None and await self._active_segment(head) is not None:
-            await self.steer_execution(
-                parent_thread_id=head.parent_thread_id,
-                execution_id=head.execution_id,
-                message=prompt,
-                immediate=False,
-                before_accept=before_accept,
-            )
-        return True
 
     async def deliver_tool_completion(
         self, thread_id: str, prompt: RunInputValue, *, before_accept: Callable[[], None] | None = None
@@ -1245,112 +1207,92 @@ class HarnessUiSubagentOperator(SubagentOperator):
         automatic_completion: ChildCompletionGuard | None = None,
     ) -> AsyncExecutionView:
         async with self._admission(scope):
-            return await self._prepare_resume_child(
-                scope=scope,
-                previous=previous,
+            subagent_name, _, _ = await self._execution_identity(previous)
+            checkpoint = await self._read_checkpoint(previous)
+            if not checkpoint.terminal or checkpoint.deferred_requests is not None:
+                raise _SubagentRequestError(
+                    "The selected child checkpoint is not terminal.",
+                    code="subagent_resume_incompatible",
+                )
+            thread = await self._require_child_thread(previous)
+            source = await self._configurations.load(scope.composition.generation_digest)
+            retained_root = None
+            if thread.configuration.agent_source.kind == "dynamic":
+                retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
+                retained_root = retained.root
+            published = await self._compositions.publish(
+                source,
+                _selection(thread.thread_id, thread.configuration),
+                parent_node=scope.composition.root,
+                dynamic_node=retained_root,
+                run_configuration=scope.composition.run_configuration,
+            )
+            pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+            reconstructed = self._agents.reconstruct(
+                published.value,
+                pricing_catalog=pricing_catalog,
+                memory_positions=checkpoint.memory_cursors,
+                subagent_operator=self,
+                subagent=True,
+                subscription_sources=self._subscription_sources,
+                root_capabilities=self._checkpoint_capabilities(thread.thread_id),
+            )
+            captured = await self._environments.admit(published.value)
+            envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
+            published = PublishedRunComposition(value=captured, reference=envelope.ref)
+            environment = await self._environments.prepare(published.value)
+            execution_id = _public_id("execution")
+            agent_instance_id = _public_id("agent")
+            usage_limits = intersect_usage_limits(usage_limits, reconstructed.executable.definition_usage_limits())
+            accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
+            stream, external_context = await self._new_stream(
+                reconstructed=reconstructed,
                 input=input,
-                identity=identity,
+                deferred_resume=accepted,
                 usage_limits=usage_limits,
-                before_accept=before_accept,
+                identity=identity,
+                state=checkpoint.harness_state,
+                environment=environment,
+                execution_id=execution_id,
+                parent=scope,
+                agent_instance_id=agent_instance_id,
+            )
+            if before_accept is not None:
+                before_accept()
+            head = await self._store.child_executions.resume(
+                previous_execution_id=previous.execution_id,
+                execution_id=execution_id,
+                child_run_id=stream.run_id,
+                run_composition=published.reference,
                 automatic_completion=automatic_completion,
             )
-
-    async def _prepare_resume_child(
-        self,
-        *,
-        scope: ParentRunScope,
-        previous: ChildExecutionHead,
-        input: RunInputValue,
-        identity: AgentIdentityRef,
-        usage_limits: UsageLimits | None,
-        before_accept: Callable[[], None] | None = None,
-        automatic_completion: ChildCompletionGuard | None = None,
-    ) -> AsyncExecutionView:
-        subagent_name, _ = await self._execution_identity(previous)
-        checkpoint = await self._read_checkpoint(previous)
-        if not checkpoint.terminal or checkpoint.deferred_requests is not None:
-            raise _SubagentRequestError(
-                "The selected child checkpoint is not terminal.",
-                code="subagent_resume_incompatible",
+            prepared = _PreparedSegment(
+                head=head,
+                scope=scope,
+                composition=published.value,
+                reconstructed=reconstructed,
+                input=input,
+                usage_limits=usage_limits,
+                identity=identity,
+                state=checkpoint.harness_state,
+                environment=environment,
+                stream=stream,
+                external_context=external_context,
+                agent_instance_id=agent_instance_id,
+                display=checkpoint.display,
             )
-        thread = await self._require_child_thread(previous)
-        source = await self._configurations.load(scope.composition.generation_digest)
-        retained_root = None
-        if thread.configuration.agent_source.kind == "dynamic":
-            retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
-            retained_root = retained.root
-        published = await self._compositions.publish(
-            source,
-            _selection(thread.thread_id, thread.configuration),
-            parent_node=scope.composition.root,
-            dynamic_node=retained_root,
-            run_configuration=scope.composition.run_configuration,
-        )
-        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
-        reconstructed = self._agents.reconstruct(
-            published.value,
-            pricing_catalog=pricing_catalog,
-            memory_positions=checkpoint.memory_cursors,
-            subagent_operator=self,
-            subscription_sources=self._subscription_sources,
-            root_capabilities=self._checkpoint_capabilities(thread.thread_id),
-        )
-        captured = await self._environments.admit(published.value)
-        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
-        published = PublishedRunComposition(value=captured, reference=envelope.ref)
-        environment = await self._environments.prepare(published.value)
-        execution_id = _public_id("execution")
-        agent_instance_id = _public_id("agent")
-        usage_limits = intersect_usage_limits(usage_limits, reconstructed.executable.definition_usage_limits())
-        accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
-        stream, external_context = await self._new_stream(
-            reconstructed=reconstructed,
-            input=input,
-            deferred_resume=accepted,
-            usage_limits=usage_limits,
-            identity=identity,
-            state=checkpoint.harness_state,
-            environment=environment,
-            execution_id=execution_id,
-            parent=scope,
-            agent_instance_id=agent_instance_id,
-        )
-        if before_accept is not None:
-            before_accept()
-        head = await self._store.child_executions.resume(
-            previous_execution_id=previous.execution_id,
-            execution_id=execution_id,
-            child_run_id=stream.run_id,
-            run_composition=published.reference,
-            automatic_completion=automatic_completion,
-        )
-        prepared = _PreparedSegment(
-            head=head,
-            scope=scope,
-            composition=published.value,
-            reconstructed=reconstructed,
-            input=input,
-            usage_limits=usage_limits,
-            identity=identity,
-            state=checkpoint.harness_state,
-            environment=environment,
-            stream=stream,
-            external_context=external_context,
-            agent_instance_id=agent_instance_id,
-            display=checkpoint.display,
-        )
-        try:
-            await self._start_segment(prepared)
-        except BaseException:
-            await self._lose_after_acceptance(head.execution_id, expected_checkpoint=None)
-            raise
-        await self._publish_summary(head)
-        return _async_view(
-            head,
-            subagent_name=subagent_name,
-            child_definition_id=reconstructed.executable.definition.definition_id,
-            source="host" if published.value.root.source_kind == "dynamic" else "declared",
-        )
+            try:
+                await self._start_segment(prepared)
+            except BaseException:
+                await self._lose_after_acceptance(head.execution_id, expected_checkpoint=None)
+                raise
+            await self._publish_summary(head)
+            return _async_view(
+                head,
+                subagent_name=subagent_name,
+                child_definition_id=reconstructed.executable.definition.definition_id,
+                source=_execution_source(published.value.root),
+            )
 
     async def cancel_restart(self, thread_id: str) -> None:
         async with self._lock:
@@ -1376,7 +1318,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if checkpoint.deferred_requests is not None:
             raise RunCoordinationError("A child handoff contains deferred requests.", code="restart_incompatible")
         composition = await self._store.objects.read_model(item.composition, ResolvedRunComposition)
-        composition = composition.model_copy(update={"is_subagent": True})
         parent_composition = await self._store.objects.read_model(item.parent_composition, ResolvedRunComposition)
         parent_thread = await self._store.threads.get(item.parent_thread_id)
         if parent_thread is None:
@@ -1392,7 +1333,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=item.parent_run_id,
             instance=AgentInstanceContext(identity=parent_identity, agent_instance_id=_public_id("agent")),
             composition=parent_composition,
-            result_delivery=parent_composition.subagents.result_delivery,
         )
         pricing = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
@@ -1400,6 +1340,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             pricing_catalog=pricing,
             memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
+            subagent=True,
             subscription_sources=self._subscription_sources,
             root_capabilities=self._checkpoint_capabilities(item.thread_id),
         )
@@ -1480,14 +1421,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
             )
         return reference.logical_digest
 
-    async def _remove_replaced_request_checkpoint(self, prepared: _PreparedSegment, active: _ActiveSegment) -> None:
-        superseded = active.run_checkpoint
+    async def _remove_superseded_checkpoint(self, head: ChildExecutionHead, superseded: ObjectRef | None) -> None:
         if superseded is None:
             return
         try:
-            async with checkpoint_lock(self._store.layout.root, prepared.head.child_thread_id):
-                current = await self._store.child_executions.get(prepared.head.execution_id)
-                if current is not None and current.status != "running" and current.selected_checkpoint != superseded:
+            async with checkpoint_lock(self._store.layout.root, head.child_thread_id):
+                current = await self._store.child_executions.get(head.execution_id)
+                if current is not None and current.selected_checkpoint != superseded:
                     await self._store.objects.remove(superseded)
         except Exception:
             get_logger(__name__).warning("Could not remove superseded child checkpoint", exc_info=True)
@@ -1732,7 +1672,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     )
         finally:
             with CancelScope(shield=True):
-                await self._remove_replaced_request_checkpoint(current, active)
+                await self._remove_superseded_checkpoint(current.head, active.run_checkpoint)
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
                     if self._tool_executions is not None:
@@ -1745,11 +1685,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 # Persisted terminal status precedes cleanup; publish again only
                 # after process-local activity is no longer observable as active.
                 await self._publish_summary_by_execution(current.head.execution_id)
-                if self.deliver is not None and current.scope.result_delivery == "automatic":
+                if current.scope.composition.subagents.result_delivery == "automatic":
                     head = await self._store.child_executions.get(current.head.execution_id)
                     if head is not None and head.status != "running":
                         view = await self._execution_view(head)
-                        name, _ = await self._execution_identity(head)
+                        name, _, _ = await self._execution_identity(head)
                         text = format_execution_header("Subagent result", name, head.execution_id, head.status)
                         text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
                         text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
@@ -2070,11 +2010,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 child_run_id=run_id,
                 tool_completions=completion_ids(state.message_history),
             )
-            if superseded is not None and superseded == expected and superseded != reference:
-                try:
-                    await self._store.objects.remove(superseded)
-                except Exception:
-                    get_logger(__name__).warning("Could not remove superseded child checkpoint", exc_info=True)
+        await self._remove_superseded_checkpoint(head, superseded)
         async with self._lock:
             self._signal_change_locked()
         return reference
@@ -2254,7 +2190,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The subagent request is outside the active parent Run.",
                 code="subagent_parent_scope_invalid",
             )
-        return replace(scope, result_delivery=context.result_delivery)
+        return scope
 
     async def _require_execution(
         self,
@@ -2325,7 +2261,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             current = parent
         return current.thread_id
 
-    async def _execution_identity(self, head: ChildExecutionHead) -> tuple[str, str]:
+    async def _execution_identity(self, head: ChildExecutionHead) -> tuple[str, str, Literal["declared", "host"]]:
         key = (head.child_thread_id, head.run_composition)
         if (identity := self._execution_identities.get(key)) is not None:
             self._execution_identities.move_to_end(key)
@@ -2353,7 +2289,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child composition belongs to another Thread.",
                 code="subagent_execution_unavailable",
             )
-        identity = (initial.root.roster_name, _definition_id(current.root))
+        identity = (initial.root.roster_name, _definition_id(current.root), _execution_source(current.root))
         self._execution_identities[key] = identity
         if len(self._execution_identities) > 256:
             self._execution_identities.popitem(last=False)
@@ -2366,7 +2302,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         root_thread_id: str | None = None,
         include_activity: bool = False,
     ) -> ChildExecutionView:
-        subagent_name, child_definition_id = await self._execution_identity(head)
+        subagent_name, child_definition_id, _ = await self._execution_identity(head)
         activity = None
         display = None
         if include_activity:
@@ -2429,7 +2365,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _execution_view(
         self, head: ChildExecutionHead, *, display: CompactChildDisplay | None = None
     ) -> SubagentExecutionView:
-        subagent_name, child_definition_id = await self._execution_identity(head)
+        subagent_name, child_definition_id, source = await self._execution_identity(head)
         if display is None:
             display = await self._execution_display(head)
         failure: JsonValue = None if head.failure is None else head.failure.model_dump(mode="json")
@@ -2443,7 +2379,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "effects before retrying work.",
             }
         return SubagentExecutionView(
-            source="host" if child_definition_id.startswith("a13n-harness-ui:dynamic:") else "declared",
+            source=source,
             execution_id=head.execution_id,
             subagent_name=subagent_name,
             child_definition_id=child_definition_id,
@@ -2639,6 +2575,10 @@ def _selection(thread_id: str, configuration: ThreadConfiguration) -> ThreadComp
         environment_run_extension_ids=configuration.environment_run_extension_ids,
         mcp_server_ids=configuration.mcp_server_ids,
     )
+
+
+def _execution_source(node: ResolvedAgentNode) -> Literal["declared", "host"]:
+    return "host" if node.source_kind == "dynamic" else "declared"
 
 
 def _definition_id(node: ResolvedAgentNode) -> str:

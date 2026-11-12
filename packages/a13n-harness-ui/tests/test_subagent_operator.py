@@ -181,8 +181,8 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
     async def root_thread_id(_thread: Any) -> str:
         return "thread-root"
 
-    async def execution_identity(_head: ChildExecutionHead) -> tuple[str, str]:
-        return "worker", "a13n-harness-ui:agent:worker"
+    async def execution_identity(_head: ChildExecutionHead) -> tuple[str, str, str]:
+        return "worker", "a13n-harness-ui:agent:worker", "declared"
 
     monkeypatch.setattr(operator, "_execution_identity", execution_identity)
     monkeypatch.setattr(operator, "_read_checkpoint", unreadable_checkpoint)
@@ -296,7 +296,13 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
     )
     prepared = subagent_module._PreparedSegment(
         head=head,
-        scope=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
+        scope=cast(
+            Any,
+            SimpleNamespace(
+                agent_instance_id="parent-agent",
+                composition=SimpleNamespace(subagents=SimpleNamespace(result_delivery="manual")),
+            ),
+        ),
         composition=unavailable,
         reconstructed=ReconstructedAgent(executable, HarnessUiModelResolver({}), frozenset()),
         input="work",
@@ -409,7 +415,13 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
             ),
         ),
         execution_id="execution_test",
-        parent=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
+        parent=cast(
+            Any,
+            SimpleNamespace(
+                agent_instance_id="parent-agent",
+                composition=SimpleNamespace(subagents=SimpleNamespace(result_delivery="manual")),
+            ),
+        ),
         agent_instance_id="child-agent",
         deferred_resume=accepted,
     )

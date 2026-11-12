@@ -290,7 +290,6 @@ class AsyncSubagentToolset:
             parent_run_id=self._context.run_id,
             parent_agent_instance_id=self._context.instance.agent_instance_id,
             host_refs=self._context.instance.host_refs,
-            result_delivery=self._result_delivery,
         )
 
     def _require_child(self, name: str) -> BuiltSubagent:

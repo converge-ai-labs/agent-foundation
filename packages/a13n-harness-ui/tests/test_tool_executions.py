@@ -370,7 +370,7 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
             for part in entry.parts
             if part.metadata.source_id == "tool_execution.completion"
         ]
-        assert len(hints) == 1 and not hints[0].metadata.display
+        assert len(hints) == 1 and hints[0].metadata.display
         assert (await app._tool_executions.state(thread.thread_id).snapshot()).values == {"late": 42}
         other = await app.create_thread()
         assert await app.tool_executions(other.thread_id) == ()
@@ -1003,8 +1003,9 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert root.call_args.kwargs["immediate"] is False
             content = root.call_args.kwargs["message"]
             assert content[0].value == "Tool completed"
-            assert content[0].metadata.display is False
+            assert content[0].metadata.display is True
             assert content[0].metadata.source_id == "tool_execution.completion"
+            assert content[0].metadata.model_extra["a13n.steering-source"] == "tool_execution"
 
 
 async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_once(tmp_path, monkeypatch):

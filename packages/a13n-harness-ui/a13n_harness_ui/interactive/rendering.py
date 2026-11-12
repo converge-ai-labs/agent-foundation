@@ -63,6 +63,9 @@ def _elapsed_text(elapsed: float) -> str:
     return f"{seconds}s"
 
 
+_ACTIVITY_SOURCES = {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
+
+
 @dataclass(slots=True)
 class Status:
     theme: Literal["auto", "dark", "light"] = "auto"
@@ -733,11 +736,7 @@ class StreamRenderer:
             child = isinstance(scope, str)
             identity = scope if child else run_id
             metadata = content.get("metadata")
-            if (
-                isinstance(metadata, dict)
-                and metadata.get("display") is False
-                and metadata.get("a13n.steering-source") not in {"async_subagent", "parent_agent", "tool_execution"}
-            ):
+            if isinstance(metadata, dict) and metadata.get("display") is False:
                 continue
             if child and self.status.mode != "detailed":
                 continue
@@ -847,24 +846,17 @@ class StreamRenderer:
                     if content.get("role") == "user"
                     else "text"
                 )
-                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in {
-                    "async_subagent",
-                    "background_process",
-                    "envd_session",
-                    "parent_agent",
-                    "tool_execution",
-                }
+                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in _ACTIVITY_SOURCES
                 if activity:
                     kind = "tool"
-                prefix = (
-                    "Activity · "
-                    if activity
-                    else f"Subagent {identity} · "
-                    if child
-                    else "> "
-                    if kind == "user"
-                    else ""
-                )
+                if activity:
+                    prefix = "Activity · "
+                elif child:
+                    prefix = f"Subagent {identity} · "
+                elif kind == "user":
+                    prefix = "> "
+                else:
+                    prefix = ""
                 rendered = terminal_text(prefix + text)
                 ranges = skill_ranges(text, meta, len(terminal_text(prefix))) if kind == "user" else ()
                 block = self._display_blocks.get(key)
@@ -964,11 +956,7 @@ class StreamRenderer:
             else payload.get("role")
         )
         metadata = ContentMetadata.from_native(payload.get("metadata"))
-        if not metadata.display and (metadata.model_extra or {}).get("a13n.steering-source") not in {
-            "async_subagent",
-            "parent_agent",
-            "tool_execution",
-        }:
+        if not metadata.display:
             return
         piece = composer_piece(metadata)
         if piece is not None and role == "user":
@@ -1040,13 +1028,7 @@ class StreamRenderer:
         thinking = event_type.startswith("REASONING_MESSAGE")
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
-        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in {
-            "background_process",
-            "async_subagent",
-            "envd_session",
-            "parent_agent",
-            "tool_execution",
-        }
+        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in _ACTIVITY_SOURCES
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
             # the identity across repeated model boundaries of this operation.
