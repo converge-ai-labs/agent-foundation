@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from a13n_harness_ui.connector_models import ConnectorRule
+from a13n_harness_ui.connector_models import ConnectorGroupName, ConnectorRule
 
 
 class Value(BaseModel):
@@ -49,6 +49,7 @@ class Instance(Value):
     connector_id: str
     kind: str
     name: str
+    group_name: ConnectorGroupName
     version: int
     enabled: bool
     deliver_to_bot: bool
@@ -62,7 +63,7 @@ class SetupAction(Value):
     id: str
     label: str
     icon: str | None = None
-    kind: Literal["submit", "open_url", "copy", "confirm"] = "submit"
+    kind: Literal["submit", "open_url", "copy", "confirm", "oauth"] = "submit"
     url: str | None = None
     value: str | None = None
 
@@ -116,5 +117,7 @@ class Capture(Value):
     connector_key: str
     configuration_version: int
     implementation: str
+    connector_name: str = ""
+    group_name: ConnectorGroupName
     # Plugin-authored safe recipe. Private credentials and state are never copied here.
     binding: dict[str, JsonValue] = Field(default_factory=dict)

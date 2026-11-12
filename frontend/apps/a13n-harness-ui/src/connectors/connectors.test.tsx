@@ -57,6 +57,7 @@ const instance: Schema<"Instance"> = {
   connector_id: "connector-one",
   kind: "github",
   name: "Work account",
+  group_name: "work-account",
   version: 1,
   enabled: true,
   deliver_to_bot: false,
@@ -188,15 +189,21 @@ it("preserves settings drafts when another tab or setup changes the saved versio
   fireEvent.change(screen.getByLabelText("Connection name"), {
     target: { value: "My draft" },
   });
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "my-draft" },
+  });
   act(() =>
     cache.setQueryData(
       ["connectors", "instances"],
-      [{ ...instance, version: 2, name: "Other tab" }],
+      [{ ...instance, version: 2, name: "Other tab", group_name: "other-tab" }],
     ),
   );
   expect(
     (screen.getByLabelText("Connection name") as HTMLInputElement).value,
   ).toBe("My draft");
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "my-draft",
+  );
   await waitFor(() =>
     expect(
       screen
@@ -210,6 +217,9 @@ it("preserves settings drafts when another tab or setup changes the saved versio
   expect(
     (screen.getByLabelText("Connection name") as HTMLInputElement).value,
   ).toBe("Other tab");
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "other-tab",
+  );
 });
 
 it("renders published guest offers without owner queries or active setup controls", async () => {
@@ -445,6 +455,9 @@ it("names new accounts before persistence and offers cleanup for incomplete setu
   expect(
     (screen.getByLabelText("Connection name") as HTMLInputElement).value,
   ).toBe("GitHub 2");
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "github-2",
+  );
   expect(transport.client.PUT).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(transport.client.PUT).not.toHaveBeenCalled();
@@ -456,14 +469,34 @@ it("names new accounts before persistence and offers cleanup for incomplete setu
     data: {
       ...instance,
       connector_id: "connector-new",
-      name: "GitHub 2",
+      name: "Personal",
+      group_name: "personal-github",
       status: {
         state: "unconfigured",
         summary: "Complete connection setup to use its tools.",
       },
     },
   });
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Personal account" },
+  });
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "personal-account",
+  );
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "personal-github" },
+  });
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Personal" },
+  });
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "personal-github",
+  );
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  expect(transport.client.PUT.mock.calls[0][1].body).toMatchObject({
+    name: "Personal",
+    group_name: "personal-github",
+  });
   await screen.findByLabelText("GitHub personal access token");
   await userEvent.click(
     screen.getByRole("button", { name: "Close connection setup" }),
@@ -624,6 +657,7 @@ it("reconciles a lost create response using the same account ID without overwrit
       ...instance,
       connector_id: id,
       name: options.body.name,
+      group_name: options.body.group_name,
     });
     throw new TypeError("Response lost after commit");
   });
@@ -637,8 +671,15 @@ it("reconciles a lost create response using the same account ID without overwrit
   fireEvent.change(screen.getByLabelText("Connection name"), {
     target: { value: "Original account" },
   });
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "original-github" },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("alert");
+  // Background polling may discover the account before the lost response is reconciled.
+  act(() =>
+    cache.setQueryData(["connectors", "instances"], [...accounts.values()]),
+  );
   fireEvent.change(screen.getByLabelText("Connection name"), {
     target: { value: "Changed draft" },
   });
@@ -655,4 +696,126 @@ it("reconciles a lost create response using the same account ID without overwrit
   expect(transport.client.POST.mock.calls[0][1].params.path.connector_id).toBe(
     [...accounts.keys()][0],
   );
+});
+
+it("edits the saved group independently and keeps collision recovery beside the field", async () => {
+  mount(<ConnectorsSection />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Actions for Work account" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Manage" }),
+  );
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "New display name" },
+  });
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "work-account",
+  );
+  expect(
+    screen.queryByText(
+      "Changing this group requires a new Run to use its tools.",
+    ),
+  ).toBeNull();
+  const help = screen.getByRole("button", { name: "About group names" });
+  expect(
+    screen.queryByText(
+      "Unique tool group used by the model. You can change it later.",
+    ),
+  ).toBeNull();
+  await userEvent.click(help);
+  expect(
+    await screen.findByText(
+      "Unique tool group used by the model. You can change it later.",
+    ),
+  ).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "new-group" },
+  });
+  expect(
+    screen.getByText(
+      "Changing this group requires a new Run to use its tools.",
+    ),
+  ).toBeTruthy();
+  transport.client.PUT.mockRejectedValueOnce(
+    new ApiError(
+      "Group name is already used by another connection.",
+      409,
+      "connector_group_conflict",
+    ),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  await screen.findByText("Group name is already used by another connection.");
+  expect(screen.getByLabelText("Group name").getAttribute("aria-invalid")).toBe(
+    "true",
+  );
+  expect(
+    (screen.getByLabelText("Connection name") as HTMLInputElement).value,
+  ).toBe("New display name");
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "personal-github" },
+  });
+  transport.client.PUT.mockResolvedValueOnce({
+    data: {
+      ...instance,
+      name: "New display name",
+      group_name: "personal-github",
+      version: 2,
+    },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() => expect(transport.client.PUT).toHaveBeenCalledTimes(2));
+  expect(transport.client.PUT.mock.calls[1][1].body).toMatchObject({
+    name: "New display name",
+    group_name: "personal-github",
+    expected_version: 1,
+  });
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "Save settings" })
+        .hasAttribute("disabled"),
+    ).toBe(true),
+  );
+});
+
+it("validates create aliases locally and preserves the draft after a server-side collision", async () => {
+  cache.setQueryData(["connectors", "instances"], [instance]);
+  mount(<CreateConnector item={catalog[0]} onClose={() => {}} />);
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "work-account" },
+  });
+  expect(
+    screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen.getByText("Group name is already used by another connection."),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "Invalid" },
+  });
+  expect(screen.getByText(/Use up to 32 lowercase letters/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "personal" },
+  });
+  transport.client.PUT.mockRejectedValueOnce(
+    new ApiError(
+      "Group name is already used by another connection.",
+      409,
+      "connector_group_conflict",
+    ),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("Group name is already used by another connection.");
+  expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
+    "personal",
+  );
+  fireEvent.change(screen.getByLabelText("Group name"), {
+    target: { value: "personal-2" },
+  });
+  expect(
+    screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
+  ).toBe(false);
+  expect(transport.client.PUT).toHaveBeenCalledOnce();
 });

@@ -1,4 +1,4 @@
-"""Connector upgrade preserves existing private configuration and old insert defaults."""
+"""Connector upgrades preserve accounts and backfill unique readable tool groups."""
 
 import pytest
 from a13n_harness_ui.storage.migration import DatabaseMigrator
@@ -58,7 +58,6 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
                 assert connection.execute(
                     text("SELECT source_thread_id, source_thread_title, text FROM bot_inbox")
                 ).one() == ("retained-thread", "Retained", "Verified progress")
-            connection.execute(insert, {"id": "old-writer"})
             rows = (
                 connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).mappings().all()
             )
@@ -68,6 +67,7 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
                 assert row["selected_events"] == '["changed"]'
                 assert row["version"] == row["credential_version"] == 1
                 assert row["name"] == ""
+                assert row["group_name"] == "example"
                 assert row["rules"] == "[]"
                 assert row["deleted"] == 0
         inspector = inspect(engine)
@@ -77,5 +77,171 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
         }
         migrator.upgrade()
         migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
+def test_group_backfill_preserves_accounts_relations_and_resolves_collisions(tmp_path):
+    from a13n_harness_ui.connector_models import ConnectorGroupName
+    from pydantic import TypeAdapter
+    from sqlalchemy.exc import IntegrityError
+
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "b816fd5edbe8"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    names = ["Work GitHub", "Work...GitHub", "work-github-2", "", "私人账户", "123", "a" * 32 + "x", "a" * 32 + "y"]
+    try:
+        with engine.begin() as connection:
+            for index, name in enumerate(names):
+                connection.execute(
+                    text(
+                        "INSERT INTO connector_configuration "
+                        "(connector_id, kind, name, enabled, deliver_to_bot, selected_events, settings, credentials, version, credential_version, rules) "
+                        "VALUES (:id, 'github', :name, 0, 1, '[\"changed\"]', '{\"scope\":\"demo\"}', '{\"token\":\"private-fixture\"}', 7, 3, '[]')"
+                    ),
+                    {"id": f"account-{index}", "name": name},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO connector_state (connector_id, key, version, value) VALUES ('account-0', 'cursor', 4, :value)"
+                ),
+                {"value": '{"position":12}'},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO bot_inbox (input_id, source, connector_id, event_type, source_event_id, text, created_at) "
+                    "VALUES ('input-retained', 'connector', 'account-0', 'changed', 'external-1', 'Retained input', '2026-11-12')"
+                )
+            )
+            before = (
+                connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).mappings().all()
+            )
+        migrator.upgrade()
+        with engine.connect() as connection:
+            after = (
+                connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).mappings().all()
+            )
+            assert [{key: row[key] for key in before[0]} for row in after] == [dict(row) for row in before]
+            groups = [row["group_name"] for row in after]
+            assert groups == [
+                "work-github",
+                "work-github-2",
+                "work-github-2-2",
+                "github",
+                "github-2",
+                "connection-123",
+                "a" * 32,
+                "a" * 30 + "-2",
+            ]
+            for group in groups:
+                TypeAdapter(ConnectorGroupName).validate_python(group)
+            assert connection.execute(text("SELECT version, value FROM connector_state")).one() == (
+                4,
+                '{"position":12}',
+            )
+            assert connection.execute(text("SELECT input_id, connector_id, text FROM bot_inbox")).one() == (
+                "input-retained",
+                "account-0",
+                "Retained input",
+            )
+            assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text("UPDATE connector_configuration SET group_name='github' WHERE connector_id='account-0'")
+            )
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert (
+                list(
+                    connection.execute(
+                        text("SELECT group_name FROM connector_configuration ORDER BY connector_id")
+                    ).scalars()
+                )
+                == groups
+            )
+    finally:
+        engine.dispose()
+
+
+def test_group_upgrade_preserves_existing_mcp_oauth_accounts(tmp_path):
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "5304b6a9760a"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO connector_configuration "
+                    "(connector_id, kind, name, enabled, deliver_to_bot, selected_events, settings, credentials) "
+                    "VALUES ('account', 'github', 'Existing', 1, 0, '[]', '{}', '{}')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO mcp_oauth "
+                    "(binding_id, owner, configuration_digest, generation, credential_version, refresh_pending, bundle_json) "
+                    "VALUES ('binding', 'connector:account', :digest, 'generation', 4, 0, :bundle)"
+                ),
+                {"digest": "a" * 64, "bundle": '{"retained":"private-fixture"}'},
+            )
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "60710c8b48e4"
+            assert connection.execute(text("SELECT group_name FROM connector_configuration")).scalar_one() == "existing"
+            assert connection.execute(text("SELECT credential_version, bundle_json FROM mcp_oauth")).one() == (
+                4,
+                '{"retained":"private-fixture"}',
+            )
+            assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+        migrator.upgrade()
+        migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
+def test_failed_group_backfill_rolls_back_and_can_be_retried(tmp_path):
+    from sqlalchemy.exc import IntegrityError
+
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "b816fd5edbe8"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO connector_configuration "
+                    "(connector_id, kind, name, enabled, deliver_to_bot, selected_events, settings, credentials) "
+                    "VALUES ('account-one', 'github', 'GitHub', 1, 0, '[]', '{}', '{\"token\":\"private-fixture\"}'), "
+                    "('account-two', 'github', 'GitHub', 1, 0, '[]', '{}', '{}')"
+                )
+            )
+            # Fail after the first row has been assigned, not before migration starts.
+            connection.exec_driver_sql(
+                "CREATE TRIGGER fail_group_backfill BEFORE UPDATE ON connector_configuration "
+                "WHEN OLD.connector_id = 'account-two' BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
+            )
+            before = connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).all()
+        with pytest.raises(IntegrityError, match="injected failure"):
+            migrator.upgrade()
+        with engine.begin() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "b816fd5edbe8"
+            assert "group_name" not in {
+                column["name"] for column in inspect(connection).get_columns("connector_configuration")
+            }
+            assert (
+                connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).all() == before
+            )
+            connection.exec_driver_sql("DROP TRIGGER fail_group_backfill")
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT group_name FROM connector_configuration ORDER BY connector_id")
+            ).scalars().all() == ["github", "github-2"]
     finally:
         engine.dispose()

@@ -2,13 +2,14 @@
 
 import json
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.connector_models import (
     ConnectorConfiguration,
+    ConnectorGroupName,
     ConnectorInput,
     ConnectorRule,
     ConnectorState,
@@ -21,6 +22,7 @@ from .database import DatabaseSessions, short_session, transaction
 from .models import BotInboxRecord, ConnectorConfigurationRecord, ConnectorSetupOfferRecord, ConnectorStateRecord
 
 _RULES = TypeAdapter(tuple[ConnectorRule, ...])
+_GROUP_NAME = TypeAdapter(ConnectorGroupName)
 
 
 def _json(value: object) -> str:
@@ -32,6 +34,7 @@ def _configuration(row: ConnectorConfigurationRecord) -> ConnectorConfiguration:
         connector_id=row.connector_id,
         kind=row.kind,
         name=row.name,
+        group_name=row.group_name,
         version=row.version,
         credential_version=row.credential_version,
         enabled=row.enabled,
@@ -114,6 +117,14 @@ class ConnectorRepository:
         credentials: dict[str, str] | None = None,
     ) -> ConnectorConfiguration:
         """Create or conditionally replace human configuration; credentials have their own CAS."""
+        try:
+            group_name = _GROUP_NAME.validate_python(configuration.group_name)
+        except ValidationError as exc:
+            raise HarnessUiError(
+                "Group name must use lowercase letters, digits and single hyphens, start with a letter, "
+                "and contain at most 32 characters.",
+                code="connector_group_invalid",
+            ) from exc
         async with transaction(self._sessions) as session:
             row = await session.get(ConnectorConfigurationRecord, configuration.connector_id)
             if row is not None and row.deleted:
@@ -131,8 +142,20 @@ class ConnectorRepository:
                 and row.credential_version != configuration.credential_version
             ):
                 raise _conflict()
+            duplicate = await session.scalar(
+                select(ConnectorConfigurationRecord.connector_id).where(
+                    ConnectorConfigurationRecord.group_name == group_name,
+                    ConnectorConfigurationRecord.connector_id != configuration.connector_id,
+                    ConnectorConfigurationRecord.deleted.is_(False),
+                )
+            )
+            if duplicate is not None:
+                raise HarnessUiError(
+                    "Group name is already used by another connection.", code="connector_group_conflict"
+                )
             values = dict(
                 name=configuration.name,
+                group_name=group_name,
                 enabled=configuration.enabled,
                 deliver_to_bot=configuration.deliver_to_bot,
                 selected_events=_json(configuration.selected_events),

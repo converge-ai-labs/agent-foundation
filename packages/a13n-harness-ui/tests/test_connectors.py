@@ -11,11 +11,11 @@ from a13n_harness_ui.connectors import Controller, Declaration, Definition, Even
 from a13n_harness_ui.connectors.catalog import Catalog
 from a13n_harness_ui.connectors.forms import safe_values, validate_form
 from a13n_harness_ui.connectors.github import GITHUB_ENDPOINT
-from a13n_harness_ui.connectors.models import SetupCommand
+from a13n_harness_ui.connectors.models import Capture, SetupCommand
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import resolve_mcp_values
 from anyio import Event, create_task_group, get_current_task
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .test_app import _settings, _write_configuration
 from .test_bot import ready
@@ -80,7 +80,7 @@ class SampleController(Controller):
 
 async def create_github(app, *, connector_id="connector-test"):
     return await app.configure_connector(
-        ConnectorConfiguration(connector_id=connector_id, kind="github"), expected_version=None
+        ConnectorConfiguration(connector_id=connector_id, kind="github", group_name=connector_id), expected_version=None
     )
 
 
@@ -96,6 +96,98 @@ async def save_github(app, connector_id="connector-test"):
     return result
 
 
+@pytest.mark.parametrize("group_name", ["github", "work-github-2", "a" * 32])
+def test_connector_groups_are_canonical_tool_search_names(group_name):
+    from a13n_harness.tools.tool_search import validate_group
+
+    configuration = ConnectorConfiguration(connector_id="account", kind="github", group_name=group_name)
+    validate_group(configuration.group_name, "Account tools")
+    capture = Capture(
+        connector_id="account",
+        connector_key="github",
+        connector_name="Personal GitHub",
+        group_name=group_name,
+        configuration_version=1,
+        implementation="example:GitHub",
+    )
+    assert Capture.model_validate_json(capture.model_dump_json()) == capture
+
+
+@pytest.mark.parametrize(
+    "group_name", ["", "GitHub", "a__b", "two words", "-github", "1github", "a--b", "a-", "a" * 33]
+)
+def test_connector_group_rejects_noncanonical_values(group_name):
+    with pytest.raises(ValidationError):
+        ConnectorConfiguration(connector_id="account", kind="github", group_name=group_name)
+
+
+async def test_group_reservations_are_atomic_editable_and_released_on_delete(tmp_path):
+    async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
+        repository = app._store.connectors
+        successes, failures = [], []
+
+        async def create(connector_id):
+            try:
+                successes.append(
+                    await repository.configure(
+                        ConnectorConfiguration(
+                            connector_id=connector_id,
+                            kind="github",
+                            group_name="github",
+                            enabled=False,
+                            credentials={"token": "private-fixture"},
+                        )
+                    )
+                )
+            except HarnessUiError as exc:
+                failures.append(exc.code)
+
+        async with create_task_group() as group:
+            group.start_soon(create, "account-one")
+            group.start_soon(create, "account-two")
+        assert len(successes) == 1 and failures == ["connector_group_conflict"]
+        current = successes[0]
+        saved = await repository.configure(current, expected_version=current.version)
+        assert saved.group_name == "github"  # Saving oneself retains the reservation.
+        other = await repository.configure(
+            ConnectorConfiguration(
+                connector_id="account-other",
+                kind="other-service",
+                group_name="other",
+            )
+        )
+        with pytest.raises(HarnessUiError) as conflict:
+            await repository.configure(
+                other.model_copy(update={"group_name": "github"}), expected_version=other.version
+            )
+        assert conflict.value.code == "connector_group_conflict"
+        assert (await repository.configuration(other.connector_id)).group_name == "other"
+        with pytest.raises(HarnessUiError) as invalid:
+            await repository.configure(
+                other.model_copy(update={"group_name": "INVALID"}), expected_version=other.version
+            )
+        assert invalid.value.code == "connector_group_invalid"
+        renamed = await repository.configure(
+            saved.model_copy(update={"name": "New display name", "group_name": "personal"}),
+            expected_version=saved.version,
+        )
+        assert renamed.version == saved.version + 1
+        assert renamed.credentials == {"token": "private-fixture"}
+        with pytest.raises(HarnessUiError):
+            await repository.configure(saved, expected_version=saved.version)
+        moved = await repository.configure(
+            other.model_copy(update={"group_name": "github"}), expected_version=other.version
+        )
+        await repository.delete(moved.connector_id, expected_version=moved.version)
+        replacement = await repository.configure(
+            ConnectorConfiguration(connector_id="replacement", kind="github", group_name="github")
+        )
+        assert replacement.group_name == "github"
+        with pytest.raises(HarnessUiError) as retired:
+            await repository.configure(moved.model_copy(update={"group_name": "unused"}))
+        assert retired.value.code == "connector_identity_retired"
+
+
 async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_path):
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
@@ -108,7 +200,7 @@ async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_p
         captures = await app.connectors().capture()
         assert len(captures) == 1
         assert "test-private-token" not in json.dumps([capture.model_dump(mode="json") for capture in captures])
-        source = app.connectors().capabilities(captures)["connector-test"]
+        source = app.connectors().capabilities(captures)["connector-test"].wrapped
         assert source._recipe.transport.url == GITHUB_ENDPOINT
         values = await resolve_mcp_values(source._recipe.transport.headers, None, private_values=source._private_values)
         assert values == {"Authorization": "Bearer test-private-token"}
@@ -195,6 +287,7 @@ async def test_atomic_state_and_input_bounds_dedup_rules_and_generation(tmp_path
         await app.configure_connector(
             ConnectorConfiguration(
                 connector_id="connector-source",
+                group_name="sample-source",
                 kind="sample",
                 deliver_to_bot=True,
                 rules=(ConnectorRule(id="rule", event="changed", conditions={"label": "selected"}),),
@@ -331,7 +424,10 @@ async def test_controller_context_has_one_owning_task_through_root_drain(tmp_pat
 
             async def configure():
                 await app.configure_connector(
-                    ConnectorConfiguration(connector_id="connector-resource", kind="sample"), expected_version=None
+                    ConnectorConfiguration(
+                        connector_id="connector-resource", kind="sample", group_name="sample-resource"
+                    ),
+                    expected_version=None,
                 )
 
             requests.start_soon(configure)
@@ -381,7 +477,8 @@ async def test_setup_shutdown_or_explicit_cancel_interrupts_action_before_closin
         integrations=HarnessUiIntegrations(connectors=(SetupDefinition(),)),
     ) as app:
         await app.configure_connector(
-            ConnectorConfiguration(connector_id="connector-flow", kind="sample"), expected_version=None
+            ConnectorConfiguration(connector_id="connector-flow", kind="sample", group_name="sample-flow"),
+            expected_version=None,
         )
         snapshot = await app.begin_connector_setup("connector-flow")
         results = []
@@ -438,7 +535,7 @@ async def test_deleted_identity_never_rebinds_old_mcp_capture(tmp_path):
         await save_github(app)
         runtime = app.connectors()
         captures = await runtime.capture()
-        source = runtime.capabilities(captures)["connector-test"]
+        source = runtime.capabilities(captures)["connector-test"].wrapped
         current = await app._store.connectors.configuration("connector-test")
         await app.delete_connector("connector-test", expected_version=current.version)
         assert await runtime.instances() == ()
@@ -487,9 +584,10 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
         assert (await runtime.instance("connector-test")).status.state == "ready"
 
 
-async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, monkeypatch):
-    import hashlib
-
+@pytest.mark.parametrize(
+    "codeact,change", [(False, None), (True, None), (True, "disable"), (True, "rename"), (True, "group")]
+)
+async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, monkeypatch, codeact, change):
     from a13n_harness_ui.composition.models import ResolvedMcpRecipe
     from a13n_harness_ui.configuration.models import McpRemoteTransport
     from a13n_harness_ui.connectors.remote_mcp import RemoteMcp, RemoteMcpService
@@ -501,21 +599,49 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
     from .test_tool_search_integration import _http_mcp
 
     root = _write_configuration(tmp_path)
-    root.write_text(root.read_text() + "tools: {enable_codeact: false, execution: {mode: inline}}\n")
+    root.write_text(
+        root.read_text() + f"tools: {{enable_codeact: {str(codeact).lower()}, execution: {{mode: inline}}}}\n"
+    )
     server = FastMCP("connector-native")
     calls = []
 
     @server.tool()
-    def lookup(query: str) -> str:
+    async def lookup(query: str) -> str:
         calls.append(query)
+        if change is not None:
+            current = await app._store.connectors.configuration("connector-first")
+            update = {
+                "disable": {"enabled": False},
+                "rename": {"name": "Renamed account"},
+                "group": {"group_name": "renamed-documents"},
+            }[change]
+            await app.configure_connector(current.model_copy(update=update), expected_version=current.version)
         return "Native result: " + query
 
-    group = "connector_" + hashlib.sha256(b"connector-first").hexdigest()[:16]
-    empty_group = "connector_" + hashlib.sha256(b"connector-empty").hexdigest()[:16]
+    group = "work-documents"
+    empty_group = "empty-documents"
+    source = f"""directory = await list_connectors()
+assert directory['groups'][0]['group'] == {group!r}
+assert 'Work documents' in directory['groups'][0]['description']
+found = await discover_connector_tools(group={group!r}, query='lookup', detail='full')
+assert found['tools'][0]['codeact_eligible']
+definition = await describe_connector_tool(group={group!r}, tool='lookup')
+assert definition['tool']['parameters_json_schema']['properties']['query']['type'] == 'string'
+try:
+    await call_connector_tool(group={empty_group!r}, tool='lookup', arguments={{'query': 'denied'}})
+except Exception:
+    pass
+else:
+    raise ValueError('Empty account unexpectedly exposed a tool')
+await call_connector_tool(group={group!r}, tool='lookup', arguments={{'query': 'direct'}})"""
+    if change is not None:
+        source += f"\nawait call_connector_tool(group={group!r}, tool='lookup', arguments={{'query': 'after-change'}})"
     commands = [
-        ("discover_connector_tools", {"group": group, "query": ""}),
+        ("discover_connector_tools", {"group": group, "query": "", "detail": "full"}),
         ("discover_connector_tools", {"group": empty_group, "query": ""}),
-        ("call_connector_tool", {"group": group, "tool": "lookup", "arguments": {"query": "direct"}}),
+        ("run_code", {"code": source})
+        if codeact
+        else ("call_connector_tool", {"group": group, "tool": "lookup", "arguments": {"query": "direct"}}),
         ("offer_connector_setup", {"connector_key": "github", "text": "Connect your GitHub account"}),
     ]
     seen = []
@@ -525,6 +651,13 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
         assert "offer_connector_setup" in names
         assert "call_connector_tool" in names
         assert "lookup" not in names
+        if codeact:
+            assert "async def call_connector_tool" in info.instructions
+            assert "async def describe_connector_tool" in info.instructions
+            assert "async def list_connector_tools" in info.instructions
+            assert "async def list_connectors" in info.instructions
+            assert "async def lookup" not in info.instructions
+            assert f"{group}__lookup" not in info.instructions
         returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
         if returns:
             seen.append(returns[-1])
@@ -579,14 +712,41 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
             assert "remote-mcp" not in app.connectors().catalog.items
             for connector_id in tools_by_account:
                 await app.configure_connector(
-                    ConnectorConfiguration(connector_id=connector_id, kind="documents"),
+                    ConnectorConfiguration(
+                        connector_id=connector_id,
+                        kind="documents",
+                        name="Work documents",
+                        group_name=group if connector_id == "connector-first" else empty_group,
+                    ),
                     expected_version=None,
                 )
+            captured = await app.connectors().capture()
+            assert captured[0].connector_name == "Work documents"
+            context = await app.connectors().model_context(captured)
+            assert next(item for item in context["instances"] if item["id"] == "connector-first")["group_name"] == group
             thread = await app.create_thread(title="Native Connector")
             receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Find a document")
             settled = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=20)
+            if change is not None:
+                assert settled.status == "failed", settled
+                assert calls == ["direct"]  # The second callback rechecks the captured account guard.
+                if change == "rename":
+                    fresh = await app.connectors().capture()
+                    first = next(item for item in fresh if item.connector_id == "connector-first")
+                    assert first.group_name == group
+                    assert first.connector_name == "Renamed account"
+                    assert captured[0].connector_name == "Work documents"
+                if change == "group":
+                    fresh = await app.connectors().capture()
+                    first = next(item for item in fresh if item.connector_id == "connector-first")
+                    assert first.group_name == "renamed-documents"
+                    assert next(item for item in captured if item.connector_id == "connector-first").group_name == group
+                assert await app._store.connectors.offers(thread.thread_id) == ()
+                return
             assert settled.status == "completed", settled
             assert calls == ["direct"]
+            discovery = next(part for part in seen if part.tool_call_id == "connector-call-0")
+            assert discovery.content["tools"][0]["codeact_eligible"] is True
             empty_result = next(part for part in seen if part.tool_call_id == "connector-call-1")
             assert "lookup" not in str(empty_result.content)
             offers = await app._store.connectors.offers(thread.thread_id)
@@ -625,15 +785,40 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
             assert (await client.get(prefix + path.removeprefix("/api"), headers=guest)).status_code == 404
         catalog = (await client.get("/api/connectors/catalog", headers=owner)).json()
         assert "remote-mcp" not in {item["key"] for item in catalog}
-        rejected = await client.put("/api/connectors/connector-generic", headers=owner, json={"kind": "remote-mcp"})
+        rejected = await client.put(
+            "/api/connectors/connector-generic", headers=owner, json={"kind": "remote-mcp", "group_name": "generic"}
+        )
         assert rejected.status_code == 400
         assert rejected.json()["error"]["code"] == "connector_plugin_unavailable"
         assert await app.connectors().instances() == ()
-        response = await client.put("/api/connectors/connector-http", headers=owner, json={"kind": "github"})
+        response = await client.put(
+            "/api/connectors/connector-http", headers=owner, json={"kind": "github", "group_name": "github"}
+        )
         assert response.status_code == 200, response.text
         assert response.json()["version"] == 1
+        assert response.json()["group_name"] == "github"
+        duplicate = await client.put(
+            "/api/connectors/connector-duplicate", headers=owner, json={"kind": "github", "group_name": "github"}
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["error"]["code"] == "connector_group_conflict"
+        for invalid in ["GitHub", "has space", "a--b", "a" * 33]:
+            rejected_group = await client.put(
+                "/api/connectors/connector-invalid", headers=owner, json={"kind": "github", "group_name": invalid}
+            )
+            assert rejected_group.status_code == 400
+        renamed = await client.put(
+            "/api/connectors/connector-http",
+            headers=owner,
+            json={"kind": "github", "name": "Personal", "group_name": "personal", "expected_version": 1},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["group_name"] == "personal"
+        assert renamed.json()["version"] == 2
         assert (
-            await client.put("/api/connectors/connector-http", headers=owner, json={"kind": "github"})
+            await client.put(
+                "/api/connectors/connector-http", headers=owner, json={"kind": "github", "group_name": "github"}
+            )
         ).status_code == 409
         setup = (await client.post("/api/connectors/connector-http/setup", headers=owner, json={})).json()
         path = f"/api/connector-setups/{setup['session_id']}/actions"
@@ -694,7 +879,8 @@ async def test_setup_corrected_submission_uses_returned_error_version_without_ge
         integrations=HarnessUiIntegrations(connectors=(SetupDefinition(),)),
     ) as app:
         await app.configure_connector(
-            ConnectorConfiguration(connector_id="connector-error", kind="sample"), expected_version=None
+            ConnectorConfiguration(connector_id="connector-error", kind="sample", group_name="sample-error"),
+            expected_version=None,
         )
         setup = await app.begin_connector_setup("connector-error")
         invalid = SetupCommand(operation_id="invalid", version=setup.version, action="save")

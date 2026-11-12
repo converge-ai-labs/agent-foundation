@@ -4979,6 +4979,186 @@
         }
       }
     },
+    "/api/mcp-authorization/status/{kind}/{target_id}": {
+      "get": {
+        "summary": "Mcp Oauth Status",
+        "operationId": "mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "mcp",
+                "connector"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/start": {
+      "post": {
+        "summary": "Mcp Oauth Start",
+        "operationId": "mcp_oauth_start_api_mcp_authorization_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/attempts/{attempt_id}": {
+      "get": {
+        "summary": "Mcp Oauth Login Status",
+        "operationId": "mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthLoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Mcp Oauth Cancel",
+        "operationId": "mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp-authorization/disconnect": {
+      "post": {
+        "summary": "Mcp Oauth Disconnect",
+        "operationId": "mcp_oauth_disconnect_api_mcp_authorization_disconnect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationTarget"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mcp/{server_id}/tools": {
       "get": {
         "summary": "Mcp Tools Settings",
@@ -10591,6 +10771,54 @@
           "copilot_subscription"
         ]
       },
+      "AuthorizationStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "disconnected",
+              "connected",
+              "expired",
+              "reconnect_required"
+            ],
+            "title": "State"
+          },
+          "login": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthLoginStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes",
+            "default": []
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AuthorizationStatus"
+      },
       "Availability": {
         "type": "string",
         "enum": [
@@ -10643,6 +10871,21 @@
             "type": "string",
             "maxLength": 65536,
             "title": "Text"
+          },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Parts",
+            "default": []
           },
           "created_at": {
             "type": "string",
@@ -10753,6 +10996,21 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Parts",
+            "default": []
           },
           "created_at": {
             "type": "string",
@@ -17354,6 +17612,12 @@
             "type": "string",
             "title": "Name"
           },
+          "group_name": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Group Name"
+          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -17399,6 +17663,7 @@
           "connector_id",
           "kind",
           "name",
+          "group_name",
           "version",
           "enabled",
           "deliver_to_bot",
@@ -17982,6 +18247,11 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "oauth": {
+            "type": "boolean",
+            "title": "Oauth",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -19296,6 +19566,53 @@
         "additionalProperties": false,
         "type": "object",
         "title": "NoteWorkSummary"
+      },
+      "OAuthLoginStatus": {
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "title": "Attempt Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "connecting",
+              "waiting",
+              "connected",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State"
+          },
+          "authorization_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_id",
+          "state"
+        ],
+        "title": "OAuthLoginStatus"
       },
       "ObjectKind": {
         "description": "Immutable payload families owned by the Harness UI store.",
@@ -21302,7 +21619,8 @@
               "submit",
               "open_url",
               "copy",
-              "confirm"
+              "confirm",
+              "oauth"
             ],
             "title": "Kind",
             "default": "submit"
@@ -27772,6 +28090,12 @@
             "title": "Name",
             "type": "string"
           },
+          "group_name": {
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Group Name",
+            "type": "string"
+          },
           "expected_version": {
             "anyOf": [
               {
@@ -27811,7 +28135,8 @@
           }
         },
         "required": [
-          "kind"
+          "kind",
+          "group_name"
         ],
         "title": "Save",
         "type": "object"
@@ -27877,6 +28202,23 @@
         "title": "SetupCommand",
         "type": "object"
       },
+      "InputAttachmentReference": {
+        "additionalProperties": false,
+        "description": "An ordered input reference to a file staged in the same Thread.",
+        "properties": {
+          "attachment_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Attachment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id"
+        ],
+        "title": "InputAttachmentReference",
+        "type": "object"
+      },
       "BotSubmit": {
         "properties": {
           "input_id": {
@@ -27889,15 +28231,30 @@
           "text": {
             "type": "string",
             "maxLength": 65536,
-            "minLength": 1,
-            "title": "Text"
+            "title": "Text",
+            "default": ""
+          },
+          "parts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/InputAttachmentReference"
+                }
+              ]
+            },
+            "type": "array",
+            "maxItems": 1024,
+            "title": "Parts",
+            "default": []
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "input_id",
-          "text"
+          "input_id"
         ],
         "title": "BotSubmit"
       },
@@ -29018,6 +29375,31 @@
         "title": "LoginCallbackInput",
         "type": "object"
       },
+      "AuthorizationTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mcp",
+              "connector"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "AuthorizationTarget"
+      },
       "McpToolSelection": {
         "additionalProperties": false,
         "properties": {
@@ -29931,22 +30313,6 @@
             "type": "string"
           }
         ]
-      },
-      "InputAttachmentReference": {
-        "additionalProperties": false,
-        "properties": {
-          "attachment_id": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Attachment Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "attachment_id"
-        ],
-        "title": "InputAttachmentReference",
-        "type": "object"
       },
       "ReasoningMode": {
         "enum": [

@@ -705,10 +705,16 @@ class McpCommandTransport(StrictModel):
         return value
 
 
+class McpOAuthConfiguration(StrictModel):
+    registration: Literal["dcr"] = "dcr"
+    scope: str | None = Field(default=None, max_length=4096)
+
+
 class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
     init_timeout_seconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     headers: dict[str, McpValueSource] = Field(default_factory=dict)
+    oauth: McpOAuthConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _safe_remote(self) -> Self:
@@ -719,7 +725,9 @@ class McpRemoteTransport(StrictModel):
         if query_names & _SECRET_FIELD_NAMES:
             raise ValueError("MCP URL query parameters must not contain credentials")
         loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
-        if parsed.scheme == "http" and (not loopback or self.headers):
+        if self.oauth is not None and any(name.lower() == "authorization" for name in self.headers):
+            raise ValueError("managed MCP OAuth cannot be combined with an Authorization header")
+        if parsed.scheme == "http" and (not loopback or self.headers or self.oauth is not None):
             raise ValueError("plain HTTP MCP is limited to header-free loopback URLs")
         return self
 

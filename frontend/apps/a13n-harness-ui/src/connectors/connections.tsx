@@ -70,6 +70,7 @@ export function ConnectorsSection() {
             body: {
               kind: instance.kind,
               name: instance.name,
+              group_name: instance.group_name,
               enabled: !instance.enabled,
               deliver_to_bot: instance.deliver_to_bot,
               settings: instance.settings,
