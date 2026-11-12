@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Input, ModalFrame, Switch } from "a13n-ui";
+import { Button, FormField, Input, ModalFrame, Switch } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { ConfirmAction } from "../shell/confirm-action";
@@ -11,6 +11,8 @@ import { SchemaForm } from "./form";
 import { defaultValue, type FormSchema, type Json } from "./schema";
 import { ConnectorStatus } from "./status";
 import { ConnectorIcon } from "./presentation";
+import { useConnectors } from "./data";
+import { groupNameError } from "./group-name";
 import styles from "./connectors.module.css";
 
 export function AccountDialog({
@@ -30,6 +32,8 @@ export function AccountDialog({
   const id = useId();
   const [base, setBase] = useState(instance);
   const [name, setName] = useState(instance.name);
+  const [groupName, setGroupName] = useState(instance.group_name);
+  const instances = useConnectors();
   const [enabled, setEnabled] = useState(instance.enabled);
   const [delivery, setDelivery] = useState(instance.deliver_to_bot);
   const [settings, setSettings] = useState<Json>(
@@ -42,10 +46,21 @@ export function AccountDialog({
   const [discard, setDiscard] = useState(false);
   const dirty =
     name !== base.name ||
+    groupName !== base.group_name ||
     enabled !== base.enabled ||
     delivery !== base.deliver_to_bot ||
     JSON.stringify(settings) !== JSON.stringify(base.settings) ||
     JSON.stringify(rules) !== JSON.stringify(base.rules ?? []);
+  const groupError =
+    groupNameError(
+      groupName,
+      instances.data
+        ?.filter((entry) => entry.connector_id !== instance.connector_id)
+        .map((entry) => entry.group_name) ?? [],
+    ) ??
+    (error instanceof ApiError && error.code === "connector_group_conflict"
+      ? "Group name is already used by another connection."
+      : undefined);
   const available =
     catalog?.available && instance.status.state !== "runtime_unavailable";
   const schema = catalog?.declaration?.configuration_schema as
@@ -54,6 +69,8 @@ export function AccountDialog({
   function reset(next: Schema<"Instance">) {
     setBase(next);
     setName(next.name);
+    setGroupName(next.group_name);
+    setError(null);
     setEnabled(next.enabled);
     setDelivery(next.deliver_to_bot);
     setSettings(next.settings as Record<string, Json>);
@@ -67,7 +84,7 @@ export function AccountDialog({
     else onClose();
   }
   async function save() {
-    if (pending.current) return;
+    if (pending.current || groupError) return;
     pending.current = true;
     setBusy(true);
     setError(null);
@@ -78,6 +95,7 @@ export function AccountDialog({
           body: {
             kind: instance.kind,
             name,
+            group_name: groupName,
             enabled,
             deliver_to_bot: delivery,
             settings: settings as Record<string, Json>,
@@ -145,7 +163,12 @@ export function AccountDialog({
               type="submit"
               form={id}
               disabled={
-                busy || !available || conflict || !dirty || !name.trim()
+                busy ||
+                !available ||
+                conflict ||
+                !dirty ||
+                !name.trim() ||
+                !!groupError
               }
             >
               {t("Save settings")}
@@ -154,7 +177,14 @@ export function AccountDialog({
         }
       >
         <div className={styles.editor}>
-          <ErrorNotice error={error} />
+          <ErrorNotice
+            error={
+              error instanceof ApiError &&
+              error.code === "connector_group_conflict"
+                ? null
+                : error
+            }
+          />
           {conflict && (
             <div role="status">
               <p>
@@ -240,6 +270,30 @@ export function AccountDialog({
                   disabled={busy}
                   required
                 />
+              </SettingsRow>
+              <SettingsRow label={t("Group name")} stackOnNarrow>
+                <FormField
+                  label={t("Group name")}
+                  hideLabel
+                  description={t(
+                    "Changing this group requires a new Run to use its tools.",
+                  )}
+                  error={groupError ? t(groupError) : undefined}
+                >
+                  <Input
+                    value={groupName}
+                    onChange={(event) => {
+                      setGroupName(event.target.value);
+                      setError(null);
+                    }}
+                    disabled={busy}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={32}
+                    required
+                  />
+                </FormField>
               </SettingsRow>
               <SettingsRow
                 label={t("Enabled")}

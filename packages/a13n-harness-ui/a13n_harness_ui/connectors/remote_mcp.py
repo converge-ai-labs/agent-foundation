@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
+from a13n_harness import AgentContext
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from fastmcp import Client
 from pydantic import JsonValue
+from pydantic_ai.capabilities import WrapperCapability
+from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.models import McpPrivateValueSource
@@ -68,13 +73,26 @@ class RemoteMcp(Controller):
             )
         return current.credentials[source.key]
 
-    def capability(self, capture: Capture) -> HarnessUiMCP:
+    def capability(self, capture: Capture) -> WrapperCapability[AgentContext]:
         recipe = ResolvedMcpRecipe.model_validate(capture.binding["mcp"])
 
         async def guard() -> None:
             await self.context.require_available(capture)
 
-        return HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard)
+        return _ProgrammaticMcp(HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard))
+
+
+@dataclass
+class _ProgrammaticMcp(WrapperCapability[AgentContext]):
+    """Opt this library's native targets into the existing CodeAct proxy path."""
+
+    def get_toolset(self) -> AbstractToolset[AgentContext] | None:
+        source = self.wrapped.get_toolset()
+        if source is None:
+            return None
+        if not isinstance(source, AbstractToolset):
+            raise TypeError("Remote MCP CodeAct policy requires a concrete native Toolset.")
+        return CodeActPolicyToolset(source, CodeActToolPolicy(default=True))
 
 
 class RemoteMcpService:
