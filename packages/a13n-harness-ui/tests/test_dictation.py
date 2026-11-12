@@ -128,9 +128,9 @@ async def test_subscription_uses_same_source_and_skips_empty_cleanup(monkeypatch
         events.append("model")
         return FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("clean speech")]))
 
-    monkeypatch.setattr(dictation, "transcribe", asr)
+    monkeypatch.setattr("a13n_harness.models.codex_dictation.transcribe", asr)
     monkeypatch.setattr(dictation, "create_model_http_client", factory)
-    monkeypatch.setattr(dictation, "CodexRequestModel", model)
+    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", model)
     result = await dictation.transcribe_subscription(
         recording(), source, "preset-model", configuration=RunConfiguration()
     )
