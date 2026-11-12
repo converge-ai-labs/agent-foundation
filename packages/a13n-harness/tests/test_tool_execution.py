@@ -914,7 +914,7 @@ async def test_immediate_settlement_publishes_completed_native_result_once(monke
         ]
         assert len(returns) == 1
         assert tool_execution_value(returns[0].content, returns[0].metadata) == {"answer": 42}
-        assert returns[0].content[1].startswith("Tool result · lookup · execution_id=")
+        assert returns[0].content == {"answer": 42}
         assert returns[0].metadata["origin"] == "retained"
     await runtime.close()
 
@@ -1128,4 +1128,20 @@ async def test_tool_notification_and_retrieved_result_share_execution_identity(r
         assert result.output_or_raise() == "done"
     finally:
         release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+async def test_foreground_owned_return_keeps_native_value_without_execution_header(mode):
+    async def lookup():
+        return 3
+
+    runtime = ToolExecutionRuntime()
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode=mode, foreground_wait_seconds=30))
+    try:
+        result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+        assert result.output_or_raise() == "continuing conversation"
+        assert observed[0].content == 3
+        assert not (await runtime.summarize(result.thread_id))[0].foreground_released
+    finally:
         await runtime.close()
