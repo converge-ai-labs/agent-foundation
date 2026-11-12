@@ -3,6 +3,7 @@
 import hashlib
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -127,8 +128,10 @@ async def test_model_forwarding_priority_flags_and_fresh_runs(
     )
     assert response.status_code == 201, response.text
     await (await runs_kit.attempt(service))
-    assert "x-trace" not in captured[-1]
-    assert "context" not in response.json()["run"]["options"]
+    assert captured[-1].get("x-trace") == (
+        "business-value" if category and (default if target is None else target) else None
+    )
+    assert response.json()["run"]["options"]["context"]["headers"]["x-trace"] == "business-value"
 
 
 async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing_storage(
@@ -201,3 +204,94 @@ async def test_mcp_run_inbox_and_schedule_reads_project_context_without_changing
         )
         assert occurrence["status"] == 200 and "private-context-value" not in json.dumps(occurrence)
     assert (await runs_kit.get_run(service, run_id))["options"]["context"] == context
+
+
+@pytest.mark.parametrize("latest", [{"headers": {"x-trace": "two"}}, {"headers": {}}])
+async def test_new_runs_keep_the_latest_context_not_the_tool_origin(
+    service: Any, scripted_model: Any, runs_kit: Any, latest: dict
+) -> None:
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs import accept, inbox
+    from a13n_service.runs.tables import ThreadRow
+    from a13n_service.runs.threads import lock_thread
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first_context = {"headers": {"x-trace": "one", "x-removed": "original-only"}}
+    scripted_model.say("First")
+    first = await runs_kit.start_thread(service, agent, "first", options={"context": first_context})
+    await (await runs_kit.attempt(service))
+    thread_id = first["thread"]["id"]
+    scripted_model.say("Second")
+    second = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "replace", options={"context": latest}))
+    assert second.status_code == 201, second.text
+    await (await runs_kit.attempt(service))
+    # A delayed result from Run A must use B's context when it admits Run C.
+    async with transaction(service.runtime.storage) as session:
+        thread = await lock_thread(session, thread_id)
+        origin = await session.get_one(RunRow, first["run"]["id"])
+        await inbox.append_tool_result(session, thread, origin, {"execution_id": "exec-delayed"})
+        awakened = await accept.accept(session, service.runtime, thread)
+        assert awakened is not None
+        awakened_id = awakened.id
+        assert awakened.parent_run_id == second.json()["run"]["id"]
+        assert awakened.options["context"] == latest
+        assert origin.options["context"] == first_context
+    scripted_model.say("Awakened")
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, awakened_id))["status"] == "completed"
+    # Omission after a replacement or explicit clear keeps the accepted head.
+    third = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "omitted"))
+    assert third.status_code == 201, third.text
+    assert third.json()["run"]["options"]["context"] == latest
+    async with transaction(service.runtime.storage) as session:
+        thread = await session.get_one(ThreadRow, thread_id)
+        assert thread.current_run_id == third.json()["run"]["id"]
+
+
+async def test_delayed_child_result_uses_latest_parent_context(
+    service: Any, scripted_model: Any, runs_kit: Any
+) -> None:
+    from .test_runs_children import DELEGATE, _child_run, _deliver
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.delegating(service, scripted_model, "async")
+    first_context = {"headers": {"x-trace": "one"}}
+    latest = {"headers": {"x-trace": "two"}}
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.say("Delegated", to="Role: coordinator")
+    first = await runs_kit.start_thread(service, agent, "delegate", options={"context": first_context})
+    await (await runs_kit.attempt(service))
+    child = await _child_run(service, first["run"]["id"])
+    assert child.options["context"] == first_context
+    scripted_model.say("42", to="Role: worker")
+    await (await runs_kit.attempt(service))
+    # Keep delivery queued while a newer external input changes the parent context.
+    scripted_model.say("Updated", to="Role: coordinator")
+    second = await runs_kit.submit(
+        service, first["thread"]["id"], runs_kit.message(agent, "replace", options={"context": latest})
+    )
+    assert second.status_code == 201, second.text
+    await (await runs_kit.attempt(service))
+    assert len(await _deliver(service)) == 1
+    thread = await runs_kit.get_thread(service, first["thread"]["id"])
+    awakened = await runs_kit.get_run(service, thread["current_run_id"])
+    assert awakened["trigger"] == "child_result"
+    assert awakened["parent_run_id"] == second.json()["run"]["id"]
+    assert awakened["options"]["context"] == latest
+    assert (await runs_kit.get_run(service, child.id))["options"]["context"] == first_context
+    scripted_model.say("Received", to="Role: coordinator")
+    await (await runs_kit.attempt(service))
+    assert (await runs_kit.get_run(service, awakened["id"]))["status"] == "completed"
+
+
+@pytest.mark.parametrize("kind", ["tool_result", "child_result"])
+def test_completion_steers_a_newer_active_run_without_rebinding_context(kind: str) -> None:
+    original = RunOptions(context=RequestContext(headers={"x-trace": "one"}))
+    latest = RunOptions(context=RequestContext(headers={"x-trace": "two"}))
+    origin = RunRow(id="run_origin", options=original.model_dump(mode="json"), sealed_at=datetime.now(UTC))
+    active = RunRow(id="run_active", options=latest.model_dump(mode="json"))
+    completion = InboxEntryRow(kind=kind, delivery="steer", origin_run_id=origin.id, options={})
+    assert steers_into(completion, active, origin)
+    assert active.options["context"] == {"headers": {"x-trace": "two"}}
+    assert origin.options["context"] == {"headers": {"x-trace": "one"}}

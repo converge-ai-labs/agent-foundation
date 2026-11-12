@@ -51,7 +51,10 @@ def test_session_cutover_preserves_thread_and_converts_saved_policies(tmp_path):
         migrator.upgrade()
         migrator.verify_current()
         with engine.connect() as connection:
-            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == before
+            assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
+                **before,
+                "external_context_json": None,
+            }
             after = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
             converted = json.loads(after.pop("environment_bindings_json"))
             config.pop("environment_bindings_json")

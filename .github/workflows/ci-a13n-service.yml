@@ -273,6 +273,8 @@ jobs:
       - name: Install native Browser desktop dependencies
         if: matrix.name == 'native'
         run: |
+          # Avoid ubuntu.com DNS failures on hosted runners; APT still verifies Ubuntu signatures.
+          printf 'https://mirrors.edge.kernel.org/ubuntu/\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           sudo apt-get update
           sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
 
