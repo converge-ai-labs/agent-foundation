@@ -58,10 +58,20 @@ export function renderDiagram(source: string, dark: boolean): Promise<string> {
         background: dark ? "#18181b" : "#ffffff",
       },
     });
-    const { svg } = await mermaid.render(`diagram-${++serial}`, source);
-    // An image document cannot execute diagram callbacks or inject styles into
-    // the application. Do not bind Mermaid's optional interactive callbacks.
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(intrinsicSize(svg))}`;
+    // Mermaid needs a laid-out DOM for text measurement. Keep its temporary
+    // SVG out of document flow so opening a diagram cannot scroll the workbench.
+    const host = document.createElement("div");
+    host.style.cssText =
+      "position:fixed;inset:0;overflow:hidden;visibility:hidden;pointer-events:none";
+    document.body.append(host);
+    try {
+      const { svg } = await mermaid.render(`diagram-${++serial}`, source, host);
+      // An image document cannot execute diagram callbacks or inject styles into
+      // the application. Do not bind Mermaid's optional interactive callbacks.
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(intrinsicSize(svg))}`;
+    } finally {
+      host.remove();
+    }
   });
   queue = render.catch(() => {});
   return render;
