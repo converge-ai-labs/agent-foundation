@@ -235,7 +235,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v5
         with:
-          name: sandbox-binary-amd64
+          name: sandbox-binary-amd64-default
           path: tmp/sandbox-binaries/amd64
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
@@ -243,7 +243,9 @@ jobs:
           context: .
           file: deploy/docker/images/sandbox/Dockerfile
           tags: a13n-sandbox:ci
-          build-args: ENVD_BINARY_SOURCE=prebuilt
+          build-args: |
+            ENVD_BINARY_SOURCE=prebuilt
+            ENVD_VARIANT=default
           outputs: type=docker,dest=${{ runner.temp }}/sandbox.tar
           pull: true
           cache-from: type=gha,scope=service-e2e-sandbox

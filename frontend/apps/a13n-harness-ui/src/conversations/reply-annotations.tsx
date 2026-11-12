@@ -254,6 +254,15 @@ function SelectionPopup({
       target={dictation}
       quote={session.quote}
       onActive={setDictating}
+      readDraft={() => {
+        const field = input.current;
+        if (!field) return;
+        return {
+          before: field.value.slice(0, field.selectionStart),
+          selected: field.value.slice(field.selectionStart, field.selectionEnd),
+          after: field.value.slice(field.selectionEnd),
+        };
+      }}
       insert={(text) => {
         const field = input.current;
         if (!field) return;

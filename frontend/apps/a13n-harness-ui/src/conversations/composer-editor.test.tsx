@@ -282,22 +282,22 @@ it.each(["draft-test", undefined])(
   },
 );
 
-it("routes clipboard images and drops to the current insertion position", () => {
+it("pastes images over the selection and inserts dropped files at the pointer", () => {
   const { draft, editor, context, textbox } = inlineEditor();
   act(() => {
     draft.doc.getText("text").insert(0, "before after");
-    editor.current!.dispatch({ selection: { anchor: 7 } });
+    editor.current!.dispatch({ selection: { anchor: 9, head: 7 } });
   });
   const file = new File(["image"], "clipboard.png", { type: "image/png" });
   fireEvent.paste(textbox, { clipboardData: { files: [file] } });
-  expect(context.upload).toHaveBeenCalledWith([file], 7);
+  expect(context.upload).toHaveBeenCalledWith([file], 7, 9);
   vi.spyOn(editor.current!, "posAtCoords").mockReturnValue(3);
   fireEvent.drop(textbox, {
     dataTransfer: { files: [file] },
     clientX: 10,
     clientY: 10,
   });
-  expect(context.upload).toHaveBeenLastCalledWith([file], 3);
+  expect(context.upload).toHaveBeenLastCalledWith([file], 3, 3);
 });
 
 it("disposes thumbnail resources even when CodeMirror reuses DOM with an equal new widget", async () => {
@@ -437,7 +437,7 @@ it("keeps staged images between text slices with local preview, removal and undo
       static revokeObjectURL = revokeObjectURL;
     },
   );
-  const { draft, context, rendered, textbox } = inlineEditor();
+  const { draft, editor, context, rendered, textbox } = inlineEditor();
   try {
     let key = "";
     const file = new File(["image"], "draft.png", { type: "image/png" });
@@ -450,9 +450,19 @@ it("keeps staged images between text slices with local preview, removal and undo
     const chip = await screen.findByRole("button", {
       name: "draft.png - ready to upload",
     });
+    const image = chip.querySelector("img");
+    act(() =>
+      editor.current!.dispatch({
+        selection: { anchor: 0, head: editor.current!.state.doc.length },
+      }),
+    );
+    expect(chip.parentElement?.hasAttribute("data-selected")).toBe(true);
+    act(() => editor.current!.dispatch({ selection: { anchor: 0 } }));
+    expect(chip.parentElement?.hasAttribute("data-selected")).toBe(false);
+    expect(chip.querySelector("img")).toBe(image);
     expect(chip.textContent).toBe("draft.png");
     expect(textbox.querySelector(".cm-line")?.textContent).toBe(
-      "before draft.png×after",
+      "before draft.pngafter",
     );
     fireEvent.click(chip);
     expect(context.previewLocal).toHaveBeenCalledWith(file);

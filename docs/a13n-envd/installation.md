@@ -6,6 +6,18 @@ description: Build or download an Envd binary that matches your EIP client, or r
 
 Install Envd on the computer that will execute file, command, or desktop operations. Harness UI acquires its own matching binary for local Sandbox mode. Use this guide when connecting another computer as a Device or when your application manages Envd directly.
 
+## Choose a binary flavor
+
+Starting with Envd 0.8.1, all six Linux, macOS and Windows targets publish `slim` and ordinary (`default`) archives. Linux also publishes the opt-in `vm` flavor. All flavors share the same version and EIP schema.
+
+| Flavor       | Included capabilities                                                                                                                     | Archive suffix |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `slim`       | Files, Shell/processes, transfers, native isolation and egress, all transports/TLS, monitoring/export, enrollment, supervision and update | `-slim`        |
+| `default`    | Slim capabilities plus native desktop capture, input, clipboard and accessibility                                                         | None           |
+| `vm` (Linux) | Ordinary capabilities plus both embedded VM backends                                                                                      | `-vm`          |
+
+Standalone installers and ordinary Cargo builds keep `default` as their default. Harness UI keeps acquiring the ordinary non-VM build. Select slim for headless workloads with `--variant slim` or `A13N_ENVD_VARIANT=slim`. Build it from source with `cargo build --locked --package a13n-envd --no-default-features`. Slim rejects `--computer-use true` before opening a transport. Inspect the installed flavor with `a13n-envd --build-variant`; `--version` retains its existing output.
+
 ## Build the matching binary
 
 For repository development, build the daemon and Python client from the same checkout. These pages track `main`; Local Envd checks that their release versions match.
@@ -134,9 +146,9 @@ a13n-envd update --version 1.2.3 --force
 
 `--force` reinstalls the selected version and cannot be combined with `--check`. The updater replaces the actual executable you invoked, including when reached through a symlink. It leaves PATH and configuration unchanged, uses your current privileges, and leaves service shutdown and restart to you.
 
-The updater preserves the current Linux build flavor: native-only builds select the ordinary archive, and builds with either VM backend select the full `-vm` archive. To switch flavors, stop the daemon and use the standalone installer with `--variant default` or `--variant vm`.
+The updater preserves its compiled flavor by default. Select another flavor explicitly, for example `a13n-envd update --version 0.8.1 --variant slim`. A flavor change replaces even an already-installed matching version; `--force` is only needed to reinstall the same version and flavor. Missing assets fail without fallback. Updaters older than 0.8.1 do not accept the new flavor option: use the standalone installer with `--variant slim` once, or upgrade the existing flavor first and then switch. Older unsplit VM releases still require the installer with `--variant vm` to retain VM support.
 
-Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
+Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version` and (from 0.8.1) `--build-variant`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
 
 Hosts can install another exact version into a separate absolute directory with `--version ... --install-dir ...`, retaining the source installation. `--staging-dir` accepts an existing caller-owned scratch directory for cleanup after an interrupted child process exits. Harness UI uses these options for its version-selected cache. A `.a13n-envd-version` marker pins a managed destination; update it through Harness UI rather than changing the cache entry to another version.
 

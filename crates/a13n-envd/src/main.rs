@@ -1,6 +1,7 @@
 use std::{ffi::OsString, time::Duration};
 
 mod update;
+mod variant;
 
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -72,6 +73,17 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+    if arguments.as_slice() == [OsString::from("--build-variant")] {
+        println!("{}", variant::Variant::current().name());
+        return;
+    }
+    if arguments
+        .first()
+        .is_some_and(|value| value == "--build-variant")
+    {
+        eprintln!("a13n-envd failed: --build-variant cannot be combined with other arguments");
+        std::process::exit(1);
     }
     if arguments.as_slice() == [OsString::from("--version")] {
         println!("a13n-envd {}", env!("CARGO_PKG_VERSION"));

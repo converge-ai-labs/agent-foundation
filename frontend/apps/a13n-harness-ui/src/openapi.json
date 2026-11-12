@@ -3790,8 +3790,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "string",
-                  "title": "Response Dictate Api Dictation Post"
+                  "$ref": "#/components/schemas/DictationResult"
                 }
               }
             }
@@ -13104,6 +13103,45 @@
         ],
         "title": "ChildToolCallView"
       },
+      "CodexDictationConfiguration": {
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^acct-[a-zA-Z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 480,
+            "pattern": "^[^\\s:]+$",
+            "title": "Model",
+            "default": "gpt-6-luna"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "CodexDictationConfiguration"
+      },
       "CodexSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -14773,6 +14811,15 @@
       },
       "DictationConfiguration": {
         "properties": {
+          "backend": {
+            "type": "string",
+            "enum": [
+              "model",
+              "codex"
+            ],
+            "title": "Backend",
+            "default": "model"
+          },
           "model": {
             "anyOf": [
               {
@@ -14782,6 +14829,9 @@
                 "type": "null"
               }
             ]
+          },
+          "codex": {
+            "$ref": "#/components/schemas/CodexDictationConfiguration"
           },
           "context_words": {
             "type": "integer",
@@ -14796,6 +14846,31 @@
         },
         "type": "object",
         "title": "DictationConfiguration"
+      },
+      "DictationResult": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "cleanup_failed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "DictationResult"
       },
       "DirectoryEntry": {
         "properties": {
@@ -28744,6 +28819,30 @@
         "title": "GitCaptureRequest",
         "type": "object"
       },
+      "DictationDraft": {
+        "properties": {
+          "before": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Before",
+            "default": ""
+          },
+          "selected": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "Selected",
+            "default": ""
+          },
+          "after": {
+            "type": "string",
+            "maxLength": 100000,
+            "title": "After",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "DictationDraft"
+      },
       "DictationInput": {
         "properties": {
           "audio": {
@@ -28775,6 +28874,9 @@
             "maxLength": 500000,
             "title": "Context",
             "default": ""
+          },
+          "draft": {
+            "$ref": "#/components/schemas/DictationDraft"
           }
         },
         "type": "object",

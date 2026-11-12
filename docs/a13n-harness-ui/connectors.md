@@ -10,12 +10,12 @@ Connectors add instance-wide accounts and tools to WebUI conversations and [Bot]
 1. Open **Settings → Connections → Connectors**.
 2. Choose **Add connection → GitHub**, name the account, then select **Continue**. Cancelling before Continue creates no account.
 3. Open **Create a personal access token** if you need a token. Choose repository and organization permissions for the work you intend to authorize.
-4. Enter the token and select **Save connection**. The saved view offers **Edit connection**, **Test connection** and **Done**.
-5. Select **Done**, then send a new deliberate message to use the connection. An existing Run keeps its captured tools.
+4. Enter the token and select **Save connection**. Saving completes setup and closes the dialog.
+5. Send a new deliberate message to use the connection. An existing Run keeps its captured tools.
 
 Connections lists your saved accounts first, with separate readiness states. If you leave a new account's setup incomplete, choose **Keep for later** or **Remove connection**. A kept account offers **Continue setup**.
 
-Token type, organization approval and GitHub permissions determine which GitHub operations work. Saving stores configuration locally; it does not contact GitHub or verify permissions. Choose **Test connection** in the saved view or the account menu for an explicit connectivity check. GitHub's connection details are built into the provider; setup only asks for your token.
+Token type, organization approval and GitHub permissions determine which GitHub operations work. Saving stores configuration locally; it does not contact GitHub or verify permissions. Choose **Test connection** in the account menu for an explicit connectivity check. GitHub's connection details are built into the provider; setup only asks for your token.
 
 The first save requires a non-blank token. Leading and trailing spaces are removed; control characters are rejected. A blank token field retains an existing saved token. The **Saved** hint confirms a stored token; **Remove saved token** removes it. A replacement token and removal cannot be submitted together. Credentials are plaintext in this instance's private database, protected by Host filesystem access. Never paste a token into chat, Agent instructions or a tool call.
 

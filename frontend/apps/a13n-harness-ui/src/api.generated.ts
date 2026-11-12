@@ -4576,6 +4576,19 @@ export interface components {
             arguments?: components["schemas"]["JsonValue"] | null;
             result?: components["schemas"]["JsonValue"] | null;
         };
+        /** CodexDictationConfiguration */
+        CodexDictationConfiguration: {
+            group?: components["schemas"]["ResourceId"] | null;
+            /** Account */
+            account?: string | null;
+            /**
+             * Model
+             * @default gpt-6-luna
+             */
+            model?: string;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** CodexSubscriptionAuthentication */
         CodexSubscriptionAuthentication: {
             /**
@@ -5136,7 +5149,14 @@ export interface components {
         };
         /** DictationConfiguration */
         DictationConfiguration: {
+            /**
+             * Backend
+             * @default model
+             * @enum {string}
+             */
+            backend?: "model" | "codex";
             model?: components["schemas"]["ResourceId"] | null;
+            codex?: components["schemas"]["CodexDictationConfiguration"];
             /**
              * Context Words
              * @default 2000
@@ -5144,6 +5164,13 @@ export interface components {
             context_words?: number;
         } & {
             [key: string]: components["schemas"]["JsonValue"];
+        };
+        /** DictationResult */
+        DictationResult: {
+            /** Text */
+            text: string;
+            /** Warning */
+            warning?: "cleanup_failed" | null;
         };
         /** DirectoryEntry */
         DirectoryEntry: {
@@ -10286,6 +10313,24 @@ export interface components {
             /** End Line */
             end_line?: number | null;
         };
+        /** DictationDraft */
+        DictationDraft: {
+            /**
+             * Before
+             * @default
+             */
+            before?: string;
+            /**
+             * Selected
+             * @default
+             */
+            selected?: string;
+            /**
+             * After
+             * @default
+             */
+            after?: string;
+        };
         /** DictationInput */
         DictationInput: {
             /** Audio */
@@ -10302,6 +10347,7 @@ export interface components {
              * @default
              */
             context?: string;
+            draft?: components["schemas"]["DictationDraft"];
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
@@ -13518,7 +13564,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "application/json": components["schemas"]["DictationResult"];
                 };
             };
         };
