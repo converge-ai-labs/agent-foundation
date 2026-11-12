@@ -2,6 +2,8 @@ import { useTranslation } from "../i18n";
 import { useBackground } from "./background-context";
 import { executionReceipt } from "./background-work";
 import type { ToolView } from "./tool-presentation";
+import { SubagentGlyph } from "./background-card";
+import { Terminal, Wrench } from "@phosphor-icons/react";
 import styles from "./background.module.css";
 
 export function executionHeaders(text: string) {
@@ -24,17 +26,22 @@ export function useNoticeLabel() {
     "Tool notification": t("Tool notification"),
     "Tool result": t("Tool result"),
   };
-  return (text: string, source: string) =>
-    labels[executionHeaders(text)[0]?.kind] ??
-    (source === "tool_execution"
-      ? t("Tool notification")
-      : source === "background_process"
-        ? t("Process update")
-        : t("Subagent update"));
+  return (text: string, source: string, count = 1) => {
+    const kind = labels[executionHeaders(text)[0]?.kind];
+    if (count > 1)
+      return kind ? `${kind} · ${count}` : t("System update count", { count });
+    return (
+      kind ??
+      (source === "tool_execution"
+        ? t("Tool notification")
+        : source === "background_process"
+          ? t("Process update")
+          : t("Subagent update"))
+    );
+  };
 }
 export function ExecutionNoticeLinks({ text }: { text: string }) {
   const bg = useBackground();
-  const { t } = useTranslation();
   return executionHeaders(text).map((header) => {
     const target = bg.resolve(header.id);
     return target ? (
@@ -42,13 +49,21 @@ export function ExecutionNoticeLinks({ text }: { text: string }) {
         key={header.id}
         type="button"
         className={styles.noticeLink}
+        title={target.title}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
           bg.open(target);
         }}
       >
-        {t("Open {{name}}", { name: target.title })}
+        {target.kind === "child" ? (
+          <SubagentGlyph id={target.id} />
+        ) : target.icon === "terminal" ? (
+          <Terminal size={14} />
+        ) : (
+          <Wrench size={14} />
+        )}
+        <span>{target.title}</span>
       </button>
     ) : null;
   });

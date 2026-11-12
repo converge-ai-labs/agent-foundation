@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Button, ScrollArea } from "a13n-ui";
 import {
   CirclesThree,
@@ -25,9 +19,8 @@ import {
   backgroundKey,
   glyphIdentity,
   type BackgroundItem,
-  argumentPreview,
 } from "./background-work";
-import { parsed, record } from "./tool-presentation";
+import { executionTime } from "./execution-time";
 import styles from "./background.module.css";
 
 export function SubagentGlyph({
@@ -71,24 +64,11 @@ export function useBackgroundStateLabel() {
 export function BackgroundToggle() {
   const { t } = useTranslation();
   const bg = useBackground();
-  const trigger = useRef<HTMLButtonElement>(null);
-  const measure = () => {
-    const rect = trigger.current?.getBoundingClientRect();
-    if (rect) bg.setAnchor?.({ right: rect.right, bottom: rect.bottom });
-  };
-  useLayoutEffect(measure);
-  useEffect(() => {
-    window.addEventListener("resize", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
   const count = bg.items.filter((item) => item.running).length;
   return (
     <Button
       variant="ghost"
       size="sm"
-      ref={trigger}
       aria-label={t("Background work")}
       title={t("Background work")}
       aria-expanded={bg.cardOpen}
@@ -113,33 +93,8 @@ export function BackgroundCard() {
     return () => clearInterval(timer);
   }, [bg.cardOpen]);
   if (!bg.cardOpen) return null;
-  const composer = document.querySelector<HTMLElement>(
-    "[data-composer-editor]",
-  );
-  const composerTop = composer?.getBoundingClientRect().top;
-  const bottom =
-    composerTop && composerTop > (bg.anchor?.bottom ?? 48)
-      ? composerTop - 16
-      : window.innerHeight - 16;
-  const top = (bg.anchor?.bottom ?? 40) + 8;
-  const right =
-    window.innerWidth <= 600
-      ? 8
-      : Math.max(
-          8,
-          window.innerWidth - (bg.anchor?.right ?? window.innerWidth),
-        );
-  const bodyHeight = Math.max(80, Math.min(480, bottom - top - 84));
-
   return (
     <section
-      style={
-        {
-          top,
-          right,
-          "--background-body-height": `${bodyHeight}px`,
-        } as CSSProperties
-      }
       id="background-work-card"
       className={styles.card}
       aria-label={t("Background work")}
@@ -197,12 +152,16 @@ export function BackgroundCard() {
             ),
         )}
       </ScrollArea>
-      {groups.more && (
+      {(groups.more || bg.more) && (
         <Button
           className={styles.showMore}
           variant="ghost"
           size="sm"
-          onClick={() => setLimit(limit + 20)}
+          loading={bg.loadingMore}
+          onClick={() => {
+            setLimit(limit + 20);
+            if (!groups.more) bg.loadMore();
+          }}
         >
           {t("Show more")}
         </Button>
@@ -211,83 +170,24 @@ export function BackgroundCard() {
   );
 }
 function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
-  const { t } = useTranslation();
   const bg = useBackground();
   const state = useBackgroundStateLabel();
-  const elapsed =
+  const duration =
     item.started && (item.running || item.ended)
-      ? Math.max(
-          0,
-          Math.floor(
-            ((item.ended ? Date.parse(item.ended) : now) -
-              Date.parse(item.started)) /
-              1000,
-          ),
+      ? executionTime(
+          (item.ended ? Date.parse(item.ended) : now) -
+            Date.parse(item.started),
         )
       : undefined;
-  const duration =
-    elapsed === undefined
-      ? ""
-      : elapsed === 0
-        ? t("<1s")
-        : elapsed >= 60
-          ? t("{{minutes}}m {{seconds}}s", {
-              minutes: Math.floor(elapsed / 60),
-              seconds: elapsed % 60,
-            })
-          : t("{{seconds}}s", { seconds: elapsed });
-  const { client } = useTransport();
-  const output = useQuery({
-    queryKey: [
-      "thread",
-      item.target.threadId,
-      "tool-executions",
-      "output",
-      item.target.id,
-    ],
-    enabled: !!item.tool,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET(
-          "/api/threads/{thread_id}/tool-executions/{execution_id}/output",
-          {
-            params: {
-              path: {
-                thread_id: item.target.threadId,
-                execution_id: item.target.id,
-              },
-            },
-            signal,
-          },
-        ),
-      ),
-  });
-  const outputHint =
-    output.data?.state === "expired"
-      ? t("Output expired")
-      : output.data?.truncated
-        ? t("Output truncated")
-        : "";
-  const shell = item.process || item.tool?.tool_name === "shell_exec";
-  const input = parsed(item.call?.input ?? output.data?.input);
-  const command =
-    record(input) && typeof input.command === "string"
-      ? input.command
-      : item.process?.command;
-  const name = shell ? command || item.target.title : item.target.title;
-  const preview = item.child
-    ? ""
-    : shell
-      ? ""
-      : argumentPreview(input) || item.preview;
+  const shell = item.process || item.target.icon === "terminal";
 
   return (
     <li className={styles.row}>
       <button
         type="button"
         className={styles.item}
-        onClick={() => bg.open({ ...item.target, title: name })}
-        title={command || preview || name}
+        onClick={() => bg.open(item.target)}
+        title={item.target.title}
       >
         <span className={styles.icon}>
           {item.child ? (
@@ -301,29 +201,21 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
             <Wrench />
           )}
         </span>
-        <span className={styles.copy}>
-          <span
-            className={`${styles.name} ${shell ? styles.command : ""}`}
-            title={name}
-          >
-            {name}
-          </span>
-          <span className={styles.preview}>
-            {outputHint && (
-              <>
-                {outputHint}
-                {!shell && preview ? " · " : ""}
-              </>
-            )}
-            {item.child ? (
-              <ChildPrompt item={item} />
-            ) : shell ? (
-              "\u00a0"
-            ) : (
-              preview || (outputHint ? "" : t("Input unavailable"))
-            )}
-          </span>
+        <span
+          className={`${styles.name} ${shell ? styles.command : ""}`}
+          title={item.target.title}
+        >
+          {item.target.title}
         </span>
+        {item.child ? (
+          <span className={styles.preview}>
+            <ChildPrompt item={item} />
+          </span>
+        ) : item.preview ? (
+          <span className={styles.preview} title={item.preview}>
+            {item.preview}
+          </span>
+        ) : null}
         <span className={styles.metadata}>
           <span>
             {state(item.state)}
@@ -346,7 +238,7 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
     </li>
   );
 }
-export function ChildStop({ item }: { item: BackgroundItem }) {
+function ChildStop({ item }: { item: BackgroundItem }) {
   const { t } = useTranslation();
   const guest = useGuestAccess();
   const bg = useBackground();
@@ -363,7 +255,7 @@ export function ChildStop({ item }: { item: BackgroundItem }) {
         control.mutate("cancel");
       }}
     >
-      <StopIcon />
+      <StopIcon weight="fill" />
     </Button>
   );
 }
@@ -400,7 +292,7 @@ export function ToolCancel({ item }: { item: BackgroundItem }) {
         disabled={cancel.isPending || cancel.isSuccess || cancel.isError}
         onClick={() => cancel.mutate()}
       >
-        <X />
+        <StopIcon weight="fill" />
       </Button>
       {cancel.isError && (
         <span title={String(cancel.error)} role="alert">

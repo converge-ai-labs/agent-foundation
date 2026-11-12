@@ -240,10 +240,14 @@ function Operation({
   );
 }
 
-export function useChildExecutions(threadId: string, enabled = true) {
+export function useChildExecutions(
+  threadId: string,
+  enabled = true,
+  limit = 20,
+) {
   const { client } = useTransport();
   return useInfiniteQuery({
-    queryKey: ["thread", threadId, "children"],
+    queryKey: ["thread", threadId, "children", limit],
     enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -251,7 +255,7 @@ export function useChildExecutions(threadId: string, enabled = true) {
         client.GET("/api/threads/{thread_id}/children", {
           params: {
             path: { thread_id: threadId },
-            query: { cursor: pageParam, limit: 20 },
+            query: { cursor: pageParam, limit },
           },
           signal,
         }),

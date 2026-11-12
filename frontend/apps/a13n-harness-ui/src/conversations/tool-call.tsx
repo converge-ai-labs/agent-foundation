@@ -1,3 +1,6 @@
+import { useBackground } from "./background-context";
+import { SubagentGlyph } from "./background-card";
+import { executionReceipt } from "./background-work";
 import { MovedToBackground } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
@@ -9,6 +12,8 @@ import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
   describeTool,
+  toolLabel,
+  toolSummary,
   questionReceipt,
   activityKind,
   activitySummary,
@@ -26,21 +31,6 @@ import { RetainedImagePreview } from "./image-preview";
 import { copyText } from "../platform";
 import { DebugData, DebugId } from "../shell/debug";
 import { ToolWorkingState } from "./tool-working-state";
-
-// Translate only labels produced by the presentation layer, never tool names or payloads.
-export function toolLabel(
-  info: ReturnType<typeof describeTool>,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  return info.generatedLabel ? t(info.label) : info.label;
-}
-
-export function toolSummary(
-  info: ReturnType<typeof describeTool>,
-  t: (key: string) => string,
-) {
-  return info.generatedSummary ? t(info.summary) : info.summary;
-}
 
 export function toolPhase(
   phase: string,
@@ -385,6 +375,70 @@ function ToolData({ tool }: { tool: ToolView }) {
   );
 }
 
+export function ShellOutput({ tool }: { tool: ToolView }) {
+  const { t } = useTranslation();
+  const info = describeTool(tool);
+  const textResult = parsed(tool.result);
+  return (
+    <section className={styles.shellResult} aria-label={t("Command result")}>
+      {info.command && (
+        <CodeContent
+          title={t("Command")}
+          value={info.command}
+          language="bash"
+        />
+      )}
+      {!tool.resultParts &&
+        typeof textResult === "string" &&
+        textResult &&
+        !info.errorText && (
+          <CodeContent title={t("Output")} value={textResult} />
+        )}
+      {["stdout", "stderr"].map((name) => {
+        const stream = info.result[name];
+        const value =
+          typeof stream === "string"
+            ? stream
+            : record(stream)
+              ? stream.text
+              : undefined;
+        return typeof value === "string" && value ? (
+          <CodeContent key={name} title={name} value={value} />
+        ) : null;
+      })}
+      {(record(info.result.status) || info.exitCode !== undefined) && (
+        <small className={styles.processStatus}>
+          {[
+            record(info.result.status) &&
+            typeof info.result.status.phase === "string"
+              ? ((
+                  {
+                    running: t("Running"),
+                    exited: t("Exited"),
+                    signaled: t("Signaled"),
+                    timed_out: t("Timed out"),
+                    failed: t("Failed"),
+                    cancelled: t("Cancelled"),
+                  } as Record<string, string>
+                )[info.result.status.phase] ?? info.result.status.phase)
+              : "",
+            info.exitCode !== undefined
+              ? t("Exit {{code}}", { code: info.exitCode })
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" - ")}
+        </small>
+      )}
+      {info.outputIncomplete && (
+        <p role="status">
+          {t("Partial process output. Earlier or omitted bytes are not shown.")}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ToolDetails({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
@@ -482,69 +536,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             )}
           </section>
         )}
-      {info.shell && (
-        <section
-          className={styles.shellResult}
-          aria-label={t("Command result")}
-        >
-          {info.command && (
-            <CodeContent
-              title={t("Command")}
-              value={info.command}
-              language="bash"
-            />
-          )}
-          {!tool.resultParts &&
-            typeof textResult === "string" &&
-            textResult &&
-            !info.errorText && (
-              <CodeContent title={t("Output")} value={textResult} />
-            )}
-          {["stdout", "stderr"].map((name) => {
-            const stream = info.result[name];
-            const value =
-              typeof stream === "string"
-                ? stream
-                : record(stream)
-                  ? stream.text
-                  : undefined;
-            return typeof value === "string" && value ? (
-              <CodeContent key={name} title={name} value={value} />
-            ) : null;
-          })}
-          {(record(info.result.status) || info.exitCode !== undefined) && (
-            <small className={styles.processStatus}>
-              {[
-                record(info.result.status) &&
-                typeof info.result.status.phase === "string"
-                  ? ((
-                      {
-                        running: t("Running"),
-                        exited: t("Exited"),
-                        signaled: t("Signaled"),
-                        timed_out: t("Timed out"),
-                        failed: t("Failed"),
-                        cancelled: t("Cancelled"),
-                      } as Record<string, string>
-                    )[info.result.status.phase] ?? info.result.status.phase)
-                  : "",
-                info.exitCode !== undefined
-                  ? t("Exit {{code}}", { code: info.exitCode })
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" - ")}
-            </small>
-          )}
-          {info.outputIncomplete && (
-            <p role="status">
-              {t(
-                "Partial process output. Earlier or omitted bytes are not shown.",
-              )}
-            </p>
-          )}
-        </section>
-      )}
+      {info.shell && <ShellOutput tool={tool} />}
       {tool.name === "view" && typeof info.result.content === "string" && (
         <CodeContent
           title={t("Read content")}
@@ -785,6 +777,9 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
+  const bg = useBackground();
+  const receipt = executionReceipt(tool);
+  const child = receipt && bg.resolve(receipt.execution_id as string);
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -799,6 +794,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             <strong data-running-label={info.running || undefined}>
               {toolLabel(info, t)}
             </strong>{" "}
+            {child?.kind === "child" && <SubagentGlyph id={child.id} />}
             {info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}

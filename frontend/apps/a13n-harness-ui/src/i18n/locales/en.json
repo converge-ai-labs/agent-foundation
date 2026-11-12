@@ -1,4 +1,5 @@
 {
+  "Start subagent": "Start subagent",
   "Authorization": "Authorization",
   "Read-only access to Linear issues, projects and teams.": "Read-only access to Linear issues, projects and teams.",
   "Read and write access to Linear. Review the permissions before authorizing.": "Read and write access to Linear. Review the permissions before authorizing.",
@@ -3483,7 +3484,6 @@
   "Message to subagent": "Message to subagent",
   "Moved to background": "Moved to background",
   "Nothing is running.": "Nothing is running.",
-  "Open {{name}}": "Open {{name}}",
   "Output expired or unavailable.": "Output expired or unavailable.",
   "Output truncated. Showing the retained preview.": "Output truncated. Showing the retained preview.",
   "Subagent message": "Subagent message",
@@ -3495,13 +3495,8 @@
   "User": "User",
   "Output expired.": "Output expired.",
   "Output unavailable.": "Output unavailable.",
-  "{{minutes}}m {{seconds}}s": "{{minutes}}m {{seconds}}s",
-  "{{seconds}}s": "{{seconds}}s",
   "Some process observations are unavailable or omitted.": "Some process observations are unavailable or omitted.",
-  "<1s": "<1s",
   "Background items": "Background items",
-  "Output expired": "Output expired",
-  "Output truncated": "Output truncated",
   "Send a message…": "Send a message…",
   "Input truncated.": "Input truncated."
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -11,6 +11,7 @@ import {
   backgroundItems,
   glyphIdentity,
 } from "./background-work";
+import { BackgroundPanel } from "./background-panel";
 import { BackgroundScope } from "./background-context";
 import { BackgroundCard, BackgroundToggle } from "./background-card";
 import { FocusDisplay } from "./stream";
@@ -19,6 +20,7 @@ import { executionHeaders } from "./background-links";
 import { ChildInputLabels, InputContent } from "./input-content";
 import { workspaceTabs, emptyTabs } from "../native/workspace-tabs";
 
+const t = (key: string) => key;
 const live = vi.hoisted(() => ({ display: null as unknown, revision: 0 }));
 vi.mock("./live-threads", () => ({ useLiveThread: () => live }));
 afterEach(() => {
@@ -47,7 +49,7 @@ it("groups conversations across resumed segments, puts running first, and pages 
     child("running", "succeeded", -1),
     ...Array.from({ length: 24 }, (_, i) => child(String(i))),
   ];
-  const items = backgroundItems("root", children, [], []);
+  const items = backgroundItems("root", children, [], [], t);
   expect(items).toHaveLength(25);
   expect(items[0].child?.execution_id).toBe("exec-running-0");
   expect(backgroundGroups(items).running).toHaveLength(1);
@@ -79,25 +81,59 @@ it("uses stable child identity and deduplicates Shell execution observations", (
           background: true,
         },
       ],
+      t,
     ),
   ).toHaveLength(1);
   expect(
-    backgroundItems("root", [], [{ ...tool, foreground_released: false }], []),
+    backgroundItems(
+      "root",
+      [],
+      [{ ...tool, foreground_released: false }],
+      [],
+      t,
+    ),
   ).toHaveLength(0);
 });
 function setup(
   children: Schema<"ChildExecutionView">[],
   tools: Schema<"ToolExecutionView">[] = [],
+  closeOnOpen = false,
 ) {
   live.display = new FocusDisplay();
-  const GET = vi.fn(async (path: string) => {
+  const GET = vi.fn(async (path: string): Promise<{ data: unknown }> => {
     if (path.endsWith("/children"))
-      return { data: { executions: children, total: children.length } };
+      return { data: { executions: [...children], total: children.length } };
     if (path.endsWith("/tool-executions")) return { data: tools };
     if (path.endsWith("/output"))
       return { data: { state: "available", text: "result", truncated: false } };
     if (path.endsWith("/transcript"))
-      return { data: { entries: [], turns: [], total: 0 } };
+      return {
+        data: {
+          entries: tools.map((tool, position) => ({
+            position,
+            message_kind: "request",
+            parts: [
+              {
+                kind: "tool_call",
+                tool_call_id: tool.tool_call_id,
+                tool_name: tool.tool_name,
+                value: { command: "pnpm test" },
+              },
+              {
+                kind: "tool_result",
+                tool_call_id: tool.tool_call_id,
+                tool_name: tool.tool_name,
+                value: {
+                  type: "tool_execution_receipt",
+                  execution_id: tool.execution_id,
+                },
+              },
+            ],
+          })),
+          turns: [],
+          total: tools.length,
+        },
+      };
     if (path.endsWith("/inputs")) return { data: { turns: [] } };
     return {
       data: {
@@ -121,7 +157,11 @@ function setup(
         value={{ client: { GET, POST } } as unknown as Transport}
       >
         <MemoryRouter>
-          <BackgroundScope threadId={id} onOpen={open}>
+          <BackgroundScope
+            threadId={id}
+            onOpen={open}
+            closeOnOpen={closeOnOpen}
+          >
             <BackgroundToggle />
             <BackgroundCard />
             {content}
@@ -130,7 +170,7 @@ function setup(
       </TransportContext>
     </QueryClientProvider>
   );
-  return { view, open, GET, POST };
+  return { view, open, GET, POST, query };
 }
 it("stays closed as work arrives, remembers open per Thread, and only exposes permitted controls", async () => {
   const user = userEvent.setup();
@@ -187,7 +227,7 @@ it("shows more ended items on explicit activation", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Show more" }));
   expect(screen.getAllByRole("button", { name: /Agent / })).toHaveLength(24);
 });
-it("distinguishes canonical notice kinds, preserves hidden source-marked rows and links executions", async () => {
+it("distinguishes canonical notice kinds, preserves source-marked rows and links executions", async () => {
   const test = setup([child("one", "running")]);
   const notices = [
     "Subagent message",
@@ -203,7 +243,7 @@ it("distinguishes canonical notice kinds, preserves hidden source-marked rows an
         kind: "user",
         text: `${kind} · Agent one · execution_id=exec-one-0 · running\nActual update`,
         metadata: {
-          display: false,
+          display: true,
           "a13n.steering-source": kind.startsWith("Tool")
             ? "tool_execution"
             : "async_subagent",
@@ -232,12 +272,10 @@ it("distinguishes canonical notice kinds, preserves hidden source-marked rows an
   for (const kind of notices)
     expect(screen.getByText(kind, { exact: true })).toBeTruthy();
   await waitFor(() =>
-    expect(
-      screen.getAllByRole("button", { name: "Open Agent one" }).length,
-    ).toBeGreaterThan(0),
+    expect(screen.getAllByRole("button", { name: "Agent one" }).length).toBe(4),
   );
   await userEvent.click(
-    screen.getAllByRole("button", { name: "Open Agent one" })[0],
+    screen.getAllByRole("button", { name: "Agent one" })[0],
   );
   expect(test.open).toHaveBeenCalled();
 });
@@ -340,4 +378,132 @@ it("omits a zero badge and distinguishes an empty card", async () => {
     screen.getByRole("button", { name: "Background work" }),
   );
   expect(await screen.findByText("Nothing is running.")).toBeTruthy();
+});
+
+it("closes the card when opening a resource in the narrow layout without fetching tool output per row", async () => {
+  const test = setup(
+    [],
+    [
+      {
+        execution_id: "exec-tool",
+        tool_call_id: "call-tool",
+        tool_name: "shell_exec",
+        foreground_released: true,
+        status: "running",
+        available_actions: ["cancel"],
+      } as Schema<"ToolExecutionView">,
+    ],
+    true,
+  );
+  render(test.view("root"));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Background work" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: /^pnpm test/ }),
+  );
+  expect(test.open).toHaveBeenCalled();
+  expect(screen.queryByRole("region", { name: "Background work" })).toBeNull();
+  expect(test.GET.mock.calls.some(([path]) => path.endsWith("/output"))).toBe(
+    false,
+  );
+});
+it("uses the composer action for child Stop and send", async () => {
+  const record = child("one", "running");
+  const test = setup([record]);
+  render(
+    test.view(
+      "root",
+      <BackgroundPanel
+        target={{
+          kind: "child",
+          threadId: "root",
+          id: "one",
+          title: "Agent one",
+        }}
+      />,
+    ),
+  );
+  const stop = await screen.findByRole("button", { name: "Stop" });
+  expect(stop.closest("form")).toBeTruthy();
+  expect(stop.textContent).toBe("");
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Message to subagent" }),
+    "Check retry",
+  );
+  expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+});
+
+it("reads the terminal child checkpoint when its head settles after a running record", async () => {
+  const running = child("one", "running");
+  const children = [running];
+  const test = setup(children);
+  const read = test.GET.getMockImplementation()!;
+  test.GET.mockImplementation(async (path: string) => {
+    const terminal = children[0].persisted_status === "succeeded";
+    const continuation_id = terminal
+      ? "terminal-checkpoint"
+      : "request-checkpoint";
+    if (path === "/api/threads/{thread_id}")
+      return {
+        data: {
+          thread: {
+            thread_id: "one",
+            configuration: { agent_source: { kind: "live" } },
+          },
+          continuation_id,
+        },
+      };
+    if (path.endsWith("/transcript"))
+      return {
+        data: {
+          continuation_id,
+          entries: [
+            {
+              position: 0,
+              message_kind: "response",
+              parts: [
+                {
+                  kind: "assistant",
+                  text: terminal
+                    ? "Final child report"
+                    : "Partial child report",
+                },
+              ],
+            },
+          ],
+          turns: [],
+          total: 1,
+        },
+      };
+    return read(path);
+  });
+  render(
+    test.view(
+      "root",
+      <BackgroundPanel
+        target={{
+          kind: "child",
+          threadId: "root",
+          id: "one",
+          title: "Agent one",
+        }}
+      />,
+    ),
+  );
+  await screen.findByText("Partial child report");
+  children[0] = {
+    ...running,
+    persisted_status: "succeeded",
+    local_status: "unavailable",
+    updated_at: "2026-11-12T00:00:02Z",
+  };
+  await act(async () => {
+    await test.query.invalidateQueries({
+      queryKey: ["thread", "root", "children"],
+    });
+  });
+  await screen.findByText("Final child report");
+  expect(screen.queryByText("Partial child report")).toBeNull();
 });

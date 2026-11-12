@@ -2285,7 +2285,7 @@ it("keeps a child's live suffix after the exact selected request checkpoint", ()
   ).toEqual(["unsaved suffix"]);
 });
 
-it("retains display-hidden execution notices without exposing ordinary hidden input", () => {
+it("retains displayable execution notices without exposing ordinary hidden input", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(0));
   display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
@@ -2294,7 +2294,7 @@ it("retains display-hidden execution notices without exposing ordinary hidden in
   notice.event.payload = {
     type: "CUSTOM",
     name: "a13n.input.steering",
-    metadata: { display: false, "a13n.steering-source": "tool_execution" },
+    metadata: { display: true, "a13n.steering-source": "tool_execution" },
     value: {
       event: {
         message_id: "notification",

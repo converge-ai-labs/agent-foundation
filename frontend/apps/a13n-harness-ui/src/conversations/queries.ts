@@ -239,11 +239,11 @@ export function seedThreadSnapshot(
   }
 }
 
-export function useThread(threadId: string) {
+export function useThread(threadId: string, revision?: string) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useQuery({
-    queryKey: ["thread", threadId, "detail"],
+    queryKey: ["thread", threadId, "detail", ...(revision ? [revision] : [])],
     enabled: !!threadId,
     queryFn: async ({ signal }) => {
       const detail = await result(
@@ -259,6 +259,22 @@ export function useThread(threadId: string) {
     },
   });
 }
+export function transcriptHistory(pages: Schema<"TranscriptPage">[] = []) {
+  const entries = new Map<number, Schema<"TranscriptEntry">>();
+  const turns = new Map<string, Schema<"TranscriptTurn">>();
+  for (const page of pages) {
+    for (const entry of [...(page.boundary_entries ?? []), ...page.entries])
+      entries.set(entry.position, entry);
+    for (const turn of page.turns ?? []) turns.set(turn.turn_id, turn);
+  }
+  return {
+    entries: [...entries.values()].sort((a, b) => a.position - b.position),
+    turns: [...turns.values()].sort(
+      (a, b) => a.input_position - b.input_position,
+    ),
+  };
+}
+
 export function useHistory(
   threadId: string,
   continuation: string | null | undefined,

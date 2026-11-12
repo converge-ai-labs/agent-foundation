@@ -1,6 +1,13 @@
 import type { Schema } from "../transport/client";
 import type { ProcessObservation } from "./process-observations";
-import { parsed, record, type ToolView } from "./tool-presentation";
+import {
+  describeTool,
+  toolLabel,
+  toolSummary,
+  parsed,
+  record,
+  type ToolView,
+} from "./tool-presentation";
 
 export type BackgroundTarget = {
   kind: "child" | "tool" | "process";
@@ -36,34 +43,12 @@ export function executionReceipt(tool: ToolView) {
     : undefined;
 }
 
-export function humanToolName(name: string) {
-  const words = name.replaceAll("_", " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-export function argumentPreview(input: unknown): string {
-  const value = parsed(input);
-  if (!record(value)) return value == null ? "" : String(value);
-  return Object.entries(value)
-    .slice(0, 3)
-    .map(
-      ([key, value]) =>
-        `${key}: ${
-          Array.isArray(value)
-            ? value.join(", ")
-            : record(value)
-              ? Object.entries(value)
-                  .map(([k, v]) => `${k}: ${String(v)}`)
-                  .join(", ")
-              : String(value)
-        }`,
-    )
-    .join(" · ");
-}
 export function backgroundItems(
   threadId: string,
   children: Schema<"ChildExecutionView">[],
   tools: Schema<"ToolExecutionView">[],
   processes: ProcessObservation[],
+  t: (key: string, options?: Record<string, unknown>) => string,
   calls: ToolView[] = [],
 ): BackgroundItem[] {
   const latest = new Map<string, Schema<"ChildExecutionView">>();
@@ -105,25 +90,22 @@ export function backgroundItems(
         (call.toolCallId ?? call.id) === tool.tool_call_id ||
         executionReceipt(call)?.execution_id === tool.execution_id,
     );
-    const args = parsed(call?.input);
-    const command =
-      record(args) && typeof args.command === "string"
-        ? args.command
-        : undefined;
+    const info = describeTool(
+      call ?? { id: tool.tool_call_id, name: tool.tool_name },
+    );
     values.push({
       target: {
         kind: "tool",
         id: tool.execution_id,
         threadId,
-        title:
-          tool.tool_name === "shell_exec"
-            ? command || "Shell"
-            : humanToolName(tool.tool_name),
+        title: info.shell
+          ? info.command || toolLabel(info, t)
+          : toolLabel(info, t),
         icon: tool.tool_name === "shell_exec" ? "terminal" : undefined,
       },
       state: tool.status,
       running: tool.status === "running" || tool.status === "queued",
-      preview: command ?? (call ? argumentPreview(args) : ""),
+      preview: info.shell ? "" : toolSummary(info, t),
       started: tool.created_at,
       ended: tool.completed_at,
       tool,
@@ -144,7 +126,7 @@ export function backgroundItems(
           ? "failed"
           : process.phase,
       running: process.phase === "running",
-      preview: process.command,
+      preview: "",
       process,
     });
   }
@@ -162,12 +144,4 @@ export function backgroundGroups(items: BackgroundItem[], endedLimit = 20) {
     ended: ended.slice(0, endedLimit),
     more: ended.length > endedLimit,
   };
-}
-
-export function isBackgroundNotice(
-  metadata: Record<string, unknown> | undefined | null,
-) {
-  return ["async_subagent", "tool_execution", "background_process"].includes(
-    String(metadata?.["a13n.steering-source"]),
-  );
 }

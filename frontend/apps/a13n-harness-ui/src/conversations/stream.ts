@@ -1,4 +1,3 @@
-import { isBackgroundNotice } from "./background-work";
 import type { ContentPart } from "@ag-ui/core";
 import { EventSchema } from "@ag-ui/core/schemas";
 import { readContentParts } from "a13n-ui";
@@ -459,12 +458,7 @@ export class FocusDisplay {
       this.gap = true;
       return;
     }
-    if (
-      object(payload.metadata) &&
-      payload.metadata.display === false &&
-      !isBackgroundNotice(payload.metadata)
-    )
-      return;
+    if (object(payload.metadata) && payload.metadata.display === false) return;
     const subagentRunId = string(payload.subagentRunId) || undefined;
     if (
       !subagentRunId &&
@@ -631,9 +625,7 @@ export class FocusDisplay {
       const event = this.custom(payload);
       if (
         !event ||
-        (object(event.metadata) &&
-          event.metadata.display === false &&
-          !isBackgroundNotice(event.metadata))
+        (object(event.metadata) && event.metadata.display === false)
       )
         return;
       this.foldCustom(event);
@@ -658,7 +650,7 @@ export class FocusDisplay {
   private displayItem(item: DisplayItem) {
     const content = item.content;
     const metadata = object(content.metadata) ? content.metadata : undefined;
-    if (metadata?.display === false && !isBackgroundNotice(metadata)) return;
+    if (metadata?.display === false) return;
     const sequence = Number(item.last_stream_id.split("-")[1]);
     if (item.kind === "observation") {
       const previous = new Map(this.blocks);

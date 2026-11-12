@@ -56,7 +56,12 @@ import {
 } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
-import { useHistory, useOperation, useThread } from "./queries";
+import {
+  transcriptHistory,
+  useHistory,
+  useOperation,
+  useThread,
+} from "./queries";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
 import { applyThreadMutation } from "./thread-updates";
@@ -326,21 +331,10 @@ function ConversationContent({
       )
     ) : null,
   );
-  const entries = useMemo(() => {
-    const byPosition = new Map<number, Schema<"TranscriptEntry">>();
-    for (const page of history.data?.pages ?? [])
-      for (const entry of [...(page.boundary_entries ?? []), ...page.entries])
-        byPosition.set(entry.position, entry);
-    return [...byPosition.values()].sort((a, b) => a.position - b.position);
-  }, [history.data]);
-  const turns = useMemo(() => {
-    const byId = new Map<string, Schema<"TranscriptTurn">>();
-    for (const page of history.data?.pages ?? [])
-      for (const turn of page.turns ?? []) byId.set(turn.turn_id, turn);
-    return [...byId.values()].sort(
-      (a, b) => a.input_position - b.input_position,
-    );
-  }, [history.data]);
+  const { entries, turns } = useMemo(
+    () => transcriptHistory(history.data?.pages),
+    [history.data],
+  );
   const latestPage = history.data?.pages[0];
   const hasLater =
     !publication &&

@@ -1,4 +1,5 @@
 {
+  "Start subagent": "启动子代理",
   "Authorization": "授权",
   "Read-only access to Linear issues, projects and teams.": "只读访问 Linear 议题、项目和团队。",
   "Read and write access to Linear. Review the permissions before authorizing.": "读写访问 Linear，请在授权前检查权限。",
@@ -3451,7 +3452,6 @@
   "Message to subagent": "向子代理发送消息",
   "Moved to background": "已转入后台",
   "Nothing is running.": "没有正在运行的工作。",
-  "Open {{name}}": "打开 {{name}}",
   "Output expired or unavailable.": "输出已过期或不可用。",
   "Output truncated. Showing the retained preview.": "输出已截断，当前显示保留的预览。",
   "Subagent message": "子代理消息",
@@ -3463,13 +3463,8 @@
   "User": "用户",
   "Output expired.": "输出已过期。",
   "Output unavailable.": "输出不可用。",
-  "{{minutes}}m {{seconds}}s": "{{minutes}}分 {{seconds}}秒",
-  "{{seconds}}s": "{{seconds}}秒",
   "Some process observations are unavailable or omitted.": "部分进程观察不可用或已省略。",
-  "<1s": "<1秒",
   "Background items": "后台条目",
-  "Output expired": "输出已过期",
-  "Output truncated": "输出已截断",
   "Send a message…": "发送消息…",
   "Input truncated.": "输入已截断。"
 }

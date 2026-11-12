@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -11,7 +10,9 @@ import { useTransport, useGuestAccess } from "../transport/context";
 import { result } from "../transport/client";
 import { useLiveThread } from "./live-threads";
 import { useChildExecutions } from "./details";
-import type { ToolView } from "./tool-presentation";
+import { savedTools, type ToolView } from "./tool-presentation";
+import { useHistory, useThread, transcriptHistory } from "./queries";
+import { useTranslation } from "../i18n";
 import {
   backgroundItems,
   type BackgroundItem,
@@ -26,8 +27,9 @@ type BackgroundState = {
   display?: FocusDisplay;
   open: (target: BackgroundTarget) => void;
   cardOpen: boolean;
-  anchor?: { right: number; bottom: number };
-  setAnchor?: (anchor: { right: number; bottom: number }) => void;
+  more: boolean;
+  loadingMore: boolean;
+  loadMore: () => void;
   setCardOpen: (open: boolean) => void;
   loading: boolean;
   error: unknown;
@@ -38,6 +40,9 @@ const Context = createContext<BackgroundState>({
   resolve: () => undefined,
   open: () => {},
   cardOpen: false,
+  more: false,
+  loadingMore: false,
+  loadMore: () => {},
   setCardOpen: () => {},
   loading: false,
   error: null,
@@ -49,17 +54,27 @@ export function BackgroundScope({
   onOpen,
   children,
   observe = false,
+  closeOnOpen = false,
 }: {
   threadId: string;
   observe?: boolean;
+  closeOnOpen?: boolean;
   onOpen: BackgroundState["open"];
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const { client } = useTransport();
   const guest = useGuestAccess();
   const queries = useQueryClient();
   const { display, revision } = useLiveThread(threadId, observe);
-  const childPage = useChildExecutions(threadId, !!threadId);
+  const detail = useThread(threadId);
+  const history = useHistory(
+    threadId,
+    detail.data?.continuation_id,
+    !!threadId && !!detail.data,
+  );
+  // Read a bounded status page; Show more is the only way to request older work.
+  const childPage = useChildExecutions(threadId, !!threadId, 100);
   const toolPage = useInfiniteQuery({
     queryKey: ["thread", threadId, "tool-executions", "background"],
     enabled: !!threadId && !guest,
@@ -77,24 +92,10 @@ export function BackgroundScope({
     getNextPageParam: (page, _pages, offset) =>
       page.length === 100 ? offset + 100 : undefined,
   });
-  useEffect(() => {
-    if (
-      childPage.hasNextPage &&
-      !childPage.isFetching &&
-      !childPage.isFetchNextPageError
-    )
-      void childPage.fetchNextPage();
-  }, [childPage.hasNextPage, childPage.isFetching, childPage.fetchNextPage]);
-  useEffect(() => {
-    if (
-      toolPage.hasNextPage &&
-      !toolPage.isFetching &&
-      !toolPage.isFetchNextPageError
-    )
-      void toolPage.fetchNextPage();
-  }, [toolPage.hasNextPage, toolPage.isFetching, toolPage.fetchNextPage]);
   const items = useMemo(() => {
-    const calls: ToolView[] = [];
+    const calls: ToolView[] = [
+      ...savedTools(transcriptHistory(history.data?.pages).entries).values(),
+    ].filter((tool) => tool !== null);
     for (const block of display.blocks.values())
       if (block.kind === "tool")
         calls.push({ ...block, name: block.name ?? "", input: block.text });
@@ -103,16 +104,18 @@ export function BackgroundScope({
       childPage.data?.pages.flatMap((page) => page.executions) ?? [],
       toolPage.data?.pages.flat() ?? [],
       display.processes.background,
+      t,
       calls,
     );
-  }, [threadId, childPage.data, toolPage.data, display, revision]);
-  const [anchor, updateAnchor] = useState<{ right: number; bottom: number }>();
-  const setAnchor = (next: { right: number; bottom: number }) =>
-    updateAnchor((previous) =>
-      previous?.right === next.right && previous.bottom === next.bottom
-        ? previous
-        : next,
-    );
+  }, [
+    threadId,
+    childPage.data,
+    toolPage.data,
+    history.data,
+    display,
+    revision,
+    t,
+  ]);
   const [cardStates, setCardStates] = useState<Record<string, boolean>>({});
   const cardOpen =
     !!threadId &&
@@ -148,10 +151,18 @@ export function BackgroundScope({
             : items.find((item) => item.target.id === id)?.target;
         },
         display,
-        open: onOpen,
+        open: (target) => {
+          onOpen(target);
+          if (closeOnOpen) setCardOpen(false);
+        },
         cardOpen,
-        anchor,
-        setAnchor,
+        more: !!(childPage.hasNextPage || toolPage.hasNextPage),
+        loadingMore:
+          childPage.isFetchingNextPage || toolPage.isFetchingNextPage,
+        loadMore: () => {
+          if (childPage.hasNextPage) void childPage.fetchNextPage();
+          if (toolPage.hasNextPage) void toolPage.fetchNextPage();
+        },
         setCardOpen,
         refresh,
         loading:

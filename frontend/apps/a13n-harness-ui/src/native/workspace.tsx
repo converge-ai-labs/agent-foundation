@@ -196,10 +196,8 @@ export function NativeWorkspace({
   };
   const narrow = useMediaQuery("(max-width: 999px)");
   const [narrowSidebar, setNarrowSidebar] = useState(false);
-  const singleView =
-    hasSupportingViews &&
-    !sidebarCollapsed &&
-    (tabLayout || (narrow && !narrowSidebar));
+  const showOneView = tabLayout || (narrow && !narrowSidebar);
+  const singleView = hasSupportingViews && !sidebarCollapsed && showOneView;
   const supportingExpanded =
     hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);
   const layoutTransition = useRef<ViewTransition | null>(null);
@@ -1067,6 +1065,7 @@ export function NativeWorkspace({
   );
   return (
     <BackgroundScope
+      closeOnOpen={showOneView}
       threadId={botMode && !bot.data?.thread ? "" : (threadId ?? "")}
       onOpen={(target) => {
         setBackgroundAvailable(true);
