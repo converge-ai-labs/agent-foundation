@@ -108,6 +108,10 @@ Native Docker 提供文件、shell、进程控制和输出观测；端口观测�
 
 继续阅读[云 Provider 设置与限制](cloud-providers.md#runloop)。
 
+### boxd
+
+继续阅读[云 Provider 设置与限制](cloud-providers.md#boxd)。
+
 ### 嵌入式配置
 
 继续阅读[云 Provider 设置与限制](cloud-providers.md#embedded-configuration)。

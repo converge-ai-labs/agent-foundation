@@ -79,6 +79,10 @@ For setup and backend limits, see [Fly.io Sprites](cloud-providers.md#flyio-spri
 
 For setup and backend limits, see [Runloop](cloud-providers.md#runloop).
 
+### boxd
+
+For setup and backend limits, see [boxd](cloud-providers.md#boxd).
+
 ## Remote HTTP / WebSocket Envd
 
 1. Register or select the externally managed Device. `RemoteEnvdStateData.device_id` identifies it.

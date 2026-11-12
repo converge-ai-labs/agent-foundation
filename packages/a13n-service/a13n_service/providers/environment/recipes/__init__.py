@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal
 
+from a13n_harness.providers.environment.boxd.shared import BoxdEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from a13n_harness.providers.environment.runloop.shared import RunloopEnvironmentConfiguration
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,6 +54,11 @@ class RunloopRecipeInput(_Recipe):
     configuration: RunloopEnvironmentConfiguration
 
 
+class BoxdRecipeInput(_Recipe):
+    type: Literal["boxd"]
+    configuration: BoxdEnvironmentConfiguration
+
+
 class LocalRecipeInput(_Recipe):
     type: Literal["local"]
     configuration: DirectLocalEnvironmentConfiguration
@@ -66,6 +72,7 @@ TemplateRecipe = Annotated[
     | VercelRecipeInput
     | SpritesRecipeInput
     | RunloopRecipeInput
+    | BoxdRecipeInput
     | LocalRecipeInput,
     Field(discriminator="type"),
 ]
