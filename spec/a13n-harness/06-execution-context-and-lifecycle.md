@@ -188,7 +188,7 @@ On a recoverable model interruption, the Harness:
 5. builds the next semantic input;
 6. starts another Pydantic run with the normalized history, same outer context and bindings, same shared usage accumulator, and a fresh model-attempt ID.
 
-The default continuation text asks the model to continue unfinished text without repeating completed work, regenerate a complete structured value or tool call rather than a suffix, and check current state before repeating uncertain side effects. Custom continuation input and prompt factories retain precedence.
+The default continuation text asks the model to continue unfinished text without repeating completed work, regenerate a complete structured value or tool call rather than a suffix, and check current state before repeating uncertain side effects. When an output-limited response contains undispatched tool calls, the default input also identifies their tool names without retaining arguments, states that those calls did not execute, and asks for smaller arguments or tool-supported split operations instead of repeating oversized calls. If splitting is unavailable, it asks the model to explain the limitation. Custom continuation input and prompt factories retain precedence.
 
 A finalized ordinary tool call missing a result at an explicitly interrupted boundary receives a failed `ToolReturnPart` stating:
 

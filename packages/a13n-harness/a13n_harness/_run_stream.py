@@ -35,6 +35,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -1374,6 +1375,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._latest_messages = current_history
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
+            undispatched_tool_names: tuple[str, ...] = ()
             recovery.attempt_id = f"model-attempt-{uuid4().hex}"
             exchange.context._model_input.begin(
                 recovery.attempt_id,
@@ -1482,6 +1484,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             and isinstance(error, OutputTokenLimitExceeded)
                         )
                         if output_limit:
+                            if self._latest_messages and isinstance(self._latest_messages[-1], ModelResponse):
+                                undispatched_tool_names = tuple(
+                                    dict.fromkeys(
+                                        part.tool_name
+                                        for part in self._latest_messages[-1].parts
+                                        if isinstance(part, ToolCallPart)
+                                    )
+                                )
                             self._latest_messages = response_tracker.sanitize_output_limit(self._latest_messages)
                         messages, _ = await self._normalize_interrupted_history(
                             self._latest_messages,
@@ -1644,7 +1654,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         "recovery.history_count": len(self._latest_messages),
                     },
                 )
-                retry_input = await policy.build_prompt(retry_error, retry_index, self._latest_messages)
+                retry_input = await policy.build_prompt(
+                    retry_error,
+                    retry_index,
+                    self._latest_messages,
+                    undispatched_tool_names=undispatched_tool_names,
+                )
                 observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
             current_history = self._latest_messages

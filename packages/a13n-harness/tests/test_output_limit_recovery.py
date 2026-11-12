@@ -10,12 +10,21 @@ from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, HarnessStat
 from a13n_harness.capabilities import CodeActCapability, HandoffCapability
 from a13n_harness.capabilities.lifecycle import LifecycleEventCapability
 from a13n_harness.events import HarnessExtensionEvent, ModelRetryScheduledPayload
+from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import OutputTokenLimitExceeded
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.models.wrapper import WrapperModel
@@ -78,6 +87,9 @@ async def test_length_continues_inside_one_run_without_concatenating_output(stre
         result = await executable.run("start", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "continuation"
     assert result.usage.requests == 2
+    assert [
+        p.content for m in histories[1] if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, UserPromptPart)
+    ][-1] == DEFAULT_RECOVERY_PROMPT
     partial = next(m for m in histories[1] if isinstance(m, ModelResponse))
     assert partial.state == "interrupted" and partial.parts == [TextPart("partial")]
     assert len({m.run_id for m in result.all_messages() if isinstance(m, ModelResponse)}) == 2
@@ -183,6 +195,101 @@ async def test_previous_tool_results_survive_length_without_reexecution() -> Non
     assert result.output_or_raise() == "done" and invoked == [True]
     assert any(isinstance(p, ToolReturnPart) and p.tool_call_id == "call-1" for m in histories[2] for p in m.parts)
     assert not any(isinstance(p, ToolCallPart) and p.tool_call_id == "call-2" for m in histories[2] for p in m.parts)
+
+
+@pytest.mark.parametrize("native_error", [False, True])
+@pytest.mark.parametrize("complete_args", [False, True])
+async def test_tool_output_limit_guides_smaller_calls_without_replaying_arguments(
+    native_error: bool, complete_args: bool
+) -> None:
+    histories = []
+    written = []
+    large_args = '{"content":"discarded-large-argument' + ('"}' if complete_args else "")
+
+    def write_chunk(content: str) -> str:
+        written.append(content)
+        return "written"
+
+    async def stream(messages, info):
+        histories.append(deepcopy(messages))
+        if len(histories) == 1:
+            yield {0: DeltaToolCall(name="write_chunk", json_args=large_args, tool_call_id="large")}
+            if native_error:
+                raise OutputTokenLimitExceeded("native truncation")
+        elif len(histories) == 2:
+            yield {0: DeltaToolCall(name="write_chunk", json_args='{"content":"small"}', tool_call_id="small")}
+        else:
+            yield "done"
+
+    model = FunctionModel(stream_function=stream)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        capabilities=(Capability(tools=[write_chunk]),),
+        model=model if native_error else FinishReasonModel(model, ["length", "tool_call", "stop"]),
+        model_recovery=policy(max_attempts=2),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done" and written == ["small"]
+    prompt = [
+        p.content for m in histories[1] if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, UserPromptPart)
+    ][-1]
+    assert isinstance(prompt, str)
+    assert prompt.startswith(DEFAULT_RECOVERY_PROMPT)
+    assert "tool calls were not executed (tools: write_chunk)" in prompt
+    assert "Use smaller arguments per call" in prompt
+    assert "where the available tools support them" in prompt
+    assert "discarded-large-argument" not in repr(histories[1])
+    assert not any(isinstance(p, ToolCallPart | ToolReturnPart) for m in histories[1] for p in m.parts)
+    assert result.state is not None
+    assert "discarded-large-argument" not in result.state.model_dump_json()
+
+
+@pytest.mark.parametrize("custom", ["fixed", "factory"])
+async def test_tool_output_limit_preserves_custom_continuation_input(custom: str) -> None:
+    histories = []
+    factory_calls = []
+
+    def prompt_factory(error, attempt_index, messages):
+        factory_calls.append((error, attempt_index, messages))
+        return "custom continuation"
+
+    def action() -> str:
+        pytest.fail("the truncated call must not execute")
+
+    async def stream(messages, info):
+        histories.append(deepcopy(messages))
+        if len(histories) == 1:
+            yield {0: DeltaToolCall(name="action", json_args="{}", tool_call_id="cut")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        capabilities=(Capability(tools=[action]),),
+        model=FinishReasonModel(FunctionModel(stream_function=stream), ["length", "stop"]),
+        model_recovery=policy(
+            max_attempts=2,
+            **(
+                {"continuation_prompt": "custom continuation"}
+                if custom == "fixed"
+                else {"prompt_factory": prompt_factory}
+            ),
+        ),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert [
+        p.content for m in histories[1] if isinstance(m, ModelRequest) for p in m.parts if isinstance(p, UserPromptPart)
+    ][-1] == "custom continuation"
+    if custom == "factory":
+        assert len(factory_calls) == 1
+        error, attempt_index, messages = factory_calls[0]
+        assert isinstance(error, OutputTokenLimitExceeded) and attempt_index == 1
+        assert not any(isinstance(p, ToolCallPart | ToolReturnPart) for m in messages for p in m.parts)
+    else:
+        assert factory_calls == []
 
 
 @pytest.mark.parametrize("structural", ["codeact", "handoff"])

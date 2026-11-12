@@ -205,8 +205,19 @@ class ModelRecoveryPolicy:
         error: BaseException,
         attempt_index: int,
         messages: Sequence[ModelMessage],
+        *,
+        undispatched_tool_names: tuple[str, ...] = (),
     ) -> RunInputValue:
         if self.prompt_factory is None:
+            if undispatched_tool_names and self.continuation_prompt == DEFAULT_RECOVERY_PROMPT:
+                return (
+                    f"{DEFAULT_RECOVERY_PROMPT}\n\n"
+                    "The previous response reached its output token limit and its tool calls were not executed "
+                    f"(tools: {', '.join(undispatched_tool_names)}). Do not repeat the same oversized calls. "
+                    "Use smaller arguments per call, or split the work into steps such as chunked writes or "
+                    "small edits where the available tools support them. If the operation cannot be split, "
+                    "explain the limitation."
+                )
             return self.continuation_prompt
         detached_messages = deepcopy(tuple(messages))
         value = self.prompt_factory(error, attempt_index, detached_messages)
