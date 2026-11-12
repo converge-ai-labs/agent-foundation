@@ -1,4 +1,4 @@
-"""Detached graceful restart handoff values; never a general execution queue."""
+"""Detached WebUI continuation handoffs; never a general execution queue."""
 
 from typing import Literal
 
@@ -13,6 +13,7 @@ class RestartItem(BaseModel):
 
     thread_id: str
     run_id: str
+    cause: Literal["graceful", "process_loss"] = "graceful"
     composition: ObjectRef
     checkpoint: ObjectRef
     execution_id: str | None = None
@@ -40,7 +41,7 @@ class RestartBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     batch_id: str
-    state: Literal["ready", "consumed"]
+    state: Literal["watching", "ready", "consumed"]
     items: tuple[RestartItem, ...] = ()
     results: tuple[RestartResult, ...] = ()
     error: str | None = None

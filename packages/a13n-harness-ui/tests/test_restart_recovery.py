@@ -145,7 +145,8 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
-            assert batch is None
+            assert batch is not None and not batch.items
+            assert await store.restarts.claim() is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
             assert not app._restart.restoring
         assert len(requests) == 1
@@ -290,10 +291,12 @@ async def test_abnormal_exit_and_cli_do_not_arm_recovery(tmp_path, monkeypatch, 
         assert exit_kind == "error"
         assert "Abnormal context exit" in str(exc.exceptions[0])
     async with open_local_store(settings.storage) as store:
-        assert await store.restarts.get() is None
+        batch = await store.restarts.get()
+        assert batch is None or not batch.items
+        assert await store.restarts.claim() is None
 
 
-async def test_drain_timeout_never_arms_recovery(tmp_path, monkeypatch):
+async def test_drain_timeout_recovers_the_exact_model_boundary(tmp_path, monkeypatch):
     root = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state", shutdown_timeout_seconds=0.05)
     started = Event()
@@ -302,9 +305,10 @@ async def test_drain_timeout_never_arms_recovery(tmp_path, monkeypatch):
     async def model(messages, info):
         nonlocal requests
         requests += 1
-        started.set()
-        await Event().wait()
-        return ModelResponse(parts=[TextPart("Never returned")])
+        if requests == 1:
+            started.set()
+            await Event().wait()
+        return ModelResponse(parts=[TextPart("Continued from the saved model request")])
 
     install_model(monkeypatch, model)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
@@ -312,13 +316,19 @@ async def test_drain_timeout_never_arms_recovery(tmp_path, monkeypatch):
         await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
         with fail_after(10):
             await started.wait()
-    assert not app._restart.committing
-    assert "app" in app._restart.errors
+    assert app._restart.committing and not app._restart.errors
     async with open_local_store(settings.storage) as store:
-        assert await store.restarts.get() is None
+        batch = await store.restarts.get()
+        assert batch is not None and batch.state == "ready" and len(batch.items) == 1
+        current = await store.threads.get(thread.thread_id)
+        assert current.continuation == batch.items[0].checkpoint
+        saved = await store.read_continuation(thread.thread_id, current.continuation, include_display=True)
+        assert not any(isinstance(p, TextPart) for m in saved.harness_state.message_history for p in m.parts)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        assert await app._root_runs.active_count() == 0
-        assert requests == 1
+        with fail_after(10):
+            while (await app.get_thread(thread.thread_id)).thread.completion is None:
+                await sleep(0.01)
+        assert requests == 2
 
 
 @pytest.mark.parametrize("parent_completes", [False, True])
@@ -388,7 +398,8 @@ async def test_child_restores_with_active_or_completed_parent(
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
-            assert batch is None
+            assert batch is not None and not batch.items
+            assert await store.restarts.claim() is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
             assert not app._restart.restoring
         assert calls["child"] == 1
@@ -400,7 +411,10 @@ async def test_child_restores_with_active_or_completed_parent(
         child_item = next(item for item in batch.items if item.execution_id is not None)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         recovered = await app._store.restarts.get()
-        assert recovered is not None and recovered.state == "consumed"
+        assert recovered is not None and recovered.state in {"consumed", "watching"}
+        assert all(task.state == "restored" for task in recovered.results)
+        if recovered.state == "watching":
+            assert all(item.execution_id is None for item in recovered.items)
         child = next(task for task in recovered.results if task.execution_id is not None)
         assert child.resumed_execution_id != child_item.execution_id
         assert child.resumed_run_id != child_item.run_id
@@ -460,12 +474,23 @@ async def test_questions_stay_waiting_without_timeout_or_automatic_answer(tmp_pa
     assert requests == 1
 
 
-async def test_handoff_consumption_is_atomic_and_does_not_require_reset(tmp_path):
-    from a13n_harness_ui.restart_models import RestartBatch
+@pytest.mark.parametrize("state", ["watching", "ready"])
+async def test_handoff_consumption_is_atomic_and_does_not_require_reset(tmp_path, state):
+    from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+
+    reference = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="a" * 64)
+    item = RestartItem(
+        thread_id="thread-test",
+        root_thread_id="thread-test",
+        run_id="run-test",
+        composition=reference,
+        checkpoint=reference,
+    )
 
     settings = _settings(tmp_path / "state")
     async with open_local_store(settings.storage) as first, open_local_store(settings.storage) as second:
-        batch = RestartBatch(batch_id="restart-test", state="ready")
+        batch = RestartBatch(batch_id="restart-test", state=state, items=(item,))
         await first.restarts.publish(batch)
         claimed = []
 
@@ -482,7 +507,7 @@ async def test_handoff_consumption_is_atomic_and_does_not_require_reset(tmp_path
         with pytest.raises(RunCoordinationError):
             await first.restarts.replace(batch, consumed)
         # A consumed attempt is historical data, not an operator lock.
-        next_batch = RestartBatch(batch_id="restart-next", state="ready")
+        next_batch = RestartBatch(batch_id="restart-next", state=state, items=(item,))
         await first.restarts.publish(next_batch)
         assert (await first.restarts.claim()).batch_id == "restart-next"
 
@@ -510,7 +535,8 @@ async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeyp
         assert (await app.wait_root_operation(receipt.receipt_id)).status == "cancelled"
     async with open_local_store(settings.storage) as store:
         batch = await store.restarts.get()
-        assert batch is None
+        assert batch is not None and not batch.items
+        assert await store.restarts.claim() is None
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         assert not app._restart.restoring
     assert calls == 1
@@ -646,7 +672,8 @@ async def test_children_admitted_during_drain_require_complete_family_staging(tm
     monkeypatch.setattr(RootRunCoordinator, "resume_restart", resume)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         report = await app._store.restarts.get()
-        assert report is not None and report.state == "consumed"
+        assert report is not None and (report.state == "consumed" or not report.items)
+        assert await app._store.restarts.claim() is None
         assert not app._restart.restoring
     assert calls == before
 
@@ -685,3 +712,318 @@ async def test_restart_boundary_is_not_stale_when_shutdown_immediately_follows_s
         assert coordinator.saved_state("thread") is state
         assert not reached_provider.is_set()
         group.cancel_scope.cancel()
+
+
+async def test_slow_unsafe_tool_does_not_discard_an_unrelated_family(tmp_path, monkeypatch):
+    from a13n_harness.codeact.state import CodeActStateOwner
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state", shutdown_timeout_seconds=1)
+    unsafe_started, healthy_started = Event(), Event()
+    effects = []
+    requests = {"Unsafe": 0, "Healthy": 0}
+    original = CodeActStateOwner.store
+
+    async def store(self, key, value, config):
+        effects.append(key)
+        if key == "uncertain":
+            unsafe_started.set()
+            await Event().wait()
+        await original(self, key, value, config)
+
+    monkeypatch.setattr(CodeActStateOwner, "store", store)
+
+    async def model(messages, info):
+        role = (
+            "Unsafe"
+            if any(isinstance(p, UserPromptPart) and "Unsafe" in str(p.content) for m in messages for p in m.parts)
+            else "Healthy"
+        )
+        requests[role] += 1
+        if role == "Unsafe":
+            return ModelResponse(parts=[ToolCallPart("store", {"key": "uncertain", "value": 1})])
+        if requests[role] == 1:
+            healthy_started.set()
+            await app._restart.pause_requested.wait()
+            return ModelResponse(parts=[ToolCallPart("store", {"key": "finished-once", "value": 1})])
+        return ModelResponse(parts=[TextPart("Healthy family continued")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        unsafe, healthy = await app.create_thread(), await app.create_thread()
+        await app.submit_thread(thread_id=unsafe.thread_id, prompt="Unsafe")
+        await app.submit_thread(thread_id=healthy.thread_id, prompt="Healthy")
+        with fail_after(10):
+            await unsafe_started.wait()
+            await healthy_started.wait()
+    async with open_local_store(settings.storage) as storage:
+        batch = await storage.restarts.get()
+        assert batch.state == "ready", (
+            app._restart.errors,
+            tuple(app._restart.finalized),
+            unsafe.thread_id,
+            healthy.thread_id,
+        )
+        assert [item.thread_id for item in batch.items] == [healthy.thread_id]
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        with fail_after(10):
+            while (await app.get_thread(healthy.thread_id)).thread.completion is None:
+                await sleep(0.01)
+        assert requests == {"Unsafe": 1, "Healthy": 2}
+    assert sorted(effects) == ["finished-once", "uncertain"]
+
+
+async def test_response_retirement_failure_blocks_tools_without_stranding_waiters(tmp_path, monkeypatch):
+    from a13n_harness.codeact.state import CodeActStateOwner
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    effects = []
+    requests = 0
+
+    async def store(self, key, value, config):
+        effects.append(key)
+
+    async def model(messages, info):
+        nonlocal requests
+        requests += 1
+        return ModelResponse(parts=[ToolCallPart("store", {"key": "never", "value": 1})])
+
+    monkeypatch.setattr(CodeActStateOwner, "store", store)
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        publish = app._store.restarts.publish
+
+        async def fail_retirement(batch):
+            if not batch.items:
+                raise OSError("Synthetic recovery retirement failure")
+            await publish(batch)
+
+        monkeypatch.setattr(app._store.restarts, "publish", fail_retirement)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Work")
+        with fail_after(10):
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status == "failed"
+        assert not effects and requests == 1
+    # Even if retirement itself cannot be persisted, terminal execution and the
+    # selected checkpoint fence the remaining old marker before a model action.
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert requests == 1 and not effects
+        batch = await app._store.restarts.get()
+        assert batch.state == "consumed" and all(item.state == "blocked" for item in batch.results)
+
+
+async def test_nonowner_app_cannot_claim_or_overwrite_the_owners_candidate(tmp_path, monkeypatch):
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state", shutdown_timeout_seconds=0.01)
+    started = Event()
+
+    async def model(messages, info):
+        started.set()
+        await Event().wait()
+        return ModelResponse(parts=[TextPart("Never")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as owner:
+        thread = await owner.create_thread()
+        receipt = await owner.submit_thread(thread_id=thread.thread_id, prompt="Owner's work")
+        with fail_after(10):
+            await started.wait()
+        before = await owner._store.restarts.get()
+        assert before.state == "watching" and len(before.items) == 1
+        async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as other:
+            assert not other._restart.enabled
+            assert await other._store.restarts.get() == before
+        assert await owner._store.restarts.get() == before
+        await owner.cancel_root_operation(receipt.receipt_id)
+        await owner.wait_root_operation(receipt.receipt_id)
+
+
+async def test_root_candidates_do_not_reconstruct_active_child_executions(tmp_path):
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.restart_models import RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+
+    reference = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="b" * 64)
+    async with open_local_store(_settings(tmp_path / "state").storage) as store:
+        restart = GracefulRestart(store.restarts, enabled=True)
+        restart.register("parent")
+        restart.register("independent")
+        parent = RestartItem(
+            thread_id="parent",
+            root_thread_id="parent",
+            run_id="old",
+            cause="process_loss",
+            composition=reference,
+            checkpoint=reference,
+        )
+        independent = parent.model_copy(update={"thread_id": "independent", "root_thread_id": "independent"})
+        await restart.boundary(parent)
+        restart.register("child", "execution-child", root_thread_id="parent")
+        await restart.boundary(parent)
+        await restart.boundary(independent)
+        batch = await store.restarts.get()
+        assert {item.thread_id for item in batch.items} == {"independent", "parent"}
+        assert all(item.execution_id is None for item in batch.items)
+        restart.finished("child")
+        assert await store.restarts.get() == batch
+
+
+@pytest.mark.parametrize("conflict", ["checkpoint", "composition", "execution"])
+async def test_process_loss_validates_selected_checkpoint_and_execution_before_action(tmp_path, monkeypatch, conflict):
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state", shutdown_timeout_seconds=0.01)
+    started = Event()
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await Event().wait()
+        return ModelResponse(parts=[TextPart("Never")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        await app.submit_thread(thread_id=thread.thread_id, prompt="Work")
+        with fail_after(10):
+            await started.wait()
+    async with open_local_store(settings.storage) as store:
+        batch = await store.restarts.get()
+        item = batch.items[0]
+        if conflict == "execution":
+            item = item.model_copy(update={"cause": "process_loss"})
+        else:
+            kind = ObjectKind.continuation if conflict == "checkpoint" else ObjectKind.run_composition
+            item = item.model_copy(
+                update={conflict: ObjectRef(object_kind=kind, object_schema_version="1", logical_digest="c" * 64)}
+            )
+        # The original execution is now cancelled by graceful shutdown. A raw
+        # cancelled summary, unlike a running original Run, grants no authority.
+        await store.restarts.replace(batch, batch.model_copy(update={"state": "watching", "items": (item,)}))
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert calls == 1
+        report = await app._store.restarts.get()
+        assert all(result.state == "blocked" for result in report.results)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
+        assert calls == 1
+
+
+async def test_terminal_retirement_keeps_the_admission_slot_until_old_registration_is_gone(tmp_path, monkeypatch):
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    first_started, finish_first, retiring, release_retirement, second_started = (Event() for _ in range(5))
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_started.set()
+            await finish_first.wait()
+            return ModelResponse(parts=[TextPart("First finished")])
+        second_started.set()
+        await Event().wait()
+        return ModelResponse(parts=[TextPart("Never")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="First")
+        with fail_after(10):
+            await first_started.wait()
+        invalidate = app._restart.invalidate
+
+        async def block_terminal_retirement(thread_id, *, suppress=False):
+            if (await app._root_runs.get(first.receipt_id)).status == "completed":
+                retiring.set()
+                await release_retirement.wait()
+            await invalidate(thread_id, suppress=suppress)
+
+        monkeypatch.setattr(app._restart, "invalidate", block_terminal_retirement)
+        finish_first.set()
+        with fail_after(10):
+            await retiring.wait()
+        try:
+            with pytest.raises(RunCoordinationError, match="active root operation"):
+                await app.submit_thread(thread_id=thread.thread_id, prompt="Too early")
+        finally:
+            release_retirement.set()
+        with fail_after(10):
+            assert (await app.wait_root_operation(first.receipt_id)).status == "completed"
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="Next")
+        with fail_after(10):
+            await second_started.wait()
+        batch = await app._store.restarts.get()
+        assert len(batch.items) == 1
+        assert batch.items[0].run_id == (await app._root_runs.get(second.receipt_id)).run_id
+        await app.cancel_root_operation(second.receipt_id)
+        await app.wait_root_operation(second.receipt_id)
+
+
+async def test_completed_root_does_not_block_saved_children_after_a_drain_timeout(tmp_path):
+    from a13n_harness import HarnessState
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.restart_models import RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+
+    reference = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="d" * 64)
+    async with open_local_store(_settings(tmp_path / "state").storage) as store:
+        restart = GracefulRestart(store.restarts, enabled=True)
+        restart.register("parent")
+        restart.register("child", "child-execution", root_thread_id="parent")
+        item = RestartItem(
+            thread_id="parent",
+            root_thread_id="parent",
+            run_id="parent-run",
+            cause="process_loss",
+            composition=reference,
+            checkpoint=reference,
+        )
+        await restart.boundary(item)
+        # A final response withdraws the last request before normal completion.
+        # Its historical boundary is not evidence of failed finalization.
+        await restart.invalidate("parent")
+        restart.requested = restart.committing = True
+        restart.active["child"].state = HarnessState.new()
+        child = item.model_copy(update={"thread_id": "child", "execution_id": "child-execution", "cause": "graceful"})
+        restart.saved(child)
+        restart.finished("parent")
+        restart.finished("child")
+        await restart.commit()
+        assert not restart.errors
+        assert (await store.restarts.get()).items == (child,)
+
+
+@pytest.mark.parametrize("mode", ["state", "cleanup"])
+async def test_model_timeout_with_failed_environment_finalization_is_not_recovered(tmp_path, monkeypatch, mode):
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state", shutdown_timeout_seconds=0.01)
+    started = Event()
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await Event().wait()
+        return ModelResponse(parts=[TextPart("Never")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
+        with fail_after(10):
+            await started.wait()
+        fail_environment_finalization(monkeypatch, mode)
+    assert thread.thread_id in app._restart.errors
+    async with open_local_store(settings.storage) as store:
+        batch = await store.restarts.get()
+        assert batch is not None and not batch.items
+        assert await store.restarts.claim() is None
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
+        assert calls == 1
