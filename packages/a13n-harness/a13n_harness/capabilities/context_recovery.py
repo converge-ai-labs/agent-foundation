@@ -78,7 +78,10 @@ class ContextRecoveryCapability(AbstractCapability[AgentContext]):
         if not self.policy.enabled or self._request is None or ctx.deps._compacting:
             return
         previous = await ctx.deps.state.read(CONTEXT_RECOVERY_STATE_ID, ContextRecoveryState, version="1")
-        if previous is not None and previous.scope_id == (ctx.deps.context_recovery_scope_id or ctx.deps.run_id):
+        consumed = previous is not None and previous.scope_id == (ctx.deps.context_recovery_scope_id or ctx.deps.run_id)
+        # The scope's single reconstruction is spent. Only a reconstruction that resumed with accepted primary
+        # progress leaves normal compaction available; a pending or failed one is terminal.
+        if consumed and (previous is None or previous.pending or previous.outcome != "resumed"):
             return
         request = self._request
         if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
@@ -96,6 +99,8 @@ class ContextRecoveryCapability(AbstractCapability[AgentContext]):
         if outcome != "overflow":
             if outcome == "compacted":
                 ctx.deps._model_recovery.context_replacement = tuple(ctx.messages)
+            return
+        if consumed:
             return
         rebuilt = await prepare_recovery(
             ctx, request, policy=self.policy, compaction_policy=compaction.policy, background=compaction.background
