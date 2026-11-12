@@ -1676,6 +1676,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                             text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
                             text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
                             await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
+                except Exception:
+                    get_logger(__name__).warning(
+                        "Could not deliver subagent result: %s", current.head.execution_id, exc_info=True
+                    )
                 finally:
                     await self._remove_superseded_checkpoint(current.head, active.run_checkpoint)
                     async with self._lock:
@@ -2817,9 +2821,6 @@ def _safe_failure(exc: BaseException, *, fallback_code: str) -> SafeFailure:
     return SafeFailure(code=code[:128], message=message[:4096])
 
 
-__all__ = ["HarnessUiSubagentOperator", "ParentRunScope"]
-
-
 def _parent_input(value: RunInputValue) -> RunInputValue:
     return tuple(
         item
@@ -2832,3 +2833,6 @@ def _parent_input(value: RunInputValue) -> RunInputValue:
         )
         for item in content_items(value)
     )
+
+
+__all__ = ["HarnessUiSubagentOperator", "ParentRunScope"]

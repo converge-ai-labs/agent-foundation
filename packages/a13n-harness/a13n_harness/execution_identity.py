@@ -4,7 +4,7 @@ from typing import Literal
 
 
 def format_execution_header(
-    kind: Literal["Subagent result", "Subagent message", "Tool result", "Tool notification"],
+    kind: Literal["Subagent notification", "Subagent result", "Subagent message", "Tool result", "Tool notification"],
     name: str,
     execution_id: str,
     state: str,

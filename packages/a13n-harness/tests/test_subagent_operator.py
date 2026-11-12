@@ -619,3 +619,15 @@ async def test_result_delivery_reaches_run_guidance(mode):
     assert result.output_or_raise() == "done"
     assert capability.result_delivery == mode
     assert not hasattr(operator.plans[0].parent, "result_delivery")
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded", "failed", "cancelled", "lost"])
+@pytest.mark.parametrize("result_type", [SubagentInfoResult, SubagentWaitResult])
+def test_execution_page_distinguishes_notifications_from_terminal_results(status, result_type):
+    from a13n_harness.toolsets.subagents import _execution_page
+
+    result = result_type(executions=(RecordingSubagentOperator._view("execution-1", status=status),), total=1)
+    kind = "Subagent notification" if status == "running" else "Subagent result"
+    assert _execution_page(result)["executions"][0]["header"] == (
+        f"{kind} · reviewer · execution_id=execution-1 · {status}"
+    )

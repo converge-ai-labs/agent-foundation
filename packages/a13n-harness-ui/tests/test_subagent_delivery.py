@@ -315,3 +315,52 @@ async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeyp
             assert head.execution_id not in await app._subagent_operator.active_execution_ids()
         finally:
             release.set()
+
+
+@pytest.mark.usefixtures("migrated_databases")
+async def test_result_offer_preparation_failure_settles_child_and_keeps_operator_available(tmp_path, monkeypatch):
+    from anyio import sleep
+    from pydantic_ai.models.function import DeltaToolCall
+
+    from .test_dynamic_subagents import new_thread, open_app, returned
+
+    ready, release = Event(), Event()
+
+    async def model(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            ready.set()
+            await release.wait()
+            yield "Child result"
+        elif not returned(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="spawn_subagent", json_args='{"name":"worker","instructions":"Work","prompt":"Work"}'
+                )
+            }
+        else:
+            yield "Parent finished"
+
+    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+        operator = app._subagent_operator
+        monkeypatch.setattr(
+            operator, "_read_checkpoint", AsyncMock(side_effect=RuntimeError("Offer preparation failed"))
+        )
+        parent = await new_thread(app)
+        receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start child")
+        await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        with fail_after(10):
+            await ready.wait()
+        (execution_id,) = await operator.active_execution_ids()
+        active = operator._active[execution_id]
+        release.set()
+        with fail_after(10):
+            await active.done.wait()
+        assert execution_id not in await operator.active_execution_ids()
+        parent = await new_thread(app)
+        receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start another child")
+        await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        with fail_after(10):
+            while await operator.active_execution_ids():
+                await sleep(0.01)
+        (head,) = (await app.query_child_executions(parent_thread_id=parent.thread_id)).executions
+        assert head.persisted_status == "succeeded"

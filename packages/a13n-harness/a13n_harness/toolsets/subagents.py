@@ -334,7 +334,10 @@ def _execution_page(result: SubagentInfoResult | SubagentWaitResult) -> JsonValu
         "executions": [
             {
                 "header": format_execution_header(
-                    "Subagent result", view.subagent_name, view.execution_id, view.status
+                    "Subagent notification" if view.status == "running" else "Subagent result",
+                    view.subagent_name,
+                    view.execution_id,
+                    view.status,
                 ),
                 **view.model_dump(mode="json"),
                 **(

@@ -16,7 +16,7 @@ from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
-from .models import ResolvedAgentNode, ResolvedRunComposition
+from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
 from .resolver import AgentCompositionResolver, ThreadCompositionSelection
 
 _LOGGER = get_logger(__name__)
@@ -122,7 +122,7 @@ class RunCompositionService:
         self._oauth = oauth
         self.connector_capture: Callable[[], Awaitable[tuple[ConnectorCapture, ...]]] | None = None
 
-    def resolve_model(self, source: LoadedHarnessUiConfiguration, model_id: str):
+    def resolve_model(self, source: LoadedHarnessUiConfiguration, model_id: str) -> ResolvedModelRecipe:
         return self._resolver.model_recipe(source.models[model_id], source)
 
     async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:

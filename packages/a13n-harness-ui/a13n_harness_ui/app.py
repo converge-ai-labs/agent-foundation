@@ -19,6 +19,7 @@ import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
+from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.http import outbound_tls_verify
@@ -34,7 +35,7 @@ from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from pydantic_ai import BinaryContent, prices
+from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
@@ -2735,9 +2736,6 @@ class HarnessUiApp:
 
     async def tool_execution_output(self, thread_id: str, execution_id: str) -> ToolExecutionOutputView:
         """Read the original result/tail without consuming model delivery or changing execution."""
-        from a13n_harness._json import dump_json_bytes
-        from pydantic_ai import ToolReturn
-
         async with self._operation():
             await self._threads.get(thread_id)
             runtime = self._tool_executions.runtime
