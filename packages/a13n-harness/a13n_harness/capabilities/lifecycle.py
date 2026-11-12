@@ -12,6 +12,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.agent import CallToolsNode, ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import ModelContextWindowExceededError, ModelHTTPError, OutputTokenLimitExceeded
+from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, HarnessError
@@ -69,6 +70,16 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
     def active_request_index(self) -> int | None:
         return self._active_request_index
 
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        recovery = ctx.deps._model_recovery
+        if ctx.run_id == recovery.attempt_id:
+            recovery.output_tool_names = tuple(
+                tool.name for tool in request_context.model_request_parameters.output_tools
+            )
+        return request_context
+
     async def wrap_node_run(
         self,
         ctx: RunContext[AgentContext],
@@ -99,11 +110,15 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
         if primary_request:
             recovery.request_error = None
             recovery.output_limit_error = None
+            recovery.output_tool_names = ()
         try:
             result = await handler(node)
             if isinstance(result, CallToolsNode) and is_primary_output_limit(ctx, result.model_response):
                 response = result.model_response
-                if (response.provider_details or {}).get("finish_reason") == "model_context_window_exceeded":
+                if (response.provider_details or {}).get("finish_reason") in {
+                    "model_context_window_exceeded",
+                    "model_length",
+                }:
                     # Context recovery reads canonical history before this node unwinds.
                     # Exclude the rejected response, including calls never dispatched.
                     if ctx.messages and ctx.messages[-1] is response:

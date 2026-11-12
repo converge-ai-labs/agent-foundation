@@ -128,10 +128,13 @@ async def test_length_continues_inside_one_run_without_concatenating_output(stre
         ]
 
 
+@pytest.mark.parametrize("raw_reason", ["model_context_window_exceeded", "model_length"])
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("exhausted", [False, True])
 @pytest.mark.parametrize("args", ["{}", '{"unfinished":'])
-async def test_explicit_context_finish_reason_uses_context_recovery_without_dispatch(enabled, exhausted, args) -> None:
+async def test_explicit_context_finish_reason_uses_context_recovery_without_dispatch(
+    raw_reason, enabled, exhausted, args
+) -> None:
     from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
     from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 
@@ -160,7 +163,7 @@ async def test_explicit_context_finish_reason_uses_context_recovery_without_disp
         model=FinishReasonModel(
             FunctionModel(stream_function=stream),
             ["length", "stop", "length" if exhausted else "stop"],
-            raw_reason="model_context_window_exceeded",
+            raw_reason=raw_reason,
         ),
         model_recovery=policy(max_attempts=5),
         context_recovery=ContextRecoveryPolicy(enabled=enabled, preserve_history=False),
@@ -433,31 +436,57 @@ async def test_length_precedes_builtin_structural_model_retries(structural: str)
     assert len({m.run_id for m in result.all_messages() if isinstance(m, ModelResponse)}) <= 2
 
 
-async def test_structured_output_regenerates_a_complete_value() -> None:
+@pytest.mark.parametrize("native_error", [False, True])
+@pytest.mark.parametrize("ordinary_call", [False, True])
+async def test_structured_output_regenerates_a_complete_value(native_error: bool, ordinary_call: bool) -> None:
     class Answer(BaseModel):
         value: str
 
-    calls = 0
+    histories = []
+    written = []
+
+    def write_chunk(content: str) -> str:
+        written.append(content)
+        return "written"
 
     async def stream(messages, info):
-        nonlocal calls
-        calls += 1
+        histories.append(deepcopy(messages))
+        calls = len(histories)
+        if calls == 1 and ordinary_call:
+            yield {0: DeltaToolCall(name="write_chunk", json_args='{"content":"discarded"}', tool_call_id="cut")}
         yield {
-            0: DeltaToolCall(
+            1: DeltaToolCall(
                 name=info.output_tools[0].name,
                 json_args='{"value":' if calls == 1 else '{"value":"whole value"}',
                 tool_call_id=f"output-{calls}",
             )
         }
+        if calls == 1 and native_error:
+            raise OutputTokenLimitExceeded("native truncation")
 
+    model = FunctionModel(stream_function=stream)
     executable = HarnessBuilder().build(
         AgentSpec(),
-        output_type=ToolOutput(Answer),
-        model=FinishReasonModel(FunctionModel(stream_function=stream), ["length", "stop"]),
+        output_type=ToolOutput(Answer, name="answer_payload"),
+        capabilities=(Capability(tools=[write_chunk]),),
+        model=model if native_error else FinishReasonModel(model, ["length", "stop"]),
         model_recovery=policy(max_attempts=2),
     )
     result = await executable.run("start", bindings=RunBindings.embedded())
-    assert result.output_or_raise() == Answer(value="whole value") and calls == 2
+    assert result.output_or_raise() == Answer(value="whole value") and len(histories) == 2
+    assert written == []
+    prompt = [
+        part.content
+        for message in histories[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ][-1]
+    if ordinary_call:
+        assert isinstance(prompt, str) and "tool calls were not executed (tools: write_chunk)" in prompt
+        assert "answer_payload" not in prompt
+    else:
+        assert prompt == DEFAULT_RECOVERY_PROMPT
 
 
 @pytest.mark.parametrize("thinking", [False, True])

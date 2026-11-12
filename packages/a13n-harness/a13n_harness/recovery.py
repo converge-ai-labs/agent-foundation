@@ -165,6 +165,7 @@ class ModelRecoveryState:
     consecutive_failures: int = 0
     request_error: BaseException | None = None
     output_limit_error: BaseException | None = None
+    output_tool_names: tuple[str, ...] = ()
     context_replacement: tuple[ModelMessage, ...] | None = None
     context_recovery_pending: bool = False
 

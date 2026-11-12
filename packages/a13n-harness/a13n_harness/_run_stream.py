@@ -1490,6 +1490,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                         part.tool_name
                                         for part in self._latest_messages[-1].parts
                                         if isinstance(part, ToolCallPart)
+                                        and part.tool_name not in recovery.output_tool_names
                                     )
                                 )
                             self._latest_messages = response_tracker.sanitize_output_limit(self._latest_messages)
