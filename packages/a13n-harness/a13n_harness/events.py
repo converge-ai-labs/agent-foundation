@@ -142,6 +142,7 @@ class ModelRetryScheduledPayload(_FirstPartyPayload):
     attempt: int = Field(ge=2)
     max_attempts: int = Field(ge=2)
     delay_seconds: float = Field(ge=0, allow_inf_nan=False)
+    reason: Literal["output_token_limit"] | None = None
 
 
 class RunStartedPayload(_FirstPartyPayload):

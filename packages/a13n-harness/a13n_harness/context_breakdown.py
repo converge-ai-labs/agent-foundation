@@ -35,7 +35,7 @@ from pydantic_ai.messages import (
     UploadedFile,
     UserPromptPart,
 )
-from pydantic_ai.models import Model, ModelRequestParameters
+from pydantic_ai.models import ModelRequestParameters, _instruction_parts_of
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.content import prompt_content
@@ -145,7 +145,8 @@ def measure_context(
             for name, entry in catalog.items.items():
                 details[group][name] += entry.characters
 
-    for block in Model._get_instruction_parts(messages, params) or ():
+    # Measure authored instructions, before provider-specific framing is added.
+    for block in _instruction_parts_of(messages, params) or ():
         if params.instruction_visibility_of(block) == "prefix":
             instruction(block.id, block.content)
     for name, tool in params.tool_defs.items():

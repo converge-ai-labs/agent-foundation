@@ -212,6 +212,8 @@ Pydantic AI retains the complete layering:
 
 The projection is a narrow native Model wrapper applied consistently to a concrete definition Model, a `RunModelResolver` result, or a Harness-inferred Model. It preserves the wrapped provider profile and behavior and maps only Harness `context_window_tokens` to native `context_window`. An explicit Harness value wins over a conflicting provider profile because it is managed definition policy; without that value, the original native profile is unchanged. The resulting `Model.context_window` and `Model.profile.context_window` agree, allowing external Pydantic AI Capabilities and first-party Harness Capabilities to share the upstream abstraction. This is interoperability projection, not a claim that the selected provider route supports a larger window; authoring remains responsible for selecting a compatible route.
 
+Native `openai_include_unmapped_response_data=True` is an opt-in `OpenAIChatModel` setting for Chat Completions-compatible adapters. The native response stores unmapped data in `provider_details["unmapped"]`, with streamed data under `unmapped["chunks"]`. The ordinary message codec retains it across state export/import, and the adapter excludes it from later provider requests. This is diagnostic response metadata, not a new Harness event, telemetry field, or display surface. Its contents may be sensitive; provider-history repair may remove it with other provider-native state. Responses API behavior remains adapter-owned.
+
 For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle characteristics and native provider request settings:
 
 ```python
@@ -475,13 +477,14 @@ Custom `ModelRecoveryRule` values contain one exact matcher and one history repa
 class ModelRecoveryPolicy:
     enabled: bool = False
     max_attempts: int = 5
+    retry_output_limit: bool = True
     continuation_prompt: RunInputValue = DEFAULT_RECOVERY_PROMPT
     prompt_factory: RecoveryPromptFactory | None = None
     backoff_initial_seconds: float = 1.0
     backoff_max_seconds: float = 30.0
 ```
 
-`max_attempts` bounds consecutive failed attempts, including the initial failed attempt, rather than the cumulative attempts in a logical Run. An accepted primary model response resets the budget and equal-jitter exponential backoff. Recovery requires a recognized transient failure at the primary model-request boundary; interrupted history alone does not authorize a retry. [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery) owns the failure classification, budget reset, backoff, prompt-factory inputs, and cancellation rules.
+`max_attempts` bounds consecutive failed attempts, including the initial failed attempt, rather than the cumulative attempts in a logical Run. An accepted primary model response resets the budget and equal-jitter exponential backoff. Recovery requires explicit primary output truncation or a recognized transient failure at the primary model-request boundary; interrupted history alone does not authorize a retry. [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery) owns the failure classification, budget reset, backoff, prompt-factory inputs, and cancellation rules.
 
 Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID.
 
@@ -500,6 +503,8 @@ The Harness does not buffer events for replay, fan out consumers, or persist the
 ## Output Boundary
 
 Pydantic `OutputSpec`, object `AgentSpec.output_schema`, output validators, output tools, and retry behavior own output production. The Harness fixes one business-output contract when `HarnessBuilder` constructs the reusable Agent; `run()` and `stream()` expose no per-run `output_type` override.
+
+A recovered Run's `output` is the final native validated output, including for string-returning output functions. Partial text remains visible in history and the event stream; the Harness does not concatenate text segments or stitch JSON fragments into a business output. Explicit output-token truncation is never successful completion on its own, even when recovery is disabled.
 
 Exactly one build-time source is valid:
 

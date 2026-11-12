@@ -566,10 +566,15 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
     assert replayed == ["plan next", "checked result"]
     for payload in payloads:
         assert payload["stream"] is True
-        if model_id in {"kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"}:
+        if provider == "deepseek":
+            assert payload["max_tokens"] == 32768
             assert "max_completion_tokens" not in payload
+        elif model_id in {"kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"}:
+            assert "max_completion_tokens" not in payload
+            assert "max_tokens" not in payload
         else:
             assert payload["max_completion_tokens"] == 32768
+            assert "max_tokens" not in payload
         if model_id == "kimi-k3":
             assert payload["reasoning_effort"] == "max"
             assert "thinking" not in payload
@@ -577,7 +582,6 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
             assert payload["thinking"] == {"type": "enabled", "keep": "all"}
         elif model_id == "deepseek-flash":
             assert payload["thinking"] == {"type": "enabled"}
-        assert "max_tokens" not in payload
         assert "openai_reasoning_summary" not in payload
         assert payload.get("reasoning_effort") != "none"
         if provider == "zai":

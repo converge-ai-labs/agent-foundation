@@ -110,7 +110,7 @@ Choose an explicit search mode for a hand-authored Agent:
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `host`        | Exposes the bound Host search provider. Stock Harness UI binds `default`.                                                       |
 | `off`         | Removes this Capability's search function; useful with a separate native search entry.                                          |
-| `native`      | Registers the upstream native Web Search tool. This shortcut exposes `search_context_size`, not the full native-tool options.   |
+| `native`      | Registers the upstream native Web Search tool. This shortcut exposes `search_context_size` and upstream `provider_settings`.    |
 | `auto`        | Registers native search and makes bound Host search available. It does not probe compatibility or retry a rejected native tool. |
 
 The schema default is `auto`; guided setup writes explicit modes. Scraping has its own `host` or `off` mode. Setup writes these combinations:
@@ -125,6 +125,22 @@ The schema default is `auto`; guided setup writes explicit modes. Scraping has i
 Removing the entire `web` Capability removes its Host toolset. Changing a search or scrape mode leaves ordinary fetch/download independently configured.
 
 `backend` selects an already bound implementation. `backend_priority` specifies preferences among bound implementations and cannot be combined with `backend`. Stock Harness UI provides only `default`; naming another vendor in YAML does not install a provider. A custom Host supplies providers through `WebBinding` and owns their credentials and lifecycle; see [Harness Capabilities](../a13n-harness/capabilities.md). Keep credentials out of Agent Capability values.
+
+Pass provider-specific native search options through `provider_settings`. For example, this Agent fragment selects OpenRouter's native Exa engine, not a Host backend:
+
+```yaml
+capabilities:
+  - capability: web
+    configuration:
+      search:
+        mode: auto
+        provider_settings:
+          openrouter:
+            engine: exa
+            max_results: 5
+```
+
+The selected adapter owns support and validation. Host fallback ignores native provider settings. Domain restrictions, allowed-host policy, and tool permissions still control native availability. Existing top-level native fields remain readable under upstream compatibility rules; nested provider settings are preferred for provider-specific options. Codex `external_web_access` remains top-level.
 
 Embedding code that constructs `WebCapability()` without configuration can read `A13N_HARNESS_WEB_SEARCH_MODE`, `..._SEARCH_BACKEND`, `..._SEARCH_BACKEND_PRIORITY`, `..._SEARCH_CONTEXT_SIZE`, and the corresponding scrape mode/backend variables. Harness UI supplies explicit configuration, so edit the Agent YAML to change its behavior.
 
@@ -144,7 +160,9 @@ Use this recipe with a Model whose connection supports both tools. Start from a 
          external_web_access: true
      - capability: native_image_generation
        configuration:
-         quality: auto
+         provider_settings:
+           openai:
+             quality: auto
          output_format: png
      - capability: web
        configuration:
@@ -196,7 +214,10 @@ capabilities:
   - capability: native_image_generation
     configuration:
       output_format: png
-      quality: auto
+      provider_settings:
+        openai:
+          quality: high
+          background: transparent
 ```
 
 Harness UI supplies the saver automatically. Use this Capability instead of adding a second raw native image tool. It saves completed images under the current Thread's `tmp/`, including for child Runs, and instructs the model to present the saved location in its reply.

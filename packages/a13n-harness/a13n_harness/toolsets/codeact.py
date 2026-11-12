@@ -848,7 +848,9 @@ def _render_tool_declaration(definition: ToolDefinition) -> str:
     # The upstream signature renderer does not represent open argument maps or
     # omission without a default faithfully. Keep the exact schema for these tools.
     if schema.get("additionalProperties", True) is not False or any(
-        name not in required and (not isinstance(prop, dict) or "default" not in prop)
+        not name.isidentifier()
+        or keyword.iskeyword(name)
+        or (name not in required and (not isinstance(prop, dict) or "default" not in prop))
         for name, prop in properties.items()
     ):
         return fallback

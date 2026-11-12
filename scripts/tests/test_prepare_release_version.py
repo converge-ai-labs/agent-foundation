@@ -47,7 +47,7 @@ def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> 
         if re.match(r"pydantic-ai(?:-slim)?(?:\[|[<>=!~;\s]|$)", requirement)
     ]
     assert len(requirements) == 1
-    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.65\.\*", requirements[0])
+    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.68\.\*", requirements[0])
 
 
 def copy_release_files(destination: Path) -> None:

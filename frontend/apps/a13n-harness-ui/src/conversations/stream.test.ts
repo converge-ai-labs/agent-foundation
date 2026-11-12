@@ -1071,37 +1071,49 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
   }
 });
 
-it("hides recovery instructions and waits for visible progress before marking recovery resumed", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  let sequence = 110;
-  const emit = (event_type: string, payload: unknown) => {
-    const frame = event(sequence++);
-    if (frame.kind !== "event") throw new Error("Expected event");
-    display.accept(
-      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
-    );
-  };
-  const retry = {
-    name: "a13n.harness.recovery",
-    value: {
-      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
-    },
-  };
-  emit("CUSTOM", retry);
-  emit("TEXT_MESSAGE_CONTENT", {
-    messageId: "recovery",
-    delta: "Internal instruction",
-    metadata: { display: false },
-  });
-  expect(display.blocks.size).toBe(0);
-  expect(display.recovery?.state).toBe("retrying");
-  emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Continuing" });
-  expect(display.recovery?.state).toBe("resumed");
-  emit("RUN_FINISHED", {});
-  expect(display.recovery).toMatchObject({ state: "resumed", retries: 1 });
-});
+it.each([undefined, "output_token_limit", "future_reason"])(
+  "hides recovery instructions and retains supported reason %s until visible progress",
+  (reason) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+    let sequence = 110;
+    const emit = (event_type: string, payload: unknown) => {
+      const frame = event(sequence++);
+      if (frame.kind !== "event") throw new Error("Expected event");
+      display.accept(
+        focusFrame({
+          ...frame,
+          event: { ...frame.event, event_type, payload },
+        }),
+      );
+    };
+    const retry = {
+      name: "a13n.harness.recovery",
+      value: {
+        event: {
+          payload: { type: "model_retry_scheduled", attempt: 2, reason },
+        },
+      },
+    };
+    emit("CUSTOM", retry);
+    emit("TEXT_MESSAGE_CONTENT", {
+      messageId: "recovery",
+      delta: "Internal instruction",
+      metadata: { display: false },
+    });
+    expect(display.blocks.size).toBe(0);
+    expect(display.recovery?.state).toBe("retrying");
+    emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Continuing" });
+    expect(display.recovery?.state).toBe("resumed");
+    emit("RUN_FINISHED", {});
+    expect(display.recovery).toMatchObject({
+      state: "resumed",
+      retries: 1,
+      reason: reason === "output_token_limit" ? reason : undefined,
+    });
+  },
+);
 
 it("does not resume an interrupted replacement using the old cursor", async () => {
   const display = new FocusDisplay();

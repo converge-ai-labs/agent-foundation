@@ -220,7 +220,7 @@ async def test_native_media_urls_are_rejected_before_sdk_download(monkeypatch, s
     async def unexpected(*args, **kwargs):
         pytest.fail("restricted media must never reach native download or HTTP")
 
-    monkeypatch.setattr("pydantic_ai.models.openai.download_item", unexpected)
+    monkeypatch.setattr("pydantic_ai.models.openai._chat_model.download_item", unexpected)
     monkeypatch.setattr("pydantic_ai.models.anthropic.download_item", unexpected)
     monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", unexpected)
     model = await build_api_key_model(

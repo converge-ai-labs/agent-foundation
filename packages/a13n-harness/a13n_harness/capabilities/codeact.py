@@ -140,6 +140,10 @@ class CodeActCapability(AbstractModelContextCapability):
     ) -> ModelResponse:
         del request_context
         self._require_context(ctx)
+        from a13n_harness.recovery import is_primary_output_limit
+
+        if is_primary_output_limit(ctx, response):
+            return response
         calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
         manager = ctx.tool_manager
 

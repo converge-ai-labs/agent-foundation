@@ -12,11 +12,17 @@ export function RecoveryText({
 }) {
   const { t } = useTranslation();
   const label =
-    recovery.state === "retrying"
-      ? t("Reconnecting to model…")
-      : recovery.state === "resumed"
-        ? t("Model connection restored")
-        : t("Model reconnection ended");
+    recovery.reason === "output_token_limit"
+      ? recovery.state === "retrying"
+        ? t("Continuing model output…")
+        : recovery.state === "resumed"
+          ? t("Model output resumed")
+          : t("Model output continuation ended")
+      : recovery.state === "retrying"
+        ? t("Reconnecting to model…")
+        : recovery.state === "resumed"
+          ? t("Model connection restored")
+          : t("Model reconnection ended");
   return `${label} - ${t("Retry count", { count: recovery.retries })}`;
 }
 

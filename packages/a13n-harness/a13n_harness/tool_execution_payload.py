@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, TypeAdapter, field_validator
 from pydantic_ai import ToolReturn
 
+from a13n_harness._json import dump_json_bytes
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionArtifact, ToolExecutionRecord
+
+_TOOL_RETURN_ADAPTER = TypeAdapter(ToolReturn)
 
 
 class Artifact(BaseModel):
@@ -22,6 +27,16 @@ class ToolExecutionPayload(BaseModel):
     result: ToolReturn
     artifacts: list[Artifact]
     retry_prompt: str | None = None
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def _decode_native_result(cls, value: Any) -> ToolReturn:
+        if isinstance(value, ToolReturn):
+            return value
+        # Native ToolReturn owns content/file decoding. Its provenance validator
+        # re-enters Python validation, so inheriting an outer strict=True would
+        # reject JSON base64 strings before BinaryContent can decode them.
+        return _TOOL_RETURN_ADAPTER.validate_json(dump_json_bytes(value))
 
     @classmethod
     def from_execution(cls, execution: StoredToolExecution) -> ToolExecutionPayload:
