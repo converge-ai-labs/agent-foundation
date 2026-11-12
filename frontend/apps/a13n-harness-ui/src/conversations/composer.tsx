@@ -1,3 +1,5 @@
+import { Dictation } from "./dictation";
+import type { DictationTarget } from "./dictation-context";
 import { useTranslation } from "../i18n";
 import { composerMessage, stopMessage } from "./composer-messages";
 import {
@@ -109,11 +111,13 @@ function beginInput(
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
 export function useDraft(threadId: string, historyOnly = false) {
   const drafts = useContext(ComposerDrafts);
+  const { shareId } = useTransport();
   let draft = drafts.get(threadId);
   if (!draft) {
     draft = new ThreadDraft();
     drafts.set(threadId, draft);
   }
+  draft.bindAnnotations(threadId, shareId);
   useSyncExternalStore<unknown>(
     draft.subscribe,
     historyOnly ? draft.getHistorySnapshot : draft.getSnapshot,
@@ -379,6 +383,7 @@ export function Composer({
   threadId,
   activity,
   canRun,
+  dictation,
   canClearContext = false,
   continuationId,
   unavailableReason,
@@ -392,6 +397,7 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   canRun: boolean;
+  dictation?: DictationTarget;
   canClearContext?: boolean;
   continuationId?: string | null;
   unavailableReason?: string;
@@ -417,6 +423,7 @@ export function Composer({
 }) {
   const { t } = useTranslation();
   const draft = useDraft(threadId);
+  const [dictating, setDictating] = useState(false);
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const promotion = useCoordinatorMutation({ thread_id: threadId });
@@ -671,6 +678,7 @@ export function Composer({
                 : undefined
       : undefined;
   const submit = async (action: "send" | "steer") => {
+    if (dictating) return;
     if (action === "send" ? !canSend : !canSteer) return;
     if (queuedInput) {
       queuedInput.submit();
@@ -1217,7 +1225,10 @@ export function Composer({
                   : null)}
           </div>
         )}
-        <div className={styles.composerInput}>
+        <div
+          className={styles.composerInput}
+          data-dictating={dictating || undefined}
+        >
           <input
             ref={upload}
             type="file"
@@ -1396,6 +1407,20 @@ export function Composer({
               />
             )}
             <div className={styles.composerChoices}>{controls?.()}</div>
+            {dictation && !transport.shareId && (
+              <Dictation
+                key={threadId}
+                target={dictation}
+                disabled={preparing || pending || queuedInput?.locked}
+                onActive={setDictating}
+                insert={(text) => {
+                  const view = editor.current;
+                  if (!view) return;
+                  view.dispatch(view.state.replaceSelection(text));
+                  requestAnimationFrame(() => view.focus());
+                }}
+              />
+            )}
           </div>
           <Button
             ref={sendButton}

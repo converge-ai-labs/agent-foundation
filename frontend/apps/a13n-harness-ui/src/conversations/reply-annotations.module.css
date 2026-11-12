@@ -99,8 +99,8 @@
   gap: 4px;
   align-items: center;
 }
-.actions > :first-child {
-  margin-inline-end: auto;
+.actions > button:nth-last-child(2) {
+  margin-inline-start: auto;
 }
 .form [data-slot="button"] {
   height: 24px;
@@ -128,18 +128,30 @@
 .chipRow {
   padding: 2px var(--composer-text-inset, 8px) 0;
 }
-.chip[data-slot] {
+.chipGroup {
+  display: inline-flex;
+  align-items: center;
   height: 24px;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--harness-radius-control);
+}
+.chip[data-slot] {
+  height: 100%;
   padding-inline: 7px;
   gap: 6px;
-  border-color: var(--a13n-border);
-  border-radius: var(--harness-radius-control);
+  border: 0;
+  border-radius: inherit;
   font-size: var(--a13n-text-xs);
   font-weight: 400;
   color: var(--a13n-secondary);
 }
-.chip[aria-expanded="true"] {
+.chipGroup:is(:hover, :focus-within, :has([aria-expanded="true"])) {
   background: var(--a13n-hover);
+}
+.chipGroup
+  .chip[data-slot]:is(:hover, :focus-visible, [aria-expanded="true"], :active) {
+  background: transparent;
+  box-shadow: none;
   color: var(--a13n-text);
 }
 
@@ -237,5 +249,77 @@
     position: absolute;
     width: 44px;
     height: 44px;
+  }
+}
+
+.form[data-voice] {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.form[data-dictating] > :not(.actions, [data-dictation-active]),
+.form[data-dictating] .actions > :not([data-dictation-active]) {
+  display: none;
+}
+.form [data-dictation-active] {
+  grid-column: 1/-1;
+}
+
+.form {
+  --dictation-wave-height: 24px;
+}
+.form button[data-size^="icon"] {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+}
+
+.form[data-stage="new"][data-multiline]:not([data-dictating]) textarea {
+  grid-column: 1/-1;
+}
+.form[data-multiline] .addNote {
+  grid-column: -2;
+}
+.form[data-multiline][data-voice] > button:not(.addNote) {
+  grid-column: -3;
+}
+@media (pointer: fine) {
+  .form .actions > button[data-size^="icon"] {
+    width: 22px;
+    min-width: 22px;
+  }
+  .actions > button[data-size^="icon"] + button[data-size^="icon"] {
+    margin-inline-start: -4px;
+  }
+}
+.clearChip {
+  display: grid;
+  place-items: center;
+  width: 0;
+  height: 18px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: var(--a13n-text);
+  color: var(--a13n-canvas);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.clearChip svg {
+  width: 12px;
+  height: 12px;
+}
+.chipGroup:is(:hover, :focus-within, :has([aria-expanded="true"])) .clearChip {
+  width: 18px;
+  margin-inline-end: 2px;
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .clearChip {
+    width: 18px;
+    margin-inline-end: 2px;
+    opacity: 1;
+    pointer-events: auto;
   }
 }

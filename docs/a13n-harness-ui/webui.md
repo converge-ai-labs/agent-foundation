@@ -126,6 +126,10 @@ Totals include retained archived conversations, Memory, Live, child agents, auxi
 
 New Runs look up prices using the selected Model’s configured route. In chat usage, **By model** shows the provider and model from the configured route (for example, `anthropic/claude-opus-5-5`). Expand a model to inspect the names reported by the provider. Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
 
+## Voice input
+
+In **Settings → General → Dictation**, choose a configured Model that accepts audio. Set the number of context words on either side of the reading position (default 2,000). Click the microphone in the composer or an **Add to chat** comment, then click Stop. The selected Model receives the recording, chat title and nearby human and assistant text. It transcribes in the language you spoke. Review the inserted text and submit it when ready. After a transcription error, Retry sends the same recording again. Cancel discards it. Microphone capture requires localhost or HTTPS.
+
 ## Agent and Model settings
 
 Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.

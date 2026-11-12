@@ -11,7 +11,7 @@ from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from a13n_harness_ui.configuration.models import ProjectDefaults
+from a13n_harness_ui.configuration.models import DictationConfiguration, ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
@@ -819,6 +819,7 @@ class ModelSummary(SurfaceModel):
 
 
 class ThreadSelectorCatalog(SurfaceModel):
+    dictation: DictationConfiguration | None = None
     sidekick_enabled: bool = False
     media_understanding: dict[NativeInputMediaKind, str] = Field(default_factory=dict)
     media_understanding_environment: tuple[NativeInputMediaKind, ...] = ()
