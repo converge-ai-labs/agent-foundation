@@ -94,9 +94,9 @@ def test_provider_native_calls_and_returns_use_existing_transcript_tool_shapes()
 
 def test_openai_adapter_native_search_failure_retains_provider_status() -> None:
     from openai.types.responses.response_function_web_search import ResponseFunctionWebSearch
-    from pydantic_ai.models.openai import _map_web_search_tool_call
+    from pydantic_ai.models.openai._native_tools import map_web_search_tool_call
 
-    _, returned = _map_web_search_tool_call(
+    _, returned = map_web_search_tool_call(
         ResponseFunctionWebSearch(
             id="ws-failed", action={"type": "search", "query": "docs"}, status="failed", type="web_search_call"
         ),

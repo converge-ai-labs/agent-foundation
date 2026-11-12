@@ -512,4 +512,4 @@ settings:
 
 例如，经审查 OpenAI 强度预设对 low/medium/high-or-xhigh 使用 16,384/32,768/65,536；经审查 Claude 自适应预设使用 32,768，显式 8,192 token 扩展推理保留 16,384 输出。Gemini 2.5 high 在 32,768 输出上限内使用 24,576 思考预算。适用范围依确切经审查模型及原生 profile，而非名称前缀；未经审查 Claude 自适应保留 16,384 基线。其他未经审查路由不增加上限。订阅创建不使用 API 预设。
 
-之后可独立编辑 `settings.max_tokens`。`/thinking` 不重算它，加载/复用 Model 也不重新应用预设。自定义端点可能有其他限制。原生序列化决定线上字段；已安装 DeepSeek 适配器发送 `max_completion_tokens`，本地模拟响应测试未建立其真实接受情况。依赖该上限前需验证实际端点行为。
+之后可独立编辑 `settings.max_tokens`。`/thinking` 不重算它，加载/复用 Model 也不重新应用预设。自定义端点可能有其他限制。原生序列化决定线上字段；已安装 DeepSeek 适配器发送 `max_tokens`，本地模拟响应测试未建立其真实接受情况。依赖该上限前需验证实际端点行为。
