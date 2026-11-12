@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import asynccontextmanager
 from typing import ClassVar
@@ -119,6 +120,25 @@ def test_connector_groups_are_canonical_tool_search_names(group_name):
 def test_connector_group_rejects_noncanonical_values(group_name):
     with pytest.raises(ValidationError):
         ConnectorConfiguration(connector_id="account", kind="github", group_name=group_name)
+
+
+@pytest.mark.parametrize("group", [None, "", "bad_group", 123])
+def test_malformed_modern_capture_does_not_use_legacy_group(group):
+    payload = {
+        "connector_id": "account",
+        "connector_key": "github",
+        "configuration_version": 1,
+        "implementation": "example:GitHub",
+        "connector_name": "",
+    }
+    if group is not None:
+        payload["group_name"] = group
+    with pytest.raises(ValidationError):
+        Capture.model_validate(payload)
+    with pytest.raises(ValidationError):
+        ConnectorConfiguration(connector_id="account", kind="github")
+    with pytest.raises(ValidationError):
+        ConnectorConfiguration(connector_id="account", kind="github", group_name="connector_0123456789abcdef")
 
 
 async def test_group_reservations_are_atomic_editable_and_released_on_delete(tmp_path):
@@ -585,7 +605,8 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
 
 
 @pytest.mark.parametrize(
-    "codeact,change", [(False, None), (True, None), (True, "disable"), (True, "rename"), (True, "group")]
+    "codeact,change",
+    [(False, None), (False, "legacy"), (True, None), (True, "disable"), (True, "rename"), (True, "group")],
 )
 async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, monkeypatch, codeact, change):
     from a13n_harness_ui.composition.models import ResolvedMcpRecipe
@@ -597,6 +618,22 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     from .test_tool_search_integration import _http_mcp
+
+    legacy = change == "legacy"
+    if legacy:
+        change = None
+        from a13n_harness_ui.connectors.runtime import Connectors
+
+        current_capture = Connectors.capture
+
+        async def legacy_capture(self):
+            captures = await current_capture(self)
+            return tuple(
+                Capture.model_validate_json(item.model_dump_json(exclude={"group_name", "connector_name"}))
+                for item in captures
+            )
+
+        monkeypatch.setattr(Connectors, "capture", legacy_capture)
 
     root = _write_configuration(tmp_path)
     root.write_text(
@@ -618,8 +655,8 @@ async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, mo
             await app.configure_connector(current.model_copy(update=update), expected_version=current.version)
         return "Native result: " + query
 
-    group = "work-documents"
-    empty_group = "empty-documents"
+    group = "connector_" + hashlib.sha256(b"connector-first").hexdigest()[:16] if legacy else "work-documents"
+    empty_group = "connector_" + hashlib.sha256(b"connector-empty").hexdigest()[:16] if legacy else "empty-documents"
     source = f"""directory = await list_connectors()
 assert directory['groups'][0]['group'] == {group!r}
 assert 'Work documents' in directory['groups'][0]['description']
@@ -716,12 +753,16 @@ await call_connector_tool(group={group!r}, tool='lookup', arguments={{'query': '
                         connector_id=connector_id,
                         kind="documents",
                         name="Work documents",
-                        group_name=group if connector_id == "connector-first" else empty_group,
+                        group_name="work-documents" if connector_id == "connector-first" else "empty-documents",
                     ),
                     expected_version=None,
                 )
             captured = await app.connectors().capture()
-            assert captured[0].connector_name == "Work documents"
+            assert captured[0].connector_name == ("" if legacy else "Work documents")
+            if legacy:
+                # A saved ToolSearch call still addresses its original group,
+                # independently of today's editable account group.
+                assert captured[0].group_name != (await app.connectors().instances())[0].group_name
             context = await app.connectors().model_context(captured)
             assert next(item for item in context["instances"] if item["id"] == "connector-first")["group_name"] == group
             thread = await app.create_thread(title="Native Connector")
