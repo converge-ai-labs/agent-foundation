@@ -49,7 +49,9 @@ export function BotFields({
         <SettingsRow
           label={t("Bot")}
           controlId={`${id}-enabled`}
-          description={t("Keeps track of ongoing work across your chats.")}
+          description={t(
+            "Keeps track of work across chats. First enable sends a visible workspace introduction using the selected model.",
+          )}
         >
           {enabled ? (
             <ConfirmAction

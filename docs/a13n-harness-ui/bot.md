@@ -9,9 +9,9 @@ Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing obj
 
 1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup; Bot uses built-in instructions, not a configured Agent.
 2. Optionally add custom instructions, such as your preferred coordination style. Custom instructions are appended alongside the built-in instructions and do not replace them. Captured global `AGENTS.md` guidance also applies.
-3. Choose **Turn on Bot**. This saves settings without running the Model. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
+3. Choose **Turn on Bot**. On first usable enable, the server sends a visible preset user message asking Bot to discover and explain your workspace. This uses an ordinary Model request and may incur cost. You can continue the conversation immediately. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
 
-The default heartbeat interval is **one hour**. Opening the page or saving settings starts no model request. The WebUI server must remain running for heartbeat processing. Bot is shared by instance-key participants and is unavailable to scoped guests. [Live mode](live-mode.md) is independent.
+The default heartbeat interval is **one hour**. Opening the page starts no model request. The first workspace introduction runs once, independently of Heartbeat and browser presence. Existing chat history or a previous attempt prevents repetition after restart or re-enabling; a failed attempt stays visible and requires an explicit follow-up. The WebUI server must remain running for heartbeat processing. Bot is shared by instance-key participants and is unavailable to scoped guests. [Live mode](live-mode.md) is independent.
 
 Merge these fields into the selected root YAML's existing `webui` mapping:
 
@@ -40,7 +40,9 @@ Bot manages recurring checks in `bot/HEARTBEAT.md`. Each heartbeat tells Bot to 
 
 Bot can use `create_project` to create a normal Project configuration and `create_thread` to start work with normal Sidekick/global Agent defaults. Project creation, Thread creation, Run admission, and task completion are separate outcomes. Bot is instructed to inspect saved results before reporting success.
 
-When memory is enabled, Bot receives global memory normally. It can discover configured Projects and call `read_project_memory` to read a Project's memory on demand. These reads are bounded and read-only. Project memories are not automatically injected into Bot's context. Keep coordination notes and tasks in Bot's own Thread.
+When memory is enabled, Bot uses the existing memory tools for global memory and its own `bot` scope in `memory/bot/` beside the root YAML. It keeps `MEMORY.md` as a concise workspace map and stores durable Project understanding with source references and uncertainty in topic files. Heartbeats check relevant, changed or unknown Projects in bounded passes. No separate project-profile database or memory extraction pipeline is introduced.
+
+Bot discovers current Project IDs and uses `read_project_memory` for bounded, read-only source context, starting with indexes and reading selected files as needed. Project memories are not automatically injected or writable from Bot. Before creating project work, Bot verifies the Project and passes its explicit ID to `create_thread`. Current handoffs belong in Bot Notes; global memory keeps cross-project preferences. The first introduction permits orientation and memory maintenance, not implementation or configuration changes.
 
 ## Bot Notes
 

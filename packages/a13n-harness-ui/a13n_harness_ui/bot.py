@@ -53,9 +53,24 @@ class BotSnapshot(SurfaceModel):
     prose: tuple[BotProse, ...] = ()
 
 
+WORKSPACE_INTRODUCTION = BotSubmit(
+    input_id="input-workspace-introduction",
+    text=(
+        "Help me get oriented in this workspace. Discover the configured Projects and their roots, "
+        "read relevant Project memory and existing Thread notes or outcomes, and build a concise workspace map "
+        "using your memory tools when available. Tell me what you found, distinguish verified facts from "
+        "uncertainty, and ask what I would like to work on next. This first conversation is for orientation "
+        "and memory maintenance; do not start implementation or change project configuration."
+    ),
+)
+
+
 _HEARTBEAT = """Host heartbeat: read HEARTBEAT.md in your working directory if it exists and follow its current checklist.
 Create or update HEARTBEAT.md as useful to manage future checks.
 List Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
+Maintain your Bot memory workspace map in bounded passes: check relevant, changed or unknown Projects,
+consult source memory indexes before selected files, and correct stale understanding with source references.
+Do not reread every Project in full or invent work because a Project exists.
 Check known working Threads before creating anything. Follow up through existing collaboration tools only when useful and authorized.
 Create or update any working Thread slot as appropriate; clear handled follow-ups, or retain concise next steps.
 Notes and Thread completion do not wake you. Explicit Thread messages are separate inputs.
@@ -171,67 +186,95 @@ class BotController:
         retained: BotInput | None = None
         with CancelScope(shield=True):
             async with self._lock:
-                await self._threads.bot_thread()
-                previous = await self._store.bot.get_input(command.input_id)
-                if previous is not None:
-                    item = await self._store.bot.retain(
-                        BotInput(
-                            input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC)
-                        )
-                    )
-                    if item.state == "discarded":
-                        raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
-                    await self._publish_user(item)
-                    return item
-                detail = await self._projections.detail(BOT_THREAD_ID)
-                if detail.deferred_requests:
-                    raise ThreadError(
-                        "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
-                    )
-                thread = await self._threads.get(BOT_THREAD_ID)
-                proposed = BotInput(
-                    input_id=command.input_id,
-                    source="user",
-                    text=command.text,
-                    created_at=datetime.now(UTC),
-                    state="dispatching",
-                    continuation_id=thread.continuation.logical_digest if thread.continuation else None,
-                )
-                item = await self._store.bot.retain(proposed)
-                prompt = [
-                    TextContent(
-                        f"Bot input {item.input_id} ({item.source})",
-                        metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
-                    ),
-                    TextContent(item.text, metadata={"display": True}),
-                ]
-                active = await self._runs.active(BOT_THREAD_ID)
-                if active is None:
-                    await self._admit(item, prompt)
-                else:
-                    item = item.model_copy(update={"receipt_id": active.receipt.receipt_id})
-                    # Native acceptance and its local correlation form one cancellation boundary.
-                    try:
-                        result = await self._runs.steer(
-                            receipt_id=active.receipt.receipt_id, message=prompt, immediate=True, touch=True
-                        )
-                        if result.accepted:
-                            await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
-                    except BaseException:
-                        await self._save_interrupted(
-                            item,
-                            "Bot steering was interrupted. Review the reported error and working Thread results before continuing.",
-                        )
-                        raise
-                    if not result.accepted:
-                        error = "Bot is not accepting input. Send a new message when ready."
-                        await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": error}))
-                        raise ThreadError(error, code="bot_input_rejected")
-                retained = await self._store.bot.get_input(item.input_id)
-                assert retained is not None
-                await self._publish_user(retained)
+                retained = await self._submit_locked(command)
         assert retained is not None
         return retained
+
+    async def _submit_locked(self, command: BotSubmit) -> BotInput:
+        """Ordinary user admission, shared by assisted introduction and direct chat."""
+        await self._require_enabled()
+        await self._threads.bot_thread()
+        previous = await self._store.bot.get_input(command.input_id)
+        if previous is not None:
+            item = await self._store.bot.retain(
+                BotInput(input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC))
+            )
+            if item.state == "discarded":
+                raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
+            await self._publish_user(item)
+            return item
+        detail = await self._projections.detail(BOT_THREAD_ID)
+        if detail.deferred_requests:
+            raise ThreadError(
+                "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
+            )
+        thread = await self._threads.get(BOT_THREAD_ID)
+        proposed = BotInput(
+            input_id=command.input_id,
+            source="user",
+            text=command.text,
+            created_at=datetime.now(UTC),
+            state="dispatching",
+            continuation_id=thread.continuation.logical_digest if thread.continuation else None,
+        )
+        item = await self._store.bot.retain(proposed)
+        prompt = [
+            TextContent(
+                f"Bot input {item.input_id} ({item.source})",
+                metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
+            ),
+            TextContent(item.text, metadata={"display": True}),
+        ]
+        active = await self._runs.active(BOT_THREAD_ID)
+        if active is None:
+            await self._admit(item, prompt)
+        else:
+            item = item.model_copy(update={"receipt_id": active.receipt.receipt_id})
+            # Native acceptance and its local correlation form one cancellation boundary.
+            try:
+                result = await self._runs.steer(
+                    receipt_id=active.receipt.receipt_id, message=prompt, immediate=True, touch=True
+                )
+                if result.accepted:
+                    await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
+            except BaseException:
+                await self._save_interrupted(
+                    item,
+                    "Bot steering was interrupted. Review the reported error and working Thread results before continuing.",
+                )
+                raise
+            if not result.accepted:
+                error = "Bot is not accepting input. Send a new message when ready."
+                await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": error}))
+                raise ThreadError(error, code="bot_input_rejected")
+        retained = await self._store.bot.get_input(item.input_id)
+        assert retained is not None
+        await self._publish_user(retained)
+        return retained
+
+    async def introduce_workspace(self) -> None:
+        """Send one visible ordinary user input when an unused Bot first becomes usable."""
+        with CancelScope(shield=True):
+            async with self._lock:
+                state = await self._store.bot.state()
+                if not await self._can_deliver() or state.paused or state.activated:
+                    return
+                if await self._store.bot.inputs() or await self._store.bot.messages():
+                    return
+                thread = await self._store.threads.get(BOT_THREAD_ID)
+                if thread is not None and thread.continuation is not None:
+                    return
+                if await self._runs.active(BOT_THREAD_ID) is not None:
+                    return
+                if thread is not None and (await self._projections.detail(BOT_THREAD_ID)).deferred_requests:
+                    return
+                try:
+                    await self._submit_locked(WORKSPACE_INTRODUCTION)
+                finally:
+                    # The Host authored this first message; even rejected admission must be visible.
+                    item = await self._store.bot.get_input(WORKSPACE_INTRODUCTION.input_id)
+                    if item is not None:
+                        await self._publish_user(item)
 
     async def _publish_user(self, item: BotInput) -> None:
         await self._store.bot.publish(
@@ -399,6 +442,7 @@ class BotController:
                 group.start_soon(self._settlement_loop)
                 while True:
                     try:
+                        await self.introduce_workspace()
                         await self.tick()
                     except Exception:
                         get_logger(__name__).exception("Bot heartbeat processing failed")
@@ -440,6 +484,8 @@ class BotController:
 
     async def deliver_automatic_inputs(self) -> None:
         """Freeze one batch; exact native acceptance consumes only its selected IDs."""
+        # An immediately notified report must not win the first activation over visible orientation.
+        await self.introduce_workspace()
         async with self._lock:
             state = await self._store.bot.state()
             if not await self._can_deliver() or state.paused:

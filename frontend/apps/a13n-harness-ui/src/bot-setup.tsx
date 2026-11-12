@@ -195,10 +195,10 @@ export function BotSetup() {
         <p>
           {heartbeat
             ? t(
-                "Turning on saves these settings without starting a run. The first Heartbeat is scheduled automatically; you can also message Bot anytime.",
+                "Turning on sends one visible first message to introduce your workspace using the selected model. Heartbeat checks follow the schedule; you can chat anytime.",
               )
             : t(
-                "Turning on saves these settings without starting a run. Heartbeat is off; you can message Bot anytime.",
+                "Turning on sends one visible first message to introduce your workspace using the selected model. Heartbeat is off; you can chat anytime.",
               )}
         </p>
         {uncertain ? (
