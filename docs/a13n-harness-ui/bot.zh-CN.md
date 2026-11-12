@@ -26,7 +26,7 @@ webui:
     connector_interval_seconds: 60
 ```
 
-使用已有 Model ID。`model` 为 null 或省略时，仅沿用全局默认 Agent 的 Model，不继承该 Agent 的指令、子 Agent、Plugin 或 MCP 选择。没有有效 Model 时无法执行。Model 和指令变更应用于后续 Run。
+Bot 继承全局默认 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。文件工具保持开启，Shell、Computer 和结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`model` 为 null 或省略时沿用默认 Agent 的 Model；填写已有 Model ID 可覆盖它。未配置默认 Agent 时，显式 Bot Model 使用最小内置执行设置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
 
 heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400 秒。自定义指令最多 1,048,576 个字符。编辑文件后，使用 `a13n-harness-ui config validate` 验证。
 
@@ -53,6 +53,10 @@ Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。Bo
 笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot。交接、结果、阻塞或问题需要关注时，工作 Thread 先更新笔记，再发送一条实质性 `send_thread_message(thread_id='thread_bot', kind='report', message=...)`。Host 保留来源 Thread 身份，并通知 Bot 现有的投递循环。Bot 关闭、暂停、不可用或等待人类决策时，报告保留待处理。受管 worker 通过 Coordinator 汇报。Bot 发出的 Thread 输入包含隐藏的回报地址指引；接收方除了回报，也保留已保存的最终结果。
 
 ## 消息与决策
+
+上下文、费用、任务等底部信息栏仅在现有 **Debug** 模式显示，普通聊天的信息栏不变。上下文采用已捕获 Run 的 Model 容量和最近一次根请求的 token 数，不是累计用量或下次选择的 Model；容量缺失时显示未知。连接反馈、实际错误和审批仍在普通模式显示；通用 Host 中断提示保留在 Debug 诊断中。
+
+配置语音输入后，可使用 **语音输入**。Bot 复用普通聊天的录音、转写设置和订阅账号选择。停止录音后，最终文本只插入当前草稿一次，不会自动发送。关闭 Debug 时，附件和语音输入仍可用，Bot 工作中也可使用。
 
 Bot 聊天页面显示你的消息、实时流式及刷新后保留的普通助手文本、最终回复，以及有意发布的主动消息。Bot 在耗时工作前简短回应，并提供有意义的进展。聊天隐藏工具调用、推理、子执行和隐藏上下文。中间文本不产生通知；最终回复只显示一次，沿用现有未读和通知机制。
 

@@ -19,6 +19,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
 )
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.toolsets.output import disclose_mapping_field
 from a13n_logging import get_logger
 from pydantic import Field
 from pydantic_ai import RunContext
@@ -807,7 +808,21 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                     "coordinator_thread_id": self.composition.coordinator_thread_id,
                     "generation_digest": self.composition.generation_digest,
                 }
-            return result
+            # Keep page identity and navigation ahead of potentially enormous
+            # UI edit evidence. The shared disclosure retains whole fields.
+            transcript = result["transcript"]
+            result["transcript"] = {
+                **{key: value for key, value in transcript.items() if key not in {"entries", "boundary_entries"}},
+                **{key: value for key, value in transcript.items() if key in {"entries", "boundary_entries"}},
+            }
+            bounded, _ = await disclose_mapping_field(
+                ctx.deps,
+                result,
+                field="transcript",
+                content_complete=False,
+                noun="Thread history page",
+            )
+            return bounded
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_get_failed")
 

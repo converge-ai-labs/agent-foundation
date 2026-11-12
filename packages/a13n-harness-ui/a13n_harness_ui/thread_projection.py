@@ -598,21 +598,34 @@ class ThreadProjectionService:
             goal=goal,
         )
 
-    async def context_usage(self, thread_id: str) -> ContextUsageView:
+    async def context_usage(
+        self,
+        thread_id: str,
+        *,
+        active_composition: ResolvedRunComposition | None = None,
+        active_run_id: str | None = None,
+    ) -> ContextUsageView:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Session does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return ContextUsageView(thread_id=thread_id)
-        inspection = await self.inspection(thread)
-        assert inspection.run_composition is not None
-        composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
-        latest = inspection.latest_request_tokens
         observed = None
-        if not inspection.context_empty:
-            observed = await self._store.usage.latest_root_request(thread_id=thread_id)
-            if observed is not None:
-                latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+        latest = None
+        if active_composition is not None:
+            # Never divide a new Run's live/request tokens by the previous Model's budget.
+            composition = active_composition
+            if active_run_id is not None:
+                observed = await self._store.usage.latest_root_request(thread_id=thread_id, run_id=active_run_id)
+        else:
+            if thread.continuation is None:
+                return ContextUsageView(thread_id=thread_id)
+            inspection = await self.inspection(thread)
+            assert inspection.run_composition is not None
+            composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
+            latest = inspection.latest_request_tokens
+            if not inspection.context_empty:
+                observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        if observed is not None:
+            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         from a13n_harness_ui.model_thinking import summarize_thinking
 

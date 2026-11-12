@@ -57,6 +57,7 @@ from a13n_harness_ui.composition import (
     CompositionAcceptanceService,
     ResolvedRunComposition,
     RunCompositionService,
+    ThreadCompositionSelection,
 )
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration import (
@@ -1163,7 +1164,16 @@ class HarnessUiApp:
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
         async with self._operation():
-            return await self._projections.context_usage(thread_id)
+            active = await self._root_runs.active(thread_id)
+            if active is None:
+                return await self._projections.context_usage(thread_id)
+            reference = await self._root_runs.composition_reference(active.receipt.receipt_id)
+            if reference is None:
+                return ContextUsageView(thread_id=thread_id)
+            composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
+            return await self._projections.context_usage(
+                thread_id, active_composition=composition, active_run_id=active.run_id
+            )
 
     async def resolve_launch_project(
         self,
@@ -1506,6 +1516,11 @@ class HarnessUiApp:
                 if source is not None and selected.agent_source.kind == "agent"
                 else None
             )
+            bot = (
+                self._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
+                if source is not None and selected.agent_source.kind == "bot" and source.bot_model_id is not None
+                else None
+            )
             active = await self._root_runs.active(thread_id)
             captured = None
             origin: Literal["active_operation", "selected_continuation", "none"] = "none"
@@ -1547,11 +1562,15 @@ class HarnessUiApp:
                     if selected.agent_source.kind == "live" and source is not None and source.document.live is not None
                     else source.memory_organization_model_id
                     if thread.memory_scope is not None and source is not None
+                    else source.bot_model_id
+                    if selected.agent_source.kind == "bot" and source is not None
                     else selected.default_model_id or (None if agent is None else agent.model)
                 ),
                 next_capability_ids=(
                     ("working_state", "runtime_context", "user_interaction", "dynamic_environment")
                     if selected.agent_source.kind == "live"
+                    else tuple(item.capability for item in bot.capabilities)
+                    if bot is not None
                     else ()
                     if agent is None
                     else tuple(item.capability for item in agent.capabilities)
