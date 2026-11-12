@@ -119,7 +119,7 @@ async def test_model_gets_one_routing_guide_exact_actions_and_described_selector
     captured = await _capture_example(tmp_path, instructions=instructions)
     guide = captured["instructions"]
     for name in ("environment-routing", "environment-computer", "environment-shell"):
-        assert guide.count(f'<tool-instruction name="{name}">') == int(instructions)
+        assert guide.count(f"<tool-name>{name}</tool-name>") == int(instructions)
     tools = {tool["name"]: tool for tool in captured["tools"]}
     assert "does not inherit" in tools["computer_type_text"]["parameters"]["properties"]["alias"]["description"]
     assert "this Run" in tools["computer_click"]["parameters"]["properties"]["observation_id"]["description"]
@@ -155,8 +155,8 @@ async def test_single_desktop_needs_routing_only_without_a_default(default_mount
         instructions=instructions,
     )
     guide = captured["instructions"]
-    assert guide.count('<tool-instruction name="environment-routing">') == int(instructions and default_mount is None)
-    assert guide.count('<tool-instruction name="environment-computer">') == int(instructions)
+    assert guide.count("<tool-name>environment-routing</tool-name>") == int(instructions and default_mount is None)
+    assert guide.count("<tool-name>environment-computer</tool-name>") == int(instructions)
     if instructions:
         assert "foreground focus" in guide
         assert "never blindly repeat input" in guide
@@ -175,7 +175,7 @@ async def test_no_exposed_environment_tools_need_no_routing_guide(tmp_path):
         configuration=DynamicEnvironmentConfiguration(files_enabled=False, shell_enabled=False, computer_enabled=False),
     )
     assert captured["tools"] == []
-    assert '<tool-instruction name="environment-' not in captured["instructions"]
+    assert "<tool-name>environment-" not in captured["instructions"]
     assert len(json.loads(captured["environment"].split("\n", 1)[1])["mounts"]) == 5
 
 
@@ -245,7 +245,7 @@ async def test_routing_guide_tracks_empty_single_multiple_and_default_changes(tm
         payload = json.loads(request["environment"].split("\n", 1)[1])
         assert len(payload["mounts"]) == count
         assert payload["default_mount"] == default
-        assert request["instructions"].count('<tool-instruction name="environment-routing">') == int(
+        assert request["instructions"].count("<tool-name>environment-routing</tool-name>") == int(
             instructions and routing
         )
         names = {tool["name"] for tool in request["tools"]} - {"advance"}
@@ -254,7 +254,7 @@ async def test_routing_guide_tracks_empty_single_multiple_and_default_changes(tm
             assert payload["mounts"][0]["root"] == "/project"
             assert "read_text" in payload["mounts"][0]["operations"]["files"]
         else:
-            assert '<tool-instruction name="environment-' not in request["instructions"]
+            assert "<tool-name>environment-" not in request["instructions"]
 
 
 async def test_desktop_provenance_and_explicit_keyboard_alias_keep_input_on_intended_mount(tmp_path):

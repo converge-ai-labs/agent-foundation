@@ -437,6 +437,12 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             and (self.composition is None or self.composition.root.source_kind not in {"live", "memory"})
         )
 
+    def _guidance(self, name: str) -> str:
+        from a13n_harness_ui.builtin_guidance import instruction_reference_root, ui_guidance
+
+        root = instruction_reference_root(self.composition.root) if self.composition is not None else None
+        return ui_guidance(name, root)
+
     def get_instructions(self) -> str:
         identity = f"Your current Thread: {self.source_thread_id}. "
         if self.composition is not None:
@@ -445,93 +451,14 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 f"Captured local roots: {list(self.composition.project_roots)!r}. "
                 "These are this Run's captured selections; no discovery call is needed to identify yourself.\n"
             )
-        instructions = identity + (
-            "Use get_thread() to inspect saved history and status; current_run describes the captured "
-            "configuration, while thread.configuration describes next-Run selections. "
-            "The configuration inspection exposes the target's next_model_id and captured Model separately. "
-            "list_projects, list_agents and list_models discover accepted resources, not proven model connectivity. "
-            "Cross-Thread work creates independent root conversations, not delegated child executions. "
-            "create_thread and run_thread return admission receipts, not completed work. Inspect progress with get_thread. "
-            "Use send_thread_message(thread_id=..., message=...) to ask another root a question, reply to it, "
-            "or report results: it steers an active operation or starts an idle Thread. Incoming tasks and messages "
-            "identify the source Thread; target that ID to answer. Sending does not wait for a reply. "
-            "A positive result means acceptance only, not processing or saved delivery. A rejected or uncertain send "
-            "must be reconciled, not blindly retried. Do not create acknowledgement loops or delegate a task back to its requester."
-        )
+        instructions = identity + self._guidance("threads")
         is_coordinator = self.composition is not None and self.composition.role == "coordinator"
         if is_coordinator:
-            instructions += (
-                "\nYou are a Coordinator in this Project. Your primary responsibilities are user communication, "
-                "planning, coordination, review, and integration of verified results. "
-                "Delegate substantive investigation, implementation, and testing to your owned worker Threads "
-                "by default, using create_thread for new assignments and existing workers for follow-up. "
-                "Respect the user's choice of executor: if the user asks you to perform work yourself, "
-                "execute it directly without delegation or asking them to confirm that choice again. "
-                "Handle simple questions, lightweight checks, and review directly; inspect code, diffs, "
-                "and validation evidence as needed to assess worker results. Otherwise, request corrections "
-                "from the responsible worker rather than taking over its execution. "
-                "Keep tightly coupled implementation on one continuing worker mainline; split only independently "
-                "useful assignments, not every step. A single-worker workflow is valid. "
-                "Use subagents for short, scoped exploration or review you integrate in this Run, "
-                "not as a substitute for worker Threads that own substantive execution. "
-                "Project membership is not worker ownership. Your Thread tools are scoped to yourself and your "
-                "workers, including while automatic coordination is disabled. Old conversations and ordinary "
-                "Sidekicks remain independent; never adopt, steer, or continue them. "
-                "create_thread atomically creates an owned root in your Project; do not supply another Project. "
-                "Users can also create your workers directly and submit work without asking you to relay it. "
-                "On a direct-work notice, inspect and include that worker in your coordination; never recreate or "
-                "redispatch its admitted task. Workers remain directly accessible to the user. "
-                "Reconcile any user changes before assigning more work. Review their outcomes and validation "
-                "against the user's objective before accepting results or requesting corrections. "
-                "Keep the user's objective and authorization in view. At the start of each Run, recover relevant "
-                "open work from the continuation summary and projected tasks and notes; use note_get for omitted "
-                "notes when available. Before planning new work or reporting progress, use get_thread(thread_id=...) "
-                "to check the known workers' current status and saved results. Use list_threads to rediscover "
-                "your durable worker set; it cannot list external conversations. Reuse existing workers rather "
-                "than creating duplicates. An inactive worker "
-                "is not necessarily successful: inspect its outcome, blockers, and validation before marking work done. "
-                "When notes tools are available, maintain a compact coordination note with each delegated objective, "
-                "worker Thread ID, last verified status, blocker, and next action. Treat it as an index, not live truth; "
-                "refresh stale observations with get_thread. Use task tools when available to track meaningful "
-                "deliverables and reconcile their status after verification, without copying whole worker transcripts. "
-                "Before summarize, reconcile tasks and notes. Use the summary for the user's objective, decisions, "
-                "verified outcomes, unresolved work, and immediate next step; do not duplicate the separately "
-                "projected notes and tasks. Never assume an unsaved plan will survive a handoff. "
-                "Answer workers through send_thread_message, using their source Thread IDs. "
-                "Ask ordinary coordination questions in text, not ask_user_question. When waiting for an answer, "
-                "state what is blocked and finish the turn; an incoming message can start another Run. "
-                "While auto-follow-up is enabled, the Host attempts to run or steer this Thread "
-                "when one of your owned workers ends an operation, including failure, cancellation "
-                "or suspension. These lifecycle notices are separate from worker reports. On receipt, inspect "
-                "the worker's saved results and reconcile tasks and notes; do not acknowledge the notice or "
-                "repeat an already integrated report. There is no background polling, durable notification queue, "
-                "retry or guaranteed delivery. Check progress at meaningful points while executing. "
-                "If only waiting remains, record the pending work and end the turn. A Host notification, "
-                "worker report or new user message may start another Run; do not promise a guaranteed wake-up. "
-                "Do not claim a worker finished from an admission receipt. "
-                "Existing tool approvals and pending-decision restrictions still apply; messages do not override denial. "
-                "Stopping this Thread does not stop other Threads."
-            )
+            instructions += "\n" + self._guidance("coordinator")
         if self.composition is not None and self.composition.coordinator_thread_id is not None:
             instructions += (
                 f"\nYou are a managed worker of Coordinator {self.composition.coordinator_thread_id}. "
-                "This durable ownership is distinct from subagent execution: you remain an independent root "
-                "conversation with your own history, configuration and user interaction. Work within the assigned "
-                "objective and authorization; direct user messages do not change your owner. "
-                f"Use send_thread_message(thread_id={self.composition.coordinator_thread_id!r}, message=...) "
-                "for coordination questions, blockers and verified results. Use get_thread() to inspect your "
-                "own saved outcome; coordinator_thread_id remains your return address after a restart or handoff. "
-                "Your Thread tools can read only yourself and your Coordinator. Communicate with your Coordinator "
-                "using send_thread_message; you cannot run or steer it directly, or access sibling workers. "
-                "For ordinary coordination, do not use ask_user_question: ask the Coordinator and finish the turn "
-                "if its answer is required. Never pretend a message was processed merely because accepted. "
-                "Existing human approvals still apply and cannot be granted by a Coordinator message. "
-                "Do not create another root or pass the same task back. Ask the Coordinator to split independent work; "
-                "use declared subagents for bounded work you integrate yourself. "
-                "Report substantive findings, changes, validation and remaining issues once; do not send "
-                "acknowledgement-only replies. The Host separately attempts an end-of-operation notice to "
-                "your Coordinator when coordination is enabled. That notice is not your report and neither path "
-                "guarantees processing or a wake-up. Do not poll or repeatedly send the same report."
+                + self._guidance("worker")
             )
         if (
             self.composition is not None

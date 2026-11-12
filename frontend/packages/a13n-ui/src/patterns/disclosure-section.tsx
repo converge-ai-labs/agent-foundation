@@ -13,11 +13,14 @@ export function DisclosureSection({
   summary,
   actions,
   children,
+  keepMounted,
   ...props
 }: Omit<ComponentProps<typeof Collapsible>, "title"> & {
   title: ReactNode;
   summary?: ReactNode;
   actions?: ReactNode;
+  /** Preserve editable drafts and form validation while the section is closed. */
+  keepMounted?: boolean;
 }) {
   // A quiet disclosure: no surface of its own, so its fields keep the form's
   // edges and a nested one never stacks a second fill. The trigger's hover
@@ -56,7 +59,7 @@ export function DisclosureSection({
         ) : (
           trigger
         )}
-        <CollapsiblePanel>
+        <CollapsiblePanel keepMounted={keepMounted}>
           <div className="grid gap-4 pt-3 pb-1">{children}</div>
         </CollapsiblePanel>
       </div>

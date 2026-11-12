@@ -395,3 +395,28 @@ curl -sS -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 <span id="create-a-docker-desktop"></span> <span id="automatic-vercel-desktops"></span> <span id="enable-observation-and-interaction"></span> <span id="computer-coordinate-mode"></span> <span id="desktop-access-prerequisites"></span> <span id="get-and-return-desktop-control"></span> <span id="upgrade-desktop-control"></span> <span id="automatic-sprites-desktops"></span>
 
 - [使用桌面](computer-use.md)
+
+## Envd 设置
+
+每个环境模板都有统一的 **Envd 设置**面板，可配置 Device 总预算、每个 Session 的预算、文件和输出大小、记录保留及传输清理、操作和启动超时、Session 生命周期默认值，以及高级协议大小限制。大小输入以字节为单位；时长输入以秒为单位，保存为毫秒。留空表示继承显示的默认值。容量摘要会指出限制独立 Session worker 数量的资源预算；这是记账上限，不保证 CPU、内存或磁盘足够。
+
+例如，Envd 默认给每个 worker Session 预留 64 个传输槽位，Device 总共 128 个。将**最大并发文件传输数**设为 `32`，即可允许超过两个 worker。其他默认预算仍将准入上限限制为四个。可以增大 Device 总预算、降低每个 Session 的预算，或组合调整以满足工作负载。
+
+API 调用使用相同的强类型 recipe 对象：
+
+```json
+{
+  "envd": {
+    "limits": {
+      "max_concurrent_file_transfers": 32
+    },
+    "idle_timeout_ms": 3600000
+  }
+}
+```
+
+Service 通过 `A13N_ENVD_CONFIG_JSON` 注入这些覆盖值。不要在普通环境变量区域添加保留的 `A13N_ENVD_*` 名称。Provider 连接、身份、凭据和执行策略保留各自的配置入口；Metrics Data Sources 继续负责监控及导出配置。Daemon 配置从低到高的优先级为：内置默认值、JSON 文件、JSON 环境变量覆盖、单独的 daemon 环境变量、显式 CLI 参数。
+
+设置在创建新环境时生效，并在创建重试和快照恢复时保持冻结。修改已有环境时，先保存模板，再创建新实例、切换相关绑定，确认旧实例中的文件和工作不再需要后再将其退役。Native 执行模式可以保存这些设置，但不会因此启动 daemon。Local 目录分配不启动 Envd；Sprites 在准备 Envd 启动脚本时应用设置。外部目标仍由部署方配置。
+
+Session 空闲超时和最大存活时长是 Host 未显式提供 Session 生命周期时使用的 daemon 默认值。它们不控制环境的空闲停止或删除，也不会覆盖 Thread Session 绑定。
