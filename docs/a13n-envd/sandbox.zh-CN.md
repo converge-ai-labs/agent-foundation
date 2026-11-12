@@ -15,7 +15,7 @@ description: 选择镜像、连接 Host，并在更换容器后保留工作目�
 
 先使用默认的 `inherit` 出站模式。普通使用无需 `--privileged`、额外 capabilities 或禁用 Docker 安全配置。Linux 运行时需支持 Envd 的原生进程操作；自定义运行时和缩减的 capability 集合可能拒绝这些操作。需要按目标过滤网络访问时，参见[受控出站网络](#opt-in-controlled-egress)。
 
-标准和 slim 工具镜像使用 slim Envd；桌面镜像使用普通版；现有 `*-vm` 标签使用 VM 版。本地源码构建根据工具组合解析 `ENVD_VARIANT=auto`。自定义标准镜像需要原生桌面后端时，添加 `--build-arg ENVD_VARIANT=default`。预构建模式必须复制并显式指定所选类型，镜像构建通过 `--build-variant` 验证。参见[二进制类型](installation.md#%E9%80%89%E6%8B%A9%E4%BA%8C%E8%BF%9B%E5%88%B6%E7%B1%BB%E5%9E%8B)。
+标准和 slim 工具镜像使用 slim Envd；桌面镜像使用普通版；现有 `*-vm` 标签使用 VM 版。本地源码构建根据工具组合解析 `ENVD_VARIANT=auto`。自定义标准镜像需要原生桌面后端时，添加 `--build-arg ENVD_VARIANT=default`。预构建模式必须复制并显式指定所选类型，镜像构建通过 `--build-variant` 验证。参见[二进制类型](installation.md#choose-a-binary-flavor)。
 
 ## 构建与检查
 
