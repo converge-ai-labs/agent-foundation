@@ -41,7 +41,7 @@ from starlette.websockets import WebSocketDisconnect
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
-from a13n_harness_ui.bot_models import BotInput, BotPause, BotSubmit
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotNote, BotNotesPage, BotPause, BotSubmit
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -614,6 +614,16 @@ def create_webui(
     @server.get("/api/bot", response_model=BotSnapshot)
     async def bot_status() -> BotSnapshot:
         return await app().bot().snapshot()
+
+    @server.get("/api/bot/notes", response_model=BotNotesPage)
+    async def bot_notes(
+        limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)
+    ) -> BotNotesPage:
+        return await app().bot().list_notes(limit=limit, offset=offset)
+
+    @server.get("/api/bot/notes/{thread_id}", response_model=BotNote)
+    async def bot_note(thread_id: str) -> BotNote:
+        return await app().bot().notes.read(caller=BOT_THREAD_ID, thread_id=thread_id)
 
     @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmit))
     async def bot_submit(request: Request) -> BotInput:

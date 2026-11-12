@@ -1,5 +1,6 @@
 """Agent-managed Markdown slots, independent of Bot execution and Thread control."""
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -49,6 +50,7 @@ def _note(row: BotNoteRecord | None, thread_id: str) -> BotNote:
 class BotNoteRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
+        self.on_change: Callable[[str], Awaitable[None]] | None = None
 
     async def read(self, *, caller: str, thread_id: str) -> BotNote:
         _authorize(caller, thread_id)
@@ -64,20 +66,26 @@ class BotNoteRepository:
             await _target(session, thread_id)
             row = await session.get(BotNoteRecord, thread_id)
             if not content.strip():
+                if row is None:
+                    return BotNote(thread_id=thread_id)
                 await session.execute(delete(BotNoteRecord).where(BotNoteRecord.thread_id == thread_id))
-                return BotNote(thread_id=thread_id)
-            if row is not None and row.content == content:
-                return _note(row, thread_id)
-            now = datetime.now(UTC)
-            await session.execute(
-                insert(BotNoteRecord)
-                .values(thread_id=thread_id, content=content, updated_at=now, last_writer_thread_id=caller)
-                .on_conflict_do_update(
-                    index_elements=["thread_id"],
-                    set_={"content": content, "updated_at": now, "last_writer_thread_id": caller},
+                result = BotNote(thread_id=thread_id)
+            else:
+                if row is not None and row.content == content:
+                    return _note(row, thread_id)
+                now = datetime.now(UTC)
+                await session.execute(
+                    insert(BotNoteRecord)
+                    .values(thread_id=thread_id, content=content, updated_at=now, last_writer_thread_id=caller)
+                    .on_conflict_do_update(
+                        index_elements=["thread_id"],
+                        set_={"content": content, "updated_at": now, "last_writer_thread_id": caller},
+                    )
                 )
-            )
-            return BotNote(thread_id=thread_id, content=content, updated_at=now, last_writer_thread_id=caller)
+                result = BotNote(thread_id=thread_id, content=content, updated_at=now, last_writer_thread_id=caller)
+        if self.on_change is not None:
+            await self.on_change(thread_id)
+        return result
 
     async def list(self, *, caller: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
         if caller != BOT_THREAD_ID:

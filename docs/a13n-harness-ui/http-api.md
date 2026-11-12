@@ -262,13 +262,15 @@ Only Project-specified axes are applied. For just the four Environment axes, use
 
 Instance-key clients can use the shared [Bot](bot.md) without creating another Thread. Scoped guests cannot access these routes.
 
-| Method and path        | Body                                                                   | Result                                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, retained inputs, active operation, and pending-decision status |
-| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input with native admission/steering outcome; acceptance is not completion                             |
-| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                   |
+| Method and path        | Body                                                                   | Result                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, native saved prose, retained inputs, active operation, and pending-decision status |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input with native admission/steering outcome; acceptance is not completion                                                 |
+| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                                       |
 
-Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
+`GET /api/bot/notes?limit=20&offset=0` lists read-only handoff summaries and `next_offset`. `GET /api/bot/notes/{thread_id}` reads an ordinary root's full Bot Note, including an empty slot. These routes provide no mutation actions. The existing Thread stream supplies live prose; saved prose uses native display item IDs to reconcile with final publications.
+
+Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/bot` for chat and pending human responses; `/threads/thread_bot` redirects there. The existing decision API retains its normal continuation checks. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
 
 ## Coordinator
 

@@ -210,7 +210,8 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             if thread_id != BOT_THREAD_ID:
                 assert "publish_bot_message" not in names
                 assert not any(tool.name == "finish_silently" for tool in info.output_tools)
-                assert "Leave substantive findings" in str(messages)
+                assert "kind='report'" in str(messages)
+                assert "saved final response" in str(messages)
                 working_runs += 1
                 yield "analysis complete" if working_runs == 1 else "follow-up complete"
                 return
@@ -222,7 +223,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
                 "properties": {},
                 "additionalProperties": False,
             }
-            assert "Only human input, Host heartbeat" in str(messages) + (info.instructions or "")
+            assert "explicit Thread messages can wake you" in str(messages) + (info.instructions or "")
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             if bot_steps == 1:
                 created = next(part.content for part in returns if part.tool_name == "create_thread")
