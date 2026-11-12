@@ -1,3 +1,9 @@
+import {
+  ExecutionNoticeLinks,
+  useNoticeLabel,
+  splitExecutionNotices,
+  executionHeaders,
+} from "./background-links";
 import { ConnectorOffer } from "../connectors/offers";
 import { useTranslation } from "../i18n";
 import { BOT_THREAD_ID } from "../bot-identity";
@@ -65,18 +71,11 @@ import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
   const source = metadata?.["a13n.steering-source"];
-  return source === "background_process" || source === "async_subagent"
+  return source === "background_process" ||
+    source === "async_subagent" ||
+    source === "tool_execution"
     ? source
     : undefined;
-}
-
-// Known steering sources; unknown sources keep their backend value.
-function useNotificationTitle() {
-  const { t } = useTranslation();
-  return (source: string) =>
-    source === "background_process"
-      ? t("Process update")
-      : t("Subagent update");
 }
 
 // Generated run, subagent and recovery chrome is translated here; backend
@@ -213,7 +212,7 @@ function savedRows(
     const start = rows.length;
     entry.parts.forEach((part, index) => {
       if (
-        part.metadata?.display === false ||
+        (part.metadata?.display === false && !systemNotice(part.metadata)) ||
         part.kind === "system" ||
         (threadId === BOT_THREAD_ID && part.tool_name === "finish_silently")
       )
@@ -233,13 +232,13 @@ function savedRows(
         rows.push({
           id,
           kind: "notifications",
-          notices: [
-            {
-              id,
-              source: systemNotice(part.metadata)!,
-              text: part.text ?? JSON.stringify(part.value, null, 2),
-            },
-          ],
+          notices: splitExecutionNotices(
+            part.text ?? JSON.stringify(part.value, null, 2),
+          ).map((text, index) => ({
+            id: `${id}:${index}`,
+            source: systemNotice(part.metadata)!,
+            text,
+          })),
         });
       } else if (part.kind === "user" || part.kind === "media") {
         appendInput(rows, part, identity);
@@ -309,7 +308,7 @@ function liveRows(
     if (
       block.diagnostic ||
       block.kind === "task" ||
-      block.metadata?.display === false ||
+      (block.metadata?.display === false && !systemNotice(block.metadata)) ||
       (threadId === BOT_THREAD_ID &&
         block.kind === "tool" &&
         block.name === "finish_silently" &&
@@ -338,13 +337,11 @@ function liveRows(
       rows.push({
         id: block.id,
         kind: "notifications",
-        notices: [
-          {
-            id: block.id,
-            source: systemNotice(block.metadata)!,
-            text: block.text,
-          },
-        ],
+        notices: splitExecutionNotices(block.text).map((text, index) => ({
+          id: `${block.id}:${index}`,
+          source: systemNotice(block.metadata)!,
+          text,
+        })),
       });
     } else if (block.kind === "user" || block.kind === "media") {
       const turn = block.id.includes(":input:")
@@ -493,11 +490,32 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
 // an unfinished fence in one reasoning part cannot consume the next part.
 function groupRows(rows: Row[]) {
   const grouped: Row[] = [];
-  for (const row of rows) {
+  const expanded = rows.flatMap((row): Row[] =>
+    row.kind === "notifications"
+      ? row.notices.map((notice, index) => ({
+          ...row,
+          id: notice.id,
+          anchor: index ? undefined : row.anchor,
+          notices: [notice],
+        }))
+      : [row],
+  );
+  for (const original of expanded) {
+    const row =
+      original.kind === "thinking"
+        ? { ...original, segments: [...original.segments] }
+        : original.kind === "tools"
+          ? { ...original, tools: [...original.tools] }
+          : original;
     const last = grouped.at(-1);
     const previous =
       last?.subagentRunId === row.subagentRunId ? last : undefined;
-    if (row.kind === "notifications" && previous?.kind === "notifications") {
+    if (
+      row.kind === "notifications" &&
+      previous?.kind === "notifications" &&
+      executionHeaders(row.notices[0].text)[0]?.kind ===
+        executionHeaders(previous.notices[0].text)[0]?.kind
+    ) {
       previous.notices.push(...row.notices);
     } else if (row.kind === "thinking" && previous?.kind === "thinking") {
       previous.segments.push(...row.segments);
@@ -597,7 +615,7 @@ function Rows({
       ? `${turn.turn_id}@${turn.timestamp}`
       : turn?.turn_id;
   const point = key && actions?.points?.[key];
-  const notificationTitle = useNotificationTitle();
+  const notificationTitle = useNoticeLabel();
   const copyText = output
     .map((row) => row.text)
     .filter(Boolean)
@@ -694,15 +712,23 @@ function Rows({
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
           <summary>
-            {row.notices.length === 1
-              ? notificationTitle(row.notices[0].source)
-              : t("System update count", { count: row.notices.length })}
+            {row.notices.length === 1 ||
+            executionHeaders(row.notices[0].text).length ? (
+              <>
+                {notificationTitle(row.notices[0].text, row.notices[0].source)}
+                {row.notices.length > 1 && ` · ${row.notices.length}`}
+              </>
+            ) : (
+              t("System update count", { count: row.notices.length })
+            )}
+            <ExecutionNoticeLinks text={row.notices[0].text} />
           </summary>
           {row.notices.map((notice) => (
             <div key={notice.id}>
               {row.notices.length > 1 && (
-                <small>{notificationTitle(notice.source)}</small>
+                <small>{notificationTitle(notice.text, notice.source)}</small>
               )}
+              <ExecutionNoticeLinks text={notice.text} />
               <pre className={styles.code}>{notice.text}</pre>
             </div>
           ))}
@@ -1503,7 +1529,7 @@ function executionSummary(
                 ? "Run {{count}} commands"
                 : info.kind === "search"
                   ? "Run {{count}} searches"
-                  : "Call {{count}} tools";
+                  : "Tools";
         const id =
           (info.kind === "file" || info.kind === "edit") && info.path
             ? info.path

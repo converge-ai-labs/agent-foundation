@@ -83,6 +83,12 @@ Content fades continuously toward the header and composer. No hard seam, ghosted
 
 The header divider appears only with the supporting right pane open. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
 
+## Background Work
+
+The floating card anchors 8px below its header trigger, is about 360px wide on desktop, and uses the elevated surface, overlay shadow and 16px radius. Its height stays above the composer when Chat is visible. Compact equal-height rows have a 16px icon box aligned to the first text line, a 14px name, and a 13px secondary preview. A right-aligned column shows state and tabular duration on one line. Stop/Cancel are ghost icon actions in a reserved slot, revealed on hover/focus and always visible on touch. Show more aligns with group labels below the shared ScrollArea and reader-edge fade. Use one flat hover fill. Shell names are commands in monospace; other tools use human labels and key/value argument previews. Expiry and truncation remain visible in words. Long values ellipsize with full text available.
+
+Child shapes derive their stable identity color and geometry from the child Thread ID using the shared identity role. Circle, square and diamond glyphs have equal optical size. State changes text or gentle motion, never identity hue; reduced motion is static. Resource tabs reuse the existing strip, truncation and aligned close controls. Child steering uses the existing composer frame at compact size, an auto-growing editor without a resize grip, a primary send icon and secondary Stop. Their readers reuse main transcript components; execution notices stay quiet and link to the originating tab. Tasks and Notes remain the only work shortcuts above the composer. Empty, loading and error states preserve the card's alignment in both themes and narrow layouts.
+
 ## Settings, Dialogs and Popovers
 
 - Settings groups use 16px horizontal insets. Headings sit 8px above their content. Desktop rows have 8px vertical insets and a 48px minimum; controls center against the complete label/description block. Nested disclosures reuse the group's surface and inset.

@@ -2323,3 +2323,8 @@ div:has(+ .execution) > .assistantMessage {
 .composerActions > button[data-dictation-mic] {
   margin-inline-end: 4px;
 }
+
+.inputAuthor {
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-secondary);
+}

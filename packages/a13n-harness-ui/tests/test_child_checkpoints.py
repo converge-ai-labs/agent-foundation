@@ -136,6 +136,7 @@ async def test_running_child_checkpoint_transcript_marker_and_replacement(tmp_pa
                 assert ended.status == "succeeded" and ended.resumable
                 page = await child_transcript(client, ended.child_thread_id)
                 assert "PROGRESS_TEXT" in json.dumps(page) and "FINAL_RESULT" in json.dumps(page)
+                assert page["turns"][-1]["final_position"] is not None
                 assert page["continuation_id"] == ended.selected_checkpoint.logical_digest
                 assert checkpoints[1] not in await app._store.objects.references(ObjectKind.child_checkpoint)
                 assert (

@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
+import { useTransport } from "../transport/context";
+import { useMutation } from "@tanstack/react-query";
 
 type ControlState = {
   instruction: string;
@@ -42,4 +44,58 @@ export function useChildControlState(parentId: string, executionId: string) {
     else setLocal((current) => ({ ...current, ...patch }));
   };
   return { state, update };
+}
+
+export function useChildControl(
+  child: Schema<"ChildExecutionView">,
+  reconcile: () => void,
+) {
+  const { client } = useTransport();
+  const { state: controlState, update: updateControl } = useChildControlState(
+    child.parent_thread_id,
+    child.execution_id,
+  );
+  const { instruction } = controlState;
+  const path = {
+    thread_id: child.parent_thread_id,
+    execution_id: child.execution_id,
+  };
+  const control = useMutation({
+    mutationFn: (action: "cancel" | "steer") =>
+      action === "cancel"
+        ? result(
+            client.POST(
+              "/api/threads/{thread_id}/children/{execution_id}/cancel",
+              { params: { path } },
+            ),
+          )
+        : result(
+            client.POST(
+              "/api/threads/{thread_id}/children/{execution_id}/steer",
+              { params: { path }, body: { prompt: instruction } },
+            ),
+          ),
+    onMutate: () =>
+      updateControl({ pending: true, error: undefined, outcome: undefined }),
+    onSuccess: (outcome, action) => {
+      if (outcome.execution_id !== child.execution_id) {
+        updateControl({ unknown: true });
+        return;
+      }
+      updateControl({
+        outcome,
+        ...(outcome.accepted && action === "steer" ? { instruction: "" } : {}),
+      });
+    },
+    onError: (error) =>
+      updateControl({
+        error,
+        unknown: !(error instanceof ApiError) || error.status >= 500,
+      }),
+    onSettled: () => {
+      updateControl({ pending: false });
+      reconcile();
+    },
+  });
+  return { controlState, updateControl, control };
 }

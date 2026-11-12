@@ -20,6 +20,8 @@ from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
+    InstructionBaselinePart,
+    InstructionDeltaPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -454,6 +456,53 @@ class ThreadProjectionService:
             next_cursor=next_cursor,
         )
 
+    async def tool_execution_input(
+        self, thread_id: str, execution_id: str, tool_call_id: str
+    ) -> tuple[str | None, bool]:
+        """Find the original call paired with this exact retained foreground receipt."""
+        thread = await self._required_thread(thread_id)
+        header = await self._inspection_header(thread)
+        candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, execution_id)
+        entries = await to_thread.run_sync(
+            lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
+        )
+        position: int | None = None
+        for entry in entries:
+            for part in entry.parts:
+                if part.kind != "tool_result" or part.tool_call_id != tool_call_id:
+                    continue
+                value = part.value
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        continue
+                if (
+                    isinstance(value, dict)
+                    and value.get("type") == "tool_execution_receipt"
+                    and value.get("execution_id") == execution_id
+                ):
+                    position = entry.position
+                    break
+            if position is not None:
+                break
+        if position is None:
+            return None, False
+        candidates = await self._store.inspections.matching_entries(
+            thread_id, header.source_id, tool_call_id, through=position
+        )
+        entries = await to_thread.run_sync(
+            lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
+        )
+        for entry in entries:
+            for part in entry.parts:
+                if part.kind == "tool_call" and part.tool_call_id == tool_call_id:
+                    value = part.value
+                    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False), bool(
+                        part.value_omitted
+                    )
+        return None, False
+
     async def transcript_inputs(
         self,
         *,
@@ -702,7 +751,13 @@ class ThreadProjectionService:
                         display = await read_display(self._store.objects, stored.display)
                         stored = stored.model_copy(update={"display": DisplayArchive(tail=display)})
                 data = await to_thread.run_sync(
-                    partial(build_thread_inspection, thread, stored, source_id=source_id if child is not None else None)
+                    partial(
+                        build_thread_inspection,
+                        thread,
+                        stored,
+                        source_id=source_id if child is not None else None,
+                        child_succeeded=child is not None and child.status == "succeeded",
+                    )
                 )
                 if not await self._store.inspections.publish(thread.thread_id, source_id, data):
                     raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
@@ -771,6 +826,7 @@ def build_thread_inspection(
     stored: Continuation | StoredThreadInitialState | StoredChildCheckpoint,
     *,
     source_id: str | None = None,
+    child_succeeded: bool = False,
 ) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
@@ -782,6 +838,18 @@ def build_thread_inspection(
     from a13n_harness_ui.display_projection import display_entries, display_turns
 
     display = display if display is not None else import_display_history(model_history)
+    if isinstance(stored, StoredChildCheckpoint) and stored.terminal and child_succeeded:
+        final = next(
+            (
+                index
+                for index in range(len(model_history) - 1, -1, -1)
+                if isinstance(model_history[index], ModelResponse)
+            ),
+            None,
+        )
+        if final is not None:
+            display = display.model_copy(update={"completed": (*display.completed, f"import:{final}")})
+
     continuation_id = (
         source_id
         if isinstance(stored, StoredChildCheckpoint)
@@ -1077,6 +1145,8 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
 
 
 def _request_parts(part: object, content_items: list[ContentItem] | None = None) -> tuple[TranscriptPart, ...]:
+    if isinstance(part, (InstructionBaselinePart, InstructionDeltaPart)):
+        return ()
     if isinstance(part, SystemPromptPart):
         return (TranscriptPart(kind="system", text=_bounded_text(part.content)),)
     if isinstance(part, UserPromptPart):

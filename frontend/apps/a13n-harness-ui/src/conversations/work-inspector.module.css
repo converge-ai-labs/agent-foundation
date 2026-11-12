@@ -42,12 +42,6 @@
 .shortcuts .more {
   display: none;
 }
-.backgroundActivity {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-variant-numeric: tabular-nums;
-}
 @media (pointer: coarse) {
   .shortcuts > button {
     min-height: 44px;

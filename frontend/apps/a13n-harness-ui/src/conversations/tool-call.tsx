@@ -1,3 +1,4 @@
+import { MovedToBackground } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
@@ -604,6 +605,7 @@ function ToolOperation({ tool }: { tool: ToolView }) {
         {detail.showPhase && (
           <small className={styles.phase}>{toolPhase(detail.phase, t)}</small>
         )}
+        <MovedToBackground tool={tool} />
         <ToolActions tool={tool} />
       </header>
       <ToolDetails tool={tool} />
@@ -810,6 +812,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
       >
         <ToolDetails tool={tool} />
       </DisclosureSection>
+      <MovedToBackground tool={tool} />
       <ToolActions tool={tool} />
     </section>
   );
@@ -976,6 +979,7 @@ export const ToolActivity = memo(function ToolActivity({
           )}
         </div>
       </DisclosureSection>
+      {tools.length === 1 && <MovedToBackground tool={tools[0]} />}
     </section>
   );
 });

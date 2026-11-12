@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from anyio import to_thread
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ from .models import (
     TranscriptTurnRecord,
 )
 
-INSPECTION_VERSION = 6
+INSPECTION_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -244,6 +244,24 @@ class InspectionRepository:
         if len(values) != len(set(positions)):
             raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
         return values
+
+    async def matching_entries(
+        self, thread_id: str, source_id: str, reference: str, *, through: int | None = None
+    ) -> tuple[str, ...]:
+        """Bounded candidate rows for an exact tool receipt/call correlation."""
+        async with short_session(self._sessions) as session:
+            query = (
+                select(TranscriptEntryRecord.value_json)
+                .join(ThreadInspectionRecord)
+                .where(
+                    ThreadInspectionRecord.thread_id == thread_id,
+                    ThreadInspectionRecord.source_id == source_id,
+                    func.instr(TranscriptEntryRecord.value_json, reference) > 0,
+                )
+            )
+            if through is not None:
+                query = query.where(TranscriptEntryRecord.position <= through)
+            return tuple(await session.scalars(query.order_by(TranscriptEntryRecord.position.desc()).limit(20)))
 
     async def turns(
         self,

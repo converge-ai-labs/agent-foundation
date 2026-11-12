@@ -1107,9 +1107,7 @@ function ConversationContent({
                 />
               ) : undefined
             }
-            display={display}
             connected={connection === "Live"}
-            reconcile={reconcile}
             goal={showGoal ? goal : null}
             activity={thread?.root_activity}
             onUseGoal={

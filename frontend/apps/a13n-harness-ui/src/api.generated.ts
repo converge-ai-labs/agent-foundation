@@ -2591,6 +2591,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool Execution Output */
+        get: operations["tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
         parameters: {
             query?: never;
@@ -8734,9 +8751,37 @@ export interface components {
             notes: components["schemas"]["NoteWorkSummary"];
             children: components["schemas"]["ChildStatusCounts"];
         };
+        /** ToolExecutionOutputView */
+        ToolExecutionOutputView: {
+            execution: components["schemas"]["ToolExecutionView"];
+            /** Input */
+            input?: string | null;
+            /**
+             * Input Truncated
+             * @default false
+             */
+            input_truncated?: boolean;
+            /** Text */
+            text?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "pending" | "expired" | "unavailable";
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live?: boolean;
+        };
         /**
          * ToolExecutionView
-         * @description Detached status only; native results stay behind Harness result tools.
+         * @description Detached execution status; output is read separately without acknowledgement.
          */
         ToolExecutionView: {
             /** Execution Id */
@@ -15995,6 +16040,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolExecutionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionOutputView"];
                 };
             };
             /** @description Validation Error */

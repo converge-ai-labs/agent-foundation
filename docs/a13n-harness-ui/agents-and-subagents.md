@@ -344,3 +344,9 @@ For standalone conversion:
 The CLI also accepts `--product codex` or `--product cursor`. For repository definitions, use `--scope project --project-root /absolute/path/to/repository`.
 
 Standalone import preserves representable tool names and diagnoses unsupported Model, permission, hook, and MCP settings. `--apply` writes the previewed definitions into local configuration and can replace existing targets; it leaves the source product's files unchanged. Import is a one-time conversion. Guided import reports definition-save and roster-update results separately, so a partial success tells you which step remains.
+
+## Background work in the WebUI
+
+Use **Background work** in the chat header to inspect running subagents, released tools and observed Shell processes. The card stays closed until you open it and remembers that choice for each chat. Select an item to open its resource tab beside the conversation, or across the work area on a narrow screen.
+
+Subagent tabs show the saved and live conversation, including messages from the main agent and human steering. Use Steer or Stop when offered. Tool tabs show available input and output, with explicit truncation, expiry and unavailable states. Shell observations are read-only. Closing a tab does not stop its work.

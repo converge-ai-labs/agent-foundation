@@ -56,6 +56,12 @@ Icons match neighboring type. Brand marks and names remain adjacent, using the s
 
 Neutral surfaces carry the interface. Primary buttons are near-black in light mode and near-white in dark mode. Indigo signals focus, selection, prose links and charts, not decorative fills. Semantic colors are success (emerald), warning (amber), danger (red), info (blue) and neutral (gray); labels identify states without color alone. Product guides own link and status treatment. Internal navigation stays in the product; external destinations use the appropriate affordance.
 
+## Identity Color
+
+Identity is separate from status. A small shape may use a stable identifier-derived candy color to distinguish a child conversation; hue never changes with its execution state. State uses text, a badge or reduced-motion-aware animation. Tool icons stay neutral. Identity colors do not become control fills or success/failure signals.
+
+Harness owns `--a13n-identity-1` through `--a13n-identity-6` in its theme: light/dark pairs are `#c83388`/`#ff78bc`, `#7b4bdb`/`#b793ff`, `#087f9e`/`#54d4ed`, `#b94d20`/`#ffab79`, `#25824c`/`#6bdf9b`, and `#ac399c`/`#ef8ce0`. Glyphs retain readable contrast against their owning canvas and elevated surfaces; names remain ordinary text.
+
 ## Controls, Overlays and Feedback
 
 - Click actions use `pointer`; text entry and spatial drag/resize controls retain their appropriate cursors. Disabled controls do not advertise activation. Shared styles own semantic defaults, including portals; cursor styling does not replace keyboard semantics.

@@ -682,7 +682,7 @@ class ThreadWork(SurfaceModel):
 
 
 class ToolExecutionView(SurfaceModel):
-    """Detached status only; native results stay behind Harness result tools."""
+    """Detached execution status; output is read separately without acknowledgement."""
 
     execution_id: str
     thread_id: str
@@ -696,6 +696,16 @@ class ToolExecutionView(SurfaceModel):
     foreground_released: bool = False
     delivery_acknowledged: bool = False
     available_actions: tuple[Literal["cancel"], ...] = ()
+
+
+class ToolExecutionOutputView(SurfaceModel):
+    execution: ToolExecutionView
+    input: str | None = None
+    input_truncated: bool = False
+    text: str | None = None
+    state: Literal["available", "pending", "expired", "unavailable"]
+    truncated: bool = False
+    live: bool = False
 
 
 class ThreadFocusSnapshot(SurfaceModel):

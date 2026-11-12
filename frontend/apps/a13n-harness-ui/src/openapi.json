@@ -7181,6 +7181,54 @@
         }
       }
     },
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/output": {
+      "get": {
+        "summary": "Tool Execution Output",
+        "operationId": "tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolExecutionOutputView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
       "post": {
         "summary": "Cancel Tool Execution",
@@ -24904,9 +24952,70 @@
         "title": "ThreadWork",
         "description": "Current work observations; sections are independently owned, not atomic."
       },
+      "ToolExecutionOutputView": {
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/ToolExecutionView"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "input_truncated": {
+            "type": "boolean",
+            "title": "Input Truncated",
+            "default": false
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending",
+              "expired",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "live": {
+            "type": "boolean",
+            "title": "Live",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "execution",
+          "state"
+        ],
+        "title": "ToolExecutionOutputView"
+      },
       "ToolExecutionView": {
         "additionalProperties": false,
-        "description": "Detached status only; native results stay behind Harness result tools.",
+        "description": "Detached execution status; output is read separately without acknowledgement.",
         "properties": {
           "execution_id": {
             "title": "Execution Id",

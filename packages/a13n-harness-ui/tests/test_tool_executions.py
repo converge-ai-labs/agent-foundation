@@ -584,7 +584,11 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
 
             async def stop_before_checkpoint(**kwargs):
                 prepared = kwargs["prepared"]
-                if change == "stop_checkpoint" or not kwargs["terminal"]:
+                # Request-boundary progress saves now precede owned tool admission.
+                # Inject Stop at the terminal/deferred boundary this test targets.
+                if (change == "stop_checkpoint" and kwargs["terminal"]) or (
+                    change == "stop_deferred" and kwargs["deferred_requests"] is not None
+                ):
                     stopped = await app.cancel_child_execution(
                         parent_thread_id=thread.thread_id, execution_id=prepared.head.execution_id
                     )

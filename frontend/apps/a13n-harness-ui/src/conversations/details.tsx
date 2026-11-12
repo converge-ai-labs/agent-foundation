@@ -24,7 +24,7 @@ import { useOperation, useThreads } from "./queries";
 import type { FocusDisplay } from "./stream";
 import { LiveOutput, RecoveryNotice } from "./transcript";
 import { sourceText } from "./tool-presentation";
-import { useChildControlState } from "./child-controls";
+import { useChildControl } from "./child-controls";
 import layout from "../shell/workbench.module.css";
 import styles from "./conversation.module.css";
 import { useThreadUsage, useContextUsage } from "./usage";
@@ -327,54 +327,13 @@ export function Child({
   const { client, shareId } = useTransport();
   const [open, setOpen] = useState(false);
   const [showTools, setShowTools] = useState(false);
-  const { state: controlState, update: updateControl } = useChildControlState(
-    child.parent_thread_id,
-    child.execution_id,
+  const { controlState, updateControl, control } = useChildControl(
+    child,
+    reconcile,
   );
   const { instruction, unknown, pending } = controlState;
   const setInstruction = (value: string) =>
     updateControl({ instruction: value });
-  const path = {
-    thread_id: child.parent_thread_id,
-    execution_id: child.execution_id,
-  };
-  const control = useMutation({
-    mutationFn: (action: "cancel" | "steer") =>
-      action === "cancel"
-        ? result(
-            client.POST(
-              "/api/threads/{thread_id}/children/{execution_id}/cancel",
-              { params: { path } },
-            ),
-          )
-        : result(
-            client.POST(
-              "/api/threads/{thread_id}/children/{execution_id}/steer",
-              { params: { path }, body: { prompt: instruction } },
-            ),
-          ),
-    onMutate: () =>
-      updateControl({ pending: true, error: undefined, outcome: undefined }),
-    onSuccess: (outcome, action) => {
-      if (outcome.execution_id !== child.execution_id) {
-        updateControl({ unknown: true });
-        return;
-      }
-      updateControl({
-        outcome,
-        ...(outcome.accepted && action === "steer" ? { instruction: "" } : {}),
-      });
-    },
-    onError: (error) =>
-      updateControl({
-        error,
-        unknown: !(error instanceof ApiError) || error.status >= 500,
-      }),
-    onSettled: () => {
-      updateControl({ pending: false });
-      reconcile();
-    },
-  });
   return (
     <details
       className={styles.activity}

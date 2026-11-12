@@ -344,6 +344,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionOutputView,
     ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
@@ -2731,6 +2732,59 @@ class HarnessUiApp:
             await self._threads.get(thread_id)
             records = await self._tool_executions.runtime.summarize(thread_id, offset=offset, limit=limit)
             return tuple(execution_view(record) for record in records)
+
+    async def tool_execution_output(self, thread_id: str, execution_id: str) -> ToolExecutionOutputView:
+        """Read the original result/tail without consuming model delivery or changing execution."""
+        from a13n_harness._json import dump_json_bytes
+        from pydantic_ai import ToolReturn
+
+        async with self._operation():
+            await self._threads.get(thread_id)
+            runtime = self._tool_executions.runtime
+            saved = await runtime.result(thread_id, execution_id)
+            if saved is None:
+                raise ThreadError(
+                    "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
+                )
+            record = saved.record
+            input_text, input_truncated = await self._projections.tool_execution_input(
+                thread_id, execution_id, record.tool_call_id
+            )
+            value = saved.result
+            live = False
+            if not record.terminal and record.tool_name == "shell_exec":
+                value = await runtime.call_resource(
+                    thread_id, execution_id, {"operation": "wait", "timeout_seconds": 0}
+                )
+                live = value is not None
+            if value is None and not (record.terminal and record.result_available):
+                expired = await self._store.tool_executions.output_expired(thread_id, execution_id)
+                return ToolExecutionOutputView(
+                    execution=execution_view(record),
+                    input=input_text,
+                    input_truncated=input_truncated,
+                    state="expired" if expired else "unavailable" if record.terminal else "pending",
+                )
+            if isinstance(value, ToolReturn):
+                value = value.return_value
+            truncated = isinstance(value, dict) and value.get("truncated") is True
+            if (
+                isinstance(value, dict)
+                and truncated
+                and isinstance(value.get("result"), str)
+                and "output_chars" in value
+            ):
+                value = value["result"]
+            text = value if isinstance(value, str) else dump_json_bytes(value).decode()
+            return ToolExecutionOutputView(
+                execution=execution_view(record),
+                input=input_text,
+                input_truncated=input_truncated,
+                text=text[:65536],
+                truncated=truncated or len(text) > 65536,
+                state="available",
+                live=live,
+            )
 
     async def cancel_tool_execution(self, thread_id: str, execution_id: str) -> ToolExecutionView:
         async with self._operation():

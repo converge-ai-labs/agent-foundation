@@ -209,6 +209,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionOutputView,
     ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
@@ -2159,6 +2160,12 @@ def create_webui(
         thread_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
     ) -> tuple[ToolExecutionView, ...]:
         return await app().tool_executions(thread_id, offset=offset, limit=limit)
+
+    @server.get(
+        "/api/threads/{thread_id}/tool-executions/{execution_id}/output", response_model=ToolExecutionOutputView
+    )
+    async def tool_execution_output(thread_id: str, execution_id: str) -> ToolExecutionOutputView:
+        return await app().tool_execution_output(thread_id, execution_id)
 
     @server.post("/api/threads/{thread_id}/tool-executions/{execution_id}/cancel", response_model=ToolExecutionView)
     async def cancel_tool_execution(thread_id: str, execution_id: str) -> ToolExecutionView:
