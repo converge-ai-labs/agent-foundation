@@ -6,14 +6,14 @@ from typing import Any
 
 from a13n_harness import AgentContext
 from a13n_harness.environment.computer import ComputerCall, ComputerObservation
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.models import ACCESSIBILITY_READ_ACTIONS, EnvironmentAction, EnvironmentError
 from pydantic_ai import BinaryContent, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapToolExecuteHandler
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
-READ_ACTIONS = frozenset(
+READ_ACTIONS = ACCESSIBILITY_READ_ACTIONS | frozenset(
     {
         EnvironmentAction.COMPUTER_DESCRIBE,
         EnvironmentAction.COMPUTER_OBSERVE,

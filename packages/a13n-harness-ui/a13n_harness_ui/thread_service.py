@@ -12,10 +12,12 @@ from a13n_harness import __version__ as harness_version
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
 from a13n_harness_ui.display_history import (
     DisplayHistoryCollector,
+    ordinary_input,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
@@ -25,6 +27,7 @@ from a13n_harness_ui.storage import (
     Continuation,
     LocalStore,
     ObjectKind,
+    ObjectRef,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
@@ -32,9 +35,13 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
-from a13n_harness_ui.storage.contracts import LiveAgentSource, MemoryAgentSource
+from a13n_harness_ui.storage.contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+from a13n_harness_ui.storage.display import read_display
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
+    BranchPoint,
+    BranchPoints,
+    BranchRequest,
     ConfigurationOrigin,
     ConfigurationProvenance,
     ProjectDefaultsPatch,
@@ -42,6 +49,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadMetadataMutation,
 )
+from a13n_harness_ui.thread_branch import boundaries, branch_prefix
 from a13n_harness_ui.thread_files import ThreadFiles
 
 
@@ -79,9 +87,11 @@ class ThreadService:
         *,
         store: LocalStore,
         configurations: CompositionAcceptanceService,
+        configuration_root: Path | None = None,
     ) -> None:
         self._store = store
         self._configurations = configurations
+        self._configuration_root = configuration_root
 
     async def create(
         self,
@@ -109,6 +119,27 @@ class ThreadService:
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
+
+    async def bot_thread(self) -> Thread:
+        """One instance-global root with built-in policy and its own Host workspace."""
+        if self._configuration_root is None:
+            raise ThreadError("Bot requires a selected configuration directory.", code="configuration_missing")
+        workspace = self._configuration_root.expanduser().resolve() / "bot"
+        await to_thread.run_sync(lambda: workspace.mkdir(parents=True, exist_ok=True))
+        async with AsyncFileLock(self._store.layout.root / ".bot-thread.lock"):
+            existing = await self._store.threads.get(BOT_THREAD_ID)
+            if existing is not None:
+                return existing
+            return await self._create(
+                configuration=ThreadConfiguration(
+                    version=1,
+                    agent_source=BotAgentSource(),
+                    local_roots=(str(workspace),),
+                    environment_profile_id=FULL_CONTROL_PROFILE_ID,
+                ),
+                title="Bot",
+                thread_id=BOT_THREAD_ID,
+            )
 
     async def live_thread(self, *, configuration_root: Path) -> Thread:
         """One persistent projectless executor for the selected configuration root."""
@@ -154,34 +185,167 @@ class ThreadService:
             raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
         return thread
 
-    async def fork(self, thread_id: str, *, files: ThreadFiles) -> Thread:
-        """Fork the complete saved conversation without borrowing execution authority."""
-        async with checkpoint_lock(self._store.layout.root, thread_id):
-            source = await self.get(thread_id)
-            if (
-                source.parent_thread_id is not None
-                or source.memory_scope is not None
-                or source.configuration.agent_source.kind != "agent"
-                or await self._store.threads.is_coordinator(thread_id)
-                or await self._store.threads.worker_owners((thread_id,))
-            ):
-                raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
-            baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
-            stored = (
-                await read_continuation(self._store.objects, source.continuation, include_display=True)
-                if source.continuation is not None
-                else baseline
+    async def _fork_source(self, thread_id: str) -> Thread:
+        source = await self.get(thread_id)
+        if (
+            thread_id == BOT_THREAD_ID
+            or source.parent_thread_id is not None
+            or source.memory_scope is not None
+            or source.configuration.agent_source.kind != "agent"
+            or await self._store.threads.is_coordinator(thread_id)
+            or await self._store.threads.worker_owners((thread_id,))
+        ):
+            raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
+        return source
+
+    @staticmethod
+    def _source_id(ref: ObjectRef) -> str:
+        return (
+            f"initial:{ref.logical_digest}"
+            if ref.object_kind is ObjectKind.thread_initial_state
+            else ref.logical_digest
+        )
+
+    async def _branch_boundaries(self, source: Thread, ref: ObjectRef, continuing: bool):
+        terminal_run_id = (
+            source.last_execution.run_id
+            if ref == source.continuation
+            and source.last_execution is not None
+            and source.last_execution.status in {"cancelled", "failed"}
+            else None
+        )
+        saved = (
+            await read_continuation(self._store.objects, ref, include_display=terminal_run_id is not None)
+            if ref.object_kind is ObjectKind.continuation
+            else await self._store.objects.read_model(ref, StoredThreadInitialState)
+        )
+        if saved.harness_state.thread_id != source.thread_id:
+            raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
+        history = saved.harness_state.message_history
+        result = {}
+
+        def add_native(messages, points):
+            for key, point in points.items():
+                for side, cut in (("before", point.before), ("after", point.after)):
+                    if cut is not None:
+                        result.setdefault((key, side), (messages, cut))
+
+        add_native(history, await to_thread.run_sync(boundaries, history, continuing))
+        display_archive = saved.display if isinstance(saved, Continuation) else None
+        display = display_archive.tail if display_archive else None
+        terminal_key = None
+        if terminal_run_id and not continuing and display and display.run_id == terminal_run_id:
+            item = next((item for item in reversed(display.items) if ordinary_input(item)), None)
+            if item is not None:
+                terminal_key = str(item.content.get("input_group") or item.id)
+                result[terminal_key, "after"] = (history, len(history))
+        # A compacted checkpoint may no longer contain the original input boundaries.
+        # The last completed checkpoint still owns its exact historical prefixes.
+        if (
+            not continuing
+            and source.completion
+            and ref == source.continuation
+            and source.completion.continuation_id != ref.logical_digest
+            and any(
+                (m.metadata or {}).get("a13n.context") in {"compaction", "handoff"}
+                or (m.metadata or {}).get("keep") == "compact"
+                for m in history
             )
-            if stored.harness_state.thread_id != thread_id:
+        ):
+            previous = await read_continuation(
+                self._store.objects,
+                ref.model_copy(update={"logical_digest": source.completion.continuation_id}),
+                include_display=bool(terminal_key),
+            )
+            if previous.harness_state.thread_id != source.thread_id:
                 raise ThreadError(
                     "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
                 )
-            state = await to_thread.run_sync(stored.harness_state.fork)
-            initial_state = (
-                await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
-                if source.continuation is not None
-                else state
-            )
+            prior = previous.harness_state.message_history
+            add_native(prior, await to_thread.run_sync(boundaries, prior, False))
+            if terminal_key and (terminal_key, "before") not in result and previous.display_history and display_archive:
+                # The durable display spans compaction. The previous completion is an exact
+                # edit prefix only for the immediately following ordinary input.
+                archive = await read_display(self._store.objects, display_archive)
+                marks = set(previous.display_history.completed)
+                last = next((i for i in range(len(archive.items) - 1, -1, -1) if archive.items[i].id in marks), None)
+                if last is not None:
+                    inputs = [item for item in archive.items[last + 1 :] if ordinary_input(item)]
+                    if len(inputs) == 1:
+                        item = inputs[0]
+                        meta = item.content.get("metadata", {})
+                        ui = meta.get("harness_ui", {}) if isinstance(meta, dict) else None
+                        composer = ui.get("composer", {}) if isinstance(ui, dict) else None
+                        if (
+                            str(item.content.get("input_group") or item.id) == terminal_key
+                            and item.kind == "text_message"
+                            and item.content.get("text")
+                            and isinstance(meta, dict)
+                            and not meta.get("media")
+                            and isinstance(ui, dict)
+                            and not (ui.keys() - {"composer"})
+                            and isinstance(composer, dict)
+                            and not composer.get("skills")
+                        ):
+                            result[terminal_key, "before"] = (prior, len(prior))
+        return result
+
+    async def branch_points(self, thread_id: str, base: ObjectRef | None, continuing: bool) -> BranchPoints:
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            source = await self._fork_source(thread_id)
+            ref = base or source.continuation or source.initial_state
+            points = await self._branch_boundaries(source, ref, continuing)
+        return BranchPoints(
+            source=self._source_id(ref),
+            points={
+                key: BranchPoint(edit=(key, "before") in points, branch=(key, "after") in points) for key, _ in points
+            },
+        )
+
+    async def fork(
+        self,
+        thread_id: str,
+        *,
+        files: ThreadFiles,
+        branch: BranchRequest | None = None,
+        base: ObjectRef | None = None,
+        continuing: bool = False,
+    ) -> Thread:
+        """Copy the saved continuation, or start fresh from a selected message prefix."""
+        async with checkpoint_lock(self._store.layout.root, thread_id):
+            source = await self._fork_source(thread_id)
+            ref = base or source.continuation or source.initial_state
+            if branch and self._source_id(ref) != branch.expected_continuation_id:
+                raise ThreadError("Conversation history changed. Reopen the message.", code="thread_branch_stale")
+            baseline = await self._store.objects.read_model(source.initial_state, StoredThreadInitialState)
+            excerpt = source.excerpt
+            attachments = None
+            stored = None
+            if branch:
+                points = await self._branch_boundaries(source, ref, continuing)
+                selected = points.get((branch.turn_key, branch.side))
+                if selected is None:
+                    raise ThreadError(
+                        "This message no longer has a usable history boundary.", code="thread_branch_stale"
+                    )
+                state, excerpt, attachments = await to_thread.run_sync(branch_prefix, *selected)
+                initial_state = state
+            else:
+                stored = (
+                    await read_continuation(self._store.objects, ref, include_display=True)
+                    if ref.object_kind is ObjectKind.continuation
+                    else baseline
+                )
+                if stored.harness_state.thread_id != thread_id:
+                    raise ThreadError(
+                        "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
+                    )
+                state = await to_thread.run_sync(stored.harness_state.fork)
+                initial_state = (
+                    await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    if source.continuation is not None
+                    else state
+                )
         now = datetime.now(UTC)
         copied: Thread | None = None
         with CancelScope(shield=True):
@@ -191,13 +355,15 @@ class ThreadService:
             )
             continuation = None
             read_model = None
-            if isinstance(stored, Continuation):
+            if branch is None and isinstance(stored, Continuation):
                 replacement = stored.model_copy(update={"harness_state": state, "created_at": now})
                 continuation = await publish_continuation(self._store.objects, replacement)
                 read_model = await to_thread.run_sync(project_continuation, replacement)
-            async with files.fork(thread_id, state.thread_id):
+            async with files.fork(thread_id, state.thread_id, attachments=attachments):
                 copied = await self._store.threads.fork(
                     source=source,
+                    excerpt=excerpt,
+                    historical=base is not None,
                     thread_id=state.thread_id,
                     initial_state=initial.ref,
                     continuation=continuation,
@@ -208,6 +374,8 @@ class ThreadService:
         return copied
 
     async def promote_coordinator(self, thread_id: str) -> Thread:
+        if thread_id == BOT_THREAD_ID:
+            raise ThreadError("Bot is an independent instance-global root.", code="bot_thread_reserved")
         thread = await self.require_interactive(thread_id)
         if await self._store.threads.is_coordinator(thread_id):
             return thread
@@ -369,6 +537,8 @@ class ThreadService:
     ) -> tuple[str, ...]:
         async with checkpoint_lock(self._store.layout.root, thread_id):
             thread = await self.require_interactive(thread_id)
+            if thread_id == BOT_THREAD_ID:
+                raise ThreadError("Bot is retained for the instance.", code="bot_thread_reserved")
             if thread.parent_thread_id is not None:
                 raise ThreadError("Delete subagent history with its parent chat.", code="child_thread_scoped")
             if thread.configuration.agent_source.kind == "live":
@@ -390,6 +560,8 @@ class ThreadService:
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
         patch = mutation.patch
+        if thread_id == BOT_THREAD_ID and (patch.archived or "title" in patch.model_fields_set):
+            raise ThreadError("Bot keeps its global identity and remains available.", code="bot_thread_reserved")
         if thread.configuration.agent_source.kind == "live" and patch.archived:
             raise ThreadError("The Live Thread stays available for voice sessions.", code="live_thread_reserved")
         if "starred" in patch.model_fields_set and await self._store.threads.worker_owners((thread_id,)):
@@ -434,11 +606,16 @@ def apply_configuration_mutation(
     source: LoadedHarnessUiConfiguration, thread: Thread, mutation: ThreadConfigurationMutation
 ) -> ThreadConfiguration:
     """Validate the next configuration without persisting it."""
-    if thread.configuration.agent_source.kind == "live":
-        raise ThreadError("Configure the built-in executor in Live settings.", code="live_thread_reserved")
+    if thread.configuration.agent_source.kind in {"live", "bot"}:
+        kind = thread.configuration.agent_source.kind
+        raise ThreadError(
+            f"Configure the built-in executor in {kind.title()} settings.", code=f"{kind}_thread_reserved"
+        )
     if thread.configuration.version != mutation.expected_version:
         raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
     replacement = mutation.patch.apply(thread.configuration)
+    if thread.thread_id == BOT_THREAD_ID and replacement.project_id is not None:
+        raise ThreadError("Bot belongs to the instance, not a Project.", code="bot_thread_reserved")
     _validate_configuration(source, replacement, root=thread.parent_thread_id is None)
     return replacement
 

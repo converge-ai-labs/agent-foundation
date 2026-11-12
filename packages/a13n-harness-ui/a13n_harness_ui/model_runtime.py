@@ -15,6 +15,7 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
+from a13n_harness.pricing import PricingCatalog, get_current_pricing_catalog
 from a13n_harness.providers.model.credentials import ApiKeyCredential
 from a13n_harness.providers.model.oauth import (
     CopilotCredentialSource,
@@ -23,6 +24,7 @@ from a13n_harness.providers.model.oauth import (
     GrokCredentialSource,
 )
 from a13n_harness.providers.model.routes import build_api_key_model
+from a13n_harness.token_pricing import TokenPricingCapability
 from pydantic_ai.models import Model, ModelResolutionContext
 
 from a13n_harness_ui.configuration import (
@@ -36,6 +38,7 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
 from a13n_harness_ui.model_accounts.routing import AccountSelectionEvent, SubscriptionGroupModel
 from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
+from a13n_harness_ui.model_presets import configured_price_entry
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
@@ -104,6 +107,23 @@ class HarnessUiModelResolver:
         self._api_keys = api_keys
         self._recipes = MappingProxyType({key: value.model_copy(deep=True) for key, value in recipes.items()})
         self._subscription_sources = MappingProxyType(dict(subscription_sources or {}))
+
+    @property
+    def configured_models(self) -> Mapping[str, ResolvedModelRecipe]:
+        return self._recipes
+
+    def pricing(self, catalog: PricingCatalog | None) -> TokenPricingCapability:
+        if catalog is None:
+            catalog = get_current_pricing_catalog()
+        entries = {}
+        for key, recipe in self._recipes.items():
+            identity = recipe.base_model or recipe.route
+            entry = configured_price_entry(catalog, identity)
+            # A Developer API tariff is not an explicit Vertex price.
+            if identity.startswith("google-vertex:") and entry is not None and entry.provider == "google":
+                continue
+            entries[key] = entry
+        return TokenPricingCapability(entries)
 
     def fresh(self) -> HarnessUiModelResolver:
         return HarnessUiModelResolver(

@@ -1,4 +1,5 @@
 import { result, type Transport } from "../transport/client";
+import { readLanguage } from "../i18n/preferences";
 import { readPreference, writePreference } from "./preferences";
 
 export class PushError extends Error {
@@ -19,6 +20,9 @@ export class PushError extends Error {
   }
 }
 
+export type NotificationScope = "all" | "bot";
+export const notificationScope = (): NotificationScope =>
+  readPreference("notifications.scope", "all") === "bot" ? "bot" : "all";
 const SUBSCRIPTION = "notifications.push-subscription";
 export const pushSubscriptionId = () => readPreference(SUBSCRIPTION, "");
 export const supportsPush = () =>
@@ -150,6 +154,8 @@ export async function enablePush(
             endpoint: subscription.endpoint,
             keys: { p256dh: data.keys.p256dh, auth: data.keys.auth },
             origin: window.location.origin,
+            scope: notificationScope(),
+            language: readLanguage(),
           },
         }),
       );

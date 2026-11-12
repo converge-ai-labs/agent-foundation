@@ -70,6 +70,8 @@ make image-check-sandbox-desktop
 - 停止再启动会保留文件和凭据，并创建新的图形会话。
 - 停止或销毁会撤销访问。轮换 token 时，先停止容器，替换私有 token 文件，关闭已有会话，再重新启动。
 
+完成一次凭据初始化后，源码构建的镜像通过原生 `a13n-envd supervise` 启动默认 HTTP 或反向 WebSocket 守护进程。显式使用 `a13n-envd daemon` 时，重启由外部 manager 负责。自定义命令和 stdio 的生命周期仍由调用方管理。重启预算和会话替换语义见[守护进程生命周期](configuration.md#daemon-lifetime-and-restarts)。
+
 Root 桌面启动器监督以 `sandbox` 身份运行的 Xvfb/Openbox，创建 Xauthority cookie 并关闭 X11 TCP 监听。必需的桌面进程退出会让容器失败。X11 支持按键事件，尚不支持字面 Unicode `type_text`。
 
 人工访问需单独启用。设置 `desktop_assistance: true`，并提供浏览器可访问、路由到容器 6081 端口的 `desktop_viewer_url`。Service 开启镜像的 `A13N_DESKTOP_ACCESS` supervisor；运维者提供 viewer 路由和 TLS。权限和交还控制的流程见[桌面控制](../a13n-service/computer-use.md#desktop-access-prerequisites)。

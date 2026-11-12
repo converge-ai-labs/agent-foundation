@@ -20,6 +20,41 @@ A useful next turn needs both current information and remembered decisions. Cont
 
 Start with the [two-Run example](#context-composition), then add workspace guidance or compaction as needed. [State and Resume](state-and-resume.md) explains how the Host saves and continues the Thread.
 
+## Source-owned context injection
+
+Each context producer decides what to inject through `AbstractModelContextCapability` or `RunBindings.model_context`. Harness supplies the same read-only `request.history` view to all producers, validates the complete returned projection, and commits every returned block. Stable `(source_id, key)` identities distinguish independently changing blocks; canonical metadata records that identity, placement, and a SHA-256 content digest outside prompt text.
+
+Use `history.matches_latest(block)` to compare a snapshot's hash with the most recent retained block for the same `(source_id, key)`. The hash covers the complete rendered UTF-8 text and stays in metadata, outside prompt text. This producer appends guidance only when it differs from the latest retained snapshot:
+
+```python
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextPlacement,
+    ModelContextProjection,
+)
+
+
+class WorkspaceGuide(AbstractModelContextCapability):
+    async def wrap_model_context(self, ctx, request, handler):
+        projection = await handler(request)
+        block = ModelContextBlock(
+            source_id="example.guide",
+            key="workspace",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content="Workspace guidance: run the focused tests before committing.",
+        )
+        if request.history.matches_latest(block):
+            return projection
+        return ModelContextProjection(blocks=(*projection.blocks, block))
+```
+
+Current-state producers, including independent file bodies, use the same comparison. `A → A → B → A` appends `A, B, A`: returning to A differs from the latest B, so the complete A block is sent again. File context separately tracks selected paths to report removals with an explicit empty selection. Unavailable observation is a different state. The optional `history.contains(block)` query checks any retained same-identity hash; an older match does not establish the current state.
+
+Events, reminders, and incremental deliveries keep their owner-controlled triggers and cursors. Return the event when it occurs, even if an earlier event has identical text; there is no emission flag or framework post-filter. If outer middleware rewrites a block, that middleware owns its final injection decision against committed rendered content.
+
+Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a block, `matches_latest` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; pending content does not establish presence, and unknown ordering makes `matches_latest` false without erasing confirmed older hashes.
+
 ## Run configuration
 
 `RunConfiguration` supplies settings shared by tools and plugins during one Run. This fragment builds a configuration and checks a URL locally; it makes no HTTP request:

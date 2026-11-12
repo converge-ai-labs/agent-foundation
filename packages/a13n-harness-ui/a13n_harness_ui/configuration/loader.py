@@ -45,8 +45,8 @@ _MAX_DIRECTORY_ENTRIES = 4096
 _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
-# Version normalized snapshots independently of user-owned source byte digests.
-# Session configuration changes normalized Device bindings even for unchanged YAML.
+# Version the provenance fingerprint independently of user-owned source bytes.
+# The final generation digest also covers normalized content, including defaults.
 _NORMALIZATION_VERSION = "2"
 logger = logging.getLogger(__name__)
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups")
@@ -139,7 +139,7 @@ async def load_harness_ui_configuration(
         if plugin_before != plugin_after:
             continue
         _warn_unknown_fields(parsed)
-        return parsed
+        return _with_normalized_digest(parsed)
 
     raise _error(
         "settings_source_unstable",
@@ -161,7 +161,7 @@ def empty_harness_ui_configuration(
         resource_kind="root",
         content=content,
     )
-    return LoadedHarnessUiConfiguration(
+    loaded = LoadedHarnessUiConfiguration(
         document=HarnessUiDocument(),
         root_digest=root_digest,
         source_digest=canonical_digest(
@@ -177,6 +177,13 @@ def empty_harness_ui_configuration(
         sources=(source,),
         content_plugins=content_plugins,
     )
+    return _with_normalized_digest(loaded)
+
+
+def _with_normalized_digest(source: LoadedHarnessUiConfiguration) -> LoadedHarnessUiConfiguration:
+    # Source bytes alone do not identify defaults supplied by the installed schema.
+    # Include the complete normalized payload after optional plugin diagnostics.
+    return source.model_copy(update={"source_digest": canonical_digest(source)})
 
 
 def _scan_tree(path: Path) -> tuple[tuple[str, Path, tuple[int, int, int, int]], ...]:

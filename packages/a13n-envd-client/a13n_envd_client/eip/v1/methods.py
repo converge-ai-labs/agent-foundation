@@ -6,7 +6,68 @@ from types import MappingProxyType
 from typing import Literal
 
 from .models import (
+    AccessibilityContent,
+    AccessibilityDescription,
+    AccessibilityMutationResult,
+    AccessibilityRangeResult,
+    AccessibilityTree,
+    ComputerA11yDescribeParams,
+    ComputerA11yFindParams,
+    ComputerA11yInspectParams,
+    ComputerA11yRangeParams,
+    ComputerA11yRangeReadParams,
+    ComputerA11yReadParams,
+    ComputerA11yRootsParams,
     ComputerActionResult,
+    ComputerAtspiCaretSetParams,
+    ComputerAtspiComponentExtentsSetParams,
+    ComputerAtspiComponentPositionSetParams,
+    ComputerAtspiComponentSizeSetParams,
+    ComputerAtspiDoActionParams,
+    ComputerAtspiDocumentSelectionsSetParams,
+    ComputerAtspiFocusParams,
+    ComputerAtspiRangeScrollToParams,
+    ComputerAtspiRangeScrollToPointParams,
+    ComputerAtspiScrollToParams,
+    ComputerAtspiScrollToPointParams,
+    ComputerAtspiSelectionAddChildParams,
+    ComputerAtspiSelectionAllParams,
+    ComputerAtspiSelectionClearParams,
+    ComputerAtspiSelectionRemoveChildParams,
+    ComputerAtspiSelectionRemoveSelectedParams,
+    ComputerAtspiTableColumnSelectParams,
+    ComputerAtspiTableColumnUnselectParams,
+    ComputerAtspiTableRowSelectParams,
+    ComputerAtspiTableRowUnselectParams,
+    ComputerAtspiTextContentsSetParams,
+    ComputerAtspiTextCopyParams,
+    ComputerAtspiTextCutParams,
+    ComputerAtspiTextDeleteParams,
+    ComputerAtspiTextInsertParams,
+    ComputerAtspiTextPasteParams,
+    ComputerAtspiTextSelectionAddParams,
+    ComputerAtspiTextSelectionRemoveParams,
+    ComputerAtspiTextSelectionSetParams,
+    ComputerAtspiValueSetParams,
+    ComputerAXDisclosingSetParams,
+    ComputerAXExpandedSetParams,
+    ComputerAXFocusedWindowSetParams,
+    ComputerAXFocusParams,
+    ComputerAXMainSetParams,
+    ComputerAXMinimizedSetParams,
+    ComputerAXPerformActionParams,
+    ComputerAXPositionSetParams,
+    ComputerAXSelectedChildrenSetParams,
+    ComputerAXSelectedColumnsSetParams,
+    ComputerAXSelectedRowsSetParams,
+    ComputerAXSelectedSetParams,
+    ComputerAXSelectedTextSetParams,
+    ComputerAXSizeSetParams,
+    ComputerAXTextRangeSelectParams,
+    ComputerAXTextRangesSelectParams,
+    ComputerAXValueNumberSetParams,
+    ComputerAXValueStringSetParams,
+    ComputerAXVisibleTextRangeSetParams,
     ComputerClickParams,
     ComputerDescribeParams,
     ComputerDescribeResult,
@@ -19,6 +80,38 @@ from .models import (
     ComputerReadClipboardResult,
     ComputerScrollParams,
     ComputerTypeTextParams,
+    ComputerUIACollapseParams,
+    ComputerUIADockSetParams,
+    ComputerUIAExpandParams,
+    ComputerUIAFocusParams,
+    ComputerUIAInvokeParams,
+    ComputerUIALegacyDefaultActionParams,
+    ComputerUIALegacySelectParams,
+    ComputerUIALegacyValueSetParams,
+    ComputerUIARangeAddSelectionParams,
+    ComputerUIARangeRemoveSelectionParams,
+    ComputerUIARangeScrollIntoViewParams,
+    ComputerUIARangeSelectParams,
+    ComputerUIARangeShowContextMenuParams,
+    ComputerUIARangeValueSetParams,
+    ComputerUIARealizeParams,
+    ComputerUIAScrollAmountParams,
+    ComputerUIAScrollIntoViewParams,
+    ComputerUIAScrollPercentParams,
+    ComputerUIASelectionAddParams,
+    ComputerUIASelectionRemoveParams,
+    ComputerUIASelectionSelectParams,
+    ComputerUIAShowContextMenuParams,
+    ComputerUIAToggleParams,
+    ComputerUIATransformMoveParams,
+    ComputerUIATransformResizeParams,
+    ComputerUIATransformRotateParams,
+    ComputerUIATransformZoomParams,
+    ComputerUIATransformZoomUnitParams,
+    ComputerUIAValueSetParams,
+    ComputerUIAViewSetParams,
+    ComputerUIAWindowCloseParams,
+    ComputerUIAWindowStateSetParams,
     ComputerWriteClipboardParams,
     ComputerWriteClipboardResult,
     ComputerZoomParams,
@@ -129,6 +222,734 @@ class MethodSpec[P, R]:
     transfer_action: Literal["open", "close", "commit", "abort"] | None = None
     transfer_direction: Literal["server_to_client", "client_to_server"] | None = None
 
+
+COMPUTER_A11Y_DESCRIBE = MethodSpec(
+    name="computer.a11y_describe",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yDescribeParams,
+    result_type=AccessibilityDescription,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_FIND = MethodSpec(
+    name="computer.a11y_find",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yFindParams,
+    result_type=AccessibilityTree,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_INSPECT = MethodSpec(
+    name="computer.a11y_inspect",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yInspectParams,
+    result_type=AccessibilityTree,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_RANGE = MethodSpec(
+    name="computer.a11y_range",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yRangeParams,
+    result_type=AccessibilityRangeResult,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_RANGE_READ = MethodSpec(
+    name="computer.a11y_range_read",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yRangeReadParams,
+    result_type=AccessibilityRangeResult,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_READ = MethodSpec(
+    name="computer.a11y_read",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yReadParams,
+    result_type=AccessibilityContent,
+    device_scoped=False,
+)
+
+COMPUTER_A11Y_ROOTS = MethodSpec(
+    name="computer.a11y_roots",
+    kind="request_response",
+    replay_class="active_only",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerA11yRootsParams,
+    result_type=AccessibilityTree,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_CARET_SET = MethodSpec(
+    name="computer.atspi_caret_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiCaretSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_COMPONENT_EXTENTS_SET = MethodSpec(
+    name="computer.atspi_component_extents_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiComponentExtentsSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_COMPONENT_POSITION_SET = MethodSpec(
+    name="computer.atspi_component_position_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiComponentPositionSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_COMPONENT_SIZE_SET = MethodSpec(
+    name="computer.atspi_component_size_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiComponentSizeSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_DO_ACTION = MethodSpec(
+    name="computer.atspi_do_action",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiDoActionParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET = MethodSpec(
+    name="computer.atspi_document_selections_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiDocumentSelectionsSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_FOCUS = MethodSpec(
+    name="computer.atspi_focus",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiFocusParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_RANGE_SCROLL_TO = MethodSpec(
+    name="computer.atspi_range_scroll_to",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiRangeScrollToParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT = MethodSpec(
+    name="computer.atspi_range_scroll_to_point",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiRangeScrollToPointParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SCROLL_TO = MethodSpec(
+    name="computer.atspi_scroll_to",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiScrollToParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SCROLL_TO_POINT = MethodSpec(
+    name="computer.atspi_scroll_to_point",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiScrollToPointParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SELECTION_ADD_CHILD = MethodSpec(
+    name="computer.atspi_selection_add_child",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiSelectionAddChildParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SELECTION_ALL = MethodSpec(
+    name="computer.atspi_selection_all",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiSelectionAllParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SELECTION_CLEAR = MethodSpec(
+    name="computer.atspi_selection_clear",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiSelectionClearParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SELECTION_REMOVE_CHILD = MethodSpec(
+    name="computer.atspi_selection_remove_child",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiSelectionRemoveChildParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED = MethodSpec(
+    name="computer.atspi_selection_remove_selected",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiSelectionRemoveSelectedParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TABLE_COLUMN_SELECT = MethodSpec(
+    name="computer.atspi_table_column_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTableColumnSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT = MethodSpec(
+    name="computer.atspi_table_column_unselect",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTableColumnUnselectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TABLE_ROW_SELECT = MethodSpec(
+    name="computer.atspi_table_row_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTableRowSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TABLE_ROW_UNSELECT = MethodSpec(
+    name="computer.atspi_table_row_unselect",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTableRowUnselectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_CONTENTS_SET = MethodSpec(
+    name="computer.atspi_text_contents_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextContentsSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_COPY = MethodSpec(
+    name="computer.atspi_text_copy",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextCopyParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_CUT = MethodSpec(
+    name="computer.atspi_text_cut",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextCutParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_DELETE = MethodSpec(
+    name="computer.atspi_text_delete",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextDeleteParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_INSERT = MethodSpec(
+    name="computer.atspi_text_insert",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextInsertParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_PASTE = MethodSpec(
+    name="computer.atspi_text_paste",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextPasteParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_SELECTION_ADD = MethodSpec(
+    name="computer.atspi_text_selection_add",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextSelectionAddParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_SELECTION_REMOVE = MethodSpec(
+    name="computer.atspi_text_selection_remove",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextSelectionRemoveParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_TEXT_SELECTION_SET = MethodSpec(
+    name="computer.atspi_text_selection_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiTextSelectionSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_ATSPI_VALUE_SET = MethodSpec(
+    name="computer.atspi_value_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAtspiValueSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_DISCLOSING_SET = MethodSpec(
+    name="computer.ax_disclosing_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXDisclosingSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_EXPANDED_SET = MethodSpec(
+    name="computer.ax_expanded_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXExpandedSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_FOCUS = MethodSpec(
+    name="computer.ax_focus",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXFocusParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_FOCUSED_WINDOW_SET = MethodSpec(
+    name="computer.ax_focused_window_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXFocusedWindowSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_MAIN_SET = MethodSpec(
+    name="computer.ax_main_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXMainSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_MINIMIZED_SET = MethodSpec(
+    name="computer.ax_minimized_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXMinimizedSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_PERFORM_ACTION = MethodSpec(
+    name="computer.ax_perform_action",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXPerformActionParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_POSITION_SET = MethodSpec(
+    name="computer.ax_position_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXPositionSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SELECTED_CHILDREN_SET = MethodSpec(
+    name="computer.ax_selected_children_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSelectedChildrenSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SELECTED_COLUMNS_SET = MethodSpec(
+    name="computer.ax_selected_columns_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSelectedColumnsSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SELECTED_ROWS_SET = MethodSpec(
+    name="computer.ax_selected_rows_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSelectedRowsSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SELECTED_SET = MethodSpec(
+    name="computer.ax_selected_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSelectedSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SELECTED_TEXT_SET = MethodSpec(
+    name="computer.ax_selected_text_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSelectedTextSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_SIZE_SET = MethodSpec(
+    name="computer.ax_size_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXSizeSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_TEXT_RANGE_SELECT = MethodSpec(
+    name="computer.ax_text_range_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXTextRangeSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_TEXT_RANGES_SELECT = MethodSpec(
+    name="computer.ax_text_ranges_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXTextRangesSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_VALUE_NUMBER_SET = MethodSpec(
+    name="computer.ax_value_number_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXValueNumberSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_VALUE_STRING_SET = MethodSpec(
+    name="computer.ax_value_string_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXValueStringSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_AX_VISIBLE_TEXT_RANGE_SET = MethodSpec(
+    name="computer.ax_visible_text_range_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerAXVisibleTextRangeSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
 
 COMPUTER_CLICK = MethodSpec(
     name="computer.click",
@@ -257,6 +1078,422 @@ COMPUTER_TYPE_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=ComputerTypeTextParams,
     result_type=ComputerActionResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_COLLAPSE = MethodSpec(
+    name="computer.uia_collapse",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIACollapseParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_DOCK_SET = MethodSpec(
+    name="computer.uia_dock_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIADockSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_EXPAND = MethodSpec(
+    name="computer.uia_expand",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAExpandParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_FOCUS = MethodSpec(
+    name="computer.uia_focus",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAFocusParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_INVOKE = MethodSpec(
+    name="computer.uia_invoke",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAInvokeParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_LEGACY_DEFAULT_ACTION = MethodSpec(
+    name="computer.uia_legacy_default_action",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIALegacyDefaultActionParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_LEGACY_SELECT = MethodSpec(
+    name="computer.uia_legacy_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIALegacySelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_LEGACY_VALUE_SET = MethodSpec(
+    name="computer.uia_legacy_value_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIALegacyValueSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_ADD_SELECTION = MethodSpec(
+    name="computer.uia_range_add_selection",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeAddSelectionParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_REMOVE_SELECTION = MethodSpec(
+    name="computer.uia_range_remove_selection",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeRemoveSelectionParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW = MethodSpec(
+    name="computer.uia_range_scroll_into_view",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeScrollIntoViewParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_SELECT = MethodSpec(
+    name="computer.uia_range_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU = MethodSpec(
+    name="computer.uia_range_show_context_menu",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeShowContextMenuParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_RANGE_VALUE_SET = MethodSpec(
+    name="computer.uia_range_value_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARangeValueSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_REALIZE = MethodSpec(
+    name="computer.uia_realize",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIARealizeParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SCROLL_AMOUNT = MethodSpec(
+    name="computer.uia_scroll_amount",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAScrollAmountParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SCROLL_INTO_VIEW = MethodSpec(
+    name="computer.uia_scroll_into_view",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAScrollIntoViewParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SCROLL_PERCENT = MethodSpec(
+    name="computer.uia_scroll_percent",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAScrollPercentParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SELECTION_ADD = MethodSpec(
+    name="computer.uia_selection_add",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIASelectionAddParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SELECTION_REMOVE = MethodSpec(
+    name="computer.uia_selection_remove",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIASelectionRemoveParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SELECTION_SELECT = MethodSpec(
+    name="computer.uia_selection_select",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIASelectionSelectParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_SHOW_CONTEXT_MENU = MethodSpec(
+    name="computer.uia_show_context_menu",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAShowContextMenuParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TOGGLE = MethodSpec(
+    name="computer.uia_toggle",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAToggleParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TRANSFORM_MOVE = MethodSpec(
+    name="computer.uia_transform_move",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIATransformMoveParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TRANSFORM_RESIZE = MethodSpec(
+    name="computer.uia_transform_resize",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIATransformResizeParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TRANSFORM_ROTATE = MethodSpec(
+    name="computer.uia_transform_rotate",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIATransformRotateParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TRANSFORM_ZOOM = MethodSpec(
+    name="computer.uia_transform_zoom",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIATransformZoomParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_TRANSFORM_ZOOM_UNIT = MethodSpec(
+    name="computer.uia_transform_zoom_unit",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIATransformZoomUnitParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_VALUE_SET = MethodSpec(
+    name="computer.uia_value_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAValueSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_VIEW_SET = MethodSpec(
+    name="computer.uia_view_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAViewSetParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_WINDOW_CLOSE = MethodSpec(
+    name="computer.uia_window_close",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAWindowCloseParams,
+    result_type=AccessibilityMutationResult,
+    device_scoped=False,
+)
+
+COMPUTER_UIA_WINDOW_STATE_SET = MethodSpec(
+    name="computer.uia_window_state_set",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.5",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=ComputerUIAWindowStateSetParams,
+    result_type=AccessibilityMutationResult,
     device_scoped=False,
 )
 
@@ -886,6 +2123,62 @@ SHELL_EXEC = MethodSpec(
 
 METHODS = MappingProxyType(
     {
+        COMPUTER_A11Y_DESCRIBE.name: COMPUTER_A11Y_DESCRIBE,
+        COMPUTER_A11Y_FIND.name: COMPUTER_A11Y_FIND,
+        COMPUTER_A11Y_INSPECT.name: COMPUTER_A11Y_INSPECT,
+        COMPUTER_A11Y_RANGE.name: COMPUTER_A11Y_RANGE,
+        COMPUTER_A11Y_RANGE_READ.name: COMPUTER_A11Y_RANGE_READ,
+        COMPUTER_A11Y_READ.name: COMPUTER_A11Y_READ,
+        COMPUTER_A11Y_ROOTS.name: COMPUTER_A11Y_ROOTS,
+        COMPUTER_ATSPI_CARET_SET.name: COMPUTER_ATSPI_CARET_SET,
+        COMPUTER_ATSPI_COMPONENT_EXTENTS_SET.name: COMPUTER_ATSPI_COMPONENT_EXTENTS_SET,
+        COMPUTER_ATSPI_COMPONENT_POSITION_SET.name: COMPUTER_ATSPI_COMPONENT_POSITION_SET,
+        COMPUTER_ATSPI_COMPONENT_SIZE_SET.name: COMPUTER_ATSPI_COMPONENT_SIZE_SET,
+        COMPUTER_ATSPI_DO_ACTION.name: COMPUTER_ATSPI_DO_ACTION,
+        COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET.name: COMPUTER_ATSPI_DOCUMENT_SELECTIONS_SET,
+        COMPUTER_ATSPI_FOCUS.name: COMPUTER_ATSPI_FOCUS,
+        COMPUTER_ATSPI_RANGE_SCROLL_TO.name: COMPUTER_ATSPI_RANGE_SCROLL_TO,
+        COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT.name: COMPUTER_ATSPI_RANGE_SCROLL_TO_POINT,
+        COMPUTER_ATSPI_SCROLL_TO.name: COMPUTER_ATSPI_SCROLL_TO,
+        COMPUTER_ATSPI_SCROLL_TO_POINT.name: COMPUTER_ATSPI_SCROLL_TO_POINT,
+        COMPUTER_ATSPI_SELECTION_ADD_CHILD.name: COMPUTER_ATSPI_SELECTION_ADD_CHILD,
+        COMPUTER_ATSPI_SELECTION_ALL.name: COMPUTER_ATSPI_SELECTION_ALL,
+        COMPUTER_ATSPI_SELECTION_CLEAR.name: COMPUTER_ATSPI_SELECTION_CLEAR,
+        COMPUTER_ATSPI_SELECTION_REMOVE_CHILD.name: COMPUTER_ATSPI_SELECTION_REMOVE_CHILD,
+        COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED.name: COMPUTER_ATSPI_SELECTION_REMOVE_SELECTED,
+        COMPUTER_ATSPI_TABLE_COLUMN_SELECT.name: COMPUTER_ATSPI_TABLE_COLUMN_SELECT,
+        COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT.name: COMPUTER_ATSPI_TABLE_COLUMN_UNSELECT,
+        COMPUTER_ATSPI_TABLE_ROW_SELECT.name: COMPUTER_ATSPI_TABLE_ROW_SELECT,
+        COMPUTER_ATSPI_TABLE_ROW_UNSELECT.name: COMPUTER_ATSPI_TABLE_ROW_UNSELECT,
+        COMPUTER_ATSPI_TEXT_CONTENTS_SET.name: COMPUTER_ATSPI_TEXT_CONTENTS_SET,
+        COMPUTER_ATSPI_TEXT_COPY.name: COMPUTER_ATSPI_TEXT_COPY,
+        COMPUTER_ATSPI_TEXT_CUT.name: COMPUTER_ATSPI_TEXT_CUT,
+        COMPUTER_ATSPI_TEXT_DELETE.name: COMPUTER_ATSPI_TEXT_DELETE,
+        COMPUTER_ATSPI_TEXT_INSERT.name: COMPUTER_ATSPI_TEXT_INSERT,
+        COMPUTER_ATSPI_TEXT_PASTE.name: COMPUTER_ATSPI_TEXT_PASTE,
+        COMPUTER_ATSPI_TEXT_SELECTION_ADD.name: COMPUTER_ATSPI_TEXT_SELECTION_ADD,
+        COMPUTER_ATSPI_TEXT_SELECTION_REMOVE.name: COMPUTER_ATSPI_TEXT_SELECTION_REMOVE,
+        COMPUTER_ATSPI_TEXT_SELECTION_SET.name: COMPUTER_ATSPI_TEXT_SELECTION_SET,
+        COMPUTER_ATSPI_VALUE_SET.name: COMPUTER_ATSPI_VALUE_SET,
+        COMPUTER_AX_DISCLOSING_SET.name: COMPUTER_AX_DISCLOSING_SET,
+        COMPUTER_AX_EXPANDED_SET.name: COMPUTER_AX_EXPANDED_SET,
+        COMPUTER_AX_FOCUS.name: COMPUTER_AX_FOCUS,
+        COMPUTER_AX_FOCUSED_WINDOW_SET.name: COMPUTER_AX_FOCUSED_WINDOW_SET,
+        COMPUTER_AX_MAIN_SET.name: COMPUTER_AX_MAIN_SET,
+        COMPUTER_AX_MINIMIZED_SET.name: COMPUTER_AX_MINIMIZED_SET,
+        COMPUTER_AX_PERFORM_ACTION.name: COMPUTER_AX_PERFORM_ACTION,
+        COMPUTER_AX_POSITION_SET.name: COMPUTER_AX_POSITION_SET,
+        COMPUTER_AX_SELECTED_CHILDREN_SET.name: COMPUTER_AX_SELECTED_CHILDREN_SET,
+        COMPUTER_AX_SELECTED_COLUMNS_SET.name: COMPUTER_AX_SELECTED_COLUMNS_SET,
+        COMPUTER_AX_SELECTED_ROWS_SET.name: COMPUTER_AX_SELECTED_ROWS_SET,
+        COMPUTER_AX_SELECTED_SET.name: COMPUTER_AX_SELECTED_SET,
+        COMPUTER_AX_SELECTED_TEXT_SET.name: COMPUTER_AX_SELECTED_TEXT_SET,
+        COMPUTER_AX_SIZE_SET.name: COMPUTER_AX_SIZE_SET,
+        COMPUTER_AX_TEXT_RANGE_SELECT.name: COMPUTER_AX_TEXT_RANGE_SELECT,
+        COMPUTER_AX_TEXT_RANGES_SELECT.name: COMPUTER_AX_TEXT_RANGES_SELECT,
+        COMPUTER_AX_VALUE_NUMBER_SET.name: COMPUTER_AX_VALUE_NUMBER_SET,
+        COMPUTER_AX_VALUE_STRING_SET.name: COMPUTER_AX_VALUE_STRING_SET,
+        COMPUTER_AX_VISIBLE_TEXT_RANGE_SET.name: COMPUTER_AX_VISIBLE_TEXT_RANGE_SET,
         COMPUTER_CLICK.name: COMPUTER_CLICK,
         COMPUTER_CLOSE_OBSERVATION.name: COMPUTER_CLOSE_OBSERVATION,
         COMPUTER_DESCRIBE.name: COMPUTER_DESCRIBE,
@@ -896,6 +2189,38 @@ METHODS = MappingProxyType(
         COMPUTER_READ_CLIPBOARD.name: COMPUTER_READ_CLIPBOARD,
         COMPUTER_SCROLL.name: COMPUTER_SCROLL,
         COMPUTER_TYPE_TEXT.name: COMPUTER_TYPE_TEXT,
+        COMPUTER_UIA_COLLAPSE.name: COMPUTER_UIA_COLLAPSE,
+        COMPUTER_UIA_DOCK_SET.name: COMPUTER_UIA_DOCK_SET,
+        COMPUTER_UIA_EXPAND.name: COMPUTER_UIA_EXPAND,
+        COMPUTER_UIA_FOCUS.name: COMPUTER_UIA_FOCUS,
+        COMPUTER_UIA_INVOKE.name: COMPUTER_UIA_INVOKE,
+        COMPUTER_UIA_LEGACY_DEFAULT_ACTION.name: COMPUTER_UIA_LEGACY_DEFAULT_ACTION,
+        COMPUTER_UIA_LEGACY_SELECT.name: COMPUTER_UIA_LEGACY_SELECT,
+        COMPUTER_UIA_LEGACY_VALUE_SET.name: COMPUTER_UIA_LEGACY_VALUE_SET,
+        COMPUTER_UIA_RANGE_ADD_SELECTION.name: COMPUTER_UIA_RANGE_ADD_SELECTION,
+        COMPUTER_UIA_RANGE_REMOVE_SELECTION.name: COMPUTER_UIA_RANGE_REMOVE_SELECTION,
+        COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW.name: COMPUTER_UIA_RANGE_SCROLL_INTO_VIEW,
+        COMPUTER_UIA_RANGE_SELECT.name: COMPUTER_UIA_RANGE_SELECT,
+        COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU.name: COMPUTER_UIA_RANGE_SHOW_CONTEXT_MENU,
+        COMPUTER_UIA_RANGE_VALUE_SET.name: COMPUTER_UIA_RANGE_VALUE_SET,
+        COMPUTER_UIA_REALIZE.name: COMPUTER_UIA_REALIZE,
+        COMPUTER_UIA_SCROLL_AMOUNT.name: COMPUTER_UIA_SCROLL_AMOUNT,
+        COMPUTER_UIA_SCROLL_INTO_VIEW.name: COMPUTER_UIA_SCROLL_INTO_VIEW,
+        COMPUTER_UIA_SCROLL_PERCENT.name: COMPUTER_UIA_SCROLL_PERCENT,
+        COMPUTER_UIA_SELECTION_ADD.name: COMPUTER_UIA_SELECTION_ADD,
+        COMPUTER_UIA_SELECTION_REMOVE.name: COMPUTER_UIA_SELECTION_REMOVE,
+        COMPUTER_UIA_SELECTION_SELECT.name: COMPUTER_UIA_SELECTION_SELECT,
+        COMPUTER_UIA_SHOW_CONTEXT_MENU.name: COMPUTER_UIA_SHOW_CONTEXT_MENU,
+        COMPUTER_UIA_TOGGLE.name: COMPUTER_UIA_TOGGLE,
+        COMPUTER_UIA_TRANSFORM_MOVE.name: COMPUTER_UIA_TRANSFORM_MOVE,
+        COMPUTER_UIA_TRANSFORM_RESIZE.name: COMPUTER_UIA_TRANSFORM_RESIZE,
+        COMPUTER_UIA_TRANSFORM_ROTATE.name: COMPUTER_UIA_TRANSFORM_ROTATE,
+        COMPUTER_UIA_TRANSFORM_ZOOM.name: COMPUTER_UIA_TRANSFORM_ZOOM,
+        COMPUTER_UIA_TRANSFORM_ZOOM_UNIT.name: COMPUTER_UIA_TRANSFORM_ZOOM_UNIT,
+        COMPUTER_UIA_VALUE_SET.name: COMPUTER_UIA_VALUE_SET,
+        COMPUTER_UIA_VIEW_SET.name: COMPUTER_UIA_VIEW_SET,
+        COMPUTER_UIA_WINDOW_CLOSE.name: COMPUTER_UIA_WINDOW_CLOSE,
+        COMPUTER_UIA_WINDOW_STATE_SET.name: COMPUTER_UIA_WINDOW_STATE_SET,
         COMPUTER_WRITE_CLIPBOARD.name: COMPUTER_WRITE_CLIPBOARD,
         COMPUTER_ZOOM.name: COMPUTER_ZOOM,
         DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,

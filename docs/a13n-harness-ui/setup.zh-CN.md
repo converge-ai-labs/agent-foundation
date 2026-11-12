@@ -78,7 +78,7 @@ a13n-harness-ui config validate
 
 `config path` 显示所选配置和数据路径。根 YAML 保存默认值；同级 `models/` 和 `agents/` 目录保存 Model 与 Agent 资源。`config validate` 检查文件和引用，不发送模型请求，因此仍需单独进行上面的回复测试。
 
-新配置的设置向导还会用 `webui.sidekick: {}` 开启 [WebUI Sidekick](configuration.md#webui-sidekick)。要关闭它，选择 **Settings → General → Sidekick → Disabled**，或设置 `sidekick: null`。设置向导保留已有选择；这个偏好本身不会开始工作。
+新配置的设置向导用 `webui.sidekick: {}` 初始化 [WebUI Sidekick](configuration.md#webui-sidekick) 默认值。Sidekick 在 WebUI 中始终可用；在 **设置 → 常规** 配置 Agent/Model 默认值。已有选择保留，旧的 null 采用继承默认值，保存偏好不会启动工作。
 
 ## 添加其他连接或 Agent
 

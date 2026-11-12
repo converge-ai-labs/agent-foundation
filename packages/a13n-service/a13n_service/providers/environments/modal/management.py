@@ -7,9 +7,8 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.modal.http import HttpReference, http_execution, tunnel_connection
 from a13n_harness.providers.environment.modal.shared import (
     ModalEnvironmentConfiguration,
@@ -23,6 +22,9 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_assets, envd_upgrade
+from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.modal import ModalRecipe
 
@@ -69,13 +71,18 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             tags = {**self.labels, "a13n_expiry": expiry.isoformat()}
             if snapshot is not None:
                 tags["a13n_resume_snapshot"] = snapshot.image_id
+            startup = self.recipe.startup_command
+            if self.recipe.envd_management == "managed":
+                # Filesystem snapshots retain paths, not live owners.
+                startup = [
+                    "sh",
+                    "-c",
+                    "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
+                    + envd_assets.startup("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                ]
+            assert startup is not None
             sandbox = await modal.Sandbox.create.aio(
-                # Filesystem snapshots can retain runtime paths, not their owners.
-                # Only a newly allocated VM clears these before starting services.
-                "sh",
-                "-c",
-                "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
-                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
+                *startup,
                 app=app,
                 name=self.name,
                 image=image,
@@ -126,6 +133,8 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
 
     async def _finish_start(self, sandbox: modal.Sandbox) -> None:
         self.sandbox = sandbox
+        if self.defer_envd_readiness:
+            return
         # Readiness and snapshot retirement belong to explicit management. A
         # failed probe retains both the new target ID and the resume snapshot.
         await self._check_envd()
@@ -153,38 +162,27 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
         if self.config.execution == "envd_ws":
             return
         assert self.sandbox is not None
-        probe = """import socket,time
-end=time.monotonic()+30
-while time.monotonic()<end:
- try:
-  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
- except OSError: time.sleep(.2)
-else: raise RuntimeError('a13n-envd did not become ready')
-"""
-        await execute_command(self.sandbox, ["python3", "-I", "-c", probe], 35)
         runtime = NativeRuntime(self.backend, self.credential)
-        async with asyncio.timeout(self.config.request_timeout_seconds):
-            while True:
-                execution = http_execution(HttpReference(self.config, self.environment_id, self.state, runtime))
-                try:
-                    await execution.open(execution_id="exec-readiness")
-                    await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
-                    if not self.config.desktop:
-                        return
-                    computer = execution.operations.computer
-                    if computer is not None:
-                        description = await computer.describe()
-                        if description.observe_ready and description.input_ready and description.targets:
-                            return
-                except EnvironmentProviderError as error:
-                    if error.category not in {Category.UNAVAILABLE, Category.TIMEOUT}:
-                        raise
-                except EnvironmentError as error:
-                    if error.code not in {"environment_unavailable", "environment_provider_failure"}:
-                        raise
-                finally:
-                    await execution.close()
-                await asyncio.sleep(0.1)
+        await wait_until_ready(
+            lambda: http_execution(HttpReference(self.config, self.environment_id, self.state, runtime)),
+            provider_key=self.provider_key,
+            desktop=self.config.desktop,
+            timeout=self.config.request_timeout_seconds,
+        )
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        assert self.sandbox is not None
+        sandbox = self.sandbox
+
+        async def execute(argv: list[str]) -> str:
+            return await execute_command(sandbox, ["sudo", "-n", *argv], 15)
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        await self._finish_start(sandbox)
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         self.reuse_transport = True

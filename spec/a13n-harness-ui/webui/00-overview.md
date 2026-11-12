@@ -43,7 +43,7 @@ Common configuration is approachable without editing YAML; advanced source editi
 
 Selected Project/Thread, scroll position, open files, and inspection panels remain personal view state. Participants report their currently focused semantic page and can see who shares it; this is awareness, not synchronized navigation. They do not move one another's focus merely by navigating. Shared changes, such as prompt edits, configuration publication, or a terminal control transfer, are explicit application operations.
 
-Presence and prompt CRDT state remain in memory. Multiplexed execution observation and interactive collaboration have independent state owners and completion boundaries. Updating or reconnecting one does not reset the others.
+The current shared composer is saved under the [bounded draft storage contract](../03-local-storage-and-recovery.md#shared-browser-drafts); presence remains in memory. Multiplexed execution observation and interactive collaboration have independent state owners and completion boundaries. Updating or reconnecting one does not reset the others.
 
 ## Authentication in the Browser
 

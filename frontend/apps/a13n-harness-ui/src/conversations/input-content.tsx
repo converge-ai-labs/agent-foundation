@@ -1,8 +1,16 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "../i18n";
 import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
+import { MessageActionButton, MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
 import { retainedSkillSpans } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
@@ -158,11 +166,11 @@ function Attachment({
     </Popover>
   );
   return (
-    <div className={image ? styles.imageTile : styles.inlineAttachment}>
+    <span className={styles.inlineAttachment}>
       {image ? (
         <button
           type="button"
-          className={styles.imageTileOpen}
+          className={styles.inlineAttachmentOpen}
           onClick={() => setPreview(true)}
           aria-label={t("Preview {{name}}", { name: attachment.name })}
           title={attachment.name}
@@ -181,7 +189,7 @@ function Attachment({
           close={() => setPreview(false)}
         />
       )}
-    </div>
+    </span>
   );
 }
 function Media({ part }: { part: InputPart }) {
@@ -263,13 +271,23 @@ export function inputCopyText(parts: InputPart[]) {
   return text;
 }
 
+function focusEnd(editor: HTMLTextAreaElement | null) {
+  if (!editor) return;
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+}
+
 export function InputContent({
   parts,
   threadId,
   renderText,
+  branchKey,
+  timestamp,
   status,
 }: {
   status?: string;
+  timestamp?: string | number;
+  branchKey?: string;
   parts: InputPart[];
   threadId?: string;
   renderText: (text: string) => ReactNode;
@@ -281,10 +299,14 @@ export function InputContent({
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
+  const actions = useContext(MessageBranches);
+  const [edit, setEdit] = useState<string | null>(null);
+  const editable =
+    branchKey && actions?.points?.[branchKey]?.edit && !actions.busy;
+
   const source = visible
     .map((part) => threadMessage(part.metadata))
     .find(Boolean);
-  const attachments: ReactNode[] = [];
   const body =
     (!source || expanded) &&
     visible.map((part, index) => {
@@ -298,15 +320,14 @@ export function InputContent({
             (composerIdentity(item) ??
               inputAttachment(item.metadata)?.attachment_id) === identity,
         );
-        attachments.push(
+        return (
           <Attachment
             key={`${threadId}:${identity}`}
             threadId={threadId}
             attachment={attachment}
             related={related}
-          />,
+          />
         );
-        return null;
       }
       const text = part.text || "";
       if (part.kind !== "media" && !text) return null;
@@ -341,11 +362,48 @@ export function InputContent({
         <div key={index}>{renderText(part.text || "")}</div>
       );
     });
+  if (edit !== null && actions)
+    return (
+      <form
+        className={styles.messageEditor}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (editable && branchKey && edit.trim())
+            void actions.create(branchKey, edit);
+        }}
+      >
+        <textarea
+          ref={focusEnd}
+          aria-label={t("Edit message")}
+          value={edit}
+          onChange={(e) => setEdit(e.target.value)}
+          onKeyDown={(e) => {
+            if (
+              e.key === "Escape" &&
+              !actions.pending &&
+              !e.nativeEvent.isComposing
+            )
+              setEdit(null);
+          }}
+        />
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={actions.pending}
+            onClick={() => setEdit(null)}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" size="sm" disabled={!editable || !edit.trim()}>
+            {t("Send")}
+          </Button>
+        </div>
+      </form>
+    );
   return (
     <div className={styles.userInput}>
-      {attachments.length > 0 && (
-        <div className={styles.sentAttachments}>{attachments}</div>
-      )}
       {(source || status || (body && body.some(Boolean))) && (
         <div
           className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
@@ -416,8 +474,22 @@ export function InputContent({
           )}
         </div>
       )}
-      {(!source || expanded) && copyText.trim() && (
-        <CopyMessage text={copyText} />
+      {(!source || expanded) && (copyText.trim() || timestamp != null) && (
+        <CopyMessage
+          text={copyText}
+          timestamp={timestamp}
+          action={
+            actions &&
+            branchKey !== undefined &&
+            !source && (
+              <MessageActionButton
+                kind="edit"
+                disabled={!editable}
+                onClick={() => setEdit(copyText)}
+              />
+            )
+          }
+        />
       )}
     </div>
   );

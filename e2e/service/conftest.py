@@ -51,7 +51,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "hosted(type): a journey on a hosted sandbox vendor, run only when asked for")
     config.addinivalue_line(
         "markers",
-        "isolated_service(worker_slots=4, start_workers=2): owns Service processes for faults or custom worker capacity",
+        "isolated_service(worker_slots=4, start_workers=2, host='127.0.0.1'): owns Service processes for faults or custom capacity/network binding",
     )
 
 
@@ -137,12 +137,12 @@ class Service:
 
 @contextmanager
 def running_service(
-    stores: Stores, directory: Path, *, worker_slots: int = 4, start_workers: int = 2
+    stores: Stores, directory: Path, *, worker_slots: int = 4, start_workers: int = 2, host: str = "127.0.0.1"
 ) -> Iterator[Service]:
     with ExitStack() as cleanup:
         database = cleanup.enter_context(cloned_database(stores))
         config = write_config(
-            directory / "service.toml", stores, database, directory / "objects", worker_slots=worker_slots
+            directory / "service.toml", stores, database, directory / "objects", worker_slots=worker_slots, host=host
         )
         control = ServiceProcess("control", config, directory / "control.log")
         workers = [ServiceProcess("worker", config, directory / f"worker-{index}.log") for index in (1, 2)]

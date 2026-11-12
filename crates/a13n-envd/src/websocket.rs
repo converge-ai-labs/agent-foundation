@@ -61,8 +61,9 @@ pub(crate) async fn serve(
 ) -> io::Result<()> {
     let connector = build_tls_connector(websocket)?;
     let (shutdown_sender, shutdown) = watch::channel(false);
+    let supervised = config.supervised;
     let signal_task = tokio::spawn(async move {
-        let _ = shutdown_signal().await;
+        let _ = crate::shutdown::wait(supervised).await;
         shutdown_sender.send_replace(true);
     });
 
@@ -789,22 +790,6 @@ fn random_bytes() -> [u8; 8] {
         bytes.copy_from_slice(&Instant::now().elapsed().as_nanos().to_le_bytes()[..8]);
     }
     bytes
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() -> io::Result<()> {
-    use tokio::signal::unix::{SignalKind, signal};
-
-    let mut terminate = signal(SignalKind::terminate())?;
-    tokio::select! {
-        result = tokio::signal::ctrl_c() => result,
-        _ = terminate.recv() => Ok(()),
-    }
-}
-
-#[cfg(not(unix))]
-async fn shutdown_signal() -> io::Result<()> {
-    tokio::signal::ctrl_c().await
 }
 
 #[cfg(test)]

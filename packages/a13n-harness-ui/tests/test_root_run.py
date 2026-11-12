@@ -21,6 +21,12 @@ pytestmark = pytest.mark.anyio
 
 async def capture(**kwargs):
     return SimpleNamespace(
+        thread=SimpleNamespace(
+            continuation=None,
+            initial_state=ObjectRef(
+                object_kind=ObjectKind.thread_initial_state, object_schema_version="1", logical_digest="b" * 64
+            ),
+        ),
         prompt=kwargs["prompt"],
         response=kwargs["response"],
         published=SimpleNamespace(

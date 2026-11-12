@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" role="img" aria-label="An agent sends execution requests to an environment containing a terminal, compute resources, project files, and a generated chart, and receives results back.">
+  <rect class="pl" x="36" y="128" width="210" height="228" rx="4" />
+  <path class="pf" d="M36 162H246" />
+  <circle class="fi" cx="52" cy="145" r="2" />
+  <circle class="ff" cx="64" cy="145" r="2" />
+  <circle class="ff" cx="76" cy="145" r="2" />
+  <text class="pt ink" x="141" y="110" text-anchor="middle">agent runtime</text>
+  <path class="pa" d="M58 188l8 6-8 6M74 200H92" />
+  <path class="pf" d="M58 220H220M58 252H220M58 284H220" />
+  <rect class="pa thin" x="58" y="231" width="12" height="12" rx="1" />
+  <path class="pa thin" d="m60 236 3 3 5-6" />
+  <rect class="pa thin" x="58" y="263" width="12" height="12" rx="1" />
+  <path class="pa thin" d="m60 268 3 3 5-6" />
+  <rect class="pa thin" x="58" y="295" width="12" height="12" rx="1" />
+  <path class="pf" d="M82 237H184M82 269H204M82 301H166" />
+  <text class="pt" x="141" y="337" text-anchor="middle">read / run / inspect</text>
+
+  <rect class="pf" x="338" y="54" width="426" height="374" rx="4" />
+  <text class="pt ink" x="360" y="84">execution environment</text>
+  <path class="pa" d="M246 206H364m-7-5 7 5-7 5M364 242H246m7-5-7 5 7 5" />
+  <text class="pt acc" x="290" y="192" text-anchor="middle">request</text>
+  <text class="pt" x="290" y="264" text-anchor="middle">result</text>
+
+  <rect class="pl" x="364" y="106" width="374" height="148" rx="3" />
+  <path class="pf" d="M364 132H738" />
+  <circle class="fi" cx="378" cy="119" r="2" />
+  <path class="pa" d="M382 152l8 6-8 6M398 164H414" />
+  <text class="pt ink" x="428" y="164">python analyze.py</text>
+  <path class="pf" d="M382 184H612M382 198H558M382 212H586" />
+  <path class="pa thin" d="M382 232H472" />
+  <text class="pt" x="496" y="236">Python + dependencies</text>
+  <rect class="pa thin" x="676" y="152" width="36" height="36" rx="2" />
+  <rect class="band" x="684" y="160" width="20" height="20" />
+  <path class="pa thin" d="M684 146V152M694 146V152M704 146V152M684 188V194M694 188V194M704 188V194M670 160H676M670 170H676M670 180H676M712 160H718M712 170H718M712 180H718" />
+  <text class="pt" x="694" y="214" text-anchor="middle">CPU</text>
+
+  <path class="pa thin" d="M452 254V278m-4-6 4 6 4-6M652 254V278m-4-6 4 6 4-6" />
+  <path class="pl" d="M364 300V288H418l12 12H526V398H364Z" />
+  <path class="pf" d="M364 312H526M382 337H508M382 363H508" />
+  <rect class="pa thin" x="380" y="322" width="9" height="10" />
+  <rect class="pf" x="380" y="348" width="9" height="10" />
+  <rect class="pa thin" x="380" y="374" width="9" height="10" />
+  <text class="pt" x="400" y="332">data.csv</text>
+  <text class="pt" x="400" y="358">analyze.py</text>
+  <text class="pt" x="400" y="384">chart.png</text>
+  <rect class="pl" x="554" y="288" width="184" height="110" rx="3" />
+  <path class="pf" d="M574 308V380H720M574 332H720M574 356H720" />
+  <rect class="band" x="588" y="352" width="24" height="28" />
+  <rect class="band" x="634" y="328" width="24" height="52" />
+  <rect class="fa" x="680" y="308" width="24" height="72" />
+  <path class="pa thin" d="M588 352H612M634 328H658" />
+  <text class="pt" x="445" y="419" text-anchor="middle">project files</text>
+  <text class="pt" x="646" y="419" text-anchor="middle">generated output</text>
+</svg>

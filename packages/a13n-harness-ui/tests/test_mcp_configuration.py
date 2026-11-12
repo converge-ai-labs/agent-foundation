@@ -150,6 +150,10 @@ async def test_json_changes_are_observed_and_captured_literal_sources_fail_if_ch
         '{"mcpServers": {"x": {"url": "https://example.com", "type": "sse", "headers": {"Authorization": "private-token"}}}}',
         '{"mcpServers": {"x": {"command": "python", "url": "https://example.com"}}}',
         '{"mcpServers": {"x": {"command": "python", "disabled": true}}}',
+        '{"mcpServers": {"x": {"command": "python", "init_timeout_seconds": 20}}}',
+        '{"mcpServers": {"x": {"url": "https://example.com", "init_timeout_seconds": 0}}}',
+        '{"mcpServers": {"x": {"url": "https://example.com", "init_timeout_seconds": -1}}}',
+        '{"mcpServers": {"x": {"url": "https://example.com", "init_timeout_seconds": "20"}}}',
         '{"mcpServers": {}, "extra": "private-token"}',
         '{"mcpServers": NaN}',
         "[]",
@@ -335,6 +339,50 @@ async def test_remote_adapter_receives_literal_headers_without_network(
     ]
 
 
+@pytest.mark.parametrize(
+    ("host_owned", "configured", "expected"),
+    [(False, None, 5), (True, None, 30), (False, 20.5, 20.5), (True, 20.5, 20.5)],
+)
+async def test_run_passes_remote_handshake_timeout_to_sdk(host_owned, configured, expected, monkeypatch):
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+    from a13n_harness_ui.mcp_runtime.connections import Connections
+    from fastmcp import Client, FastMCP
+    from pydantic_ai.models.function import FunctionModel
+
+    from .test_tool_search_integration import _http_mcp
+
+    observed = []
+    init = Client.__init__
+
+    def record_timeout(self, *args, **kwargs):
+        observed.append(kwargs["init_timeout"])
+        init(self, *args, **kwargs)
+
+    async def model(messages, info):
+        yield "done"
+
+    monkeypatch.setattr(Client, "__init__", record_timeout)
+    async with _http_mcp(FastMCP("Timeout fixture")) as url:
+        recipe = ResolvedMcpRecipe(
+            server_id="mcp-test",
+            transport=McpRemoteTransport(url=url, init_timeout_seconds=configured),
+            host_owned=host_owned,
+        )
+        connections = Connections()
+        try:
+            agent = HarnessBuilder().build(
+                AgentSpec(),
+                output_type=str,
+                model=FunctionModel(stream_function=model),
+                capabilities=(HarnessUiMCP(recipe, connections=connections),),
+            )
+            assert (await agent.run("Check", bindings=RunBindings.embedded())).status == "completed"
+        finally:
+            await connections.close()
+    assert observed == [expected]
+
+
 def test_cli_config_show_omits_literal_mcp_values_and_reload_retains_last_valid_generation(tmp_path: Path) -> None:
     from a13n_harness_ui.cli import cli
     from click.testing import CliRunner
@@ -447,12 +495,19 @@ async def test_invalid_root_mcp_policy_rejects_configuration(tmp_path: Path, pol
         await load_harness_ui_configuration(root)
 
 
-async def test_historical_mcp_recipe_and_empty_policy_keep_canonical_payload(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"command": "python", "arguments": [], "environment": {}},
+        {"url": "https://example.com/mcp", "headers": {}},
+    ],
+)
+async def test_historical_mcp_recipe_and_empty_policy_keep_canonical_payload(tmp_path: Path, transport: dict) -> None:
     from a13n_harness_ui.configuration.models import HarnessUiDocument
 
     from .test_object_store import _object_store
 
-    original = {"server_id": "mcp-one", "transport": {"command": "python", "arguments": [], "environment": {}}}
+    original = {"server_id": "mcp-one", "transport": transport}
     recipe = ResolvedMcpRecipe.model_validate(original)
     assert not recipe.host_owned and recipe.protocol == "auto"
     assert recipe.generic_selected and not recipe.apps_enabled

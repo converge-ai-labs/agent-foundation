@@ -36,6 +36,7 @@ a13n_service/
     connector_providers/     schemas  routes  catalog
     web_providers/    runtime
     connections/      tables  schemas  service  routes  access  authorization  oauth  account  credentials
+    egress_credentials/  tables  schemas  service  routes
                       operations  discovery  headers  runtime
     uploads/          tables  schemas  service  routes
     assets/           tables  schemas  service  routes
@@ -211,7 +212,7 @@ Object IDs follow the platform's [data conventions](../data-conventions.md#servi
 | `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`                 | request IDs                                  |
 | `mem`               | memories                                                              | `mfile`               | memory_files                                 |
 
-`passwords`, `thread_environments` and `thread_memories` are join tables without IDs, `memory_file_stores` and `memory_file_revisions` are keyed by their memory (and change `seq`), and `usage_records` keep the Harness's record IDs; every other table has a 72-character `id` primary key. Every workspace-owned row has a composite `(organization_id, workspace_id)` foreign key, except a memory's store row, files and revisions, which reach their scope through their memory ([11](11-memory.md#tables)). Display items are `itm_` plus the first 32 hex characters of a SHA-256 of their run, kind and source, so they are stable across attempts ([07](07-facts-and-delivery.md#checkpoints-and-display)). Harness tool-call IDs, provider-owned IDs, secrets, cursors and digests keep their owners' formats.
+`passwords`, `thread_environments` and `thread_memories` are join tables without IDs, `thread_session_bindings` and `thread_session_credentials` use the composite keys defined by [Environments](06-environments.md), `memory_file_stores` and `memory_file_revisions` are keyed by their memory (and change `seq`), and `usage_records` keep the Harness's record IDs; other resource tables have a 72-character `id` primary key. Egress credentials use the `ecred_` prefix. Every workspace-owned row has a composite `(organization_id, workspace_id)` foreign key, except a memory's store row, files and revisions, which reach their scope through their memory ([11](11-memory.md#tables)). Display items are `itm_` plus the first 32 hex characters of a SHA-256 of their run, kind and source, so they are stable across attempts ([07](07-facts-and-delivery.md#checkpoints-and-display)). Harness tool-call IDs, provider-owned IDs, secrets, cursors and digests keep their owners' formats.
 
 ## Error codes
 

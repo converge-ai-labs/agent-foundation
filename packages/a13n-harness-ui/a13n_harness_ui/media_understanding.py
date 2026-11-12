@@ -53,9 +53,11 @@ class FileMediaUnderstanding:
                 raise MediaUnderstandingError("media_understanding_unavailable")
         else:
             try:
-                model = await self._resolver.resolve(model_recipe_id(recipe), thread_id=self._thread_id)
+                selected = model_recipe_id(recipe)
+                model = await self._resolver.resolve(selected, thread_id=self._thread_id)
                 provider = AgentMediaUnderstandingProvider(
                     models={request.kind: model},
+                    model_ids={request.kind: selected},
                     model_settings={request.kind: cast(ModelSettings, dict(recipe.settings))},
                     image_input=(
                         recipe.model_characteristics.image_input

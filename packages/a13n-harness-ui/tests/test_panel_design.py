@@ -92,7 +92,7 @@ def test_long_edit_preview_discloses_character_omission_and_preserves_closed_fra
     transcript.close()
 
 
-@pytest.mark.parametrize("source", ["background_process", "async_subagent", None])
+@pytest.mark.parametrize("source", ["background_process", "async_subagent", "envd_session", None])
 def test_activity_input_uses_provenance_not_message_text(source: str | None) -> None:
     renderer = StreamRenderer(Status())
     renderer.ingest(

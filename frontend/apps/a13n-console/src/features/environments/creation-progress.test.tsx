@@ -2,7 +2,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import { CreationProgress, DesktopPreview } from "./creation-progress";
+import {
+  CreationProgress,
+  DesktopPreview,
+  creationNotice,
+  HEADLESS_INSTALL_NOTICE,
+  HEADLESS_IMAGE_NOTICE,
+  HEADLESS_SNAPSHOT_NOTICE,
+  VERCEL_FIRST_DESKTOP_NOTICE,
+} from "./creation-progress";
 import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
@@ -45,11 +53,51 @@ function mount(node: React.ReactNode) {
   };
 }
 
+it.each([
+  [
+    "e2b",
+    { template: "base", preparation: "headless" },
+    HEADLESS_INSTALL_NOTICE,
+  ],
+  ["modal", { image: "auto" }, HEADLESS_IMAGE_NOTICE],
+  ["daytona", { snapshot: "auto" }, HEADLESS_SNAPSHOT_NOTICE],
+  ["vercel", {}, VERCEL_FIRST_DESKTOP_NOTICE],
+  ["sprites", {}, HEADLESS_INSTALL_NOTICE],
+  ["vercel", { snapshot: "snap_custom" }, undefined],
+  ["modal", { image: "im_custom" }, undefined],
+  ["e2b", { template: "custom", preparation: "preinstalled" }, undefined],
+  ["docker", {}, undefined],
+] as const)(
+  "selects the %s preparation notice from provider and recipe",
+  (type, recipe, notice) => {
+    expect(creationNotice(type, { execution: "envd_http", ...recipe })).toBe(
+      notice,
+    );
+  },
+);
+
+it("omits preparation for an instance whose frozen recipe is not automatic", async () => {
+  http.GET.mockResolvedValue({ data: null });
+  const view = mount(
+    <CreationProgress environment={environment} providerType="modal" />,
+  );
+  await waitFor(() =>
+    expect(
+      view.cache.getQueryState(["environment-creation", environment.id])
+        ?.status,
+    ).toBe("success"),
+  );
+  expect(view.container.textContent).toBe("");
+  view.unmount();
+  view.cache.clear();
+});
+
 it("uses real build stage and server time across remounts, then retries a confirmed failure with its ETag", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   // Browser time is behind the server; the elapsed display must still show 65 s.
   vi.setSystemTime(new Date("2026-10-22T09:59:00Z"));
   let progress = {
+    profile: "desktop",
     stage: "building",
     started_at: environment.created_at,
     observed_at: "2026-10-22T10:01:05Z",
@@ -101,6 +149,7 @@ it("does not offer retry before confirmation or without write permission", async
   access.write = false;
   http.GET.mockResolvedValue({
     data: {
+      profile: "desktop",
       stage: "failed",
       started_at: environment.created_at,
       observed_at: environment.created_at,
@@ -112,6 +161,95 @@ it("does not offer retry before confirmation or without write permission", async
   expect(screen.queryByRole("button", { name: "Retry creation" })).toBeNull();
   view.unmount();
   view.cache.clear();
+});
+
+it("offers a fenced preparation retry for a failed managed upgrade on an existing instance", async () => {
+  http.GET.mockResolvedValue({
+    data: {
+      profile: "headless",
+      stage: "failed",
+      started_at: environment.created_at,
+      observed_at: environment.created_at,
+      ended_at: environment.created_at,
+      retryable: true,
+    },
+  });
+  http.POST.mockResolvedValue({ data: environment });
+  const failed = {
+    ...environment,
+    status: "starting",
+    failure: {
+      code: "envd_upgrade_failed",
+      message: "Inspect upgrade output",
+      permanent: true,
+    },
+  } as Schema["EnvironmentView"];
+  const view = mount(
+    <CreationProgress
+      environment={failed}
+      etag='"env_test:4"'
+      providerType="docker"
+    />,
+  );
+  await screen.findByText("Environment preparation needs attention");
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Inspect upgrade output",
+  );
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Retry preparation" }));
+  expect(http.POST).toHaveBeenCalledWith(
+    "/api/v1/environments/{environment_id}/retry-creation",
+    expect.objectContaining({ headers: { "If-Match": '"env_test:4"' } }),
+  );
+  view.unmount();
+  view.cache.clear();
+});
+
+it.each([false, true])(
+  "shows reconciliation only for an unsettled failure (permanent=%s)",
+  async (permanent) => {
+    http.GET.mockResolvedValue({
+      data: {
+        profile: "headless",
+        stage: permanent ? "failed" : "starting",
+        started_at: environment.created_at,
+        observed_at: environment.created_at,
+        retryable: false,
+      },
+    });
+    const failed = {
+      ...environment,
+      status: "starting",
+      failure: {
+        code: "provider_identity_changed",
+        message: "Replace the instance",
+        permanent,
+      },
+    } as Schema["EnvironmentView"];
+    const view = mount(<CreationProgress environment={failed} />);
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByText(/previous operation is still being reconciled/) !==
+        null,
+    ).toBe(!permanent);
+    expect(
+      screen.queryByRole("button", { name: "Retry preparation" }),
+    ).toBeNull();
+    view.unmount();
+    view.cache.clear();
+  },
+);
+
+it("omits automatic-install notices in preinstalled mode", () => {
+  for (const type of ["e2b", "modal", "daytona", "vercel", "sprites"]) {
+    expect(
+      creationNotice(type, {
+        execution: "envd_http",
+        envd_management: "preinstalled",
+      }),
+    ).toBeUndefined();
+  }
 });
 
 it("captures only on explicit view/refresh and releases preview URLs when closed", async () => {
@@ -148,6 +286,7 @@ it("captures only on explicit view/refresh and releases preview URLs when closed
 it("labels Modal build progress without changing the durable progress endpoint", async () => {
   http.GET.mockResolvedValue({
     data: {
+      profile: "desktop",
       stage: "building",
       started_at: environment.created_at,
       observed_at: environment.created_at,
@@ -166,6 +305,7 @@ it("labels Modal build progress without changing the durable progress endpoint",
 it("shows Sprites installation rather than a reusable template build", async () => {
   http.GET.mockResolvedValue({
     data: {
+      profile: "desktop",
       stage: "building",
       started_at: environment.created_at,
       observed_at: "2026-10-22T10:01:05Z",
@@ -201,3 +341,36 @@ it("disables unsupported instance previews without sending a request", async () 
   await userEvent.click(button);
   expect(http.GET).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["vercel", "headless", "Installing headless Envd"],
+  ["vercel", "desktop", "Installing Envd and desktop dependencies"],
+  ["e2b", "headless", "Installing headless Envd"],
+  ["modal", "headless", "Building headless Envd image in Modal"],
+  ["daytona", "headless", "Building headless Envd snapshot in Daytona"],
+])(
+  "renders %s %s preparation from the frozen server profile",
+  async (providerType, profile, label) => {
+    http.GET.mockResolvedValue({
+      data: {
+        profile,
+        stage: "building",
+        started_at: environment.created_at,
+        observed_at: environment.created_at,
+        retryable: false,
+      },
+    });
+    const view = mount(
+      <CreationProgress
+        environment={environment}
+        providerType={providerType}
+      />,
+    );
+    await screen.findByText(label);
+    expect(
+      screen.queryByText("Building desktop snapshot in Vercel"),
+    ).toBeNull();
+    view.unmount();
+    view.cache.clear();
+  },
+);

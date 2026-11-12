@@ -31,6 +31,12 @@ it("recognizes exact presets regardless of action ordering without widening cust
   expect(permissionPreset({ operations: [...readOnly].reverse() })).toBe(
     "read_only",
   );
+  const previousFullControl = fullControl.filter(
+    (action) => !/^environment\.computer\.(a11y|ax|uia|atspi)_/.test(action),
+  );
+  const savedCeiling = { operations: previousFullControl };
+  expect(permissionPreset(savedCeiling)).toBeUndefined();
+  expect(savedCeiling.operations).toEqual(previousFullControl);
   expect(permissionPreset(undefined)).toBeUndefined();
   expect(permissionPreset({})).toBeUndefined();
   expect(permissionPreset({ operations: [] })).toBeUndefined();

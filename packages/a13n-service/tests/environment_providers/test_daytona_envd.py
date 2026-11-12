@@ -16,17 +16,7 @@ from .test_native_http_providers import BACKENDS, NativeCloud
 @pytest.mark.anyio
 @pytest.mark.parametrize("fault", [None, "boot", "eip", "deletion", "lost_create"])
 async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault):
-    class Cloud(NativeCloud):
-        async def request(self, request):
-            if request.url.path.endswith("/process/execute"):
-                self.calls.append((request.method, request.url.path))
-                body = json.loads(request.content)
-                assert "socket.create_connection" in body["command"]
-                assert "8888" in body["command"] and body["timeout"] == 35
-                return httpx2.Response(200, json={"exitCode": 1 if fault == "boot" else 0, "result": ""})
-            return await super().request(request)
-
-    cloud = Cloud("daytona")
+    cloud = NativeCloud("daytona")
     cloud.lose_create_response = fault == "lost_create"
 
     def transport_init(self, key, url, token, timeout, **kwargs):
@@ -35,9 +25,11 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
 
     monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
     execution = AsyncMock()
-    if fault == "eip":
+    if fault in {"boot", "eip"}:
         execution.open.side_effect = provider_error(
-            "daytona", "provider_device_mismatch", EnvironmentProviderErrorCategory.INVALID
+            "daytona",
+            "envd_bootstrap_failed" if fault == "boot" else "provider_device_mismatch",
+            EnvironmentProviderErrorCategory.INVALID,
         )
     references = []
 
@@ -85,7 +77,7 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         assert json.loads(cloud.target["env"]["A13N_ENVD_CONFIG_JSON"]) == recipe.envd.overrides()
         assert cloud.target["env"]["A13N_DESKTOP"] == "true"
         assert cloud.target["env"]["A13N_DESKTOP_ACCESS"] == "false"
-        assert not any("computeruse" in path for _, path in cloud.calls)
+        assert not any("computeruse" in path or "/process/execute" in path for _, path in cloud.calls)
         assert references[0].state == state
         execution.check_ready.assert_awaited_with(frozenset({"computer"}))
         cloud.target["autoDeleteInterval"] = 0

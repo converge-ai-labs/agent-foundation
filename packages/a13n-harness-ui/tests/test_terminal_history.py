@@ -47,7 +47,7 @@ def test_restore_preserves_roles_and_omits_internal_guidance() -> None:
     renderer.transcript.close()
 
 
-@pytest.mark.parametrize("source", ["background_process", "async_subagent"])
+@pytest.mark.parametrize("source", ["background_process", "async_subagent", "envd_session"])
 def test_restored_lifecycle_notifications_are_activity_not_authored_input(source: str) -> None:
     renderer = StreamRenderer(Status())
     restore_transcript(

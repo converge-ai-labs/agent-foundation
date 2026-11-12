@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { BOT_THREAD_ID } from "../bot-identity";
 import {
   memo,
   createContext,
@@ -10,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ScrollArea } from "a13n-ui";
 import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
@@ -25,7 +27,6 @@ import {
   ToolActivity,
   toolLabel,
   toolSummary,
-  toolPhase,
 } from "./tool-call";
 import {
   activityKind,
@@ -36,10 +37,15 @@ import {
 } from "./tool-presentation";
 import { AnnotatedReply } from "./annotated-reply";
 import { MessageText } from "./message-text";
+import { MessageActionButton, MessageBranches } from "./message-branch";
+import { RecoveryText } from "./run-activity";
 import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 import { FailureNotice } from "./failure-notice";
 
+const TerminalTurn = createContext<
+  { id: string; time: string; notice?: ReactNode } | undefined
+>(undefined);
 const CurrentFailureRun = createContext<string | null | undefined>(undefined);
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
@@ -118,6 +124,7 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
+  timestamp?: DisplayBlock["timestamp"];
   id: string;
   subagentRunId?: string;
   anchor?: string;
@@ -196,13 +203,19 @@ function savedRows(
   groups: Map<Schema<"TranscriptPart">, ToolView[] | null>,
   continuation?: string | null,
   currentFailureRunId?: string | null,
+  threadId?: string,
 ): Row[] {
   const rows: Row[] = [];
   for (const entry of entries) {
     const identity = savedEntryIdentity(entry);
     const start = rows.length;
     entry.parts.forEach((part, index) => {
-      if (part.metadata?.display === false || part.kind === "system") return;
+      if (
+        part.metadata?.display === false ||
+        part.kind === "system" ||
+        (threadId === BOT_THREAD_ID && part.tool_name === "finish_silently")
+      )
+        return;
       // Sibling parts can grow at later checkpoints without replacing this part.
       const id = `saved:${savedEntryIdentity({ ...entry, parts: [part] })}:${index}`;
       const context = part.metadata?.["a13n.context"];
@@ -273,6 +286,7 @@ function savedRows(
       });
     }
     for (let index = start; index < rows.length; index++) {
+      rows[index].timestamp = entry.timestamp ?? undefined;
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
     }
@@ -282,14 +296,22 @@ function savedRows(
   return rows;
 }
 
-function liveRows(blocks: DisplayBlock[], running = false): Row[] {
+function liveRows(
+  blocks: DisplayBlock[],
+  running = false,
+  threadId?: string,
+): Row[] {
   const rows: Row[] = [];
   let previousChild: string | undefined;
   for (const block of blocks) {
     if (
       block.diagnostic ||
       block.kind === "task" ||
-      block.metadata?.display === false
+      block.metadata?.display === false ||
+      (threadId === BOT_THREAD_ID &&
+        block.kind === "tool" &&
+        block.name === "finish_silently" &&
+        !block.subagentRunId)
     )
       continue;
     const firstRow = rows.length;
@@ -381,8 +403,10 @@ function liveRows(blocks: DisplayBlock[], running = false): Row[] {
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
     }
-    for (let index = firstRow; index < rows.length; index++)
+    for (let index = firstRow; index < rows.length; index++) {
       rows[index].subagentRunId = block.subagentRunId;
+      rows[index].timestamp = block.timestamp;
+    }
   }
   return rows;
 }
@@ -508,6 +532,7 @@ function Reasoning({
   }[];
 }) {
   const { t } = useTranslation();
+  const running = segments.some((part) => part.running);
   const duration = executionTime(
     segments.every((segment) => segment.durationMs != null)
       ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
@@ -520,10 +545,8 @@ function Reasoning({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary
-        data-running-label={segments.some((part) => part.running) || undefined}
-      >
-        {t("Thought")}
+      <summary data-running-label={running || undefined}>
+        {running ? t("Thinking", { context: "active" }) : t("Thought")}
         {duration && (
           <span className={styles.executionDuration}>
             {t("for {{duration}}", { duration })}
@@ -531,15 +554,21 @@ function Reasoning({
         )}
         <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
       </summary>
-      <section
-        className={styles.reasoningBody}
-        aria-label={t("Thought content")}
-        tabIndex={0}
+      <ScrollArea
+        autoHeight
+        scrollbarGutter
+        overscrollContain
+        className={`${styles.reasoningBody} ${styles.innerReader}`}
+        viewportProps={{
+          role: "region",
+          "aria-label": t("Thought content"),
+          tabIndex: 0,
+        }}
       >
         {segments.map((segment) => (
           <MessageText key={segment.id} text={segment.text} />
         ))}
-      </section>
+      </ScrollArea>
     </details>
   );
 }
@@ -549,13 +578,23 @@ function Rows({
   threadId,
   continuation = false,
   output = [],
+  turn,
+  messageActions = false,
 }: {
   rows: Row[];
   threadId?: string;
   continuation?: boolean;
+  turn?: Schema<"TranscriptTurn">;
+  messageActions?: boolean;
   output?: Extract<Row, { kind: "assistant" }>[];
 }) {
   const { t } = useTranslation();
+  const actions = useContext(MessageBranches);
+  const key =
+    turn?.turn_id.startsWith("entry:") && turn.timestamp != null
+      ? `${turn.turn_id}@${turn.timestamp}`
+      : turn?.turn_id;
+  const point = key && actions?.points?.[key];
   const notificationTitle = useNotificationTitle();
   const copyText = output
     .map((row) => row.text)
@@ -573,8 +612,16 @@ function Rows({
     >
       {row.kind === "input" ? (
         <InputContent
+          branchKey={
+            messageActions &&
+            !row.subagentRunId &&
+            row.position === turn?.input_position
+              ? (key ?? "")
+              : undefined
+          }
           threadId={threadId}
           parts={row.parts}
+          timestamp={row.timestamp}
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
         />
@@ -612,6 +659,24 @@ function Rows({
           )}
           {row === output.at(-1) && copyText.trim() && (
             <CopyMessage
+              action={
+                messageActions &&
+                actions &&
+                !row.subagentRunId && (
+                  <MessageActionButton
+                    kind="branch"
+                    disabled={
+                      !point || !point.branch || actions.pending || !!row.live
+                    }
+                    onClick={() => {
+                      if (key) void actions.create(key);
+                    }}
+                  />
+                )
+              }
+              timestamp={
+                turn?.final_position != null ? row.timestamp : undefined
+              }
               text={copyText}
               truncated={output.some((part) => part.truncated)}
             />
@@ -668,6 +733,7 @@ export const SavedEntry = memo(function SavedEntry({
           toolGroups ?? savedToolGroups([entry]),
           undefined,
           currentFailureRunId,
+          threadId,
         )}
         threadId={threadId}
         continuation={continuation}
@@ -680,6 +746,32 @@ export const SavedEntry = memo(function SavedEntry({
   );
 });
 
+// Intentional publications use the same message rendering as native history.
+// Host heartbeat and working output stay in execution history rather than chat.
+export function PublishedTranscript({
+  messages,
+}: {
+  messages: { message_id: string; role: "user" | "assistant"; text: string }[];
+}) {
+  return messages.map((message) => {
+    const row: Row =
+      message.role === "user"
+        ? {
+            id: message.message_id,
+            kind: "input",
+            parts: [{ kind: "text", text: message.text }],
+          }
+        : { id: message.message_id, kind: "assistant", text: message.text };
+    return (
+      <Rows
+        key={row.id}
+        rows={[row]}
+        output={row.kind === "assistant" ? [row] : []}
+      />
+    );
+  });
+}
+
 export function ConversationTranscript({
   entries,
   blocks,
@@ -690,17 +782,17 @@ export function ConversationTranscript({
   turns = [],
   loadDetails = false,
   onSavedEntries,
-  recovery,
   pending,
   activity,
   currentFailureRunId,
+  terminalTurn,
   running = false,
 }: {
+  terminalTurn?: { id: string; time: string; notice?: ReactNode };
   running?: boolean;
   currentFailureRunId?: string | null;
   activity?: ReactNode;
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   turns?: Schema<"TranscriptTurn">[];
   loadDetails?: boolean;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
@@ -718,10 +810,11 @@ export function ConversationTranscript({
         savedToolGroups(entries),
         continuation,
         currentFailureRunId,
+        threadId,
       ),
-    [entries, continuation, currentFailureRunId],
+    [entries, continuation, currentFailureRunId, threadId],
   );
-  const live = liveRows(blocks, running);
+  const live = liveRows(blocks, running, threadId);
   const savedIds = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
   );
@@ -754,22 +847,23 @@ export function ConversationTranscript({
       });
   }
   return (
-    <CurrentFailureRun value={currentFailureRunId}>
-      <TurnRows
-        rows={rows}
-        entries={entries}
-        turns={turns}
-        localInputs={localInputs}
-        threadId={threadId}
-        loadDetails={loadDetails}
-        onSavedEntries={onSavedEntries}
-        continuation={continuation}
-        recovery={recovery}
-        pending={pending}
-      />
-      {activity}
-      {gap && <GapNotice />}
-    </CurrentFailureRun>
+    <TerminalTurn value={terminalTurn}>
+      <CurrentFailureRun value={currentFailureRunId}>
+        <TurnRows
+          rows={rows}
+          entries={entries}
+          turns={turns}
+          localInputs={localInputs}
+          threadId={threadId}
+          loadDetails={loadDetails}
+          onSavedEntries={onSavedEntries}
+          continuation={continuation}
+          pending={pending}
+        />
+        {activity}
+        {gap && <GapNotice />}
+      </CurrentFailureRun>
+    </TerminalTurn>
   );
 }
 
@@ -782,11 +876,9 @@ function TurnRows({
   loadDetails,
   onSavedEntries,
   continuation,
-  recovery,
   pending,
 }: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
   turns: Schema<"TranscriptTurn">[];
@@ -870,14 +962,14 @@ function TurnRows({
     }
     groups.at(-1)!.rows.push(row);
   }
-  if (!groups.length && (recovery || pending))
+  if (!groups.length && pending)
     groups.push({
       id: "ungrouped",
       presentationKey: "turn:ungrouped",
       rows: [],
     });
   return groups.map((group, index) =>
-    group.id === "ungrouped" && !recovery && !pending ? (
+    group.id === "ungrouped" && !pending ? (
       <Rows
         key={group.presentationKey}
         rows={questionRows(group.rows)}
@@ -887,7 +979,6 @@ function TurnRows({
       <Turn
         key={group.presentationKey}
         {...group}
-        recovery={index === groups.length - 1 ? recovery : undefined}
         pending={index === groups.length - 1 ? pending : undefined}
         entries={group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries}
         threadId={threadId}
@@ -906,7 +997,6 @@ function TurnRows({
 
 function Turn(props: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -934,7 +1024,6 @@ function TurnHistory({
 }: {
   pending?: PendingInteraction;
   id: string;
-  recovery?: FocusDisplay["recovery"];
   turn?: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
   rows: Row[];
@@ -972,8 +1061,9 @@ function TurnHistory({
         savedToolGroups(loaded),
         continuation,
         currentFailureRunId,
+        props.threadId,
       ),
-    [loaded, continuation, currentFailureRunId],
+    [loaded, continuation, currentFailureRunId, props.threadId],
   );
   const savedInputs = new Set(
     saved.filter((row) => row.kind === "input").map((row) => row.id),
@@ -1076,11 +1166,9 @@ function TurnSegments({
   retry,
   loading = false,
   failed = false,
-  recovery,
   pending,
 }: {
   pending?: PendingInteraction;
-  recovery?: FocusDisplay["recovery"];
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1110,7 +1198,22 @@ function TurnSegments({
   const complete =
     turn?.final_position != null &&
     rows.every((row) => row.position !== undefined);
-  const outputPosition = turn?.output_position ?? turn?.final_position;
+  const stopped = useContext(TerminalTurn);
+  const stoppedAt =
+    stopped && stopped.id === turn?.turn_id ? stopped.time : undefined;
+  const actions = useContext(MessageBranches);
+  const lastProse =
+    stoppedAt && !missing
+      ? rows.findLast(
+          (row) =>
+            row.kind === "assistant" &&
+            !row.subagentRunId &&
+            !row.live &&
+            row.text.trim(),
+        )
+      : undefined;
+  const outputPosition =
+    lastProse?.position ?? turn?.output_position ?? turn?.final_position;
   const output = rows.flatMap((row) =>
     outputPosition != null &&
     row.kind === "assistant" &&
@@ -1200,18 +1303,6 @@ function TurnSegments({
       mountedExecution.current.has(segment.id) ||
       segment.rows.some((row) => row.position === undefined),
   );
-  let recoverySegment = visibleSegments.findLast(
-    (segment) => segment.kind === "execution",
-  );
-  if (recovery && !recoverySegment) {
-    // Use the next execution boundary so arriving tools reuse an open reader.
-    recoverySegment = {
-      id: `${boundary}:execution:${textIndex}`,
-      kind: "execution",
-      rows: [],
-    };
-    visibleSegments.push(recoverySegment);
-  }
   useLayoutEffect(() => {
     mountedExecution.current = new Set(
       visibleSegments
@@ -1249,7 +1340,9 @@ function TurnSegments({
               key={segment.id}
               rows={segment.rows}
               threadId={threadId}
-              output={output}
+              output={stoppedAt ? [] : output}
+              turn={turn}
+              messageActions
             />
           );
         return (
@@ -1264,10 +1357,28 @@ function TurnSegments({
                 ? turn?.duration_ms
                 : undefined
             }
-            recovery={segment === recoverySegment ? recovery : undefined}
           />
         );
       })}
+      {turn && stoppedAt && (
+        <div className={styles.assistantMessage}>
+          {stopped?.notice}
+          <CopyMessage
+            timestamp={stoppedAt}
+            text={output.map((row) => row.text).join("\n\n")}
+            truncated={output.some((row) => row.truncated)}
+            action={
+              actions?.points?.[turn.turn_id]?.branch && (
+                <MessageActionButton
+                  kind="branch"
+                  disabled={actions.pending}
+                  onClick={() => void actions.create(turn.turn_id)}
+                />
+              )
+            }
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -1277,47 +1388,97 @@ function ExecutionSegment({
   threadId,
   complete,
   durationMs,
-  recovery,
 }: {
   durationMs?: number | null;
-  recovery?: FocusDisplay["recovery"];
   rows: Row[];
   threadId: string;
   complete: boolean;
 }) {
   const { t } = useTranslation();
-  const latest = rows.at(-1);
-  const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
-  const toolInfo = latestTool ? describeTool(latestTool) : undefined;
   const duration = executionTime(durationMs);
-  const preview = complete
-    ? duration
-      ? t("Worked for {{duration}}", { duration })
-      : t("Worked")
-    : toolInfo
-      ? `${[toolLabel(toolInfo, t), toolSummary(toolInfo, t)].filter(Boolean).join(" ")}${toolInfo.showPhase ? ` - ${toolPhase(toolInfo.phase, t)}` : ""}`
-      : latest?.kind === "thinking"
-        ? t("Thought")
-        : t("View the available execution steps");
-  return (
-    <ExecutionDetails
-      complete={complete}
-      preview={preview}
-      running={
-        !complete &&
-        (toolInfo?.running ||
-          (latest?.kind === "thinking" &&
-            latest.segments.some((part) => part.running)))
+  const { preview, running } = complete
+    ? {
+        preview: duration
+          ? t("Worked for {{duration}}", { duration })
+          : t("Worked"),
+        running: false,
       }
-    >
+    : executionSummary(rows, t);
+  return (
+    <ExecutionDetails complete={complete} preview={preview} running={running}>
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
           <Rows rows={rows} threadId={threadId} continuation />
-          <RecoveryNotice recovery={recovery} />
         </ExecutionReader>
       )}
     </ExecutionDetails>
   );
+}
+
+function executionSummary(
+  rows: Row[],
+  t: ReturnType<typeof useTranslation>["t"],
+) {
+  const counts = new Map<string, Set<string>>();
+  let activeStep: string | undefined;
+  let thinking = false;
+  let notices = 0;
+  const otherActivities = new Set<string>();
+  for (const row of rows) {
+    if (row.kind === "tools") {
+      for (const tool of row.tools) {
+        const info = describeTool(tool);
+        if (info.running)
+          activeStep = [toolLabel(info, t), toolSummary(info, t)]
+            .filter(Boolean)
+            .join(" ");
+        const action =
+          info.kind === "file"
+            ? "Read {{count}} files"
+            : info.kind === "edit"
+              ? "Edit {{count}} files"
+              : tool.name === "shell_exec"
+                ? "Run {{count}} commands"
+                : info.kind === "search"
+                  ? "Run {{count}} searches"
+                  : "Call {{count}} tools";
+        const id =
+          (info.kind === "file" || info.kind === "edit") && info.path
+            ? info.path
+            : tool.id;
+        const members = counts.get(action);
+        if (members) members.add(id);
+        else counts.set(action, new Set([id]));
+      }
+    } else if (row.kind === "thinking") {
+      thinking = true;
+      if (row.segments.some((part) => part.running))
+        activeStep = t("Thinking", { context: "active" });
+    } else if (row.kind === "notifications") notices += row.notices.length;
+    else if (row.kind === "context")
+      otherActivities.add(
+        row.context === "handoff" ? t("Summary") : t("Compact Summary"),
+      );
+    else if (
+      row.kind === "origin" ||
+      (row.kind === "activity" && row.childName)
+    )
+      otherActivities.add(t("Subagents"));
+    else if (row.kind === "activity")
+      otherActivities.add(row.name || t("Activity"));
+  }
+  if (activeStep) return { preview: activeStep, running: true };
+  const labels = Array.from(counts, ([action, members]) =>
+    t(action, { count: members.size }),
+  );
+  labels.push(...otherActivities);
+  if (notices) labels.push(t("System update count", { count: notices }));
+  const preview = labels.length
+    ? labels.join(", ")
+    : thinking
+      ? t("Thought")
+      : t("View the available execution steps");
+  return { preview, running: false };
 }
 
 function ExecutionReader({
@@ -1415,7 +1576,6 @@ export function RecoveryNotice({
 }: {
   recovery: FocusDisplay["recovery"];
 }) {
-  const { t } = useTranslation();
   if (!recovery) return null;
   return (
     <div
@@ -1425,12 +1585,7 @@ export function RecoveryNotice({
     >
       <ArrowClockwise aria-hidden="true" />
       <span>
-        {recovery.state === "retrying"
-          ? t("Reconnecting to model…")
-          : recovery.state === "resumed"
-            ? t("Model connection restored")
-            : t("Model reconnection ended")}
-        {` - ${t("Retry count", { count: recovery.retries })}`}
+        <RecoveryText recovery={recovery} />
       </span>
     </div>
   );
@@ -1450,16 +1605,18 @@ function GapNotice() {
 export function LiveOutput({
   blocks,
   gap,
+  running = false,
   threadId,
   label,
 }: {
   label?: string;
   blocks: DisplayBlock[];
   gap: boolean;
+  running?: boolean;
   threadId?: string;
 }) {
   const { t } = useTranslation();
-  const rows = liveRows(blocks);
+  const rows = liveRows(blocks, running, threadId);
   return (
     <section
       className={styles.liveOutput}

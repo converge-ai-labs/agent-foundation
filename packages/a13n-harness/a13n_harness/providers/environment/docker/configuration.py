@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from a13n_harness.environment.envd_settings import EnvdLimits, EnvdSettings
 from a13n_harness.environment.models import EnvironmentTargetState
@@ -153,6 +153,26 @@ class DockerEnvironmentConfiguration(BaseModel):
         exclude_if=lambda value: not value.overrides(),
         description="Envd startup settings. Applies to new instances; existing instances keep their frozen settings.",
     )
+
+    @field_validator("envd", mode="before")
+    @classmethod
+    def validate_envd_settings(cls, value: Any, info: ValidationInfo) -> Any:
+        if info.data.get("execution", "native") == "native":
+            return value
+        defaults = {
+            "max_file_bytes": info.data.get("max_file_bytes", cls.model_fields["max_file_bytes"].default),
+            "max_output_preview_bytes": info.data.get(
+                "max_output_preview_bytes", cls.model_fields["max_output_preview_bytes"].default
+            ),
+            "max_output_bytes_per_stream": info.data.get(
+                "max_output_bytes_per_stream", cls.model_fields["max_output_bytes_per_stream"].default
+            ),
+            "max_spool_bytes": info.data.get("max_spool_bytes", cls.model_fields["max_spool_bytes"].default),
+            "max_processes": info.data.get(
+                "max_concurrent_processes", cls.model_fields["max_concurrent_processes"].default
+            ),
+        }
+        return EnvdSettings.model_validate(value, context={"envd_limit_defaults": defaults})
 
     def launch_limits(self) -> dict[str, int]:
         limits = {

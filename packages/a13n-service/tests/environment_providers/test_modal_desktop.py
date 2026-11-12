@@ -14,7 +14,9 @@ from a13n_service.providers.environments.modal import management as module
 
 
 def management(*, assistance=True, snapshot=False):
-    recipe = ModalRecipe(image="im-envd", desktop=True, desktop_assistance=assistance)
+    recipe = ModalRecipe(
+        image="im-envd", startup_command=["/usr/local/bin/start-envd"], desktop=True, desktop_assistance=assistance
+    )
     state = EnvironmentState(
         provider_key="modal",
         state_version="1",
@@ -115,7 +117,7 @@ async def test_readiness_requires_actual_computer_and_closes_connection(monkeypa
     await manager._check_envd()
     assert execution.open.await_count == execution.close.await_count == 2
     execution.check_ready.assert_awaited_with(frozenset({"computer"}))
-    command.assert_awaited_once()
+    command.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -198,3 +200,17 @@ async def test_service_policy_denies_discovered_envd_before_reading_token(monkey
     assert failure.value.code == "envd_endpoint_denied"
     token.assert_not_awaited()
     sandbox.detach.aio.assert_awaited()
+
+
+@pytest.mark.anyio
+async def test_preinstalled_allocation_preserves_the_authored_startup_argv(monkeypatch):
+    import modal
+
+    manage = management(assistance=False)
+    create = AsyncMock(return_value=SimpleNamespace(object_id="sb-authored"))
+    monkeypatch.setattr(manage, "connection", AsyncMock(return_value=object()))
+    monkeypatch.setattr(modal.App.lookup, "aio", AsyncMock(return_value=object()))
+    monkeypatch.setattr(modal.Image, "from_id", lambda *args, **kwargs: object())
+    monkeypatch.setattr(modal.Sandbox.create, "aio", create)
+    await manage._allocate(None)
+    assert create.call_args.args == ("/usr/local/bin/start-envd",)

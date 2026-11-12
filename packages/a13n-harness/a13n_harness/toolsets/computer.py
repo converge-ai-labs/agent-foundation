@@ -7,7 +7,7 @@ from collections import OrderedDict
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
-from pydantic_ai import BinaryContent, ToolReturn
+from pydantic_ai import BinaryContent, Tool, ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
@@ -31,6 +31,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import environment_failure
+from .accessibility import AccessibilityToolset
 
 _ComputerAlias = Annotated[
     str | None,
@@ -56,6 +57,12 @@ class ComputerToolset:
         self._coordinate_space = ComputerConfiguration(coordinate_space=coordinate_space).coordinate_space
         self._environment = environment
         self._observations: OrderedDict[str, ComputerObservation] = OrderedDict()
+        self._accessibility = AccessibilityToolset(
+            environment,
+            observation=self._observation,
+            image_point=self._point,
+            observation_reference=self._observation_reference,
+        )
 
     def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         actions = frozenset(
@@ -74,27 +81,79 @@ class ComputerToolset:
             (self.computer_read_clipboard, EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
             (self.computer_write_clipboard, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
         )
-        return InstructionFunctionToolset(
-            tools=[
-                HarnessTool(
-                    method,
-                    harness_metadata=HarnessToolMetadata(
-                        tool_id=action.value,
-                        effects=frozenset({"read"})
-                        if read_only
-                        else frozenset({"read", "write", "delete", "execute", "external_communication"}),
-                        credential_audiences=(),
-                        idempotency="read_only" if read_only else "none",
-                        output_policy=ToolOutputPolicy(
-                            max_inline_bytes=65536, max_output_bytes=5 * 1024 * 1024, overflow="fail"
-                        ),
+        tools: list[Tool[AgentContext]] = [
+            HarnessTool(
+                method,
+                harness_metadata=HarnessToolMetadata(
+                    tool_id=action.value,
+                    effects=frozenset({"read"})
+                    if read_only
+                    else frozenset({"read", "write", "delete", "execute", "external_communication"}),
+                    credential_audiences=(),
+                    idempotency="read_only" if read_only else "none",
+                    output_policy=ToolOutputPolicy(
+                        max_inline_bytes=65536, max_output_bytes=5 * 1024 * 1024, overflow="fail"
                     ),
-                )
-                for method, action, read_only in methods
-                if action in actions and (allowed_names is None or method.__name__ in allowed_names)
-            ],
+                ),
+            )
+            for method, action, read_only in methods
+            if action in actions and (allowed_names is None or method.__name__ in allowed_names)
+        ]
+        tools.extend(self._accessibility.tools(allowed_names=allowed_names))
+        names = {tool.name for tool in tools}
+        sections = [
+            section
+            for section, selected in (
+                ("computer_describe", {"computer_describe"}),
+                (
+                    "computer_observe",
+                    {
+                        "computer_observe",
+                        "computer_zoom",
+                        "computer_click",
+                        "computer_move",
+                        "computer_drag",
+                        "computer_scroll",
+                    },
+                ),
+                ("computer_zoom", {"computer_zoom"}),
+                ("computer_clipboard", {"computer_read_clipboard", "computer_write_clipboard"}),
+                (
+                    "computer_input",
+                    {method.__name__ for method, _, read_only in methods if not read_only}
+                    - {"computer_write_clipboard"},
+                ),
+                (
+                    "computer_accessibility",
+                    {name for name in names if name.startswith("computer_accessibility_")}
+                    | {"computer_ax", "computer_uia", "computer_atspi"},
+                ),
+                ("computer_accessibility_mutation", {"computer_ax", "computer_uia", "computer_atspi"}),
+                (
+                    "computer_uia",
+                    {"computer_uia"} if EnvironmentAction.COMPUTER_UIA_SELECTION_SELECT in actions else set(),
+                ),
+                (
+                    "computer_atspi",
+                    {"computer_atspi"} if EnvironmentAction.COMPUTER_ATSPI_SELECTION_ADD_CHILD in actions else set(),
+                ),
+            )
+            if names & selected
+        ]
+        instructions = [tool_instruction("environment-computer", *sections)] if tools else []
+        if names & {
+            "computer_observe",
+            "computer_zoom",
+            "computer_click",
+            "computer_move",
+            "computer_drag",
+            "computer_scroll",
+        }:
+            instructions.append(self._coordinate_instruction())
+        return InstructionFunctionToolset(
+            tools=tools,
             id="a13n-computer-tools",
-            instructions=[tool_instruction("environment-computer"), self._coordinate_instruction()],
+            instructions=instructions,
         )
 
     async def computer_describe(self, *, alias: _ComputerAlias = None) -> Any:
@@ -134,6 +193,7 @@ class ComputerToolset:
             )
             reference = f"obs-{secrets.token_hex(4)}"
             self._observations[reference] = screenshot.observation
+            self._accessibility.register_observation(screenshot.observation, selected_alias)
             while len(self._observations) > 16:
                 self._observations.popitem(last=False)
             return ToolReturn(
@@ -395,6 +455,12 @@ class ComputerToolset:
                 },
             )
         return observation
+
+    def _observation_reference(self, native_id: str) -> str:
+        for reference, observation in self._observations.items():
+            if observation.observation_id == native_id:
+                return reference
+        raise EnvironmentError("Source screenshot was evicted.", code="environment_not_found")
 
     async def _execute(self, request: ComputerInput, *, alias: _ComputerAlias = None) -> Any:
         try:

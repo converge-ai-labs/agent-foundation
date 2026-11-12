@@ -1,9 +1,2760 @@
 {
   "info": {
     "title": "Environment Interaction Protocol",
-    "version": "0.4"
+    "version": "0.5"
   },
   "methods": [
+    {
+      "name": "computer.a11y_describe",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yDescribeParams/properties/context"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityDescription"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yDescribeParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_find",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/node"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/limits"
+          }
+        },
+        {
+          "name": "view",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/view"
+          }
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/cursor"
+          }
+        },
+        {
+          "name": "query",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yFindParams/properties/query"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityTree"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yFindParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_inspect",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/node"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/limits"
+          }
+        },
+        {
+          "name": "view",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/view"
+          }
+        },
+        {
+          "name": "cursor",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/cursor"
+          }
+        },
+        {
+          "name": "projection_observation_id",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yInspectParams/properties/projection_observation_id"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityTree"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yInspectParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_range",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeParams/properties/node"
+          }
+        },
+        {
+          "name": "query",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeParams/properties/query"
+          }
+        },
+        {
+          "name": "source",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeParams/properties/source"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeParams/properties/limits"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityRangeResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yRangeParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_range_read",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeReadParams/properties/context"
+          }
+        },
+        {
+          "name": "reference",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeReadParams/properties/reference"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeReadParams/properties/request"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRangeReadParams/properties/limits"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityRangeResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yRangeReadParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_read",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yReadParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yReadParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yReadParams/properties/request"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yReadParams/properties/limits"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityContent"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yReadParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.a11y_roots",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRootsParams/properties/context"
+          }
+        },
+        {
+          "name": "scope",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRootsParams/properties/scope"
+          }
+        },
+        {
+          "name": "limits",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerA11yRootsParams/properties/limits"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityTree"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerA11yRootsParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_caret_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiCaretSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiCaretSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiCaretSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiCaretSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiCaretSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_component_extents_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentExtentsSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentExtentsSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentExtentsSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentExtentsSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiComponentExtentsSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_component_position_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentPositionSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentPositionSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentPositionSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentPositionSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiComponentPositionSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_component_size_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentSizeSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentSizeSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentSizeSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiComponentSizeSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiComponentSizeSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_do_action",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDoActionParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDoActionParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDoActionParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDoActionParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiDoActionParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_document_selections_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDocumentSelectionsSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDocumentSelectionsSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDocumentSelectionsSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiDocumentSelectionsSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiDocumentSelectionsSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_focus",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiFocusParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiFocusParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiFocusParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiFocusParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiFocusParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_range_scroll_to",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_range_scroll_to_point",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToPointParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToPointParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToPointParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToPointParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiRangeScrollToPointParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_scroll_to",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiScrollToParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_scroll_to_point",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToPointParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToPointParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToPointParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiScrollToPointParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiScrollToPointParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_selection_add_child",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAddChildParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAddChildParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAddChildParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAddChildParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiSelectionAddChildParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_selection_all",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAllParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAllParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAllParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionAllParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiSelectionAllParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_selection_clear",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionClearParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionClearParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionClearParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionClearParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiSelectionClearParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_selection_remove_child",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveChildParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveChildParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveChildParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveChildParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveChildParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_selection_remove_selected",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveSelectedParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveSelectedParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveSelectedParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveSelectedParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiSelectionRemoveSelectedParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_table_column_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTableColumnSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_table_column_unselect",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnUnselectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnUnselectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnUnselectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableColumnUnselectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTableColumnUnselectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_table_row_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTableRowSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_table_row_unselect",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowUnselectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowUnselectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowUnselectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTableRowUnselectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTableRowUnselectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_contents_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextContentsSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextContentsSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextContentsSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextContentsSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextContentsSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_copy",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCopyParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCopyParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCopyParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCopyParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextCopyParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_cut",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCutParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCutParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCutParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextCutParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextCutParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_delete",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextDeleteParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextDeleteParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextDeleteParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextDeleteParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextDeleteParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_insert",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextInsertParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextInsertParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextInsertParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextInsertParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextInsertParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_paste",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextPasteParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextPasteParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextPasteParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextPasteParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextPasteParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_selection_add",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionAddParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionAddParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionAddParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionAddParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionAddParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_selection_remove",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionRemoveParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionRemoveParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionRemoveParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionRemoveParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionRemoveParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_text_selection_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiTextSelectionSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.atspi_value_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiValueSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiValueSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiValueSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAtspiValueSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAtspiValueSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_disclosing_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXDisclosingSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXDisclosingSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXDisclosingSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXDisclosingSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXDisclosingSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_expanded_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXExpandedSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXExpandedSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXExpandedSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXExpandedSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXExpandedSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_focus",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXFocusParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_focused_window_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusedWindowSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusedWindowSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusedWindowSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXFocusedWindowSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXFocusedWindowSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_main_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMainSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMainSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMainSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMainSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXMainSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_minimized_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMinimizedSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMinimizedSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMinimizedSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXMinimizedSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXMinimizedSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_perform_action",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPerformActionParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPerformActionParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPerformActionParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPerformActionParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXPerformActionParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_position_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPositionSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPositionSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPositionSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXPositionSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXPositionSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_selected_children_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedChildrenSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedChildrenSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedChildrenSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedChildrenSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSelectedChildrenSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_selected_columns_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedColumnsSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedColumnsSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedColumnsSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedColumnsSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSelectedColumnsSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_selected_rows_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedRowsSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedRowsSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedRowsSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedRowsSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSelectedRowsSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_selected_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSelectedSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_selected_text_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedTextSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedTextSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedTextSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSelectedTextSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSelectedTextSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_size_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSizeSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSizeSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSizeSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXSizeSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXSizeSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_text_range_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangeSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangeSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangeSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangeSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXTextRangeSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_text_ranges_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangesSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangesSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangesSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXTextRangesSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXTextRangesSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_value_number_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueNumberSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueNumberSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueNumberSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueNumberSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXValueNumberSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_value_string_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueStringSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueStringSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueStringSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXValueStringSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXValueStringSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.ax_visible_text_range_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXVisibleTextRangeSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXVisibleTextRangeSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXVisibleTextRangeSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerAXVisibleTextRangeSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerAXVisibleTextRangeSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
     {
       "name": "computer.click",
       "paramStructure": "by-name",
@@ -433,6 +3184,1574 @@
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ComputerTypeTextParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_collapse",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIACollapseParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIACollapseParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIACollapseParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIACollapseParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIACollapseParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_dock_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIADockSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIADockSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIADockSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIADockSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIADockSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_expand",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAExpandParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAExpandParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAExpandParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAExpandParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAExpandParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_focus",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAFocusParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAFocusParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAFocusParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAFocusParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAFocusParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_invoke",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAInvokeParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAInvokeParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAInvokeParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAInvokeParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAInvokeParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_legacy_default_action",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyDefaultActionParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyDefaultActionParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyDefaultActionParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyDefaultActionParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIALegacyDefaultActionParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_legacy_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacySelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacySelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacySelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacySelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIALegacySelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_legacy_value_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyValueSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyValueSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyValueSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIALegacyValueSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIALegacyValueSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_add_selection",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeAddSelectionParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeAddSelectionParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeAddSelectionParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeAddSelectionParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeAddSelectionParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_remove_selection",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeRemoveSelectionParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeRemoveSelectionParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeRemoveSelectionParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeRemoveSelectionParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeRemoveSelectionParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_scroll_into_view",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeScrollIntoViewParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeScrollIntoViewParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeScrollIntoViewParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeScrollIntoViewParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeScrollIntoViewParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_show_context_menu",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeShowContextMenuParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeShowContextMenuParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeShowContextMenuParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeShowContextMenuParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeShowContextMenuParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_range_value_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeValueSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeValueSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeValueSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARangeValueSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARangeValueSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_realize",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARealizeParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARealizeParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARealizeParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIARealizeParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIARealizeParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_scroll_amount",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollAmountParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollAmountParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollAmountParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollAmountParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAScrollAmountParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_scroll_into_view",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollIntoViewParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollIntoViewParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollIntoViewParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollIntoViewParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAScrollIntoViewParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_scroll_percent",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollPercentParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollPercentParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollPercentParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAScrollPercentParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAScrollPercentParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_selection_add",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionAddParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionAddParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionAddParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionAddParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIASelectionAddParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_selection_remove",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionRemoveParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionRemoveParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionRemoveParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionRemoveParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIASelectionRemoveParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_selection_select",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionSelectParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionSelectParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionSelectParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIASelectionSelectParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIASelectionSelectParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_show_context_menu",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAShowContextMenuParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAShowContextMenuParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAShowContextMenuParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAShowContextMenuParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAShowContextMenuParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_toggle",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAToggleParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAToggleParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAToggleParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAToggleParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAToggleParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_transform_move",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformMoveParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformMoveParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformMoveParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformMoveParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIATransformMoveParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_transform_resize",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformResizeParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformResizeParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformResizeParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformResizeParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIATransformResizeParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_transform_rotate",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformRotateParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformRotateParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformRotateParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformRotateParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIATransformRotateParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_transform_zoom",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIATransformZoomParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_transform_zoom_unit",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomUnitParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomUnitParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomUnitParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIATransformZoomUnitParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIATransformZoomUnitParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_value_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAValueSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAValueSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAValueSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAValueSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAValueSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_view_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAViewSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAViewSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAViewSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAViewSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAViewSetParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_window_close",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowCloseParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowCloseParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowCloseParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowCloseParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAWindowCloseParams"
+      },
+      "x-eip-replay-class": "terminal_evidence",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "computer.uia_window_state_set",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowStateSetParams/properties/context"
+          }
+        },
+        {
+          "name": "node",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowStateSetParams/properties/node"
+          }
+        },
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowStateSetParams/properties/request"
+          }
+        },
+        {
+          "name": "readback",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/ComputerUIAWindowStateSetParams/properties/readback"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/AccessibilityMutationResult"
+        }
+      },
+      "x-eip-error-family": "resource",
+      "x-eip-introduced": "0.5",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/ComputerUIAWindowStateSetParams"
       },
       "x-eip-replay-class": "terminal_evidence",
       "x-eip-transfer-action": null,

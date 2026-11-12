@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationInfo,
+    model_serializer,
+    model_validator,
+)
 
 # Resource accounting in the supported 64-bit daemon uses usize::MAX >> 3.
 MAX_RESOURCE = (2**64 - 1) >> 3
@@ -64,12 +72,6 @@ RESERVATIONS = (
 class EnvdLimits(_Overrides):
     """Daemon budgets, with the same defaults and constraints as config.rs."""
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "x-envd-reservations": [list(pair) for pair in RESERVATIONS if pair[0] != "max_concurrent_operations"]
-        }
-    )
-
     max_device_spool_bytes: int = budget(4 * 1024 * 1024 * 1024, "capacity", "bytes")
     max_device_spool_objects: int = budget(65_536, "capacity", "count")
     max_device_staged_file_bytes: int = budget(32 * 1024 * 1024 * 1024, "capacity", "bytes")
@@ -104,17 +106,21 @@ class EnvdLimits(_Overrides):
     max_file_transfer_duration_ms: int = budget(2 * 60 * 60 * 1000, "retention", "milliseconds")
 
     @model_validator(mode="after")
-    def consistent(self) -> Self:
+    def consistent(self, info: ValidationInfo) -> Self:
+        effective = {name: getattr(self, name) for name in type(self).model_fields}
+        if info.context and "envd_limit_defaults" in info.context:
+            effective.update(info.context["envd_limit_defaults"])
+            effective.update(self.overrides())
         for session, device in RESERVATIONS:
-            if getattr(self, session) > getattr(self, device):
+            if effective[session] > effective[device]:
                 raise ValueError(f"{session} must not exceed {device}")
-        if self.max_process_records < self.max_processes:
+        if effective["max_process_records"] < effective["max_processes"]:
             raise ValueError("max_process_records must cover max_processes")
-        if self.max_file_transfer_records < self.max_concurrent_file_transfers:
+        if effective["max_file_transfer_records"] < effective["max_concurrent_file_transfers"]:
             raise ValueError("max_file_transfer_records must cover max_concurrent_file_transfers")
-        if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
+        if effective["max_output_preview_bytes"] > effective["max_output_bytes_per_stream"]:
             raise ValueError("max_output_preview_bytes must not exceed max_output_bytes_per_stream")
-        if self.max_spool_bytes < 2 * self.max_output_bytes_per_stream:
+        if effective["max_spool_bytes"] < 2 * effective["max_output_bytes_per_stream"]:
             raise ValueError("max_spool_bytes must hold both output streams")
         return self
 

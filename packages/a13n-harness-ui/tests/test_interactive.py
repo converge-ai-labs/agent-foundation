@@ -503,6 +503,9 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
     child = root.model_copy(update={"record_id": "child-1", "parent_agent_instance_id": "agent-root"})
     delegated = root.model_copy(update={"record_id": "delegated-1", "delegation_id": "delegation-1"})
     auxiliary = root.model_copy(update={"record_id": "aux-1", "source": "files.media_understanding"})
+    failed = root.model_copy(
+        update={"record_id": "failed", "usage_status": "unavailable", "request_usage": BoundedRequestUsage()}
+    )
     event = LiveEvent(
         epoch="test",
         sequence=1,
@@ -518,13 +521,15 @@ def test_context_samples_replace_root_requests_without_double_counting_cache_or_
                     "schema_version": "1",
                     "payload": {
                         "type": "usage_report",
-                        "records": [item.model_dump(mode="json") for item in (root, child, delegated, auxiliary)],
+                        "records": [
+                            item.model_dump(mode="json") for item in (root, child, delegated, auxiliary, failed)
+                        ],
                     },
                 }
             }
         },
     )
-    assert len(model_usage(event)) == 4
+    assert len(model_usage(event)) == 5
     samples = root_context_samples(event)
     assert len(samples) == 1
     assert samples[0].tokens == 120
@@ -980,7 +985,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
             assert (await app.thread_usage(thread_id=backend.thread_id)).combined.model_requests == 1
             assert status.context_tokens is not None
             assert "ctx " in status.line(80)
-            assert "cost --" in status.line(80)  # FunctionModel has no invented price.
+            assert status.usage.cost > 0 and "$" in status.line(80)  # The selected Codex route supplies the price.
             assert "in " not in status.line(80) and "cache 0.0%" in status.line(80)
         finally:
             release.set()
@@ -1018,7 +1023,7 @@ async def test_usage_updates_before_root_operation_completes(tmp_path: Path, mon
         assert status.total_tokens == dict(totals.tokens)["input_tokens"] + dict(totals.tokens)["output_tokens"]
         assert status.usage.cost == totals.model_cost_usd
         assert status.unknown_costs == totals.unknown_model_costs
-        assert "cost --" in status.line()
+        assert status.unknown_costs == 0 and "$" in status.line()
         assert status.context_tokens == latest_context
         await backend.new()
         assert status.requests == 0 and status.usage is None and status.context_tokens is None

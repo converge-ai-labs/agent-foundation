@@ -50,6 +50,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bot Status */
+        get: operations["bot_status_api_bot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bot/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bot Submit */
+        post: operations["bot_submit_api_bot_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bot/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bot Pause */
+        post: operations["bot_pause_api_bot_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/configuration": {
         parameters: {
             query?: never;
@@ -917,6 +968,23 @@ export interface paths {
         post?: never;
         /** Close Terminal */
         delete: operations["close_terminal_api_host_terminals__terminal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/files/pick-directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick Host Directory */
+        post: operations["pick_host_directory_api_host_files_pick_directory_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2077,6 +2145,40 @@ export interface paths {
         patch: operations["set_auto_followup_api_threads__thread_id__coordinator_patch"];
         trace?: never;
     };
+    "/api/threads/{thread_id}/branch-points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Branch Points */
+        get: operations["branch_points_api_threads__thread_id__branch_points_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/branch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Branch Thread */
+        post: operations["branch_thread_api_threads__thread_id__branch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/fork": {
         parameters: {
             query?: never;
@@ -2917,14 +3019,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live";
+            kind: "agent" | "markdown" | "memory" | "live" | "bot";
             /** Id */
             id: string;
         };
@@ -3304,6 +3406,149 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
+        /**
+         * BotAgentSource
+         * @description Application-owned persistent assistant; not a selectable Agent resource.
+         */
+        BotAgentSource: {
+            /**
+             * Kind
+             * @default bot
+             * @constant
+             */
+            kind?: "bot";
+            /**
+             * Id
+             * @default bot
+             * @constant
+             */
+            id?: "bot";
+        };
+        /** BotInput */
+        BotInput: {
+            /** Input Id */
+            input_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "heartbeat" | "connector" | "automatic";
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * State
+             * @default queued
+             * @enum {string}
+             */
+            state?: "queued" | "dispatching" | "admitted" | "completed" | "interrupted" | "discarded";
+            /** Receipt Id */
+            receipt_id?: string | null;
+            /** Continuation Id */
+            continuation_id?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Causation Id */
+            causation_id?: string | null;
+        };
+        /** BotMessage */
+        BotMessage: {
+            /** Message Id */
+            message_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Input Id */
+            input_id?: string | null;
+        };
+        /** BotSnapshot */
+        BotSnapshot: {
+            /**
+             * Thread Id
+             * @default thread_bot
+             */
+            thread_id?: string;
+            state: components["schemas"]["BotState"];
+            thread?: components["schemas"]["ThreadSummary"] | null;
+            /** Available */
+            available: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Model Id */
+            model_id?: string | null;
+            /** Heartbeat Enabled */
+            heartbeat_enabled: boolean;
+            /** Interval Seconds */
+            interval_seconds: number;
+            operation?: components["schemas"]["RootOperationView"] | null;
+            /**
+             * Pending Decision
+             * @default false
+             */
+            pending_decision?: boolean;
+            /**
+             * Inputs
+             * @default []
+             */
+            inputs?: components["schemas"]["BotInput"][];
+            /**
+             * Messages
+             * @default []
+             */
+            messages?: components["schemas"]["BotMessage"][];
+        };
+        /** BotState */
+        BotState: {
+            /**
+             * Activated
+             * @default false
+             */
+            activated?: boolean;
+            /**
+             * Paused
+             * @default false
+             */
+            paused?: boolean;
+            /** Next Heartbeat At */
+            next_heartbeat_at?: string | null;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Heartbeat Interval Seconds */
+            heartbeat_interval_seconds?: number | null;
+        };
+        /** BranchPoint */
+        BranchPoint: {
+            /** Edit */
+            edit: boolean;
+            /** Branch */
+            branch: boolean;
+        };
+        /** BranchPoints */
+        BranchPoints: {
+            /** Source */
+            source: string;
+            /** Points */
+            points: {
+                [key: string]: components["schemas"]["BranchPoint"];
+            };
+        };
         /** BrowserAccess */
         BrowserAccess: {
             /**
@@ -3573,7 +3818,7 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
             /** Source Id */
             source_id: string;
             /** Model Id */
@@ -4680,7 +4925,7 @@ export interface components {
          * @description Exact authorization values in the locked first-party catalog.
          * @enum {string}
          */
-        EnvironmentAction: "environment.file.stat" | "environment.file.read_text" | "environment.file.read_bytes" | "environment.file.write_text" | "environment.file.patch_text" | "environment.file.list" | "environment.file.query" | "environment.file.search_text" | "environment.file.mkdir" | "environment.file.move" | "environment.file.remove" | "environment.file.write_bytes" | "environment.file.copy_source" | "environment.file.copy_destination" | "environment.shell.exec" | "environment.process.list" | "environment.process.start" | "environment.process.inspect" | "environment.process.read_output" | "environment.process.write_stdin" | "environment.process.close_stdin" | "environment.process.signal" | "environment.process.wait" | "environment.process.kill" | "environment.process.release" | "environment.output.read" | "environment.output.release" | "environment.port.inspect" | "environment.port.wait" | "environment.state.export" | "environment.state.restore" | "environment.computer.describe" | "environment.computer.observe" | "environment.computer.zoom" | "environment.computer.click" | "environment.computer.move" | "environment.computer.drag" | "environment.computer.scroll" | "environment.computer.type_text" | "environment.computer.press_keys" | "environment.computer.read_clipboard" | "environment.computer.write_clipboard";
+        EnvironmentAction: "environment.file.stat" | "environment.file.read_text" | "environment.file.read_bytes" | "environment.file.write_text" | "environment.file.patch_text" | "environment.file.list" | "environment.file.query" | "environment.file.search_text" | "environment.file.mkdir" | "environment.file.move" | "environment.file.remove" | "environment.file.write_bytes" | "environment.file.copy_source" | "environment.file.copy_destination" | "environment.shell.exec" | "environment.process.list" | "environment.process.start" | "environment.process.inspect" | "environment.process.read_output" | "environment.process.write_stdin" | "environment.process.close_stdin" | "environment.process.signal" | "environment.process.wait" | "environment.process.kill" | "environment.process.release" | "environment.output.read" | "environment.output.release" | "environment.port.inspect" | "environment.port.wait" | "environment.state.export" | "environment.state.restore" | "environment.computer.describe" | "environment.computer.observe" | "environment.computer.zoom" | "environment.computer.click" | "environment.computer.move" | "environment.computer.drag" | "environment.computer.scroll" | "environment.computer.type_text" | "environment.computer.press_keys" | "environment.computer.read_clipboard" | "environment.computer.write_clipboard" | "environment.computer.a11y_describe" | "environment.computer.a11y_roots" | "environment.computer.a11y_inspect" | "environment.computer.a11y_find" | "environment.computer.a11y_read" | "environment.computer.a11y_range" | "environment.computer.a11y_range_read" | "environment.computer.ax_disclosing_set" | "environment.computer.ax_expanded_set" | "environment.computer.ax_focus" | "environment.computer.ax_focused_window_set" | "environment.computer.ax_main_set" | "environment.computer.ax_minimized_set" | "environment.computer.ax_perform_action" | "environment.computer.ax_position_set" | "environment.computer.ax_selected_children_set" | "environment.computer.ax_selected_columns_set" | "environment.computer.ax_selected_rows_set" | "environment.computer.ax_selected_set" | "environment.computer.ax_selected_text_set" | "environment.computer.ax_size_set" | "environment.computer.ax_text_range_select" | "environment.computer.ax_text_ranges_select" | "environment.computer.ax_value_number_set" | "environment.computer.ax_value_string_set" | "environment.computer.ax_visible_text_range_set" | "environment.computer.uia_collapse" | "environment.computer.uia_dock_set" | "environment.computer.uia_expand" | "environment.computer.uia_focus" | "environment.computer.uia_invoke" | "environment.computer.uia_legacy_default_action" | "environment.computer.uia_legacy_select" | "environment.computer.uia_legacy_value_set" | "environment.computer.uia_range_add_selection" | "environment.computer.uia_range_remove_selection" | "environment.computer.uia_range_scroll_into_view" | "environment.computer.uia_range_select" | "environment.computer.uia_range_show_context_menu" | "environment.computer.uia_range_value_set" | "environment.computer.uia_realize" | "environment.computer.uia_scroll_amount" | "environment.computer.uia_scroll_into_view" | "environment.computer.uia_scroll_percent" | "environment.computer.uia_selection_add" | "environment.computer.uia_selection_remove" | "environment.computer.uia_selection_select" | "environment.computer.uia_show_context_menu" | "environment.computer.uia_toggle" | "environment.computer.uia_transform_move" | "environment.computer.uia_transform_resize" | "environment.computer.uia_transform_rotate" | "environment.computer.uia_transform_zoom" | "environment.computer.uia_transform_zoom_unit" | "environment.computer.uia_value_set" | "environment.computer.uia_view_set" | "environment.computer.uia_window_close" | "environment.computer.uia_window_state_set" | "environment.computer.atspi_caret_set" | "environment.computer.atspi_component_extents_set" | "environment.computer.atspi_component_position_set" | "environment.computer.atspi_component_size_set" | "environment.computer.atspi_do_action" | "environment.computer.atspi_document_selections_set" | "environment.computer.atspi_focus" | "environment.computer.atspi_range_scroll_to" | "environment.computer.atspi_range_scroll_to_point" | "environment.computer.atspi_scroll_to" | "environment.computer.atspi_scroll_to_point" | "environment.computer.atspi_selection_add_child" | "environment.computer.atspi_selection_all" | "environment.computer.atspi_selection_clear" | "environment.computer.atspi_selection_remove_child" | "environment.computer.atspi_selection_remove_selected" | "environment.computer.atspi_table_column_select" | "environment.computer.atspi_table_column_unselect" | "environment.computer.atspi_table_row_select" | "environment.computer.atspi_table_row_unselect" | "environment.computer.atspi_text_contents_set" | "environment.computer.atspi_text_copy" | "environment.computer.atspi_text_cut" | "environment.computer.atspi_text_delete" | "environment.computer.atspi_text_insert" | "environment.computer.atspi_text_paste" | "environment.computer.atspi_text_selection_add" | "environment.computer.atspi_text_selection_remove" | "environment.computer.atspi_text_selection_set" | "environment.computer.atspi_value_set";
         /** EnvironmentBindingSelection */
         EnvironmentBindingSelection: {
             /** Device Id */
@@ -5729,6 +5974,8 @@ export interface components {
         };
         /** ModelChoices */
         ModelChoices: {
+            /** Base Models */
+            base_models?: components["schemas"]["ModelChoice"][];
             /** Connections */
             connections?: components["schemas"]["ModelConnection"][];
             /**
@@ -5828,6 +6075,8 @@ export interface components {
         ModelRecipe: {
             /** Route */
             route: string;
+            /** Base Model */
+            base_model?: string | null;
             authentication: components["schemas"]["ModelAuthentication"];
             /** Settings */
             settings?: {
@@ -5897,6 +6146,11 @@ export interface components {
             /** Source */
             source: string;
             totals: components["schemas"]["UsageTotals"];
+            /**
+             * Reported Models
+             * @default []
+             */
+            reported_models?: string[];
         };
         /** ModelUsageView */
         ModelUsageView: {
@@ -5905,6 +6159,10 @@ export interface components {
             root: components["schemas"]["UsageTotals"];
             descendants: components["schemas"]["UsageTotals"];
             combined: components["schemas"]["UsageTotals"];
+            /** Display Name */
+            display_name?: string | null;
+            /** Model Identity */
+            model_identity?: string | null;
         };
         /** MonitoringCatalog */
         MonitoringCatalog: {
@@ -8695,6 +8953,11 @@ export interface components {
             /** Receipt Id */
             receipt_id: string;
             /**
+             * Message Id
+             * @default null
+             */
+            message_id?: string | null;
+            /**
              * Status
              * @enum {string}
              */
@@ -8983,6 +9246,11 @@ export interface components {
              * @default null
              */
             update_base64?: string | null;
+            /**
+             * Options Update Base64
+             * @default null
+             */
+            options_update_base64?: string | null;
             /** @default null */
             presence?: components["schemas"]["DraftPresence"] | null;
         };
@@ -9000,6 +9268,11 @@ export interface components {
             participant_id: string;
             /** Update Base64 */
             update_base64: string;
+            /**
+             * Options Update Base64
+             * @default null
+             */
+            options_update_base64?: string | null;
             /** Participants */
             participants: {
                 [key: string]: components["schemas"]["DraftPresence"];
@@ -9088,6 +9361,18 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
         };
+        /** BotSubmit */
+        BotSubmit: {
+            /** Input Id */
+            input_id: string;
+            /** Text */
+            text: string;
+        };
+        /** BotPause */
+        BotPause: {
+            /** Paused */
+            paused: boolean;
+        };
         /** PushKeys */
         PushKeys: {
             /** P256Dh */
@@ -9102,6 +9387,18 @@ export interface components {
             keys: components["schemas"]["PushKeys"];
             /** Origin */
             origin: string;
+            /**
+             * Scope
+             * @default all
+             * @enum {string}
+             */
+            scope?: "all" | "bot";
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language?: "en" | "zh-CN";
         };
         /** ShareCreate */
         ShareCreate: {
@@ -9303,6 +9600,8 @@ export interface components {
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */
@@ -9327,6 +9626,8 @@ export interface components {
         VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
+            /** Base Model */
+            base_model?: string | null;
             /** Connection */
             connection: string;
             /** Model Id */
@@ -9525,6 +9826,18 @@ export interface components {
             /** Defaults Digest */
             defaults_digest: string;
         };
+        /** BranchRequest */
+        BranchRequest: {
+            /** Expected Continuation Id */
+            expected_continuation_id: string;
+            /** Turn Key */
+            turn_key: string;
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "before" | "after";
+        };
         /** ApprovalDecision */
         ApprovalDecision: {
             /**
@@ -9644,6 +9957,8 @@ export interface components {
             draft_id: string;
             /** Update Base64 */
             update_base64: string;
+            /** Options Update Base64 */
+            options_update_base64?: string | null;
         };
         FastSelection: boolean | "ultrafast";
         /** InputAttachmentReference */
@@ -9803,6 +10118,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bot_status_api_bot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSnapshot"];
+                };
+            };
+        };
+    };
+    bot_submit_api_bot_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotSubmit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotInput"];
+                };
+            };
+        };
+    };
+    bot_pause_api_bot_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotPause"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSnapshot"];
                 };
             };
         };
@@ -11452,6 +11835,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pick_host_directory_api_host_files_pick_directory_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string | null;
                 };
             };
         };
@@ -13856,6 +14259,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CoordinatorUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    branch_points_api_threads__thread_id__branch_points_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BranchPoints"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    branch_thread_api_threads__thread_id__branch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BranchRequest"];
             };
         };
         responses: {

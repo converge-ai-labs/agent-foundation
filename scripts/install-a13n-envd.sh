@@ -6,17 +6,19 @@ fail() { printf 'a13n-envd installer: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 Usage: sh install-a13n-envd.sh [--version X.Y.Z[-rc.N]] [--install-dir /absolute/path]
-                               [--add-to-path | --no-add-to-path]
+                               [--variant default|vm] [--add-to-path | --no-add-to-path]
 
 Install the native a13n-envd binary for Linux or macOS; do not start it.
 Defaults: newest stable envd release; ~/.local/bin (/usr/local/bin for root);
 no PATH changes. Explicit flags override these environment variables:
+  A13N_ENVD_VARIANT       default (non-VM) or vm (Linux only)
   A13N_ENVD_VERSION       Exact canonical release version
   A13N_ENVD_INSTALL_DIR   Absolute destination directory
   A13N_ENVD_ADD_TO_PATH   1 to opt in, 0 to leave PATH unchanged
-Requires curl, tar, sha256sum or shasum; jq for automatic version selection.
+Requires curl or GNU wget, tar, sha256sum or shasum; jq for automatic version selection.
 EOF
 }
+variant=${A13N_ENVD_VARIANT:-default}
 version=${A13N_ENVD_VERSION:-}
 install_dir=${A13N_ENVD_INSTALL_DIR:-}
 add_to_path=${A13N_ENVD_ADD_TO_PATH:-0}
@@ -24,9 +26,9 @@ path_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --help|-h) usage; exit 0 ;;
-        --version|--install-dir)
+        --version|--install-dir|--variant)
             [ "$#" -ge 2 ] && [ -n "$2" ] || fail "$1 requires a value"
-            case "$1" in --version) version=$2 ;; --install-dir) install_dir=$2 ;; esac
+            case "$1" in --version) version=$2 ;; --install-dir) install_dir=$2 ;; --variant) variant=$2 ;; esac
             shift 2 ;;
         --add-to-path|--no-add-to-path)
             [ -z "$path_flag" ] || [ "$path_flag" = "$1" ] || fail "PATH flags are mutually exclusive"
@@ -52,7 +54,16 @@ case "$(uname -s):$(uname -m)" in
     Darwin:arm64|Darwin:aarch64) target=aarch64-apple-darwin ;;
     *) fail 'unsupported platform (expected Linux/macOS x86_64 or ARM64)' ;;
 esac
-for tool in curl tar; do command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"; done
+suffix=
+case "$variant" in
+    default) ;;
+    vm) case "$target" in *-linux-*) suffix=-vm ;; *) fail 'VM builds are available only for Linux' ;; esac ;;
+    *) fail 'variant must be default or vm' ;;
+esac
+command -v tar >/dev/null 2>&1 || fail 'tar is required'
+if command -v curl >/dev/null 2>&1; then downloader=curl
+elif command -v wget >/dev/null 2>&1; then downloader=wget
+else fail 'curl or GNU wget is required'; fi
 if command -v sha256sum >/dev/null 2>&1; then checksum=sha256sum
 elif command -v shasum >/dev/null 2>&1; then checksum=shasum
 else fail 'sha256sum or shasum is required'; fi
@@ -84,8 +95,12 @@ if [ "$add_to_path" = 1 ]; then
 fi
 
 download() {
-    curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
-        --connect-timeout 10 --max-time 120 --retry 3 "$1" -o "$2"
+    if [ "$downloader" = curl ]; then
+        curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 120 --retry 3 "$1" -o "$2"
+    else
+        wget --https-only --quiet --timeout=30 --tries=3 -O "$2" "$1"
+    fi
 }
 mkdir -p "$install_dir"
 [ ! -d "$install_dir/a13n-envd" ] && [ ! -L "$install_dir/a13n-envd" ] || fail 'destination must not be a directory or symlink'
@@ -108,7 +123,7 @@ if [ -z "$version" ]; then
         page=$((page + 1))
     done
 fi
-archive="a13n-envd-$version-$target.tar.gz"
+archive="a13n-envd-$version-$target$suffix.tar.gz"
 release="https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v$version"
 download "$release/$archive" "$stage/$archive"
 download "$release/SHA256SUMS" "$stage/SHA256SUMS"
@@ -135,6 +150,7 @@ awk 'substr($0, 1, 1) != "-" { exit 1 }' "$stage/types" || fail 'archive entries
 tar -xOzf "$stage/$archive" a13n-envd > "$stage/a13n-envd"
 [ -s "$stage/a13n-envd" ] || fail 'archive contains an empty executable'
 chmod 755 "$stage/a13n-envd"
+[ "$("$stage/a13n-envd" --version)" = "a13n-envd $version" ] || fail 'executable version mismatch or incompatible userspace'
 mv -f "$stage/a13n-envd" "$install_dir/a13n-envd"
 printf 'Installed a13n-envd %s to %s/a13n-envd\n' "$version" "$install_dir"
 

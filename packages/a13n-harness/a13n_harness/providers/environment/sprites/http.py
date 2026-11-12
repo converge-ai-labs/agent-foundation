@@ -19,6 +19,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
 )
 from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
 from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.managed import HTTP_TOKEN_READ
 from a13n_harness.providers.environment.sprites.commands import command
 from a13n_harness.providers.environment.sprites.shared import SpritesReference, SpritesTargetState
 
@@ -110,14 +111,7 @@ async def http_session(
             raise failure("sprites", "provider_target_missing", Category.MISSING)
         raw = await command(
             reference,
-            [
-                "sudo",
-                "-n",
-                "python3",
-                "-I",
-                "-c",
-                "import sys; sys.stdout.write(open('/var/lib/a13n-envd/http-token').read(4097))",
-            ],
+            ["sudo", "-n", *HTTP_TOKEN_READ],
             15,
             max_output=4096,
         )
@@ -134,7 +128,12 @@ async def http_session(
                 async with runtime.open_session(
                     expected_device_id=reference.owner,
                     session_recovery=session_recovery,
-                    required_methods=REQUIRED_METHODS | frozenset({"computer.describe", "computer.observe"}),
+                    required_methods=REQUIRED_METHODS
+                    | (
+                        frozenset({"computer.describe", "computer.observe"})
+                        if reference.config.desktop
+                        else frozenset()
+                    ),
                 ) as session:
                     yield session
     finally:

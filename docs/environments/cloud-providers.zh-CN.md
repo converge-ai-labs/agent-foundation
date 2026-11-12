@@ -21,7 +21,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 
 将凭据保存在目标配置与重连状态之外。组织/团队字段描述后端命名空间，不授予权限。Modal 凭据选择工作区，可选 `workspace` 字段只是标签。Service 的 E2B 连接通过域名选择 E2B 云或兼容后端，见 [Service provider](../a13n-service/environments.md#providers)。
 
-自定义客体镜像必须提供所选根目录、Python 与 shell。Daytona、Sprites 和 Runloop 使用客体 PATH 中的 `python3`；Modal 管理 helper 使用客体 PATH 中的 Python，Vercel 使用其运行时 Python 路径。
+无桌面 Envd 准备使用 POSIX 工具，不安装客体 Python、jq 或桌面依赖。Native Files & Shell helper 保留各自的 Python 要求。自定义预装镜像提供兼容 Envd、所选用户/工作目录和启动命令；普通基础镜像不表示请求自动安装。
 
 管理端准备目标，并为 Envd 路径准备守护进程与授权连接。EIP 提供执行语义，Sandbox 和出站网络设置实施所选执行策略。已有 Native 目标采用 Envd 时需显式迁移。
 
@@ -45,7 +45,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 
 Modal 的 `start()` 恢复保存的文件系统快照，并返回新引用。`open()` 不执行恢复或快照清理。删除快照需要匹配原生所有权标签。外部注册的状态提供连接信息，不授予销毁权限。
 
-创建中断后，核对原生名称或所有权元数据。超时、权限错误和未知响应表示结果未确定，不等于目标不存在。不能隐式重建丢失目标或重放结果不确定的命令。Envd 共用期限、取消、输出和 Session 清理语义；停止与销毁由厂商管理端负责。
+创建中断后，核对原生名称或所有权元数据。超时、权限错误和未知响应表示结果未确定，不等于目标不存在。不能隐式重建丢失目标或重放结果不确定的命令。托管 Envd 启动器最多替换崩溃的守护进程三次，退避 1/2/4 秒；桌面启动器保留显示与访问进程。Sprites 使用原生 service，Kubernetes 使用 Pod 重启策略。守护进程重启产生新 Session，后续操作前需重新连接并观察。活进程挂起和中断命令不自动重放。Envd 共用期限、取消、输出和 Session 清理语义；停止与销毁由厂商管理端负责。
 
 ### E2B 运行时
 
@@ -110,6 +110,18 @@ uv run python -m a13n_environment_example.e2b
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
 
+### E2B 无桌面准备 {#e2b-headless-preparation}
+
+选择 Envd HTTP，关闭 Desktop，再选择 **Install headless Envd**。Service 在所选沙箱中安装，并保留 E2B SDK 守护进程。模板需要 GNU/Linux x86_64、glibc 2.39 或更新版本、apt-get 和 util-linux，例如仅含基础系统的 Debian 13 或 Ubuntu 24.04+ 模板。官方 `base` 可能仍使用较旧 Bookworm，失败时需按提示改用兼容模板；Service 不升级 libc。自定义模板默认 **Preinstalled Envd**，需显式选择才安装。
+
+```json
+{"template":"your-compatible-base","execution":"envd_http","preparation":"headless","timeout_seconds":1200}
+```
+
+使用 `preparation="headless"` 时，`timeout_seconds` 至少为 960 秒，以覆盖有界安装和就绪检查预算。该条件不改变 Native 或预装运行时配置通用的 30 秒下限；所选 E2B 后端可能要求更长的最低存活时间。
+
+创建在启动有界安装任务前记录目标和安装器版本。重入继续同一目标及终态结果，确认失败后需显式重试。连接仅检查就绪。原生暂停/恢复保留内存与文件。
+
 ### E2B 桌面准备 {#e2b-desktop-preparation}
 
 在 Console 中选择 E2B 连接并启用**桌面环境**。**自动桌面**在首次创建时准备私有模板，后续复用。凭据需同时允许模板构建和沙箱操作。首次创建耗时更长；官方 E2B `desktop` 模板本身缺少 Envd。
@@ -138,16 +150,16 @@ Supervisor 实施人工授权与撤销，Service 协调安全暂停/恢复。Env
 
 ### Daytona
 
-在 Service / Console 中准备自动桌面：
+在 Service / Console 中自动准备无桌面或桌面 Envd：
 
 1. 在 Daytona 控制台设置组织默认区域。连接区域不能替代该账号设置。
 2. 添加具备 Sandbox 操作及 Snapshot 读写/删除权限的 Key。`organization_id` 是可选约束，默认目标区域为 `us`。
-3. 启用 Desktop 并创建环境。仅保存模板不会开始构建。
+3. 保持 `snapshot="auto"`，关闭 Desktop 可准备无桌面 Envd，开启可使用 Computer 与人工访问。创建环境；仅保存模板不会开始构建。
 4. 查看显示的构建阶段。可以离开页面再返回环境实例；确认失败后先修复原因再重试。
 
-首次创建构建包含 Envd 与桌面/访问组件的私有快照，后续复用记录的 ID。自动快照使用 2 CPU、4 GiB 内存和 10 GiB 磁盘。复用按工作区、Provider、后端、凭据版本和清单隔离，并重新核验所有权、身份和内容。提交结果不确定时先核对，再决定是否重新构建。通过校验后清理失败构建；就绪快照在实例停止/删除后保留。
+首次创建按所选无桌面或桌面配置构建私有快照，后续复用记录的 ID。无桌面快照不安装 Python、X11 或浏览器依赖。自动快照使用 2 CPU、4 GiB 内存和 10 GiB 磁盘。复用按工作区、Provider、后端、凭据版本和清单隔离，并重新核验所有权、身份和内容。提交结果不确定时先核对，再决定是否重新构建。通过校验后清理失败构建；就绪快照在实例停止/删除后保留。
 
-自定义快照（包括无桌面目标或仅具备运行权限的 Key）需准备 Linux amd64 二进制及具有快照权限的私有 `DAYTONA_API_KEY`。从仓库根目录运行：
+自定义预装快照或仅具备运行权限的 Key需准备 Linux amd64 二进制及具有快照权限的私有 `DAYTONA_API_KEY`。从仓库根目录运行：
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
@@ -163,16 +175,18 @@ Agent 操作在 `/workspace` 通过私有 8888 端口使用 EIP。Daytona 代理
 
 ### Modal
 
-在 Service / Console 中准备自动桌面：
+在 Service 中自动准备 Envd：
 
 1. 提供 Modal Token ID 和 Token Secret。凭据选择账号，`workspace` 是可选标签。
-2. 启用 Desktop，省略 `image` 或使用 `auto`。空连接设置选择 `main` 环境中的 `a13n-sandboxes` App，首次准备时按需创建 App。
+2. 省略 `image` 或使用 `auto`。保持 `desktop=false` 可使用无桌面的 Files & Shell；启用 Desktop 可使用 Computer 工具。空连接设置选择 `main` 环境中的 `a13n-sandboxes` App，首次准备时按需创建 App。
 3. 创建环境以开始准备。查看构建阶段和已用时间；离开 Console 不会停止构建。
-4. 打开就绪预览，或在确认失败后修复问题再重试。
+4. 使用就绪环境，或在确认失败后修复问题再重试。桌面配置还提供预览。
 
-首次创建从固定版本的公开文件构建，后续复用不可变镜像 ID。默认 2 CPU、4096 MiB、3600 秒并启用人工协助，保留显式覆盖值。构建记录按工作区、Provider、凭据版本和清单隔离。复用检查当前镜像访问权；等待中断后重新等待同一内容寻址构建，不分配临时沙箱。镜像和 App 保留为账号资源。
+首次创建从固定版本的公开文件构建，后续复用相应配置的不可变镜像 ID。无桌面镜像不安装桌面、浏览器或客体 Python 依赖。自动桌面默认 2 CPU、4096 MiB、3600 秒并启用人工协助，保留显式覆盖值。构建记录按工作区、Provider、凭据版本和清单隔离。复用检查当前镜像访问权；等待中断后重新等待同一内容寻址构建，不分配临时沙箱。镜像和 App 保留为账号资源。
 
-自定义镜像和无桌面目标需要显式兼容的 `image` 及已有 App。用 `modal token new` 登录，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
+Modal 和 Daytona 自动准备可通过 `base_image` 选择固定 digest 的 GNU/Linux x86_64 apt 系基础镜像。它需提供 glibc >= 2.39、root 构建用户，且 `sandbox` 名称及 UID/GID 1000 未被占用。digest 参与资源复用；不兼容系统在修改软件包前失败。托管构建替换其 entrypoint。显式自定义预装镜像/快照不接受 `base_image`。
+
+自定义镜像需要显式兼容的 `image` 及已有 App。用 `modal token new` 登录，准备 Linux amd64 Envd 二进制，再从仓库根目录运行可选构建器：
 
 ```sh
 uv run --locked python examples/environment-provider/modal_desktop_image.py \
@@ -184,6 +198,8 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 ```json
 {
   "image": "im-yourImageId",
+  "envd_management": "preinstalled",
+  "startup_command": ["a13n-sandbox-entrypoint", "a13n-sandbox-desktop", "a13n-envd", "supervise"],
   "desktop": true,
   "desktop_assistance": true,
   "cpu": 2,
@@ -201,7 +217,13 @@ Envd 以 UID/GID 1000 在 `/workspace` 运行。`desktop` 要求创建/恢复时
 
 ### Vercel Sandbox
 
-Native Files & Shell 保持 `execution="native"`。Computer use 需准备运维构建的快照，选择 `execution="envd_http"`、`desktop=true`，需要人工访问时再启用 Service 的 `desktop_assistance=true`。
+Native Files & Shell 保持 `execution="native"`。选择 Envd HTTP 并省略 snapshot 或使用 `snapshot="auto"`，可直接在最终持久 Ubuntu 目标中安装。关闭 Desktop 选择无桌面 Envd，开启则添加 Computer 与人工访问。自动配置默认生命周期 2700 秒。Console 显示持久化阶段，离开页面后创建仍继续。
+
+```json
+{"execution":"envd_http","snapshot":"auto","desktop":false,"timeout_seconds":2700}
+```
+
+中断后安装继续记录的目标与固定任务，不创建临时 builder 或准备快照。停止/恢复保留文件并重建进程。自定义快照仍按预装契约支持。自行构建时：
 
 安全配置 `VERCEL_TOKEN`、`VERCEL_TEAM_ID` 和 `VERCEL_PROJECT_ID`。从仓库根目录使用兼容 Linux amd64 Envd 二进制构建：
 
@@ -217,6 +239,8 @@ uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py 
 {
   "execution": "envd_http",
   "snapshot": "snap_yourSnapshot",
+  "envd_management": "preinstalled",
+  "startup_command": ["sh", "-c", "umask 077; install -d -m 0700 /var/lib/a13n-envd; cd /workspace; rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; nohup a13n-sandbox-entrypoint a13n-sandbox-desktop a13n-envd supervise >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &"],
   "desktop": true,
   "desktop_assistance": true,
   "vcpus": 2,
@@ -224,13 +248,13 @@ uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py 
 }
 ```
 
-Envd 以 UID/GID 1001 使用 `/workspace`，Native 执行使用 `/vercel/sandbox`。创建与显式恢复启动预装组件，并检查 EIP/Computer 就绪。连接和访问不安装、修复或恢复。8888 端口承载已认证 EIP，6081 承载可撤销查看器。浏览器接收短期 supervisor 凭据，不接收 Vercel 或客体 token。Service 检查所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复重建桌面进程并使旧观察/授权失效。
+Envd 以 UID/GID 1001 使用 `/workspace`，Native 执行使用 `/vercel/sandbox`。预装快照必须提供 `startup_command`，命令在后台启动运行时后返回。创建与原生会话恢复时，Service 使用实例启动环境变量，以 root 通过每个原生会话的固定任务执行操作者编写的 argv，然后检查 EIP/Computer 就绪。回执丢失后重新加入该任务，不会重放启动；确认失败的任务需要显式创建新的生命周期操作才能重试。快照保留文件，不保留进程。连接和访问不安装、修复或恢复。8888 端口承载已认证 EIP，6081 承载可撤销查看器。浏览器接收短期 supervisor 凭据，不接收 Vercel 或客体 token。Service 检查所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复重建桌面进程并使旧观察/授权失效。
 
 ### Fly.io Sprites
 
-默认根目录使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`。[Sprites 环境指南](https://docs.sprites.dev/working-with-sprites/)介绍可写 home 和工具。原生休眠保留磁盘，执行会唤醒 Sprite。不要调度显式停止；销毁等待确认不存在。
+Native 执行使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`。显式 `execution="envd_http"` 且关闭 Desktop，可在最终 Sprite 中安装无桌面 Envd，不添加 Python 或显示依赖。Sprites 原生 service 负责守护进程重启，每次新 EIP 连接检查记录的运行时。[Sprites 环境指南](https://docs.sprites.dev/working-with-sprites/)介绍可写 home 和工具。原生休眠保留磁盘，执行会唤醒 Sprite。不要调度显式停止；销毁等待确认不存在。
 
-需要 Computer 和人工控制时，让 Service [在每个新 Sprite 中安装桌面](../a13n-service/computer-use.md#automatic-sprites-desktops)，再以 `execution="envd_http"` 连接。Native 执行仍可使用。
+需要 Computer 和人工控制时，开启 Desktop，让 Service [在每个新 Sprite 中安装桌面](../a13n-service/computer-use.md#automatic-sprites-desktops)，再以 `execution="envd_http"` 连接。Native 执行仍可使用。
 
 ### Runloop
 

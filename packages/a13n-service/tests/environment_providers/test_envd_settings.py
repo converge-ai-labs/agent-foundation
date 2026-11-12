@@ -14,7 +14,7 @@ RECIPES = [
     ("docker", {}),
     ("e2b", {}),
     ("daytona", {"snapshot": "envd-image"}),
-    ("modal", {"image": "envd-image"}),
+    ("modal", {"image": "envd-image", "startup_command": ["a13n-envd"]}),
     ("sprites", {}),
     ("vercel", {}),
     ("runloop", {}),
@@ -91,3 +91,27 @@ def test_envd_validates_merged_limits_instead_of_overridden_native_values():
     assert config.launch_limits()["max_output_bytes_per_stream"] == 4194304
     with pytest.raises(ValidationError, match="Output preview"):
         DockerRecipe(execution="native", max_output_bytes_per_stream=32768)
+
+
+@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+@pytest.mark.parametrize(
+    "limits, legacy",
+    [
+        ({"max_spool_bytes": 128 * 1024 * 1024}, {}),
+        ({"max_output_bytes_per_stream": 1024 * 1024}, {}),
+        ({"max_process_records": 1, "max_device_processes": 1}, {"max_concurrent_processes": 1}),
+    ],
+)
+def test_docker_partial_overrides_validate_against_legacy_fallbacks(execution, limits, legacy):
+    config = DockerRecipe(execution=execution, envd={"limits": limits}, **legacy)
+    assert config.envd.overrides() == {"limits": limits}
+    frozen = config.model_dump_json()
+    assert DockerRecipe.model_validate_json(frozen).envd.overrides() == {"limits": limits}
+    effective = config.launch_limits()
+    assert effective["max_spool_bytes"] >= 2 * effective["max_output_bytes_per_stream"]
+    assert effective["max_output_preview_bytes"] <= effective["max_output_bytes_per_stream"]
+    payload = envd_environment({"A13N_ENVD_CONFIG_JSON": json.dumps({"limits": effective})}, config.envd)
+    assert json.loads(payload["A13N_ENVD_CONFIG_JSON"])["limits"] == effective
+    # The daemon defaults remain the validation baseline for other providers.
+    with pytest.raises(ValidationError):
+        EnvdSettings.model_validate({"limits": limits})

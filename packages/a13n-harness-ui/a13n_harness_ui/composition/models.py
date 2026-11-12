@@ -56,6 +56,9 @@ class DependencyProvenance(CompositionModel):
 class ResolvedModelRecipe(CompositionModel):
     model_id: str = Field(min_length=1, max_length=128)
     route: str = Field(min_length=3, max_length=512)
+    base_model: str | None = Field(
+        default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
+    )
     authentication: ModelAuthentication
     subscription_group: SubscriptionGroupResource | None = Field(default=None, exclude_if=lambda value: value is None)
     settings: dict[str, JsonValue] = Field(default_factory=dict)
@@ -123,7 +126,7 @@ class ResolvedEnvironmentBinding(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown", "memory", "live"]
+    source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
     system_prompt: tuple[str, ...] = Field(default=(), max_length=16)
@@ -205,6 +208,15 @@ class ResolvedRunComposition(CompositionModel):
     session_versions: dict[str, int] = Field(default_factory=dict)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
+
+    def agent_nodes(self) -> tuple[ResolvedAgentNode, ...]:
+        values: list[ResolvedAgentNode] = []
+        pending = [self.root]
+        while pending:
+            node = pending.pop()
+            values.append(node)
+            pending.extend(reversed(tuple(item.definition for item in node.children)))
+        return tuple(values)
 
     @model_validator(mode="after")
     def _valid_environment_selection(self) -> Self:

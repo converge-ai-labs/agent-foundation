@@ -854,7 +854,7 @@ it("forks a saved chat and its attachments through the real HTTP boundary", asyn
     }),
   );
   expect(copied.thread_id).not.toBe(source.thread_id);
-  expect(copied.title).toBe("Fork this title");
+  expect(copied.title).toBe("Fork this title (2)");
   expect(copied.configuration).toEqual(before.thread.configuration);
   expect(copied.root_activity.state).toBe("inactive");
   const copyPath = { thread_id: copied.thread_id };
@@ -898,3 +898,79 @@ it("forks a saved chat and its attachments through the real HTTP boundary", asyn
   );
   expect(JSON.stringify(updated.entries)).toContain("Only in the fork");
 });
+
+it("shares saved composer choices across devices without changing Thread defaults", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Shared choices" },
+    }),
+  );
+  const thread = created.thread_id;
+  const original = await result(
+    transport.client.GET("/api/threads/{thread_id}", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  const a = new ThreadDraft(),
+    b = new ThreadDraft();
+  const first = a.connect(transport, thread, () => {});
+  const second = b.connect(transport, thread, () => {});
+  let reopened: ReturnType<ThreadDraft["connect"]> | undefined;
+  try {
+    await until(() => a.synchronized && b.synchronized);
+    a.modelOptions = {
+      model_id: "model-alternate",
+      thinking: "high",
+      fast: false,
+    };
+    a.environment = { local_roots: [] };
+    a.mode = "goal";
+    a.doc.getText("text").insert(0, "Saved across devices");
+    await until(
+      () =>
+        a.synchronized &&
+        b.synchronized &&
+        b.mode === "goal" &&
+        b.modelId === "model-alternate",
+    );
+    expect(b.controls).toEqual({ thinking: "high", fast: false });
+    expect(b.environment).toEqual({ local_roots: [] });
+    const draftId = a.draftId;
+    first.close();
+    second.close();
+    // A fresh device has no browser state to recover from.
+    const c = new ThreadDraft();
+    reopened = c.connect(transport, thread, () => {});
+    await until(() => c.synchronized);
+    expect(c.draftId).toBe(draftId);
+    expect(c.modelId).toBe("model-alternate");
+    expect(c.mode).toBe("goal");
+    expect(values(c.doc).prompt).toBe("Saved across devices");
+    // Submit the captured choices as Run-only overrides, using ordinary mode
+    // here so this scripted fixture completes without a Goal loop.
+    c.mode = "normal";
+    await until(() => c.synchronized);
+    await submitDraft(c, transport, thread, "send");
+    expect(c.submission.kind).toBe("accepted");
+    expect(c.modelId).toBe("model-alternate");
+    expect(c.controls.thinking).toBe("high");
+    await until(() => c.synchronized && values(c.doc).prompt === "");
+    const detail = await result(
+      transport.client.GET("/api/threads/{thread_id}", {
+        params: { path: { thread_id: thread } },
+      }),
+    );
+    expect(detail.thread.configuration).toEqual(original.thread.configuration);
+    const inspection = await result(
+      transport.client.GET("/api/threads/{thread_id}/configuration", {
+        params: { path: { thread_id: thread } },
+      }),
+    );
+    expect(inspection.captured?.agent.model_id).toBe("model-alternate");
+    expect(inspection.captured?.agent.thinking_summary).toBe("High");
+  } finally {
+    first.close();
+    second.close();
+    reopened?.close();
+  }
+}, 30000);

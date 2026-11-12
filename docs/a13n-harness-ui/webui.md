@@ -97,9 +97,13 @@ Open **Details** for operation status, child executions, tasks, notes, usage, an
 
 ### Shared drafts
 
-People viewing the same saved conversation edit one shared draft in the running App. Reconnect to the same instance to synchronize again. Server restart creates a replacement draft: explicitly rejoin it and choose whether to restore this browser's text.
+People viewing the same saved conversation share its input, uploaded attachment references, Model/Thinking/Speed/Reasoning mode, Environment, and Goal choices. Acknowledged edits are saved on the server and restored across browsers, devices, and server restarts. Prompt guests share text and attachments but cannot read or change owner Run choices.
 
-Unsynchronized edits can be lost on reload or browser crash. Synchronized text remains while the server runs. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.
+When upgrading, your browser's previous Model/control choices initialize an untouched shared composer if they still match its Agent and effective Model. Existing shared choices or an explicit reset take precedence. The old browser record is removed only after synchronization confirms the saved state.
+
+Each composer retains at most 512 KiB of current editing state and expires after 30 days without input or option changes, even when nonempty; attached editors are skipped. Deleting the conversation deletes its saved composer. Referenced unsubmitted attachments remain protected from ordinary scratch cleanup while the nonempty draft is retained. After expiry or replacement, explicitly rejoin before restoring browser input.
+
+Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the local editor; accepted Send starts a new undo boundary. Participant display names identify collaborators visually, not as authenticated identities.
 
 ### Skills and work inspection
 
@@ -114,19 +118,21 @@ Process counts cover observed running handles, excluding foreground calls. The p
 Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the injected Skill names and their usage. Expand Tool calls to inspect argument and result sizes. Category token counts use the character proportions of this input. Media tokens without a separate count are distributed using the same proportions. Each percentage uses the full context window as its denominator.
 
 1. Open **Usage** using the chart icon beside the sidebar collapse button. **Project → View usage** or **Details → Usage → Open analytics** opens a preselected scope.
-2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model.
+2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or the configured Model used for the request.
 3. Compare daily totals and the Project, Thread, or model breakdown. Sort by tokens or cost and select a row to narrow the scope.
 4. Use **Refresh** for newly saved usage. Filters remain in the URL; the page does not update continuously.
 
 Totals include retained archived conversations, Memory, Live, child agents, auxiliary calls, and Coordinator workers. Project attribution follows the root Thread's current Project. Provider receipts remain in Thread details.
 
-Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
+New Runs look up prices using the selected Model’s configured route. In chat usage, **By model** shows the provider and model from the configured route (for example, `anthropic/claude-opus-5-5`). Expand a model to inspect the names reported by the provider. Costs are recorded USD model estimates: **—** means unknown, **$0** is a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not extra tokens. Unrecorded historical consumption is unavailable. Guest links do not grant analytics access.
 
 ## Agent and Model settings
 
 Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.
 
-For a persistent Model choice, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
+To change the Thread's default Model, including for the terminal UI, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
+
+A fresh chat starts with its creation defaults. The unfinished New draft remembers choices in this browser; existing chats restore their shared composer choices from the server. For the same Agent, an explicit composer Model takes precedence even if the conversation’s default model changes. Clear the composer Model override to follow the current conversation default, falling back to the Agent’s Model.
 
 Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
@@ -138,7 +144,7 @@ Use **Chat options → Clear context** to start the next message without prior m
 
 Choices depend on the Model and installed adapter. Off appears only where supported; minimal effort need not mean Off. Unknown models retain Default with an explanation. Resolve disabled budgets or custom-setting conflicts in Model configuration. Thinking does not change the output-token limit.
 
-The override is private to this tab, applies to subsequent Runs until changed, and clears when you change Agent or Model. It does not edit the Model resource or affect steering and already-running work.
+The shared composer remembers the selected effort for this conversation across browsers and server restarts. Refresh the page or reopen the chat to use it on the next Send. Changing the Agent or effective Model clears the override. It does not edit the Model resource or affect steering and already-running work.
 
 ### Environments for subsequent Runs
 
@@ -149,15 +155,15 @@ The override is private to this tab, applies to subsequent Runs until changed, a
 
 Full Control uses the server account. Sandbox requires a supported Host isolation launcher and native runtime; a failed preparation stays an error rather than switching to Full Control. Device working directories route operations but do not confine the daemon's filesystem authority.
 
-A tab's explicit Environment selection accompanies later Sends until reset. It leaves saved Thread defaults, other participants, and the active Run unchanged. **Steer** and deferred answers retain the active or suspended Run's Environment. New subagents inherit the captured Environment; resumed subagents retain their own conversation configuration.
+The shared composer's applied Environment selection accompanies later Sends until reset or draft expiry. Other instance-key participants see the same choice; saved Thread defaults and the active Run stay unchanged. **Steer** and deferred answers retain the active or suspended Run's Environment. New subagents inherit the captured Environment; resumed subagents retain their own conversation configuration.
 
-Use **Configuration** to compare saved defaults with a Run's captured Environment. Replace unavailable profiles explicitly. New-conversation drafts retain choices across reload; existing-conversation overrides are tab-local. Changing modes does not copy or isolate existing Project files or history.
+Use **Configuration** to compare saved defaults with a Run's captured Environment. Replace unavailable profiles explicitly. New-conversation drafts retain choices locally across reload; existing-conversation choices are saved and shared. Changing modes does not copy or isolate existing Project files or history.
 
 ## Fast mode
 
 Choose **Fast** in **Agent & Model settings**, or **Ultrafast** where the selected Codex connection supports it. Click the selected button again to request Off. **Use model setting** inherits Model settings; **Provider default** is distinct from Off.
 
-The choice applies to later Sends in this tab and clears on Agent/Model change. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
+The shared composer remembers the choice for later Sends in this conversation. Changing the Agent or effective Model clears it. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
 
 The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Provider eligibility and charges determine the outcome; requesting a speed mode does not guarantee faster execution.
 
@@ -328,7 +334,7 @@ Each Project can have several Coordinators. The role is permanent, including if 
 
 A worker is a root conversation with human controls, not a Subagent. **Managed by · name** fixes its owner and Project. Before creation, remove that label to make an independent draft without losing text, attachments, or choices. After creation it stays fixed; uncertain creation must be inspected before retrying. Workers appear under their owner, and search labels them **Coordinator worker**.
 
-Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Disabling Sidekick does not disable Coordinators.
+Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Sidekick defaults do not control Coordinator identity or automatic follow-up.
 
 Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
 
@@ -346,7 +352,7 @@ These limits apply to model tools, not human WebUI access. Workers cannot create
 
 An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` overrides the first Run only; `run_thread` can override a later Run. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
 
-Configure **Settings → General → Sidekick** for default Agent, Model, and reporting instructions. It is enabled by default. **Inherit current agent**, **Use agent model**, and **Disabled** express distinct choices. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+Configure **Settings → General → Subagent defaults** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 
 ## Fork a conversation
 
@@ -354,6 +360,8 @@ Configure **Settings → General → Sidekick** for default Agent, Model, and re
 2. Inspect the newly opened copy, then send your next instruction there.
 
 Forking makes no Model request. It copies saved history, notes, tasks, settings, and Thread-owned files. An active source contributes its last saved checkpoint. External Project directories, remote targets, and sandboxes remain shared resources.
+
+To start from an earlier reply, hover over it and select **Branch in new chat**. You can branch from a finished reply while a later Run is active. To revise an ordinary text message in an idle chat, select **Edit message**, then **Send**. The edited message runs in the new chat. Copies use numbered titles such as `Coffee brief (2)` and `Coffee brief (3)`.
 
 Coordinators, workers, Subagent Threads, and internal Memory/Live Threads cannot be forked. After uncertain creation, inspect the conversation list before retrying.
 
@@ -397,7 +405,7 @@ For later changes:
 
 Forms/YAML share one draft. **Save changes** validates and replaces the complete file. Tab navigation preserves unsaved edits; reload does not. Detected external changes retain your dirty draft, while file saves remain last-write-wins. Hidden MCP source text means a replacement also replaces unseen fields and all resources in that file. Active Runs keep captured configuration. Follow [configuration recipes](configuration-recipes.md) for complete file-based setups.
 
-Open **Project settings** to edit server directories and creation defaults. **Browse → Use this directory** changes only the draft; save to apply. With computer sharing off, enter Host paths manually. New Threads use saved defaults; existing Threads retain selections unless explicitly changed. Default, None, and Custom differ; previews show saved values/sources rather than testing a Model.
+Open **Project settings** to edit server directories and creation defaults. With computer sharing enabled, **Add folder** opens a system folder picker on a directly connected local Mac or Windows desktop. Other connections can browse directories on the server. With sharing off, enter a server path. Save to apply your selection. New Threads use saved defaults; existing Threads retain selections unless explicitly changed. Default, None, and Custom differ; previews show saved values/sources rather than testing a Model.
 
 Click the generated collaboration name in the top-right header and **Save name** to change this browser's label. The online indicator opens the per-tab participant directory. Names and presence are live collaboration metadata, not provider identities. Background tabs are distinguishable from foreground attention.
 
@@ -423,6 +431,10 @@ Read the saved result at the bottom of history in a focused, visible tab to clea
 Follow/read state belongs to this browser/site address and synchronizes across tabs. Reopening refreshes followed results saved while closed; first visits treat existing results as historical. Clearing site data removes that state. These dots require no notification permission and are separate from system push.
 
 ## Task notifications
+
+Choose **All** or **Bot only** under **Notify me about** in Notifications settings. The default is All. This browser-local choice filters both in-app notices and background notifications without affecting other devices, unread markers, or the explicit delivery test. Bot only includes Bot messages and requests for your input, while excluding ordinary Chat results.
+
+Bot publications show **New message from Bot** and a preview of the actual message. Choose **View message**, or click the system notification, to open Bot. Different messages from the same Run remain distinct. Bot input requests use **Bot needs your response** and open the decision in Activity. System notification titles follow the display language last synchronized by that browser; authored message text stays unchanged.
 
 1. On the receiving device, open **Settings → General → Notifications** at a stable HTTPS address.
 2. Choose **Allow notifications** or **Enable background notifications** and accept the browser prompt.

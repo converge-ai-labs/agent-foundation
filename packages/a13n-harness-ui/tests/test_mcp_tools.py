@@ -96,6 +96,40 @@ async def test_discovery_lists_disabled_tools_without_executing(tmp_path: Path):
         assert calls == []
 
 
+@pytest.mark.parametrize("configured", [None, 45.5])
+async def test_remote_discovery_allows_the_handshake_budget_and_bounds_listing(tmp_path, monkeypatch, configured):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from a13n_harness_ui.configuration import mcp_tools
+    from anyio import current_effective_deadline, current_time
+
+    remote = {"url": "https://example.com/mcp"}
+    if configured is not None:
+        remote["init_timeout_seconds"] = configured
+    root, _ = _source(tmp_path, {"mcpServers": {"one": remote}})
+    source = await load_harness_ui_configuration(root)
+    client = MagicMock()
+    remaining = []
+
+    def record_deadline():
+        remaining.append(current_effective_deadline() - current_time())
+        return []
+
+    client.list_tools = AsyncMock(side_effect=record_deadline)
+    client.__aenter__.return_value = client
+
+    def connect(transport, *, mode, init_timeout):
+        assert init_timeout == (configured or 5)
+        record_deadline()
+        return client
+
+    monkeypatch.setattr(mcp_tools, "Client", connect)
+    assert await discover_tools(source, "mcp-one", tmp_path) == ()
+    connect_budget, list_budget = remaining
+    assert (45.5 if configured else 29) < connect_budget <= (30 + (configured or 0))
+    assert 29 < list_budget <= 30
+
+
 def test_search_disabled_round_trip_preserves_custom_groups():
     plan = AgentToolSearch.model_validate_json(
         json.dumps(

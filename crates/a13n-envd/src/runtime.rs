@@ -58,7 +58,10 @@ impl RuntimeState {
         {
             let entry = entry.map_err(|error| format!("cannot inspect runtime entry: {error}"))?;
             let name = entry.file_name();
-            if name == ".a13n-envd.lock" {
+            if name == ".a13n-envd.lock"
+                || name == crate::daemon_control::LOCK
+                || name == crate::daemon_control::RECORD
+            {
                 continue;
             }
             let Some(display_name) = name.to_str() else {

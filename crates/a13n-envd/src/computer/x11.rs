@@ -236,6 +236,9 @@ impl Backend {
             .as_ref()
             .map_err(Clone::clone)
     }
+    pub(super) fn accessibility_geometry(&self, target: &str) -> Result<Geometry, EIPError> {
+        self.desktop()?.select(Some(target))
+    }
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         let desktop = self.desktop()?;
         Ok(ComputerDescribeResult {

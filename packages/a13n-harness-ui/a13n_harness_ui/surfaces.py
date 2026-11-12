@@ -66,7 +66,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory", "live"]
+    kind: Literal["agent", "markdown", "memory", "live", "bot"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -318,6 +318,22 @@ class TranscriptEntry(SurfaceModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Transcript timestamps must include a UTC offset")
         return value.astimezone(UTC)
+
+
+class BranchPoint(SurfaceModel):
+    edit: bool
+    branch: bool
+
+
+class BranchPoints(SurfaceModel):
+    source: str
+    points: dict[str, BranchPoint]
+
+
+class BranchRequest(SurfaceModel):
+    expected_continuation_id: str = Field(pattern=r"^(?:initial:)?[0-9a-f]{64}$")
+    turn_key: str = Field(min_length=1, max_length=512)
+    side: Literal["before", "after"]
 
 
 class TranscriptTurn(SurfaceModel):

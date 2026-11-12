@@ -45,13 +45,7 @@ async def verify(runtime: Runtime, environment_id: str, endpoint: str, token: st
     """
     try:
         with anyio.fail_after(runtime.settings.providers.operation_seconds):
-            identity = device_id or await envd.first_contact(endpoint, token, runtime.endpoint_policy)
-            adapter = await envd.connect(
-                endpoint, token, environment_id=environment_id, device_id=identity, policy=runtime.endpoint_policy
-            )
-            async with await adapter.open():
-                pass
-            return identity
+            return await envd.verify(endpoint, token, runtime.endpoint_policy, device_id=device_id)
     except EnvironmentProviderError as error:
         if error.category not in PERMANENT:
             raise _unverified(error.code) from None

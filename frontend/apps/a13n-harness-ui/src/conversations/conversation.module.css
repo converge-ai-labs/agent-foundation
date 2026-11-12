@@ -1,4 +1,5 @@
 .navigation {
+  --thread-label-inset: 32px;
   --harness-nav-height: 30px;
   display: flex;
   flex-direction: column;
@@ -23,8 +24,19 @@
 .navigationHeadingActions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex-shrink: 0;
+}
+/* Menu focus guards can sit between the two action buttons while open. */
+@media (pointer: fine) {
+  .navigationHeadingActions > button,
+  .messageActions > button {
+    inline-size: 22px;
+    block-size: 22px;
+  }
+}
+.navigationViewMenu [data-slot="menu-radio-item"] {
+  font-size: var(--harness-nav-font);
 }
 .navigationHeading > span {
   overflow: hidden;
@@ -434,7 +446,8 @@
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 4px 8px 4px 32px;
+  padding: 4px 8px;
+  padding-inline-start: var(--thread-label-inset, 32px);
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
@@ -621,25 +634,51 @@
   margin: 8px 0 16px auto;
   position: relative;
   width: fit-content;
-  min-width: 64px;
   max-width: min(85%, 640px);
 }
-.sentAttachments {
+.messageEditor {
+  width: min(100%, 640px);
+  margin: 8px 0 16px auto;
+  padding: 12px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: var(--harness-radius-panel);
+  background: var(--a13n-elevated);
+}
+.messageEditor textarea {
+  display: block;
+  width: 100%;
+  min-height: 3lh;
+  max-height: 36vh;
+  field-sizing: content;
+  resize: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
+}
+.messageEditor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.messageEditor:has(textarea:focus-visible) {
+  border-color: var(--a13n-secondary);
+}
+.messageEditor > div {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-.sentAttachments + .userMessage {
-  width: fit-content;
-  max-width: 100%;
-  margin: 8px 0 0 auto;
+  margin-top: 8px;
 }
 .userMessage {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline-start: auto;
   color: var(--a13n-text);
-  padding: 12px 12px;
-  background: var(--a13n-surface);
+  padding: 12px;
+  background: color-mix(in srgb, var(--a13n-surface) 98%, var(--a13n-text));
   border-radius: 10px;
   font-size: var(--harness-prose-size);
   line-height: var(--harness-prose-leading);
@@ -653,7 +692,7 @@
 .messageActions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
   min-height: 32px;
   margin-top: 4px;
   margin-inline-start: -6px;
@@ -685,6 +724,15 @@
     opacity: 1;
   }
 }
+.messageTime {
+  margin-inline: 2px;
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-xs);
+  white-space: nowrap;
+}
+.userInput .messageTime {
+  order: -1;
+}
 .copyMessage {
   color: inherit;
 }
@@ -711,7 +759,7 @@
   .threadStar {
     height: 44px;
   }
-  .copyMessage {
+  .messageActions button {
     width: 44px;
     height: 44px;
   }
@@ -864,16 +912,12 @@
 }
 .reasoningBody {
   max-height: 144px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   margin: 4px 8px 8px;
 }
-.reasoningBody > div + div {
+.reasoningBody [data-slot="scroll-area-content"] > div + div {
   margin-top: 12px;
 }
-.reasoning > summary:focus-visible,
-.reasoningBody:focus-visible {
+.reasoning > summary:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -1519,7 +1563,9 @@ dl.detailGrid > .detailLongRow dd {
   height: 24px;
 }
 .showMore {
-  margin: 4px 0 0 8px;
+  margin-block-start: 4px;
+  margin-inline-start: calc(var(--thread-label-inset) - 8px);
+  padding-inline: 7px;
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
@@ -1531,13 +1577,13 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachment {
   display: inline-flex;
   align-items: center;
-  vertical-align: -0.12em;
+  vertical-align: middle;
   box-sizing: border-box;
-  height: 20px;
+  height: 28px;
   max-width: min(280px, calc(100% - 5px));
-  margin-inline: 1px 4px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 999px;
+  margin: 2px 4px 2px 1px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
   background: var(--a13n-surface);
   font-family: inherit;
   font-size: calc(var(--a13n-text-body) * 13 / 14);
@@ -1564,12 +1610,18 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
   padding-inline-end: 1px;
 }
+.inlineAttachment:has(img) {
+  height: 44px;
+}
 .inlineAttachmentOpen img {
-  width: 16px;
-  height: 16px;
-  object-fit: cover;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
   border-radius: 4px;
   flex-shrink: 0;
+}
+.inlineAttachmentOpen img[hidden] {
+  display: none;
 }
 .inlineAttachmentOpen span {
   line-height: 1.4;
@@ -1580,7 +1632,7 @@ dl.detailGrid > .detailLongRow dd {
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--harness-log-text);
-  width: 19px;
+  width: 24px;
   justify-content: center;
   padding: 0;
   margin-inline-end: 2px;
@@ -1590,8 +1642,17 @@ dl.detailGrid > .detailLongRow dd {
   background: var(--a13n-hover);
 }
 .inlineAttachment button:focus-visible {
-  outline: 2px solid var(--a13n-secondary);
+  outline: 2px solid var(--a13n-signal);
   outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .inlineAttachment {
+    min-height: 46px;
+  }
+  .inlineAttachmentOpen,
+  .inlineAttachmentRemove {
+    min-width: 44px;
+  }
 }
 .attachmentThumbnail {
   width: 36px;
@@ -1768,7 +1829,9 @@ dl.detailGrid > .detailLongRow dd {
 }
 /* One masked surface keeps diffusion and tint on the same continuous curve.
    Stacking backdrop filters leaves dark halos around partially faded text. */
-.readerFade {
+.readerFade,
+.innerReader[data-overflow-y-start]::before,
+.innerReader[data-overflow-y-end]::after {
   position: absolute;
   /* Keep the scrollbar outside the optical treatment. */
   inset-inline: var(--reader-fade-inset, 12px);
@@ -1778,8 +1841,12 @@ dl.detailGrid > .detailLongRow dd {
   --fade-direction: to top;
   background: linear-gradient(
     var(--fade-direction),
-    color-mix(in srgb, var(--a13n-canvas) 92%, transparent),
-    var(--a13n-canvas) 75%
+    color-mix(
+      in srgb,
+      var(--reader-surface, var(--a13n-canvas)) 92%,
+      transparent
+    ),
+    var(--reader-surface, var(--a13n-canvas)) 75%
   );
   backdrop-filter: blur(2px);
   mask-image: linear-gradient(
@@ -1791,6 +1858,22 @@ dl.detailGrid > .detailLongRow dd {
     rgb(0 0 0 / 92%) 80%,
     #000 100%
   );
+}
+.innerReader {
+  --reader-fade-top: 14px;
+  --reader-fade-inset: 0;
+}
+.innerReader[data-overflow-y-start]::before,
+.innerReader[data-overflow-y-end]::after {
+  content: "";
+  inset-inline-end: 10px;
+}
+.innerReader::before {
+  top: 0;
+}
+.innerReader[data-overflow-y-end]::after {
+  bottom: 0;
+  --fade-direction: to bottom;
 }
 .readerFade[data-edge="top"] {
   top: 0;
@@ -1845,7 +1928,13 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
 }
 .execution {
-  margin: 8px 0 16px;
+  margin: 8px 0;
+}
+div:has(+ .execution) > .assistantMessage {
+  margin-block-end: 8px;
+}
+.execution + div > .assistantMessage {
+  margin-block-start: 8px;
 }
 .executionHeading {
   display: flex;
@@ -1941,7 +2030,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .executionContent {
   position: relative;
-  max-height: min(192px, 32dvh);
+  max-height: min(256px, 42.67dvh);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -2136,73 +2225,4 @@ dl.detailGrid > .detailLongRow dd {
 }
 .conversationFeedback:empty {
   display: none;
-}
-
-.imageTray {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 6px var(--composer-text-inset, 4px);
-  max-width: 100%;
-}
-.imageTile {
-  width: 120px;
-  aspect-ratio: 1;
-  flex: none;
-  position: relative;
-}
-.imageTileOpen {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 1px solid var(--a13n-border);
-  border-radius: 9px;
-  overflow: hidden;
-  background: var(--a13n-surface);
-  color: var(--harness-log-text);
-  cursor: zoom-in;
-}
-.imageTileOpen img {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  object-fit: cover;
-}
-.imageTileOpen img:not([hidden]) + span {
-  display: none;
-}
-.imageTileOpen span {
-  padding: 6px;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-}
-.imageTileRemove {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--card);
-  background: var(--a13n-text);
-  color: var(--card);
-  font: 14px/1 sans-serif;
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .imageTile:not(:hover, :focus-within) .imageTileRemove {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
-.composerEditor [data-image-placeholder]::before {
-  content: attr(data-image-placeholder);
-  position: absolute;
-  pointer-events: none;
-  color: var(--harness-placeholder);
 }

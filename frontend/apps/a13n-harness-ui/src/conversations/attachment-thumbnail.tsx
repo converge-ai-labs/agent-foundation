@@ -78,21 +78,3 @@ export function AttachmentThumbnail({
     />
   );
 }
-
-export function LocalImageThumbnail({ file }: { file: File }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(file);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [file]);
-  return url ? (
-    <img
-      src={url}
-      alt=""
-      onError={(event) => {
-        event.currentTarget.hidden = true;
-      }}
-    />
-  ) : null;
-}

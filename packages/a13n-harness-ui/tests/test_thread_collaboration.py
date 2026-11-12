@@ -162,7 +162,10 @@ async def test_rejected_message_never_starts_a_replacement_run(tmp_path: Path, m
         receipt_id, parts = calls[0]
         assert receipt_id == "receipt-captured"
         assert parts == (
-            TextContent(f"Message from Thread {source.thread_id}:", metadata={"display": False}),
+            TextContent(
+                f"Message from Thread {source.thread_id}:",
+                metadata={"display": False, "source_id": "a13n-harness-ui.thread-message-context"},
+            ),
             TextContent(
                 "Report",
                 metadata={
@@ -188,7 +191,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
 ) -> None:
     root = configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": None}  # Opting out does not remove generic collaboration tools.
+    document["webui"] = {"sidekick": None}  # Legacy null uses inherited Sidekick defaults.
     root.write_text(yaml.safe_dump(document))
     origin_id = ""
     origin_idle, reported = Event(), Event()
@@ -312,7 +315,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         assert (
             next(part for part in parts if (part.text or "").startswith("Task from Thread")).metadata.display is False
         )
-    assert all("Sidekick is enabled" not in text for text in instructions)
+    assert any("Sidekick is enabled" in text for text in instructions)
 
 
 @pytest.mark.parametrize(
@@ -626,7 +629,7 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
         result = await capability.create_thread(context, prompt="Independent work")
         assert result["ok"] is False and result["thread_id"] != source.thread_id
         context, body = prompts[0]
-        assert context.metadata == {"display": False}
+        assert context.metadata == {"display": False, "source_id": "a13n-harness-ui.thread-message-context"}
         assert f"Requesting Project: {project_id or 'No Project'}" in context.content
         assert "Requesting Project: project-main" not in context.content
         assert body.content == "Independent work"

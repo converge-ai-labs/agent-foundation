@@ -13,6 +13,7 @@ import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import type { DisplayBlock } from "./stream";
 import { ConversationTranscript } from "./transcript";
+import { MessageBranches } from "./message-branch";
 import { useHistory } from "./queries";
 import { previewInput, type LocalInput } from "./local-input";
 
@@ -58,6 +59,73 @@ const props = {
 };
 const readingAnchor = (node: HTMLElement) =>
   node.closest<HTMLElement>("[data-reading-anchor]")?.dataset.readingAnchor;
+
+it("shows response time only on the final reply of a completed run", () => {
+  const timestamp = "2026-11-11T05:57:43.000Z";
+  const entries = [
+    input,
+    { ...output, timestamp },
+    {
+      ...output,
+      position: 2,
+      timestamp,
+      parts: [{ kind: "assistant" as const, text: "Final reply" }],
+    },
+  ];
+  const closing = { ...turn, end_position: 3, output_position: 2 };
+  const view = render(
+    <ConversationTranscript
+      {...props}
+      entries={entries}
+      turns={[closing]}
+      blocks={[]}
+    />,
+  );
+  expect(view.container.querySelector("time")).toBeNull();
+  view.rerender(
+    <ConversationTranscript
+      {...props}
+      entries={entries}
+      turns={[{ ...closing, final_position: 2 }]}
+      blocks={[]}
+    />,
+  );
+  expect(view.container.querySelectorAll("time")).toHaveLength(1);
+  expect(
+    screen.getByText("Final reply").closest("section")?.querySelector("time")
+      ?.dateTime,
+  ).toBe(timestamp);
+});
+
+it("branches from an imported reply without a timestamp", () => {
+  const create = vi.fn();
+  const imported = {
+    ...turn,
+    turn_id: "entry:0",
+    timestamp: null,
+    end_position: 2,
+    output_position: 1,
+  };
+  render(
+    <MessageBranches
+      value={{
+        busy: false,
+        pending: false,
+        create,
+        points: { "entry:0": { edit: true, branch: true } },
+      }}
+    >
+      <ConversationTranscript
+        {...props}
+        entries={[input, output]}
+        turns={[imported]}
+        blocks={[]}
+      />
+    </MessageBranches>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Branch in new chat" }));
+  expect(create).toHaveBeenCalledWith("entry:0");
+});
 
 it("retains live output nodes and reading anchors through repeated saves", () => {
   const view = render(

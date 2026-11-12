@@ -43,7 +43,7 @@ from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -73,7 +73,7 @@ from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunCompositi
 class ReconstructedAgent:
     """One fresh executable and the Run bindings needed to invoke it."""
 
-    executable: ExecutableAgent[str]
+    executable: ExecutableAgent[str | None]
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
     run_configuration: RunConfiguration = field(default_factory=RunConfiguration)
@@ -85,6 +85,10 @@ class ReconstructedAgent:
         if not self.media_models:
             return None
         return FileMediaUnderstanding(self.media_models, self.model_resolver.fresh(), thread_id=thread_id)
+
+
+def _finish_bot_silently() -> None:
+    """Finish this Bot turn without adding a final user-facing reply."""
 
 
 class _GlobalGuidanceCapability(AbstractModelContextCapability):
@@ -108,14 +112,17 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
             else "No global AGENTS.md instructions are configured for this run. Earlier global guidance blocks no longer apply."
         )
         content = "# AGENTS.md instructions (global configuration)\n\n<INSTRUCTIONS>\n" + current + "\n</INSTRUCTIONS>"
+        block = ModelContextBlock(
+            source_id="a13n-harness-ui.global-guidance",
+            context_group="environment_context",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        if request.history.matches_latest(block):
+            return projection
         return ModelContextProjection(
             blocks=(
-                ModelContextBlock(
-                    source_id="a13n-harness-ui.global-guidance",
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                block,
                 *projection.blocks,
             )
         )
@@ -238,9 +245,7 @@ class AgentReconstructor:
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
-            dict.fromkeys(
-                recipe.plugin_key for node in _walk_nodes(composition.root) for recipe in node.harness_plugins
-            )
+            dict.fromkeys(recipe.plugin_key for node in composition.agent_nodes() for recipe in node.harness_plugins)
         )
         try:
             plugin_catalog = self._catalog.plugin_catalog(plugin_keys)
@@ -282,8 +287,10 @@ class AgentReconstructor:
                 api_keys=self._api_keys,
                 configuration=composition.run_configuration,
             )
+            pricing = model_resolver.pricing(pricing_catalog)
+            definition = definition.with_updates(capabilities=(*definition.capabilities, pricing))
             compaction = (
-                CompactionRun(background_compaction, model_resolver.fresh(), pricing_catalog)
+                CompactionRun(background_compaction, model_resolver.fresh(), pricing)
                 if background_compaction is not None and composition.background_compaction.enabled
                 else None
             )
@@ -315,7 +322,7 @@ class AgentReconstructor:
         return ReconstructedAgent(
             run_configuration=composition.run_configuration,
             memory_cursors=cursors,
-            executable=cast(ExecutableAgent[str], executable),
+            executable=cast(ExecutableAgent[str | None], executable),
             model_resolver=model_resolver,
             compaction=compaction,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
@@ -344,6 +351,12 @@ class AgentReconstructor:
                 ),
             )
         )
+        resolver = HarnessUiModelResolver(
+            {recipe_id: node.model},
+            subscription_sources=subscription_sources,
+            api_keys=self._api_keys,
+            configuration=composition.run_configuration,
+        )
         definition = AgentDefinition(
             agent=AgentSpec(
                 model=recipe_id,
@@ -354,20 +367,20 @@ class AgentReconstructor:
                 usage_limits=UsageLimits(request_limit=12),
             ),
             output_type=str,
-            capabilities=(*root_capabilities, memory, CurrentAgentContextCapability()),
+            capabilities=(
+                *root_capabilities,
+                memory,
+                CurrentAgentContextCapability(),
+                resolver.pricing(pricing_catalog),
+            ),
         )
         executable = HarnessBuilder(
             configured_plugins_enabled=False,
             instrumentation=self._instrumentation,
         ).build(definition, pricing_catalog=pricing_catalog)
         return ReconstructedAgent(
-            executable=cast(ExecutableAgent[str], executable),
-            model_resolver=HarnessUiModelResolver(
-                {recipe_id: node.model},
-                subscription_sources=subscription_sources,
-                api_keys=self._api_keys,
-                configuration=composition.run_configuration,
-            ),
+            executable=cast(ExecutableAgent[str | None], executable),
+            model_resolver=resolver,
             run_configuration=composition.run_configuration,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
@@ -383,7 +396,7 @@ class AgentReconstructor:
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
-    ) -> AgentDefinition[str]:
+    ) -> AgentDefinition[str | None]:
         recipe_id = model_recipe_id(node.model)
         previous = model_recipes.setdefault(recipe_id, node.model)
         if previous != node.model:
@@ -500,7 +513,9 @@ class AgentReconstructor:
                 system_prompt=list(node.system_prompt),
                 instructions=list(node.instructions),
             ),
-            output_type=str,
+            output_type=[str, ToolOutput(_finish_bot_silently, name="finish_silently")]
+            if node.source_kind == "bot"
+            else str,
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
@@ -516,16 +531,6 @@ class AgentReconstructor:
                 ),
             ),
         )
-
-
-def _walk_nodes(root: ResolvedAgentNode) -> tuple[ResolvedAgentNode, ...]:
-    values: list[ResolvedAgentNode] = []
-    pending = [root]
-    while pending:
-        node = pending.pop()
-        values.append(node)
-        pending.extend(reversed(tuple(item.definition for item in node.children)))
-    return tuple(values)
 
 
 __all__ = ["AgentReconstructor", "ReconstructedAgent"]

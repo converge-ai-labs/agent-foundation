@@ -638,6 +638,27 @@
     "Environments": {
       "additionalProperties": false,
       "properties": {
+        "credential_sync_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Credential Sync Seconds",
+          "type": "number"
+        },
+        "credential_sync_timeout_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Credential Sync Timeout Seconds",
+          "type": "number"
+        },
+        "credential_sync_batch": {
+          "default": 128,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Credential Sync Batch",
+          "type": "integer"
+        },
         "scan_seconds": {
           "default": 5,
           "exclusiveMinimum": 0,

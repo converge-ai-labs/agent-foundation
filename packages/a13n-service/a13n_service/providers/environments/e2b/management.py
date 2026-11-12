@@ -21,9 +21,12 @@ from a13n_harness.providers.environment.e2b.http import http_execution, http_run
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
+from a13n_service.providers.environment import envd_assets, envd_upgrade
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
 from a13n_service.providers.environment.envd import envd_environment
+from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.metrics import (
     DeviceObservation,
     MetricsLaunch,
@@ -31,6 +34,7 @@ from a13n_service.providers.environment.metrics import (
     observe,
     scrape_target,
 )
+from a13n_service.providers.environments.e2b import preparation
 
 if TYPE_CHECKING:
     from e2b import AsyncSandbox
@@ -73,11 +77,16 @@ class E2BManagement(E2BReference, ManagementBackend):
         super().__init__(configuration, environment_id=environment_id, state=state, runtime=runtime)
         self._operation_id = operation_id
 
-    def _remember(self, sandbox_id: str) -> None:
+    def _remember(self, sandbox_id: str, *, revision: str | None = None) -> None:
+        previous = self._state
+        if previous is not None and previous.preparation_revision != revision:
+            raise provider_error("envd_preparation_revision_conflict", Category.CONFLICT)
         self._state = E2BProviderStateData(
             sandbox_id=sandbox_id,
             environment_id=self._native_id,
             configuration_fingerprint=self._configuration.fingerprint,
+            preparation_revision=revision,
+            preparation_phase=previous.preparation_phase if previous else "installing" if revision else None,
         )
         self._cache_state(
             EnvironmentState(provider_key=PROVIDER_KEY, state_version="1", state=self._state.model_dump(mode="json"))
@@ -107,7 +116,10 @@ class E2BManagement(E2BReference, ManagementBackend):
                     return None
                 target = matches[0]
             self._validate_target(target)
-            self._remember(target.sandbox_id)
+            revision = target.metadata.get(preparation.TAG) if self._configuration.preparation == "headless" else None
+            if self._configuration.preparation == "headless" and not revision:
+                raise provider_error("envd_preparation_revision_missing", Category.CONFLICT)
+            self._remember(target.sandbox_id, revision=revision)
             return target
 
     def validate_management(self) -> None:
@@ -116,25 +128,29 @@ class E2BManagement(E2BReference, ManagementBackend):
         if self._state is not None and self._state.environment_id != self.environment_id:
             raise provider_error("provider_target_conflict", Category.CONFLICT)
 
-    async def create(self) -> None:
+    async def create(self) -> Pending | None:
         from e2b import AsyncSandbox
         from e2b.sandbox.commands.command_handle import CommandExitException
 
         target = await self._inspect()
         if target is not None:
             if target.state.value != "running" or self._configuration.execution != "native":
-                await self.start()
-            return
+                return await self.start()
+            return None
         if self._state is not None:
             raise provider_error("provider_target_missing", Category.MISSING)
         config = self._configuration
         metadata = {"a13n_environment": self._native_id, "a13n_configuration": config.fingerprint}
         if self._operation_id:
             metadata["a13n_operation"] = self._operation_id
+        if config.preparation == "headless":
+            metadata[preparation.TAG] = preparation.revision()
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
-                envs=envd_environment(dict(config.environment), config.envd),
+                envs=self._envd_environment()
+                if config.envd_management == "preinstalled" and config.execution != "native"
+                else envd_environment(dict(config.environment), config.envd),
                 timeout=config.timeout_seconds,
                 metadata=metadata,
                 allow_internet_access=config.allow_internet_access,
@@ -142,9 +158,11 @@ class E2BManagement(E2BReference, ManagementBackend):
                 lifecycle={"on_timeout": "kill", "auto_resume": False},
                 **self._options(),
             )
-            self._remember(sandbox.sandbox_id)
+            self._remember(sandbox.sandbox_id, revision=metadata.get(preparation.TAG))
             try:
-                if config.execution != "native":
+                if config.preparation == "headless" and not await self._prepare_envd(sandbox):
+                    return Pending(self.state, settled=True)
+                if config.execution != "native" and config.envd_management == "managed":
                     try:
                         await self._bootstrap_envd(sandbox)
                     except CommandExitException:
@@ -158,8 +176,27 @@ class E2BManagement(E2BReference, ManagementBackend):
                 await close_sandbox(sandbox)
         if config.execution == "envd_http":
             await self._check_envd()
+        self._prepared("ready")
+        return None
 
-    async def start(self) -> None:
+    def _prepared(self, phase: Literal["installing", "starting", "ready"]) -> None:
+        if self._state is not None and self._state.preparation_revision is not None:
+            self._state = self._state.model_copy(update={"preparation_phase": phase})
+            self._cache_state(
+                EnvironmentState(
+                    provider_key=PROVIDER_KEY, state_version="1", state=self._state.model_dump(mode="json")
+                )
+            )
+
+    async def _prepare_envd(self, sandbox: AsyncSandbox) -> bool:
+        assert self._state is not None and self._state.preparation_revision is not None
+        if self._state.preparation_phase == "installing":
+            if not await preparation.install(sandbox, self._state.preparation_revision, self._operation_id):
+                return False
+            self._prepared("starting")
+        return True
+
+    async def start(self) -> Pending | None:
         from e2b import AsyncSandbox
 
         target = await self._inspect()
@@ -174,77 +211,99 @@ class E2BManagement(E2BReference, ManagementBackend):
                     self._validate_target(await sandbox.get_info())
                 finally:
                     await close_sandbox(sandbox)
-        if self._configuration.execution == "envd_ws":
+        preparing = (
+            self._configuration.preparation == "headless"
+            and self._state is not None
+            and self._state.preparation_phase != "ready"
+        )
+        if self._configuration.envd_management == "managed" and (
+            preparing or self._configuration.execution == "envd_ws"
+        ):
             sandbox = await open_sandbox(target.sandbox_id, self._options(), self._validate_target)
             try:
+                if preparing and not await self._prepare_envd(sandbox):
+                    return Pending(self.state, settled=True)
                 await self._bootstrap_envd(sandbox)
             finally:
                 await close_sandbox(sandbox)
-        elif self._configuration.execution == "envd_http":
+        if self._configuration.execution == "envd_http":
             await self._check_envd()
+        self._prepared("ready")
+        return None
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        assert self._state is not None
+        sandbox = await open_sandbox(self._state.sandbox_id, self._options(), self._validate_target)
+        try:
+
+            async def execute(argv: list[str]) -> str:
+                with sdk_errors(mutation=True):
+                    result = await sandbox.commands.run(shlex.join(argv), user="root", timeout=10, request_timeout=15)
+                    return result.stdout
+
+            if not await envd_upgrade.upgrade(
+                execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+            ):
+                return Pending(self.state, settled=True)
+        finally:
+            await close_sandbox(sandbox)
+        if self._configuration.execution == "envd_http":
+            await self._check_envd()
+        return None
 
     async def _bootstrap_envd(self, sandbox: AsyncSandbox) -> None:
-        # Only lifecycle creation starts preinstalled services. Attachments and
-        # human grants never install, repair or restart a desktop.
+        # Managed lifecycle creation starts services; authored boot remains unchanged.
+        if self._configuration.envd_management == "preinstalled":
+            return
         executable = "a13n-sandbox-desktop" if self._configuration.desktop else "a13n-envd"
         await sandbox.commands.run(
             "umask 077; install -d -m 0700 /var/lib/a13n-envd && exec flock -n /var/lib/a13n-envd/start.lock "
-            "a13n-sandbox-entrypoint " + executable + " > /var/lib/a13n-envd/startup.log 2>&1",
+            "sh -c " + shlex.quote(envd_assets.startup(executable)) + " > /var/lib/a13n-envd/startup.log 2>&1",
             user="root",
             cwd="/workspace",
             background=True,
             timeout=0,
             request_timeout=self._configuration.request_timeout_seconds,
-            envs=self.bootstrap_environment(
-                {
-                    **self._configuration.environment,
-                    **(self._metrics.environment if self._metrics is not None else {}),
-                    **(
-                        {
-                            "A13N_ENVD_CONFIG_JSON": json.dumps(
-                                {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
-                            )
-                        }
-                        if self._metrics is not None
-                        else {}
-                    ),
-                    "A13N_ENVD_DEVICE_ID": self._native_id,
-                    "A13N_ENVD_TRANSPORT": "http",
-                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
-                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                    "A13N_ENVD_EXECUTION_UID": "1001",
-                    "A13N_ENVD_EXECUTION_GID": "1001",
-                    "A13N_ENVD_FULL_CONTROL": "true",
-                    "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
-                    "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
-                    "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
-                },
-                self._configuration.envd,
-            ),
+            envs=self._envd_environment(),
         )
-        if self._configuration.execution == "envd_ws":
-            return
-        # This bounded probe waits for startup only; EIP subsequently verifies
-        # authentication, identity, protocol and required capabilities.
-        probe = """import socket,time
-end=time.monotonic()+30
-while time.monotonic()<end:
- try:
-  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
- except OSError: time.sleep(.2)
-else: raise RuntimeError('a13n-envd did not become ready')
-"""
-        await sandbox.commands.run(
-            shlex.join(["python3", "-I", "-c", probe]), user="root", timeout=35, request_timeout=40
+
+    def _envd_environment(self) -> dict[str, str]:
+        return self.bootstrap_environment(
+            {
+                **self._configuration.environment,
+                **(self._metrics.environment if self._metrics is not None else {}),
+                **(
+                    {
+                        "A13N_ENVD_CONFIG_JSON": json.dumps(
+                            {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
+                        )
+                    }
+                    if self._metrics is not None
+                    else {}
+                ),
+                "A13N_ENVD_DEVICE_ID": self._native_id,
+                "A13N_ENVD_TRANSPORT": "http",
+                "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                "A13N_ENVD_EXECUTION_UID": "1001",
+                "A13N_ENVD_EXECUTION_GID": "1001",
+                "A13N_ENVD_FULL_CONTROL": "true",
+                "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                "A13N_DESKTOP_ACCESS": "true" if self._configuration.desktop_assistance else "false",
+            },
+            self._configuration.envd,
         )
 
     async def _check_envd(self) -> None:
-        execution = http_execution(self)
-        try:
-            await execution.open(execution_id="exec-readiness")
-            await execution.check_ready(frozenset({"computer"}) if self._configuration.desktop else frozenset())
-        finally:
-            await execution.close()
+        if self.defer_envd_readiness:
+            return
+        await wait_until_ready(
+            lambda: http_execution(self),
+            provider_key=PROVIDER_KEY,
+            desktop=self._configuration.desktop,
+            timeout=30,
+        )
 
     async def desktop_access(self, request: Request) -> Reply:
         if not self._configuration.desktop or self._state is None:

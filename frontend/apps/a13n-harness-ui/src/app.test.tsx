@@ -187,6 +187,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows Bot once in the upper chat shortcuts without a second profile-menu entry", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  window.history.replaceState(null, "", "/new");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (new URL(request.url).pathname === "/api/status") return json(status);
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const sidebar = within(
+    await screen.findByRole("complementary", { name: "Workbench navigation" }),
+  );
+  const shortcuts = sidebar.getByRole("navigation", { name: "Chat shortcuts" });
+  expect(sidebar.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
+  expect(
+    within(shortcuts).getByRole("link", { name: "Bot" }).getAttribute("href"),
+  ).toBe("/bot");
+});
+
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");
@@ -260,6 +281,7 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   });
   render(<BrowserApp />);
   await screen.findByText("Global-only memory");
+  expect(screen.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
   expect(
     screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
   ).toBe("true");
@@ -1545,11 +1567,7 @@ it("configures Sidekick in General without changing defaults or starting chats",
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  expect(
-    (await screen.findByRole("switch", { name: "Sidekick" })).getAttribute(
-      "aria-checked",
-    ),
-  ).toBe("true");
+  await screen.findByText("Subagent defaults");
   await user.click(screen.getByText("Subagent defaults"));
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
@@ -1575,10 +1593,13 @@ it("configures Sidekick in General without changing defaults or starting chats",
       screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
     ).toContain("Worker"),
   );
-  await user.click(screen.getByRole("switch", { name: "Sidekick" }));
+  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Use current agent" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(2));
-  expect(parse(content).webui.sidekick).toBeNull();
+  expect(parse(content).webui.sidekick).toEqual({ model: "model-worker" });
   expect(content).toContain("custom: keep");
   expect(content).toContain("agent-assistant");
   expect(submissions).toBe(0);
@@ -1801,6 +1822,7 @@ it("synchronizes quick rename with the mounted clean Project editor before savin
     expect((nameField as HTMLInputElement).value).toBe("Renamed"),
   );
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  await user.click(screen.getByTitle("/test"));
   fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
     target: { value: "/changed" },
   });

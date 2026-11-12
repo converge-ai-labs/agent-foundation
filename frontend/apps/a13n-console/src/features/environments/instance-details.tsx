@@ -37,6 +37,7 @@ import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
 import { KubernetesDetails } from "./kubernetes-details";
 import { EnvironmentMonitoring } from "../monitoring/environment";
+import { EnvironmentCredentials } from "../credentials/environment";
 
 /**
  * Standalone entry point: a "Details" button that opens the same inspector.
@@ -249,23 +250,20 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
-              {["e2b", "modal", "daytona", "vercel", "sprites"].includes(
-                provider.data?.type ?? "",
-              ) &&
-                template.data?.config.recipe?.desktop === true && (
-                  <>
-                    {(provider.data?.type === "sprites" ||
-                      template.data.config.recipe?.template === "auto" ||
-                      template.data.config.recipe?.image === "auto" ||
-                      template.data.config.recipe?.snapshot === "auto") && (
-                      <CreationProgress
-                        environment={value}
-                        providerType={provider.data?.type}
-                        etag={detail.data?.etag}
-                      />
-                    )}
-                  </>
-                )}
+              {[
+                "docker",
+                "e2b",
+                "modal",
+                "daytona",
+                "vercel",
+                "sprites",
+              ].includes(provider.data?.type ?? "") && (
+                <CreationProgress
+                  environment={value}
+                  providerType={provider.data?.type}
+                  etag={detail.data?.etag}
+                />
+              )}
               {value.desktop_preview !== "not_configured" &&
                 value.status === "ready" &&
                 !value.failure?.permanent &&
@@ -356,6 +354,12 @@ export function EnvironmentPanel({
                 environment={value}
                 etag={detail.data?.etag}
               />
+              <section className={styles.factGroup}>
+                <EnvironmentCredentials
+                  key={value.id}
+                  environmentId={value.id}
+                />
+              </section>
               <section className={styles.factGroup}>
                 <h3>{t("Source")}</h3>
                 <dl className={styles.facts}>

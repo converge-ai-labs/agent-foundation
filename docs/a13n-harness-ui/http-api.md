@@ -258,6 +258,18 @@ To adopt the selected Project's defaults:
 
 Only Project-specified axes are applied. For just the four Environment axes, use GET/POST `/api/threads/{thread_id}/project-environments`; its preview describes a complete Environment replacement. Neither operation copies files.
 
+## Bot
+
+Instance-key clients can use the shared [Bot](bot.md) without creating another Thread. Scoped guests cannot access these routes.
+
+| Method and path        | Body                                                                   | Result                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, retained inputs, active operation, and pending-decision status |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input with native admission/steering outcome; acceptance is not completion                             |
+| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                   |
+
+Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/threads/thread_bot` for Activity and use the existing decision API for pending human responses. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
+
 ## Coordinator
 
 Create an owner with `POST /api/threads` and `{"defaults":{"project_id":"project-main"},"coordinator":true}`. Use an available Project ID. Creation saves the role and enables automatic follow-up; submit input separately. A failed submission leaves the created Thread in place.
@@ -489,9 +501,9 @@ Report changes immediately, set `foreground:false` when hidden/unfocused, and re
 
 Implement this protocol only if clients need to edit the same unsent input. Ordinary HTTP scripts can submit `parts` directly.
 
-GET `/api/drafts` lists nonempty drafts as `{thread_id,draft_id,unsent_since}` without text or editor membership. Selected pending/failed attachments count as nonempty; whitespace and dormant entries do not. Refetch after `draft` summary hints or reset, then look up Thread metadata separately. The index and documents are in memory and disappear on App restart.
+GET `/api/drafts` lists nonempty drafts as `{thread_id,draft_id,unsent_since}` without text or editor membership. Selected pending/failed attachments count as nonempty; whitespace and dormant entries do not. Refetch after `draft` summary hints or reset, then look up Thread metadata separately. The index comes from the saved current draft and survives App restart. Each root Thread has one bounded composer record; content/options edits expire after 30 days without further edits, with attached editors skipped during pruning.
 
-Connect to `/api/threads/{thread_id}/draft/connect` using first-frame authentication. Root Threads support one shared document per App, independently of computer sharing. `DraftFrame` contains `draft_id`, participant ID, a base64 Yjs v1 full-state update, and presence. Use these root types:
+Connect to `/api/threads/{thread_id}/draft/connect` using first-frame authentication. Root Threads support one logical shared composer per App, independently of computer sharing. `DraftFrame` contains `draft_id`, participant ID, a base64 Yjs v1 content update, optional owner-only `options_update_base64`, and presence. Content and options use separate Y documents, saved atomically in the same record. The options document has one `options` map for `model`, `environment`, and `mode`; owner clients include its complete update in synchronization and submission captures. Guests neither receive nor submit options bytes, including replayed updates. Use these root types:
 
 | Root                            | Meaning                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------- |
@@ -500,18 +512,18 @@ Connect to `/api/threads/{thread_id}/draft/connect` using first-frame authentica
 
 Inline text tokens are `U+FFFC + key + U+FFFC`. Only live occurrences select input; dormant map entries support undo. Missing or unfinished entries block submission. Expand occurrences in text order before sending, so editor tokens never reach execution. Inspect an attachment through its metadata endpoint without downloading bytes.
 
-Apply server updates to a Yjs-compatible replica. Send `{"kind":"sync","draft_id":"...","update_base64":"..."}` with the **complete** replica update, including dependencies and deletions. The server validates the merged document atomically. `draft_invalid` preserves server state; retain rejected local content for correction. Limits are 512 KiB encoded CRDT state, 256 Ki text characters, eight selected attachments, and 20 MiB attachment bytes. CRDT history counts toward the state limit.
+Apply server updates to a Yjs-compatible replica. Send `{"kind":"sync","draft_id":"...","update_base64":"..."}` with the **complete** replica update, including dependencies and deletions. The server validates the merged document atomically. `draft_invalid` preserves server state; retain rejected local content for correction. Limits are 512 KiB combined encoded content/options CRDT state, 256 Ki text characters, eight selected attachments, and 20 MiB attachment bytes. CRDT history counts toward the state limit.
 
 Editor presence uses `{"kind":"presence","draft_id":"...","presence":{"name":"Alice","color":"#112233"}}`; optional `anchor`/`head` are base64 Y relative positions. Names/colors are unverified. Merge offline edits on reconnect only when `draft_id` matches. After identity loss, offer local recovery explicitly.
 
 Send through ordinary `/submit`, not a separate draft endpoint:
 
 1. Synchronize edits and observe their accepted CRDT state.
-2. Clone the replica and expand its text/attachment selections into ordered `parts`.
+2. Clone both replicas synchronously and expand text/attachment selections into ordered `parts`. Capture owner Run choices from the same snapshot; they remain Run-only overrides rather than Thread defaults.
 3. After positive submission acknowledgement, delete only text visible in that clone, then merge its complete deletion update into the live replica. Keep inline registry entries for concurrent token occurrences.
 4. Preserve the draft on rejection or uncertain delivery. Editing-state replay is safe to reconcile; execution resubmission is a separate action.
 
-Disconnect removes editor presence while retaining the in-memory document and active Run. Closing the App drops drafts; saved conversation history keeps its own lifetime.
+Disconnect removes editor presence while retaining the saved composer and active Run. Closing the App retains unexpired drafts; saved conversation history keeps its own lifetime. Successful Send clears only captured input and the captured goal-mode selection, preserving concurrent edits and reusable Model/Environment choices.
 
 ### Ordered input bodies
 
@@ -569,7 +581,7 @@ Use the live OpenAPI document for the complete endpoint inventory, including Bro
 | `GET /api/host/terminals` and `/{terminal_id}`   | List terminals or inspect one                   |
 | `GET /healthz` and `/readyz`                     | Check listener liveness and App readiness       |
 
-Feature flags describe availability: `host_files` requires sharing; `host_git` additionally requires Git; `host_terminal` requires a supported native terminal. `shared_drafts` and `page_presence` describe in-memory collaboration independently of sharing. Health, readiness, static assets, and the OpenAPI download have their own non-schema-listed boundaries.
+Feature flags describe availability: `host_files` requires sharing; `host_git` additionally requires Git; `host_terminal` requires a supported native terminal. `shared_drafts` describes persistent composer collaboration and `page_presence` describes process-local presence, independently of sharing. Health, readiness, static assets, and the OpenAPI download have their own non-schema-listed boundaries.
 
 ## Errors and versions
 

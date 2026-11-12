@@ -1,7 +1,10 @@
+import { MessageBranchProvider } from "./message-branch";
 import { ReaderFades } from "./reader-fades";
+import { useComposerRunChoices } from "./composer-run-choices";
 import { useTranslation } from "../i18n";
 import {
   type ComponentProps,
+  type ReactNode,
   useContext,
   useCallback,
   useEffect,
@@ -10,7 +13,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import {
+  Link,
+  Navigate,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router";
+import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { ArrowDown } from "@phosphor-icons/react";
@@ -55,7 +65,7 @@ import {
   isUnavailableChat,
 } from "./conversation-unavailable";
 import { LiveConnectionStatus } from "./live-connection";
-import { ConversationTranscript, RecoveryNotice } from "./transcript";
+import { ConversationTranscript } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { inputSource, conversationTitle } from "./local-input";
 import { InputNavigation } from "./input-navigation";
@@ -77,6 +87,14 @@ export function ConversationPage(props: {
   unauthorized: () => void;
 }) {
   const { threadId = "" } = useParams();
+  const location = useLocation();
+  if (threadId === BOT_THREAD_ID)
+    return (
+      <Navigate
+        to={{ pathname: "/bot", search: location.search, hash: location.hash }}
+        replace
+      />
+    );
   return <Conversation key={threadId} threadId={threadId} {...props} />;
 }
 export function Conversation(
@@ -92,23 +110,36 @@ function ConversationContent({
   threadId,
   profile,
   unauthorized,
+  publication,
 }: {
   threadId: string;
   profile: Profile;
   unauthorized: () => void;
+  publication?: {
+    threadAvailable: boolean;
+    ready: boolean;
+    revision: string;
+    completionVersion: number;
+    messages: ReactNode;
+    composer: ReactNode;
+    status: ReactNode;
+  };
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const queries = useQueryClient();
-  const detail = useThread(threadId);
+  const detail = useThread(
+    publication && !publication.threadAvailable ? "" : threadId,
+  );
   const selectors = useSelectors();
   const guest = useGuestAccess();
   const mcpInputs = useMcpInputRequests(threadId, !guest && !!detail.data);
   const readOnly = !!detail.data?.thread.memory_scope;
+  const isBot = threadId === BOT_THREAD_ID;
   const canCompose =
-    !readOnly && (!guest || guest.grant.permission === "prompt");
+    !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
   const owner = useQuery({
@@ -143,8 +174,6 @@ function ConversationContent({
       );
     },
     onSuccess: (updated) => {
-      draft.controls = {};
-      draft.notify();
       applyThreadMutation(queries, updated);
     },
     onSettled: () => {
@@ -168,14 +197,15 @@ function ConversationContent({
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
-    !!detail.data,
+    !!detail.data && !publication,
     selectedTurn,
   );
   const { display, connection, reconnections, revision } =
     useLiveThread(threadId);
   const [showAvailable, setShowAvailable] = useState(false);
   const pageReady = useInitialReady(
-    showAvailable ||
+    publication?.ready ||
+      showAvailable ||
       // A confirmed Send already has readable input. Keep it and the next
       // prompt visible while the destination observes detail and saved history.
       draft.localInputs.some((input) => input.state === "accepted") ||
@@ -185,7 +215,7 @@ function ConversationContent({
     // Saved body readiness is independent of live replay and editor sync.
     // The composer retains its own connection/control guards before sending.
   );
-  const rename = !guest && !readOnly && dialog === "rename";
+  const rename = !isBot && !guest && !readOnly && dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
@@ -272,6 +302,8 @@ function ConversationContent({
   const reconcile = useCallback(() => {
     refreshThread(queries, threadId, "reconcile");
     refreshActivity(queries, transport, threadId);
+    if (threadId === BOT_THREAD_ID)
+      void queries.invalidateQueries({ queryKey: ["bot"] });
   }, [queries, transport, threadId]);
   const decisions = useDecisionPlacement(
     detail.data?.deferred_requests?.length ? (
@@ -302,9 +334,11 @@ function ConversationContent({
     );
   }, [history.data]);
   const latestPage = history.data?.pages[0];
-  const hasLater = !!(latestPage?.later_turns_cursor === undefined
-    ? latestPage?.newer_cursor
-    : latestPage.later_turns_cursor);
+  const hasLater =
+    !publication &&
+    !!(latestPage?.later_turns_cursor === undefined
+      ? latestPage?.newer_cursor
+      : latestPage.later_turns_cursor);
   const findTurn = useCallback(
     (id: string) =>
       [
@@ -374,10 +408,12 @@ function ConversationContent({
     previousLocalInput.current = latestLocalInput;
   }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
+  const lastTurn = turns.at(-1);
   const completionVersion =
-    history.isPreviousHistory || history.isError
+    publication?.completionVersion ??
+    (history.isPreviousHistory || history.isError
       ? 0
-      : (history.data?.pages[0]?.completion_version ?? 0);
+      : (history.data?.pages[0]?.completion_version ?? 0));
   const acknowledged = results.followed.get(threadId);
   useEffect(() => {
     if (
@@ -424,6 +460,7 @@ function ConversationContent({
     acknowledged,
     hasLater,
     history.data,
+    publication?.revision,
   ]);
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -453,6 +490,7 @@ function ConversationContent({
   // is not evidence that continuation was saved.
   const presentation = display.presentationFor(continuation);
   const showLive =
+    !publication &&
     !hasLater &&
     showFocusedOutput(
       presentation,
@@ -461,21 +499,23 @@ function ConversationContent({
       history.isPreviousHistory,
     );
   const liveBlocks = presentation.blocksAfter(continuation);
-  const visibleContent = `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
-    showLive
-      ? liveBlocks
-          .filter((block) => !block.diagnostic)
-          .map(
-            (block) =>
-              `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
-          )
-          .join("|")
-      : ""
-  }`;
+  const visibleContent =
+    publication?.revision ??
+    `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
+      showLive
+        ? liveBlocks
+            .filter((block) => !block.diagnostic)
+            .map(
+              (block) =>
+                `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
+            )
+            .join("|")
+        : ""
+    }`;
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
-    if (!pageReady || !element || !history.data) return;
+    if (!pageReady || !element || (!history.data && !publication)) return;
     const restored = !!restoreScroll.current;
     if (restoreScroll.current) {
       try {
@@ -617,13 +657,42 @@ function ConversationContent({
     },
   });
   const thread = detail.data?.thread;
+  const runAgent = guest ? undefined : thread?.configuration.agent_source.id;
+  const refreshRunConfiguration = useCallback(async () => {
+    const [current, catalog] = await Promise.all([
+      detail.refetch(),
+      selectors.refetch(),
+    ]);
+    if (!current.isSuccess || !catalog.isSuccess) return;
+    const configuration = current.data.thread.configuration;
+    const agent = configuration.agent_source.id;
+    return {
+      agent,
+      inheritedModel:
+        configuration.default_model_id ??
+        catalog.data.agents.find((item) => item.agent_id === agent)?.model_id ??
+        null,
+    };
+  }, [detail.refetch, selectors.refetch]);
+  const runChoices = useComposerRunChoices(
+    draft,
+    runAgent,
+    thread?.configuration.default_model_id ??
+      (selectors.data
+        ? (selectors.data.agents.find((item) => item.agent_id === runAgent)
+            ?.model_id ?? null)
+        : undefined),
+    refreshRunConfiguration,
+    guest ? undefined : threadId,
+  );
   const unavailable =
+    !publication &&
     detail.isError &&
     (isUnavailableChat(detail.error) ||
       (!detail.data && !draft.localInputs.length && !showLive));
   const pageError =
     detail.error ||
-    (history.isFetchNextPageError ? null : history.error) ||
+    (!publication && !history.isFetchNextPageError ? history.error : null) ||
     agentSelection.error ||
     selectors.error ||
     mcpInputs.error ||
@@ -644,7 +713,11 @@ function ConversationContent({
           });
       }}
     />
-  ) : !disconnected && history.isPending && !history.data && !showLive ? (
+  ) : !publication &&
+    !disconnected &&
+    history.isPending &&
+    !history.data &&
+    !showLive ? (
     <span role="status">{t("Loading messages\u2026")}</span>
   ) : null;
   const connectionStatus =
@@ -683,6 +756,55 @@ function ConversationContent({
         </Link>
       </div>
     );
+  const failureNotice = (
+    <RootFailureNotice
+      lastExecution={thread?.last_execution}
+      threadId={threadId}
+      receipt={receipt}
+      display={display}
+      continuationId={detail.data?.continuation_id}
+      completedContinuationId={thread?.completion?.continuation_id}
+      retry={
+        isBot || guest || readOnly || thread?.archived
+          ? undefined
+          : () => {
+              void submitContinuation(
+                draft,
+                transport,
+                threadId,
+                tracker ? () => tracker.beforeRun(threadId) : undefined,
+                () => appContexts?.capture(threadId) ?? [],
+              ).finally(reconcile);
+            }
+      }
+      retryDisabled={
+        !detail.data?.available_actions?.includes("run") ||
+        thread?.root_activity.state !== "inactive" ||
+        agentSelection.isPending ||
+        agentSelection.isError ||
+        detail.isError ||
+        draft.submission.kind === "pending" ||
+        draft.submission.kind === "unknown" ||
+        (draft.submission.kind === "accepted" &&
+          draft.submission.receipt !== receipt)
+      }
+    />
+  );
+  const terminalTurn =
+    thread?.root_activity.state === "inactive" &&
+    (thread.last_execution?.status === "cancelled" ||
+      thread.last_execution?.status === "failed") &&
+    thread.last_execution.completed_at &&
+    continuation === detail.data?.continuation_id &&
+    lastTurn &&
+    lastTurn.end_position === latestPage?.total &&
+    lastTurn.final_position == null
+      ? {
+          id: lastTurn.turn_id,
+          time: thread.last_execution.completed_at,
+          notice: failureNotice,
+        }
+      : undefined;
   const content = (
     <>
       <div className={styles.page}>
@@ -700,14 +822,16 @@ function ConversationContent({
         )}
         <div className={styles.readerFrame}>
           <ReaderFades />
-          <InputNavigation
-            threadId={threadId}
-            continuation={continuation}
-            localInputs={draft.localInputs}
-            reader={reader}
-            revision={visibleContent}
-            onSelect={jumpToInput}
-          />
+          {!publication && (
+            <InputNavigation
+              threadId={threadId}
+              continuation={continuation}
+              localInputs={draft.localInputs}
+              reader={reader}
+              revision={visibleContent}
+              onSelect={jumpToInput}
+            />
+          )}
           <div
             ref={reader}
             className={`${styles.reading} a13n-scrollbar`}
@@ -773,160 +897,152 @@ function ConversationContent({
                   {t("Retry loading")}
                 </Button>
               )}
-              <PauseConversationFollowing value={interruptScroll}>
-                <ConversationTranscript
-                  currentFailureRunId={
-                    thread?.last_execution?.status === "failed"
-                      ? thread.last_execution.run_id
-                      : undefined
-                  }
-                  entries={entries}
-                  running={
-                    operation?.state === "running" &&
-                    presentation === display &&
-                    operation.run_id === presentation.runId
-                  }
-                  blocks={showLive ? liveBlocks : []}
-                  localInputs={hasLater ? [] : draft.localInputs}
-                  turns={turns}
-                  loadDetails
-                  onSavedEntries={reconcileSavedInputs}
-                  continuation={continuation}
-                  gap={showLive && display.gap}
-                  threadId={threadId}
-                  activity={
-                    !readOnly &&
-                    !showGoal &&
-                    !hasLater &&
-                    !thread?.archived &&
-                    !detail.data?.deferred_requests?.length &&
-                    display.recovery?.state !== "retrying" ? (
-                      <RunActivity
-                        activity={operation}
-                        submission={draft.submission}
-                        operation={observedOperation.data}
-                      />
-                    ) : undefined
-                  }
-                  pending={
-                    !hasLater && detail.data?.deferred_requests?.length
-                      ? {
-                          requestIds: detail.data.deferred_requests
-                            .filter(
-                              (request) =>
-                                request.tool_name === "ask_user_question",
-                            )
-                            .map((request) => request.request_id),
-                          content: decisions.slot,
-                        }
-                      : undefined
-                  }
-                  recovery={
-                    !hasLater && display.recovery?.state === "resumed"
-                      ? display.recovery
-                      : undefined
-                  }
-                />
-                {decisions.portal}
-                {!guest && (
-                  <McpInputs
-                    threadId={threadId}
-                    requests={mcpInputs.data}
-                    reconcile={() => void mcpInputs.refetch()}
-                  />
-                )}
-              </PauseConversationFollowing>
-              {hasLater && (
-                <div className={styles.historyActions}>
-                  <Button
-                    variant="ghost"
-                    loading={history.isFetchingPreviousPage}
-                    onClick={() => void history.fetchPreviousPage()}
-                  >
-                    {t("Load newer")}
-                  </Button>
-                  <Button variant="ghost" onClick={backToLatest}>
-                    {t("Back to latest")}
-                  </Button>
-                </div>
-              )}
-              <RootFailureNotice
-                lastExecution={thread?.last_execution}
-                threadId={threadId}
-                receipt={receipt}
-                display={display}
-                continuationId={detail.data?.continuation_id}
-                completedContinuationId={thread?.completion?.continuation_id}
-                retry={
-                  guest || readOnly || thread?.archived
-                    ? undefined
-                    : () => {
-                        void submitContinuation(
-                          draft,
-                          transport,
-                          threadId,
-                          tracker
-                            ? () => tracker.beforeRun(threadId)
-                            : undefined,
-                          () => appContexts?.capture(threadId) ?? [],
-                        ).finally(reconcile);
+              {publication ? (
+                <>
+                  {publication.messages}
+                  {decisions.slot}
+                  {decisions.portal}
+                </>
+              ) : (
+                <>
+                  <PauseConversationFollowing value={interruptScroll}>
+                    <MessageBranchProvider
+                      receipt={thread?.root_activity.receipt_id}
+                      thread={threadId}
+                      draft={draft}
+                      continuation={continuation}
+                      enabled={
+                        !!thread &&
+                        !isBot &&
+                        !guest &&
+                        thread.role === "ordinary" &&
+                        !thread.parent_thread_id &&
+                        !thread.memory_scope &&
+                        thread.configuration.agent_source.kind === "agent" &&
+                        !thread.archived
                       }
-                }
-                retryDisabled={
-                  !detail.data?.available_actions?.includes("run") ||
-                  thread?.root_activity.state !== "inactive" ||
-                  agentSelection.isPending ||
-                  agentSelection.isError ||
-                  detail.isError ||
-                  draft.submission.kind === "pending" ||
-                  draft.submission.kind === "unknown" ||
-                  (draft.submission.kind === "accepted" &&
-                    draft.submission.receipt !== receipt)
-                }
-              />
-              {display.recovery?.state !== "resumed" && (
-                <RecoveryNotice recovery={display.recovery} />
+                      active={
+                        thread?.root_activity.state !== "inactive" ||
+                        draft.submission.kind === "pending"
+                      }
+                    >
+                      <ConversationTranscript
+                        terminalTurn={terminalTurn}
+                        currentFailureRunId={
+                          thread?.last_execution?.status === "failed"
+                            ? thread.last_execution.run_id
+                            : undefined
+                        }
+                        entries={entries}
+                        running={
+                          operation?.state === "running" &&
+                          presentation === display &&
+                          operation.run_id === presentation.runId
+                        }
+                        blocks={showLive ? liveBlocks : []}
+                        localInputs={hasLater ? [] : draft.localInputs}
+                        turns={turns}
+                        loadDetails
+                        onSavedEntries={reconcileSavedInputs}
+                        continuation={continuation}
+                        gap={showLive && display.gap}
+                        threadId={threadId}
+                        activity={
+                          !readOnly &&
+                          !showGoal &&
+                          !hasLater &&
+                          !thread?.archived &&
+                          !detail.data?.deferred_requests?.length ? (
+                            <RunActivity
+                              recovery={display.recovery}
+                              activity={operation}
+                              submission={draft.submission}
+                              operation={observedOperation.data}
+                            />
+                          ) : undefined
+                        }
+                        pending={
+                          !hasLater && detail.data?.deferred_requests?.length
+                            ? {
+                                requestIds: detail.data.deferred_requests
+                                  .filter(
+                                    (request) =>
+                                      request.tool_name === "ask_user_question",
+                                  )
+                                  .map((request) => request.request_id),
+                                content: decisions.slot,
+                              }
+                            : undefined
+                        }
+                      />
+                      {decisions.portal}
+                      {!guest && (
+                        <McpInputs
+                          threadId={threadId}
+                          requests={mcpInputs.data}
+                          reconcile={() => void mcpInputs.refetch()}
+                        />
+                      )}
+                    </MessageBranchProvider>
+                  </PauseConversationFollowing>
+                  {hasLater && (
+                    <div className={styles.historyActions}>
+                      <Button
+                        variant="ghost"
+                        loading={history.isFetchingPreviousPage}
+                        onClick={() => void history.fetchPreviousPage()}
+                      >
+                        {t("Load newer")}
+                      </Button>
+                      <Button variant="ghost" onClick={backToLatest}>
+                        {t("Back to latest")}
+                      </Button>
+                    </div>
+                  )}
+                  {!terminalTurn && failureNotice}
+
+                  {((guest && !canCompose) || readOnly || isCoordinator) &&
+                    !entries.length &&
+                    !draft.localInputs.length &&
+                    thread?.root_activity.state === "inactive" &&
+                    !showLive &&
+                    !history.isPending &&
+                    !history.error && (
+                      <div
+                        className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
+                      >
+                        {guest && !canCompose ? (
+                          <>
+                            <h2>{t("No messages yet")}</h2>
+                            <p>
+                              {t(
+                                "Messages will appear here when this chat gets started.",
+                              )}
+                            </p>
+                          </>
+                        ) : readOnly ? (
+                          <>
+                            <h2>{t("No organization history yet")}</h2>
+                            <p>
+                              {t(
+                                "Automatic memory updates appear here. Viewing this page won't start a run.",
+                              )}
+                            </p>
+                          </>
+                        ) : isCoordinator ? (
+                          <>
+                            <h2>{t("What are we working on?")}</h2>
+                            <p>
+                              {t(
+                                "Share a goal. I’ll help plan the work and bring results back here.",
+                              )}
+                            </p>
+                          </>
+                        ) : null}
+                      </div>
+                    )}
+                </>
               )}
-              {((guest && !canCompose) || readOnly || isCoordinator) &&
-                !entries.length &&
-                !draft.localInputs.length &&
-                thread?.root_activity.state === "inactive" &&
-                !showLive &&
-                !history.isPending &&
-                !history.error && (
-                  <div
-                    className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
-                  >
-                    {guest && !canCompose ? (
-                      <>
-                        <h2>{t("No messages yet")}</h2>
-                        <p>
-                          {t(
-                            "Messages will appear here when this chat gets started.",
-                          )}
-                        </p>
-                      </>
-                    ) : readOnly ? (
-                      <>
-                        <h2>{t("No organization history yet")}</h2>
-                        <p>
-                          {t(
-                            "Automatic memory updates appear here. Viewing this page won't start a run.",
-                          )}
-                        </p>
-                      </>
-                    ) : isCoordinator ? (
-                      <>
-                        <h2>{t("What are we working on?")}</h2>
-                        <p>
-                          {t(
-                            "Share a goal. I’ll help plan the work and bring results back here.",
-                          )}
-                        </p>
-                      </>
-                    ) : null}
-                  </div>
-                )}
             </div>
           </div>
         </div>
@@ -946,7 +1062,9 @@ function ConversationContent({
         {!readOnly && detail.data && (
           <WorkInspector
             threadId={threadId}
-            connectionStatus={connectionStatus}
+            connectionStatus={
+              publication ? publication.status : connectionStatus
+            }
             status={
               !guest && thread && !thread.archived ? (
                 <ComposerStatus
@@ -992,6 +1110,12 @@ function ConversationContent({
         {(!canCompose || thread?.archived) && feedback && (
           <div className={styles.conversationFeedback}>{feedback}</div>
         )}
+        {publication?.status && !detail.data && (
+          <div className={styles.conversationFeedback}>
+            {publication.status}
+          </div>
+        )}
+        {publication?.composer}
         {canCompose && !thread?.archived && (
           <Composer
             feedback={feedback}
@@ -1023,6 +1147,7 @@ function ConversationContent({
                 : undefined
             }
             canRun={
+              (!runAgent || !runChoices.pending) &&
               !agentSelection.isPending &&
               !agentSelection.isError &&
               !detail.isError &&
@@ -1041,7 +1166,6 @@ function ConversationContent({
                   ? t("Loading chat…")
                   : undefined
             }
-            modelId={draft.modelId}
             leadingControls={
               guest ? undefined : thread?.configuration.agent_source.kind ===
                 "live" ? (
@@ -1072,10 +1196,7 @@ function ConversationContent({
                   defaultModelId={thread?.configuration.default_model_id}
                   modelId={draft.modelId}
                   controls={draft.controls}
-                  onControlsChange={(value) => {
-                    draft.controls = value;
-                    draft.notify();
-                  }}
+                  onControlsChange={runChoices.onControlsChange}
                   disabled={
                     !thread ||
                     agentSelection.isPending ||
@@ -1083,11 +1204,7 @@ function ConversationContent({
                     draft.submission.kind === "unknown"
                   }
                   onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={(value) => {
-                    draft.modelId = value;
-                    draft.controls = {};
-                    draft.notify();
-                  }}
+                  onModelChange={runChoices.onModelChange}
                 />
               )
             }
@@ -1101,7 +1218,7 @@ function ConversationContent({
             {t("View-only link - Following this chat live.")}
           </p>
         )}
-        {!guest && !readOnly && (
+        {!guest && !readOnly && !isBot && (
           <SharePanel
             open={dialog === "share"}
             onClose={closeDialog}
@@ -1173,7 +1290,7 @@ function ConversationContent({
             reconcile={reconcile}
             management={
               <div className={styles.detailActions}>
-                {!readOnly && thread && (
+                {!isBot && !readOnly && thread && (
                   <CoordinatorSettings
                     thread={thread}
                     pending={!!detail.data?.deferred_requests?.length}

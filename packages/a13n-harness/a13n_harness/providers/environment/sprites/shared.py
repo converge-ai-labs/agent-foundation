@@ -39,7 +39,7 @@ class SpritesEnvironmentConfiguration(CommandConfiguration):
 
     @model_validator(mode="after")
     def execution_requirements(self) -> Self:
-        if self.desktop != (self.execution != "native"):
+        if self.desktop and self.execution == "native":
             raise ValueError("Sprites desktop requires Envd execution")
         return self
 

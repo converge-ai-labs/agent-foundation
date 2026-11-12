@@ -34,6 +34,27 @@ impl Backend {
         super::macos_clipboard::write(text, interrupted)
     }
     pub(super) fn close_clipboard(&self) {}
+    pub(super) fn accessibility_geometry(&self, target: &str) -> Result<Geometry, EIPError> {
+        let monitor = select(Some(target))?;
+        let geometry = geometry(&monitor)?;
+        // AX screen points and CGDisplayBounds share the top-left desktop frame.
+        // The retained Basis maps that logical display rectangle to the actual
+        // captured image dimensions. Do not apply a guessed Retina multiplier.
+        let bounds = objc2_core_graphics::CGDisplayBounds(monitor.id().map_err(|_| unavailable())?);
+        if geometry.x != bounds.origin.x
+            || geometry.y != bounds.origin.y
+            || geometry.width != bounds.size.width
+            || geometry.height != bounds.size.height
+            || ![geometry.x, geometry.y, geometry.width, geometry.height]
+                .iter()
+                .all(|v| v.is_finite())
+            || geometry.width <= 0.0
+            || geometry.height <= 0.0
+        {
+            return Err(error(ErrorType::Conflict, "AX display transform changed"));
+        }
+        Ok(geometry)
+    }
     pub(super) fn describe(&self) -> Result<ComputerDescribeResult, EIPError> {
         describe()
     }

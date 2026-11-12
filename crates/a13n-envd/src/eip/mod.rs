@@ -39,10 +39,149 @@ mod tests {
     }
 
     #[test]
+    fn empty_allowlist_keeps_its_discriminator_when_default_fields_are_omitted() {
+        let decoded: super::EgressDestinations = decode(r#"{"mode":"allowlist"}"#).unwrap();
+        assert!(
+            matches!(&decoded, super::EgressDestinations::Allowlist(policy) if policy.hosts.is_empty())
+        );
+        assert_eq!(encode(&decoded).unwrap(), br#"{"mode":"allowlist"}"#);
+        let public: super::EgressDestinations = decode(r#"{"mode":"public"}"#).unwrap();
+        assert!(matches!(public, super::EgressDestinations::Public(_)));
+        assert!(decode::<super::EgressDestinations>(r#"{"mode":"unknown"}"#).is_err());
+    }
+
+    #[test]
+    fn accessibility_helper_json_preserves_discriminators_and_defaults() {
+        use super::EipExpandedJson;
+        let read: super::AccessibilityRead = decode(r#"{"kind":"text"}"#).unwrap();
+        assert!(matches!(
+            read,
+            super::AccessibilityRead::AccessibilityTextRead(_)
+        ));
+        assert_eq!(
+            read.expanded_json().unwrap(),
+            serde_json::json!({"kind":"text", "span":null})
+        );
+        let encoded = String::from_utf8(encode(&read).unwrap()).unwrap();
+        let round_trip: super::AccessibilityRead = decode(&encoded).unwrap();
+        assert_eq!(round_trip, read);
+        for kind in ["document", "numeric_value", "scroll", "selection"] {
+            let value: super::AccessibilityRead =
+                decode(&format!(r#"{{"kind":"{kind}"}}"#)).unwrap();
+            assert_eq!(value.expanded_json().unwrap()["kind"], kind);
+        }
+        let table: super::AccessibilityRead = decode(r#"{"kind":"table"}"#).unwrap();
+        let full = table.expanded_json().unwrap();
+        assert_eq!(full["row"], 0);
+        assert_eq!(full["rows"], 1);
+        assert_eq!(full["include_headers"], true);
+        let scope: super::AccessibilityRootScope = decode("{}").unwrap();
+        assert_eq!(scope.expanded_json().unwrap()["kind"], "windows");
+        let span: super::AccessibilityRangeQuery =
+            decode(r#"{"kind":"span","span":{"unit":"atspi_character","start":0,"end":2}}"#)
+                .unwrap();
+        assert_eq!(span.expanded_json().unwrap()["kind"], "span");
+        let wrong = decode::<super::AccessibilityRead>(r#"{"kind":"invented"}"#);
+        assert!(wrong.is_err());
+    }
+
+    #[test]
+    fn accessibility_nested_message_defaults_match_explicit_empty_objects() {
+        let defaults = super::AccessibilityLimits::default();
+        let explicit: super::AccessibilityLimits = decode("{}").unwrap();
+        assert_eq!(defaults, explicit);
+        defaults.validate().unwrap();
+        assert_eq!(defaults.max_nodes, 256);
+        let omitted: super::ComputerA11yInspectParams = decode(
+            r#"{"context":{"operation_id":"foreign-node"},"node":{"backend":"atspi","backend_epoch":"aep_test","node_handle":"an_test"}}"#,
+        ).unwrap();
+        assert_eq!(omitted.limits, explicit);
+    }
+
+    #[test]
+    fn accessibility_operand_presence_preserves_explicit_clear() {
+        assert!(decode::<super::AXChildrenSelectedChildrenSet>(r#"{}"#).is_err());
+        assert!(decode::<super::AXRanges>(r#"{}"#).is_err());
+        assert!(decode::<super::AtspiDocumentSelections>(r#"{}"#).is_err());
+        let value: super::AXChildrenSelectedChildrenSet = decode(r#"{"children":[]}"#).unwrap();
+        let encoded: serde_json::Value = serde_json::from_slice(&encode(&value).unwrap()).unwrap();
+        assert_eq!(encoded["children"], serde_json::json!([]));
+        assert_eq!(encoded["op"], "selected_children_set");
+        let value: super::AXRanges = decode(r#"{"ranges":[]}"#).unwrap();
+        assert_eq!(
+            encode(&value).unwrap(),
+            br#"{"op":"text_ranges_select","ranges":[]}"#
+        );
+    }
+
+    #[test]
+    fn accessibility_numeric_domains_preserve_native_units() {
+        for count in [-10001, -10000, -1, 0, 10000, 10001] {
+            let payload = serde_json::json!({"unit": "character", "count": count}).to_string();
+            assert_eq!(
+                decode::<super::AccessibilityRangeMoveMove>(&payload).is_ok(),
+                (-10000..=10000).contains(&count)
+            );
+        }
+        for size in [-1.0, 0.0, 0.5, 1.0] {
+            let payload = serde_json::json!({"width": size, "height": size}).to_string();
+            assert_eq!(decode::<super::UIAResize>(&payload).is_ok(), size > 0.0);
+        }
+        for percent in [-1.0, 0.0, 0.5, 100.0, 101.0] {
+            let payload = serde_json::json!({"horizontal": percent}).to_string();
+            assert_eq!(
+                decode::<super::UIAScrollPercent>(&payload).is_ok(),
+                (0.0..=100.0).contains(&percent)
+            );
+        }
+    }
+
+    #[test]
+    fn accessibility_text_and_json_primitives_match_python_profile() {
+        for text in [
+            String::new(),
+            "😀".repeat(16384),
+            "😀".repeat(16385),
+            "a\0b".to_owned(),
+        ] {
+            let payload = serde_json::json!({"value": text}).to_string();
+            assert_eq!(
+                decode::<super::AXStringValue>(&payload).is_ok(),
+                text.len() <= 65536 && !text.contains('\0')
+            );
+        }
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            let payload = serde_json::json!({"value": value}).to_string();
+            assert!(decode::<super::AccessibilityScalar>(&payload).is_err());
+        }
+        for value in [
+            serde_json::json!(false),
+            serde_json::json!(-42),
+            serde_json::json!(0.5),
+            serde_json::json!(""),
+        ] {
+            let payload = serde_json::json!({"value": value}).to_string();
+            assert!(decode::<super::AccessibilityScalar>(&payload).is_ok());
+        }
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!(42),
+            serde_json::json!({}),
+        ] {
+            let payload = serde_json::json!({"states": {"enabled": value}}).to_string();
+            assert!(decode::<super::AccessibilityFind>(&payload).is_err());
+        }
+    }
+
+    #[test]
     fn generated_registry_has_complete_v1_surface() {
-        assert_eq!(EIP_PROTOCOL_VERSION, "0.4");
+        assert_eq!(EIP_PROTOCOL_VERSION, "0.5");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 58);
+        assert_eq!(METHODS.len(), 146);
         assert!(
             METHODS
                 .iter()
@@ -54,14 +193,14 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            26
+            33
         );
         assert_eq!(
             METHODS
                 .iter()
                 .filter(|method| method.replay_class == "terminal_evidence")
                 .count(),
-            22
+            103
         );
         assert_eq!(
             METHODS

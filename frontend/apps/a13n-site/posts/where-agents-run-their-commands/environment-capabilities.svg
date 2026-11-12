@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" role="img" aria-label="An agent requests CSV analysis. Inside the execution environment, Python uses CPU resources to process data.csv and produce chart.png; the filesystem stores the input, script, and output.">
+  <rect class="pl" x="24" y="100" width="164" height="78" rx="3" />
+  <text class="pt ink" x="106" y="132" text-anchor="middle">agent runtime</text>
+  <text class="pt" x="106" y="155" text-anchor="middle">analyze this CSV</text>
+  <path class="pa" d="M188 120H260m-6-4 6 4-6 4M260 160H188m6-4-6 4 6 4" />
+  <text class="pt acc" x="224" y="106" text-anchor="middle">request</text>
+  <text class="pt" x="224" y="181" text-anchor="middle">result</text>
+
+  <rect class="pf" x="260" y="28" width="516" height="250" rx="3" />
+  <text class="pt ink" x="282" y="54">execution environment</text>
+  <path class="pl" d="M288 86H362l16 16V158H288ZM362 86V102H378" />
+  <text class="pt ink" x="333" y="130" text-anchor="middle">data.csv</text>
+  <path class="pa" d="M388 122H438m-6-4 6 4-6 4M582 122H630m-6-4 6 4-6 4" />
+  <rect class="band" x="448" y="82" width="124" height="80" rx="2" />
+  <rect class="pa thin" x="448" y="82" width="124" height="80" rx="2" />
+  <text class="pt acc" x="510" y="106" text-anchor="middle">Python on CPU</text>
+  <text class="pt ink" x="510" y="128" text-anchor="middle">analyze.py</text>
+  <text class="pt" x="510" y="149" text-anchor="middle">+ dependencies</text>
+  <rect class="pl" x="640" y="86" width="112" height="72" rx="2" />
+  <path class="pf" d="M656 96V138H736" />
+  <rect class="band" x="668" y="120" width="14" height="18" />
+  <rect class="band" x="690" y="110" width="14" height="28" />
+  <rect class="fa" x="712" y="98" width="14" height="40" />
+  <text class="pt ink" x="696" y="177" text-anchor="middle">chart.png</text>
+  <path class="pf" d="M282 194H754" />
+  <text class="pt ink" x="282" y="221">filesystem</text>
+  <text class="pt" x="282" y="247">input: data.csv</text>
+  <text class="pt" x="444" y="247">code: analyze.py</text>
+  <text class="pt" x="620" y="247">output: chart.png</text>
+  <text class="pt" x="400" y="308" text-anchor="middle">Compute runs the program. Storage keeps its inputs, code and results.</text>
+</svg>

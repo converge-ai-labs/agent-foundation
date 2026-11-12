@@ -1312,7 +1312,9 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     assert ModelMessagesTypeAdapter.dump_json([request]) == before
 
 
-@pytest.mark.parametrize("source", ["user", "steering", "context", "recovery", "async_subagent", "background_process"])
+@pytest.mark.parametrize(
+    "source", ["user", "steering", "context", "recovery", "async_subagent", "background_process", "envd_session"]
+)
 def test_input_sources_are_custom_text_events_and_cache_points_are_omitted(source) -> None:
     from a13n_harness.events import input_events
     from pydantic_ai.messages import CachePoint

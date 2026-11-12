@@ -11,7 +11,8 @@ export type LocalInput = {
 };
 
 export function inputSource(part: InputPart): string | undefined {
-  return typeof part.metadata?.source_id === "string"
+  return part.metadata?.display !== false &&
+    typeof part.metadata?.source_id === "string"
     ? part.metadata.source_id
     : undefined;
 }

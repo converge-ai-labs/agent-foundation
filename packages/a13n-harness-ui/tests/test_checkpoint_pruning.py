@@ -91,6 +91,7 @@ async def test_failed_deletion_has_no_marker_and_deleted_identity_cannot_be_reus
         with pytest.raises(StoreIntegrityError) as failure:
             await store.threads.fork(
                 source=source,
+                excerpt=source.excerpt,
                 thread_id=value.harness_state.thread_id,
                 initial_state=_initial(),
                 continuation=None,

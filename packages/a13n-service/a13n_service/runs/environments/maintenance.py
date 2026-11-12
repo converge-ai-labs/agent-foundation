@@ -21,6 +21,8 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
+from a13n_service.runs.environments import vercel_snapshots
+from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.lifecycle import (
     LOST,
     PHASES,
@@ -59,10 +61,18 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
             EnvironmentRow.preparation_failed_at.is_(None),
             ~settled_clause(),
         ),
+        # Settled guest startup/upgrade jobs need explicit retry, including instances without
+        # failed-initial-preparation retention. Omit them before the bounded candidate scan.
+        or_(
+            EnvironmentRow.status.not_in(("creating", "starting")),
+            EnvironmentRow.failure["code"].astext.not_in(("envd_upgrade_failed", "envd_startup_failed")).is_not(False),
+            ~settled_clause(),
+        ),
         or_(EnvironmentRow.lease_expires_at.is_(None), EnvironmentRow.lease_expires_at < func.now()),
         or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
     )
     await _each(runtime, due.order_by(EnvironmentRow.updated_at), partial(advance, runtime, owner=owner))
+    await _each(runtime, vercel_snapshots.orphaned(), partial(vercel_snapshots.drain, runtime))
 
 
 async def renew_environments(runtime: Runtime) -> None:
@@ -166,6 +176,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                     mounts = mounts & (ThreadEnvironmentRow.name != PRIMARY)
                 await session.execute(delete(ThreadEnvironmentRow).where(mounts))
             if environment.provider_identity is None:
+                await retire_environment(session, environment.id)
                 environment.status = "deleted"
                 environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
                 environment.next_operation_at = None

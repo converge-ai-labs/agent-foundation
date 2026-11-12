@@ -79,6 +79,11 @@ class E2BEnvironmentConfiguration(BaseModel):
         title="Execution connection",
         description="Native E2B Files & Shell, Envd HTTP, or Service-managed outbound WebSocket. Envd modes require a compatible template.",
     )
+    preparation: Literal["preinstalled", "headless"] = Field(
+        default="preinstalled",
+        title="Envd preparation",
+        description="Preinstalled keeps the template's existing runtime contract. Headless explicitly permits Service to install and start Envd in the allocated GNU/Linux sandbox; execution attachment remains check-only.",
+    )
     desktop: bool = Field(
         default=False,
         title="Desktop environment",
@@ -89,8 +94,10 @@ class E2BEnvironmentConfiguration(BaseModel):
     def _execution(self) -> Self:
         if self.desktop and self.execution == "native":
             raise ValueError("Desktop requires Envd execution and an a13n-envd template")
-        if self.execution != "native" and self.template in {"base", "desktop"}:
-            raise ValueError("Envd execution requires an operator-built a13n-envd template")
+        if self.preparation == "headless" and (self.execution == "native" or self.desktop):
+            raise ValueError("Headless preparation requires Envd execution without desktop")
+        if self.execution != "native" and self.template in {"base", "desktop"} and self.preparation != "headless":
+            raise ValueError("Envd execution requires a preinstalled template or explicit headless preparation")
         return self
 
     environment: EnvironmentVariables = Field(default_factory=dict)
@@ -121,6 +128,8 @@ class E2BEnvironmentConfiguration(BaseModel):
         # Preserve the historical digest byte-for-byte for non-desktop instances.
         if self.execution != "native":
             fields.update({"execution", "desktop"})
+        if self.preparation != "preinstalled":
+            fields.add("preparation")
         target = self.model_dump_json(include=fields)
         return hashlib.sha256(target.encode()).hexdigest()
 
@@ -133,3 +142,5 @@ class E2BEnvironmentConfiguration(BaseModel):
 
 class E2BProviderStateData(EnvironmentTargetState):
     sandbox_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,128}$")
+    preparation_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    preparation_phase: Literal["installing", "starting", "ready"] | None = None

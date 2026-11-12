@@ -22,6 +22,22 @@ The working directory sets path defaults. Access to other Device paths follows t
 
 The [Python EIP client](python-client.md) provides scoped Session management and the method table. Configure client and daemon timeouts separately.
 
+## Restart after installing a release
+
+Use `a13n-envd daemon` under an external service manager and ask that manager to restart it after installation. Use `a13n-envd supervise` when the deployment has no reliable service manager. The native supervisor replaces an exited daemon at most three times over its lifetime, with one-, two- and four-second backoff. Operator stop drains and cleans up the owned child without replacing it. Stdio remains caller-owned.
+
+After the three crash replacements are exhausted, or an accepted restart fails to confirm the new child's identity after draining the old daemon, the supervisor exits unsuccessfully and its local restart endpoint is unavailable. Inspect the launcher/guest startup log, correct the startup failure, then ask the outer service/container launcher to start a fresh `a13n-envd supervise` process with the same trusted arguments, installation state, credential files and workspace. This creates a new replacement budget; running `a13n-envd restart` cannot revive an exited supervisor. Verify authenticated EIP readiness and open new Sessions before continuing. When the provider cannot restart that target, use its explicit instance-replacement path.
+
+After atomically installing a release at the original executable path, request a version-selected restart from the same account:
+
+```sh
+a13n-envd restart --runtime-dir /run/a13n-envd-state --version 0.8.0
+```
+
+The runtime directory defaults to `A13N_ENVD_RUNTIME_DIR`. The command verifies the installed version before stopping the old daemon. If the selected version is already running, it succeeds without another restart, so a lost receipt can be retried. An explicit restart does not consume or reset the crash-replacement budget. A restart receipt confirms that the launched child's compiled version matches the requested version; verify authenticated EIP readiness before dispatching work.
+
+The Host owns download, checksum verification and installation. Restart creates a new daemon generation and ends all old Sessions, processes and retained output. Device identity, credentials and workspace files remain. A new Session does not replay commands or recover old handles. Native daemon restart leaves the outer desktop launcher and display running; an external manager's restart follows that manager's service scope.
+
 ## Plan output capacity before daemon launch
 
 Size output capacity for concurrent commands, not just the text shown to the user. Standalone daemon defaults are:
@@ -73,4 +89,4 @@ Use the product's Run interrupt to stop a Run, Session close to end its executio
 | Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent      |
 | Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback       |
 
-Check readiness through EIP. The HTTP carrier provides authenticated control and transfer routes, not a general health or browser endpoint. With stdio, write diagnostics away from protocol stdout. Use [configuration](configuration.md) for carrier and bootstrap settings.
+Check readiness through EIP. For deployment liveness, explicitly enable the separate [health probe](configuration.md#optional-health-probe); it works independently of the EIP transport. The EIP HTTP carrier provides authenticated control and transfer routes, not a general health or browser endpoint. With stdio, write diagnostics away from protocol stdout. Use [configuration](configuration.md) for carrier and bootstrap settings.

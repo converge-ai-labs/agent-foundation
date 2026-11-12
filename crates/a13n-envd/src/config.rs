@@ -36,6 +36,8 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_MAX_LIFETIME_MS",
     "A13N_ENVD_VM_STARTUP_TIMEOUT_MS",
     "A13N_ENVD_TRANSPORT",
+    "A13N_ENVD_HEALTH_ENABLED",
+    "A13N_ENVD_HEALTH_BIND",
     "A13N_ENVD_HTTP_BIND",
     "A13N_ENVD_HTTP_CREDENTIAL_FILE",
     "A13N_ENVD_HTTP_TLS_CERT_FILE",
@@ -103,6 +105,8 @@ use crate::execution::boundary::{Egress, Sandbox};
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
+    #[serde(default)]
+    health: crate::health::Options,
     monitoring: Option<crate::monitoring::Options>,
     #[serde(default)]
     execution: crate::execution::Options,
@@ -222,6 +226,11 @@ pub(crate) struct ConnectionBootstrap {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Config {
+    /// Private supervisor lifetime pipe; preserved across managed-broker reexec.
+    #[serde(default)]
+    pub(crate) supervised: bool,
+    #[serde(default)]
+    pub(crate) health: crate::health::Options,
     #[serde(default)]
     pub(crate) monitoring: Option<crate::monitoring::Options>,
     #[serde(default)]
@@ -260,9 +269,11 @@ pub(crate) struct Config {
 }
 
 impl Config {
-    pub(crate) fn from_environment() -> Result<Self, ConfigError> {
+    pub(crate) fn from_environment(
+        arguments: Vec<std::ffi::OsString>,
+    ) -> Result<Self, ConfigError> {
         reject_unknown_environment_variables()?;
-        Self::from_arguments(StartupArguments::parse(env::args_os().skip(1))?, None)
+        Self::from_arguments(StartupArguments::parse(arguments)?, None)
     }
 
     pub(crate) fn for_connection(
@@ -458,6 +469,8 @@ impl Config {
             prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
         };
         Ok(Self {
+            supervised: false,
+            health: file.health,
             monitoring: file.monitoring,
             computer_use,
             computer_use_permission_timeout: Duration::from_millis(permission_timeout_ms),
@@ -488,6 +501,8 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test(device_id: &str) -> Self {
         Self {
+            supervised: false,
+            health: crate::health::Options::default(),
             monitoring: None,
             computer_use: false,
             computer_use_permission_timeout: Duration::from_secs(120),
@@ -1186,7 +1201,11 @@ fn apply_environment(value: &mut serde_json::Value) -> Result<(), ConfigError> {
             value[field] = text.into();
         }
     }
+    if let Some(bind) = optional_unicode("A13N_ENVD_HEALTH_BIND")? {
+        set_config_field(value, &["health", "bind"], bind.into());
+    }
     for (name, path) in [
+        ("A13N_ENVD_HEALTH_ENABLED", &["health", "enabled"][..]),
         ("A13N_ENVD_ALLOW_SUDO", &["execution", "allow_sudo"][..]),
         (
             "A13N_ENVD_DIRECTORY_DISCOVERY",

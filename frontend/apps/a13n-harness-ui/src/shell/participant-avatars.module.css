@@ -58,14 +58,16 @@
 .title > span {
   font-variant-numeric: tabular-nums;
 }
+.peopleScroll {
+  max-height: 280px;
+  margin-top: 16px;
+}
 .people {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 0;
   display: grid;
   gap: 12px;
-  max-height: 280px;
-  overflow-y: auto;
 }
 .people > li {
   display: flex;

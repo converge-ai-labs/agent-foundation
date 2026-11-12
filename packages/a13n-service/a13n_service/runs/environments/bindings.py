@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from a13n_harness.environment.session_recovery import EnvdSessionState
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,10 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, lock, short_session, transaction
 from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.http import require_match
+from a13n_service.resources.egress_credentials.service import validate_references
 from a13n_service.resources.environment_instances.access import lock_environments
+from a13n_service.runs.environments.egress import storage as credentials
+from a13n_service.runs.environments.egress.state import SyncState
 from a13n_service.runs.environments.schemas import SessionBindingView, SessionConfiguration
 from a13n_service.runs.environments.tables import ThreadExecutionContextRow, ThreadSessionBindingRow
 from a13n_service.runs.schemas import EnvironmentMount
@@ -27,6 +30,7 @@ class SessionHead(BaseModel):
     configuration: SessionConfiguration
     session_version: int | None = None
     session: EnvdSessionState | None = None
+    egress_sync: SyncState | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 def binding_key(mount: EnvironmentMount) -> tuple[str, str]:
@@ -39,6 +43,8 @@ async def ensure(
     environment_id: str,
     name: str,
     configuration: SessionConfiguration | None = None,
+    *,
+    default_configuration: SessionConfiguration | None = None,
 ) -> ThreadSessionBindingRow:
     """Mount creation selects an existing binding or creates its desired policy under the Thread lock."""
     row = await session.get(ThreadSessionBindingRow, (thread.id, environment_id, name))
@@ -49,7 +55,7 @@ async def ensure(
             name=name,
             organization_id=thread.organization_id,
             workspace_id=thread.workspace_id,
-            configuration=(configuration or SessionConfiguration()).model_dump(mode="json"),
+            configuration=(configuration or default_configuration or SessionConfiguration()).model_dump(mode="json"),
         )
         session.add(row)
         await session.flush()
@@ -121,9 +127,24 @@ async def admit(session: AsyncSession, thread: ThreadRow, mounts: Sequence[Envir
             head = SessionHead(version=1, configuration=mount.session_configuration)
         elif head.configuration != mount.session_configuration:
             await require_idle(session, thread.id, mount)
+            await credentials.discard_unstarted(
+                session,
+                thread.id,
+                binding_key(mount),
+                head.session_version if head.session is not None and head.session.status != "retired" else None,
+            )
             head = head.model_copy(update={"version": head.version + 1, "configuration": mount.session_configuration})
         assert head is not None
         row.head = head.model_dump(mode="json")
+        await credentials.register(
+            session,
+            WorkspaceScope(thread.organization_id, thread.workspace_id),
+            thread.id,
+            mount.environment_id,
+            mount.session_binding,
+            head.version,
+            mount.session_configuration,
+        )
         frozen.append(mount.model_copy(update={"session_version": head.version}))
     return frozen
 
@@ -157,6 +178,7 @@ async def update_binding(
         require_match(if_match, thread.id, thread.version)
         require_open(thread)
         await lock_environments(session, scope.workspace_id, [environment_id], principal_id=actor.id)
+        await validate_references(session, actor, scope, configuration.credential_references)
         row = await session.get(ThreadSessionBindingRow, (thread.id, environment_id, name))
         if row is None:
             raise not_found("session_binding", name)

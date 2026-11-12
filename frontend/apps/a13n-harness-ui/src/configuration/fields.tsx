@@ -4,10 +4,11 @@ import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { Link, useLocation } from "react-router";
+import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
-import { Button, FormField, Switch, Textarea } from "a13n-ui";
+import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -17,6 +18,7 @@ import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { useRootConfiguration } from "./root-configuration";
+import { BotFields } from "./bot-fields";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
@@ -277,26 +279,13 @@ export function ResourceFields({
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
-            variant="grouped"
+            variant="plain"
             title={t("Environments")}
             description={t(
               "Used by new chats, or when you apply Project defaults.",
             )}
           >
-            <div className={styles.fieldGroup}>
-              <p className="mb-3 text-sm text-muted-foreground">
-                {rawBindings == null
-                  ? t(
-                      "New chats add no remote environments. Existing chats keep theirs.",
-                    )
-                  : bindings.length
-                    ? t(
-                        "Applying these defaults replaces the chat's remote environments.",
-                      )
-                    : t(
-                        "Applying these defaults removes the chat's remote environments.",
-                      )}
-              </p>
+            <div className={environments.project}>
               {roots ? (
                 <EnvironmentsEditor
                   value={{
@@ -351,33 +340,49 @@ export function ResourceFields({
                   {t("Fix the folder list in Advanced configuration first.")}
                 </p>
               )}
-              <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
-                {rawBindings == null && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      setEnvironments(
-                        [],
-                        text(["defaults", "default_environment"]) || null,
+              <details className={environments.applyDetails}>
+                <summary>{t("When applying to existing chats")}</summary>
+                <p>
+                  {rawBindings == null
+                    ? t(
+                        "New chats add no remote environments. Existing chats keep theirs.",
                       )
-                    }
-                  >
-                    {t("Local only")}
-                  </Button>
-                )}
-                {(rawBindings != null ||
-                  text(["defaults", "default_environment"])) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={!roots?.length}
-                    onClick={() => setEnvironments(undefined, null)}
-                  >
-                    {t("Keep current")}
-                  </Button>
-                )}
-              </div>
+                    : bindings.length
+                      ? t(
+                          "Applying these defaults replaces the chat's remote environments.",
+                        )
+                      : t(
+                          "Applying these defaults removes the chat's remote environments.",
+                        )}
+                </p>
+                <div>
+                  {rawBindings == null && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() =>
+                        setEnvironments(
+                          [],
+                          text(["defaults", "default_environment"]) || null,
+                        )
+                      }
+                    >
+                      {t("Local only")}
+                    </Button>
+                  )}
+                  {(rawBindings != null ||
+                    text(["defaults", "default_environment"])) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={!roots?.length}
+                      onClick={() => setEnvironments(undefined, null)}
+                    >
+                      {t("Keep current")}
+                    </Button>
+                  )}
+                </div>
+              </details>
             </div>
           </SettingsSection>
         </>
@@ -388,41 +393,23 @@ export function ResourceFields({
           <>
             <SettingsSection variant="grouped" title={t("Chats")}>
               {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-              <SettingsRow
-                label="Sidekick"
-                controlId="sidekick-enabled"
-                stackOnNarrow={false}
-                description={t(
-                  "Let your agent delegate work to separate chats.",
-                )}
-              >
-                <Switch
-                  id="sidekick-enabled"
-                  checked={get(["webui", "sidekick"]) !== null}
-                  onCheckedChange={(enabled) =>
-                    set(["webui", "sidekick"], enabled ? {} : null)
-                  }
-                />
-              </SettingsRow>
-              {get(["webui", "sidekick"]) !== null && (
-                <details className={layout.groupDisclosure}>
-                  <summary>{t("Subagent defaults")}</summary>
-                  <div>
-                    {scalar(
-                      t("Sidekick agent"),
-                      ["webui", "sidekick", "agent"],
-                      agentOptions,
-                      t("Use current agent"),
-                    )}
-                    {scalar(
-                      t("Sidekick model"),
-                      ["webui", "sidekick", "model"],
-                      models,
-                      t("Use agent model"),
-                    )}
-                  </div>
-                </details>
-              )}
+              <details className={layout.groupDisclosure}>
+                <summary>{t("Subagent defaults")}</summary>
+                <div>
+                  {scalar(
+                    t("Sidekick agent"),
+                    ["webui", "sidekick", "agent"],
+                    agentOptions,
+                    t("Use current agent"),
+                  )}
+                  {scalar(
+                    t("Sidekick model"),
+                    ["webui", "sidekick", "model"],
+                    models,
+                    t("Use agent model"),
+                  )}
+                </div>
+              </details>
             </SettingsSection>
             <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
@@ -499,6 +486,9 @@ export function ResourceFields({
                 </>
               )}
             </SettingsSection>
+            <section id="bot">
+              <BotFields source={source} onChange={onChange} />
+            </section>
             <section id="live">
               <SettingsSection variant="grouped" title={t("Live voice")}>
                 <SettingsRow

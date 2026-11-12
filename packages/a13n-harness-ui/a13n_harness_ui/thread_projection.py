@@ -300,6 +300,8 @@ class ThreadProjectionService:
         )
 
     async def detail(self, thread_id: str) -> ThreadDetail:
+        from a13n_harness_ui.bot_models import BOT_THREAD_ID
+
         thread = await self._required_thread(thread_id)
         summary = await self._summary(thread)
         continuation_id = None
@@ -320,6 +322,8 @@ class ThreadProjectionService:
                     actions.append("clear_context")
         else:
             actions.extend(summary.root_activity.available_actions)
+        if thread_id == BOT_THREAD_ID:
+            actions = [action for action in actions if action in {"respond", "wait", "cancel"}]
         return ThreadDetail(
             thread=summary,
             continuation_id=continuation_id,
@@ -606,12 +610,12 @@ class ThreadProjectionService:
         from a13n_harness_ui.model_thinking import summarize_thinking
 
         thinking = model.thinking_override if model.thinking_override is not None else model.settings.get("thinking")
-        usage = observed.request_usage if observed and observed.usage_status != "unavailable" else None
+        usage = observed.request_usage if observed else None
         return ContextUsageView(
             thread_id=thread_id,
             latest_request_tokens=latest,
             record_id=observed.record_id if observed else None,
-            input_audio_tokens=observed.request_usage.input_audio_tokens if observed else None,
+            input_audio_tokens=usage.input_audio_tokens if usage else None,
             context_breakdown=observed.context_breakdown if observed else None,
             input_tokens=usage.input_tokens if usage else None,
             output_tokens=usage.output_tokens if usage else None,
@@ -796,7 +800,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source") in {"background_process", "async_subagent"}
+            or metadata.get("a13n.steering-source") in {"background_process", "async_subagent", "envd_session"}
         ):
             continue
         visible = [
@@ -805,7 +809,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             if (projected := project_input_content(item)) is not None
             and projected[1].display
             and (projected[1].model_extra or {}).get("a13n.steering-source")
-            not in {"background_process", "async_subagent"}
+            not in {"background_process", "async_subagent", "envd_session"}
         ]
         if not visible:
             continue

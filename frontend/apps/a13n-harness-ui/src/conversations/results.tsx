@@ -114,12 +114,14 @@ export class ResultTracker {
   follow = async (thread: Schema<"ThreadSummary">, observedAt = Date.now()) => {
     if (thread.parent_thread_id) return;
     this.observe(thread, observedAt);
-    const id = thread.thread_id;
+    await this.followVersion(thread.thread_id, thread.completion?.version ?? 0);
+  };
+  // A lazily allocated root can register its known baseline before its first Send.
+  followVersion = async (id: string, version: number) => {
     if (this.snapshot.followed.has(id)) return;
     const pending = this.following.get(id);
     if (pending) return pending;
-    const baseline =
-      this.failedFollows.get(id) ?? thread.completion?.version ?? 0;
+    const baseline = this.failedFollows.get(id) ?? version;
     const following = (async () => {
       try {
         const record = await this.store.update(id, baseline, true);

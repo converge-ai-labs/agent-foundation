@@ -50,6 +50,10 @@ runtime = LocalEnvdProviderRuntime(
 
 使用 HTTP EIP 时，在连接的 `envd_http` 中配置 Worker 可达的主机和监听地址。Service 保留镜像入口，将容器 8888 端口发布到 Docker 分配的主机端口。使用兼容的 Envd 镜像并保持网络启用。镜像负责执行身份，因此该路径拒绝配方中的 `user` 覆盖。添加 `desktop: true`，可让就绪检查包含可观察、可输入的桌面。明文 HTTP 要求回环地址或显式信任的私有链路。Console 步骤见[创建 Docker 桌面](../a13n-service/computer-use.md#create-a-docker-desktop)。
 
+无桌面 Envd 可选择与部署版本匹配的官方 `-slim` 沙箱标签，并设置 `execution="envd_http"`、`desktop=false`。管理初始化和凭据读取使用 POSIX shell 与核心工具，不需要 guest Python 或 jq。Native Docker 文件操作仍需要 Python。
+
+使用自定义 base 时，先构建显式兼容的 wrapper 镜像：安装兼容的 Envd 二进制和公共 `a13n-sandbox-entrypoint`，创建 Session 用户与可写工作目录，并在 Dockerfile 中选择该 wrapper 和 daemon 命令。Service 保留入口与命令，以 root 启动。普通 base 镜像本身不是自动安装请求。二进制架构与 userspace 必须匹配；添加 shell 脚本不能让 glibc 二进制在 musl 上运行。桌面 wrapper 还需要桌面启动器及其依赖。
+
 嵌入式 Host 也可以借用自己的 Engine 客户端：
 
 ```python

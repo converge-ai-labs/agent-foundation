@@ -18,7 +18,6 @@
   gap: 4px;
   width: 100%;
   min-height: 44px;
-  margin-block: 8px 12px;
   padding: 8px;
   padding-inline-start: 0;
   border: 0;
@@ -113,6 +112,7 @@
    source text, code and diagrams. Horizontal code scrolling remains native. */
 .fullscreen :global([data-tool-details]),
 .fullscreen :global([data-tool-resources]),
+.fullscreen :global([data-tool-source]),
 .fullscreen [data-execution-reader] pre,
 .fullscreen :global([data-diagram-canvas]) {
   max-height: none;

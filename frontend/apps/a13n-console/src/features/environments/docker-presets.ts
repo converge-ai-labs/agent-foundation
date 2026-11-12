@@ -27,7 +27,10 @@ export function dockerMode(
     const preset = presets[mode];
     const matches = Object.entries(preset).every(
       ([key, expected]) =>
-        (value[key] ?? properties[key]?.default) === expected,
+        (value[key] ??
+          (key === "envd_management"
+            ? preset[key]
+            : properties[key]?.default)) === expected,
     );
     const hasCustomSettings = Object.entries(value).some(
       ([key, current]) =>

@@ -1,32 +1,96 @@
-.folders,
-.folder,
-.browser {
+.folders {
   display: grid;
-  gap: 12px;
+  min-width: 0;
+  padding-block: 12px;
+  gap: 8px;
+}
+.folderHeading,
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
-.folders {
-  gap: 8px;
+.folderHeading {
+  min-height: 32px;
+  justify-content: space-between;
 }
-.compact {
-  padding-block: 8px;
-}
-.addFolder {
-  margin-inline-start: -8px;
-  padding-inline: 8px;
-}
-.label {
-  margin: 0;
-  font-size: var(--a13n-text-body);
-  font-weight: 400;
-  line-height: 20px;
-}
-.row.directoryRow {
+.environmentIdentity {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  min-width: 0;
+  gap: 10px;
 }
-.directoryRow > [data-slot="button"] {
-  flex-shrink: 0;
+.environmentIdentity > svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.environmentIdentity h4,
+.environmentIdentity p,
+.emptyFolders {
+  margin: 0;
+}
+.environmentIdentity h4 {
+  font-weight: 550;
+  color: var(--a13n-text);
+}
+.environmentIdentity p,
+.emptyFolders {
+  font-size: var(--a13n-text-sm);
+  line-height: 18px;
+  color: var(--a13n-secondary);
+}
+.emptyFolders {
+  padding-inline-start: 30px;
+}
+.folderHeading > button {
+  flex: none;
+  margin-inline-end: -6px;
+}
+.folder {
+  min-height: 44px;
+  padding-inline-start: 30px;
+}
+.folder > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.folder > [data-slot="input-control"],
+.folderPath {
+  flex: 1;
+  min-width: 0;
+}
+.folder > button:last-child:not(.folderPath) {
+  color: var(--a13n-secondary);
+}
+.folderPath {
+  display: grid;
+  gap: 1px;
+  padding: 4px 6px;
+  margin-inline-start: -6px;
+  border-radius: var(--harness-radius-control);
+  text-align: start;
+}
+.folderPath:hover,
+.folderPath:focus-visible {
+  background: var(--a13n-hover);
+}
+.folderPath strong,
+.folderPath span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folderPath strong {
+  font-weight: 500;
+}
+.folderPath span {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
 }
 .row {
   display: flex;
@@ -44,6 +108,9 @@
   font-size: var(--a13n-text-body);
 }
 .browser {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--a13n-border);
   border-radius: var(--harness-radius-control);
@@ -66,7 +133,8 @@
 }
 .entries {
   max-height: min(200px, 30dvh);
-  overflow: auto;
+}
+.entries [data-slot="scroll-area-content"] {
   display: grid;
   gap: 4px;
 }
@@ -103,20 +171,10 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: -2px;
 }
-@media (max-width: 480px) {
-  .browseButton > span {
-    display: none;
-  }
-  .directoryRow > [data-slot="button"] {
-    width: var(--harness-control-height);
-    height: var(--harness-control-height);
-    padding: 0;
-  }
-}
 @media (pointer: coarse) {
   .entry,
-  .directoryRow > [data-slot="button"] {
-    min-width: 44px;
+  .folder button,
+  .folderHeading button {
     min-height: 44px;
   }
 }

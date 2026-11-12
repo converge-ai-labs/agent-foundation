@@ -6,7 +6,7 @@ Harness UI (`a13n-harness-ui`) is a local Agent workbench with a personal CLI an
 
 `a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, page presence, shared prompt editing, resource configuration, and explicitly enabled native Host files, Git views, and PTY. Instance-key participants share administrative authority; [scoped sharing](webui/05-scoped-sharing.md) admits guests to a Project or Thread without multi-tenancy. There is no detached daemon or IPC mode.
 
-Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, replay active model or Python invocations, lease work across workers, or provide distributed failover. Retained native Shells can reconnect to their original Provider process under local ownership; durable results and completion hints follow [local recovery](03-local-storage-and-recovery.md#retained-tool-executions). A finalized [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff) permits single-use continuation after a clean sequential WebUI update, not crash recovery. a13n Service remains the durable hosted product.
+Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but ordinary root receipts, input, and deferred responses remain process-local. [Bot](12-bot-and-connector-ingress.md) separately retains bounded input intent and selected Connector ingress; it does not replay active model or Python invocations, lease work across workers, or provide distributed failover. Retained native Shells can reconnect to their original Provider process under local ownership; durable results and completion hints follow [local recovery](03-local-storage-and-recovery.md#retained-tool-executions). A finalized [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff) permits single-use continuation after a clean sequential WebUI update, not crash recovery. a13n Service remains the durable hosted product.
 
 Harness UI depends on the [Harness](../a13n-harness/README.md), including its [Environment Providers](../a13n-harness/08a-environment-execution.md), and on [Agent Stream Protocol](../a13n-stream-protocol/README.md) through their public contracts. It does not reproduce their Agent loop, Environment operation, or observation semantics.
 
@@ -33,6 +33,8 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 [MCP Apps Host](09-mcp-apps.md) owns opt-in retained tool-result Apps, connection and View lifetimes, same-server interaction authority, explicit model context/messages, and browser isolation.
 
 [Host Browser](11-browser.md) owns the optional Linux/macOS headed browser, persistent profile, Linux VNC viewer, macOS native-window preview and Agent/human handoff.
+
+[Bot and Connector Ingress](12-bot-and-connector-ingress.md) owns the built-in personal assistant, heartbeat scheduling, intentional messages, coordination workspace, cross-Project memory reads, and shared Connector database/inbox boundaries.
 
 [Live Mode](10-live-mode.md) owns root Live configuration, the built-in projectless executor, persistent voice transcript, browser media ownership, and online-only Thread reporting.
 
@@ -71,7 +73,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling. Independent Apps do not thereby share live collaboration or execution receipts.
-14. Page/editor presence and shared browser drafts are in-memory collaboration state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
+14. WebUI composer content and owner Run choices persist as one bounded current draft per root Thread. Page/editor presence remains process-local. Draft persistence is separate from selected continuation and root-work acceptance; reconnect never authorizes automatic submission.
 15. Native Host files, Git views, and PTY are explicitly enabled human operations on the server OS, independent of Agent Environment policy and Run lifetime.
 
 ## Conventions

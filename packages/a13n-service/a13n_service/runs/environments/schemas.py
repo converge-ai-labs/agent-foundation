@@ -3,7 +3,6 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_harness.environment.envd_policy import EnvdSessionConfiguration
 from a13n_harness.environment.models import (
     FILE_EXECUTION_ACTIONS,
     EnvironmentAction,
@@ -18,12 +17,14 @@ from pydantic import (
     JsonValue,
     SecretStr,
     StringConstraints,
-    model_validator,
 )
 
 from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers import envd
+from a13n_service.resources.environment_instances.session_configuration import (
+    SessionConfiguration as SessionConfiguration,
+)
 from a13n_service.resources.environment_templates.schemas import Reclamation
 from a13n_service.resources.metrics_data_sources.schemas import Labels
 
@@ -76,6 +77,8 @@ class Handle(BaseModel):
     outbound: OutboundBinding | None = Field(default=None, repr=False, exclude_if=lambda value: value is None)
     state: EnvironmentState | None = None
     credential_version: str | None = None
+    envd_version: str | None = None
+    envd_target_version: str | None = None
     e2b_desktop_template: str | None = None
     modal_desktop_image: str | None = None
     daytona_desktop_snapshot: str | None = None
@@ -198,16 +201,6 @@ class EnvironmentUpdate(BaseModel):
     name: EnvironmentName | None = None
     endpoint: EnvdEndpoint | None = None
     token: EnvdToken | None = None
-
-
-class SessionConfiguration(EnvdSessionConfiguration):
-    """Tenant-authored Session policy; Service credentials are not process-environment references."""
-
-    @model_validator(mode="after")
-    def no_host_credentials(self) -> "SessionConfiguration":
-        if self.egress is not None and self.egress.secrets:
-            raise ValueError("Service Session bindings cannot reference Host environment credentials")
-        return self
 
 
 class SessionBindingUpdate(BaseModel):

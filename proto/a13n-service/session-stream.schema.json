@@ -1172,6 +1172,28 @@
       "title": "DynamicSubagents",
       "type": "object"
     },
+    "EgressConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "destinations": {
+          "$ref": "#/$defs/EgressDestinations"
+        },
+        "secrets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SecretReference"
+          },
+          "maxItems": 64,
+          "title": "Secrets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "destinations"
+      ],
+      "title": "EgressConfiguration",
+      "type": "object"
+    },
     "EgressDestinations": {
       "discriminator": {
         "mapping": {
@@ -1370,58 +1392,6 @@
       "title": "EntryView",
       "type": "object"
     },
-    "EnvdEgressConfiguration": {
-      "additionalProperties": false,
-      "properties": {
-        "destinations": {
-          "$ref": "#/$defs/EgressDestinations"
-        },
-        "secrets": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/EnvdSecretReference"
-          },
-          "maxItems": 64,
-          "title": "Secrets",
-          "type": "array"
-        }
-      },
-      "required": [
-        "destinations"
-      ],
-      "title": "EnvdEgressConfiguration",
-      "type": "object"
-    },
-    "EnvdSecretReference": {
-      "additionalProperties": false,
-      "properties": {
-        "env": {
-          "maxLength": 128,
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-          "title": "Env",
-          "type": "string"
-        },
-        "inject_hosts": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 256,
-          "minItems": 1,
-          "title": "Inject Hosts",
-          "type": "array"
-        },
-        "source": {
-          "$ref": "#/$defs/EnvironmentCredentialSource"
-        }
-      },
-      "required": [
-        "env",
-        "source",
-        "inject_hosts"
-      ],
-      "title": "EnvdSecretReference",
-      "type": "object"
-    },
     "EnvironmentAction": {
       "description": "Exact authorization values in the locked first-party catalog.",
       "enum": [
@@ -1466,31 +1436,98 @@
         "environment.computer.type_text",
         "environment.computer.press_keys",
         "environment.computer.read_clipboard",
-        "environment.computer.write_clipboard"
+        "environment.computer.write_clipboard",
+        "environment.computer.a11y_describe",
+        "environment.computer.a11y_roots",
+        "environment.computer.a11y_inspect",
+        "environment.computer.a11y_find",
+        "environment.computer.a11y_read",
+        "environment.computer.a11y_range",
+        "environment.computer.a11y_range_read",
+        "environment.computer.ax_disclosing_set",
+        "environment.computer.ax_expanded_set",
+        "environment.computer.ax_focus",
+        "environment.computer.ax_focused_window_set",
+        "environment.computer.ax_main_set",
+        "environment.computer.ax_minimized_set",
+        "environment.computer.ax_perform_action",
+        "environment.computer.ax_position_set",
+        "environment.computer.ax_selected_children_set",
+        "environment.computer.ax_selected_columns_set",
+        "environment.computer.ax_selected_rows_set",
+        "environment.computer.ax_selected_set",
+        "environment.computer.ax_selected_text_set",
+        "environment.computer.ax_size_set",
+        "environment.computer.ax_text_range_select",
+        "environment.computer.ax_text_ranges_select",
+        "environment.computer.ax_value_number_set",
+        "environment.computer.ax_value_string_set",
+        "environment.computer.ax_visible_text_range_set",
+        "environment.computer.uia_collapse",
+        "environment.computer.uia_dock_set",
+        "environment.computer.uia_expand",
+        "environment.computer.uia_focus",
+        "environment.computer.uia_invoke",
+        "environment.computer.uia_legacy_default_action",
+        "environment.computer.uia_legacy_select",
+        "environment.computer.uia_legacy_value_set",
+        "environment.computer.uia_range_add_selection",
+        "environment.computer.uia_range_remove_selection",
+        "environment.computer.uia_range_scroll_into_view",
+        "environment.computer.uia_range_select",
+        "environment.computer.uia_range_show_context_menu",
+        "environment.computer.uia_range_value_set",
+        "environment.computer.uia_realize",
+        "environment.computer.uia_scroll_amount",
+        "environment.computer.uia_scroll_into_view",
+        "environment.computer.uia_scroll_percent",
+        "environment.computer.uia_selection_add",
+        "environment.computer.uia_selection_remove",
+        "environment.computer.uia_selection_select",
+        "environment.computer.uia_show_context_menu",
+        "environment.computer.uia_toggle",
+        "environment.computer.uia_transform_move",
+        "environment.computer.uia_transform_resize",
+        "environment.computer.uia_transform_rotate",
+        "environment.computer.uia_transform_zoom",
+        "environment.computer.uia_transform_zoom_unit",
+        "environment.computer.uia_value_set",
+        "environment.computer.uia_view_set",
+        "environment.computer.uia_window_close",
+        "environment.computer.uia_window_state_set",
+        "environment.computer.atspi_caret_set",
+        "environment.computer.atspi_component_extents_set",
+        "environment.computer.atspi_component_position_set",
+        "environment.computer.atspi_component_size_set",
+        "environment.computer.atspi_do_action",
+        "environment.computer.atspi_document_selections_set",
+        "environment.computer.atspi_focus",
+        "environment.computer.atspi_range_scroll_to",
+        "environment.computer.atspi_range_scroll_to_point",
+        "environment.computer.atspi_scroll_to",
+        "environment.computer.atspi_scroll_to_point",
+        "environment.computer.atspi_selection_add_child",
+        "environment.computer.atspi_selection_all",
+        "environment.computer.atspi_selection_clear",
+        "environment.computer.atspi_selection_remove_child",
+        "environment.computer.atspi_selection_remove_selected",
+        "environment.computer.atspi_table_column_select",
+        "environment.computer.atspi_table_column_unselect",
+        "environment.computer.atspi_table_row_select",
+        "environment.computer.atspi_table_row_unselect",
+        "environment.computer.atspi_text_contents_set",
+        "environment.computer.atspi_text_copy",
+        "environment.computer.atspi_text_cut",
+        "environment.computer.atspi_text_delete",
+        "environment.computer.atspi_text_insert",
+        "environment.computer.atspi_text_paste",
+        "environment.computer.atspi_text_selection_add",
+        "environment.computer.atspi_text_selection_remove",
+        "environment.computer.atspi_text_selection_set",
+        "environment.computer.atspi_value_set"
       ],
       "title": "EnvironmentAction",
       "type": "string"
-    },
-    "EnvironmentCredentialSource": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "environment",
-          "title": "Kind",
-          "type": "string"
-        },
-        "name": {
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-          "title": "Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "name"
-      ],
-      "title": "EnvironmentCredentialSource",
-      "type": "object"
     },
     "EnvironmentMount": {
       "additionalProperties": false,
@@ -1980,6 +2017,14 @@
       ],
       "title": "HistoricalDesktopPending",
       "type": "object"
+    },
+    "Hosts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
     },
     "InitialRun": {
       "additionalProperties": false,
@@ -3933,6 +3978,33 @@
       ],
       "type": "string"
     },
+    "SecretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "maxLength": 41,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+          "title": "Credential Id",
+          "type": "string"
+        },
+        "env": {
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Env",
+          "type": "string"
+        },
+        "inject_hosts": {
+          "$ref": "#/$defs/Hosts"
+        }
+      },
+      "required": [
+        "env",
+        "credential_id",
+        "inject_hosts"
+      ],
+      "title": "SecretReference",
+      "type": "object"
+    },
     "SessionConfiguration": {
       "additionalProperties": false,
       "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
@@ -3952,7 +4024,7 @@
         "egress": {
           "anyOf": [
             {
-              "$ref": "#/$defs/EnvdEgressConfiguration"
+              "$ref": "#/$defs/EgressConfiguration"
             },
             {
               "type": "null"

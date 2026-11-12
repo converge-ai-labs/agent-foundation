@@ -159,6 +159,20 @@
   width: 32px;
   height: 32px;
 }
+/* Compact adjacent icons by default; local layouts still own sizes and gaps. */
+:where(:has(> button[data-size^="icon"] + button[data-size^="icon"])) {
+  column-gap: 0;
+}
+@media (pointer: fine) {
+  :where(
+    button[data-size^="icon"]:has(+ button[data-size^="icon"]),
+    button[data-size^="icon"] + button[data-size^="icon"]
+  ) {
+    inline-size: 24px;
+    block-size: 24px;
+    flex-shrink: 0;
+  }
+}
 :where(
   :is([data-slot="button"], [data-a13n-button])[data-variant="default"],
   :is([data-slot="button"], [data-a13n-button])[data-variant="destructive"]

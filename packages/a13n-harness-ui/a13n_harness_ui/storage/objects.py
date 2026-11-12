@@ -267,14 +267,14 @@ class ImmutableObjectStore:
         """Remove an object whose owner has released it; callers coordinate reference use."""
         await to_thread.run_sync(partial(self._path_for(reference).unlink, missing_ok=True))
 
-    async def references(self) -> tuple[ObjectRef, ...]:
+    async def references(self, kind: ObjectKind | None = None) -> tuple[ObjectRef, ...]:
         """List object files currently present in the local store."""
 
-        return await to_thread.run_sync(self._references)
+        return await to_thread.run_sync(self._references, kind)
 
-    def _references(self) -> tuple[ObjectRef, ...]:
+    def _references(self, selected: ObjectKind | None = None) -> tuple[ObjectRef, ...]:
         references: list[ObjectRef] = []
-        for path in self._layout.objects.glob("*/*/*/*.json.zst"):
+        for path in self._layout.objects.glob(f"{selected.value if selected else '*'}/*/*/*.json.zst"):
             try:
                 kind, version, prefix, filename = path.relative_to(self._layout.objects).parts
                 reference = ObjectRef(

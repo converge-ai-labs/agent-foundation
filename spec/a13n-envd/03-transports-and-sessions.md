@@ -36,7 +36,7 @@ Carrier liveness, Session inactivity and operation/transfer deadlines are distin
 
 ## Binary Data-Frame Profile
 
-EIP 0.4 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
+EIP 0.5 selects binary profile 1. Stdio and WebSocket share this network-byte-order frame; HTTP transfers use raw bodies instead.
 
 | Field               | Width | Contract                                                                         |
 | ------------------- | ----: | -------------------------------------------------------------------------------- |
@@ -76,7 +76,7 @@ The first initialize is device-scoped. Thereafter the Host opens/closes independ
 
 A Host may supply separate private proxy authentication in bounded `X-` headers on both control and transfer requests. These headers cannot replace EIP bearer authentication, Session/transfer selectors, or HTTP framing. They are connection credentials, never operation arguments, and redirects are not followed. The daemon's bearer credential remains independent of any infrastructure gateway credential.
 
-The dedicated EIP listener requires an Authorization Bearer token on every control/transfer request. Public links use verified HTTPS by default; scoped loopback/provider-private plaintext can sit behind provider TLS. The Python HTTP client accepts an explicit caller-owned `verify=False` as an insecure TLS opt-out without allowing public plaintext or redirects. It does not read Harness environment variables; the Harness Host applies its [operator-controlled outbound TLS policy](../a13n-harness/15-security-compatibility-and-tradeoffs.md#operator-controlled-outbound-tls) when constructing the attachment. Tokens and selectors never appear in URLs, cookies, logs, model state or portable provider state. No redirects, browser CORS surface, generic file routes, health endpoint or arbitrary URL fetch are supported.
+The dedicated EIP listener requires an Authorization Bearer token on every control/transfer request. Public links use verified HTTPS by default; scoped loopback/provider-private plaintext can sit behind provider TLS. The Python HTTP client accepts an explicit caller-owned `verify=False` as an insecure TLS opt-out without allowing public plaintext or redirects. It does not read Harness environment variables; the Harness Host applies its [operator-controlled outbound TLS policy](../a13n-harness/15-security-compatibility-and-tradeoffs.md#operator-controlled-outbound-tls) when constructing the attachment. Tokens and selectors never appear in URLs, cookies, logs, model state or portable provider state. No redirects, browser CORS surface, generic file routes or arbitrary URL fetch are supported. The optional [health probe](01-daemon-lifecycle-and-configuration.md#optional-health-probe) uses a separate listener and grants no EIP access.
 
 `POST /eip/control` contains one control envelope. Selector-free initialize/device.describe observes Device info; directory.list performs optional bounded discovery without a Session. Selector-free session.open validates its explicit expected device/generation and Session configuration and creates another independent Session. This does not replace any existing Session. Subsequent control calls select via `eip_session` in the envelope, identically to framed carriers. An authenticated selector cannot be rebound to another trust principal or generation.
 

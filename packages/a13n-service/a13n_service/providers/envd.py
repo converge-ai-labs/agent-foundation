@@ -5,6 +5,8 @@ the endpoint against the outbound policy. First contact reads the device identit
 connection expects that identity, so an endpoint that now reaches another daemon is refused.
 """
 
+from a13n_envd_client.eip import v1 as eip
+from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.execution import EnvironmentConnector
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.session_recovery import EnvdSessionBorrower
@@ -41,12 +43,34 @@ def checked_token(value: str) -> str:
     return value
 
 
-async def first_contact(endpoint: str, token: str, policy: EndpointPolicy) -> str:
-    """The device identity the daemon at `endpoint` states when it accepts `token`; no session opens."""
+async def verify(endpoint: str, token: str, policy: EndpointPolicy, *, device_id: str | None) -> str:
+    """Verify identity and Session readiness on one connection, without granting probe egress."""
     await check_endpoint(TYPE, endpoint, policy)
     configuration = HttpEnvdConnectionConfiguration(endpoint=endpoint)
     async with HttpEnvdProviderRuntime(configuration, HttpEnvdCredential(token=SecretStr(token))) as runtime:
-        return (await runtime.describe(expected_device_id=None)).device_id
+        device = await runtime.acquire_device(expected_device_id=device_id)
+        session_configuration = eip.SessionConfiguration()
+        if device.descriptor.boundary.egress == eip.EgressMode.CONTROLLED:
+            session_configuration = eip.SessionConfiguration(
+                egress_mode=eip.EgressMode.CONTROLLED,
+                egress=eip.EgressPolicy(destinations=eip.AllowlistDestinations(mode="allowlist")),
+            )
+        try:
+            session = await device.open_session(
+                configuration=session_configuration,
+                required_methods=("environment.describe", "environment.readiness", "session.close"),
+            )
+        except Exception as error:
+            raise provider_error(
+                TYPE, "provider_session_failed", EnvironmentProviderErrorCategory.UNAVAILABLE
+            ) from error
+        try:
+            await session.close()
+        except Exception as error:
+            raise provider_error(
+                TYPE, "provider_session_close_failed", EnvironmentProviderErrorCategory.UNAVAILABLE
+            ) from error
+        return device.descriptor.device_id
 
 
 async def connect(

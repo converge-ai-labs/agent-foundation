@@ -4,7 +4,12 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Schema, Transport } from "../transport/client";
 import { TransportContext } from "../transport/context";
-import { SavedEntry, LiveOutput, MessageText } from "./transcript";
+import {
+  SavedEntry,
+  LiveOutput,
+  MessageText,
+  ConversationTranscript,
+} from "./transcript";
 
 afterEach(cleanup);
 it("keeps live prose visible when a stream gap needs a warning", () => {
@@ -245,4 +250,75 @@ it("renders retained root errors alongside historical output without making them
   expect(screen.getByRole("alert").textContent).toContain(
     "Earlier provider failure",
   );
+});
+
+it("hides Bot silent-finish calls live and after reload without hiding ordinary Thread tools", () => {
+  const blocks = [
+    {
+      id: "quiet",
+      kind: "tool" as const,
+      name: "finish_silently",
+      text: "{}",
+      result: "Final result processed.",
+      done: true,
+    },
+  ];
+  const view = render(
+    <LiveOutput
+      blocks={blocks}
+      gap={false}
+      threadId="thread_bot"
+      label="Live output"
+    />,
+  );
+  expect(screen.queryByText("finish_silently")).toBeNull();
+  expect(screen.queryByText("Live output")).toBeNull();
+  expect(view.container.textContent).toBe("");
+  view.rerender(
+    <LiveOutput blocks={blocks} gap={false} threadId="ordinary-thread" />,
+  );
+  expect(screen.getByText("finish_silently")).toBeTruthy();
+  const entry = {
+    position: 0,
+    message_kind: "response",
+    parts: [
+      {
+        kind: "tool_call",
+        tool_name: "finish_silently",
+        tool_call_id: "quiet",
+        value: {},
+      },
+      {
+        kind: "tool_result",
+        tool_name: "finish_silently",
+        tool_call_id: "quiet",
+        value: "Final result processed.",
+      },
+      { kind: "assistant", text: "A separately published result." },
+    ],
+  } as Schema<"TranscriptEntry">;
+  view.rerender(
+    <ConversationTranscript
+      entries={[]}
+      blocks={blocks}
+      localInputs={[]}
+      threadId="thread_bot"
+    />,
+  );
+  expect(view.container.childElementCount).toBe(0);
+  view.rerender(
+    <ConversationTranscript
+      entries={[{ ...entry, parts: entry.parts.slice(0, 2) }]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="thread_bot"
+    />,
+  );
+  expect(view.container.childElementCount).toBe(0);
+  view.rerender(<SavedEntry entry={entry} threadId="thread_bot" />);
+  expect(screen.queryByText("finish_silently")).toBeNull();
+  expect(screen.queryByText("Final result processed.")).toBeNull();
+  expect(screen.getByText("A separately published result.")).toBeTruthy();
+  view.rerender(<SavedEntry entry={entry} threadId="ordinary-thread" />);
+  expect(screen.getByText("finish_silently")).toBeTruthy();
 });

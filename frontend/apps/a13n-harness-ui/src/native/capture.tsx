@@ -172,6 +172,8 @@ export function CaptureContext({
     error instanceof CaptureError && localErrors[error.message]
       ? new Error(localErrors[error.message])
       : error;
+  // Bot's queue currently accepts text, not attachment captures.
+  if (threadId === "thread_bot") return null;
   if (compact)
     return (
       <section

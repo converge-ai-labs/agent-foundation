@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from py_vapid import Vapid
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import RootOperationNotice
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushTestResult, decode_key
@@ -23,6 +24,33 @@ from a13n_harness_ui.storage import LocalStore
 from a13n_harness_ui.storage.push import PushRepository
 
 _LOG = get_logger("a13n_harness_ui.web_push")
+
+
+def notice_payload(
+    thread_id: str, thread_title: str | None, notice: RootOperationNotice, *, language: str
+) -> dict[str, str]:
+    """Present messages as messages, keeping execution outcomes distinct."""
+    chinese = language == "zh-CN"
+    bot = thread_id == BOT_THREAD_ID
+    if bot and notice.message_id is not None:
+        title = "Bot 给你发了消息" if chinese else "New message from Bot"
+    elif bot and notice.status == "suspended":
+        title = "Bot 需要你的回应" if chinese else "Bot needs your response"
+    else:
+        title = {
+            "completed": "任务已完成" if chinese else "Task completed",
+            "failed": "任务失败" if chinese else "Task failed",
+            "suspended": "需要你的输入" if chinese else "Your input is needed",
+            "goal_verified": "Agent 已验证目标" if chinese else "Goal verified by the Agent",
+            "goal_incomplete": "目标未验证" if chinese else "Goal not verified",
+        }[notice.status]
+        title += f" · {(thread_title or ('聊天' if chinese else 'Conversation'))[:80]}"
+    return {
+        "title": title,
+        "body": notice.brief[:180],
+        "tag": f"a13n-harness-ui.{notice.message_id or notice.receipt_id}",
+        "path": "/bot" if bot and notice.message_id is not None else f"/threads/{quote(thread_id, safe='')}",
+    }
 
 
 class WebPush:
@@ -61,21 +89,11 @@ class WebPush:
                     thread = await self._store.threads.get(thread_id)
                     if thread is None or thread.archived:
                         continue
-                    title = {
-                        "completed": "Task completed",
-                        "failed": "Task failed",
-                        "suspended": "Your input is needed",
-                        "goal_verified": "Goal verified by the Agent",
-                        "goal_incomplete": "Goal not verified",
-                    }[notice.status]
-                    payload = {
-                        "title": f"{title} · {(thread.title or 'Conversation')[:80]}",
-                        "body": notice.brief[:180],
-                        "tag": f"a13n-harness-ui.{notice.receipt_id}",
-                        "path": f"/threads/{quote(thread_id, safe='')}",
-                    }
                     async with create_task_group() as deliveries:
                         for subscription in await self.repository.recipients():
+                            if subscription.scope == "bot" and thread_id != BOT_THREAD_ID:
+                                continue
+                            payload = notice_payload(thread_id, thread.title, notice, language=subscription.language)
                             deliveries.start_soon(self._deliver, subscription, payload)
                 except Exception:
                     # Provider failures are diagnostics, not execution failures.
@@ -89,8 +107,10 @@ class WebPush:
         accepted = await self._deliver(
             subscription,
             {
-                "title": "Harness UI test notification",
-                "body": "Background notifications can reach this device even when WebUI is closed.",
+                "title": "Harness UI 测试通知" if subscription.language == "zh-CN" else "Harness UI test notification",
+                "body": "WebUI 关闭后仍可向此设备发送后台通知。"
+                if subscription.language == "zh-CN"
+                else "Background notifications can reach this device even when WebUI is closed.",
                 "tag": "a13n-harness-ui.test",
                 "path": "/settings/notifications",
             },
@@ -102,6 +122,13 @@ class WebPush:
             # Do not deliver a queued snapshot after its subscription was removed.
             current = await self.repository.get(subscription.subscription_id)
             if current is None or current.keys != subscription.keys:
+                return False
+            if current.scope == "bot" and payload["path"] not in {
+                "/bot",
+                f"/threads/{BOT_THREAD_ID}",
+                "/settings/notifications",
+            }:
+                # Scope may change while this delivery waits for capacity.
                 return False
             try:
                 key = await self._key()

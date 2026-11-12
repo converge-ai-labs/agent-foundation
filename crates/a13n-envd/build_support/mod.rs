@@ -19,6 +19,7 @@ const TOOLING_ENUMS: &[&str] = &[
     "ReplayClass",
     "ErrorFamily",
     "EIPStringFormat",
+    "EIPJsonPrimitive",
     "TransferAction",
     "TransferDirection",
     "EIPDataFrameKind",
@@ -63,7 +64,7 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          use serde::{Deserialize, Serialize};\n\n",
     );
     output.push_str(&format!(
-        "pub const EIP_PROTOCOL_VERSION: &str = \"0.4\";\n\
+        "pub const EIP_PROTOCOL_VERSION: &str = \"0.5\";\n\
          pub const EIP_PROTO_PACKAGE: &str = \"{PACKAGE}\";\n\n"
     ));
     render_data_frame(&mut output, pool, &extensions)?;
@@ -72,6 +73,11 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          pub struct ValidationError(pub String);\n\n\
          pub trait EipValidate {\n\
          \x20   fn validate(&self) -> Result<(), ValidationError>;\n\
+         }\n\n\
+         /// Default-inclusive JSON for native helper operands and result budgeting.\n\
+         /// Wire serialization remains compact and uses the normal Serialize impl.\n\
+         pub trait EipExpandedJson {\n\
+         \x20   fn expanded_json(&self) -> Result<serde_json::Value, serde_json::Error>;\n\
          }\n\n\
          #[derive(Debug)]\n\
          pub enum DecodeError {\n\
@@ -805,9 +811,13 @@ fn render_field_default(
         field.name().to_snake_case()
     );
     output.push_str(&format!(
-        "fn {function}() -> {field_type} {{ {expression} }}\n\
-         fn is_{function}(value: &{field_type}) -> bool {{ value == &{function}() }}\n\n"
+        "fn {function}() -> {field_type} {{ {expression} }}\n\n"
     ));
+    if !option.has_field_by_name("const_string") {
+        output.push_str(&format!(
+            "fn is_{function}(value: &{field_type}) -> bool {{ value == &{function}() }}\n\n"
+        ));
+    }
     Ok(Some(function))
 }
 
@@ -822,6 +832,35 @@ fn real_oneof_fields(descriptor: &MessageDescriptor) -> Vec<Vec<FieldDescriptor>
             (!fields.is_empty()).then_some(fields)
         })
         .collect()
+}
+
+fn render_constant_deserializer(
+    output: &mut String,
+    owner: &MessageDescriptor,
+    field: &FieldDescriptor,
+    extensions: &Extensions,
+) -> Result<Option<String>, String> {
+    let Some(option) = field_option_message(field, extensions)? else {
+        return Ok(None);
+    };
+    if !option.has_field_by_name("const_string") {
+        return Ok(None);
+    }
+    // Untagged unions choose a variant during deserialization, before EipValidate runs.
+    // Enforce constants here so variants with omitted default fields cannot match the wrong arm.
+    let expected = string_field(&option, "const_string")?;
+    let function = format!(
+        "deserialize_{}_{}",
+        owner.name().to_snake_case(),
+        field.name()
+    );
+    output.push_str(&format!(
+        "fn {function}<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {{\n\
+         let value = String::deserialize(deserializer)?;\n\
+         if value != {expected:?} {{ return Err(serde::de::Error::custom(\"invalid discriminator\")); }}\n\
+         Ok(value)\n}}\n\n"
+    ));
+    Ok(Some(function))
 }
 
 fn render_message(
@@ -848,8 +887,17 @@ fn render_message(
             rust_field_type(&fields[0], false)?.0
         ));
         render_validation_impl(output, descriptor, &fields, extensions, true, false)?;
+        render_expanded_json(output, descriptor, &fields, extensions, true, false)?;
         return Ok(());
     }
+    render_expanded_json(
+        output,
+        descriptor,
+        &fields,
+        extensions,
+        transparent,
+        discriminated_union,
+    )?;
     if discriminated_union {
         let oneofs = real_oneof_fields(descriptor);
         if oneofs.len() != 1 {
@@ -874,9 +922,14 @@ fn render_message(
     }
 
     let mut default_functions = BTreeMap::new();
+    let mut constant_deserializers = BTreeMap::new();
     for field in &fields {
         if let Some(function) = render_field_default(output, descriptor, field, extensions)? {
             default_functions.insert(field.full_name().to_owned(), function);
+        }
+        if let Some(function) = render_constant_deserializer(output, descriptor, field, extensions)?
+        {
+            constant_deserializers.insert(field.full_name().to_owned(), function);
         }
     }
     let options = descriptor.options();
@@ -886,13 +939,8 @@ fn render_message(
             "redacted_debug",
         );
     let debug = if redacted { "" } else { "Debug, " };
-    let default = if defaulted_messages.contains(descriptor.full_name()) {
-        "Default, "
-    } else {
-        ""
-    };
     output.push_str(&format!(
-        "#[derive({debug}Clone, {default}PartialEq, Serialize, Deserialize)]\n"
+        "#[derive({debug}Clone, PartialEq, Serialize, Deserialize)]\n"
     ));
     output.push_str("#[serde(deny_unknown_fields)]\n");
     output.push_str(&format!("pub struct {} {{\n", descriptor.name()));
@@ -907,10 +955,35 @@ fn render_message(
             || real_oneof_names.contains(field.full_name()))
             && explicit_default.is_none();
         let (field_type, default) = rust_field_type(field, optional)?;
-        if let Some(function) = explicit_default {
+        let field_option = field_option_message(field, extensions)?;
+        let required = field_option
+            .as_ref()
+            .is_some_and(|option| bool_field(option, "required"));
+        if let Some(function) = constant_deserializers.get(field.full_name()) {
             output.push_str(&format!(
-                "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
+                "    #[serde(deserialize_with = \"{function}\")]\n"
             ));
+        }
+        if required && !(field.is_list() || field.is_map()) {
+            return Err(format!(
+                "required presence is only supported for collections: {}",
+                field.full_name()
+            ));
+        }
+        if required {
+            // Keep explicit empty collections in JSON and reject absent operands.
+        } else if let Some(function) = explicit_default {
+            if field_option
+                .as_ref()
+                .is_some_and(|option| option.has_field_by_name("const_string"))
+            {
+                // Discriminators identify the union variant even at their default value.
+                output.push_str(&format!("    #[serde(default = \"{function}\")]\n"));
+            } else {
+                output.push_str(&format!(
+                    "    #[serde(default = \"{function}\", skip_serializing_if = \"is_{function}\")]\n"
+                ));
+            }
         } else if field.is_map() {
             output
                 .push_str("    #[serde(default, skip_serializing_if = \"BTreeMap::is_empty\")]\n");
@@ -925,11 +998,94 @@ fn render_message(
         output.push_str(&format!("    pub {}: {},\n", field.name(), field_type));
     }
     output.push_str("}\n\n");
+    if defaulted_messages.contains(descriptor.full_name()) {
+        output.push_str(&format!(
+            "impl Default for {} {{\n    fn default() -> Self {{\n        Self {{\n",
+            descriptor.name()
+        ));
+        for field in &fields {
+            let expression = match default_functions.get(field.full_name()) {
+                Some(function) => format!("{function}()"),
+                None => "Default::default()".to_owned(),
+            };
+            output.push_str(&format!("            {}: {expression},\n", field.name()));
+        }
+        output.push_str("        }\n    }\n}\n\n");
+    }
     if redacted {
         let name = descriptor.name();
         output.push_str(&format!("impl std::fmt::Debug for {name} {{ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{ f.write_str(\"{name}([REDACTED])\") }} }}\n"));
     }
     render_validation_impl(output, descriptor, &fields, extensions, false, false)?;
+    Ok(())
+}
+
+fn render_expanded_json(
+    output: &mut String,
+    descriptor: &MessageDescriptor,
+    fields: &[FieldDescriptor],
+    extensions: &Extensions,
+    transparent: bool,
+    union: bool,
+) -> Result<(), String> {
+    output.push_str(&format!(
+        "impl EipExpandedJson for {} {{\n    fn expanded_json(&self) -> Result<serde_json::Value, serde_json::Error> {{\n",
+        descriptor.name()
+    ));
+    if transparent {
+        output.push_str("        serde_json::to_value(&self.0)\n");
+    } else if union {
+        output.push_str("        match self {\n");
+        for field in real_oneof_fields(descriptor).into_iter().flatten() {
+            output.push_str(&format!(
+                "            Self::{}(value) => value.expanded_json(),\n",
+                field.name().to_upper_camel_case()
+            ));
+        }
+        output.push_str("        }\n");
+    } else {
+        let oneofs: BTreeSet<_> = real_oneof_fields(descriptor)
+            .into_iter()
+            .flatten()
+            .map(|field| field.full_name().to_owned())
+            .collect();
+        output.push_str("        Ok(serde_json::json!({\n");
+        for field in fields {
+            let name = field.name();
+            let optional = (field.field_descriptor_proto().proto3_optional()
+                || oneofs.contains(field.full_name()))
+                && !field_has_explicit_default(field, extensions)?;
+            let expression = if field.is_map() {
+                let Kind::Message(entry) = field.kind() else {
+                    unreachable!()
+                };
+                if matches!(entry.map_entry_value_field().kind(), Kind::Message(message) if message.package_name() == PACKAGE)
+                {
+                    format!(
+                        "self.{name}.iter().map(|(key, value)| Ok((key.clone(), value.expanded_json()?))).collect::<Result<serde_json::Map<String, serde_json::Value>, serde_json::Error>>()?"
+                    )
+                } else {
+                    format!("serde_json::to_value(&self.{name})?")
+                }
+            } else if matches!(field.kind(), Kind::Message(message) if message.package_name() == PACKAGE)
+            {
+                if field.is_list() {
+                    format!(
+                        "self.{name}.iter().map(EipExpandedJson::expanded_json).collect::<Result<Vec<_>, _>>()?"
+                    )
+                } else if optional {
+                    format!("self.{name}.as_ref().map(EipExpandedJson::expanded_json).transpose()?")
+                } else {
+                    format!("self.{name}.expanded_json()?")
+                }
+            } else {
+                format!("serde_json::to_value(&self.{name})?")
+            };
+            output.push_str(&format!("            {name:?}: {expression},\n"));
+        }
+        output.push_str("        }))\n");
+    }
+    output.push_str("    }\n}\n\n");
     Ok(())
 }
 
@@ -1094,6 +1250,61 @@ fn render_field_checks(
                 field.name()
             ));
         }
+        if bool_field(&option, "no_nul") {
+            output.push_str(&format!(
+                "{check_padding}if {target}.contains('\\0') {{ return Err(ValidationError(\"{} must not contain NUL\".to_owned())); }}\n",
+                field.name()
+            ));
+        }
+        if option.has_field_by_name("max_utf8_bytes") {
+            let maximum = option
+                .get_field_by_name("max_utf8_bytes")
+                .and_then(|value| value.as_u32())
+                .ok_or_else(|| "max_utf8_bytes is not uint32".to_owned())?;
+            output.push_str(&format!(
+                "{check_padding}if {target}.len() > {maximum}usize {{ return Err(ValidationError(\"{} exceeds its UTF-8 byte limit\".to_owned())); }}\n",
+                field.name()
+            ));
+        }
+        let primitives = option
+            .get_field_by_name("json_primitives")
+            .ok_or_else(|| "missing json_primitives option".to_owned())?;
+        if let prost_reflect::Value::List(primitives) = primitives.as_ref()
+            && !primitives.is_empty()
+        {
+            let value = if field.is_list() || field.is_map() {
+                "value"
+            } else {
+                &target
+            };
+            let mut accepted = Vec::new();
+            for primitive in primitives {
+                accepted.push(match primitive.as_enum_number() {
+                    Some(1) => format!("{value}.is_boolean()"),
+                    Some(2) => format!("({value}.is_i64() || {value}.is_u64())"),
+                    Some(3) => format!("{value}.as_f64().is_some_and(f64::is_finite)"),
+                    Some(4) => format!("{value}.is_string()"),
+                    Some(5) => format!("{value}.is_null()"),
+                    _ => return Err("invalid JSON primitive option".to_owned()),
+                });
+            }
+            let accepted = accepted.join(" || ");
+            let check = format!(
+                "if !({accepted}) {{ return Err(ValidationError(\"{} has an invalid JSON primitive type\".to_owned())); }}",
+                field.name()
+            );
+            if field.is_map() {
+                output.push_str(&format!(
+                    "{check_padding}for value in {target}.values() {{ {check} }}\n"
+                ));
+            } else if field.is_list() {
+                output.push_str(&format!(
+                    "{check_padding}for value in &{target} {{ {check} }}\n"
+                ));
+            } else {
+                output.push_str(&format!("{check_padding}{check}\n"));
+            }
+        }
         if option.has_field_by_name("const_string") {
             let expected = string_field(&option, "const_string")?;
             output.push_str(&format!(
@@ -1153,9 +1364,34 @@ fn render_field_checks(
             } else if matches!(field.kind(), Kind::Uint64 | Kind::Fixed64) {
                 dereferenced
             } else {
-                format!("({dereferenced} as u64)")
+                format!("({dereferenced} as i128)")
             }
         };
+        if option.has_field_by_name("signed_minimum") {
+            let minimum = option
+                .get_field_by_name("signed_minimum")
+                .and_then(|value| value.as_i64())
+                .ok_or_else(|| "signed_minimum is not sint64".to_owned())?;
+            let minimum = if matches!(field.kind(), Kind::Float | Kind::Double) {
+                format!("{minimum}.0")
+            } else {
+                minimum.to_string()
+            };
+            output.push_str(&format!(
+                "{check_padding}if {} < {minimum} {{ return Err(ValidationError(\"{} is below its signed minimum\".to_owned())); }}\n",
+                numeric_target(), field.name()
+            ));
+        }
+        if option.has_field_by_name("exclusive_minimum") {
+            let minimum = option
+                .get_field_by_name("exclusive_minimum")
+                .and_then(|value| value.as_f64())
+                .ok_or_else(|| "exclusive_minimum is not double".to_owned())?;
+            output.push_str(&format!(
+                "{check_padding}if {} <= {minimum:?} {{ return Err(ValidationError(\"{} must exceed its minimum\".to_owned())); }}\n",
+                numeric_target(), field.name()
+            ));
+        }
         if option.has_field_by_name("minimum") {
             let minimum = option
                 .get_field_by_name("minimum")

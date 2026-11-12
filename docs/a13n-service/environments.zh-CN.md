@@ -21,11 +21,45 @@ description: 为文件和命令任务创建工作空间、复用已有机器，�
 
 `envd_ws` 暂不支持 Console 中独立的桌面预览，按钮会显示原因。Agent 的 Computer 工具仍取决于设备能力和执行权限。设备保持在线但执行 Session 失效时，工具会报告失败，Run 可以在下一次使用工具时准备新 Session；不会自动重放之前的命令，也不会恢复旧进程句柄。
 
-将 `server.public_url` 配置为沙箱能够访问的 HTTPS 地址，并允许 WebSocket 转发。镜像或模板需包含更新后的兼容 Envd 和 `a13n-sandbox-entrypoint`。E2B、Vercel 仍需兼容模板或快照，Sprites 仍需桌面模式。Console 的模板配置可以选择执行连接方式；Docker 需先选择自定义环境。
+将 `server.public_url` 配置为沙箱能够访问的 HTTPS 地址，并允许 WebSocket 转发。镜像或模板需包含更新后的兼容 Envd 和 `a13n-sandbox-entrypoint`。自动准备支持无桌面和桌面配置：E2B 可在兼容的所选模板中安装，Vercel 在最终持久 Ubuntu 目标中安装，Sprites 在最终 Sprite 中安装。显式自定义镜像、模板或快照保留各自的预装要求。Console 的模板配置可以选择执行连接方式；Docker 需先选择自定义环境。
 
 Service 自动下发该环境的专用连接凭据，完成 EIP 初始化后才将创建或启动标记为成功。连接失败时保留已分配的沙箱，便于重试或清理。Worker 调用工具无需访问沙箱的 Envd HTTP 端口。Provider 生命周期接口、人工桌面访问和监控仍有各自的网络要求。文件和截图在 Worker 与 Control 之间通过 Redis Stream 传输，Control 与 Envd 之间继续使用现有 WebSocket。
 
 已有模板的 native 或 HTTP 默认行为保持不变。此连接方式需要 Service，独立 Harness 的 Provider 连接器会明确拒绝。修改模板只影响新环境，不改变已经创建的实例。
+
+## Envd 安装与升级
+
+Docker、E2B、Modal、Daytona、Vercel 和 Sprites 的 recipe 支持 `envd_management`：
+
+| 值             | 安装与启动管理权                                                                 |
+| -------------- | -------------------------------------------------------------------------------- |
+| `managed`      | Service 在准备阶段安装其固定版本，并重启运行时。                                 |
+| `preinstalled` | 自行提供 Envd 及启动命令。Service 检查就绪状态，不安装、不替换启动方式、不升级。 |
+
+自动准备的 Envd 以及官方 Docker Envd 镜像默认使用 `managed`。显式自定义镜像、模板和快照默认使用 `preinstalled`。自动资源选择器要求 `managed`；冲突配置会被拒绝。Native 执行不接受 `managed`。Kubernetes 继续使用操作者编写的 Pod 和 init-container 启动配方。
+
+例如，E2B 可以在兼容的所选模板上安装并托管 Envd 二进制：
+
+```json
+{"execution":"envd_http","template":"my-debian13-template","preparation":"headless","envd_management":"managed"}
+```
+
+自行维护兼容的自定义运行时时，选择 `preinstalled`：
+
+- E2B：自定义 `template`，并使用 `preparation: "preinstalled"`。
+- Modal：自定义 `image` 及 `startup_command`，例如 `["/usr/local/bin/start-envd"]`。创建及快照恢复均原样使用这个 argv。
+- Daytona：提供启动命令会运行 Envd 的自定义快照。
+- Vercel：提供自定义 `snapshot` 及 `startup_command`，例如 `["/usr/local/bin/start-envd"]`。命令需在后台启动运行时后返回。创建和原生会话恢复时，Service 使用实例启动环境变量，以 root 执行这个 argv。每个原生会话记录一个启动任务，管理操作在回执丢失后可重新加入，而不会重放命令；文件系统快照不会保留进程。
+- Sprites：使用 `envd_http`，自行安装运行时、配置 Device 身份和服务；Service 不注册标准启动器。`preinstalled` 与 `envd_ws` 组合会被拒绝，因为私有 outbound 启动配置目前需要 Service 启动器。
+- Docker：提供包含自定义启动命令的镜像。
+
+Modal/Daytona 可通过 `base_image` 选择支持的基础镜像并自动托管准备。将已有自定义运行时设为 `managed` 时，目标须具备标准的 root 所有安装/运行目录、GNU/Linux 安装器依赖和原生监督进程；该字段不会替换镜像入口或补装桌面。
+
+Service 在创建、启动/恢复，以及固定版本推进后首次使用已有托管实例时升级。它先取得现有持久化准备操作，再安装经过校验的发布版本、请求重启，并验证认证 EIP 就绪状态。并发调用者加入同一操作。已有人工桌面保留和查看会推迟首次使用升级。空闲实例不通过定时任务升级，Service 也不选择 `latest`。
+
+**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行、结果未知或实例已确认丢失时会被拒绝。升级失败会使此前已就绪的托管实例停留在 `starting`，直到显式重试成功才能使用，但不会启动首次准备失败的自动回收。若缺少发布版本或运行时不兼容，应先修复原因再重试。原生实例确认丢失后需替换或删除。缺少回执不代表命令没有执行。
+
+外部服务管理器运行 `a13n-envd daemon` 并负责重启。没有外部管理器时，准备的运行时使用 `a13n-envd supervise`；Service 安装二进制后请求该原生监督进程重启。局部重启命令见 [Envd 运维](../a13n-envd/operations.md#restart-after-installing-a-release)。
 
 ## 工作空间自动配置
 
@@ -171,7 +205,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
-| 稳定版或 RC                             | `0.5.1`  |
+| 稳定版或 RC                             | `0.8.0`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
 Sandbox 版本归 Envd 管理，与 Service 版本独立。设置明确的标签或 digest 可选择其他镜像。`pull_policy: if_missing` 使用 Engine 本地镜像，缺失时在首次创建时拉取；`never` 要求镜像已经存在。自动配置的模板保存明确镜像，因此升级会保留这一选择。
@@ -229,6 +263,36 @@ Service 验证设备，加密保存 token，并返回 `ready` 实例。使用注
 每个 Thread 在 Environment 上拥有具名 Session 绑定。使用同一绑定的目录挂载跨 Run 共享 Session；不同绑定名在同一 Device 上选择独立 Session。最后清理时分离连接并保留恢复描述符。普通新工作在确认原 Session 丢失后可以新建；保留的 Shell 工作必须恢复原 Session 和原进程，恢复绝不替代或重放命令。端点和 token 轮换保留逻辑绑定。
 
 挂载通过 `session_binding` 选择绑定（默认 `default`），通过 `session_configuration` 初始化启动策略。使用 `GET` 或 `PUT /api/v1/threads/{thread_id}/session-bindings/{environment_id}/{name}?workspace_id=…` 查看或替换期望策略；PUT 使用 Thread ETag 和 `configuration` 对象。启动策略变化后，只有没有已接纳 Run 或未完成保留工具使用该绑定时，接纳才会替换 Session；否则返回 `environment_busy`。目录选择仍属于单个挂载。
+
+### 命令中的 HTTPS 凭据
+
+先创建工作空间的[出站凭据](resources.md#egress-credentials)，再在 Session 配置中引用其 ID。例如：
+
+```json
+{
+  "egress_mode": "controlled",
+  "egress": {
+    "destinations": { "mode": "allowlist", "hosts": ["api.github.com"] },
+    "secrets": [
+      {
+        "env": "GH_TOKEN",
+        "credential_id": "ecred_your_credential_id",
+        "inject_hosts": ["api.github.com"]
+      }
+    ]
+  }
+}
+```
+
+在 Agent 的 `default_session_configuration` 中设置这段策略，可以初始化新的主 Session 绑定；在 Thread 绑定的 `configuration` 中设置，供后续 Run 使用；在 `options.environment.session_configuration` 中设置，只对本次 Run 生效。已有 Thread 绑定优先于 Agent 默认值。Run 覆盖不会改写 Thread 的期望配置；不同配置不能同时使用同一个绑定。
+
+环境必须支持 Envd controlled egress。Service 在允许命令执行前检查当前凭据；不支持时会明确失败，不会把真实 token 放进普通环境变量。Envd 提供占位值，仅在发往指定域名的 HTTPS 请求头中替换为真实值。命令仍需按服务要求构造请求头，例如 `curl -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user`。保持 TLS 校验开启，使用环境配置的证书信任。Host 的 web 和 browser 工具不会继承这些绑定。
+
+Agent 在每次模型请求中获得当前选定的变量名、域名和使用说明，只有一份当前说明，上下文压缩不会将其移除。说明不包含真实值或占位值；仅轮换 token 时无需更改命令或说明。
+
+轮换先同步保存新值，再异步更新活跃 Session。现有 Session 持有者也会定期比较版本，默认间隔十秒，因此通知丢失后仍会补偿。受跟踪的后台任务可以在 Run 结束后继续保持同步。空闲 Session 不会为了更新凭据而被连接；它在下次 attach 时、执行命令前取得最新版本。detach 保留 Session 及其凭据，原生 close 或过期负责清理。
+
+撤销后，Service 接纳流程立即阻止新使用；活跃 Session 异步删除绑定。空闲 Session 可能保留旧值直到再次 attach 或原生清理。需要立即失效时，应同时在上游服务撤销 token。保存或撤销接口成功，不代表所有原生 Session 都已应用。
 
 ### 升级到 Session 绑定
 

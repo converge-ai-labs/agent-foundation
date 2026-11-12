@@ -20,6 +20,8 @@ export function useNavigationObservations({
   selectedUpdatedAt: number;
 }) {
   const results = useResults();
+  const included = (thread: Schema<"ThreadSummary">) =>
+    thread.thread_id !== "thread_bot" && belongs(thread);
   // The selected detail can arrive before a slower sidebar refresh. Use that
   // observation for this row, without replacing other Projects or page cursors.
   const observed = new Map<string, NavigationRow>(
@@ -28,7 +30,7 @@ export function useNavigationObservations({
       ...(list.data?.pages[0]?.active_rows ?? []),
       ...(list.data?.pages[0]?.starred_rows ?? []),
     ]
-      .filter((row) => belongs(row.thread))
+      .filter((row) => included(row.thread))
       .map((row) => [row.thread.thread_id, row]),
   );
   for (const { thread, observedAt } of results.threads.values()) {
@@ -41,7 +43,7 @@ export function useNavigationObservations({
     );
     if (observed.has(thread.thread_id) && observedAt <= (page?.observedAt ?? 0))
       continue;
-    if (!belongs(thread)) {
+    if (!included(thread)) {
       observed.delete(thread.thread_id);
       continue;
     }
@@ -68,7 +70,7 @@ export function useNavigationObservations({
     : undefined;
   if (
     selected &&
-    belongs(selected) &&
+    included(selected) &&
     (!observed.has(selected.thread_id) ||
       selectedUpdatedAt >
         Math.max(
@@ -96,7 +98,7 @@ export function useNavigationObservations({
   );
   for (const thread of owners.data ?? []) {
     if (
-      belongs(thread) &&
+      included(thread) &&
       ownerIds.includes(thread.thread_id) &&
       !observed.has(thread.thread_id)
     )

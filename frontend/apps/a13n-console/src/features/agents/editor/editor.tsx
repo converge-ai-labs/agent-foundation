@@ -199,6 +199,9 @@ export function AgentEditor({
         setAdvancedExpanded(true);
       } else if (built.stage === "reviewer") {
         setReviewPanel({ validation: built.error });
+      } else if (built.stage === "environment") {
+        // The environment section exposes its current cross-field error.
+        setValidation(undefined);
       } else {
         setModelValidation(undefined);
         setValidation(built.error);
@@ -335,6 +338,11 @@ export function AgentEditor({
               }
             />
             <AgentEnvironment
+              sessionConfiguration={draft.sessionConfiguration}
+              onSessionConfigurationChange={draft.setSessionConfiguration}
+              sessionInvalid={
+                attempted && !built.ok && built.stage === "environment"
+              }
               value={draft.environmentTemplateId}
               environmentId={draft.environmentId}
               onChange={(value) => {

@@ -40,6 +40,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.browser_context import BrowserContextCapability
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -67,6 +68,7 @@ from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
@@ -120,7 +122,7 @@ class RootContinuationSelection:
 
 @dataclass(frozen=True, slots=True)
 class RootRunOutcome:
-    result: HarnessRunResult[str]
+    result: HarnessRunResult[str | None]
     environment: EnvironmentFinalization
     continuation: RootContinuationSelection
     composition: ObjectRef
@@ -144,6 +146,7 @@ class RootRunAdmission:
     display: DisplayArchive | None = None
     browser_binding: str | None = None
     browser_unavailable: str = ""
+    external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
 
 
 class RootRunExecutor:
@@ -324,6 +327,7 @@ class RootRunExecutor:
             display=archive,
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
+            external_context=await self._store.threads.external_context(thread_id),
         )
 
     async def execute(
@@ -538,7 +542,7 @@ class RootRunExecutor:
                 actor="a13n-harness-ui.root",
                 host_refs={"thread_id": thread.thread_id},
             )
-            usage_reporter = self._store.usage.reporter(thread_id)
+            usage_reporter = self._store.usage.reporter(thread_id, reconstructed.model_resolver.configured_models)
             model_call_check = (
                 await reconstructed.compaction.prepare(
                     instance=instance,
@@ -566,6 +570,8 @@ class RootRunExecutor:
                 display.observe(item)
 
             bindings = RunBindings(
+                metadata=admission.external_context.model_copy(deep=True).metadata,
+                request_context=admission.external_context.request_context(),
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
                 codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
                 instance=instance,
@@ -596,8 +602,8 @@ class RootRunExecutor:
                 capability_count=len(reconstructed.definition_capability_ids),
                 environment_prepared=True,
             )
-        result: HarnessRunResult[str] | None = None
-        stream: HarnessRunStream[str] | None = None
+        result: HarnessRunResult[str | None] | None = None
+        stream: HarnessRunStream[str | None] | None = None
         stream_entry_attempted = False
         run_error: BaseException | None = None
         excerpts: ExcerptCollector | None = None
@@ -620,6 +626,7 @@ class RootRunExecutor:
                 instance=instance,
                 composition=published.value,
                 composition_ref=published.reference,
+                external_context=admission.external_context,
             ):
                 stream_entry_attempted = True
                 async with stream:
@@ -751,11 +758,13 @@ class RootRunExecutor:
                                 usage=result.usage,
                             )
                         )
-                    completed_run_id = (
-                        stream.run_id
-                        if stream is not None and result.status == "completed" and run_error is None
-                        else None
-                    )
+                    run_completed = stream is not None and result.status == "completed" and run_error is None
+                    completed_run_id = stream.run_id if stream is not None and run_completed else None
+                    if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
+                        if not await self._store.bot.has_visible_result(
+                            direct_reply=isinstance(result.output, str) and bool(result.output.strip())
+                        ):
+                            completed_run_id = None
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -765,7 +774,7 @@ class RootRunExecutor:
                         state=result.state,
                         display_base=archive,
                         display=(
-                            display.capture(result.state.message_history, completed=completed_run_id is not None)
+                            display.capture(result.state.message_history, completed=run_completed)
                             if display is not None and result.state is not None
                             else None
                         ),
@@ -872,6 +881,7 @@ class RootRunExecutor:
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
         composition_ref: ObjectRef,
+        external_context: ExternalContext,
     ) -> AsyncGenerator[None]:
         with execution_composition(composition_ref):
             operator = self._subagent_operator
@@ -881,6 +891,7 @@ class RootRunExecutor:
                     run_id=run_id,
                     instance=instance,
                     composition=composition,
+                    external_context=external_context,
                 ):
                     yield
                 return

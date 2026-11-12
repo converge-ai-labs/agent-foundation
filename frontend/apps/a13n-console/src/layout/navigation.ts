@@ -11,6 +11,7 @@ import {
   ClockIcon,
   MonitorIcon,
   PlugIcon,
+  KeyIcon,
   PuzzlePieceIcon,
 } from "@phosphor-icons/react";
 export const navigationGroups: {
@@ -40,6 +41,7 @@ export const navigationGroups: {
         ],
       ],
       ["connections", "Connections", PlugIcon],
+      ["credentials", "Credentials", KeyIcon],
       ["browsers", "Browsers", GlobeIcon],
       [
         "environments",
@@ -83,12 +85,13 @@ export function routeSkeleton(
     "/environments": 4,
     "/browsers": 4,
     "/connections": 3,
+    "/credentials": 5,
     "/traces": 5,
     "/findings": 5,
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
   if (
-    /^\/(agents|schedules|traces|environments|memories|memory-spaces|findings)\/[^/]+$/.test(
+    /^\/(agents|schedules|traces|environments|memories|memory-spaces|findings|credentials)\/[^/]+$/.test(
       tail,
     )
   )

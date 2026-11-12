@@ -1,10 +1,13 @@
 """Vercel management implementation."""
 
 import asyncio
+import hashlib
 import math
+import shlex
 from datetime import UTC, datetime
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.environment.native.configuration import NamedTargetState, TokenCredential
@@ -20,9 +23,14 @@ from a13n_harness.providers.environment.vercel.shared import (
 )
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_assets, envd_install, envd_upgrade
 from a13n_service.providers.environment.envd import envd_environment
+from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.vercel import VercelRecipe
+
+from . import preparation
 
 
 class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfiguration, NamedTargetState]):
@@ -34,16 +42,19 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         runtime: NativeRuntime | None,
         operation_id: str,
     ):
-        if configuration.snapshot == "auto":
-            raise failure("vercel", "desktop_snapshot_not_prepared", Category.INVALID)
         if runtime is None:
             raise TypeError("Vercel management requires a runtime")
         super().__init__(configuration, environment_id, state, runtime)
         self.recipe = configuration
-        del operation_id
+        self.operation_id = operation_id
 
-    async def create(self) -> None:
+    @property
+    def automatic(self) -> bool:
+        return self.config.execution != "native" and self.config.snapshot in {None, "auto"}
+
+    async def create(self) -> Pending | None:
         self.pinned_session = None
+        recovered = self.target is None
         response = await self.lookup()
         created = False
         if response is None:
@@ -58,7 +69,11 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                     "projectId": self.backend.project_id,
                     **(
                         {
-                            "source": {"type": "snapshot", "snapshotId": self.config.snapshot},
+                            **(
+                                {"image": preparation.specification(desktop=self.config.desktop)["image"]}
+                                if self.automatic
+                                else {"source": {"type": "snapshot", "snapshotId": self.config.snapshot}}
+                            ),
                             "ports": [
                                 *([8888] if self.config.execution == "envd_http" else []),
                                 *([access.PORT] if self.recipe.desktop_assistance else []),
@@ -68,22 +83,35 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
-                    **({"env": environment} if environment else {}),
+                    **(
+                        {"env": self._envd_environment()}
+                        if self.config.execution != "native"
+                        else ({"env": environment} if environment else {})
+                    ),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
                     "snapshotExpiration": 0,
-                    "tags": self.labels,
+                    "tags": {
+                        **self.labels,
+                        **(
+                            {preparation.TAG: preparation.revision(desktop=self.config.desktop)}
+                            if self.automatic
+                            else {}
+                        ),
+                    },
                 },
             )
             response = decode_response(SandboxResponse, raw, self.provider_key, mutation=True)
             self.accept(response)
             created = True
+        if self.automatic and (created or recovered):
+            # Publish the final native identity before dispatching any guest installation.
+            return Pending(self.state, settled=True)
         if created and self.config.execution != "native":
-            await self._ready(response, bootstrap=True)
-        else:
-            await self.start()
+            return await self._ready(response)
+        return await self.start()
 
-    async def start(self) -> None:
+    async def start(self) -> Pending | None:
         self.pinned_session = None
         response = await self.lookup()
         if response is None:
@@ -105,16 +133,15 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             raise failure(self.provider_key, "provider_unavailable", Category.UNAVAILABLE)
 
         if self.config.execution != "native":
-            await self._ready(response, bootstrap=resumed)
+            self.pinned_session = response.session.id
+            if self.automatic and not await preparation.prepare(self, response, self.operation_id):
+                return Pending(self.state, settled=True)
+            return await self._ready(response)
+        return None
 
-    async def _ready(self, response: SandboxResponse, *, bootstrap: bool) -> None:
-        if response.session.status != "running":
-            raise failure("vercel", "provider_unavailable", Category.UNAVAILABLE)
-        self.pinned_session = response.session.id
-        if bootstrap:
-            # Only a new native session starts services. Failed/recovered creates
-            # and attachment must never repair an existing desktop implicitly.
-            settings = {
+    def _envd_environment(self) -> dict[str, str]:
+        return self.bootstrap_environment(
+            {
                 **self.config.environment,
                 "A13N_ENVD_DEVICE_ID": self.owner,
                 "A13N_ENVD_TRANSPORT": "http",
@@ -126,62 +153,99 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                 "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
                 "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                 "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-            }
+            },
+            self.config.envd,
+        )
+
+    async def _ready(self, response: SandboxResponse) -> Pending | None:
+        if response.session.status != "running":
+            raise failure("vercel", "provider_unavailable", Category.UNAVAILABLE)
+        self.pinned_session = response.session.id
+        # Management may restart a dead launcher. Read-only execution attachment never does.
+        # The guest lock makes repeated/lost launches harmless, including within one native session.
+        if self.config.execution != "native" and self.recipe.envd_management == "managed":
+            settings = self._envd_environment()
             program = "a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"
-            # A snapshot retains disk, including stale X11 socket paths, but not
-            # processes. The per-session marker fences duplicate bootstrap attempts.
-            settings = self.bootstrap_environment(settings, self.config.envd)
-            script = """import json,os,subprocess,sys
-from pathlib import Path
-session,program=sys.argv[1:]
-os.umask(0o077)
-root=Path('/var/lib/a13n-envd');root.mkdir(mode=0o700,exist_ok=True)
-marker=root/('session-'+session)
-with marker.open('x'): pass
-for name in ['/tmp/.X99-lock','/tmp/.X11-unix/X99','/run/a13n-desktop-access/control.sock']:
- Path(name).unlink(missing_ok=True)
-with (root/'startup.log').open('ab') as log:
- subprocess.Popen(['flock','-n',str(root/'start.lock'),'a13n-sandbox-entrypoint',program],
-  env=dict(os.environ),cwd='/workspace',stdin=subprocess.DEVNULL,
-  stdout=log,stderr=log,start_new_session=True)
-"""
+            script = """set -eu
+umask 077
+install -d -m 0700 /var/lib/a13n-envd
+cd /workspace
+nohup flock -n /var/lib/a13n-envd/start.lock sh -c '
+ rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock
+ STARTUP
+' >> /var/lib/a13n-envd/startup.log 2>&1 < /dev/null &
+""".replace("STARTUP", envd_assets.startup(program))
             await command(
                 self,
                 response.session.id,
-                ["python3", "-I", "-c", script, response.session.id, program],
+                ["sh", "-c", script, "sh", program],
                 env=settings,
                 sudo=True,
                 timeout=15,
             )
-        if self.config.execution == "envd_ws":
+        elif self.recipe.startup_command is not None:
+            # Reconcile every management entry, including lost allocation/resume replies.
+            # One frozen guest job per native session prevents replay of authored side effects.
+            script = "exec 9>&-\nexec " + shlex.join(self.recipe.startup_command)
+            revision = hashlib.sha256(script.encode()).hexdigest()
+            session = hashlib.sha256(response.session.id.encode()).hexdigest()
+            status = (
+                await command(
+                    self,
+                    response.session.id,
+                    [
+                        "sh",
+                        "-c",
+                        envd_install.dispatch(
+                            script,
+                            revision,
+                            self.operation_id,
+                            root=f"/var/lib/a13n-startup/{session}",
+                            timeout_seconds=math.ceil(self.config.request_timeout_seconds),
+                        ),
+                    ],
+                    env=self._envd_environment(),
+                    sudo=True,
+                    timeout=15,
+                    max_output=1024,
+                )
+            ).strip()
+            if status == "running":
+                return Pending(self.state, settled=True)
+            if status != "ready":
+                raise failure(self.provider_key, "envd_startup_failed", Category.INVALID, certainty=Certainty.KNOWN)
+        if self.defer_envd_readiness or self.config.execution == "envd_ws":
             return
-        probe = """import socket,time
-end=time.monotonic()+30
-while time.monotonic()<end:
- try:
-  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
- except OSError: time.sleep(.2)
-else: raise RuntimeError('Envd readiness timed out')
-"""
-        await command(self, response.session.id, ["python3", "-I", "-c", probe], timeout=35)
         runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
-        reference = HttpReference(self.config, self.environment_id, self.state, runtime)
-        reference.pinned_session = response.session.id
-        execution = http_execution(reference)
-        try:
-            await execution.open(execution_id="exec-readiness")
-            await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
-            if self.config.desktop:
-                computer = execution.operations.computer
-                if computer is None:
-                    raise failure("vercel", "desktop_unavailable", Category.UNAVAILABLE)
-                description = await computer.describe()
-                if not description.observe_ready or not description.input_ready or not description.targets:
-                    raise failure("vercel", "desktop_unavailable", Category.UNAVAILABLE)
-        finally:
-            await execution.close()
+
+        def execution():
+            reference = HttpReference(self.config, self.environment_id, self.state, runtime)
+            reference.pinned_session = response.session.id
+            return http_execution(reference)
+
+        await wait_until_ready(
+            execution,
+            provider_key=self.provider_key,
+            desktop=self.config.desktop,
+            timeout=self.config.request_timeout_seconds,
+        )
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        session_id = self.pinned_session or await self.running_session()
+
+        async def execute(argv: list[str]) -> str:
+            return await command(self, session_id, argv, sudo=True, timeout=15)
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        response = await self.lookup()
+        if response is None or response.session.id != session_id:
+            raise failure(self.provider_key, "provider_target_conflict", Category.CONFLICT)
+        return await self._ready(response)
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or self.target is None:

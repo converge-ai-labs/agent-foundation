@@ -1,3 +1,5 @@
+import conversation from "./conversation.module.css";
+import { ScrollArea } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { describeTool, record, type ToolView } from "./tool-presentation";
 import styles from "./tool-call.module.css";
@@ -12,13 +14,20 @@ export function ToolWorkingState({ tool }: { tool: ToolView }) {
       return <p className={styles.recordedText}>{value || t("Empty note.")}</p>;
     if (Array.isArray(result.keys))
       return result.keys.length ? (
-        <ul className={styles.resources} aria-label={t("Notes")}>
-          {result.keys
-            .filter((key): key is string => typeof key === "string")
-            .map((key) => (
-              <li key={key}>{key}</li>
-            ))}
-        </ul>
+        <ScrollArea
+          autoHeight
+          scrollbarGutter
+          className={`${styles.resourceScroll} ${conversation.innerReader}`}
+          data-tool-resources
+        >
+          <ul className={styles.resources} aria-label={t("Notes")}>
+            {result.keys
+              .filter((key): key is string => typeof key === "string")
+              .map((key) => (
+                <li key={key}>{key}</li>
+              ))}
+          </ul>
+        </ScrollArea>
       ) : (
         <p className={styles.recordedText}>{t("No notes.")}</p>
       );

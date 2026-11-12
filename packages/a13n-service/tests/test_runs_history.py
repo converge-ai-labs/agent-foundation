@@ -268,7 +268,7 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(
                 .order_by(RunItemPageRow.first_ordinal)
             )
         ).all()
-    assert [tuple(page) for page in pages] == [(first, first + 15) for first in range(1, count - 15, 16)]
+    assert [tuple(page) for page in pages] == [(first, first + 15) for first in range(1, count - 14, 16)]
 
     async def window(**params: int) -> list[int]:
         response = await service.client.get(f"{service.api}/runs/{run_id}/items", params=params)

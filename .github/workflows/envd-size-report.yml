@@ -1,0 +1,44 @@
+name: Envd size report
+
+on:
+  workflow_run:
+    workflows: [a13n-envd CI]
+    types: [completed]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: envd-size-report-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # This workflow runs with write permission, including for fork PRs. Only
+      # trusted default-branch code executes; PR artifacts are JSON data only.
+      - name: Checkout trusted reporting code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Download measurements from the completed run
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: envd-size-*-attempt-${{ github.event.workflow_run.run_attempt }}
+          path: size-reports
+      - name: Update PR size report
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await require('./.github/scripts/envd-size-comment.cjs').post({github, context, core});

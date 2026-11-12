@@ -10,7 +10,10 @@ import { useTranslation } from "react-i18next";
 import { ConfigurationGroup } from "./configuration-group";
 import { EnvdSettings } from "./envd-settings";
 import { KubernetesConfiguration } from "./kubernetes-configuration";
-import { SPRITES_DESKTOP_NOTICE } from "./creation-progress";
+import {
+  HEADLESS_INSTALL_NOTICE,
+  SPRITES_DESKTOP_NOTICE,
+} from "./creation-progress";
 import styles from "./environments.module.css";
 import { fieldSchema } from "../../shared/forms/schema-definition";
 import { EnvironmentVariables } from "../../shared/forms/environment-variables";
@@ -73,9 +76,13 @@ export function ProviderConfiguration({
   const vercelDraft = useRef<string | undefined>(undefined);
   const [modalCustom, setModalCustom] = useState(false);
   const modalDraft = useRef<string | undefined>(undefined);
+  const modalBaseDraft = useRef<unknown>(undefined);
+  const daytonaBaseDraft = useRef<unknown>(undefined);
   const [e2bCustom, setE2bCustom] = useState(false);
   const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
+  const startupDraft = useRef<unknown>(undefined);
+  const customPolicyDraft = useRef<unknown>("preinstalled");
   if (variant === "kubernetes")
     return (
       <KubernetesConfiguration
@@ -100,7 +107,6 @@ export function ProviderConfiguration({
     value?.execution === "envd_ws" ||
     value?.desktop === true;
   const e2bUsesCustomTemplate =
-    (e2bRequiresEnvd && value?.desktop !== true) ||
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
@@ -112,6 +118,40 @@ export function ProviderConfiguration({
     (typeof value?.snapshot === "string" && value.snapshot !== "auto");
   const modalUsesCustom =
     modalCustom || (typeof value?.image === "string" && value.image !== "auto");
+  function executionMode(next: Record<string, unknown>) {
+    return (
+      next.execution ??
+      (next.desktop === true || variant === "modal" || variant === "daytona"
+        ? "envd_http"
+        : "native")
+    );
+  }
+  function defaultEnvdPolicy(next: Record<string, unknown>) {
+    const execution = executionMode(next);
+    if (execution === "native") return "preinstalled";
+    if (variant === "modal")
+      return (next.image ?? "auto") === "auto" ? "managed" : "preinstalled";
+    if (variant === "daytona" || variant === "vercel")
+      return (next.snapshot ?? "auto") === "auto" ? "managed" : "preinstalled";
+    if (variant === "e2b")
+      return next.template === "auto" ||
+        next.preparation === "headless" ||
+        (next.preparation === undefined && (next.template ?? "base") === "base")
+        ? "managed"
+        : "preinstalled";
+    if (variant === "sprites") return "managed";
+    const image =
+      next.image ??
+      (schema?.properties as Record<string, { default?: unknown }>)?.image
+        ?.default;
+    return typeof image === "string" &&
+      image.startsWith("ghcr.io/converge-ai-labs/a13n-sandbox:")
+      ? "managed"
+      : "preinstalled";
+  }
+  const effectivePolicy =
+    value?.envd_management ?? defaultEnvdPolicy(value ?? {});
+  const nativeExecution = executionMode(value ?? {}) === "native";
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
   const selected: DockerMode =
     presets && value && schema && !custom
@@ -127,6 +167,7 @@ export function ProviderConfiguration({
       next === "custom"
         ? (customDraft.current ?? value ?? {})
         : applyDockerPreset(value ?? {}, presets[next]),
+      true,
     );
   }
   const properties =
@@ -195,6 +236,22 @@ export function ProviderConfiguration({
       if (value?.desktop === true) features.push(property);
       continue;
     }
+    if (key === "envd_management") {
+      if (!nativeExecution)
+        integration.push([
+          key,
+          {
+            ...(property[1] as Record<string, unknown>),
+            default: defaultEnvdPolicy(value ?? {}),
+          },
+        ]);
+      continue;
+    }
+    if (key === "startup_command") {
+      if (!nativeExecution && effectivePolicy === "preinstalled")
+        common.push(property);
+      continue;
+    }
     if (
       variant === "e2b" &&
       e2bRequiresEnvd &&
@@ -210,7 +267,14 @@ export function ProviderConfiguration({
       ].includes(key)
     )
       continue;
-    if (variant === "e2b" && key === "template") continue;
+    if (variant === "e2b" && ["template", "preparation"].includes(key))
+      continue;
+    if (
+      key === "base_image" &&
+      ((variant === "modal" && modalUsesCustom) ||
+        (variant === "daytona" && daytonaUsesCustom))
+    )
+      continue;
     if (variant === "vercel" && ["snapshot", "desktop"].includes(key)) continue;
     if (variant === "sprites" && key === "desktop") continue;
     if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
@@ -255,7 +319,42 @@ export function ProviderConfiguration({
       common.push(property);
     else advanced.push(property);
   }
-  const change = (next: Record<string, unknown>) =>
+  const change = (next: Record<string, unknown>, preservePolicy = false) => {
+    if (
+      next.execution === "native" &&
+      variant === "vercel" &&
+      typeof value?.snapshot === "string" &&
+      value.snapshot !== "auto"
+    ) {
+      vercelDraft.current = value.snapshot;
+      customPolicyDraft.current = effectivePolicy;
+      setVercelCustom(true);
+    }
+    if (executionMode(next) === "native") {
+      if (variant !== "default")
+        next = { ...next, envd_management: "preinstalled" };
+    } else if (nativeExecution && !preservePolicy)
+      next = {
+        ...next,
+        envd_management:
+          variant === "vercel" &&
+          executionMode(next) !== "native" &&
+          vercelUsesCustom &&
+          vercelDraft.current !== undefined
+            ? customPolicyDraft.current
+            : defaultEnvdPolicy(next),
+      };
+    if (next.envd_management === "managed" || next.execution === "native") {
+      if (value?.startup_command != null)
+        startupDraft.current = value.startup_command;
+      next = { ...next, startup_command: undefined };
+    } else if (
+      next.envd_management === "preinstalled" &&
+      next.startup_command == null &&
+      (variant === "modal" || variant === "vercel")
+    ) {
+      next = { ...next, startup_command: startupDraft.current };
+    }
     onChange(
       JSON.stringify(
         (variant === "daytona" ||
@@ -269,6 +368,7 @@ export function ProviderConfiguration({
         2,
       ),
     );
+  };
   const fieldsAvailable = !!schema && !!value;
   const jsonMode = mode === "json" || !fieldsAvailable;
   function desktopControls() {
@@ -387,7 +487,10 @@ export function ProviderConfiguration({
                   ...(enabled && value.timeout_seconds === undefined
                     ? { timeout_seconds: 2700 }
                     : {}),
-                  snapshot: enabled ? (value.snapshot ?? "auto") : null,
+                  snapshot: enabled
+                    ? (value.snapshot ??
+                      (vercelUsesCustom ? vercelDraft.current : "auto"))
+                    : null,
                   desktop_assistance: enabled,
                   ...(enabled && !vercelUsesCustom
                     ? {
@@ -457,6 +560,7 @@ export function ProviderConfiguration({
                             : "envd_http",
                       }
                     : { desktop_assistance: false }),
+                  preparation: "preinstalled",
                   ...(enabled &&
                   (!value.template ||
                     ["base", "desktop"].includes(String(value.template)))
@@ -469,9 +573,17 @@ export function ProviderConfiguration({
             />
           </SettingsRow>
         )}
-        {variant === "sprites" && value.desktop === true && (
-          <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>
-        )}
+        {variant === "sprites" &&
+          (value.execution === "envd_http" ||
+            value.execution === "envd_ws") && (
+            <p role="note">
+              {t(
+                value.desktop === true
+                  ? SPRITES_DESKTOP_NOTICE
+                  : HEADLESS_INSTALL_NOTICE,
+              )}
+            </p>
+          )}
       </>
     );
   }
@@ -510,8 +622,12 @@ export function ProviderConfiguration({
                 daytonaDraft.current = undefined;
                 setModalCustom(false);
                 modalDraft.current = undefined;
+                modalBaseDraft.current = undefined;
+                daytonaBaseDraft.current = undefined;
                 e2bCustomDraft.current = undefined;
                 customDraft.current = undefined;
+                startupDraft.current = undefined;
+                customPolicyDraft.current = "preinstalled";
                 setMode("fields");
                 setReset((value) => value + 1);
               }}
@@ -573,14 +689,14 @@ export function ProviderConfiguration({
           <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
             {variant === "modal" && (
               <>
-                {value.desktop === true && (
+                {
                   <SegmentedControl
                     label={t("Modal image")}
                     value={modalUsesCustom ? "custom" : "automatic"}
                     options={[
                       {
                         value: "automatic",
-                        label: t("Automatic desktop"),
+                        label: t("Automatic Envd"),
                         disabled: readOnly,
                       },
                       {
@@ -590,11 +706,23 @@ export function ProviderConfiguration({
                       },
                     ]}
                     onValueChange={(next) => {
-                      if (modalUsesCustom && typeof value.image === "string")
+                      if (modalUsesCustom && typeof value.image === "string") {
                         modalDraft.current = value.image;
+                        customPolicyDraft.current = effectivePolicy;
+                      }
+                      if (next === "custom")
+                        modalBaseDraft.current = value.base_image;
                       setModalCustom(next === "custom");
                       change({
                         ...value,
+                        envd_management:
+                          next === "custom"
+                            ? customPolicyDraft.current
+                            : "managed",
+                        base_image:
+                          next === "custom"
+                            ? undefined
+                            : (modalBaseDraft.current ?? value.base_image),
                         image:
                           next === "custom"
                             ? (modalDraft.current ?? "")
@@ -602,8 +730,8 @@ export function ProviderConfiguration({
                       });
                     }}
                   />
-                )}
-                {(value.desktop !== true || modalUsesCustom) && (
+                }
+                {modalUsesCustom && (
                   <SchemaFields
                     schema={{
                       ...schema,
@@ -616,10 +744,12 @@ export function ProviderConfiguration({
                     onChange={change}
                   />
                 )}
-                {value.desktop === true && !modalUsesCustom && (
+                {!modalUsesCustom && (
                   <p role="note">
                     {t(
-                      "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                      value.desktop === true
+                        ? "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues."
+                        : "The first headless creation builds an Envd image. Later creations reuse it. No desktop or guest Python runtime is required.",
                     )}
                   </p>
                 )}
@@ -627,14 +757,14 @@ export function ProviderConfiguration({
             )}
             {variant === "daytona" && (
               <>
-                {value.desktop === true && (
+                {
                   <SegmentedControl
                     label={t("Daytona snapshot")}
                     value={daytonaUsesCustom ? "custom" : "automatic"}
                     options={[
                       {
                         value: "automatic",
-                        label: t("Automatic desktop"),
+                        label: t("Automatic Envd"),
                         disabled: readOnly,
                       },
                       {
@@ -647,11 +777,23 @@ export function ProviderConfiguration({
                       if (
                         daytonaUsesCustom &&
                         typeof value.snapshot === "string"
-                      )
+                      ) {
                         daytonaDraft.current = value.snapshot;
+                        customPolicyDraft.current = effectivePolicy;
+                      }
+                      if (next === "custom")
+                        daytonaBaseDraft.current = value.base_image;
                       setDaytonaCustom(next === "custom");
                       change({
                         ...value,
+                        envd_management:
+                          next === "custom"
+                            ? customPolicyDraft.current
+                            : "managed",
+                        base_image:
+                          next === "custom"
+                            ? undefined
+                            : (daytonaBaseDraft.current ?? value.base_image),
                         snapshot:
                           next === "custom"
                             ? (daytonaDraft.current ?? "")
@@ -659,8 +801,8 @@ export function ProviderConfiguration({
                       });
                     }}
                   />
-                )}
-                {(value.desktop !== true || daytonaUsesCustom) && (
+                }
+                {daytonaUsesCustom && (
                   <SchemaFields
                     schema={{
                       ...schema,
@@ -674,10 +816,12 @@ export function ProviderConfiguration({
                     onChange={change}
                   />
                 )}
-                {value.desktop === true && !daytonaUsesCustom && (
+                {!daytonaUsesCustom && (
                   <p role="note">
                     {t(
-                      "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                      value.desktop === true
+                        ? "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues."
+                        : "The first headless creation builds an Envd snapshot. Later creations reuse it. No desktop or guest Python runtime is required.",
                     )}
                   </p>
                 )}
@@ -685,14 +829,16 @@ export function ProviderConfiguration({
             )}
             {variant === "vercel" && (
               <>
-                {value.desktop === true && (
+                {(value.desktop === true ||
+                  value.execution === "envd_http" ||
+                  value.execution === "envd_ws") && (
                   <SegmentedControl
                     label={t("Vercel snapshot")}
                     value={vercelUsesCustom ? "custom" : "automatic"}
                     options={[
                       {
                         value: "automatic",
-                        label: t("Automatic desktop"),
+                        label: t("Automatic Envd"),
                         disabled: readOnly,
                       },
                       {
@@ -705,11 +851,17 @@ export function ProviderConfiguration({
                       if (
                         vercelUsesCustom &&
                         typeof value.snapshot === "string"
-                      )
+                      ) {
                         vercelDraft.current = value.snapshot;
+                        customPolicyDraft.current = effectivePolicy;
+                      }
                       setVercelCustom(next === "custom");
                       change({
                         ...value,
+                        envd_management:
+                          next === "custom"
+                            ? customPolicyDraft.current
+                            : "managed",
                         snapshot:
                           next === "custom"
                             ? (vercelDraft.current ?? "")
@@ -718,7 +870,7 @@ export function ProviderConfiguration({
                     }}
                   />
                 )}
-                {value.desktop === true && vercelUsesCustom && (
+                {vercelUsesCustom && !nativeExecution && (
                   <SchemaFields
                     schema={{
                       ...schema,
@@ -732,13 +884,16 @@ export function ProviderConfiguration({
                     onChange={change}
                   />
                 )}
-                {value.desktop === true && !vercelUsesCustom && (
-                  <p role="note">
-                    {t(
-                      "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
-                    )}
-                  </p>
-                )}
+                {(value.desktop === true ||
+                  value.execution === "envd_http" ||
+                  value.execution === "envd_ws") &&
+                  !vercelUsesCustom && (
+                    <p role="note">
+                      {t(
+                        "Envd is installed directly on each persistent Vercel sandbox. Desktop mode also installs desktop dependencies. Creation can take several minutes; you can leave this page while it continues.",
+                      )}
+                    </p>
+                  )}
               </>
             )}
             {!builtIn && image.length > 0 && (
@@ -766,9 +921,7 @@ export function ProviderConfiguration({
                               ? "Automatic desktop"
                               : "Official default",
                           ),
-                          disabled:
-                            readOnly ||
-                            (e2bRequiresEnvd && value.desktop !== true),
+                          disabled: readOnly,
                         },
                         {
                           value: "custom",
@@ -787,10 +940,13 @@ export function ProviderConfiguration({
                           change({
                             ...value,
                             template: e2bCustomDraft.current ?? "",
+                            preparation: "preinstalled",
+                            envd_management: customPolicyDraft.current,
                           });
                         } else {
                           if (typeof value.template === "string")
                             e2bCustomDraft.current = value.template;
+                          customPolicyDraft.current = effectivePolicy;
                           setE2bCustom(false);
                           setDaytonaCustom(false);
                           setVercelCustom(false);
@@ -801,6 +957,13 @@ export function ProviderConfiguration({
                           change({
                             ...value,
                             template: e2bDefaultTemplate,
+                            preparation:
+                              value.desktop === true || !e2bRequiresEnvd
+                                ? "preinstalled"
+                                : "headless",
+                            envd_management: e2bRequiresEnvd
+                              ? "managed"
+                              : "preinstalled",
                             ...(value.desktop === true
                               ? { desktop_assistance: true }
                               : {}),
@@ -817,11 +980,13 @@ export function ProviderConfiguration({
                           template: {
                             ...(e2bTemplate as Record<string, unknown>),
                             description:
-                              value.desktop === true
-                                ? "Enter an operator-built template with a13n-envd and desktop components preinstalled."
-                                : e2bRequiresEnvd
-                                  ? "Enter an operator-built template with a13n-envd preinstalled."
-                                  : "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
+                              value.preparation === "headless"
+                                ? "Enter a GNU/Linux template with glibc 2.39 or newer. Envd is installed on its allocated sandbox; existing SDK processes remain available."
+                                : value.desktop === true
+                                  ? "Enter an operator-built template with a13n-envd and desktop components preinstalled."
+                                  : e2bRequiresEnvd
+                                    ? "Enter an operator-built template with a13n-envd preinstalled."
+                                    : "Enter an existing E2B template name or ID. Desktop processes and Computer tools will remain disabled.",
                           },
                         },
                       }}
@@ -847,6 +1012,45 @@ export function ProviderConfiguration({
                 </div>
               )}
             </div>
+            {variant === "e2b" && e2bRequiresEnvd && value.desktop !== true && (
+              <>
+                <SegmentedControl
+                  label={t("Envd preparation")}
+                  value={
+                    value.preparation === "headless" ||
+                    (value.preparation === undefined &&
+                      (value.template ?? "base") === "base")
+                      ? "headless"
+                      : "preinstalled"
+                  }
+                  options={[
+                    {
+                      value: "headless",
+                      label: t("Install headless Envd"),
+                      disabled: readOnly,
+                    },
+                    {
+                      value: "preinstalled",
+                      label: t("Preinstalled Envd"),
+                      disabled: readOnly,
+                    },
+                  ]}
+                  onValueChange={(preparation) =>
+                    change({
+                      ...value,
+                      preparation,
+                      envd_management:
+                        preparation === "headless" ? "managed" : "preinstalled",
+                    })
+                  }
+                />
+                <p role="note">
+                  {t(
+                    "Headless preparation installs Envd on the selected sandbox and requires glibc 2.39 or newer. Choose a compatible template; the stock base may be too old. Preinstalled mode leaves the template runtime unchanged.",
+                  )}
+                </p>
+              </>
+            )}
             {variant === "e2b" && value.desktop === true && (
               <p className={styles.e2bHelp}>
                 {t(
@@ -948,13 +1152,27 @@ export function ProviderConfiguration({
                         ...(variant === "vercel" && next.execution === "native"
                           ? { snapshot: null }
                           : {}),
+                        ...(variant === "e2b" && next.execution === "native"
+                          ? { preparation: "preinstalled" }
+                          : {}),
                         ...(variant === "e2b" &&
+                        next.desktop !== true &&
                         (next.execution === "envd_http" ||
                           next.execution === "envd_ws") &&
-                        ["base", "desktop"].includes(
-                          String(next.template ?? "base"),
-                        )
-                          ? { template: "" }
+                        (next.template ?? "base") === "base"
+                          ? { preparation: "headless" }
+                          : {}),
+                        ...(variant === "vercel" &&
+                        (next.execution === "envd_http" ||
+                          next.execution === "envd_ws")
+                          ? {
+                              snapshot:
+                                next.snapshot ??
+                                (vercelUsesCustom
+                                  ? vercelDraft.current
+                                  : "auto"),
+                              timeout_seconds: next.timeout_seconds ?? 2700,
+                            }
                           : {}),
                       })
                     }

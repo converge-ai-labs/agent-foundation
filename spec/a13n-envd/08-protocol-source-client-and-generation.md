@@ -6,7 +6,7 @@ EIP has one language-neutral protocol source that generates the daemon wire surf
 
 The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `a13n-envd`. Envd-backed execution Providers in Harness implement Environment connector and provider-neutral Environment execution over this EIP client; Harness opens those Environment executions and adds Run-local mounts, routing, tools, and context.
 
-The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The deployment baseline is daemon/client `0.7.0`; Envd `0.6.x` peers are unsupported and must be upgraded together. The EIP source identifier remains `0.4` for this baseline and is not a cross-release compatibility guarantee; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
+The client and `a13n-envd` daemon belong to one a13n-envd release group. Their package version is release identity. The deployment baseline is daemon/client `0.7.0`; Envd `0.6.x` peers are unsupported and must be upgraded together. The EIP source identifier is `0.5` and is not a cross-release compatibility guarantee; peers do not negotiate or compare it, as defined by [EIP Protocol](02-eip-protocol.md).
 
 ## Boundaries
 
@@ -47,7 +47,7 @@ The client package is lower-level than Harness and Service and is reusable by pr
 
 ## Canonical IDL Profile
 
-Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.4 selects data-frame profile 1, including explicit Session routing. Device initialization returns the descriptor; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers validate the current schemas and reject unsupported frame profiles. EIP-specific method options declare at least:
+Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. EIP 0.5 selects data-frame profile 1, including explicit Session routing. Device initialization returns the descriptor; binary attachments require a ready logical Session. The major-1 IDL namespace is canonical. Generated clients and servers validate the current schemas and reject unsupported frame profiles. EIP-specific method options declare at least:
 
 - exact JSON-RPC method name;
 - whether the method opens, closes, commits, or aborts a typed file transfer and the permitted direction;
@@ -166,6 +166,8 @@ A Host owns current `EnvironmentState`, target selection, and explicit managemen
 
 Every a13n-envd release publishes native archives for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64, plus one Release `SHA256SUMS` file. Unix assets are named `a13n-envd-<version>-<target>.tar.gz`; Windows assets are named `a13n-envd-<version>-<target>.zip`. The six exact targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`. Each archive contains the `a13n-envd` executable and repository license.
 
+The six ordinary archives contain the default native-only build. Linux additionally publishes `a13n-envd-<version>-<target>-vm.tar.gz` with both VM backends and their embedded runtime assets. Default builds and default sandbox image tags exclude VM dependencies and runtime assets. Linux VM image tags append `-vm` to the tooling variant: `vm`, `slim-vm`, and `desktop-vm`, with corresponding exact-version and development tags. The tooling variants remain independent of VM support. Service automatic installation selects ordinary archives and default image tags. Existing published assets remain immutable; pinned consumers adopt the split through a subsequent release.
+
 Invoking the executable with exactly `a13n-envd --version` writes `a13n-envd <version>\n` to stdout, writes nothing to stderr, and exits zero. `<version>` is the canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity embedded at build time. This path is side-effect-free: it does not create a Tokio runtime, inspect daemon environment or configuration, prepare an execution boundary, allocate runtime state, emit logs, or open a carrier. `--version` combined with another argument is invalid rather than partially starting a daemon.
 
 The repository provides two standalone installer entry points:
@@ -174,6 +176,8 @@ The repository provides two standalone installer entry points:
 - `scripts/install-a13n-envd.ps1` for native Windows PowerShell.
 
 Both accept an exact `--version`, an absolute `--install-dir`, and mutually exclusive `--add-to-path` or `--no-add-to-path` behavior. `A13N_ENVD_VERSION`, `A13N_ENVD_INSTALL_DIR`, and `A13N_ENVD_ADD_TO_PATH` (`1` or `0`) provide the same inputs; explicit flags override environment values, which override defaults. Without an explicit version, the installer resolves the newest stable GitHub Release whose tag matches `release/a13n-envd-v*`; prereleases are excluded, so an RC requires an explicit canonical version.
+
+The POSIX installer additionally accepts `--variant default|vm` and `A13N_ENVD_VARIANT`, defaulting to `default`. `vm` is Linux-only and selects the `-vm` archive; invalid variants fail before downloading. The native updater retains the current Linux build flavor; a build with either VM backend selects the full VM archive. Switching flavors uses the standalone installer. Missing flavor assets fail without falling back to another flavor.
 
 The default install directory is `~/.local/bin` for a non-root POSIX user, `/usr/local/bin` for POSIX root, and `%LOCALAPPDATA%\A13N\bin` on Windows. A supplied install directory must be absolute. Installers do not modify `PATH` by default. `--add-to-path` is the only opt-in mutation and updates the appropriate user shell or Windows user environment without changing system-wide configuration; `--no-add-to-path` explicitly preserves the default behavior.
 

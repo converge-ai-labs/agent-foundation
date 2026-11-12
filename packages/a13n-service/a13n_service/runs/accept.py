@@ -138,14 +138,16 @@ async def snapshot_options(session: AsyncSession, thread: ThreadRow, requested: 
         raise conflict("run", previous.id, "execution_policy_immutable")
     for field, default, reason in (
         ("configuration", RunConfiguration(), "run_configuration_immutable"),
-        ("context", RequestContext(), "request_context_immutable"),
         ("max_usage", None, "usage_limit_immutable"),
     ):
         value = getattr(requested, field)
         if value is not None and value != (getattr(frozen, field) or default):
             raise conflict("run", previous.id, reason)
     return requested.model_copy(
-        update={field: getattr(frozen, field) for field in ("execution", "configuration", "context", "max_usage")}
+        update={
+            **{field: getattr(frozen, field) for field in ("execution", "configuration", "max_usage")},
+            "context": requested.context if requested.context is not None else frozen.context,
+        }
     )
 
 
@@ -358,6 +360,16 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         )
         options = options.model_copy(update={"execution": policy.override()})
     parent, lineage = await parent_of(session, thread)
+    # The last accepted Run is this Thread's durable context head. Completion
+    # provenance still owns authority/options, but cannot restore an older context.
+    # Forks start a separate scope; children receive their initial parent snapshot.
+    if thread.last_run_id is not None and (
+        options.context is None
+        or source.trigger in {"resume", "tool_result", "child_result", "browser_handback", "desktop_handback"}
+    ):
+        latest = await session.get_one(RunRow, thread.last_run_id)
+        context = stored.require(RunOptions, latest.options, kind="run", id=latest.id).context
+        options = options.model_copy(update={"context": context or RequestContext()})
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     primary_override: EnvironmentMount | MountCreate | None = source.environment_mount
     if options.environment is not None and primary_override is None:
@@ -384,13 +396,19 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
                 session,
                 thread,
                 [primary],
-                principal_id=principal.id,
+                principal=principal,
+                default_session_configuration=revision.config.default_session_configuration,
             )
         elif isinstance(primary, EnvironmentMount):
             await adopt_mounts(session, thread, [primary])
         elif primary is not None:
             await reserve_primary(
-                session, principal, thread, template_id=primary, limit=runtime.settings.environments.managed_count
+                session,
+                principal,
+                thread,
+                template_id=primary,
+                limit=runtime.settings.environments.managed_count,
+                session_configuration=revision.config.default_session_configuration,
             )
     from a13n_service.runs.browsers.service import freeze as freeze_browser
 
@@ -412,6 +430,8 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         thread,
         principal=principal,
         primary=primary_override,
+        default_session_configuration=revision.config.default_session_configuration,
+        authority=source.authority,
         # A desktop handback requires the original target and already holds its exclusive lock.
         recreation_limit=None if source.trigger == "desktop_handback" else runtime.settings.environments.managed_count,
     )

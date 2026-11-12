@@ -7,6 +7,8 @@ import { cn } from "../lib/utils";
 export function ScrollArea({
   className,
   children,
+  autoHeight = false,
+  viewportProps,
   scrollFade = false,
   scrollbarGutter = false,
   fill = false,
@@ -14,6 +16,11 @@ export function ScrollArea({
   overscrollContain = false,
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
+  autoHeight?: boolean;
+  viewportProps?: Pick<
+    ScrollAreaPrimitive.Viewport.Props,
+    "role" | "aria-label" | "tabIndex"
+  >;
   scrollFade?: boolean;
   scrollbarGutter?: boolean;
   fill?: boolean;
@@ -22,12 +29,16 @@ export function ScrollArea({
 }): React.ReactElement {
   return (
     <ScrollAreaPrimitive.Root
-      className={cn("size-full min-h-0", className)}
+      className={cn("min-h-0", autoHeight ? "h-auto" : "size-full", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        {...viewportProps}
         className={cn(
-          "h-full rounded-[inherit] outline-none transition-shadow focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+          "rounded-[inherit] outline-none transition-shadow",
+          autoHeight
+            ? "h-auto max-h-[inherit] focus-visible:inset-ring-1 focus-visible:inset-ring-ring/80"
+            : "h-full focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
           overscrollContain &&
             "data-has-overflow-y:overscroll-y-contain data-has-overflow-x:overscroll-x-contain",
           scrollFade &&

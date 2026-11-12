@@ -45,7 +45,6 @@ from .shell_results import (
 
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
 _DEFAULT_INLINE_BYTES = 64 * 1024
-_SHELL_INSTRUCTION = tool_instruction("environment-shell")
 
 _NonNegativeOffset = Annotated[int, Field(ge=0)]
 _PositiveTimeout = Annotated[float, Field(gt=0, allow_inf_nan=False)]
@@ -157,10 +156,13 @@ class ShellToolset:
             )
         if allowed_names is not None:
             tools = [tool for tool in tools if tool.name in allowed_names]
+        sections = [tool.name for tool in tools]
+        if any(name != "shell_exec" for name in sections):
+            sections.insert(0, "shell_processes")
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[_SHELL_INSTRUCTION],
+            instructions=[tool_instruction("environment-shell", *sections)] if tools else [],
         )
 
     async def wrap_run(

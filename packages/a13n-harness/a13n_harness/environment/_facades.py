@@ -53,6 +53,7 @@ from a13n_harness.environment.retention import (
     EnvironmentOutputReadResult,
 )
 
+from ._accessibility_facade import _AccessibilityFacade
 from ._mount import (
     _EnteredMount,
     _validate_process_result_identity,
@@ -66,6 +67,7 @@ if TYPE_CHECKING:
 class _ComputerFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
+        self.accessibility = _AccessibilityFacade(environment, self)
 
     @asynccontextmanager
     async def _lease(

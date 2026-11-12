@@ -8,6 +8,7 @@ RUN CARGO_BUILD_JOBS=2 cargo build --locked -p a13n-envd
 FROM python:3.13-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb openbox xauth x11-utils x11-xkb-utils x11-xserver-utils xdotool python3-tk fonts-dejavu-core tini \
+    dbus-daemon dbus-x11 at-spi2-core libatk-adaptor python3-gi gir1.2-gtk-3.0 \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.11.32
 WORKDIR /app

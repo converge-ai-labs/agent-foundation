@@ -182,8 +182,8 @@ async def test_long_composer_text_preserves_order_metadata_and_survives_restart(
     pruned = Event()
     prune = ThreadFiles.prune
 
-    async def observe_prune(self):
-        result = await prune(self)
+    async def observe_prune(self, *, retained=frozenset()):
+        result = await prune(self, retained=retained)
         pruned.set()
         return result
 

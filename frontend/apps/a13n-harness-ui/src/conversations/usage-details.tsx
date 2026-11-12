@@ -288,12 +288,19 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
             )}
             <ul className={styles.models}>
               {models.map(([name, value]) => {
+                const model = scopes.find((item) => item.name === name);
+                const label = model?.display_name ?? name;
                 const groups = (usage.groups ?? []).filter(
                   (group) =>
                     group.model === name &&
                     (scope === "combined" ||
                       group.descendant === (scope === "descendants")),
                 );
+                const reported = [
+                  ...new Set(
+                    groups.flatMap((group) => group.reported_models ?? []),
+                  ),
+                ];
                 return (
                   <li key={name}>
                     <details className={styles.modelDetails}>
@@ -301,19 +308,27 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                         <span
                           className={styles.modelName}
                           title={
-                            name === "Other models" ? t("Other models") : name
+                            name === "Other models" ? t("Other models") : label
                           }
                         >
                           {name === "Other models" ? (
                             t("Other models")
                           ) : (
-                            <ModelIdentity name={name} />
+                            <ModelIdentity
+                              name={label}
+                              modelIdentity={model?.model_identity ?? undefined}
+                            />
                           )}
                         </span>
                         <span className={styles.modelCost}>
                           {modelCost(value)}
                         </span>
                       </summary>
+                      {reported.length > 0 && (
+                        <p className={styles.scope}>
+                          {t("Reported models")}: {reported.join(", ")}
+                        </p>
+                      )}
                       <TokenRows totals={value} />
                       {value.unknown_model_costs > 0 && (
                         <p className={styles.scope}>

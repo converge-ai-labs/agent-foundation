@@ -12,6 +12,7 @@ from a13n_harness import AgentIdentityRef, AgentInstanceContext, HarnessState
 from a13n_harness.compaction import CompactionInput
 from a13n_harness.model_calls import ModelCall
 from a13n_harness.state import AgentContextState
+from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageSnapshot
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.compaction_model import CompactionBudget, CompactionRun
@@ -167,7 +168,7 @@ async def test_detached_model_resources_usage_and_resumed_budget(
         context = AgentContextState()
         await context.write("a13n.usage", snapshot, version="1")
         state = HarnessState.new(thread_id=state.thread_id, agent_context_state=await context.snapshot())
-        run = CompactionRun(owner, resolver, None)
+        run = CompactionRun(owner, resolver, TokenPricingCapability({}))
         budget = await run.prepare(
             instance=instance,
             reporter=usage.reporter(state.thread_id),
@@ -187,7 +188,7 @@ async def test_detached_model_resources_usage_and_resumed_budget(
         )
         await run.submit(input)
         await asyncio.wait_for(started.wait(), 5)
-        resumed = CompactionRun(owner, resolver, None)
+        resumed = CompactionRun(owner, resolver, TokenPricingCapability({}))
         shared = await resumed.prepare(
             instance=instance,
             reporter=usage.reporter(state.thread_id),
@@ -213,7 +214,7 @@ async def test_detached_model_resources_usage_and_resumed_budget(
         await owner.close()
         # A new App restores the detached scope even though execution state never contained it.
         reopened = BackgroundCompaction(repository, tmp_path)
-        restored = await CompactionRun(reopened, resolver, None).prepare(
+        restored = await CompactionRun(reopened, resolver, TokenPricingCapability({})).prepare(
             instance=instance,
             reporter=usage.reporter(state.thread_id),
             state=state,
@@ -266,7 +267,7 @@ async def test_background_compaction_uses_captured_settings_with_native_history(
             )
         usage = ThreadUsageRepository(database.sessions)
         owner = BackgroundCompaction(CompactionRepository(database.sessions), tmp_path)
-        run = CompactionRun(owner, HarnessUiModelResolver({}), None)
+        run = CompactionRun(owner, HarnessUiModelResolver({}), TokenPricingCapability({}))
         state = HarnessState.new(thread_id="thread_test")
         instance = AgentInstanceContext(
             identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-test"

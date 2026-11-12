@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 dependencies = [
     "docker>=7.2,<8",
     "e2b>=2.46.4,<3",
-    "modal>=1.5.5,<2",
+    "modal>=1.6.3,<2",
     "a13n-logging",
     "a13n-envd-client",
     "a13n-harness[e2b,kubernetes]",
@@ -98,7 +98,7 @@ known_first_party = ["a13n_service"]
 package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "fastmcp-slim" = "fastmcp", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
-a13n-envd-client = ">=0.7.0,<0.8.0"
+a13n-envd-client = ">=0.8.0,<0.9.0"
 a13n-logging = ">=0.2.0,<0.3.0"
-a13n-harness = "==0.30.0"
-a13n-stream-protocol = "==0.30.0"
+a13n-harness = "==0.33.0"
+a13n-stream-protocol = "==0.33.0"

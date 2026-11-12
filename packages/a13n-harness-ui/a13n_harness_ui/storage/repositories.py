@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, tru
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
+from a13n_harness_ui.external_context import ExternalContext
 
 from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
@@ -114,35 +116,39 @@ class ConfigurationRepository:
                         accepted_at=now,
                     )
                 )
-                for relative_path, source_digest, resource_kind, resource_id in sources:
-                    session.add(
-                        ConfigurationSourceRecord(
-                            generation_digest=generation_digest,
-                            relative_path=relative_path,
-                            source_digest=source_digest,
-                            resource_kind=resource_kind,
-                            resource_id=resource_id,
-                        )
+            else:
+                record.object_schema_version = generation.object_schema_version
+                record.object_digest = generation.logical_digest
+                record.accepted_at = now
+                await session.execute(
+                    delete(ConfigurationSourceRecord).where(
+                        ConfigurationSourceRecord.generation_digest == generation_digest
                     )
-                for item in resources:
-                    session.add(
-                        ResourceIndexRecord(
-                            generation_digest=generation_digest,
-                            relative_path=item.relative_path,
-                            resource_kind=item.resource_kind,
-                            resource_id=item.resource_id,
-                            name=item.name,
-                            source_digest=item.source_digest,
-                            normalized_digest=item.normalized_digest,
-                        )
+                )
+                await session.execute(
+                    delete(ResourceIndexRecord).where(ResourceIndexRecord.generation_digest == generation_digest)
+                )
+            for relative_path, source_digest, resource_kind, resource_id in sources:
+                session.add(
+                    ConfigurationSourceRecord(
+                        generation_digest=generation_digest,
+                        relative_path=relative_path,
+                        source_digest=source_digest,
+                        resource_kind=resource_kind,
+                        resource_id=resource_id,
                     )
-            elif (
-                record.object_schema_version != generation.object_schema_version
-                or record.object_digest != generation.logical_digest
-            ):
-                raise StoreIntegrityError(
-                    "Accepted generation digest maps to different immutable content.",
-                    code="configuration_digest_collision",
+                )
+            for item in resources:
+                session.add(
+                    ResourceIndexRecord(
+                        generation_digest=generation_digest,
+                        relative_path=item.relative_path,
+                        resource_kind=item.resource_kind,
+                        resource_id=item.resource_id,
+                        name=item.name,
+                        source_digest=item.source_digest,
+                        normalized_digest=item.normalized_digest,
+                    )
                 )
             if current is None:
                 session.add(CurrentConfigurationRecord(singleton_id=1, generation_digest=generation_digest))
@@ -195,6 +201,27 @@ class ConfigurationRepository:
 class ThreadRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
+
+    async def external_context(self, thread_id: str) -> ExternalContext:
+        """Read a detached latest value without loading or changing a checkpoint."""
+        async with short_session(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            return ExternalContext.model_validate_json(record.external_context_json or "{}")
+
+    async def replace_external_context(self, thread_id: str, value: ExternalContext) -> None:
+        """Replace only business data; never modify configuration or execution authority."""
+        encoded = value.model_dump_json()
+        async with transaction(self._sessions) as session:
+            result = await session.scalar(
+                update(ThreadRecord)
+                .where(ThreadRecord.thread_id == thread_id)
+                .values(external_context_json=encoded)
+                .returning(ThreadRecord.thread_id)
+            )
+            if result is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
 
     async def create(
         self,
@@ -277,6 +304,8 @@ class ThreadRepository:
         source: Thread,
         thread_id: str,
         initial_state: ObjectRef,
+        excerpt: ConversationExcerpt,
+        historical: bool = False,
         continuation: ObjectRef | None,
         read_model: ThreadReadModel | None,
     ) -> Thread:
@@ -305,21 +334,41 @@ class ThreadRepository:
             if (
                 current.metadata_version != source.metadata_version
                 or _configuration_value(configuration) != source.configuration
-                or _continuation_ref(current) != source.continuation
+                or (not historical and _continuation_ref(current) != source.continuation)
             ):
                 raise StoreConflictError(
                     "The source Thread changed while copying. Fork it again.", code="thread_fork_conflict"
                 )
+            name = source.title or source.excerpt.first_input or "Untitled chat"
+            base = re.sub(r" \(([2-9]|[1-9]\d+)\)$", "", name).rstrip() or name
+            # Allocate inside the publication transaction, including archived siblings.
+            used = set(
+                await session.scalars(
+                    select(ThreadRecord.title)
+                    .join(ThreadConfigurationRecord)
+                    .where(
+                        ThreadConfigurationRecord.project_id == source.configuration.project_id,
+                        ThreadRecord.title.startswith(base[:480], autoescape=True),
+                    )
+                )
+            )
+            number = 2
+            while True:
+                suffix = f" ({number})"
+                title = base[: 512 - len(suffix)].rstrip() + suffix
+                if title not in used:
+                    break
+                number += 1
             record = ThreadRecord(
                 thread_id=thread_id,
                 metadata_version=1,
-                title=source.title,
+                title=title,
                 archived=source.archived,
                 starred=source.starred,
-                first_input=source.excerpt.first_input,
-                latest_input=source.excerpt.latest_input,
-                latest_reply=source.excerpt.latest_reply,
-                reply_kind=source.excerpt.reply_kind,
+                first_input=excerpt.first_input,
+                latest_input=excerpt.latest_input,
+                latest_reply=excerpt.latest_reply,
+                reply_kind=excerpt.reply_kind,
                 created_at=now,
                 updated_at=now,
                 touched_at=now,
@@ -1277,13 +1326,15 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import LiveAgentSource, MemoryAgentSource
+    from .contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
         if record.agent_source_kind == "memory"
         else LiveAgentSource()
         if record.agent_source_kind == "live"
+        else BotAgentSource()
+        if record.agent_source_kind == "bot"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)

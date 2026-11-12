@@ -22,14 +22,19 @@
   gap: 4px;
   min-width: 0;
 }
+.shortcuts {
+  gap: 2px;
+}
 .shortcuts > button {
   flex-shrink: 0;
 }
 .shortcuts .shortcut {
-  width: auto;
   min-width: 28px;
   gap: 3px;
   padding-inline: 5px;
+}
+.shortcut > svg {
+  margin-inline: 0;
 }
 .shortcuts button:is(:hover, [data-popup-open]) {
   color: var(--a13n-text);

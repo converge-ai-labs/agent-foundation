@@ -111,6 +111,12 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
         assert set(inspect(engine).get_table_names()) == {
             "accepted_configuration",
             "alembic_version",
+            "bot_state",
+            "bot_input",
+            "bot_message",
+            "connector_configuration",
+            "bot_inbox",
+            "bot_note",
             "child_execution",
             "compaction",
             "configuration_source",
@@ -133,8 +139,10 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "transcript_entry",
             "transcript_turn",
             "thread_usage",
+            "usage_model",
             "web_push_key",
             "web_push_subscription",
+            "webui_draft",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(

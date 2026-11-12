@@ -56,7 +56,7 @@ from a13n_harness_ui.guardian_credits import supports_guardian_credits
 from a13n_harness_ui.memory import ORGANIZATION_PROMPT
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.model_controls import apply_model_controls
-from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
+from a13n_harness_ui.prompts import BOT_INSTRUCTIONS, DEFAULT_SYSTEM_PROMPT
 from a13n_harness_ui.storage.contracts import Thread, ThreadConfiguration
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -96,7 +96,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown", "live"]
+    agent_source_kind: Literal["agent", "markdown", "live", "bot"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -272,6 +272,8 @@ class AgentCompositionResolver:
         if selection.agent_source_kind == "live":
             return self._live_node(source)
         self._validate_selection(source, selection)
+        if selection.agent_source_kind == "bot":
+            return self._bot_node(source, model_overrides=model_overrides)
         if selection.default_model_id is not None and (model_overrides is None or model_overrides.model_id is None):
             model_overrides = (model_overrides or RunModelOverrides()).model_copy(
                 update={"model_id": selection.default_model_id}
@@ -371,12 +373,8 @@ class AgentCompositionResolver:
                 kind: self.model_recipe(source.models[model_id], source)
                 for kind, model_id in source.document.media_understanding.selections().items()
             },
-            webui_sidekick=(
-                SidekickConfiguration(
-                    agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
-                )
-                if source.document.webui.sidekick is not None
-                else None
+            webui_sidekick=SidekickConfiguration(
+                agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
             ),
             content_plugins=tuple(
                 ResolvedContentPlugin(
@@ -409,7 +407,7 @@ class AgentCompositionResolver:
         if selection.default_model_id is not None and selection.agent_source_kind != "agent":
             raise CompositionError("A Markdown child follows its parent Model.", code="thread_model_invalid")
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
-        if selection.agent_source_id not in sources:
+        if selection.agent_source_kind != "bot" and selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
         if (
             built_in_environment_profile(selection.environment_profile_id) is None
@@ -613,6 +611,46 @@ class AgentCompositionResolver:
             children=(),
         )
 
+    def _bot_node(
+        self, source: LoadedHarnessUiConfiguration, *, model_overrides: RunModelOverrides | None = None
+    ) -> ResolvedAgentNode:
+        model_id = source.bot_model_id
+        if model_id is None:
+            raise CompositionError("Select a Model in Bot settings.", code="bot_model_required")
+        # Reuse ordinary Model controls and built-in Capability composition, without
+        # selecting or inheriting a user Agent's instructions, tools or children.
+        node = self._agent_node(
+            source,
+            AgentResource(
+                schema_version="1",
+                kind="agent",
+                id="agent-bot",
+                name="Bot",
+                model=model_id,
+                instructions=source.document.webui.bot.instructions,
+                capabilities=(
+                    CapabilitySelection(
+                        capability="dynamic_environment",
+                        configuration={"files_enabled": True, "shell_enabled": False, "computer_enabled": False},
+                    ),
+                ),
+            ),
+            plugin_catalog=self.catalog.plugin_catalog(()),
+            root_plugins=(),
+            root_mcp=(),
+            budget=[_MAX_RESOLVED_NODES],
+            depth=1,
+            model_overrides=model_overrides,
+        )
+        return node.model_copy(
+            update={
+                "source_kind": "bot",
+                "source_id": "bot",
+                "roster_name": "bot",
+                "system_prompt": (PACKAGE_SYSTEM_PROMPT, BOT_INSTRUCTIONS),
+            }
+        )
+
     def _live_node(self, source: LoadedHarnessUiConfiguration) -> ResolvedAgentNode:
         settings = source.document.live
         if settings is None or not settings.enabled or settings.model is None:
@@ -699,6 +737,7 @@ class AgentCompositionResolver:
             model_id=item.id,
             subscription_group=group,
             route=normalized.route,
+            base_model=item.base_model,
             authentication=item.authentication,
             settings=normalized.settings,
             model_configuration=normalized.model_cfg,

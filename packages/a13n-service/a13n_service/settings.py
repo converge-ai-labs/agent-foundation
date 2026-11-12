@@ -380,6 +380,10 @@ class ClientEnvironments(Section):
 
 
 class Environments(Section):
+    # Existing Session owners compare credential versions without attaching idle Sessions.
+    credential_sync_seconds: float = Field(default=10, gt=0, le=300)
+    credential_sync_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    credential_sync_batch: int = Field(default=128, ge=1, le=1000)
     # Maintenance and renewal interval, and the batch of each; idle thresholds are template policy.
     scan_seconds: float = Field(default=5, gt=0, le=300)
     batch: int = Field(default=16, ge=1, le=1000)

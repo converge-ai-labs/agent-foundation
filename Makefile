@@ -37,6 +37,20 @@ install: ## Install locked dependencies and Git hooks
 	@echo "Installing pre-commit hooks"
 	@uv run --locked pre-commit install --install-hooks
 
+ENVD_FEATURES ?=
+
+.PHONY: accessibility-linux-test
+accessibility-linux-test: ## Test Linux AT-SPI against disposable GTK and native D-Bus providers
+	cargo build --release --locked --package a13n-envd --features "$(ENVD_FEATURES)"
+	CARGO_HOME="$${CARGO_HOME:-$$HOME/.cargo}" RUSTUP_HOME="$${RUSTUP_HOME:-$$HOME/.rustup}" bash dev/fixtures/linux-desktop/test-accessibility.sh cargo test --release --locked --package a13n-envd --features "$(ENVD_FEATURES)" --lib accessibility::linux -- --include-ignored --test-threads=1
+	A13N_ENVD_TEST_BINARY="$(CURDIR)/target/release/a13n-envd" bash dev/fixtures/linux-desktop/test-accessibility.sh uv run --locked --package a13n-harness --group test --no-default-groups pytest packages/a13n-harness/tests/test_accessibility_linux_native.py -q
+
+.PHONY: accessibility-chromium-test
+accessibility-chromium-test: ## Test real Chromium AT-SPI (A13N_ATSPI_CHROMIUM=/absolute/browser/path)
+	@test -x "$(A13N_ATSPI_CHROMIUM)" || { echo 'Set A13N_ATSPI_CHROMIUM to an executable Chromium/Chrome path' >&2; exit 2; }
+	cargo build --release --locked --package a13n-envd --features "$(ENVD_FEATURES)"
+	A13N_ATSPI_CHROMIUM="$(A13N_ATSPI_CHROMIUM)" A13N_ENVD_TEST_BINARY="$(CURDIR)/target/release/a13n-envd" bash dev/fixtures/linux-desktop/test-accessibility.sh uv run --locked --package a13n-harness --group test --no-default-groups pytest packages/a13n-harness/tests/test_accessibility_chromium_native.py -q
+
 .PHONY: sync
 sync: ## Synchronize the locked Python workspace
 	@uv sync --quiet --locked --all-packages
@@ -393,7 +407,7 @@ rust-format-check: ## Check Rust formatting
 	@cargo fmt --all -- --check
 
 # BoxLite mode 2 acquires real versioned runtime assets; mode 1 is check-only.
-# Embed debug assets too so make rust-build produces a relocatable daemon.
+# Optional VM checks embed their runtime assets; ordinary builds stay non-VM.
 rust-lint rust-test rust-build: export BOXLITE_DEPS_STUB = 2
 rust-lint rust-test rust-build: export BOXLITE_EMBED_RUNTIME = 1
 
@@ -406,8 +420,8 @@ rust-test: ## Run Rust workspace tests
 	@cargo test --workspace --all-features --locked
 
 .PHONY: rust-build
-rust-build: ## Build the Rust workspace
-	@cargo build --workspace --all-features --locked
+rust-build: ## Build the Rust workspace without optional VM backends
+	@cargo build --workspace --locked
 
 .PHONY: rust-package
 rust-package: ## Verify the a13n-envd crates.io package

@@ -1,5 +1,6 @@
+import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
-import { AguiContent, Button, DisclosureSection } from "a13n-ui";
+import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "../i18n";
 import { useGuestAccess } from "../transport/context";
@@ -150,12 +151,20 @@ function CodeContent({
           {t("Copy unavailable. Select the text to copy.")}
         </small>
       )}
-      <pre>
-        <SyntaxCode
-          source={content}
-          language={language || (typeof value === "object" ? "json" : "")}
-        />
-      </pre>
+      <ScrollArea
+        autoHeight
+        scrollbarGutter
+        clampContentMinWidth={false}
+        className={`${styles.sourceScroll} ${conversation.innerReader}`}
+        data-tool-source
+      >
+        <pre>
+          <SyntaxCode
+            source={content}
+            language={language || (typeof value === "object" ? "json" : "")}
+          />
+        </pre>
+      </ScrollArea>
     </section>
   );
 }
@@ -702,49 +711,56 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
               ? t(`{{count}} ${resources} found`, { count: result.total })
               : t(`Available ${resources}`)}
           </h4>
-          <ul className={styles.resources} data-tool-resources>
-            {(result[resources] as unknown[])
-              .filter(record)
-              .map((resource, index) => {
-                const id =
-                  typeof resource.thread_id === "string"
-                    ? resource.thread_id
-                    : typeof resource.id === "string"
-                      ? resource.id
-                      : "";
-                const name =
-                  typeof resource.title === "string"
-                    ? resource.title
-                    : typeof resource.name === "string"
-                      ? resource.name
-                      : id;
-                return (
-                  <li key={id || index}>
-                    {!guest && resources === "threads" && id ? (
-                      <Link to={`/threads/${encodeURIComponent(id)}`}>
-                        {name || id}
-                        <ArrowSquareOut aria-hidden="true" />
-                      </Link>
-                    ) : !guest && resources === "projects" && id ? (
-                      <Link to={`/projects/${encodeURIComponent(id)}`}>
-                        {name || id}
-                      </Link>
-                    ) : (
-                      <span>{name || id}</span>
-                    )}
-                    <small>
-                      {[
-                        id !== name ? id : "",
-                        resource.model_id,
-                        resource.route,
-                      ]
-                        .filter((value) => typeof value === "string" && value)
-                        .join(" - ")}
-                    </small>
-                  </li>
-                );
-              })}
-          </ul>
+          <ScrollArea
+            autoHeight
+            scrollbarGutter
+            className={`${styles.resourceScroll} ${conversation.innerReader}`}
+            data-tool-resources
+          >
+            <ul className={styles.resources}>
+              {(result[resources] as unknown[])
+                .filter(record)
+                .map((resource, index) => {
+                  const id =
+                    typeof resource.thread_id === "string"
+                      ? resource.thread_id
+                      : typeof resource.id === "string"
+                        ? resource.id
+                        : "";
+                  const name =
+                    typeof resource.title === "string"
+                      ? resource.title
+                      : typeof resource.name === "string"
+                        ? resource.name
+                        : id;
+                  return (
+                    <li key={id || index}>
+                      {!guest && resources === "threads" && id ? (
+                        <Link to={`/threads/${encodeURIComponent(id)}`}>
+                          {name || id}
+                          <ArrowSquareOut aria-hidden="true" />
+                        </Link>
+                      ) : !guest && resources === "projects" && id ? (
+                        <Link to={`/projects/${encodeURIComponent(id)}`}>
+                          {name || id}
+                        </Link>
+                      ) : (
+                        <span>{name || id}</span>
+                      )}
+                      <small>
+                        {[
+                          id !== name ? id : "",
+                          resource.model_id,
+                          resource.route,
+                        ]
+                          .filter((value) => typeof value === "string" && value)
+                          .join(" - ")}
+                      </small>
+                    </li>
+                  );
+                })}
+            </ul>
+          </ScrollArea>
           {typeof result.next_cursor === "string" && (
             <small>{t("More results available; this is a loaded page.")}</small>
           )}

@@ -12,6 +12,7 @@ from dataclasses import replace
 from typing import Literal
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
+from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.spec import HarnessModelCharacteristics
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
@@ -179,13 +180,23 @@ def model_connection(connection_id: str) -> ModelConnection:
     return connection
 
 
+def base_model_choices() -> tuple[ModelChoice, ...]:
+    return tuple(
+        ModelChoice(value=e.key, label=model_name(e.provider, e.model)) for e in get_current_pricing_catalog().entries
+    )
+
+
 class ModelChoices(StrictModel):
+    base_models: tuple[ModelChoice, ...] = Field(default_factory=base_model_choices)
     connections: tuple[ModelConnection, ...] = Field(default_factory=model_connections)
     session_affinity_presets: tuple[SessionAffinityPreset, ...] = SESSION_AFFINITY_PRESETS
 
 
 class ModelRecipe(StrictModel):
     route: str = Field(min_length=3, max_length=512)
+    base_model: str | None = Field(
+        default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
+    )
     authentication: ModelAuthentication
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
@@ -203,6 +214,9 @@ class ModelRecipe(StrictModel):
 
 
 class ModelOptionsRequest(StrictModel):
+    base_model: str | None = Field(
+        default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
+    )
     connection: str = Field(min_length=1, max_length=128)
     model_id: str = Field(min_length=1, max_length=480)
     base_url: str | None = Field(default=None, max_length=4096)
@@ -368,12 +382,10 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
     if any(char.isspace() for char in request.model_id):
         raise HarnessUiError("Model IDs cannot contain whitespace.", code="model_id_invalid")
     route = f"{connection.provider}:{request.model_id}"
-    known_context = (
-        known_context_window(connection.provider, request.model_id, base_url)
-        if connection.authentication == "api_key"
-        else None
-    )
-    known_inputs = known_model_characteristics(route)
+    identity = request.base_model or route
+    provider, _, model = identity.partition(":")
+    known_context = known_context_window(provider, model, base_url) if connection.authentication == "api_key" else None
+    known_inputs = known_model_characteristics(identity)
     known_capabilities = known_inputs.capabilities if known_inputs is not None else None
     context = (
         HarnessModelCharacteristics().context_window_tokens
@@ -425,7 +437,12 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
         else None
     )
     options = model_options(
-        ModelOptionsRequest(connection=request.connection, model_id=request.model_id, base_url=effective_url)
+        ModelOptionsRequest(
+            connection=request.connection,
+            model_id=request.model_id,
+            base_model=request.base_model,
+            base_url=effective_url,
+        )
     )
     authentication = request.authentication
     if authentication is None and connection.authentication != "api_key":
@@ -451,11 +468,12 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
         raise HarnessUiError("This connection does not accept a base URL.", code="model_base_url_unsupported")
     return ModelRecipe(
         route=options.route,
+        base_model=request.base_model,
         authentication=authentication,
         settings=settings,
         model_configuration=configuration,
         model_characteristics=_characteristics(
-            options.route,
+            request.base_model or options.route,
             request.model_characteristics if request.model_characteristics is not None else options.characteristics,
         ),
     )
@@ -486,7 +504,7 @@ def _characteristics(route: str, authored: ModelCharacteristics | None) -> Model
 def recipe_document(recipe: ModelRecipe) -> dict[str, JsonValue]:
     """Stable creation bytes, including omitted reviewed input capabilities."""
     document = recipe.model_dump(mode="json", exclude_none=True)
-    characteristics = _characteristics(recipe.route, recipe.model_characteristics)
+    characteristics = _characteristics(recipe.base_model or recipe.route, recipe.model_characteristics)
     policy = characteristics.model_dump(mode="json")
     policy["capabilities"] = sorted(item.value for item in characteristics.capabilities)
     if "url_input" in characteristics.model_fields_set:

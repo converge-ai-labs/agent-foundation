@@ -184,15 +184,18 @@ class RuntimeContextCapability(AbstractModelContextCapability):
                 code="runtime_context_limit_invalid",
             )
         reminder = f"{_RUNTIME_OPEN}\n{encoded.decode('utf-8')}\n{_RUNTIME_CLOSE}"
+        block = ModelContextBlock(
+            source_id=RUNTIME_CONTEXT_CAPABILITY_ID,
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=reminder,
+        )
+        if request.history.matches_latest(block):
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id=RUNTIME_CONTEXT_CAPABILITY_ID,
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=reminder,
-                ),
+                block,
             )
         )
 
@@ -264,15 +267,19 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
                 code="workspace_outline_stale",
                 details={"root": self.configuration.root},
             )
+        block = ModelContextBlock(
+            source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
+            key=self.configuration.root,
+            context_group="environment_context",
+            placement=ModelContextPlacement.INPUT_PREAMBLE,
+            content=content,
+        )
+        if request.history.matches_latest(block):
+            return projection
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
-                ModelContextBlock(
-                    source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.INPUT_PREAMBLE,
-                    content=content,
-                ),
+                block,
             )
         )
 
@@ -443,9 +450,9 @@ async def _project_guidance(context: AgentContext) -> str | None:
         async with context.environment.open_files(selection) as files:
             content = await _scan_project_guidance(files)
         current = context.environment.select_files(".")
-    except EnvironmentError:
-        # Discovery is optional and never widens the current mount's read permissions.
-        return None
+    except EnvironmentError as exc:
+        # Discovery never widens the current mount's read permissions.
+        return f"Project guidance discovery is unavailable ({exc.code})."
     if current != selection:
         raise DefinitionError(
             "The project guidance root changed while it was being scanned.", code="file_context_stale"
@@ -541,25 +548,29 @@ class _FileContextRunCapability(FileContextCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
-        if request.kind is not ModelContextRequestKind.INPUT or (not self._sections and not self._guidance):
+        if request.kind is not ModelContextRequestKind.INPUT:
             return projection
-        parts = [_FILE_CONTEXT_OPEN]
-        for path, content in self._sections:
-            parts.extend((f'<file path="{_xml_attribute(path)}">', content, "</file>"))
-        if self._guidance:
-            parts.extend(("<project-guidance>", self._guidance, "</project-guidance>"))
-        parts.append(_FILE_CONTEXT_CLOSE)
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                ModelContextBlock(
-                    source_id=FILE_CONTEXT_CAPABILITY_ID,
-                    context_group="environment_context",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content="\n".join(parts),
-                ),
+
+        def block(key: str, content: str) -> ModelContextBlock:
+            return ModelContextBlock(
+                source_id=FILE_CONTEXT_CAPABILITY_ID,
+                key=key,
+                context_group="environment_context",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=f"{_FILE_CONTEXT_OPEN}\n{content}\n{_FILE_CONTEXT_CLOSE}",
             )
+
+        paths = "\n".join(path for path, _ in self._sections)
+        blocks = [block("files", f"Current file context paths: {paths or 'No file context is loaded.'}")]
+        blocks.extend(
+            block(f"file:{path}", f'<file path="{_xml_attribute(path)}">\n{content}\n</file>')
+            for path, content in self._sections
         )
+        if self.configuration.include_project_guidance:
+            guidance = self._guidance or "No project guidance entrypoints are available."
+            blocks.append(block("project-guidance", f"<project-guidance>\n{guidance}\n</project-guidance>"))
+        selected = tuple(item for item in blocks if not request.history.matches_latest(item))
+        return ModelContextProjection(blocks=(*projection.blocks, *selected))
 
 
 class HandoffConfiguration(BaseModel):

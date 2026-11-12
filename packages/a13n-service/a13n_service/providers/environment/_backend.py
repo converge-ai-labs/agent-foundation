@@ -11,6 +11,7 @@ from a13n_harness.providers.environment.remote_envd.managed import ManagedCreden
 
 from .desktop_access import Reply, Request
 from .envd import envd_environment
+from .management import Pending
 from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 from .websocket import WebSocketBootstrap
 
@@ -19,6 +20,8 @@ class ManagementBackend(BackendReference):
     """Lifecycle and desktop-access authority, without execution operations."""
 
     websocket: WebSocketBootstrap | None = None
+    # The adapter joins the guest upgrade after native start and before authenticated readiness.
+    defer_envd_readiness: bool = False
 
     def bootstrap_environment(self, values: dict[str, str], settings: EnvdSettings) -> dict[str, str]:
         values = envd_environment(values, settings)
@@ -48,10 +51,13 @@ class ManagementBackend(BackendReference):
         """Read Envd-owned cached observations without an execution Session."""
         raise self._unsupported()
 
-    async def create(self) -> None:
+    async def create(self) -> Pending | None:
         raise self._unsupported()
 
-    async def start(self) -> None:
+    async def start(self) -> Pending | None:
+        raise self._unsupported()
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
         raise self._unsupported()
 
     async def inspect(self) -> Literal["running", "stopped", "absent"]:

@@ -67,6 +67,8 @@ Managed binaries live at `<data-root>/runtimes/managed/<version>/<target>/a13n-e
 
 For local Computer Use, enable **Desktop capability**, save, and restart Harness UI. Run **Check permissions** on the Host, then explicitly select Computer Use for the desired execution default. The permission check neither captures the screen nor injects input. Managed/custom executable settings are in [root envd configuration](configuration.md#local-envd-runtime).
 
+The Computer toolset also includes native accessibility discovery and bounded semantic reads. Check `computer_accessibility_describe` for the selected backend and readiness. Grant individual `environment.computer.a11y_*` operations and exact platform mutations through the mount's permission ceiling. Grouped `computer_ax`, `computer_uia` and `computer_atspi` tools still check each native action. Node and text-range references remain bound to their originating mount and execution. Native backend support, permission and readiness are independent; see [native accessibility](../a13n-envd/computer-use.md#native-accessibility) for the workflow and screenshot projection rules.
+
 The CLI separates inspection, preparation, and default changes:
 
 ```console

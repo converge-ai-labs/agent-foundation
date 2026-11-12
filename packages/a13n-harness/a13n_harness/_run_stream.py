@@ -66,6 +66,7 @@ from a13n_harness.context import (
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.mounts import EnvironmentChange
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.session_recovery import envd_session_notifications
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
     HarnessError,
@@ -368,6 +369,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._environment_lifecycle_task: asyncio.Task[None] | None = None
         self._environment_ready_delivered = False
         self._context: AgentContext | None = None
+        self._envd_session_replacements: list[str] = []
         self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
         self._exchange: PluginRunExchange | None = None
         self._run_attachments_closed = False
@@ -466,6 +468,20 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return parent.bind_child(self._emitter)
 
     async def __aenter__(self) -> HarnessRunStream[OutputT]:
+        with envd_session_notifications(self._notify_session_replaced):
+            return await self._prepare()
+
+    async def _notify_session_replaced(self, session_id: str) -> None:
+        if self._steering_stopped.is_set():
+            return
+        if self._context is not None and self._context._steering.active:
+            await self._context._steering.notify_session_replaced(session_id)
+        else:
+            # Startup precedes native binding. Only this Run's first active
+            # attempt receives these hints; they are never checkpointed.
+            self._envd_session_replacements.append(session_id)
+
+    async def _prepare(self) -> HarnessRunStream[OutputT]:
         if self._entered:
             raise RunError("HarnessRunStream cannot be entered more than once.", code="run_stream_reused")
         self._entered = True
@@ -596,6 +612,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             model_characteristics=(
                 agent_spec.model_characteristics if isinstance(agent_spec, HarnessAgentSpec) else None
             ),
+            _envd_session_replacements=self._envd_session_replacements,
             _model_inference=self._executable._model_inference,
             toolset_instructions=(
                 bindings.toolset_instructions
@@ -893,9 +910,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         """Own plugin and native scopes independently of bounded public consumption."""
         assert self._exchange is not None
         try:
-            result = await self._call_plugin(0, self._exchange)
+            with envd_session_notifications(self._notify_session_replaced):
+                result = await self._call_plugin(0, self._exchange)
         finally:
             self._steering_stopped.set()
+            self._envd_session_replacements.clear()
         self._install_terminal_fence()
         if result.status in {"failed", "cancelled"}:
             await self.context.usage_attribution._flush_cleanup()

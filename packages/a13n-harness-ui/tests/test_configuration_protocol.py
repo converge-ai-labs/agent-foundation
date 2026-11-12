@@ -343,15 +343,21 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
             assert "Sidekick is enabled" in seen[1]  # Later requests in the same Run retain captured instructions.
             second = (await api.post(prefix + "/submit", json={"parts": ["Inspect again"]})).json()["receipt_id"]
             assert (await settled(api, second))["status"] == "completed"
-            assert "Sidekick is enabled" not in seen[2]
-            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] is None
+            assert "Sidekick is enabled" in seen[2]
+            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] == {
+                "agent": None,
+                "model": None,
+            }
             assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
     async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             saved = (await api.get("/api/configuration/sources/a13n-harness-ui.yaml")).json()
             assert yaml.safe_load(saved["content"])["webui"]["sidekick"] is None
             assert (await api.get("/api/threads")).json()["total"] == 1
-            third = (await api.post(prefix + "/submit", json={"parts": ["Still disabled"]})).json()["receipt_id"]
+            third = (await api.post(prefix + "/submit", json={"parts": ["Still available"]})).json()["receipt_id"]
             assert (await settled(api, third))["status"] == "completed"
-            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] is None
-            assert "Sidekick is enabled" not in seen[-1]
+            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] == {
+                "agent": None,
+                "model": None,
+            }
+            assert "Sidekick is enabled" in seen[-1]

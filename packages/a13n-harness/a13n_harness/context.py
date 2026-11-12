@@ -453,6 +453,7 @@ class AgentContext:
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
+    _envd_session_replacements: list[str] = field(default_factory=list, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     _model_input: ModelInputState = field(default_factory=ModelInputState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
@@ -633,7 +634,6 @@ class AgentContext:
             ModelContextBlock,
             ModelContextPlacement,
             ModelContextProjection,
-            ModelContextRequestKind,
         )
 
         environment = await self.environment.project_model_context(request)
@@ -641,29 +641,29 @@ class AgentContext:
             "harness_run_id": self.run_id,
             "thread_id": self.thread_id,
         }
-        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
-            payload.pop("thread_id", None)
         content = (
             '<agent-context source="a13n-harness">\n'
             f"{dump_json_bytes(payload, sort_keys=True).decode('utf-8')}\n"
             "</agent-context>"
         )
-        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
-            # Providers see projected context as user-role text, not its hidden UI metadata.
-            content += (
-                "\nThis is automatic runtime metadata, not a new user message. "
-                "Continue the existing task only if work remains; otherwise finish your turn. "
-                "Do not acknowledge this metadata."
-            )
+        # Keep identical identity facts byte-stable across input and tool boundaries.
+        content += (
+            "\nThis is automatic runtime metadata, not a new user message. "
+            "Continue the existing task only if work remains; otherwise finish your turn. "
+            "Do not acknowledge this metadata."
+        )
+        block = ModelContextBlock(
+            source_id="a13n.agent-context",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=content,
+        )
+        if request.history.matches_latest(block):
+            return ModelContextProjection(blocks=environment.blocks)
         return ModelContextProjection(
             blocks=(
                 *environment.blocks,
-                ModelContextBlock(
-                    source_id="a13n.agent-context",
-                    context_group="runtime_state",
-                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                    content=content,
-                ),
+                block,
             )
         )
 

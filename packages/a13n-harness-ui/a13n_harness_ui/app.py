@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mappi
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from itertools import chain
 from pathlib import Path
@@ -81,7 +82,12 @@ from a13n_harness_ui.configuration.mcp_tools import (
     selection_mutation,
     tool_settings,
 )
-from a13n_harness_ui.configuration.models import BrowserConfiguration, DeviceResource, PairedDeviceAuthentication
+from a13n_harness_ui.configuration.models import (
+    BrowserConfiguration,
+    DeviceResource,
+    PairedDeviceAuthentication,
+    ProjectResource,
+)
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
@@ -132,6 +138,7 @@ from a13n_harness_ui.errors import (
     HarnessUiError,
     LivePresentationError,
     RunCoordinationError,
+    StoreIntegrityError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -139,6 +146,7 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.file_context import (
     context_text,
 )
@@ -199,6 +207,8 @@ if TYPE_CHECKING:
 
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
+from a13n_harness_ui.bot import BotController
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -248,7 +258,7 @@ from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import append_surface_hint, detach_input
+from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -276,8 +286,11 @@ from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+from a13n_harness_ui.surface_context import append_surface_provenance
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
+    BranchPoints,
+    BranchRequest,
     ChildControlResult,
     ChildExecutionPage,
     ConfigurationProvenance,
@@ -463,6 +476,7 @@ class HarnessUiApp:
         self._restart = restart_coordinator
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
+        self._bot: BotController | None = None
         self._web_push = web_push
         self._store = store
         self.sharing = Sharing(self, ShareRepository(store.database.sessions))
@@ -483,6 +497,7 @@ class HarnessUiApp:
         self._host_git = HostGit(enabled=share_computer)
         self._host_terminal = HostTerminal(enabled=share_computer)
         self._shared_drafts: dict[str, SharedDraft] = {}
+        self._shared_drafts_lock = Lock()
         self._page_presence = PagePresence()
         self._root_runs = root_runs
         self._tool_executions = tool_executions
@@ -520,6 +535,11 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    def bot(self) -> BotController:
+        if self._bot is None:
+            raise HarnessUiError("Bot is available only in WebUI.", code="bot_unavailable")
+        return self._bot
 
     def voice(self) -> VoiceController:
         if self._voice is None:
@@ -953,6 +973,52 @@ class HarnessUiApp:
                 raise AppStateError("The selected Model no longer exists.", code="model_missing")
             await self._store.project_models.set(project_id, model_id)
 
+    async def create_project(self, *, project: ProjectResource) -> ProjectResource:
+        """Create a configuration-backed Project without replacing an existing resource."""
+        async with self._operation(), self._configuration_lock:
+            path = self._require_configuration_path()
+            source = await self._configurations.current()
+            destination = f"projects/{project.id}.yaml"
+            if (
+                source is not None
+                and (project.id in source.projects or any(item.relative_path == destination for item in source.sources))
+            ) or await to_thread.run_sync((path.parent / destination).exists):
+                raise AppStateError(
+                    "Project already exists; inspect it before making changes.", code="project_conflict"
+                )
+            result = await mutate_configuration_source(
+                path,
+                destination,
+                ResourceMutationRequest(content=project.model_dump_json()),
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            await self._accept_mutation(result)
+            return result.configuration.projects[project.id]
+
+    async def read_project_memory(self, *, project_id: str, path: str = "", offset: int = 0) -> dict[str, Any]:
+        """Read one Project scope on demand; directory entries or bounded file text."""
+        if offset < 0:
+            raise ThreadError("Memory offset must be non-negative.", code="memory_offset_invalid")
+        if not path:
+            entries = await self.memory_files(project_id=project_id)
+            end = min(len(entries), offset + 100)
+            return {
+                "project_id": project_id,
+                "entries": [entry.model_dump(mode="json") for entry in entries[offset:end]],
+                "next_offset": end if end < len(entries) else None,
+            }
+        value = await self.memory_file(project_id=project_id, path=path)
+        end = min(len(value.text), offset + 16384)
+        return {
+            "project_id": project_id,
+            "path": value.path,
+            "version": value.version,
+            "offset": offset,
+            "text": value.text[offset:end],
+            "next_offset": end if end < len(value.text) else None,
+        }
+
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
 
@@ -1060,7 +1126,13 @@ class HarnessUiApp:
 
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():
-            return await self._store.usage.snapshot(thread_id=thread_id)
+            source = await self._configurations.current()
+            models = (
+                {item.id: (item.name, item.base_model or item.route) for item in source.models.values()}
+                if source
+                else {}
+            )
+            return await self._store.usage.snapshot(thread_id=thread_id, model_identities=models)
 
     async def thread_work(
         self,
@@ -1241,6 +1313,22 @@ class HarnessUiApp:
         """Copy an independent ordinary Thread without admitting a Run."""
         async with self._operation():
             thread = await self._threads.fork(thread_id, files=self._thread_files)
+            await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            return await self._projections.get_thread(thread.thread_id)
+
+    async def branch_points(self, thread_id: str) -> BranchPoints:
+        async with self._operation(), self._root_runs.message_branch_source(thread_id) as (base, continuing):
+            return await self._threads.branch_points(thread_id, base, continuing)
+
+    async def branch_thread(self, thread_id: str, request: BranchRequest) -> ThreadSummary:
+        async with self._operation():
+            async with self._root_runs.message_branch_source(thread_id, editing=request.side == "before") as (
+                base,
+                continuing,
+            ):
+                thread = await self._threads.fork(
+                    thread_id, files=self._thread_files, branch=request, base=base, continuing=continuing
+                )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
@@ -1827,25 +1915,55 @@ class HarnessUiApp:
             return exc.code
 
     async def list_unsent_drafts(self) -> tuple[DraftSummary, ...]:
-        """Discover process-local shared input without joining editors or reading text."""
+        """Discover saved shared input without joining editors or reading text."""
         async with self._operation():
             return tuple(
-                DraftSummary(thread_id=thread_id, draft_id=draft.draft_id, unsent_since=draft.unsent_since)
-                for thread_id, draft in self._shared_drafts.items()
-                if draft.unsent_since is not None and not draft.closed
+                DraftSummary(thread_id=thread_id, draft_id=draft_id, unsent_since=since)
+                for thread_id, draft_id, since in await self._store.drafts.unsent()
             )
 
     async def shared_draft(self, thread_id: str) -> SharedDraft:
-        async with self._operation():
-            thread = await self._threads.require_interactive(thread_id)
-            if thread.parent_thread_id is not None:
-                raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
-            await self._thread_files.touch(thread_id)
-            if thread_id not in self._shared_drafts:
-                self._shared_drafts[thread_id] = SharedDraft()
-            return self._shared_drafts[thread_id]
+        async with self._operation(), self._shared_drafts_lock:
+            return await self._load_shared_draft(thread_id)
 
-    async def edit_shared_draft(self, thread_id: str, participant: str, command: DraftCommand) -> None:
+    @asynccontextmanager
+    async def shared_draft_editor(self, thread_id: str) -> AsyncGenerator[tuple[SharedDraft, str]]:
+        draft: SharedDraft | None = None
+        participant: str | None = None
+        try:
+            async with self._operation(), self._shared_drafts_lock:
+                draft = await self._load_shared_draft(thread_id)
+                participant = draft.attach()
+            yield draft, participant
+        finally:
+            if draft is not None and participant is not None:
+                draft.detach(participant)
+
+    async def _load_shared_draft(self, thread_id: str) -> SharedDraft:
+        """Load under the draft lock; editor registration shares its prune boundary."""
+        thread = await self._threads.require_interactive(thread_id)
+        if thread.parent_thread_id is not None:
+            raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
+        await self._thread_files.touch(thread_id)
+        if thread_id not in self._shared_drafts:
+            from a13n_harness_ui.storage.drafts import DRAFT_RETENTION
+
+            stored = await self._store.drafts.get(thread_id)
+            if stored is not None and stored.updated_at < datetime.now(UTC) - DRAFT_RETENTION:
+                stored = None
+            try:
+                draft = SharedDraft(thread_id=thread_id, stored=stored, persist=self._store.drafts.save)
+            except ValueError as exc:
+                raise StoreIntegrityError(
+                    "Couldn't restore this saved composer. Its stored input was preserved; repair the saved draft before reconnecting.",
+                    code="draft_restore_failed",
+                ) from exc
+            self._shared_drafts[thread_id] = draft
+        return self._shared_drafts[thread_id]
+
+    async def edit_shared_draft(
+        self, thread_id: str, participant: str, command: DraftCommand, *, edit_options: bool = True
+    ) -> None:
         async with self._operation():
             # Joining establishes the immutable root/interactive scope and holds
             # Thread files until App close. Commands must belong to that room;
@@ -1857,26 +1975,38 @@ class HarnessUiApp:
             async def validate(attachments: tuple[str, ...]) -> None:
                 await self._thread_files.validate_attachments(thread_id, attachments)
 
-            if await draft.command(participant, command, validate):
+            if await draft.command(participant, command, validate, edit_options=edit_options):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
-    def _prepare_draft_clear(self, thread_id: str, capture: DraftCapture | None) -> tuple[SharedDraft, bytes] | None:
+    def _prepare_draft_clear(
+        self, thread_id: str, capture: DraftCapture | None, *, reset_mode: bool = False
+    ) -> tuple[SharedDraft, tuple[bytes, bytes | None]] | None:
         if capture is None:
             return None
         draft = self._shared_drafts.get(thread_id)
         if draft is None:
             raise AppStateError("The shared draft instance changed.", code="draft_instance_conflict")
-        return draft, draft.prepare_clear(capture)
+        return draft, draft.prepare_clear(capture, reset_mode=reset_mode)
 
-    async def _clear_submitted_draft(self, thread_id: str, prepared: tuple[SharedDraft, bytes] | None) -> None:
+    async def _clear_submitted_draft(
+        self, thread_id: str, prepared: tuple[SharedDraft, tuple[bytes, bytes | None]] | None
+    ) -> None:
         if prepared is None:
             return
         draft, update = prepared
         # Admission already succeeded. Finish its draft cleanup even if the
         # initiating request disappears, without shielding admission itself.
         with CancelScope(shield=True):
-            if await draft.clear(update):
-                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+            try:
+                if await draft.clear(update):
+                    await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+            except (HarnessUiError, ValueError) as exc:
+                # Do not turn known admission into rejection: a caller could
+                # otherwise retry input which is already executing.
+                get_logger(__name__).warning(
+                    "Accepted input draft cleanup failed",
+                    extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+                )
 
     @property
     def host_terminal_available(self) -> bool:
@@ -2112,9 +2242,31 @@ class HarnessUiApp:
 
     async def prune_thread_files(self) -> tuple[str, ...]:
         async with self._operation():
-            return await self._thread_files.prune()
+            return await self._prune_scratch()
+
+    async def _prune_scratch(self) -> tuple[str, ...]:
+        retained = frozenset(thread_id for thread_id, _, _ in await self._store.drafts.unsent()) | frozenset(
+            thread_id
+            for thread_id, draft in self._shared_drafts.items()
+            if draft.participants and draft.unsent_since is not None
+        )
+        return await self._thread_files.prune(retained=retained)
+
+    async def _prune_drafts(self) -> None:
+        async with self._shared_drafts_lock:
+            active = tuple(thread_id for thread_id, draft in self._shared_drafts.items() if draft.participants)
+            for thread_id in await self._store.drafts.prune(active=active):
+                if (draft := self._shared_drafts.pop(thread_id, None)) is not None:
+                    draft.close()
+                await self._summary_hub.publish(kind="draft", thread_id=thread_id)
 
     async def _maintain_read_models(self) -> None:
+        try:
+            await self._store.repair_usage_models()
+        except Exception as exc:
+            get_logger(__name__).warning(
+                "Historical usage model lookup failed", extra={"error_type": type(exc).__name__}
+            )
         while True:
             try:
                 repaired = await self._store.repair_read_models()
@@ -2132,7 +2284,8 @@ class HarnessUiApp:
     async def _prune_storage(self) -> None:
         """Independent maintenance failures never cancel the App's task group."""
         for kind, prune in (
-            ("scratch", self._thread_files.prune),
+            ("draft", self._prune_drafts),
+            ("scratch", self._prune_scratch),
             ("compaction", self._prune_compactions),
             ("checkpoint", self._store.checkpoints.prune),
             ("tool_execution", self._store.tool_executions.prune),
@@ -2246,6 +2399,17 @@ class HarnessUiApp:
             )
         return parts
 
+    async def set_thread_external_context(self, *, thread_id: str, context: ExternalContext) -> None:
+        """Replace durable business context for future Runs, including async wakes.
+
+        Existing Runs retain their admitted snapshot. This trusted integration API
+        does not alter Thread configuration, credentials or authorization.
+        """
+        context = context.model_copy(deep=True)
+        async with self._operation():
+            await self._threads.get(thread_id)
+            await self._store.threads.replace_external_context(thread_id, context)
+
     async def submit_thread(
         self,
         *,
@@ -2266,9 +2430,11 @@ class HarnessUiApp:
         attachment_ids = tuple(attachment_ids)
         if mode not in {"normal", "goal"}:
             raise ValueError("Unknown submission mode")
+        if thread_id == BOT_THREAD_ID:
+            raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
-            draft_clear = self._prepare_draft_clear(thread_id, draft)
+            draft_clear = self._prepare_draft_clear(thread_id, draft, reset_mode=True)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
             if mode == "goal":
@@ -2307,10 +2473,16 @@ class HarnessUiApp:
                 prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
-                    TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
+                    TextContent(
+                        text,
+                        metadata={
+                            "source_id": "a13n-harness-ui.mcp-app-context",
+                            "harness_ui": {"mcp_app_context": True},
+                        },
+                    )
+                    for text in selected_context
                 )
-            if input_surface is not None:
-                prompt = append_surface_hint(prompt, input_surface)
+            prompt = append_surface_provenance(prompt, input_surface)
 
             async def authorize_app_message() -> None:
                 if mcp_app_view is not None:
@@ -2345,6 +2517,8 @@ class HarnessUiApp:
     ) -> RootRunReceipt:
         async with self._operation():
             await self._threads.require_interactive(thread_id)
+            if thread_id == BOT_THREAD_ID:
+                return await self.bot().respond(response, mutation=mutation, model_overrides=model_overrides)
             return await self._root_runs.submit_response(
                 thread_id=thread_id,
                 response=response,
@@ -2439,6 +2613,9 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        if thread_id == BOT_THREAD_ID:
+            # Results stay available for inspection on the next permitted input.
+            return True
         if self._state is not AppState.ready:
             return False
         detail = await self._projections.detail(thread_id)
@@ -2497,6 +2674,8 @@ class HarnessUiApp:
         return True
 
     async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
+        if thread_id == BOT_THREAD_ID:
+            return True
         if self._state is not AppState.ready or not current():
             return False
         detail = await self._projections.detail(thread_id)
@@ -2564,6 +2743,8 @@ class HarnessUiApp:
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
+            if operation.receipt.thread_id == BOT_THREAD_ID:
+                raise ThreadError("Use Bot chat to send Bot input.", code="bot_chat_required")
             await self._threads.require_interactive(operation.receipt.thread_id)
             draft_clear = self._prepare_draft_clear(operation.receipt.thread_id, draft)
             catalog = (
@@ -2747,7 +2928,7 @@ class HarnessUiApp:
 
     async def model_choices(self) -> ModelChoices:
         async with self._operation():
-            return ModelChoices()
+            return await to_thread.run_sync(ModelChoices)
 
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
@@ -3173,6 +3354,8 @@ class HarnessUiApp:
         self._replace_candidate_error(None)
         self._devices.update_monitoring_sources(result.configuration.devices.values())
         self._memory_organizer.configuration_changed(result.configuration)
+        if self._bot is not None:
+            await self._bot.reconcile_policy()
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
@@ -3703,6 +3886,7 @@ async def open_harness_ui_app(
             threads = ThreadService(
                 store=store,
                 configurations=configurations,
+                configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
             )
 
             async def authorize_browser(thread_id: str) -> None:
@@ -3895,6 +4079,15 @@ async def open_harness_ui_app(
                 restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
+                app._bot = BotController(
+                    store=store,
+                    threads=threads,
+                    configurations=configurations,
+                    runs=root_runs,
+                    projections=projections,
+                    summaries=summary_hub,
+                    notify=web_push.enqueue if web_push is not None else None,
+                )
                 if configuration_path is not None:
                     app._voice = VoiceController(
                         configuration_root=configuration_path.expanduser().resolve().parent,
@@ -3913,6 +4106,9 @@ async def open_harness_ui_app(
                     configurations=configurations,
                     inspect_configuration=app.inspect_thread_configuration,
                     voice=app._voice,
+                    bot=app._bot,
+                    create_project=app.create_project,
+                    read_project_memory=app.read_project_memory,
                 )
                 root_executor.set_root_capability_factory(
                     lambda composition: ThreadCollaborationCapability(
@@ -3929,6 +4125,8 @@ async def open_harness_ui_app(
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
+                    if app._bot is not None:
+                        background.start_soon(app._bot.run)
                     if app._voice is not None:
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)

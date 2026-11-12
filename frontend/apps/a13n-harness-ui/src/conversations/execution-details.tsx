@@ -103,7 +103,7 @@ export function ExecutionDetails({
         }
       }}
     >
-      <DialogTrigger className={styles.preview}>
+      <DialogTrigger className={`${styles.preview} ${conversation.execution}`}>
         <span className={styles.previewHeading}>
           <span
             className={styles.excerpt}

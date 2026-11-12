@@ -581,6 +581,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
       description: "2 environments - 2 directories",
     }),
   );
+  await user.click(screen.getByTitle("/old"));
   const path = screen.getByRole("textbox", { name: "Server directory" });
   await user.clear(path);
   await user.type(path, "/selected");

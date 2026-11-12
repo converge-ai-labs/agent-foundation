@@ -97,9 +97,13 @@ flowchart TB
 
 ### 共享草稿
 
-查看同一保存对话的人在运行中的 App 内编辑同一份共享草稿。重新连接同一实例即可再次同步。服务器重启会产生替代草稿：明确重新加入，再选择是否恢复本浏览器的文字。
+查看同一保存对话的人共享输入、已上传附件引用、Model/Thinking/Speed/Reasoning mode、Environment 和 Goal 选择。已确认同步的编辑保存在服务器上，可跨浏览器、设备和服务器重启恢复。Prompt 访客共享文字和附件，但不能读取或修改所有者的 Run 选项。
 
-未同步编辑可能因重载或浏览器崩溃丢失；已同步文字在服务器运行期间保留。撤销属于本地编辑器，接受的 Send 建立新的撤销边界。参与者显示名用于辨认协作者，不是认证身份。
+升级时，如果浏览器原有的 Model/控制选项仍匹配当前 Agent 和有效 Model，会用它们初始化尚未设置选项的共享输入框。已有共享选择或明确的重置优先。旧浏览器记录只会在同步确认状态已保存后移除。
+
+每个输入框最多保留 512 KiB 当前编辑状态；输入和选项连续 30 天未改变后会过期，即使仍有内容，当前连接的编辑者除外。删除对话会删除保存的输入框。非空草稿保留期间，引用的未提交附件不会被普通临时文件清理删除。过期或被替换后，需要明确重新加入，再恢复浏览器输入。
+
+未同步编辑可能因重载或浏览器崩溃丢失。撤销属于本地编辑器，接受的 Send 建立新的撤销边界。参与者显示名用于辨认协作者，不是认证身份。
 
 ### Skill 与工作检查
 
@@ -114,19 +118,21 @@ flowchart TB
 点击输入框上方的上下文用量圆环，可查看最近一次主 Agent 请求。横条显示输入、本轮输出和剩余窗口。展开技能可查看实际注入的技能名称和用量。展开工具调用可分别查看参数和返回内容的估算 token 数。各项按本次输入的字符占比分摊 token，包括未单独计量的媒体用量。百分比表示各项占整个上下文窗口的比例。
 
 1. 点击侧栏折叠按钮旁的图表图标打开 **Usage**。**Project → View usage** 或 **Details → Usage → Open analytics** 会预选对应范围。
-2. 选择 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或实际 provider/model 筛选。
+2. 选择 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或请求选用的模型配置筛选。
 3. 对比每日汇总和 Project、Thread、模型明细。按 token 或费用排序，点击行缩小范围。
 4. 用 **Refresh** 获取新保存的用量。筛选保留在 URL 中；页面不会持续更新。
 
 总量包含保留的归档对话、Memory、Live、子 agent、辅助调用和 Coordinator worker。Project 归属跟随根 Thread 当前的 Project。Provider 回执仍可在 Thread 详情查看。
 
-费用是记录的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 标记只含已知部分的小计。缓存 token 属于输入/输出的子集，不额外计数。未记录的历史消耗无法补回。访客链接不授予用量分析访问权限。
+新 Run 按所选模型配置的 route 查价。聊天用量中的**按模型**显示配置路由对应的供应商和模型（例如 `anthropic/claude-opus-5-5`）。展开模型可以查看供应商返回的名称。费用是记录的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 标记只含已知部分的小计。缓存 token 属于输入/输出的子集，不额外计数。未记录的历史消耗无法补回。访客链接不授予用量分析访问权限。
 
 ## Agent 与 Model 设置
 
 点击输入框底部当前 Model，选择 Agent、Model、Reasoning mode、Thinking 等级或 Speed。每项在同一弹层内展开，Default 恢复继承设置。桌面和手机均通过 Chat options 使用 Goal、Coordinate agents、Environment 和 Clear context。
 
-需要持久 Model 选择时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
+需要修改 Thread 默认 Model（包括终端 UI 使用的默认值）时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
+
+新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
 
 **Chat options → Clear context** 让下一条消息不带先前模型消息、笔记、任务或保存的 Agent 工作状态开始，同时丢弃待处理问题和审批。聊天历史、文件、设置和未发送输入保留。
 
@@ -138,7 +144,7 @@ flowchart TB
 
 选项取决于 Model 和安装的适配器。仅支持时显示 Off；最低 effort 不一定表示 Off。未知模型保留 Default 并说明原因。禁用预算或自定义设置冲突应在 Model 配置中解决。Thinking 不改变输出 token 上限。
 
-覆盖值只属于当前标签页，在修改前应用于后续 Run；更换 Agent 或 Model 会清除它。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
+共享输入框按会话保存思考强度，可跨浏览器和服务器重启恢复。刷新页面或重新打开聊天后，下次发送仍会使用所选强度。更换 Agent 或实际使用的 Model 后，强度会恢复为默认值。它不编辑 Model 资源，也不影响 steering 或正在运行的工作。
 
 ### 后续 Run 使用的环境
 
@@ -149,15 +155,15 @@ flowchart TB
 
 Full Control 使用服务器账户。Sandbox 需要 Host 支持的隔离启动器和原生运行时；准备失败会保留为错误，不会切换到 Full Control。Device 工作目录用于路由操作，不限制 daemon 的文件系统权限。
 
-标签页的显式 Environment 选择会随之后的 Send 发送，直到重置。它不改变保存的 Thread 默认值、其他参与者或活动 Run。**Steer** 和延后回答保留活动或挂起 Run 的 Environment。新 subagent 继承捕获的 Environment；恢复的 subagent 保留各自对话配置。
+共享输入框已应用的 Environment 选择会随之后的 Send 发送，直到重置或草稿过期。其他持有实例密钥的参与者看到同一选择；保存的 Thread 默认值和活动 Run 保持不变。**Steer** 和延后回答保留活动或挂起 Run 的 Environment。新 subagent 继承捕获的 Environment；恢复的 subagent 保留各自对话配置。
 
-用 **Configuration** 对比保存默认值和 Run 捕获的 Environment。不可用 profile 必须明确替换。新对话草稿在重载后保留选择；已有对话的覆盖只属于标签页。切换模式不会复制或隔离现有 Project 文件或历史。
+用 **Configuration** 对比保存默认值和 Run 捕获的 Environment。不可用 profile 必须明确替换。新对话草稿在浏览器本地保留选择；已有对话的选择由服务器保存并共享。切换模式不会复制或隔离现有 Project 文件或历史。
 
 ## Fast 模式
 
 在 **Agent & Model settings** 选择 **Fast**，或在支持的 Codex 连接上选择 **Ultrafast**。再次点击选中的按钮请求 Off。**Use model setting** 继承 Model 设置；**Provider default** 与 Off 不同。
 
-选择应用于当前标签页之后的 Send，更换 Agent/Model 时清除。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
+共享输入框会为这个会话保存所选速度。更换 Agent 或实际使用的 Model 后，速度会恢复为默认值。它不影响 steering、Thinking 或保存的 Model 配置。Context / Cost / Cache / Time 一行显示当前或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**；短横线表示不可用。
 
 服务器为支持的 OpenAI/Codex、直连 Anthropic 和 Gemini 连接提供原生速度控件。被禁用的选项会说明限制。实际效果取决于 provider 资格和收费；请求速度模式不保证更快执行。
 
@@ -328,7 +334,7 @@ Coordinator 默认把实质性的调查、实现和测试委派给 worker，自�
 
 Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name** 固定 owner 和 Project。创建前移除此标签可变为独立草稿，不丢文字、附件或选择；创建后固定。创建结果不确定时先检查再重试。Worker 位于 owner 下，搜索标为 **Coordinator worker**。
 
-在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。关闭 Sidekick 不关闭 Coordinator。
+在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。Sidekick 默认值不控制 Coordinator 身份或自动跟进。
 
 自动跟进会在首次直接分配 worker 任务，以及所属工作完成、失败、取消或等待输入时尝试交付。Coordinator 先检查保存结果再接受完成。通知没有重试/重启重放。关闭浏览器保留工作；停止 Coordinator 不停止 worker，也不暂停之后通知。决策截止时间仍生效。
 
@@ -346,7 +352,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 只覆盖首个 Run，`run_thread` 可覆盖后续 Run。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
 
-在 **Settings → General → Sidekick** 配置默认 Agent、Model 和汇报指令，默认开启。**Inherit current agent**、**Use agent model** 和 **Disabled** 含义不同。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
+在 **设置 → 常规 → 子 Agent 默认值** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 
 ## 创建对话副本
 
@@ -354,6 +360,8 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 2. 检查打开的副本，再发送下一条指令。
 
 Fork 不发起 Model 请求，复制保存历史、笔记、任务、设置和 Thread 自有文件。活动来源提供最后保存检查点。外部 Project 目录、远程目标和沙箱仍是共享资源。
+
+要从较早的回复继续，悬停到该回复并选择**从这里新建分支聊天**。后续消息正在生成时也可以从已结束的回复分支。聊天空闲时，选择**编辑消息**可以修改普通文本消息，点**发送**后在新聊天中生成回复。副本按顺序编号，例如「白昼咖啡 (2)」「白昼咖啡 (3)」。
 
 Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork。创建结果不确定时，先检查对话列表再重试。
 
@@ -397,7 +405,7 @@ Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork�
 
 表单/YAML 共用草稿。**Save changes** 校验并替换整个文件。标签页内导航保留未保存编辑，重载不保留。检测到外部变化会保留未保存草稿，文件保存仍以后写覆盖前写。MCP 源文本隐藏，替换也会覆盖不可见字段和文件中全部资源。活动 Run 保留捕获配置。完整文件设置见[配置配方](configuration-recipes.md)。
 
-打开 **Project settings** 编辑服务器目录和创建默认值。**Browse → Use this directory** 只改草稿，保存后应用。关闭计算机共享时手动输入 Host 路径。新 Thread 使用保存默认值；已有 Thread 保留选择，除非明确修改。Default、None、Custom 不同，预览展示保存值/来源，不测试 Model。
+打开 **Project settings** 编辑服务器目录和创建默认值。开启计算机共享后，在本机直连的 macOS 或 Windows 上，点 **Add folder** 会打开系统目录选择器。其他连接可浏览服务器目录，关闭共享时可手动输入路径。保存后生效。新 Thread 使用保存默认值；已有 Thread 保留选择，除非明确修改。Default、None、Custom 不同，预览展示保存值/来源，不测试 Model。
 
 点击右上角生成的协作名称并 **Save name**，修改当前浏览器标签。在线指示打开按标签页区分的参与者目录。名称和 presence 是实时协作元数据，不是 provider 身份。后台标签页与前台关注可区分。
 
@@ -423,6 +431,10 @@ Project 可混用本地/远程目录，也可只有远程目录；始终至少�
 关注/已读状态属于此浏览器和站点地址，并在标签页间同步。重新打开刷新关闭期间保存的关注结果；首次访问把已有结果视为历史。清除站点数据移除此状态。这些圆点不需通知权限，与系统推送独立。
 
 ## 任务通知
+
+在通知设置的**通知范围**中选择**全部**或**只 Bot**，默认为全部。此选项同时筛选当前浏览器的站内提示和后台通知，不影响其他设备、未读标记或主动发送的测试通知。只 Bot 包含 Bot 消息和需要你回应的通知，不包含普通聊天的任务结果。
+
+Bot 发布的消息显示**Bot 给你发了消息**和实际消息预览。选择**查看消息**或点击系统通知即可打开 Bot。同一轮运行中的不同消息会分别通知。需要输入时显示 **Bot 需要你的回应**，点击后在 Activity 中处理。系统通知标题使用当前浏览器最近同步的显示语言，消息正文保持原文。
 
 1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → General → Notifications**。
 2. 选择 **Allow notifications** 或 **Enable background notifications**，接受浏览器提示。

@@ -99,6 +99,80 @@
         }
       }
     },
+    "/api/bot": {
+      "get": {
+        "summary": "Bot Status",
+        "operationId": "bot_status_api_bot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/inputs": {
+      "post": {
+        "summary": "Bot Submit",
+        "operationId": "bot_submit_api_bot_inputs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotInput"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/pause": {
+      "post": {
+        "summary": "Bot Pause",
+        "operationId": "bot_pause_api_bot_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotPause"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/push/configuration": {
       "get": {
         "summary": "Push Configuration",
@@ -2306,6 +2380,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/pick-directory": {
+      "post": {
+        "summary": "Pick Host Directory",
+        "operationId": "pick_host_directory_api_host_files_pick_directory_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Pick Host Directory Api Host Files Pick Directory Post"
                 }
               }
             }
@@ -5674,6 +5774,94 @@
         }
       }
     },
+    "/api/threads/{thread_id}/branch-points": {
+      "get": {
+        "summary": "Branch Points",
+        "operationId": "branch_points_api_threads__thread_id__branch_points_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BranchPoints"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/branch": {
+      "post": {
+        "summary": "Branch Thread",
+        "operationId": "branch_thread_api_threads__thread_id__branch_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BranchRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/fork": {
       "post": {
         "summary": "Fork Thread",
@@ -8828,6 +9016,9 @@
           },
           {
             "$ref": "#/components/schemas/LiveAgentSource"
+          },
+          {
+            "$ref": "#/components/schemas/BotAgentSource"
           }
         ]
       },
@@ -8839,7 +9030,8 @@
               "agent",
               "markdown",
               "memory",
-              "live"
+              "live",
+              "bot"
             ],
             "title": "Kind",
             "type": "string"
@@ -9856,6 +10048,372 @@
         ],
         "title": "Availability"
       },
+      "BotAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "bot",
+            "title": "Kind",
+            "default": "bot"
+          },
+          "id": {
+            "type": "string",
+            "const": "bot",
+            "title": "Id",
+            "default": "bot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BotAgentSource",
+        "description": "Application-owned persistent assistant; not a selectable Agent resource."
+      },
+      "BotInput": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Input Id"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "heartbeat",
+              "connector",
+              "automatic"
+            ],
+            "title": "Source"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536,
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "dispatching",
+              "admitted",
+              "completed",
+              "interrupted",
+              "discarded"
+            ],
+            "title": "State",
+            "default": "queued"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "causation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Causation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "source",
+          "text",
+          "created_at"
+        ],
+        "title": "BotInput"
+      },
+      "BotMessage": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "input_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message_id",
+          "role",
+          "text",
+          "created_at"
+        ],
+        "title": "BotMessage"
+      },
+      "BotSnapshot": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "default": "thread_bot"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BotState"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "heartbeat_enabled": {
+            "type": "boolean",
+            "title": "Heartbeat Enabled"
+          },
+          "interval_seconds": {
+            "type": "integer",
+            "title": "Interval Seconds"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_decision": {
+            "type": "boolean",
+            "title": "Pending Decision",
+            "default": false
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/BotInput"
+            },
+            "type": "array",
+            "title": "Inputs",
+            "default": []
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/BotMessage"
+            },
+            "type": "array",
+            "title": "Messages",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "available",
+          "enabled",
+          "heartbeat_enabled",
+          "interval_seconds"
+        ],
+        "title": "BotSnapshot"
+      },
+      "BotState": {
+        "properties": {
+          "activated": {
+            "type": "boolean",
+            "title": "Activated",
+            "default": false
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          },
+          "next_heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Heartbeat At"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "heartbeat_interval_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat Interval Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BotState"
+      },
+      "BranchPoint": {
+        "properties": {
+          "edit": {
+            "type": "boolean",
+            "title": "Edit"
+          },
+          "branch": {
+            "type": "boolean",
+            "title": "Branch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edit",
+          "branch"
+        ],
+        "title": "BranchPoint"
+      },
+      "BranchPoints": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "points": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BranchPoint"
+            },
+            "type": "object",
+            "title": "Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "points"
+        ],
+        "title": "BranchPoints"
+      },
       "BrowserAccess": {
         "properties": {
           "protocol": {
@@ -10397,7 +10955,8 @@
               "agent",
               "markdown",
               "memory",
-              "live"
+              "live",
+              "bot"
             ],
             "title": "Source Kind"
           },
@@ -13820,7 +14379,95 @@
           "environment.computer.type_text",
           "environment.computer.press_keys",
           "environment.computer.read_clipboard",
-          "environment.computer.write_clipboard"
+          "environment.computer.write_clipboard",
+          "environment.computer.a11y_describe",
+          "environment.computer.a11y_roots",
+          "environment.computer.a11y_inspect",
+          "environment.computer.a11y_find",
+          "environment.computer.a11y_read",
+          "environment.computer.a11y_range",
+          "environment.computer.a11y_range_read",
+          "environment.computer.ax_disclosing_set",
+          "environment.computer.ax_expanded_set",
+          "environment.computer.ax_focus",
+          "environment.computer.ax_focused_window_set",
+          "environment.computer.ax_main_set",
+          "environment.computer.ax_minimized_set",
+          "environment.computer.ax_perform_action",
+          "environment.computer.ax_position_set",
+          "environment.computer.ax_selected_children_set",
+          "environment.computer.ax_selected_columns_set",
+          "environment.computer.ax_selected_rows_set",
+          "environment.computer.ax_selected_set",
+          "environment.computer.ax_selected_text_set",
+          "environment.computer.ax_size_set",
+          "environment.computer.ax_text_range_select",
+          "environment.computer.ax_text_ranges_select",
+          "environment.computer.ax_value_number_set",
+          "environment.computer.ax_value_string_set",
+          "environment.computer.ax_visible_text_range_set",
+          "environment.computer.uia_collapse",
+          "environment.computer.uia_dock_set",
+          "environment.computer.uia_expand",
+          "environment.computer.uia_focus",
+          "environment.computer.uia_invoke",
+          "environment.computer.uia_legacy_default_action",
+          "environment.computer.uia_legacy_select",
+          "environment.computer.uia_legacy_value_set",
+          "environment.computer.uia_range_add_selection",
+          "environment.computer.uia_range_remove_selection",
+          "environment.computer.uia_range_scroll_into_view",
+          "environment.computer.uia_range_select",
+          "environment.computer.uia_range_show_context_menu",
+          "environment.computer.uia_range_value_set",
+          "environment.computer.uia_realize",
+          "environment.computer.uia_scroll_amount",
+          "environment.computer.uia_scroll_into_view",
+          "environment.computer.uia_scroll_percent",
+          "environment.computer.uia_selection_add",
+          "environment.computer.uia_selection_remove",
+          "environment.computer.uia_selection_select",
+          "environment.computer.uia_show_context_menu",
+          "environment.computer.uia_toggle",
+          "environment.computer.uia_transform_move",
+          "environment.computer.uia_transform_resize",
+          "environment.computer.uia_transform_rotate",
+          "environment.computer.uia_transform_zoom",
+          "environment.computer.uia_transform_zoom_unit",
+          "environment.computer.uia_value_set",
+          "environment.computer.uia_view_set",
+          "environment.computer.uia_window_close",
+          "environment.computer.uia_window_state_set",
+          "environment.computer.atspi_caret_set",
+          "environment.computer.atspi_component_extents_set",
+          "environment.computer.atspi_component_position_set",
+          "environment.computer.atspi_component_size_set",
+          "environment.computer.atspi_do_action",
+          "environment.computer.atspi_document_selections_set",
+          "environment.computer.atspi_focus",
+          "environment.computer.atspi_range_scroll_to",
+          "environment.computer.atspi_range_scroll_to_point",
+          "environment.computer.atspi_scroll_to",
+          "environment.computer.atspi_scroll_to_point",
+          "environment.computer.atspi_selection_add_child",
+          "environment.computer.atspi_selection_all",
+          "environment.computer.atspi_selection_clear",
+          "environment.computer.atspi_selection_remove_child",
+          "environment.computer.atspi_selection_remove_selected",
+          "environment.computer.atspi_table_column_select",
+          "environment.computer.atspi_table_column_unselect",
+          "environment.computer.atspi_table_row_select",
+          "environment.computer.atspi_table_row_unselect",
+          "environment.computer.atspi_text_contents_set",
+          "environment.computer.atspi_text_copy",
+          "environment.computer.atspi_text_cut",
+          "environment.computer.atspi_text_delete",
+          "environment.computer.atspi_text_insert",
+          "environment.computer.atspi_text_paste",
+          "environment.computer.atspi_text_selection_add",
+          "environment.computer.atspi_text_selection_remove",
+          "environment.computer.atspi_text_selection_set",
+          "environment.computer.atspi_value_set"
         ],
         "title": "EnvironmentAction",
         "type": "string"
@@ -16688,6 +17335,13 @@
       },
       "ModelChoices": {
         "properties": {
+          "base_models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "type": "array",
+            "title": "Base Models"
+          },
           "connections": {
             "items": {
               "$ref": "#/components/schemas/ModelConnection"
@@ -16907,6 +17561,19 @@
             "minLength": 3,
             "title": "Route"
           },
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "authentication": {
             "$ref": "#/components/schemas/ModelAuthentication"
           },
@@ -17120,6 +17787,14 @@
           },
           "totals": {
             "$ref": "#/components/schemas/UsageTotals"
+          },
+          "reported_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reported Models",
+            "default": []
           }
         },
         "type": "object",
@@ -17146,6 +17821,28 @@
           },
           "combined": {
             "$ref": "#/components/schemas/UsageTotals"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "model_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Identity"
           }
         },
         "type": "object",
@@ -24657,6 +25354,20 @@
             "title": "Receipt Id",
             "type": "string"
           },
+          "message_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
           "status": {
             "enum": [
               "completed",
@@ -25357,6 +26068,19 @@
             "default": null,
             "title": "Update Base64"
           },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options Update Base64"
+          },
           "presence": {
             "anyOf": [
               {
@@ -25396,6 +26120,18 @@
           "update_base64": {
             "title": "Update Base64",
             "type": "string"
+          },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Options Update Base64"
           },
           "participants": {
             "additionalProperties": {
@@ -25588,6 +26324,44 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "BotSubmit": {
+        "properties": {
+          "input_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Input Id"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_id",
+          "text"
+        ],
+        "title": "BotSubmit"
+      },
+      "BotPause": {
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "paused"
+        ],
+        "title": "BotPause"
+      },
       "PushKeys": {
         "properties": {
           "p256dh": {
@@ -25623,6 +26397,24 @@
             "type": "string",
             "maxLength": 512,
             "title": "Origin"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "bot"
+            ],
+            "title": "Scope",
+            "default": "all"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "zh-CN"
+            ],
+            "title": "Language",
+            "default": "en"
           }
         },
         "additionalProperties": false,
@@ -26195,6 +26987,19 @@
       },
       "ModelOptionsRequest": {
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "connection": {
             "type": "string",
             "maxLength": 128,
@@ -26262,6 +27067,19 @@
       },
       "ModelRecipeRequest": {
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "connection": {
             "type": "string",
             "maxLength": 128,
@@ -27019,6 +27837,37 @@
         "title": "ProjectDefaultsApply",
         "type": "object"
       },
+      "BranchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_continuation_id": {
+            "pattern": "^(?:initial:)?[0-9a-f]{64}$",
+            "title": "Expected Continuation Id",
+            "type": "string"
+          },
+          "turn_key": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Turn Key",
+            "type": "string"
+          },
+          "side": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_continuation_id",
+          "turn_key",
+          "side"
+        ],
+        "title": "BranchRequest",
+        "type": "object"
+      },
       "ApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -27385,6 +28234,18 @@
             "minLength": 1,
             "title": "Update Base64",
             "type": "string"
+          },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options Update Base64"
           }
         },
         "required": [

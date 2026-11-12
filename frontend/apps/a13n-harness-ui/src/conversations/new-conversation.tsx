@@ -1,3 +1,4 @@
+import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
   useContext,
@@ -299,6 +300,12 @@ function NewConversation({
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
   );
+  const runChoices = useComposerRunChoices(
+    composerDraft,
+    defaults.agent_id ?? effective?.agent_source.id,
+    effective?.default_model_id ??
+      (selectors.data ? (effectiveAgent?.model_id ?? null) : undefined),
+  );
   const effectiveEnvironment = selectors.data?.environments.find(
     (item) => item.profile_id === effective?.environment_profile_id,
   );
@@ -476,6 +483,7 @@ function NewConversation({
                   }
             }
             canRun={
+              !runChoices.pending &&
               !!preview.data &&
               !preview.error &&
               ownerAvailable &&
@@ -505,7 +513,6 @@ function NewConversation({
             onPreparing={setPreparing}
             onSubmitted={openConversation}
             onReviewOutcome={openConversation}
-            modelId={composerDraft.modelId}
             leadingControls={
               <RunEnvironments
                 catalog={selectors.data}
@@ -523,23 +530,15 @@ function NewConversation({
                 catalog={selectors.data}
                 agentId={defaults.agent_id ?? ""}
                 defaultAgentId={effectiveAgent?.agent_id}
+                defaultModelId={effective?.default_model_id}
                 modelId={composerDraft.modelId}
                 controls={composerDraft.controls}
-                onControlsChange={(value) => {
-                  composerDraft.controls = value;
-                  composerDraft.notify();
-                }}
+                onControlsChange={runChoices.onControlsChange}
                 disabled={choicesDisabled}
                 onAgentChange={(value) => {
                   change({ agent_id: value || null });
-                  composerDraft.controls = {};
-                  composerDraft.notify();
                 }}
-                onModelChange={(value) => {
-                  composerDraft.modelId = value;
-                  composerDraft.controls = {};
-                  composerDraft.notify();
-                }}
+                onModelChange={runChoices.onModelChange}
               />
             )}
           />

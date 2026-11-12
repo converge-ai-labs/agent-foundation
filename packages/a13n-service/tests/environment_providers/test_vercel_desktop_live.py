@@ -1,6 +1,7 @@
 """Opt-in real Vercel EIP files, processes, Computer and stop/start acceptance."""
 
 import asyncio
+import json
 import os
 import secrets
 
@@ -47,6 +48,7 @@ async def test_vercel_envd_desktop_and_resume(tmp_path):
             execution="envd_http",
             desktop=True,
             snapshot=os.environ["A13N_TEST_VERCEL_SNAPSHOT"],
+            startup_command=json.loads(os.environ["A13N_TEST_VERCEL_STARTUP_COMMAND_JSON"]),
             request_timeout_seconds=300,
             timeout_seconds=1800,
         )

@@ -14,7 +14,7 @@ import pytest
 
 INSTALLER = Path(__file__).parents[1] / "install-a13n-envd.sh"
 pytestmark = pytest.mark.skipif(os.name == "nt" or shutil.which("jq") is None, reason="POSIX shell and jq required")
-BINARY = b"native binary fixture; must not be executed\n"
+BINARY = b"#!/bin/sh\nprintf 'a13n-envd 0.0.6\\n'\n"
 
 
 @pytest.fixture
@@ -76,8 +76,16 @@ shutil.copyfile(source, args[args.index('-o') + 1])
     return run, fixtures, destination, home, commands
 
 
-def release(fixtures: Path, version: str = "0.0.6", target: str = "x86_64-unknown-linux-gnu", *, bad: str = "") -> Path:
-    archive = fixtures / f"a13n-envd-{version}-{target}.tar.gz"
+def release(
+    fixtures: Path,
+    version: str = "0.0.6",
+    target: str = "x86_64-unknown-linux-gnu",
+    *,
+    bad: str = "",
+    variant: str = "default",
+) -> Path:
+    suffix = "-vm" if variant == "vm" else ""
+    archive = fixtures / f"a13n-envd-{version}-{target}{suffix}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         names = ["a13n-envd", "LICENSE"]
         if bad == "traversal":
@@ -87,7 +95,7 @@ def release(fixtures: Path, version: str = "0.0.6", target: str = "x86_64-unknow
         if bad == "missing":
             names.remove("a13n-envd")
         for name in names:
-            data = BINARY if name == "a13n-envd" else b"license\n"
+            data = BINARY.replace(b"0.0.6", version.encode()) if name == "a13n-envd" else b"license\n"
             entry = tarfile.TarInfo(name)
             if name == "a13n-envd" and bad in {"symlink", "hardlink"}:
                 entry.type = tarfile.SYMTYPE if bad == "symlink" else tarfile.LNKTYPE
@@ -101,6 +109,40 @@ def release(fixtures: Path, version: str = "0.0.6", target: str = "x86_64-unknow
     # Match release-a13n-envd.yml: find . ... | xargs -0 sha256sum.
     (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  ./{archive.name}\n")
     return archive
+
+
+@pytest.mark.parametrize("downloader", ["curl", "wget"])
+@pytest.mark.parametrize("variant", ["default", "vm"])
+def test_pinned_install_without_python_jq_or_other_downloader(installer, downloader, variant):
+    run, fixtures, destination, _, commands = installer
+    release(fixtures, variant=variant)
+    remote = (commands / "curl").read_text()
+    if downloader == "wget":
+        (commands / "curl").unlink()
+        remote = remote.replace("args.index('-o')", "args.index('-O')")
+        (commands / "wget").write_text(remote)
+        (commands / "wget").chmod(0o755)
+    for name in ("sh", "tar", "gzip", "sha256sum", "awk", "grep", "mkdir", "mktemp", "chmod", "mv", "rm", "wc", "tr"):
+        (commands / name).symlink_to(shutil.which(name))
+    result = run("--version", "0.0.6", "--variant", variant, PATH=str(commands))
+    assert result.returncode == 0, result.stderr
+    assert (destination / "a13n-envd").read_bytes() == BINARY
+    assert not (commands / "python3").exists()
+    assert not (commands / "jq").exists()
+
+
+def test_wrong_binary_version_preserves_existing_install(installer):
+    run, fixtures, destination, _, _ = installer
+    archive = release(fixtures, version="0.0.5")
+    renamed = fixtures / archive.name.replace("0.0.5", "0.0.6")
+    archive.rename(renamed)
+    (fixtures / "SHA256SUMS").write_text(f"{hashlib.sha256(renamed.read_bytes()).hexdigest()}  {renamed.name}\n")
+    destination.mkdir()
+    (destination / "a13n-envd").write_bytes(b"previous")
+    result = run("--version", "0.0.6")
+    assert_failed(result, destination)
+    assert "version mismatch" in result.stderr
+    assert (destination / "a13n-envd").read_bytes() == b"previous"
 
 
 def assert_failed(result, destination: Path):
@@ -130,6 +172,24 @@ def test_install_and_replace_without_path_mutation(installer, system, machine, t
         assert not list(destination.glob(".a13n-envd.*"))
     assert not list(home.iterdir())
     assert "release/a13n-envd-v0.0.6/" in (fixtures / "requests").read_text()
+
+
+@pytest.mark.parametrize("use_flag", [True, False])
+def test_vm_variant_selects_separate_asset(installer, use_flag):
+    run, fixtures, destination, _, _ = installer
+    release(fixtures, variant="vm")
+    args = ("--variant", "vm") if use_flag else ()
+    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else "vm")
+    assert result.returncode == 0, result.stderr
+    assert (destination / "a13n-envd").read_bytes() == BINARY
+    assert "x86_64-unknown-linux-gnu-vm.tar.gz" in (fixtures / "requests").read_text()
+
+
+@pytest.mark.parametrize("variant,system", [("unknown", "Linux"), ("vm", "Darwin")])
+def test_invalid_variant_fails_before_download(installer, variant, system):
+    run, fixtures, destination, _, _ = installer
+    assert_failed(run("--version", "0.0.6", "--variant", variant, MOCK_OS=system), destination)
+    assert not (fixtures / "requests").exists()
 
 
 def test_default_version_paginates_and_excludes_other_components_and_prereleases(installer):

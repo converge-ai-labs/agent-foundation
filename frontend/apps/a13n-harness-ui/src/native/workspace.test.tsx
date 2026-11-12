@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   useContext,
   useEffect,
@@ -152,6 +152,12 @@ vi.mock("./terminal", () => ({
     );
   },
 }));
+beforeEach(() => {
+  // Resource interaction tests start with an explicitly opened supporting panel.
+  for (const chat of ["current", "other", "new"]) {
+    localStorage.setItem(`a13n-harness-ui.native-panel.${chat}`, "open");
+  }
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -221,31 +227,38 @@ function setup(
                         roots: ["/other"],
                       },
                     ]
-                  : url === "/api/threads/{thread_id}"
+                  : url === "/api/bot"
                     ? {
-                        thread: {
-                          title: "Current chat",
-                          configuration: {
-                            local_roots:
-                              options?.params?.path?.thread_id === "other"
-                                ? otherProject === "project-two"
-                                  ? ["/other"]
-                                  : currentRoots
-                                : currentProject
-                                  ? currentRoots
-                                  : [],
-                            project_id:
-                              options?.params?.path?.thread_id === "other"
-                                ? otherProject
-                                : currentProject,
-                          },
-                        },
+                        available: true,
+                        state: { activated: false, paused: false },
+                        messages: [],
+                        inputs: [],
                       }
-                    : {
-                        kind: options?.params?.query?.path?.endsWith(".txt")
-                          ? "file"
-                          : "directory",
-                      },
+                    : url === "/api/threads/{thread_id}"
+                      ? {
+                          thread: {
+                            title: "Current chat",
+                            configuration: {
+                              local_roots:
+                                options?.params?.path?.thread_id === "other"
+                                  ? otherProject === "project-two"
+                                    ? ["/other"]
+                                    : currentRoots
+                                  : currentProject
+                                    ? currentRoots
+                                    : [],
+                              project_id:
+                                options?.params?.path?.thread_id === "other"
+                                  ? otherProject
+                                  : currentProject,
+                            },
+                          },
+                        }
+                      : {
+                          kind: options?.params?.query?.path?.endsWith(".txt")
+                            ? "file"
+                            : "directory",
+                        },
           },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
@@ -307,6 +320,24 @@ function setup(
   );
   return { focus, get, queries };
 }
+it("opens Bot in the existing native workspace before activation without loading a missing Thread", async () => {
+  localStorage.setItem("a13n-harness-ui.native-panel.thread_bot", "open");
+  const { get } = setup("/bot");
+  await screen.findByRole("heading", { name: "Bot" });
+  await screen.findByRole("link", { name: "Bot settings" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "New tab" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(
+    get.mock.calls.some(([path]) => path === "/api/threads/{thread_id}"),
+  ).toBe(false);
+  expect(screen.queryByRole("button", { name: "Chat actions" })).toBeNull();
+  await chooseView("Browser");
+  expect(screen.getByTestId("chat").textContent).toContain("/bot");
+});
+
 async function chooseView(name: "Files" | "Changes" | "Browser" | "Terminal") {
   await waitFor(() =>
     expect(
@@ -340,6 +371,44 @@ function restoreSideBySide() {
     screen.getByRole("button", { name: "Open supporting panel" }),
   );
 }
+
+it.each(["/", "/new", "/threads/current"])(
+  "keeps the supporting panel closed by default on %s, including with a legacy open preference",
+  async (path) => {
+    localStorage.clear();
+    localStorage.setItem("a13n-harness-ui.native-panel", "open");
+    setup(path);
+    const toggle = await screen.findByRole("button", {
+      name: "Open supporting panel",
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByRole("tablist", { name: "Workspace views" }),
+    ).toBeNull();
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole("button", { name: "Close supporting panel" }),
+    ).toBeTruthy();
+    expect(
+      localStorage.getItem(
+        `a13n-harness-ui.native-panel.${path.startsWith("/threads/") ? "current" : "new"}`,
+      ),
+    ).toBe("open");
+    fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+    await screen.findByText("Chat remains mounted /threads/other");
+    expect(
+      screen.getByRole("button", { name: "Open supporting panel" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: path.startsWith("/threads/") ? "Current chat" : "New chat",
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Close supporting panel" }),
+    ).toBeTruthy();
+  },
+);
 
 it("adds files through the new-tab picker in one strip and closes views without discarding private buffers", async () => {
   const dirty = { dirty: true, text: "Keep this private edit" };
@@ -1851,7 +1920,8 @@ it("remembers each chat's supporting-panel choice across navigation and remounts
   ).toBeTruthy();
 });
 
-it("keeps New chat's choice separate and uses the old global preference only as a default", async () => {
+it("keeps New chat's choice separate without updating the old global preference", async () => {
+  localStorage.clear();
   localStorage.setItem("a13n-harness-ui.native-panel", "closed");
   setup("/new");
   fireEvent.click(
@@ -1892,4 +1962,15 @@ it("explicit native links reopen only their destination chat's saved closed pane
   expect(localStorage.getItem("a13n-harness-ui.native-panel.other")).toBe(
     "closed",
   );
+});
+
+it("keeps only Chat details in the reserved Bot Activity actions", async () => {
+  setup("/threads/thread_bot");
+  const actions = await screen.findByRole("button", { name: "Chat actions" });
+  fireEvent.click(actions);
+  expect(
+    await screen.findByRole("menuitem", { name: "Chat details" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Share" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Rename" })).toBeNull();
 });

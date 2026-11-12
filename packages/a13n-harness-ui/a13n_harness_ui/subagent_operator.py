@@ -94,6 +94,7 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
@@ -184,6 +185,7 @@ class ParentRunScope:
     run_id: str
     instance: AgentInstanceContext
     composition: ResolvedRunComposition
+    external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
 
     @property
     def agent_instance_id(self) -> str:
@@ -221,6 +223,7 @@ class _PreparedSegment:
     state: HarnessState
     environment: EnvironmentRunPlan
     stream: HarnessRunStream[Any]
+    external_context: ExternalContext
     agent_instance_id: str
     display: CompactChildDisplay
 
@@ -388,6 +391,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         run_id: str,
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
+        external_context: ExternalContext | None = None,
     ) -> AsyncGenerator[None]:
         """Authorize operator calls from one exact currently active Harness Run."""
 
@@ -412,6 +416,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=run_id,
             instance=instance,
             composition=composition,
+            external_context=(external_context or ExternalContext()).model_copy(deep=True),
         )
         async with self._lock:
             self._require_started_locked()
@@ -481,6 +486,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             initial_state=initial.ref,
             title=request.subagent_name,
         )
+        await self._store.threads.replace_external_context(state.thread_id, scope.external_context)
         # Preparation publishes binding state against this Thread, before execution is admitted.
         captured = await self._environments.admit(published.value)
         envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
@@ -498,7 +504,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             plan.usage_limits,
             reconstructed.executable.definition_usage_limits(),
         )
-        stream = self._new_stream(
+        stream, external_context = await self._new_stream(
             reconstructed=reconstructed,
             input=plan.context.input,
             usage_limits=usage_limits,
@@ -527,6 +533,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             state=state,
             environment=environment,
             stream=stream,
+            external_context=external_context,
             agent_instance_id=agent_instance_id,
             display=CompactChildDisplay(),
         )
@@ -1026,7 +1033,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         agent_instance_id = _public_id("agent")
         usage_limits = intersect_usage_limits(usage_limits, reconstructed.executable.definition_usage_limits())
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
-        stream = self._new_stream(
+        stream, external_context = await self._new_stream(
             reconstructed=reconstructed,
             input=input,
             deferred_resume=accepted,
@@ -1058,6 +1065,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             state=checkpoint.harness_state,
             environment=environment,
             stream=stream,
+            external_context=external_context,
             agent_instance_id=agent_instance_id,
             display=checkpoint.display,
         )
@@ -1127,7 +1135,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         limits = None if item.usage_limits is None else TypeAdapter(UsageLimits).validate_python(item.usage_limits)
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         restored = await self._store.usage.restore(thread_id=item.thread_id, state=checkpoint.harness_state)
-        stream = self._new_stream(
+        stream, external_context = await self._new_stream(
             reconstructed=reconstructed,
             input=None,
             deferred_resume=accepted,
@@ -1158,13 +1166,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             state=checkpoint.harness_state,
             environment=environment,
             stream=stream,
+            external_context=external_context,
             agent_instance_id=agent_instance_id,
             display=checkpoint.display,
         )
         await self._start_segment(prepared)
         return execution_id, stream.run_id
 
-    def _new_stream(
+    async def _new_stream(
         self,
         *,
         reconstructed: ReconstructedAgent,
@@ -1178,8 +1187,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         agent_instance_id: str,
         deferred_resume: DeferredToolResume | None = None,
         resume_usage: bool = False,
-    ) -> HarnessRunStream[Any]:
+    ) -> tuple[HarnessRunStream[Any], ExternalContext]:
+        external_context = await self._store.threads.external_context(state.thread_id)
         bindings = RunBindings(
+            metadata=external_context.metadata,
+            request_context=external_context.request_context(),
             tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
             codeact_state=self._tool_executions.state(state.thread_id) if self._tool_executions is not None else None,
             configuration=reconstructed.run_configuration,
@@ -1195,14 +1207,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             deferred_tools_supported=False,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
-            usage_reporter=self._store.usage.reporter(state.thread_id),
+            usage_reporter=self._store.usage.reporter(state.thread_id, reconstructed.model_resolver.configured_models),
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
         bindings = production_run_bindings(
             bindings,
             reconstructed.definition_capability_ids,
         )
-        return reconstructed.executable.stream(
+        stream = reconstructed.executable.stream(
             input if deferred_resume is None or deferred_resume.recovery else None,
             bindings=bindings,
             previous_state=state,
@@ -1210,6 +1222,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             deferred_resume=deferred_resume,
             usage_limits=usage_limits,
         )
+        return stream, external_context
 
     async def _start_segment(self, prepared: _PreparedSegment) -> None:
         done = Event()
@@ -1286,7 +1299,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     )
                     next_environment = await self._environments.prepare(current.composition)
                     accepted = _deny_deferred(deferred)
-                    next_stream = self._new_stream(
+                    next_stream, external_context = await self._new_stream(
                         reconstructed=current.reconstructed,
                         input=current.input,
                         usage_limits=current.usage_limits,
@@ -1317,6 +1330,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         state=state,
                         environment=next_environment,
                         stream=next_stream,
+                        external_context=external_context,
                         agent_instance_id=current.agent_instance_id,
                         display=display,
                     )
@@ -1486,6 +1500,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 run_id=prepared.stream.run_id,
                 instance=instance,
                 composition=prepared.composition,
+                external_context=prepared.external_context,
             ):
                 with execution_composition(prepared.head.run_composition):
                     async with prepared.stream as stream:

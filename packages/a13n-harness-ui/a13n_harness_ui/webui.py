@@ -28,7 +28,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     credential_digest,
 )
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, sleep
+from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, run_process, sleep
 from anyio.abc import TaskStatus
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -40,6 +40,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.bot import BotSnapshot
+from a13n_harness_ui.bot_models import BotInput, BotPause, BotSubmit
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -170,6 +172,8 @@ from a13n_harness_ui.storage.shares import unavailable
 from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.surfaces import (
+    BranchPoints,
+    BranchRequest,
     ChildControlResult,
     ChildExecutionPage,
     ContextUsageView,
@@ -604,6 +608,19 @@ def create_webui(
     )
     server.add_middleware(RequestLog)
     register_voice_routes(server, lambda: app().voice(), api_key)
+
+    @server.get("/api/bot", response_model=BotSnapshot)
+    async def bot_status() -> BotSnapshot:
+        return await app().bot().snapshot()
+
+    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmit))
+    async def bot_submit(request: Request) -> BotInput:
+        return await app().bot().submit(await _document(request, BotSubmit))
+
+    @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
+    async def bot_pause(request: Request) -> BotSnapshot:
+        command = await _document(request, BotPause)
+        return await app().bot().pause(command.paused)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -1089,21 +1106,21 @@ def create_webui(
         if not await authenticate_browser(socket):
             return
         delivery = InteractiveOutput(socket)
+        editors = AsyncExitStack()
         try:
             await guest_check(socket, thread_id, prompt=True)
-            draft = await app().shared_draft(thread_id)
+            draft, participant = await editors.enter_async_context(app().shared_draft_editor(thread_id))
         except HarnessUiError as exc:
             await delivery.send(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))))
             await delivery.close(code=4404)
             return
-        participant = draft.attach()
         try:
             async with create_task_group() as group:
 
                 async def output() -> None:
                     while True:
                         changed = draft.changed
-                        frame = draft.frame(participant)
+                        frame = draft.frame(participant, include_options=not bool(socket.path_params.get("share_id")))
                         await delivery.send(frame)
                         if frame.closed:
                             await delivery.close()
@@ -1124,7 +1141,12 @@ def create_webui(
                         try:
                             command = DraftCommand.model_validate_json(await receive_text(socket, limit=710000))
                             await guest_check(socket, thread_id, prompt=True)
-                            await app().edit_shared_draft(thread_id, participant, command)
+                            await app().edit_shared_draft(
+                                thread_id,
+                                participant,
+                                command,
+                                edit_options=not bool(socket.path_params.get("share_id")),
+                            )
                         except (ValidationError, ValueError):
                             await delivery.send(
                                 ErrorEnvelope(
@@ -1143,7 +1165,7 @@ def create_webui(
         except* (WebSocketDisconnect, TimeoutError):
             pass
         finally:
-            draft.detach(participant)
+            await editors.aclose()
 
     @server.get("/api/browser", response_model=BrowserRuntimeState)
     async def browser_runtime() -> BrowserRuntimeState:
@@ -1368,6 +1390,37 @@ def create_webui(
             pass
         finally:
             session.detach(participant)
+
+    @server.post("/api/host/files/pick-directory")
+    async def pick_host_directory(request: Request) -> str | None:
+        manager = local_file_manager(request)
+        if not manager:
+            raise HarnessUiError("Local file manager unavailable.", code="host_files_permission_denied")
+        if manager == "finder":
+            command = [
+                "/usr/bin/osascript",
+                "-e",
+                'try\nactivate\nreturn POSIX path of (choose folder)\non error number -128\nreturn ""\nend try',
+            ]
+        else:
+            command = [
+                str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"),
+                "-NoProfile",
+                "-STA",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.Windows.Forms; "
+                "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); "
+                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "if ($dialog.ShowDialog() -eq 'OK') { [Console]::Write($dialog.SelectedPath) }",
+            ]
+        try:
+            selection = await run_process(command, check=False)
+        except OSError as exc:
+            raise HarnessUiError("Could not open the folder picker.", code="host_files_io_error") from exc
+        if selection.returncode:
+            raise HarnessUiError("Could not open the folder picker.", code="host_files_io_error")
+        path = selection.stdout.decode().removesuffix("\n")
+        return str(Path(path)) if path else None
 
     @server.post("/api/host/files/reveal", status_code=204)
     async def reveal_host_file(request: Request, path: NativePath) -> Response:
@@ -1908,6 +1961,14 @@ def create_webui(
     @server.patch("/api/threads/{thread_id}/coordinator", response_model=ThreadSummary)
     async def set_auto_followup(thread_id: str, body: CoordinatorUpdate) -> ThreadSummary:
         return await app().set_auto_followup(thread_id, body.auto_followup)
+
+    @server.get("/api/threads/{thread_id}/branch-points")
+    async def branch_points(thread_id: str) -> BranchPoints:
+        return await app().branch_points(thread_id)
+
+    @server.post("/api/threads/{thread_id}/branch", response_model=ThreadSummary, openapi_extra=_body(BranchRequest))
+    async def branch_thread(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().branch_thread(thread_id, await _document(request, BranchRequest))
 
     @server.post("/api/threads/{thread_id}/fork", response_model=ThreadSummary)
     async def fork_thread(thread_id: str) -> ThreadSummary:
@@ -2450,7 +2511,9 @@ def create_webui(
     )
     async def shared_submit(share_id: str, thread_id: str, request: Request) -> RootRunReceipt:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
-        if document.skill_references:
+        if document.skill_references or (
+            document.draft is not None and document.draft.options_update_base64 is not None
+        ):
             raise forbidden()
         await app().sharing.thread(share_id, thread_id, prompt=True)
         return await app().submit_thread(
@@ -2476,7 +2539,9 @@ def create_webui(
     )
     async def shared_steer(share_id: str, receipt_id: str, request: Request) -> RootControlResult:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)
-        if document.skill_references:
+        if document.skill_references or (
+            document.draft is not None and document.draft.options_update_base64 is not None
+        ):
             raise forbidden()
         operation = await app().get_root_operation(receipt_id)
         await app().sharing.thread(share_id, operation.receipt.thread_id, prompt=True)

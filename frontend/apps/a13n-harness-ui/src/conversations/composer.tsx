@@ -58,10 +58,6 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useTrackUnsent } from "./unsent";
 import { previewInput, type LocalInput } from "./local-input";
-import {
-  AttachmentThumbnail,
-  LocalImageThumbnail,
-} from "./attachment-thumbnail";
 import type { OrderedInputPart } from "./inline-attachments";
 
 function beginInput(
@@ -171,7 +167,6 @@ export async function submitDraft(
   threadId: string,
   action: "send" | "steer",
   receipt?: string,
-  modelId?: string,
   localInput?: LocalInput,
   attachments = new Map<string, Schema<"ThreadAttachment">>(),
   loadSkills?: LoadSkills,
@@ -186,11 +181,6 @@ export async function submitDraft(
   )
     return;
   const annotations = preset === undefined ? draft.annotations : [];
-  const mode = draft.mode;
-  const controls = modelControlRequest(draft.controls);
-  const environment = draft.environment
-    ? structuredClone(draft.environment)
-    : undefined;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -236,6 +226,7 @@ export async function submitDraft(
         !(error instanceof AppContextPendingError),
     };
     captured?.doc.destroy();
+    captured?.optionsDoc.destroy();
     draft.notify();
     return;
   }
@@ -247,6 +238,10 @@ export async function submitDraft(
   try {
     let acceptedReceipt: string;
     if (action === "send") {
+      const { model, environment, mode } = captured.options;
+      const { thinking, fast, reasoning_mode } = model ?? {};
+      const controls = modelControlRequest({ thinking, fast, reasoning_mode });
+      const selectedModel = model?.model_id;
       const accepted = await result(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
@@ -257,7 +252,7 @@ export async function submitDraft(
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(appContext.length ? { app_context: appContext } : {}),
-            ...(modelId ? { model_id: modelId } : {}),
+            ...(selectedModel ? { model_id: selectedModel } : {}),
             ...(environment ? { environment } : {}),
             ...controls,
           },
@@ -299,8 +294,7 @@ export async function submitDraft(
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
-    if (action === "send") draft.mode = "normal";
-    if (captured) draft.clear(captured);
+    if (captured) draft.clear(captured, action === "send");
     if (annotations.length)
       draft.setAnnotations(
         draft.annotations.filter((note) => !annotations.includes(note)),
@@ -335,6 +329,7 @@ export async function submitDraft(
     }
   } finally {
     captured?.doc.destroy();
+    captured?.optionsDoc.destroy();
     draft.notify();
   }
   return draft.submission.kind === "accepted";
@@ -353,7 +348,6 @@ export function submitContinuation(
     threadId,
     "send",
     undefined,
-    draft.modelId,
     undefined,
     undefined,
     () => loadThreadSkills(transport, threadId, draft.environment),
@@ -374,6 +368,7 @@ export function Composer({
   local = false,
   skillDefaults,
   prepareThread,
+  queuedInput,
   coordinator,
   owner,
   onPreparing,
@@ -381,7 +376,6 @@ export function Composer({
   onReviewOutcome,
   controls,
   leadingControls,
-  modelId,
   threadId,
   activity,
   canRun,
@@ -412,6 +406,7 @@ export function Composer({
   local?: boolean;
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
+  queuedInput?: { pending: boolean; locked: boolean; submit: () => void };
   coordinator?: { active: boolean; available: boolean; locked?: boolean };
   owner?: { title: string; onRemove?: () => void; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
@@ -419,7 +414,6 @@ export function Composer({
   onReviewOutcome?: () => void;
   controls?: () => ReactNode;
   leadingControls?: ReactNode;
-  modelId?: string;
 }) {
   const { t } = useTranslation();
   const draft = useDraft(threadId);
@@ -574,13 +568,6 @@ export function Composer({
       staleTime: Infinity,
     })),
   });
-  const imageSelections = selections.flatMap((selection, index) => {
-    const file = draft.uploads.get(selection.key)?.file;
-    const attachment = attachments[index]?.data;
-    const type = attachment?.media_type ?? file?.type;
-    if (selection.id === "failed" || !type?.startsWith("image/")) return [];
-    return [{ ...selection, file, attachment }];
-  });
   useEffect(() => {
     if (local) return;
     const current = draft.connect(transport, threadId, unauthorized);
@@ -599,7 +586,7 @@ export function Composer({
     [preview],
   );
   const busy = activity.state !== "inactive";
-  const pending = draft.submission.kind === "pending";
+  const pending = draft.submission.kind === "pending" || !!queuedInput?.pending;
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = selections.some(({ key, id }, index) =>
@@ -650,6 +637,7 @@ export function Composer({
   const stopAction = !transport.shareId && busy && !hasInput;
   const canSend =
     canRun &&
+    !queuedInput?.locked &&
     !coordinatorBlocked &&
     !busy &&
     ready &&
@@ -684,6 +672,10 @@ export function Composer({
       : undefined;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" ? !canSend : !canSteer) return;
+    if (queuedInput) {
+      queuedInput.submit();
+      return;
+    }
     if (
       preparation.current ||
       draft.submission.kind === "pending" ||
@@ -737,7 +729,6 @@ export function Composer({
         threadId,
         action,
         activity.receipt_id ?? undefined,
-        modelId,
         localInput,
         metadata,
         loadSkills,
@@ -1236,78 +1227,38 @@ export function Composer({
               void uploadFiles(Array.from(event.target.files ?? []))
             }
           />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.attachButton}
-            aria-label={t("Attach files")}
-            title={t("Attach files - you can also paste or drop files")}
-            loading={uploading}
-            disabled={preparing}
-            onClick={() => upload.current?.click()}
+          {!queuedInput && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.attachButton}
+              aria-label={t("Attach files")}
+              title={t("Attach files - you can also paste or drop files")}
+              loading={uploading}
+              disabled={preparing}
+              onClick={() => upload.current?.click()}
+            >
+              <Plus />
+            </Button>
+          )}
+          <div
+            inert={preparing || pending || queuedInput?.locked}
+            className={styles.composerEditor}
           >
-            <Plus />
-          </Button>
-          <div inert={preparing} className={styles.composerEditor}>
-            {imageSelections.length > 0 && (
-              <div className={styles.imageTray}>
-                {imageSelections.map(
-                  ({ key, from, id, attachment, file }, index) => {
-                    const name =
-                      attachment?.name ?? file?.name ?? t("Attachment");
-                    return (
-                      <div key={key + ":" + index} className={styles.imageTile}>
-                        <button
-                          type="button"
-                          className={styles.imageTileOpen}
-                          aria-label={t("Preview {{name}}", { name })}
-                          title={name}
-                          onClick={() => {
-                            if (attachment && id)
-                              void showAttachment(id, attachment);
-                            else if (file)
-                              setPreview({
-                                name,
-                                image: true,
-                                text: "",
-                                url: URL.createObjectURL(file),
-                              });
-                          }}
-                        >
-                          {attachment ? (
-                            <AttachmentThumbnail
-                              threadId={threadId}
-                              attachment={attachment}
-                            />
-                          ) : (
-                            file && <LocalImageThumbnail file={file} />
-                          )}
-                          <span>{name}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.imageTileRemove}
-                          aria-label={t("Remove {{name}}", { name })}
-                          onClick={() => {
-                            draft.removeAttachment(key, from);
-                            editor.current?.focus();
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  },
-                )}
-              </div>
-            )}
             <AnnotationChip />
             <ComposerEditor
               autoFocus={autoFocus}
               local={local}
+              draftDescription={
+                queuedInput
+                  ? t(
+                      "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.",
+                    )
+                  : undefined
+              }
               skillContext={skillContext}
               loadSkills={
-                transport.shareId
+                transport.shareId || queuedInput
                   ? undefined
                   : async () => {
                       try {
@@ -1333,33 +1284,44 @@ export function Composer({
               }}
               submit={() => void submit(busy ? "steer" : "send")}
               editor={editor}
-              attachments={{
-                imageKeys: new Set(imageSelections.map(({ key }) => key)),
-                transport,
-                threadId,
-                metadata: new Map(
-                  attachments.flatMap((item) =>
-                    item.data
-                      ? [[item.data.attachment_id, item.data] as const]
-                      : [],
-                  ),
-                ),
-                preview: (id, attachment) =>
-                  void showAttachment(id, attachment),
-                upload: (files, at) => void uploadFiles(files, at),
-                retry: (key) => {
-                  const item = draft.uploads.get(key);
-                  if (
-                    !local &&
-                    (item?.status === "failed" || item?.status === "staged")
-                  )
-                    void uploadOne(key, item.file);
-                  else if (!item)
-                    setError(
-                      "This upload is unavailable in this tab. Remove it and attach the file again.",
-                    );
-                },
-              }}
+              attachments={
+                queuedInput
+                  ? undefined
+                  : {
+                      transport,
+                      threadId,
+                      metadata: new Map(
+                        attachments.flatMap((item) =>
+                          item.data
+                            ? [[item.data.attachment_id, item.data] as const]
+                            : [],
+                        ),
+                      ),
+                      preview: (id, attachment) =>
+                        void showAttachment(id, attachment),
+                      previewLocal: (file) =>
+                        setPreview({
+                          name: file.name,
+                          image: true,
+                          text: "",
+                          url: URL.createObjectURL(file),
+                        }),
+                      upload: (files, at) => void uploadFiles(files, at),
+                      retry: (key) => {
+                        const item = draft.uploads.get(key);
+                        if (
+                          !local &&
+                          (item?.status === "failed" ||
+                            item?.status === "staged")
+                        )
+                          void uploadOne(key, item.file);
+                        else if (!item)
+                          setError(
+                            "This upload is unavailable in this tab. Remove it and attach the file again.",
+                          );
+                      },
+                    }
+              }
             />
           </div>
           <div className={styles.composerActions}>
@@ -1377,7 +1339,7 @@ export function Composer({
                 </span>
               )}
             </span>
-            {!transport.shareId && (
+            {!transport.shareId && !queuedInput && (
               <TaskOptions
                 coordinatorEnabled={draft.coordinator}
                 goal={

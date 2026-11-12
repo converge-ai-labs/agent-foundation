@@ -8,6 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from a13n_harness.environment.accessibility_operations import BoundAccessibilityOperations
 from a13n_harness.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
@@ -85,6 +86,9 @@ class FileScopeProvider(Protocol):
 
 
 class BoundComputerOperations(Protocol):
+    @property
+    def accessibility(self) -> BoundAccessibilityOperations: ...
+
     async def read_clipboard(self, *, max_bytes: int = 16384, alias: str | None = None) -> ComputerClipboard: ...
 
     async def write_clipboard(self, text: str, *, alias: str | None = None) -> ComputerClipboardWriteResult: ...

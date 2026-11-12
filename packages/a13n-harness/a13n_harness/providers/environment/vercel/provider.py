@@ -47,8 +47,6 @@ def construct(
     runtime: NativeRuntime | None,
     session_recovery: EnvdSessionBorrower | None = None,
 ) -> ExecutionBackend:
-    if configuration.snapshot == "auto":
-        raise failure("vercel", "desktop_snapshot_not_prepared", Category.INVALID)
     if runtime is None:
         raise TypeError("Vercel requires a runtime")
     if configuration.execution == "native":

@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import JsonValue
 
 if TYPE_CHECKING:
+    from a13n_harness.pricing import ModelPricingEntry, PricingCatalog
     from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 
 
@@ -121,18 +122,29 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
+def pricing_provider(provider: str) -> str:
+    return {
+        "openai-chat": "openai",
+        "openai-responses": "openai",
+        "openai-chatgpt": "openai",
+        "openai-codex": "openai",
+        "xai": "x-ai",
+        "grok": "x-ai",
+        "grok-build": "x-ai",
+    }.get(provider, provider)
+
+
+def configured_price_entry(catalog: PricingCatalog, route: str) -> ModelPricingEntry | None:
+    provider, _, model = route.partition(":")
+    return catalog.resolve(model, provider=pricing_provider(provider))
+
+
 def known_context_window(provider: str, model_id: str, base_url: str) -> int | None:
     """Read current official facts, then bundled pricing metadata; never fetch."""
     from a13n_harness.model_catalog import get_official_model_catalog
     from a13n_harness.pricing import get_default_pricing_catalog
 
-    catalog_provider = (
-        "openai"
-        if provider in {"openai-responses", "openai-chat"}
-        else "x-ai"
-        if provider in {"grok", "xai"}
-        else provider
-    )
+    catalog_provider = pricing_provider(provider)
     official_provider = {"google": "google-gla", "x-ai": "grok"}.get(catalog_provider, catalog_provider)
     official = get_official_model_catalog().get(f"{official_provider}:{model_id}")
     if official is not None and official.characteristics.context_window_tokens is not None:

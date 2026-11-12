@@ -21,11 +21,11 @@ Use loopback or an explicitly trusted private HTTP route with the matching outbo
 ### Automatic Vercel desktops
 
 1. Add a Vercel provider with an access token. Choose **Load Vercel teams**, then select a team and project accessible to that token.
-2. Create a template with **Desktop environment → Automatic desktop**.
-3. Create an instance. The first build can take several minutes; Console shows its phase and elapsed time. Return to **Environment instances** to check progress after leaving the page.
+2. Create a template with **Desktop environment → Automatic Envd**.
+3. Create an instance. Installation on each new target can take several minutes; Console shows its phase and elapsed time. Return to **Environment instances** to check progress after leaving the page.
 4. When ready, inspect the desktop preview and enable the agent's permissions.
 
-The token needs sandbox and snapshot creation, read and deletion permissions, with a lifetime suitable for unattended use. Subsequent creations reuse a validated snapshot within the same workspace, provider, credential version, team, project and build revision. Temporary builders are removed; the reusable snapshot stays in your Vercel project.
+Use a token with sandbox lifecycle permissions and a lifetime suitable for unattended use. Service installs directly on the final persistent Ubuntu sandbox and retains its identity through creation reentry; it creates no temporary build sandbox or preparation snapshot. An exact custom snapshot remains supported as a preinstalled alternative. Native stop/resume snapshots retain their own lifecycle permissions.
 
 ### Enable observation and interaction
 
@@ -43,6 +43,14 @@ API clients update a mount with `PATCH /api/v1/threads/{thread_id}/environments/
 ```
 
 The action list replaces the entire permission set. Include file and execution actions you want to retain; Console's presets preserve them. Computer permissions govern Computer tools, while shell and other tools keep their separate authority.
+
+### Native accessibility permissions
+
+The Computer toolset includes semantic reads and grouped `computer_ax`, `computer_uia` and `computer_atspi` mutation tools. Discover the backend with `computer_accessibility_describe`, inspect a target's actual capabilities, then verify any change through readback or a screenshot. Native backend readiness is independent of permissions.
+
+Observation permission includes the seven `environment.computer.a11y_*` read actions. Exact mutation ceilings use platform actions such as `environment.computer.uia_invoke` or `environment.computer.atspi_do_action`; selecting a grouped tool does not authorize every operation. Retained node and text-range references stay bound to their original mount and execution. Inspect bounded-result completeness before treating a missing node as absent.
+
+Semantic reads and mutations use the same Computer takeover admission. After handback, a fresh screenshot and a later model decision are required before native mutation; semantic reads, projections and mutation readback do not satisfy screenshot freshness. An unknown native mutation outcome requires state reconciliation before another attempt.
 
 ### Computer coordinate mode
 

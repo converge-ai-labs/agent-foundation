@@ -15,6 +15,7 @@ const destinations: Record<string, string> = {
   agents: "Agents",
   findings: "Findings",
   connections: "Connections",
+  credentials: "Credentials",
   environments: "Environments",
   browsers: "Browsers",
   memories: "Memory collections",

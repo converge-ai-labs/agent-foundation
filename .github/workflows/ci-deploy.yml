@@ -1,49 +1,18 @@
 name: Deployment CI
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/ci-deploy.yml"
-      - ".github/workflows/sandbox-binary.yml"
-      - "Makefile"
-      - "deploy/docker/images/a13n-service/**"
-      - "deploy/kubernetes/**"
-      - "scripts/deploy_smoke.py"
-      - "scripts/k8s_local.py"
-      - "e2e/service/**"
-      - "dev/service/**"
-      - "scripts/tests/test_service_e2e_tooling.py"
-      - "conftest.py"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".dockerignore"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "LICENSE"
-      - "dev/fixtures/**"
-      - "deploy/docker/images/sandbox/**"
-      - "crates/a13n-envd/**"
-      - "packages/a13n-envd-client/**"
-      - "packages/a13n-harness/pyproject.toml"
-      - "packages/a13n-harness/*.py"
-      - "packages/a13n-harness/a13n_harness/**"
-      - "packages/a13n-service/pyproject.toml"
-      - "packages/a13n-service/*.py"
-      - "packages/a13n-service/a13n_service/**"
-      - "packages/a13n-stream-protocol/**"
-      - "packages/a13n-logging/**"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image:
+        description: Source-matched sandbox digest, or empty to load the same-run build
+        type: string
+        required: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   chart:
@@ -74,15 +43,7 @@ jobs:
       - name: Lint and test the chart for every values file
         run: make sync k8s-check
 
-  sandbox-binary:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    uses: ./.github/workflows/sandbox-binary.yml
-    with:
-      arch: amd64
-      runner: ubuntu-24.04
-
   helm:
-    needs: sandbox-binary
     name: Helm installation and rolling upgrade
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -90,7 +51,7 @@ jobs:
     env:
       K8S_ENVIRONMENTS: "1"
       K8S_BUILD_CACHE: gha
-      K8S_SANDBOX_BINARY_SOURCE: prebuilt
+      K8S_SANDBOX_IMAGE: a13n-sandbox:ci
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -151,31 +112,22 @@ jobs:
               core.exportVariable(name, process.env[name]);
             }
 
-      - name: Download the shared checkout binary
-        uses: actions/download-artifact@v5
+      - name: Load the shared sandbox image
+        uses: ./.github/actions/load-ci-sandbox
         with:
-          name: sandbox-binary-amd64
-          path: tmp/sandbox-binaries/amd64
+          image: ${{ inputs.image }}
+          tag: a13n-sandbox:ci
 
-      - name: Build both checkout images alongside cluster creation
+      - name: Build the checkout Service image alongside cluster creation
         run: |
-          python3 - <<'PY'
+          python3 - <<'PYCODE'
           import os
-          from concurrent.futures import ThreadPoolExecutor
           from scripts.k8s_local import prepare_image
 
-          images = [
-              ("K8S_SERVICE_IMAGE", "a13n-service", "a13n-service:ci"),
-              ("K8S_SANDBOX_IMAGE", "sandbox", "a13n-sandbox:ci"),
-          ]
-          with ThreadPoolExecutor(max_workers=2) as pool:
-              builds = [(variable, pool.submit(prepare_image, component, tag))
-                        for variable, component, tag in images]
-              prepared = [(variable, build.result()) for variable, build in builds]
+          image = prepare_image("a13n-service", "a13n-service:ci")
           with open(os.environ["GITHUB_ENV"], "a") as output:
-              for variable, image in prepared:
-                  output.write(f"{variable}={image}\n")
-          PY
+              output.write(f"K8S_SERVICE_IMAGE={image}\n")
+          PYCODE
 
       - name: Require successful cluster creation
         timeout-minutes: 5
@@ -232,7 +184,6 @@ jobs:
           retention-days: 7
 
   journeys:
-    needs: sandbox-binary
     name: Kubernetes journeys (${{ matrix.name }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -301,29 +252,11 @@ jobs:
             echo "$?" > "$RUNNER_TEMP/kind-create.status"
           ' > "$RUNNER_TEMP/kind-create.log" 2>&1 < /dev/null &
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Load the shared sandbox image
+        uses: ./.github/actions/load-ci-sandbox
         with:
-          # ubuntu-latest uses the containerd image store: build directly into it,
-          # without a second image tar export/load or a BuildKit container teardown.
-          driver: docker
-
-      - name: Download the shared checkout binary
-        uses: actions/download-artifact@v5
-        with:
-          name: sandbox-binary-amd64
-          path: tmp/sandbox-binaries/amd64
-
-      - name: Build the checkout sandbox with reusable layers
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/images/sandbox/Dockerfile
-          tags: a13n-sandbox:ci
-          build-args: ENVD_BINARY_SOURCE=prebuilt
-          load: true
-          cache-from: type=gha,scope=service-e2e-sandbox
-          # Service E2E owns this cache; journey shards only consume it.
+          image: ${{ inputs.image }}
+          tag: a13n-sandbox:ci
 
       - name: Require successful cluster creation
         timeout-minutes: 5

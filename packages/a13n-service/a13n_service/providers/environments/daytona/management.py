@@ -5,7 +5,6 @@ import shlex
 from urllib.parse import urlsplit, urlunsplit
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.daytona.http import HttpReference, http_execution
 from a13n_harness.providers.environment.daytona.shared import (
@@ -21,6 +20,9 @@ from a13n_harness.providers.environment.native.http import decode_response
 from pydantic import BaseModel, Field
 
 from a13n_service.providers.environment import desktop_access as access
+from a13n_service.providers.environment import envd_upgrade
+from a13n_service.providers.environment.envd_readiness import wait_until_ready
+from a13n_service.providers.environment.management import Pending
 from a13n_service.providers.environment.native import NativeManagement
 from a13n_service.providers.environment.recipes.daytona import DaytonaRecipe
 
@@ -106,6 +108,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         if target.state in {"stopped", "archived", "paused"}:
             await self.transport().request("POST", self.path + "/start")
         target = await self.wait_for("started")
+        if self.defer_envd_readiness:
+            return
         await self._check_envd(target)
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
@@ -113,43 +117,45 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
     async def _check_envd(self, target: Sandbox) -> None:
         if self.config.execution == "envd_ws":
             return
-        # Snapshot boot owns startup on create and restart. Attachment only reads
-        # credentials and checks EIP; it cannot repair a failed daemon.
-        toolbox = await self.open_toolbox(target)
-        probe = """import socket,time
-end=time.monotonic()+30
-while time.monotonic()<end:
- try:
-  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
- except OSError: time.sleep(.2)
-else: raise RuntimeError('a13n-envd did not become ready')
-"""
-        result = decode_response(
-            Execution,
-            await toolbox.request(
-                "POST",
-                target.id + "/process/execute",
-                body={
-                    "command": shlex.join(["python3", "-I", "-c", probe]),
-                    "timeout": 35,
-                },
-            ),
-            self.provider_key,
-        )
-        if result.exitCode != 0:
-            raise provider_error(
-                self.provider_key,
-                "envd_bootstrap_failed",
-                Category.UNAVAILABLE,
-                description="The Daytona snapshot must start compatible a13n-envd and desktop services at boot",
-            )
+        # Snapshot boot owns startup on create and restart. Fresh authenticated
+        # EIP scopes verify readiness without guest-side TCP probes or repairs.
         runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
-        execution = http_execution(HttpReference(self.config, self.environment_id, self.state, runtime))
-        try:
-            await execution.open(execution_id="exec-readiness")
-            await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
-        finally:
-            await execution.close()
+        await wait_until_ready(
+            lambda: http_execution(HttpReference(self.config, self.environment_id, self.state, runtime)),
+            provider_key=self.provider_key,
+            desktop=self.config.desktop,
+            timeout=min(40, self.config.request_timeout_seconds),
+        )
+
+    async def update_envd(self, version: str, operation_id: str) -> Pending | None:
+        target = await self.lookup()
+        if target is None or target.state != "started":
+            raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+        toolbox = await self.open_toolbox(target)
+
+        async def execute(argv: list[str]) -> str:
+            result = decode_response(
+                Execution,
+                await toolbox.request(
+                    "POST",
+                    target.id + "/process/execute",
+                    body={"command": shlex.join(["sudo", "-n", *argv]), "timeout": 15},
+                ),
+                self.provider_key,
+                mutation=True,
+            )
+            if result.exitCode != 0:
+                raise failure(self.provider_key, "envd_upgrade_dispatch_failed", Category.PROVIDER_FAILURE)
+            return result.result
+
+        if not await envd_upgrade.upgrade(
+            execute, provider_key=self.provider_key, version=version, operation_id=operation_id
+        ):
+            return Pending(self.state, settled=True)
+        await self._check_envd(target)
+        if self.recipe.desktop_assistance:
+            await self.desktop_access(access.Describe())
+        return None
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:

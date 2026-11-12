@@ -736,9 +736,11 @@ it.each([
   "submits captured skill references for %s at speed %s and preserves later edits",
   async (action, speed) => {
     const draft = new ThreadDraft();
-    draft.controls.thinking = false;
-    draft.controls.fast = speed;
-    draft.controls.reasoning_mode = "standard";
+    draft.controls = {
+      thinking: false,
+      fast: speed,
+      reasoning_mode: "standard",
+    };
     draft.environment = {
       environment_profile_id: "environment-sandbox",
       local_roots: ["/work/selected"],
@@ -781,11 +783,12 @@ it.each([
       "receipt",
       undefined,
       undefined,
-      undefined,
       async () => {
-        draft.controls.thinking = "high";
-        draft.controls.fast = true;
-        draft.controls.reasoning_mode = "pro";
+        draft.controls = {
+          thinking: "high",
+          fast: true,
+          reasoning_mode: "pro",
+        };
         draft.environment = {
           environment_profile_id: "environment-native",
           local_roots: [],
@@ -847,7 +850,6 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
     undefined,
     undefined,
     undefined,
-    undefined,
     async () => {
       abort.abort();
       return { catalog_id: "a".repeat(64), context_kind: "idle", items: [] };
@@ -860,7 +862,7 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
 
 it("continues with the shared draft and attachments and clears only accepted input", async () => {
   const draft = new ThreadDraft();
-  draft.controls.thinking = "low";
+  draft.controls = { thinking: "low" };
   draft.doc.getText("text").insert(0, "Keep my next question");
   draft.addAttachment("attachment-kept");
   draft.receive({
@@ -932,7 +934,6 @@ it("excludes Retry while skills load and retains uncertain acknowledgement owner
     transport,
     "thread-one",
     "send",
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -1188,7 +1189,7 @@ it("keeps a single pending action while steering waits for synchronization", asy
 });
 
 it.each(["accepted", "rejected", "unknown"] as const)(
-  "captures private Goal intent and retains it only on %s failure",
+  "captures shared Goal intent and retains it only on %s failure",
   async (outcome) => {
     const draft = new ThreadDraft();
     draft.mode = "goal";
@@ -1220,7 +1221,6 @@ it.each(["accepted", "rejected", "unknown"] as const)(
       undefined,
       undefined,
       undefined,
-      undefined,
       () => prepare,
     );
     expect(draft.submission.kind).toBe("pending");
@@ -1233,10 +1233,10 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     expect(values(draft.doc).prompt).toBe(
       outcome === "accepted" ? "" : "Verify every requirement",
     );
-    // Private intent is absent from the replicated editor document.
     const peer = new ThreadDraft();
     Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(draft.doc));
-    expect(peer.mode).toBe("normal");
+    Y.applyUpdate(peer.optionsDoc, Y.encodeStateAsUpdate(draft.optionsDoc));
+    expect(peer.mode).toBe(draft.mode);
     draft.doc.destroy();
     peer.doc.destroy();
   },
@@ -1685,7 +1685,6 @@ it("retains input and translates a pending selected App context rejection on lan
       transport,
       "thread-one",
       "send",
-      undefined,
       undefined,
       undefined,
       undefined,
