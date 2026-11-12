@@ -1281,6 +1281,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dictation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dictate */
+        post: operations["dictate_api_dictation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models/choices": {
         parameters: {
             query?: never;
@@ -4696,6 +4713,17 @@ export interface components {
              */
             registration?: "configured" | "paired" | "revoked";
         };
+        /** DictationConfiguration */
+        DictationConfiguration: {
+            model?: components["schemas"]["ResourceId"] | null;
+            /**
+             * Context Words
+             * @default 2000
+             */
+            context_words?: number;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** DirectoryEntry */
         DirectoryEntry: {
             /** Name */
@@ -7893,6 +7921,7 @@ export interface components {
         };
         /** ThreadSelectorCatalog */
         ThreadSelectorCatalog: {
+            dictation?: components["schemas"]["DictationConfiguration"] | null;
             /**
              * Sidekick Enabled
              * @default false
@@ -9597,6 +9626,23 @@ export interface components {
             start_line?: number | null;
             /** End Line */
             end_line?: number | null;
+        };
+        /** DictationInput */
+        DictationInput: {
+            /** Audio */
+            audio: string;
+            /** Thread Id */
+            thread_id?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title?: string;
+            /**
+             * Context
+             * @default
+             */
+            context?: string;
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
@@ -12432,6 +12478,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dictate_api_dictation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictationInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
         };

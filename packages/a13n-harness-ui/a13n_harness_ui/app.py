@@ -209,6 +209,7 @@ from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
 from a13n_harness_ui.bot import BotController
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.dictation import DictationInput, transcribe_audio
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -237,8 +238,10 @@ from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import (
     ChatGPTSubscriptionSource,
     CopilotSubscriptionSource,
+    HarnessUiModelResolver,
     ManagedSubscriptionSource,
     SubscriptionSource,
+    model_recipe_id,
 )
 from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.page_presence import (
@@ -444,6 +447,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         copilot_login: CopilotLoginCallback | None,
+        subscription_sources: dict[str, SubscriptionSource] | None = None,
         candidate_error: HarnessUiError | None = None,
         browsers: HostBrowsers | None = None,
         share_computer: bool = False,
@@ -486,6 +490,7 @@ class HarnessUiApp:
         self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
+        self._dictation_sources = subscription_sources
         self._catalog = catalog
         self._configurations = configurations
         self._threads = threads
@@ -545,6 +550,22 @@ class HarnessUiApp:
         if self._voice is None:
             raise HarnessUiError("Live is available in WebUI with a configuration directory.", code="live_unavailable")
         return self._voice
+
+    async def transcribe(self, request: DictationInput) -> str:
+        async with self._operation():
+            source = await self._configurations.current()
+            if not source or not (model_id := source.document.dictation.model):
+                raise HarnessUiError("Select a speech recognition Model in settings.", code="dictation_unconfigured")
+            recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
+            key = model_recipe_id(recipe)
+            resolver = HarnessUiModelResolver(
+                {key: recipe},
+                api_keys=self._api_keys,
+                subscription_sources=self._dictation_sources,
+                configuration=source.document.run_configuration,
+            )
+            model = await resolver.resolve(key, thread_id=request.thread_id or "dictation")
+            return await transcribe_audio(request, model, recipe.settings)
 
     async def _voice_model(self, source: LoadedHarnessUiConfiguration) -> tuple[CodexLiveModel, str]:
         from a13n_harness_ui.model_accounts.routing import account_order, choose_account
@@ -4070,6 +4091,7 @@ async def open_harness_ui_app(
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
                 grok_login=grok_login,
+                subscription_sources=subscription_sources,
                 candidate_error=candidate_error,
                 browsers=browsers,
                 share_computer=share_computer,

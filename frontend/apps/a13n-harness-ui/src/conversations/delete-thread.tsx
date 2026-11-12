@@ -49,6 +49,7 @@ export function DeleteThread({
     onSuccess: async (deleted) => {
       for (const id of deleted) {
         newDrafts.discardDeleted(id);
+        composers.get(id)?.setAnnotations([]);
         composers.delete(id);
         unsent.store?.forget(id);
         await queries.cancelQueries({ queryKey: ["thread", id] });

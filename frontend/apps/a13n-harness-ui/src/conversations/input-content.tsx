@@ -352,14 +352,20 @@ export function InputContent({
       marked.push(points.slice(end).join(""));
       if ((composerIdentity(part) || spans.length) && part.kind !== "media")
         return (
-          <span key={index} className={styles.inputText}>
+          <span
+            key={index}
+            className={styles.inputText}
+            data-dictation-human={source ? undefined : ""}
+          >
             {marked}
           </span>
         );
       return part.kind === "media" ? (
         <Media key={index} part={part} />
       ) : (
-        <div key={index}>{renderText(part.text || "")}</div>
+        <div key={index} data-dictation-human={source ? undefined : ""}>
+          {renderText(part.text || "")}
+        </div>
       );
     });
   if (edit !== null && actions)

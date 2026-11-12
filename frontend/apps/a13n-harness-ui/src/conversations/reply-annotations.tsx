@@ -1,3 +1,5 @@
+import { Dictation } from "./dictation";
+import type { DictationTarget } from "./dictation-context";
 import {
   useCallback,
   useEffect,
@@ -34,10 +36,12 @@ type Session = {
 export function ReplyAnnotations({
   draft,
   reader,
+  dictation,
   enabled,
   children,
 }: {
   draft: ThreadDraft;
+  dictation?: DictationTarget;
   reader: RefObject<HTMLDivElement | null>;
   enabled: boolean;
   children: ReactNode;
@@ -132,12 +136,24 @@ export function ReplyAnnotations({
   return (
     <AnnotationContext
       value={
-        enabled ? { notes, active: session?.note?.id, edit, remove } : null
+        enabled
+          ? {
+              notes,
+              active: session?.note?.id,
+              edit,
+              remove,
+              clear: () => {
+                draft.setAnnotations([]);
+                setSession(undefined);
+              },
+            }
+          : null
       }
     >
       {children}
       {enabled && session && (
         <SelectionPopup
+          dictation={dictation}
           session={session}
           onStart={() => setSession({ ...session, stage: "new" })}
           onClose={() => setSession(undefined)}
@@ -149,13 +165,23 @@ export function ReplyAnnotations({
   );
 }
 
+function layoutComment(field: HTMLTextAreaElement) {
+  const form = field.form;
+  if (!form || form.dataset.stage !== "new") return;
+  // Measure with the inline controls present so wrapping has a stable threshold.
+  form.removeAttribute("data-multiline");
+  form.toggleAttribute("data-multiline", field.scrollHeight > 24);
+}
+
 function SelectionPopup({
+  dictation,
   session,
   onStart,
   onClose,
   onSave,
   onDelete,
 }: {
+  dictation?: DictationTarget;
   session: Session;
   onStart: () => void;
   onClose: () => void;
@@ -163,6 +189,7 @@ function SelectionPopup({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const [dictating, setDictating] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const focusComment = useCallback((field: HTMLTextAreaElement | null) => {
     input.current = field;
@@ -215,6 +242,27 @@ function SelectionPopup({
       return () => CSS.highlights.delete("reply-annotation");
     }
   }, [stage, range, note]);
+  const microphone = dictation && (
+    <Dictation
+      target={dictation}
+      quote={session.quote}
+      onActive={setDictating}
+      insert={(text) => {
+        const field = input.current;
+        if (!field) return;
+        field.setRangeText(
+          text,
+          field.selectionStart,
+          field.selectionEnd,
+          "end",
+        );
+        requestAnimationFrame(() => {
+          layoutComment(field);
+          field.focus();
+        });
+      }}
+    />
+  );
   return (
     <Popover
       key={stage}
@@ -249,8 +297,11 @@ function SelectionPopup({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              onSave(input.current?.value ?? "");
+              if (!dictating) onSave(input.current?.value ?? "");
             }}
+            data-dictating={dictating || undefined}
+            data-stage={stage}
+            data-voice={dictation ? "" : undefined}
             className={styles.form}
           >
             {!range && (
@@ -262,6 +313,7 @@ function SelectionPopup({
               key={note?.id ?? "new"}
               ref={focusComment}
               defaultValue={note?.comment ?? ""}
+              onInput={(e) => layoutComment(e.currentTarget)}
               rows={1}
               aria-label={t("Annotation comment")}
               placeholder={t("Optional comment…")}
@@ -287,6 +339,7 @@ function SelectionPopup({
                 >
                   <Trash />
                 </Button>
+                {microphone}
                 <Button
                   type="button"
                   size="xs"
@@ -300,14 +353,17 @@ function SelectionPopup({
                 </Button>
               </div>
             ) : (
-              <Button
-                className={styles.addNote}
-                type="submit"
-                size="icon-xs"
-                aria-label={t("Add annotation")}
-              >
-                <Check weight="bold" aria-hidden="true" />
-              </Button>
+              <>
+                {microphone}
+                <Button
+                  className={styles.addNote}
+                  type="submit"
+                  size="icon-xs"
+                  aria-label={t("Add annotation")}
+                >
+                  <Check weight="bold" aria-hidden="true" />
+                </Button>
+              </>
             )}
           </form>
         )}

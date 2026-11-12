@@ -805,6 +805,15 @@ function ConversationContent({
           notice: failureNotice,
         }
       : undefined;
+  const dictation =
+    !guest && selectors.data?.dictation?.model
+      ? {
+          words: selectors.data.dictation.context_words ?? 2000,
+          reader,
+          title: thread?.title ?? "",
+          threadId,
+        }
+      : undefined;
   const content = (
     <>
       <div className={styles.page}>
@@ -1118,6 +1127,7 @@ function ConversationContent({
         {publication?.composer}
         {canCompose && !thread?.archived && (
           <Composer
+            dictation={dictation}
             feedback={feedback}
             feedbackError={pageError}
             suppressConnectionNotice={
@@ -1336,6 +1346,7 @@ function ConversationContent({
       onContinue={() => setShowAvailable(true)}
     >
       <ReplyAnnotations
+        dictation={dictation}
         reader={reader}
         draft={draft}
         enabled={canCompose && !thread?.archived}

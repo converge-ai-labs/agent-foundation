@@ -1,0 +1,68 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  color: var(--a13n-text);
+}
+.wave {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: var(--dictation-wave-height, 28px);
+  overflow: hidden;
+}
+.samples {
+  position: absolute;
+  inset-block: 0;
+  left: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+.samples::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  width: 100%;
+  height: 3px;
+  background: radial-gradient(
+      circle at 1.5px center,
+      color-mix(in srgb, var(--a13n-secondary) 42%, transparent) 0 0.9px,
+      transparent 1.5px
+    )
+    right center / 6px 3px repeat-x;
+}
+.samples i {
+  position: absolute;
+  width: 3px;
+  flex: none;
+  background: color-mix(in srgb, var(--a13n-secondary) 80%, transparent);
+  border-radius: 999px;
+}
+.bar button {
+  border-radius: 50%;
+  flex: none;
+}
+.spin {
+  width: 20px;
+  height: 20px;
+  margin-inline: 6px;
+  animation: rotate 0.9s linear infinite;
+}
+@keyframes rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.error {
+  font-size: var(--a13n-text-xs);
+  color: var(--destructive);
+}
+.failed {
+  flex: 1;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}

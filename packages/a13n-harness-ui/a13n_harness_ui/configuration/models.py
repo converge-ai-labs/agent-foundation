@@ -275,6 +275,11 @@ class WebUiConfiguration(ConfigurationModel):
         return tuple(value if value == "*" else origin(value) for value in values)
 
 
+class DictationConfiguration(ConfigurationModel):
+    model: ResourceId | None = None
+    context_words: int = Field(default=2000, ge=0, le=10000)
+
+
 class MediaUnderstandingConfiguration(ConfigurationModel):
     """Application defaults for native-first file-media understanding."""
 
@@ -410,6 +415,9 @@ class HarnessUiDocument(ConfigurationModel):
     mcp: McpConfiguration = Field(
         default_factory=McpConfiguration,
         exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
+    )
+    dictation: DictationConfiguration = Field(
+        default_factory=DictationConfiguration, exclude_if=lambda v: not v.model and v.context_words == 2000
     )
     media_understanding: MediaUnderstandingConfiguration = Field(
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
@@ -1007,6 +1015,11 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             _require_reference(model_id, self.models, field)
             if kind not in self.models[model_id].media_capabilities():
                 raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
+        dictation = self.document.dictation.model
+        if dictation:
+            _require_reference(dictation, self.models, "dictation.model")
+            if "audio" not in self.models[dictation].media_capabilities():
+                raise ValueError("dictation.model requires a Model declaring audio_understanding")
         sidekick = self.document.webui.sidekick
         _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
         _require_reference(sidekick.model, self.models, "webui.sidekick.model")

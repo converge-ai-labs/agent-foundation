@@ -3328,6 +3328,35 @@
         }
       }
     },
+    "/api/dictation": {
+      "post": {
+        "summary": "Dictate",
+        "operationId": "dictate_api_dictation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Dictate Api Dictation Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models/choices": {
       "get": {
         "summary": "Model Choices",
@@ -13644,6 +13673,32 @@
         ],
         "title": "DeviceSummary"
       },
+      "DictationConfiguration": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context_words": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Context Words",
+            "default": 2000
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "DictationConfiguration"
+      },
       "DirectoryEntry": {
         "properties": {
           "name": {
@@ -22671,6 +22726,16 @@
       },
       "ThreadSelectorCatalog": {
         "properties": {
+          "dictation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DictationConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sidekick_enabled": {
             "type": "boolean",
             "title": "Sidekick Enabled",
@@ -26984,6 +27049,45 @@
         ],
         "title": "GitCaptureRequest",
         "type": "object"
+      },
+      "DictationInput": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "maxLength": 15000000,
+            "minLength": 1,
+            "title": "Audio"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1024,
+            "title": "Title",
+            "default": ""
+          },
+          "context": {
+            "type": "string",
+            "maxLength": 500000,
+            "title": "Context",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "DictationInput"
       },
       "ModelOptionsRequest": {
         "properties": {
