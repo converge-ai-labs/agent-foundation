@@ -1,7 +1,7 @@
 """add explicit connector group names.
 
 Revision ID: 60710c8b48e4
-Revises: b816fd5edbe8
+Revises: 5304b6a9760a
 Create Date: 2026-11-12 10:36:30.797645+00:00
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "60710c8b48e4"
-down_revision: str | Sequence[str] | None = "b816fd5edbe8"
+down_revision: str | Sequence[str] | None = "5304b6a9760a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
