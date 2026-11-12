@@ -5,6 +5,7 @@ import pytest
 from a13n_harness.capabilities import BrowserUseCapability
 from a13n_harness.capabilities.browser import BrowserBackend, BrowserElement, BrowserError, BrowserObservation
 from a13n_harness.capabilities.browser.actions import Click, Press, Ref
+from pydantic_ai import ToolReturn
 from pydantic_ai.exceptions import ModelRetry
 
 pytestmark = pytest.mark.anyio
@@ -89,7 +90,8 @@ async def test_human_takeover_errors_are_tool_results_and_do_not_crash_the_run()
         ("browser_screenshot", {}),
         ("browser_act", {"action": Press(kind="press", key="Enter")}),
     ]:
-        assert "Human control" in await tools[name].function_schema.call(args, None)
+        result = await tools[name].function_schema.call(args, None)
+        assert "Human control" in (result.return_value if isinstance(result, ToolReturn) else result)
 
 
 @pytest.mark.parametrize("grouped", [False, True])
@@ -365,7 +367,7 @@ async def test_host_can_return_takeover_guidance_without_waiting_or_replaying(na
     owner._screenshot = ("s1", "old-image")
     tools = owner.get_toolset().tools
     result = await tools[name].function_schema.call(args, None)
-    assert result == notify.return_value
+    assert (result.return_value if isinstance(result, ToolReturn) else result) == notify.return_value
     notify.assert_called_once_with()
     backend.wait_for_handback.assert_not_awaited()
     assert not owner._references and not owner._tabs and owner._screenshot is None
@@ -416,3 +418,20 @@ async def test_host_file_instructions_survive_dynamic_run_binding(file_instructi
     )
     result = await executable.run("Check files", bindings=RunBindings.embedded(browser_backend=backend))
     assert result.output_or_raise() == "Done"
+
+
+def test_screenshot_return_schema_describes_only_the_payload_or_string():
+    tool = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset().tools["browser_screenshot"]
+    schema = tool.function_schema.return_schema
+    result = schema["$defs"]["_ScreenshotResult"]
+    assert result["properties"] == {
+        "screenshot": {"type": "string"},
+        "width_css": {"type": "number"},
+        "height_css": {"type": "number"},
+        "visual_action": {"type": "boolean"},
+    }
+    assert set(result["required"]) == set(result["properties"])
+    assert schema["anyOf"] == [{"$ref": "#/$defs/_ScreenshotResult"}, {"type": "string"}]
+    assert len(json.dumps(schema)) < 1000
+    assert "return_value" not in json.dumps(schema)
+    assert not tool.include_return_schema

@@ -34,7 +34,7 @@ from .test_environment_core import _Binding, _instance
 pytestmark = pytest.mark.anyio
 
 
-async def capture(actions, *, selected=None, instructions=True, computer=True, other_actions=None):
+async def capture(actions, *, selected=None, instructions=True, computer=True, other_actions=None, reference_root=None):
     calls: list[AgentInfo] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -76,7 +76,10 @@ async def capture(actions, *, selected=None, instructions=True, computer=True, o
         ),
     )
     result = await executable.run(
-        "inspect", bindings=RunBindings.embedded(environment=runtime, toolset_instructions=instructions)
+        "inspect",
+        bindings=RunBindings.embedded(
+            environment=runtime, toolset_instructions=instructions, instruction_reference_root=reference_root
+        ),
     )
     assert result.output_or_raise() == "done"
     assert all(source.entered == 0 for source in sources.values())
@@ -213,3 +216,21 @@ async def test_lazy_support_narrows_context_tools_and_schemas_while_retaining_gr
         assert payload["mounts"][0]["operations_source"] == "execution"
         assert "observe" not in payload["mounts"][0]["operations"]["computer"]
         assert source.entered == 1
+
+
+@pytest.mark.parametrize("reference_root", [None, "/release-guidance"])
+async def test_shell_and_routing_guidance_use_run_reference_root_without_activation(reference_root):
+    names, instructions = await capture(
+        {Action.SHELL_EXEC},
+        computer=False,
+        other_actions={Action.SHELL_EXEC},
+        reference_root=reference_root,
+    )
+    assert "shell_exec" in names
+    assert "Do not reissue it." in instructions
+    assert "Choose the target before acting." in instructions
+    assert "Reads are non-consuming" in instructions
+    assert ("Live Shell controls end at execution settlement" in instructions) is (reference_root is None)
+    assert ("Absolute file paths and shell" in instructions) is (reference_root is None)
+    for page in ("environment-shell", "environment-routing"):
+        assert (f"/release-guidance/harness/{page}.md" in instructions) is (reference_root is not None)

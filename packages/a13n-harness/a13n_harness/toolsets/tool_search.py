@@ -30,6 +30,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
 from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
@@ -257,7 +258,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             FunctionToolset(
                 [search, describe, call, listing, groups],
                 id="tool-search-controls",
-                metadata={TOOL_EXECUTION_METADATA_KEY: "control"},
+                metadata={TOOL_EXECUTION_METADATA_KEY: "control", TOOL_GUIDANCE_KEY: "tool_search"},
             ),
             CodeActToolPolicy(default=True),
         ).get_tools(ctx)
@@ -283,7 +284,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
         elif wrapped is not None:
             parts.extend(wrapped)
         parts.append(
-            tool_instruction("tool_search").format(
+            tool_instruction("tool_search", reference_root=ctx.deps.instruction_reference_root).format(
                 search_name=self.config.search_name,
                 describe_name=self.config.describe_name,
                 call_name=self.config.call_name,

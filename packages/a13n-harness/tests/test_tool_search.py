@@ -189,11 +189,11 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
     def inspect(_step: int, info: AgentInfo) -> None:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
         catalog = info.instructions or ""
-        assert "async def discover_tools" in catalog
-        assert "async def call_tool" in catalog
+        assert "`discover_tools`" in catalog
+        assert "`call_tool`" in catalog
         assert "crm__double" not in catalog
-        assert "async def double" not in catalog
-        assert "async def discover_tools" not in runner.description
+        assert "`double`" not in catalog
+        assert "`discover_tools`" not in runner.description
 
     source = """found = await discover_tools(query='double', group='crm')
 match = found['tools'][0]
@@ -693,11 +693,18 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
     assert result.usage.tool_calls == 3
 
 
-async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> None:
+@pytest.mark.parametrize("reference_root", [None, "/release-guidance"])
+async def test_proxy_instruction_switch_and_custom_names_are_consistent(reference_root) -> None:
     def value() -> int:
         return 1
 
-    config = ProxyToolSearchConfig(search_name="find_ops", call_name="invoke_op")
+    config = ProxyToolSearchConfig(
+        search_name="find_ops",
+        describe_name="describe_op",
+        call_name="invoke_op",
+        groups_name="domains",
+        list_name="list_ops",
+    )
     for enabled in (True, False):
 
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
@@ -708,12 +715,16 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> Non
             if enabled:
                 assert "find_ops" in instructions
                 assert "invoke_op" in instructions
+                assert "describe_op" in instructions and "domains" in instructions and "list_ops" in instructions
+                assert ("/release-guidance/harness/tool_search.md" in instructions) is (reference_root is not None)
+                assert ("Exact local or" in instructions) is (reference_root is None)
 
         result, returns = await _run(
             (_group(value, config=config),),
             [("find_ops", {"query": "", "detail": "full"})],
             inspect=inspect,
             toolset_instructions=enabled,
+            bindings=RunBindings.embedded(instruction_reference_root=reference_root),
         )
         assert result.output_or_raise() == "done"
         assert returns[0].content["tools"][0]["instructions"] == (["Use exact customer IDs."] if enabled else [])
@@ -932,10 +943,10 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
         if codeact:
             runner = next(tool for tool in info.function_tools if tool.name == "run_code")
             catalog = info.instructions or ""
-            assert ("async def call_tool" in catalog) is grouped
-            assert ("async def identify" in catalog) is not grouped
-            assert "async def call_tool" not in runner.description
-            assert "async def identify" not in runner.description
+            assert ("`call_tool`" in catalog) is grouped
+            assert ("`identify`" in catalog) is not grouped
+            assert "`call_tool`" not in runner.description
+            assert "`identify`" not in runner.description
         else:
             assert ("identify" in names) is not grouped
             assert ("call_tool" in names) is grouped
@@ -1902,3 +1913,54 @@ async def test_scoped_proxy_surface_cannot_disappear_or_change_identity_during_r
     with pytest.raises(DefinitionError) as error:
         await _run((_connector_surface(pull_request),), [("list_connector_groups", {})])
     assert error.value.code == "capability_scope_invalid"
+
+
+@pytest.mark.parametrize("stage", ["validator", "execution"])
+@pytest.mark.parametrize("page", [None, "files"])
+async def test_proxy_retry_guidance_names_target_page_exactly_once(stage, page) -> None:
+    from pydantic_ai import ModelRetry
+
+    def validate(ctx, value: int):
+        if stage == "validator":
+            raise ModelRetry("Use another value")
+
+    def lookup(value: int):
+        raise ModelRetry("Use another value")
+
+    result, returns = await _run(
+        (
+            _group(
+                Tool(lookup, args_validator=validate, max_retries=1, metadata={"a13n.guidance": page} if page else {})
+            ),
+        ),
+        [("call_tool", {"group": "crm", "tool": "lookup", "arguments": {"value": 1}})],
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    part = returns[0]
+    assert part.outcome == "retried"
+    assert part.tool_name == "call_tool" and part.tool_call_id == "call-0"
+    expected = "Use another value"
+    if page:
+        expected += "\nGuidance: `/release-guidance/harness/files.md`. Read with view before deciding whether to retry."
+    assert part.content == expected
+    assert part.retry.attempt == 1 and part.retry.max_retries == 1
+
+
+async def test_real_search_control_retry_points_to_its_own_guidance() -> None:
+    def lookup() -> int:
+        return 42
+
+    result, returns = await _run(
+        (_group(lookup),),
+        [("discover_tools", {"query": "!!!"})],
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    part = returns[0]
+    assert part.outcome == "retried" and part.tool_name == "discover_tools"
+    assert part.content == (
+        "Supply operation keywords or an exact tool name; use an empty query to browse.\n"
+        "Guidance: `/release-guidance/harness/tool_search.md`. Read with view before deciding whether to retry."
+    )
+    assert part.retry.attempt == 1 and part.retry.max_retries == 5

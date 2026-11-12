@@ -60,7 +60,11 @@ def memory_toolset[K: str](
             offered.append(_tool(getattr(owner, key), kind, key, spec, names))
     if not offered:
         return None
-    return InstructionFunctionToolset(tools=offered, id=f"a13n-memory-{kind}-tools", instructions=[instruction])
+    return InstructionFunctionToolset(
+        tools=offered,
+        id=f"a13n-memory-{kind}-tools",
+        instructions=[instruction],
+    )
 
 
 def memory_tool_name(kind: str, key: str) -> str:

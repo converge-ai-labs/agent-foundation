@@ -1,27 +1,42 @@
 <environment-shell>
-Check the current Environment context before relying on paths. Establish the shell dialect before using platform-specific syntax; a mount name or path spelling is not evidence of the operating system.
+Check the current Environment context before relying on paths.
 
+Establish the shell dialect before using platform-specific syntax; a mount name or path spelling is not evidence of the operating system.
+
+With Host-held tool execution, a fast command returns its result; expiry or immediate steering returns an `exec-*` execution receipt for the same running command.
+
+Do not reissue it.
+
+Use the exposed execution controls for status, cancellation and the final result.
+
+Recovery is best-effort; never assume missing commands succeeded or restart them automatically.
+
+Prefer file tools for ordinary file reading, listing, searching and content editing. Use the `cwd` argument instead of embedding `cd` in a command.
+
+Treat `exec-*` and `process-*` references as opaque. Never invent or alter them or use them as native process IDs.
+
+Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page. Set `timeout_seconds=0` for a non-blocking poll. Reads are non-consuming, so repeating the same offsets is safe. </environment-shell>
+
+<!-- reference -->
+
+<environment-shell>
 Shell and process tools select one Environment mount and cannot perform cross-mount file operations. SDK-text output may be partial, and null producer counts mean unknown. At an observation cap, use application log files; waiting or querying cannot reset the budget. </environment-shell>
 
 <shell-exec>
-Use `shell_exec` for shell commands. On process-capable mounts, commands automatically yield after the configured foreground wait, even in inline mode. With Host-held tool execution, a fast command returns its result; expiry or immediate steering returns an `exec-*` execution receipt for the same running command. Foreground-only mounts follow the Host's generic inline/automatic policy. Do not reissue it. Use the exposed execution controls for status, cancellation and the final result.
+Use `shell_exec` for shell commands. On process-capable mounts, commands automatically yield after the configured foreground wait, even in inline mode. Foreground-only mounts follow the Host's generic inline/automatic policy.
 
 Without runtime ownership, including Shell calls inside CodeAct, a process-capable Environment returns native output and, when still running after the configured wait, a `process-*` reference. Nested CodeAct calls return actual values, not separate execution receipts. Only the outer runner can hand off.
 
-Prefer file tools for ordinary file reading, listing, searching and content editing. Use the `cwd` argument instead of embedding `cd` in a command. `execution_timeout_seconds` requests a provider-enforced hard deadline and can be unsupported. The Host's initial wait and bounded control waits only bound waiting. Harness adds no Agent-wide tool timeout. </shell-exec>
+`execution_timeout_seconds` requests a provider-enforced hard deadline and can be unsupported. The Host's initial wait and bounded control waits only bound waiting. Harness adds no Agent-wide tool timeout. </shell-exec>
 
 <shell-processes>
 On process-capable mounts, pass the live execution ID as `process_id` to the available Shell controls. Live Shell controls end at execution settlement; a Host-held execution's final result is retrieved through the Host's execution-result tool.
 
-Treat `exec-*` and `process-*` references as opaque. Never invent or alter them or use them as native process IDs. An `exec-*` Shell reference remains controllable across Runs of the same Thread while the same Host runtime retains it and the current Environment authorizes the original target and actions. A `process-*` reference belongs to its originating Run and does not remain usable in continuation Runs. Native discovery can find commands the Provider actually retained after scope loss; a saved reference alone does not restore authority. </shell-processes>
+An `exec-*` Shell reference remains controllable across Runs of the same Thread while the same Host runtime retains it and the current Environment authorizes the original target and actions. A `process-*` reference belongs to its originating Run and does not remain usable in continuation Runs. Native discovery can find commands the Provider actually retained after scope loss; a saved reference alone does not restore authority. </shell-processes>
 
 <shell-info>
-Use `shell_info(process_id=...)` for status only. No-ID discovery is available only when its schema permits omitting `process_id` and the selected/default mount allows `environment.process.list`; Direct Local does not support discovery. Listing and inspection are independently authorized. These queries do not attach, refresh or reset output. Recovery is best-effort; never assume missing commands succeeded or restart them automatically.
+Use `shell_info(process_id=...)` for status only. No-ID discovery is available only when its schema permits omitting `process_id` and the selected/default mount allows `environment.process.list`; Direct Local does not support discovery. Listing and inspection are independently authorized. These queries do not attach, refresh or reset output.
 </shell-info>
-
-<shell-wait>
-Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page. Set `timeout_seconds=0` for a non-blocking poll. Reads are non-consuming, so repeating the same offsets is safe.
-</shell-wait>
 
 <shell-input>
 Use `shell_input` only for UTF-8 stdin writes and EOF. It does not return output.

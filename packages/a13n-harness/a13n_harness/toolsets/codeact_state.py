@@ -21,6 +21,7 @@ from a13n_harness.codeact.state import (
     CodeActStoredValues as CodeActStoredValues,
 )
 from a13n_harness.context import AgentContext
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 
 
@@ -36,7 +37,11 @@ class CodeActStateToolset:
     def get_toolset(self) -> CodeActPolicyToolset:
         # Arbitrary JsonValue inputs are incompatible with provider strict schemas.
         return CodeActPolicyToolset(
-            wrapped=FunctionToolset([Tool(self.store, strict=False), self.load, self.forget], id="codeact-state"),
+            wrapped=FunctionToolset(
+                [Tool(self.store, strict=False), self.load, self.forget],
+                id="codeact-state",
+                metadata={TOOL_GUIDANCE_KEY: "codeact"},
+            ),
             policy=CodeActToolPolicy(default=True),
         )
 

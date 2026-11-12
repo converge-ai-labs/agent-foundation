@@ -23,9 +23,16 @@ from pydantic_ai.capabilities import (
     ValidatedToolArgs,
     WrapToolExecuteHandler,
 )
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, OutputTokenLimitExceeded, ToolFailed
+from pydantic_ai.exceptions import (
+    ApprovalRequired,
+    CallDeferred,
+    ModelRetry,
+    OutputTokenLimitExceeded,
+    ToolFailed,
+    ToolRetryError,
+)
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
+from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -42,6 +49,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.session_recovery import envd_session_notifications
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY, hinted_retry_text
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
@@ -232,6 +240,29 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
             raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
         return args
 
+    async def on_tool_validate_error(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: str | dict[str, Any],
+        error: ValidationError | ModelRetry,
+    ) -> dict[str, Any]:
+        if (
+            isinstance(error, ModelRetry)
+            and (
+                text := hinted_retry_text(
+                    error.message,
+                    reference_root=ctx.deps.instruction_reference_root,
+                    page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                )
+            )
+            is not None
+        ):
+            raise ModelRetry(text) from error
+        raise error
+
     async def after_tool_validate(
         self,
         ctx: RunContext[AgentContext],
@@ -270,7 +301,38 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         args: ValidatedToolArgs,
         handler: WrapToolExecuteHandler,
     ) -> Any:
-        result = await handler(args)
+        try:
+            result = await handler(args)
+        except ToolRetryError as error:
+            # The target boundary already decided whether a forwarded retry gets guidance.
+            if isinstance(error.__cause__, ToolRetryError):
+                raise
+            part = error.tool_retry
+            if (
+                isinstance(part, ToolReturnPart)
+                and part.retry is not None
+                and part.retry.cause == "model_retry"
+                and (
+                    text := hinted_retry_text(
+                        part.content,
+                        reference_root=ctx.deps.instruction_reference_root,
+                        page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                    )
+                )
+                is not None
+            ):
+                raise ToolRetryError(replace(part, content=text)) from error
+            raise
+        except ModelRetry as error:
+            if (
+                text := hinted_retry_text(
+                    error.message,
+                    reference_root=ctx.deps.instruction_reference_root,
+                    page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                )
+            ) is not None:
+                raise ModelRetry(text) from error
+            raise
         # Retire provenance only after the complete execution chain returns:
         # inner wrappers can still defer after after_tool_execute has run.
         # External completion bypasses execution and retains its marker.

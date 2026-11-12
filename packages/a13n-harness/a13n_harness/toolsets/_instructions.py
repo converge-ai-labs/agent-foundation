@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from functools import cache
-from importlib.resources import files
 
 from pydantic_ai import RunContext
 from pydantic_ai.messages import InstructionPart
@@ -12,7 +11,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
 
 from a13n_harness.context import AgentContext
-from a13n_harness.guidance import render_guidance
+from a13n_harness.guidance import guidance_reference_path, load_guidance, render_guidance
 
 type ToolInstruction = str | Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]
 
@@ -21,8 +20,8 @@ type ToolInstruction = str | Callable[[RunContext[AgentContext]], Awaitable[Inst
 def tool_instruction(name: str, *, reference_root: str | None = None) -> str:
     """Load one release-owned guidance file for a Toolset."""
     content = render_guidance(
-        files("a13n_harness.toolsets.prompts").joinpath("guidance", f"{name}.md").read_text(encoding="utf-8"),
-        f"{reference_root}/harness/{name}.md" if reference_root is not None else None,
+        load_guidance(name),
+        guidance_reference_path(reference_root, name) if reference_root is not None else None,
     )
     return f"<tool-name>{name}</tool-name>\n{content}"
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import hashlib
 import json
@@ -18,8 +17,7 @@ from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UserError
-from pydantic_ai.function_signature import FunctionSignature
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed, ToolRetryError, UserError
 from pydantic_ai.messages import CachePoint, InstructionPart, TextContent, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
@@ -51,6 +49,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
+from a13n_harness.guidance import guidance_hint, retry_guidance_page
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder
 from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
@@ -214,7 +213,9 @@ class _ExecutionBudget:
     supplemental: list[tuple[int, list[UserContent]]] = field(default_factory=list)
     nested_errors: list[dict[str, Any]] = field(default_factory=list)
 
-    def note_error(self, ordinal: int, boundary: str, exc: Exception | ToolDenied, message: str) -> None:
+    def note_error(
+        self, ordinal: int, boundary: str, exc: Exception | ToolDenied, message: str, *, hint: str | None = None
+    ) -> None:
         # These are observations, including errors caught by sandbox code, not an
         # inferred causal chain. Keep only a small bounded prefix per execution.
         if len(self.nested_errors) < 4:
@@ -223,7 +224,7 @@ class _ExecutionBudget:
                     "ordinal": ordinal,
                     "boundary": boundary,
                     "type": _truncate_utf8(type(exc).__name__, 128),
-                    "message": _truncate_utf8(message, 256),
+                    "message": _truncate_utf8(message, 256) + ("\n" + hint if hint is not None else ""),
                 }
             )
 
@@ -265,6 +266,30 @@ class _ExecutionBudget:
         return [item for _, content in sorted(self.supplemental) for item in content]
 
 
+def _runner_descriptions(guidance: str, *, inline: bool, programs: bool) -> dict[str, str]:
+    """Split the two runner sections once, retaining the shared text and its spacing."""
+    prefix, code_open, remainder = guidance.partition("<run-code>")
+    code_body, code_close, remainder = remainder.partition("</run-code>")
+    gap, program_open, remainder = remainder.partition("<run-program>")
+    program_body, program_close, shared = remainder.partition("</run-program>")
+    if not code_open or not code_close:
+        raise ValueError("CodeAct guidance requires a complete <run-code> section")
+    if not program_open or not program_close:
+        raise ValueError("CodeAct guidance requires a complete <run-program> section")
+    code = code_open + code_body + code_close
+    program = program_open + program_body + program_close
+    descriptions: dict[str, str] = {}
+    if inline:
+        descriptions[_RUN_CODE] = (prefix + code + gap + shared).strip()
+    if programs:
+        descriptions[_RUN_PROGRAM] = (
+            program + "\n\nThe shared CodeAct rules are in the run_code description."
+            if inline
+            else (prefix + gap + program + shared).strip()
+        )
+    return descriptions
+
+
 @dataclass
 class CodeActToolset(WrapperToolset[AgentContext]):
     """Add restricted runner tools around the current Agent's final Toolset."""
@@ -303,13 +328,19 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         # Build once during preparation so collisions and invalid schemas fail before
         # either runner is exposed. Execution rebuilds from the active manager.
         _build_catalog(wrapped_tools)
+        descriptions = _runner_descriptions(
+            tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
+            inline=self.config.inline,
+            programs=self.config.programs,
+        )
+
         tools: list[Tool[AgentContext]] = []
         if self.config.inline:
             tools.append(
                 Tool(
                     self._run_code,
                     name=_RUN_CODE,
-                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
+                    description=descriptions[_RUN_CODE],
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
@@ -324,7 +355,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 Tool(
                     self._run_program,
                     name=_RUN_PROGRAM,
-                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
+                    description=descriptions[_RUN_PROGRAM],
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
@@ -538,10 +569,16 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 record.error_type = type(exc).__name__
                 raise
             except Exception as exc:
-                budget.note_error(ordinal, nested_boundary, exc, "Nested tool execution or output validation failed")
+                page = retry_guidance_page(exc) if isinstance(exc, ModelRetry | ToolRetryError) else None
+                root = ctx.deps.instruction_reference_root
+                hint = guidance_hint(root, page) if root is not None and page is not None else None
+                budget.note_error(
+                    ordinal, nested_boundary, exc, "Nested tool execution or output validation failed", hint=hint
+                )
                 record.outcome = "failed"
                 record.error_type = type(exc).__name__
-                raise RuntimeError(f"Nested tool {canonical_name!r} failed with {type(exc).__name__}") from None
+                message = f"Nested tool {canonical_name!r} failed with {type(exc).__name__}"
+                raise RuntimeError(message + ("\n" + hint if hint is not None else "")) from None
             finally:
                 _NESTED_TOOL_EXECUTION.reset(nested_token)
                 if nested_started is not None:
@@ -800,6 +837,7 @@ def render_codeact_catalog(
     tools: dict[str, ToolsetTool[AgentContext]],
     *,
     ctx: RunContext[AgentContext],
+    catalog_argument_schemas: bool,
 ) -> str:
     catalog = _build_catalog(tools, ctx=ctx)
     if not catalog.definitions:
@@ -808,75 +846,22 @@ def render_codeact_catalog(
     entries: list[str] = []
     for sandbox_name, definition in sorted(catalog.definitions.items()):
         canonical_name = catalog.sandbox_to_canonical[sandbox_name]
-        heading = f"### `{sandbox_name}`"
+        entry = f"`{sandbox_name}`"
         if canonical_name != sandbox_name:
-            heading += f" (tool `{canonical_name}`)"
-        details = [heading, "```python\n" + _render_tool_declaration(definition) + "\n```"]
-        if definition.description:
-            details.append(f"  {definition.description}")
-        details.append(
-            "  Arguments JSON Schema: "
-            + json.dumps(
+            entry += f" (tool `{canonical_name}`)"
+        if catalog_argument_schemas:
+            entry += "\n  Arguments JSON Schema: " + json.dumps(
                 definition.parameters_json_schema,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
                 default=str,
             )
-        )
-        if definition.return_schema is not None:
-            details.append(
-                "  Return JSON Schema: "
-                + json.dumps(
-                    definition.return_schema,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    default=str,
-                )
-            )
-        entries.append("\n".join(details))
-    return "CodeAct callable host tools:\n" + "\n".join(entries)
-
-
-def _render_tool_declaration(definition: ToolDefinition) -> str:
-    """Render documentation from prepared schemas without changing tool semantics."""
-    fallback = f"async def {definition.name}(**kwargs: Any) -> Any: ..."
-    schema = definition.parameters_json_schema
-    properties = schema.get("properties", {})
-    required = set(schema.get("required", []))
-    # The upstream signature renderer does not represent open argument maps or
-    # omission without a default faithfully. Keep the exact schema for these tools.
-    if schema.get("additionalProperties", True) is not False or any(
-        not name.isidentifier()
-        or keyword.iskeyword(name)
-        or (name not in required and (not isinstance(prop, dict) or "default" not in prop))
-        for name, prop in properties.items()
-    ):
-        return fallback
-    try:
-        signature = FunctionSignature.from_schema(
-            name=definition.name,
-            parameters_schema=schema,
-            return_schema=definition.return_schema,
-        )
-        for name in required:
-            if name in signature.params:
-                signature.params[name].default = None
-        # Each entry is self-contained; qualify its referenced JSON shapes so
-        # unrelated tools with identically named models do not imply shared types.
-        names = frozenset(ref.name for ref in signature.referenced_types)
-        if len(names) != len(signature.referenced_types):
-            return fallback  # Input and output schemas reuse a type name for different shapes.
-        declarations = FunctionSignature.render_type_definitions([signature], names)
-        declarations.append(signature.render("...", is_async=True, conflicting_type_names=names))
-        rendered = "\n\n".join(declarations)
-        # This validates generated documentation, never model-authored source.
-        # Non-identifier JSON property names remain callable through **mapping.
-        ast.parse(rendered)
-    except (ValueError, TypeError, SyntaxError, RecursionError):
-        return fallback
-    return rendered
+        entries.append(entry)
+    return (
+        "CodeAct callable host tools. Call them with the same keyword arguments as the matching tool definitions.\n"
+        + "\n".join(entries)
+    )
 
 
 def _sanitize_name(name: str) -> str:

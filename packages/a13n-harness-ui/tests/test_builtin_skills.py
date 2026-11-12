@@ -449,3 +449,14 @@ async def test_async_child_selects_and_reads_its_own_guidance_bundle(tmp_path, m
         assert len(executions.executions) == 1
         assert executions.executions[0].persisted_status == "succeeded"
     assert calls == {"parent": 3, "child": 2 if child_references else 1}
+
+
+def test_operation_bundle_contains_new_reference_pages() -> None:
+    from importlib.resources import files
+
+    bundle = files("a13n_harness_ui").joinpath("assets/builtin_skills/harness-ui-operations")
+    index = bundle.joinpath("SKILL.md").read_text()
+    for name in ("environment-shell", "tool_search", "environment-routing"):
+        relative = f"harness/{name}.md"
+        assert relative in index
+        assert "<!-- reference -->" in bundle.joinpath(relative).read_text()

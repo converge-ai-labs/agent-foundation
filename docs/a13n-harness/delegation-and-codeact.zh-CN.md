@@ -233,6 +233,8 @@ codeact = CodeActCapability(CodeActConfig(
 
 在 builder 中用此实例替换 `CodeActCapability()`。默认每次 runner 允许 128 次嵌套工具尝试、16 路并发和 300 秒执行时间。存储默认最多 256 项、10 MiB。父级工具调用限制和提供方上限仍然生效。
 
+目录列出可调用名称及其规范名称映射；参数以原生工具定义为准。在 `CodeActConfig` 中设置 `catalog_argument_schemas=True`，可在目录中额外包含精确的参数 JSON Schema。该字段必须是布尔值，默认为 `False`；两种模式均不包含描述、Python 声明或返回值 Schema。如果程序在看到工具结果前就需要使用其中的字段，工具可以设置 Pydantic AI 的 `include_return_schema=True`，让原生工具定义包含返回值 Schema。
+
 ## 异步子级
 
 子任务需要在父 Run 结束后继续时，使用异步子级。Host 实现 `SubagentOperator`，负责调度子级、保留检查点并交付结果。将 operator 传给 `SubagentCapability(async_enabled=True, operator=operator)`，替换内联 Capability。

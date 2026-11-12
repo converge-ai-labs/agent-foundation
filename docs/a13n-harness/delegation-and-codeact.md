@@ -233,6 +233,8 @@ codeact = CodeActCapability(CodeActConfig(
 
 Use this instance in place of `CodeActCapability()` in the builder. Defaults allow 128 nested tool attempts, concurrency 16, and 300 seconds per runner. Stored data defaults to 256 entries and 10 MiB. Parent tool-call limits and provider ceilings still apply.
 
+The catalog lists callable names and canonical-name mappings; use the native tool definitions for arguments. Set `catalog_argument_schemas=True` in `CodeActConfig` to also include exact argument JSON Schemas in the catalog. This strict boolean defaults to `False`; neither mode includes descriptions, Python declarations, or return schemas. A tool whose result fields a program must use before seeing a result can set Pydantic AI's `include_return_schema=True` so its native definition carries the return schema.
+
 ## Asynchronous Children
 
 Use asynchronous children when work must outlive the parent Run. Your Host implements `SubagentOperator` to schedule children, retain checkpoints, and deliver results. Pass that operator to `SubagentCapability(async_enabled=True, operator=operator)` instead of the inline Capability.

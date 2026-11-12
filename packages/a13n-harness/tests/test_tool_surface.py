@@ -162,9 +162,9 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
     result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
-    assert "async def preferred" in catalog
-    assert "async def fallback" not in catalog
-    assert "async def preferred" not in runner_description
+    assert "`preferred`" in catalog
+    assert "`fallback`" not in catalog
+    assert "`preferred`" not in runner_description
 
 
 async def test_wrapper_cannot_be_ordered_outside_the_mandatory_surface() -> None:

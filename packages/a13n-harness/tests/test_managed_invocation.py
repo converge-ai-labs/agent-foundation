@@ -756,3 +756,190 @@ async def test_failed_delivery_after_write_does_not_replay_the_tool():
     assert error["code"] == "tool_result_too_large"
     assert "512 inline bytes" in error["message"]
     assert "before repeating" in error["details"]["hint"]
+
+
+@pytest.mark.parametrize("stage", ["validator", "execution", "schema"])
+@pytest.mark.parametrize("delivery", ["reference", "inline", "markerless", "unmapped"])
+async def test_model_retry_guidance_preserves_native_results_and_retry_budget(stage, delivery) -> None:
+    from pydantic_ai import ModelRetry, Tool
+    from pydantic_ai.exceptions import ToolRetryError
+
+    observed = []
+    calls = []
+
+    def validate(ctx, value: int) -> None:
+        if stage == "validator" and value == 1:
+            raise ModelRetry("Choose another value")
+
+    def lookup(value: int) -> int:
+        calls.append(value)
+        if stage == "execution" and value == 1:
+            raise ModelRetry("Choose another value")
+        return value
+
+    class Observe(AbstractCapability):
+        async def wrap_tool_execute(self, ctx, *, call, tool_def, args, handler):
+            try:
+                return await handler(args)
+            except ToolRetryError as error:
+                observed.append(error.tool_retry)
+                raise
+
+    async def model(messages, info):
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if returns and returns[-1].outcome == "success":
+            yield "done"
+        else:
+            value = 2 if returns else ("invalid" if stage == "schema" else 1)
+            yield {
+                0: DeltaToolCall(
+                    name="lookup", json_args=json.dumps({"value": value}), tool_call_id=f"lookup-{len(returns)}"
+                )
+            }
+
+    page = "web" if delivery == "markerless" else "files"
+    metadata = {} if delivery == "unmapped" else {"a13n.guidance": page}
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            Capability(tools=[Tool(lookup, args_validator=validate, max_retries=1, metadata=metadata)]),
+            Observe(),
+        ),
+    )
+    result = await executable.run(
+        "go",
+        bindings=RunBindings.embedded(instruction_reference_root=None if delivery == "inline" else "/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    retry = next(
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
+    )
+    assert retry.tool_call_id == "lookup-0" and retry.tool_name == "lookup"
+    assert retry.retry.attempt == 1 and retry.retry.max_retries == 1
+    if stage == "schema":
+        assert retry.retry.cause == "validation_error"
+        assert isinstance(retry.content, list)
+        assert retry.content == [
+            {
+                "type": "int_parsing",
+                "loc": ["value"],
+                "msg": "Input should be a valid integer, unable to parse string as an integer",
+                "input": "invalid",
+            }
+        ]
+        assert calls == [2]
+    else:
+        assert retry.retry.cause == "model_retry"
+        hint = "Guidance: `/release-guidance/harness/files.md`. Read with view before deciding whether to retry."
+        assert retry.content == "Choose another value" + ("\n" + hint if delivery == "reference" else "")
+        if stage == "execution":
+            assert len(observed) == 1
+            assert replace(observed[0], content=retry.content) == retry
+        assert calls == ([2] if stage == "validator" else [1, 2])
+
+
+@pytest.mark.parametrize("failure", ["failed", "denied"])
+async def test_guidance_does_not_change_terminal_failures(failure) -> None:
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+    from pydantic_ai import Tool
+    from pydantic_ai.exceptions import ToolFailed
+
+    def lookup() -> str:
+        raise ToolFailed("Keep this terminal message")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_tool_model("lookup", {}),
+        capabilities=(
+            Capability(tools=[Tool(lookup, metadata={"a13n.guidance": "files"})]),
+            ToolPermissionsCapability(ToolPermissions(default="deny" if failure == "denied" else "allow")),
+        ),
+    )
+    result = await executable.run("go", bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"))
+    assert result.output_or_raise()
+    part = next(
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    assert part.outcome == "failed"
+    assert "Guidance:" not in str(part.content)
+    if failure == "failed":
+        assert part.content == "Keep this terminal message"
+    else:
+        assert "Tool invocation is denied" in str(part.content)
+
+
+@pytest.mark.parametrize("structured", [False, True])
+async def test_guidance_rebuild_preserves_all_native_retry_fields(structured) -> None:
+    from copy import deepcopy
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
+    from pydantic_ai import ToolDefinition
+    from pydantic_ai.exceptions import ToolRetryError
+    from pydantic_ai.messages import RetryInfo
+
+    content = (
+        [{"loc": ["value"], "type": "value_error", "msg": "Choose another value"}]
+        if structured
+        else "Choose another value"
+    )
+    original = ToolReturnPart(
+        tool_name="actual_target",
+        content=content,
+        tool_call_id="original-call",
+        tool_kind="tool_search",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        metadata={"retain": {"value": 1}},
+        outcome="retried",
+        retry=RetryInfo(cause="model_retry", attempt=2, max_retries=3),
+    )
+    error = ToolRetryError(original)
+
+    async def handler(args):
+        raise error
+
+    ctx = SimpleNamespace(deps=SimpleNamespace(instruction_reference_root="/release-guidance"))
+    with pytest.raises(ToolRetryError) as raised:
+        await ToolExecutionBoundaryCapability().wrap_tool_execute(
+            ctx,
+            call=ToolCallPart("envelope", {}, tool_call_id="envelope-call"),
+            tool_def=ToolDefinition(name="envelope", metadata={"a13n.guidance": "files"}),
+            args={},
+            handler=handler,
+        )
+    part = raised.value.tool_retry
+    expected = (
+        content
+        if structured
+        else (
+            "Choose another value\nGuidance: `/release-guidance/harness/files.md`. "
+            "Read with view before deciding whether to retry."
+        )
+    )
+    assert part == replace(original, content=expected)
+    assert deepcopy(part) == part
+    if structured:
+        assert raised.value is error
+    else:
+        from a13n_harness.guidance import retry_guidance_page
+
+        assert raised.value.__cause__ is error
+        assert retry_guidance_page(ToolRetryError(deepcopy(part))) == "files"
