@@ -5,6 +5,7 @@ import { environmentTemplates } from "../environments/api";
 import { modelApi } from "../models/api";
 import { webProviderApi } from "../web/api";
 import type { AgentConfig } from "./configuration";
+import { remapToolSearchConnection } from "./tool-search";
 
 type DependencyKind =
   | "model"
@@ -147,34 +148,11 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         ),
         ...(config.tool_search
           ? {
-              tool_search: {
-                ...config.tool_search,
-                ...(config.tool_search.automatic
-                  ? {
-                      automatic: {
-                        ...config.tool_search.automatic,
-                        exclude_connections:
-                          config.tool_search.automatic.exclude_connections?.map(
-                            (id) =>
-                              id === connection.connection_id ? value : id,
-                          ),
-                      },
-                    }
-                  : {}),
-                groups: Object.fromEntries(
-                  Object.entries(config.tool_search.groups ?? {}).map(
-                    ([name, group]) => [
-                      name,
-                      {
-                        ...group,
-                        connections: group.connections?.map((id) =>
-                          id === connection.connection_id ? value : id,
-                        ),
-                      },
-                    ],
-                  ),
-                ),
-              },
+              tool_search: remapToolSearchConnection(
+                config.tool_search,
+                connection.connection_id,
+                value,
+              ),
             }
           : {}),
       }),

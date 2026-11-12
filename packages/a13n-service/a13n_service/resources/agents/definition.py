@@ -20,7 +20,7 @@ from referencing.jsonschema import DRAFT202012
 
 from a13n_service.infra.errors import invalid
 from a13n_service.resources.agents import toolsets
-from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec, ToolSearchGroup
+from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec, ToolSearch, ToolSearchGroup
 
 CLIENT_TOOLSET_ID = "a13n-service-client"
 QUESTION_TOOL = "ask_user_question"
@@ -126,7 +126,7 @@ def tool_search(
 ) -> ToolSearchPlan | None:
     """Bind presentation to the same source instances the host contributes to this agent."""
     selected = config.tool_search
-    if selected is None:
+    if not isinstance(selected, ToolSearch):
         return None
     groups = selected.groups
     if (automatic := selected.automatic) is not None:
