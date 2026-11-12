@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import replace
+from typing import Annotated
 
 import pytest
 from a13n_harness import AgentSpec, DeferredToolRequests, DeferredToolResume, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
+    CodeActConfig,
     CompactionCapability,
     CompactionPolicy,
     HandoffCapability,
@@ -19,7 +21,7 @@ from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.content import request_input_content
 from a13n_harness.tools import discovery
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 from pydantic_ai import CallDeferred, FunctionToolset, Tool
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.exceptions import ToolFailed
@@ -120,11 +122,11 @@ async def test_native_discovery_retains_lru_and_immediate_codeact_directory(monk
         if index == len(calls) - 1:
             replaced = True
             assert sum(isinstance(part, ToolSearchReturnPart) for msg in messages for part in msg.parts) == 1
-            assert info.instructions.count("async def double") == 1
-            assert "async def triple" not in info.instructions
+            assert info.instructions.count("`double`") == 1
+            assert "`triple`" not in info.instructions
             for tool in info.function_tools:
                 if tool.name in {"run_code", "run_program"}:
-                    assert "async def double" not in tool.description
+                    assert "`double`" not in tool.description
             assert not any(
                 isinstance(part, ToolReturnPart) and part.tool_name == "run_code"
                 for msg in messages
@@ -259,31 +261,35 @@ async def test_search_without_target_calls_retains_nothing(monkeypatch, proxy):
     _, snapshots = await _run_calls(capabilities, [search, ("summarize", {"content": "Continue"})])
     messages, info = snapshots[-1]
     assert not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
-    assert "async def double" not in info.instructions
-    assert "async def triple" not in info.instructions
+    assert "`double`" not in info.instructions
+    assert "`triple`" not in info.instructions
     assert not info.model_request_parameters.revealed_tool_names
 
 
 @pytest.mark.parametrize("budget, codeact_retained", [(10_000, False), (12_000, True)])
 async def test_byte_budget_counts_native_schema_and_one_shared_codeact_catalog(monkeypatch, budget, codeact_retained):
-    def large(value: int) -> int:
+    def large(value: Annotated[int, Field(description="多" * 1500)]) -> int:
         return value
 
     source = Capability(
         toolsets=[
             CodeActPolicyToolset(
-                FunctionToolset([Tool(large, description="多" * 1500, defer_loading=True)]),
+                FunctionToolset([Tool(large, defer_loading=True)]),
                 CodeActToolPolicy(default=True),
             )
         ]
     )
     monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", budget)
-    for codeact, retained in [(False, True), (True, codeact_retained)]:
+    for config, retained in [
+        (None, True),
+        (CodeActConfig(), True),
+        (CodeActConfig(catalog_argument_schemas=True), codeact_retained),
+    ]:
         capabilities = (
             source,
             ToolSearch(strategy="keywords"),
             HandoffCapability(),
-            *((CodeActCapability(),) if codeact else ()),
+            *((CodeActCapability(config),) if config is not None else ()),
         )
         _, snapshots = await _run_calls(
             capabilities,
@@ -391,7 +397,7 @@ async def test_loaded_capability_is_not_retained_or_advertised_by_codeact():
             ("summarize", {"content": "Continue"}),
         ],
     )
-    assert "async def lookup" not in snapshots[-1][1].instructions
+    assert "`lookup`" not in snapshots[-1][1].instructions
     assert not snapshots[-1][1].model_request_parameters.revealed_tool_names
 
 

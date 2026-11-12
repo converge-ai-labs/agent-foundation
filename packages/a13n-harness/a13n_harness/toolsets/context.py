@@ -31,7 +31,7 @@ from a13n_harness.events import (
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_guidance
 from .events import HandoffSummaryEvent
 
 _HANDOFF_INSTRUCTION = tool_guidance("summarize")
@@ -60,6 +60,7 @@ class HandoffToolset:
         return InstructionFunctionToolset(
             tools=[Tool(self.summarize, metadata={HANDOFF_TOOL_METADATA_KEY: True})],
             id="a13n-handoff-tools",
+            metadata={TOOL_GUIDANCE_KEY: "summarize"},
             instructions=_HANDOFF_INSTRUCTION,
         )
 

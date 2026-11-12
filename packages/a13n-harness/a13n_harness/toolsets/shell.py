@@ -27,7 +27,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
@@ -159,6 +159,7 @@ class ShellToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
+            metadata={TOOL_GUIDANCE_KEY: "environment-shell"},
             instructions=[tool_guidance("environment-shell")] if tools else [],
         )
 

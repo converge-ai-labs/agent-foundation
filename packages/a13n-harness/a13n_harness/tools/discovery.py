@@ -305,6 +305,7 @@ def replacement_tools(ctx: RunContext[AgentContext], names: set[str]) -> dict[st
 def _context_bytes(
     ctx: RunContext[AgentContext], request: ModelRequestContext, messages: list[ModelMessage], names: set[str]
 ) -> int:
+    from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
     from a13n_harness.toolsets.codeact import render_codeact_catalog
 
     size = len(
@@ -327,16 +328,25 @@ def _context_bytes(
                 ensure_ascii=False,
             ).encode()
         )
+    owner = ctx.capabilities.get(CODEACT_CAPABILITY_ID)
     baseline = replacement_tools(ctx, set())
     selected = replacement_tools(ctx, names)
-    if any(
+    if isinstance(owner, CodeActCapability) and any(
         (definition.metadata or {}).get("a13n.codeact.runner") is True
         for definition in request.model_request_parameters.function_tools
     ):
         size += max(
             0,
-            len(render_codeact_catalog(selected, ctx=ctx).encode())
-            - len(render_codeact_catalog(baseline, ctx=ctx).encode()),
+            len(
+                render_codeact_catalog(
+                    selected, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas
+                ).encode()
+            )
+            - len(
+                render_codeact_catalog(
+                    baseline, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas
+                ).encode()
+            ),
         )
     return size
 

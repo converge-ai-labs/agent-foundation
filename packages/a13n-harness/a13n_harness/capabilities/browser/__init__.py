@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, TypedDict, runtime_checkable
 
 from pydantic import Field, JsonValue
 from pydantic_ai import BinaryContent, ModelRetry, RunContext, ToolReturn
@@ -13,7 +13,7 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
-from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
+from a13n_harness.toolsets._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_instruction
 
 from .actions import Action, Clip, Condition, ElementCondition, Ref, Visual
 
@@ -27,6 +27,13 @@ class _BrowserToolset(InstructionFunctionToolset):
         from a13n_harness.toolsets.codeact import CodeActToolPolicy
 
         return CodeActToolPolicy(default=True)
+
+
+class _ScreenshotResult(TypedDict):
+    screenshot: str
+    width_css: float
+    height_css: float
+    visual_action: bool
 
 
 @dataclass(frozen=True)
@@ -227,7 +234,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         async def instructions(ctx: RunContext[AgentContext]) -> InstructionPart:
             return InstructionPart(content=self._instructions(ctx.deps.instruction_reference_root), dynamic=False)
 
-        tools = _BrowserToolset(instructions=instructions)
+        tools = _BrowserToolset(metadata={TOOL_GUIDANCE_KEY: "browser"}, instructions=instructions)
 
         def metadata(name: str, read: bool = False) -> dict[str, object]:
             effects: set[ToolEffect] = {"read"} if read else {"execute", "external_communication"}
@@ -466,7 +473,9 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             return await guarded(backend.upload(target(ref), tuple(paths), revision=self._revision))
 
         @tools.tool_plain(metadata=metadata("screenshot", True))
-        async def browser_screenshot(full_page: bool = False, clip: Clip | None = None) -> ToolReturn | str:
+        async def browser_screenshot(
+            full_page: bool = False, clip: Clip | None = None
+        ) -> ToolReturn[_ScreenshotResult | str]:
             """Capture viewport, full page, or a viewport clip in CSS pixels. Preserves element refs.
             Returns image plus sN reference for one visual click/hover. Visual x/y are fractions (0..1)
             of this image, not pixels. Prefer semantic refs. After scrolling or acting, capture again.
@@ -487,9 +496,9 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
                     content=[BinaryContent(data=shot.data, media_type="image/jpeg")],
                 )
             except BrowserHumanControl:
-                return await handback()
+                return ToolReturn(return_value=await handback())
             except BrowserError as exc:
-                return str(exc)
+                return ToolReturn(return_value=str(exc))
 
         enabled = self.enabled_tools
         return (

@@ -582,6 +582,8 @@ Direct provider calls and unmanaged side effects by trusted code are outside aut
 
 ## Failure Surface
 
+In [reference guidance delivery](09-context-and-memory.md#file-backed-operational-guidance), the execution boundary may append the owning page's guidance line to `ModelRetry` content; schema validation and other failures remain unchanged.
+
 First-party JSON tool failures use `{"ok": false, "error": {"code": ..., "message": ..., "details": {...}}}` with an optional `error.retry_hint`. `code` remains the machine contract; `message` is a bounded safe explanation and `details` is always an object. Existing domain-specific fields, such as HTTP status, byte limits, and outcome certainty, retain their meaning. Native Pydantic `ToolFailed`/`ModelRetry`, third-party tool payloads, MCP errors, and Host-owned child execution failures retain their owning protocols; this is not a universal result wrapper or exception hierarchy.
 
 The semantic owner supplies public explanations and corrective `field`, stable `reason`, and `hint` details where known. Internal validation exposes bounded field locations and error types, not rejected input, custom validator exception text, or full validation reports. Safe Harness failures may preserve their public explanation; arbitrary provider exception descriptions are never copied into model results. Code-only provider failures receive code-owned text rather than an invented provider diagnosis. A legacy or unknown Environment code retains a safe fallback explanation. When the owner has no reliable next step, the error omits the hint.

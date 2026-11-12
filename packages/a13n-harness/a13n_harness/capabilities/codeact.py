@@ -120,7 +120,9 @@ class CodeActCapability(AbstractModelContextCapability):
             return ""
         # Realtime resolves instructions after final tool preparation, but never
         # invokes before_model_request. Share one directory between both runners.
-        return render_codeact_catalog(manager.tools, ctx=ctx)
+        return render_codeact_catalog(
+            manager.tools, ctx=ctx, catalog_argument_schemas=self.config.catalog_argument_schemas
+        )
 
     async def before_model_request(
         self,
@@ -197,8 +199,11 @@ def refresh_codeact_catalog(
     if not any((tool.metadata or {}).get("a13n.codeact.runner") is True for tool in parameters.function_tools):
         return
     tools = manager.tools if retained_names is None else replacement_tools(ctx, retained_names)
+    owner = ctx.capabilities.get(CODEACT_CAPABILITY_ID)
+    if not isinstance(owner, CodeActCapability):
+        return
     catalog = InstructionPart(
-        content=render_codeact_catalog(tools, ctx=ctx),
+        content=render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas),
         id=_CATALOG_INSTRUCTION_ID,
         dynamic=True,
         on_change="append",

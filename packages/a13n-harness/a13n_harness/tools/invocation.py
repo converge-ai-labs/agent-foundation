@@ -23,9 +23,16 @@ from pydantic_ai.capabilities import (
     ValidatedToolArgs,
     WrapToolExecuteHandler,
 )
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, OutputTokenLimitExceeded, ToolFailed
+from pydantic_ai.exceptions import (
+    ApprovalRequired,
+    CallDeferred,
+    ModelRetry,
+    OutputTokenLimitExceeded,
+    ToolFailed,
+    ToolRetryError,
+)
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
+from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -42,6 +49,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.session_recovery import envd_session_notifications
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.guidance import _GUIDANCE_PAGE_ATTRIBUTE, _GuidanceRetryText, guidance_hint, retry_guidance_page
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
@@ -83,6 +91,7 @@ from a13n_harness.tools.policy import (
     InvocationScope,
     ToolInvocationContext,
 )
+from a13n_harness.toolsets._instructions import TOOL_GUIDANCE_KEY, guidance_has_reference
 
 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID = "a13n.tool-execution-boundary"
 logger = get_logger(__name__)
@@ -232,6 +241,34 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
             raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
         return args
 
+    def _guidance_page(
+        self, ctx: RunContext[AgentContext], tool_def: ToolDefinition, error: BaseException
+    ) -> str | None:
+        if ctx.deps.instruction_reference_root is None or retry_guidance_page(error) is not None:
+            return None
+        page = (tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY)
+        return page if isinstance(page, str) and guidance_has_reference(page) else None
+
+    async def on_tool_validate_error(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: str | dict[str, Any],
+        error: ValidationError | ModelRetry,
+    ) -> dict[str, Any]:
+        if isinstance(error, ModelRetry) and (page := self._guidance_page(ctx, tool_def, error)) is not None:
+            assert ctx.deps.instruction_reference_root is not None
+            enriched = ModelRetry(
+                _GuidanceRetryText(
+                    error.message + "\n" + guidance_hint(ctx.deps.instruction_reference_root, page), page
+                )
+            )
+            setattr(enriched, _GUIDANCE_PAGE_ATTRIBUTE, page)
+            raise enriched from error
+        raise error
+
     async def after_tool_validate(
         self,
         ctx: RunContext[AgentContext],
@@ -270,7 +307,40 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         args: ValidatedToolArgs,
         handler: WrapToolExecuteHandler,
     ) -> Any:
-        result = await handler(args)
+        try:
+            result = await handler(args)
+        except ToolRetryError as error:
+            part = error.tool_retry
+            if (
+                isinstance(part, ToolReturnPart)
+                and part.retry is not None
+                and part.retry.cause == "model_retry"
+                and isinstance(part.content, str)
+                and (page := self._guidance_page(ctx, tool_def, error)) is not None
+            ):
+                assert ctx.deps.instruction_reference_root is not None
+                enriched = ToolRetryError(
+                    replace(
+                        part,
+                        content=_GuidanceRetryText(
+                            part.content + "\n" + guidance_hint(ctx.deps.instruction_reference_root, page), page
+                        ),
+                    )
+                )
+                setattr(enriched, _GUIDANCE_PAGE_ATTRIBUTE, page)
+                raise enriched from error
+            raise
+        except ModelRetry as error:
+            if (page := self._guidance_page(ctx, tool_def, error)) is not None:
+                assert ctx.deps.instruction_reference_root is not None
+                enriched_retry = ModelRetry(
+                    _GuidanceRetryText(
+                        error.message + "\n" + guidance_hint(ctx.deps.instruction_reference_root, page), page
+                    )
+                )
+                setattr(enriched_retry, _GUIDANCE_PAGE_ATTRIBUTE, page)
+                raise enriched_retry from error
+            raise
         # Retire provenance only after the complete execution chain returns:
         # inner wrappers can still defer after after_tool_execute has run.
         # External completion bypasses execution and retains its marker.

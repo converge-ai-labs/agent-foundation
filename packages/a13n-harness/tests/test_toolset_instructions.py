@@ -154,7 +154,8 @@ def test_instruction_reference_root_requires_a_canonical_environment_path(path: 
         RunBindings.embedded(instruction_reference_root=path)
 
 
-async def test_codeact_reference_delivery_changes_guidance_not_runner_schemas() -> None:
+@pytest.mark.parametrize("inline,programs", [(True, True), (True, False), (False, True)])
+async def test_codeact_reference_delivery_changes_guidance_not_runner_schemas(inline, programs) -> None:
     from a13n_harness.capabilities import CodeActCapability, CodeActConfig
 
     observed = []
@@ -167,17 +168,98 @@ async def test_codeact_reference_delivery_changes_guidance_not_runner_schemas() 
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(CodeActCapability(CodeActConfig()),),
+        capabilities=(CodeActCapability(CodeActConfig(inline=inline, programs=programs)),),
     )
     for root in (None, "/release-guidance"):
         result = await executable.run("inspect", bindings=RunBindings.embedded(instruction_reference_root=root))
         assert result.output_or_raise() == "done"
     assert observed[0].keys() == observed[1].keys()
-    for name in ("run_code", "run_program"):
+    first = "run_code" if inline else "run_program"
+    for name in (name for name in ("run_code", "run_program") if name in observed[0]):
         full, reference = observed[0][name], observed[1][name]
         assert full.parameters_json_schema == reference.parameters_json_schema
+        assert ("<run-code>" in full.description) is (name == "run_code")
+        assert ("<run-program>" in full.description) is (name == "run_program")
+        if name != first:
+            assert full.description == reference.description
+            assert f"The shared CodeAct rules are in the {first} description." in full.description
+            assert "<tool-name>" not in full.description
+            assert "not transactional" not in full.description
+            continue
+        assert "<tool-name>codeact</tool-name>" in full.description
         assert "bisect" in full.description and "bisect" not in reference.description
         assert "/release-guidance/harness/codeact.md" in reference.description
         assert "only tool call" in reference.description
         assert "not transactional" in reference.description
         assert "no ambient filesystem" in reference.description
+
+
+def test_guidance_reference_explains_when_to_read_without_changing_inline_delivery() -> None:
+    from a13n_harness.guidance import render_guidance
+
+    content = "<essential-rules>Rules</essential-rules>\n\n<!-- reference -->\n\n<workflow>Details</workflow>"
+    assert render_guidance(content) == "<essential-rules>Rules</essential-rules>\n\n\n\n<workflow>Details</workflow>"
+    assert render_guidance(content, "/guidance/harness/example.md") == (
+        "<essential-rules>Rules</essential-rules>\n\n<reference>\n"
+        "Workflows and troubleshooting: `/guidance/harness/example.md`. "
+        "Read it with view before a multi-step task or after an error.\n</reference>"
+    )
+
+
+@pytest.mark.parametrize("missing_tag", ["<run-code>", "</run-code>", "<run-program>", "</run-program>"])
+def test_runner_descriptions_require_complete_sections(missing_tag: str) -> None:
+    from a13n_harness.toolsets._instructions import tool_instruction
+    from a13n_harness.toolsets.codeact import _runner_descriptions
+
+    guidance = tool_instruction("codeact").replace(missing_tag, "")
+    with pytest.raises(ValueError, match="CodeAct guidance requires a complete <run-"):
+        _runner_descriptions(guidance, inline=True, programs=True)
+
+
+@pytest.mark.parametrize(
+    "page,kwargs",
+    [
+        (
+            "tool_search",
+            dict(
+                search_name="find_ops",
+                describe_name="describe_op",
+                call_name="invoke_op",
+                groups_name="domains",
+                list_name="list_ops",
+            ),
+        ),
+        ("subagents", dict(available_subagents="researcher: bounded research")),
+        ("delegate", dict(available_subagents="researcher: bounded research")),
+    ],
+)
+def test_formatted_guidance_has_no_reference_replacement_fields(page, kwargs) -> None:
+    from string import Formatter
+
+    from a13n_harness.toolsets._instructions import tool_instruction
+
+    content = files("a13n_harness.toolsets.prompts").joinpath("guidance", f"{page}.md").read_text()
+    _, marker, reference = content.partition("<!-- reference -->")
+    if marker:
+        assert all(field is None for _, field, _, _ in Formatter().parse(reference))
+    for root in (None, "/release-guidance"):
+        rendered = tool_instruction(page, reference_root=root).format(**kwargs)
+        assert kwargs[next(iter(kwargs))] in rendered
+
+
+@pytest.mark.parametrize(
+    "page,essential,detail",
+    [
+        ("environment-shell", "Do not reissue it.", "Reads are non-consuming"),
+        ("tool_search", "A summary is not a calling contract.", "Exact local or"),
+        ("environment-routing", "Choose the target before acting.", "Absolute file paths and shell"),
+    ],
+)
+def test_reference_pages_keep_essentials_and_inline_delivery_keeps_details(page, essential, detail) -> None:
+    from a13n_harness.toolsets._instructions import tool_instruction
+
+    inline = tool_instruction(page)
+    reference = tool_instruction(page, reference_root="/release-guidance")
+    assert essential in inline and essential in reference
+    assert detail in inline and detail not in reference
+    assert f"/release-guidance/harness/{page}.md" in reference
