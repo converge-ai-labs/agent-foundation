@@ -49,19 +49,25 @@ const Context = createContext<BackgroundState>({
   refresh: () => {},
 });
 export const useBackground = () => useContext(Context);
-export function BackgroundScope({
-  threadId,
-  onOpen,
-  children,
-  observe = false,
-  closeOnOpen = false,
-}: {
+type BackgroundScopeProps = {
   threadId: string;
   observe?: boolean;
   closeOnOpen?: boolean;
   onOpen: BackgroundState["open"];
   children: ReactNode;
-}) {
+};
+
+export function BackgroundScope(props: BackgroundScopeProps) {
+  return props.threadId ? <ThreadBackgroundScope {...props} /> : props.children;
+}
+
+function ThreadBackgroundScope({
+  threadId,
+  onOpen,
+  children,
+  observe = false,
+  closeOnOpen = false,
+}: BackgroundScopeProps) {
   const { t } = useTranslation();
   const { client } = useTransport();
   const guest = useGuestAccess();
@@ -74,7 +80,7 @@ export function BackgroundScope({
     !!threadId && !!detail.data,
   );
   // Read a bounded status page; Show more is the only way to request older work.
-  const childPage = useChildExecutions(threadId, !!threadId, 100);
+  const childPage = useChildExecutions(threadId, !!threadId);
   const toolPage = useInfiniteQuery({
     queryKey: ["thread", threadId, "tool-executions", "background"],
     enabled: !!threadId && !guest,

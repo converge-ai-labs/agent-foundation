@@ -238,6 +238,6 @@ it("presents dynamic creation with a translated action and the child's authored 
   ).toBeTruthy();
   await language("简体中文");
   expect(
-    screen.getByRole("button", { name: "启动子代理 Checkout reviewer" }),
+    screen.getByRole("button", { name: "启动子智能体 Checkout reviewer" }),
   ).toBeTruthy();
 });

@@ -240,8 +240,7 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
                 title={t(stopAction ? "Stop" : "Steer")}
                 size="icon"
                 disabled={
-                  (!hasMessage &&
-                    !child.available_actions?.includes("cancel")) ||
+                  (!hasMessage && !stopAction) ||
                   controlState.pending ||
                   controlState.unknown
                 }

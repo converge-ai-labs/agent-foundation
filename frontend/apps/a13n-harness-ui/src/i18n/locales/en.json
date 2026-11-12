@@ -1,5 +1,4 @@
 {
-  "Start subagent": "Start subagent",
   "Authorization": "Authorization",
   "Read-only access to Linear issues, projects and teams.": "Read-only access to Linear issues, projects and teams.",
   "Read and write access to Linear. Review the permissions before authorizing.": "Read and write access to Linear. Review the permissions before authorizing.",
@@ -3468,6 +3467,7 @@
   "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.": "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.",
   "This message was not sent. Edit it or discard it before continuing.": "This message was not sent. Edit it or discard it before continuing.",
   "Retry exactly": "Retry exactly",
+  "Start subagent": "Start subagent",
   "Background work": "Background work",
   "Close background work": "Close background work",
   "Couldn’t confirm delivery. Nothing was resent.": "Couldn’t confirm delivery. Nothing was resent.",

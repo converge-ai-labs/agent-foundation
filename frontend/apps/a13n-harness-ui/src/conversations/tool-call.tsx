@@ -1,6 +1,3 @@
-import { useBackground } from "./background-context";
-import { SubagentGlyph } from "./background-card";
-import { executionReceipt } from "./background-work";
 import { MovedToBackground } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
@@ -777,9 +774,6 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
-  const bg = useBackground();
-  const receipt = executionReceipt(tool);
-  const child = receipt && bg.resolve(receipt.execution_id as string);
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -794,7 +788,6 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             <strong data-running-label={info.running || undefined}>
               {toolLabel(info, t)}
             </strong>{" "}
-            {child?.kind === "child" && <SubagentGlyph id={child.id} />}
             {info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}

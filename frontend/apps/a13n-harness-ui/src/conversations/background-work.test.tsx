@@ -507,3 +507,26 @@ it("reads the terminal child checkpoint when its head settles after a running re
   await screen.findByText("Final child report");
   expect(screen.queryByText("Partial child report")).toBeNull();
 });
+
+it("keeps a pending child prompt blank and reports unavailable only after an empty response", async () => {
+  const test = setup([child("one", "running")]);
+  const read = test.GET.getMockImplementation()!;
+  let settle!: (value: { data: unknown }) => void;
+  test.GET.mockImplementation((path) =>
+    path.endsWith("/inputs")
+      ? new Promise((resolve) => {
+          settle = resolve;
+        })
+      : read(path),
+  );
+  render(test.view("root"));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Background work" }),
+  );
+  await waitFor(() => expect(settle).toBeDefined());
+  expect(screen.queryByText("Input unavailable")).toBeNull();
+  await act(async () => {
+    settle({ data: { turns: [] } });
+  });
+  expect(await screen.findByText("Input unavailable")).toBeTruthy();
+});

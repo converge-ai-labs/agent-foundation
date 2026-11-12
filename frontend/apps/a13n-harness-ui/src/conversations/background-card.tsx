@@ -324,6 +324,7 @@ function ChildPrompt({ item }: { item: BackgroundItem }) {
         }),
       ),
   });
+  if (!item.preview && prompt.isPending) return null;
   const text =
     item.preview || prompt.data?.turns[0]?.preview || t("Input unavailable");
   return <span title={text}>{text}</span>;
