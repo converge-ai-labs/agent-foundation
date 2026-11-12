@@ -3347,7 +3347,7 @@
   "Run {{count}} searches_other": "执行 {{count}} 次搜索",
   "No connections yet. Add a service account to get started.": "还没有连接。添加服务账号即可开始。",
   "Connect GitHub": "连接 GitHub",
-  "Connect GitHub with your personal access token. Access follows your GitHub permissions.": "使用个人访问令牌连接 GitHub。访问范围取决于你的 GitHub 权限。",
+  "Repositories, issues and pull requests with your GitHub permissions.": "按你的 GitHub 权限访问仓库、议题和拉取请求。",
   "Choose token permissions for the repositories and organizations you want to use. Saving does not contact GitHub.": "按需要访问的仓库和组织选择令牌权限。保存时不会连接 GitHub。",
   "GitHub connection test failed. Check your token and GitHub permissions.": "GitHub 连接测试失败。请检查令牌和 GitHub 权限。"
 }

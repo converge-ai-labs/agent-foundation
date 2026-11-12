@@ -4790,6 +4790,10 @@ export interface components {
             name: string;
             /** Description */
             description: string;
+            /** Brand */
+            brand?: string | null;
+            /** Logo Url */
+            logo_url?: string | null;
             /** Configuration Schema */
             configuration_schema: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -7194,6 +7198,8 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /** Icon */
+            icon?: string | null;
             /**
              * Kind
              * @default submit

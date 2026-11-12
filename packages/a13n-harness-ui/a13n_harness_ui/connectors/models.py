@@ -24,6 +24,8 @@ class Declaration(Value):
     key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")
     name: str
     description: str
+    brand: str | None = None
+    logo_url: str | None = None
     configuration_schema: dict[str, JsonValue]
     events: tuple[EventDeclaration, ...] = ()
     bot_delivery: bool = False
@@ -59,6 +61,7 @@ class Instance(Value):
 class SetupAction(Value):
     id: str
     label: str
+    icon: str | None = None
     kind: Literal["submit", "open_url", "copy", "confirm"] = "submit"
     url: str | None = None
     value: str | None = None

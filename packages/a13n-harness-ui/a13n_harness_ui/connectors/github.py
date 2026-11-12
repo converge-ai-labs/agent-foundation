@@ -50,7 +50,8 @@ class GitHub(Definition):
         return Declaration(
             key="github",
             name="GitHub",
-            description="Connect GitHub with your personal access token. Access follows your GitHub permissions.",
+            brand="github",
+            description="Repositories, issues and pull requests with your GitHub permissions.",
             configuration_schema={**Settings.model_json_schema(), "readOnly": True},
             setup_intents=("configure", "test"),
         )
@@ -121,7 +122,7 @@ class GitHubSetup(SetupFlow):
                     kind="open_url",
                     url="https://github.com/settings/personal-access-tokens",
                 ),
-                SetupAction(id="save", label="Save connection"),
+                SetupAction(id="save", label="Save connection", icon="save"),
             ),
         )
         return self._step
@@ -166,10 +167,10 @@ class GitHubSetup(SetupFlow):
 
     async def _saved_step(self) -> Step:
         configured = bool((await self.controller.context.configuration()).credentials.get("token"))
-        actions = [SetupAction(id="edit", label="Edit connection")]
+        actions = [SetupAction(id="edit", label="Edit connection", icon="edit")]
         if (await self.controller.status()).state == "ready":
-            actions.append(SetupAction(id="test", label="Test connection"))
-        actions.append(SetupAction(id="done", label="Done"))
+            actions.append(SetupAction(id="test", label="Test connection", icon="test"))
+        actions.append(SetupAction(id="done", label="Done", icon="done"))
         return Step(
             key="saved",
             title="Connection saved" if configured else "Setup incomplete",

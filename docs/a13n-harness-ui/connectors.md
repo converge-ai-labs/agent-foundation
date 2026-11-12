@@ -64,6 +64,12 @@ The form profile supports objects, strings/passwords, booleans, numbers, enums, 
 
 Controllers own shared resources until admitted root users drain. Native tools remain per-Run Capabilities. A background producer is restarted on configuration changes. Setup actions are explicit and serialized; reads observe the current Step, and an optional flow worker advances external waits. Close optional flow resources after cancellation. Plugins are trusted Host Python code, not sandboxed scripts.
 
+### Presentation conventions
+
+All Connectors use the same account list and setup renderer. In `Declaration`, optional `brand="github"` selects a shared brand mark; optional `logo_url="https://example.com/logo.png"` supplies a public image for an unregistered service. No frontend provider registration is required. Use a stable credential-free URL: the browser loads it without a referrer. Missing, unsupported or failed images fall back to a generic mark. Keep a short service name and one concise description.
+
+`SetupAction(icon="save", ...)` declares a semantic hint. Supported tokens are `edit`, `test`, `save`, `continue`, `done`, `refresh`, `open_url` and `copy`. The Host chooses the glyph and layout. Secondary `edit` and `test` submit actions become icon buttons with tooltips and accessible labels; primary and confirmation actions keep their text. Unknown or omitted hints keep text, and URL/copy actions default to their kind's glyph. Never derive behavior from an icon, put secrets in logo URLs, or depend on action IDs to select presentation. Keep permissions, saved-versus-tested results and recovery instructions visible.
+
 ### Implement a service using Remote MCP
 
 Subclass `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` to reuse native tools and typed programmatic access. This is a Controller base, not a registered Definition. Your Definition owns the concrete service's name, configuration model and setup. Its `open()` yields your Controller. Implement `connection(configuration)` to return a safe `ResolvedMcpRecipe`, or `None` while the account is incomplete. Fix the service endpoint and transport policy in code, and use `McpPrivateValueSource` for private headers. Never put credential values in the recipe.

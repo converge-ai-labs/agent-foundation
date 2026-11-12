@@ -40,6 +40,19 @@
   color: var(--a13n-secondary);
   margin: 0;
 }
+.identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.identity > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.instanceRow > :first-child > p {
+  padding-inline-start: 28px;
+}
 .rowActions {
   display: flex;
   align-items: center;
@@ -65,6 +78,14 @@
 }
 .editor {
   gap: 32px;
+}
+.setupFooter {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .setup form:empty {
   display: none;

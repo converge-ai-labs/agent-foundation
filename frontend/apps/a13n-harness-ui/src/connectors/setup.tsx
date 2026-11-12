@@ -1,5 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ModalFrame,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "a13n-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
@@ -7,6 +13,11 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
+import {
+  ConnectorIcon,
+  compactSetupAction,
+  setupActionIcon,
+} from "./presentation";
 import {
   clearSecrets,
   defaultValue,
@@ -28,11 +39,13 @@ function stepValues(step: Schema<"Step">): Json {
 export function ConnectorSetup({
   connectorId,
   name,
+  declaration,
   intent = "configure",
   onClose,
 }: {
   connectorId: string;
   name?: string;
+  declaration?: Schema<"Declaration"> | null;
   intent?: string;
   onClose: () => void;
 }) {
@@ -233,8 +246,13 @@ export function ConnectorSetup({
         bottomStickOnMobile
         keepVisibleWhenNested
         title={
-          <span tabIndex={-1} ref={heading}>
-            {snapshot ? t(snapshot.step.title) : t("Opening connection setup…")}
+          <span tabIndex={-1} ref={heading} className={styles.identity}>
+            <ConnectorIcon declaration={declaration} />
+            <span>
+              {snapshot
+                ? t(snapshot.step.title)
+                : t("Opening connection setup…")}
+            </span>
           </span>
         }
         description={name}
@@ -246,7 +264,7 @@ export function ConnectorSetup({
           }
         }}
         footer={
-          <>
+          <div className={styles.setupFooter}>
             {terminal || !snapshot ? (
               <Button variant="outline" disabled={busy} onClick={requestClose}>
                 {t("Close")}
@@ -281,6 +299,11 @@ export function ConnectorSetup({
             {!terminal &&
               !uncertain &&
               submitActions.map((action) => {
+                const Icon = setupActionIcon(action);
+                const compact = compactSetupAction(
+                  action,
+                  action.id === primary?.id,
+                );
                 const button = (
                   <Button
                     key={action.id}
@@ -288,9 +311,12 @@ export function ConnectorSetup({
                     form={formId}
                     value={action.id}
                     variant={action.id === primary?.id ? "default" : "outline"}
+                    size={compact ? "icon" : "default"}
+                    aria-label={compact ? t(action.label) : undefined}
                     disabled={busy}
                   >
-                    {t(action.label)}
+                    {Icon && <Icon size={16} aria-hidden="true" />}
+                    {!compact && t(action.label)}
                   </Button>
                 );
                 return action.kind === "confirm" ? (
@@ -304,11 +330,16 @@ export function ConnectorSetup({
                       void act(action.id);
                     }}
                   />
+                ) : compact ? (
+                  <Tooltip key={action.id}>
+                    <TooltipTrigger render={button} />
+                    <TooltipPopup>{t(action.label)}</TooltipPopup>
+                  </Tooltip>
                 ) : (
                   button
                 );
               })}
-          </>
+          </div>
         }
       >
         <section className={styles.setup} aria-label={t("Connection setup")}>
@@ -373,8 +404,9 @@ export function ConnectorSetup({
                       (action) =>
                         action.kind === "open_url" || action.kind === "copy",
                     )
-                    .map((action) =>
-                      action.kind === "open_url" ? (
+                    .map((action) => {
+                      const Icon = setupActionIcon(action);
+                      return action.kind === "open_url" ? (
                         <Button
                           key={action.id}
                           variant="link"
@@ -387,6 +419,7 @@ export function ConnectorSetup({
                             />
                           }
                         >
+                          {Icon && <Icon size={14} aria-hidden="true" />}
                           {t(action.label)}
                         </Button>
                       ) : (
@@ -400,10 +433,11 @@ export function ConnectorSetup({
                             );
                           }}
                         >
+                          {Icon && <Icon size={14} aria-hidden="true" />}
                           {t(action.label)}
                         </Button>
-                      ),
-                    )}
+                      );
+                    })}
               </div>
             </>
           )}

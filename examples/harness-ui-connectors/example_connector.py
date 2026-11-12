@@ -131,7 +131,7 @@ class Setup(SetupFlow):
             title="Configure periodic example",
             form=Settings.model_json_schema(),
             values=Settings.model_validate(self.current.settings).model_dump(mode="json"),
-            actions=(SetupAction(id="save", label="Save connection"),),
+            actions=(SetupAction(id="save", label="Save connection", icon="save"),),
         )
 
     async def act(self, action: str, values: dict[str, JsonValue]) -> Step:

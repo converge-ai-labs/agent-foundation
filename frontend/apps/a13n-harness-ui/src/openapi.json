@@ -13917,6 +13917,28 @@
             "type": "string",
             "title": "Description"
           },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "configuration_schema": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -20784,6 +20806,17 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "kind": {
             "type": "string",

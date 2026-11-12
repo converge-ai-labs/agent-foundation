@@ -106,6 +106,37 @@ afterEach(async () => {
   sessionStorage.clear();
 });
 
+it("renders an unregistered service logo from its backend declaration", async () => {
+  mount(
+    <CreateConnector
+      item={{
+        key: "custom-service",
+        available: true,
+        declaration: {
+          key: "custom-service",
+          name: "Custom service",
+          description: "A third-party service",
+          logo_url: "https://example.invalid/custom-logo.png",
+          configuration_schema: { type: "object" },
+        },
+      }}
+      onClose={() => {}}
+    />,
+  );
+  expect(
+    screen.getByRole("heading", { name: "Add Custom service" }),
+  ).toBeTruthy();
+  const logo = document.querySelector<HTMLImageElement>("img");
+  expect(logo?.src).toBe("https://example.invalid/custom-logo.png");
+  expect(logo?.getAttribute("referrerpolicy")).toBe("no-referrer");
+  fireEvent.error(logo!);
+  expect(document.querySelector("img")).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "Add Custom service" }),
+  ).toBeTruthy();
+  expect(transport.client.POST).not.toHaveBeenCalled();
+});
+
 it("clears private fields on dispatch, preserves other drafts and reconciles unknown outcomes without replay", async () => {
   mount(<ConnectorSetup connectorId="connector-one" onClose={() => {}} />);
   const token = await screen.findByLabelText("GitHub personal access token");
@@ -389,8 +420,13 @@ it("keeps saved connection actions reachable in the dialog and supports implicit
       title: "Connection saved",
       state: "input",
       actions: [
-        { id: "test", label: "Test connection", kind: "submit" },
-        { id: "done", label: "Done", kind: "submit" },
+        {
+          id: "opaque-probe",
+          label: "Test connection",
+          kind: "submit",
+          icon: "test",
+        },
+        { id: "done", label: "Done", kind: "submit", icon: "done" },
       ],
     },
   };
@@ -408,7 +444,9 @@ it("keeps saved connection actions reachable in the dialog and supports implicit
   fireEvent.submit(token.closest("form")!);
   await screen.findByText("Connection saved");
   expect(transport.client.POST.mock.calls[1][1].body.action).toBe("save");
-  expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy();
+  const testButton = screen.getByRole("button", { name: "Test connection" });
+  expect(testButton.textContent).toBe("");
+  expect(screen.getByRole("button", { name: "Done" }).textContent).toBe("Done");
   transport.client.POST.mockResolvedValueOnce({
     data: {
       ...saved,
@@ -424,6 +462,9 @@ it("keeps saved connection actions reachable in the dialog and supports implicit
     screen.getByRole("button", { name: "Test connection" }),
   );
   await screen.findByRole("alert");
+  expect(transport.client.POST.mock.calls[2][1].body.action).toBe(
+    "opaque-probe",
+  );
   expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
 });

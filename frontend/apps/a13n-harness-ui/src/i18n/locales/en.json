@@ -3379,7 +3379,7 @@
   "Run {{count}} searches_other": "Run {{count}} searches",
   "No connections yet. Add a service account to get started.": "No connections yet. Add a service account to get started.",
   "Connect GitHub": "Connect GitHub",
-  "Connect GitHub with your personal access token. Access follows your GitHub permissions.": "Connect GitHub with your personal access token. Access follows your GitHub permissions.",
+  "Repositories, issues and pull requests with your GitHub permissions.": "Repositories, issues and pull requests with your GitHub permissions.",
   "Choose token permissions for the repositories and organizations you want to use. Saving does not contact GitHub.": "Choose token permissions for the repositories and organizations you want to use. Saving does not contact GitHub.",
   "GitHub connection test failed. Check your token and GitHub permissions.": "GitHub connection test failed. Check your token and GitHub permissions."
 }

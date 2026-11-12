@@ -7,6 +7,8 @@ import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useConnectors } from "./data";
 import { ConnectorSetup } from "./setup";
+import { ConnectorIcon } from "./presentation";
+import styles from "./connectors.module.css";
 
 export function CreateConnector({
   item,
@@ -106,6 +108,7 @@ export function CreateConnector({
     return (
       <ConnectorSetup
         connectorId={created.connector_id}
+        declaration={item.declaration}
         name={created.name}
         onClose={closeSetup}
       />
@@ -146,7 +149,12 @@ export function CreateConnector({
     <ModalFrame
       open
       bottomStickOnMobile
-      title={t("Add {{name}}", { name: typeName })}
+      title={
+        <span className={styles.identity}>
+          <ConnectorIcon declaration={item.declaration} />
+          <span>{t("Add {{name}}", { name: typeName })}</span>
+        </span>
+      }
       description={t(
         "Choose a name to distinguish this account from your other connections.",
       )}

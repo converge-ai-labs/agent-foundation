@@ -10,6 +10,7 @@ import { useConnectorCatalog, useConnectors } from "./data";
 import { ConnectorSetup } from "./setup";
 import { CreateConnector } from "./create";
 import { ConnectorStatus } from "./status";
+import { ConnectorIcon } from "./presentation";
 import styles from "./connectors.module.css";
 
 export function useConnectorOffers(threadId: string, enabled = true) {
@@ -56,6 +57,7 @@ export function ConnectorOffer({ offer }: { offer: Schema<"SetupOffer"> }) {
     <section className={styles.offer} aria-label={t("Connector setup offer")}>
       <div className={styles.header}>
         <strong>
+          <ConnectorIcon declaration={declaration?.declaration} />
           {ready ? (
             <>
               <Check size={16} aria-hidden="true" />{" "}
@@ -145,6 +147,7 @@ export function ConnectorOffer({ offer }: { offer: Schema<"SetupOffer"> }) {
       {!shareId && setup && (
         <ConnectorSetup
           connectorId={setup}
+          declaration={declaration?.declaration}
           name={eligible.find((item) => item.connector_id === setup)?.name}
           onClose={() => setSetup(null)}
         />

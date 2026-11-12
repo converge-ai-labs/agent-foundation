@@ -10,6 +10,7 @@ import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
 import { defaultValue, type FormSchema, type Json } from "./schema";
 import { ConnectorStatus } from "./status";
+import { ConnectorIcon } from "./presentation";
 import styles from "./connectors.module.css";
 
 export function AccountDialog({
@@ -121,7 +122,12 @@ export function AccountDialog({
         open
         bottomStickOnMobile
         keepVisibleWhenNested
-        title={instance.name}
+        title={
+          <span className={styles.identity}>
+            <ConnectorIcon declaration={catalog?.declaration} />
+            <span>{instance.name}</span>
+          </span>
+        }
         description={catalog?.declaration?.name ?? instance.kind}
         closeLabel={t("Close connection settings")}
         onOpenChange={(open, details) => {

@@ -64,6 +64,12 @@ example = "example_connector:Example"
 
 Controller 持有共享资源，直到已接纳的根运行完成清理。原生工具仍是每次运行的 Capability。后台采集器在配置变化后重启。配置 action 必须显式执行并串行处理；读取只观察当前 Step，可选流程 worker 用于推进外部等待。取消后关闭流程资源。插件是可信 Host Python 代码，不是沙箱脚本。
 
+### 展示约定
+
+所有连接器共用账户列表和配置渲染器。`Declaration` 中可选的 `brand="github"` 选择共用品牌图标；`logo_url="https://example.com/logo.png"` 为未收录的服务提供公共图片，不需要逐个在前端注册 provider。使用稳定且不含凭据的地址，浏览器加载时不发送 referrer。缺少、不支持或加载失败的图片使用通用图标。服务名称保持简短，描述用一句话说明用途。
+
+`SetupAction(icon="save", ...)` 声明语义提示。支持 `edit`、`test`、`save`、`continue`、`done`、`refresh`、`open_url` 和 `copy`，由 Host 选择图形和布局。次要的 `edit` 和 `test` 提交操作显示为带提示和无障碍标签的图标按钮；主操作和确认操作保留文字。未知或省略的提示保留文字，打开链接和复制操作默认使用对应类型的图标。不要根据图标推导行为，不要在 logo 地址中放入秘密，也不要依赖 action ID 选择展示方式。权限、保存与测试的区别以及恢复说明保持可见。
+
 ### 用 Remote MCP 实现具体服务
 
 继承 `a13n_harness_ui.connectors.remote_mcp.RemoteMcp`，复用原生工具和类型化编程访问。这是 Controller 基类，不是已注册的 Definition。你的 Definition 负责具体服务的名称、配置模型和配置流程，其 `open()` 产出你的 Controller。实现 `connection(configuration)`，返回安全的 `ResolvedMcpRecipe`，账户配置未完成时返回 `None`。服务地址与传输策略由代码确定，私密请求头使用 `McpPrivateValueSource` 引用，不能把凭据值放入 recipe。

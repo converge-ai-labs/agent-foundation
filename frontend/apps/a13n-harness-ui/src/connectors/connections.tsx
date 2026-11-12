@@ -8,7 +8,16 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "a13n-ui";
-import { CaretDown, DotsThree, Plus, Plug } from "@phosphor-icons/react";
+import {
+  ArrowsClockwise,
+  CaretDown,
+  DotsThree,
+  GearSix,
+  Plus,
+  PlugsConnected,
+  Power,
+  Trash,
+} from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -19,6 +28,7 @@ import { ConnectorSetup } from "./setup";
 import { AccountDialog } from "./account-dialog";
 import { CreateConnector } from "./create";
 import { ConnectorStatus } from "./status";
+import { ConnectorIcon } from "./presentation";
 import { useConnectorCatalog, useConnectors } from "./data";
 import styles from "./connectors.module.css";
 
@@ -101,7 +111,7 @@ export function ConnectorsSection() {
                 disabled={!item.available}
                 onClick={() => setCreate(item)}
               >
-                <Plug size={16} />
+                <ConnectorIcon declaration={item.declaration} size={20} />
                 <span>
                   <span>{item.declaration?.name ?? item.key}</span>
                   <small className={styles.menuDescription}>
@@ -141,7 +151,12 @@ export function ConnectorsSection() {
               <SettingsRow
                 key={instance.connector_id}
                 className={styles.instanceRow}
-                label={instance.name}
+                label={
+                  <span className={styles.identity}>
+                    <ConnectorIcon declaration={item?.declaration} />
+                    <span>{instance.name}</span>
+                  </span>
+                }
                 description={item?.declaration?.name ?? instance.kind}
               >
                 <div className={styles.rowActions}>
@@ -179,6 +194,7 @@ export function ConnectorsSection() {
                       <MenuItem
                         onClick={() => setManage(instance.connector_id)}
                       >
+                        <GearSix size={16} aria-hidden="true" />
                         {t("Manage")}
                       </MenuItem>
                       <MenuItem
@@ -190,6 +206,7 @@ export function ConnectorsSection() {
                           })
                         }
                       >
+                        <ArrowsClockwise size={16} aria-hidden="true" />
                         {t("Set up again")}
                       </MenuItem>
                       {item?.declaration?.setup_intents?.includes("test") && (
@@ -206,6 +223,7 @@ export function ConnectorsSection() {
                             })
                           }
                         >
+                          <PlugsConnected size={16} aria-hidden="true" />
                           {t("Test connection")}
                         </MenuItem>
                       )}
@@ -215,6 +233,7 @@ export function ConnectorsSection() {
                           void mutate(instance);
                         }}
                       >
+                        <Power size={16} aria-hidden="true" />
                         {t(instance.enabled ? "Disable" : "Enable")}
                       </MenuItem>
                       <MenuSeparator />
@@ -226,6 +245,7 @@ export function ConnectorsSection() {
                             closeOnClick={false}
                             disabled={busy}
                           >
+                            <Trash size={16} aria-hidden="true" />
                             {t("Delete connection")}
                           </MenuItem>
                         }
@@ -253,6 +273,15 @@ export function ConnectorsSection() {
       {setup && (
         <ConnectorSetup
           connectorId={setup.id}
+          declaration={
+            catalog.data?.find(
+              (item) =>
+                item.key ===
+                instances.data?.find(
+                  (instance) => instance.connector_id === setup.id,
+                )?.kind,
+            )?.declaration
+          }
           intent={setup.intent}
           name={
             instances.data?.find((item) => item.connector_id === setup.id)?.name
