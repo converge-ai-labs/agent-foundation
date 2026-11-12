@@ -18,6 +18,16 @@
   background: var(--a13n-signal);
 }
 
+.recovery p {
+  margin: 0;
+}
+.recoveryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .setup {
   composes: settingsContent from "./shell/workbench.module.css";
 }

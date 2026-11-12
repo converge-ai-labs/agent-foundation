@@ -752,11 +752,15 @@ export const SavedEntry = memo(function SavedEntry({
 // Host heartbeat and working output stay in execution history rather than chat.
 export function PublishedTranscript({
   messages,
+  threadId,
 }: {
+  threadId?: string;
   messages: {
     message_id: string;
     role: "user" | "assistant";
     text: string;
+    parts?: Schema<"BotMessage">["parts"];
+    status?: string;
     connector_setups?: Schema<"SetupOffer">[];
   }[];
 }) {
@@ -766,12 +770,26 @@ export function PublishedTranscript({
         ? {
             id: message.message_id,
             kind: "input",
-            parts: [{ kind: "text", text: message.text }],
+            status: message.status,
+            parts: message.parts?.length
+              ? message.parts.map((part) =>
+                  typeof part === "string"
+                    ? { kind: "text", text: part }
+                    : {
+                        kind: "attachment",
+                        metadata: { harness_ui: { attachment: part } },
+                      },
+                )
+              : [{ kind: "text", text: message.text }],
           }
         : { id: message.message_id, kind: "assistant", text: message.text };
     return (
       <div key={row.id}>
-        <Rows rows={[row]} output={row.kind === "assistant" ? [row] : []} />
+        <Rows
+          rows={[row]}
+          threadId={threadId}
+          output={row.kind === "assistant" ? [row] : []}
+        />
         {message.connector_setups?.map((offer) => (
           <ConnectorOffer key={offer.offer_id} offer={offer} />
         ))}

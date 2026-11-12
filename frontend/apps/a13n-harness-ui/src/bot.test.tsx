@@ -69,6 +69,10 @@ const approval: Schema<"ApprovalRequestView"> = {
   override_allowed: false,
 };
 let reject: boolean;
+let sendGate: Promise<void> | undefined;
+let rejectionStatus: number | undefined;
+let uploadFailure: boolean;
+let botReadGate: Promise<void> | undefined;
 let rootSource: string;
 let configurationWrites: string[];
 let writable: boolean;
@@ -79,6 +83,12 @@ let queries: QueryClient;
 let transport: ReturnType<typeof createTransport>;
 let draft: ThreadDraft;
 const profile = { display_name: "Tester", color: "#666666" };
+const attachment: Schema<"ThreadAttachment"> = {
+  attachment_id: "attachment-example",
+  name: "notes.txt",
+  media_type: "text/plain",
+  size: 5,
+};
 function typeMessage(text: string) {
   act(() => {
     const input = draft.doc.getText("text");
@@ -122,6 +132,10 @@ beforeEach(() => {
   saveGate = undefined;
   savedDrafts = new Map();
   reject = false;
+  sendGate = undefined;
+  rejectionStatus = undefined;
+  uploadFailure = false;
+  botReadGate = undefined;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.stubGlobal(
     "fetch",
@@ -129,12 +143,47 @@ beforeEach(() => {
       const path = new URL(request.url).pathname;
       if (path === "/api/bot/inputs") {
         requests.push(await request.json());
+        await sendGate;
         if (reject) throw new TypeError("Offline");
+        if (rejectionStatus)
+          return Response.json(
+            { error: { message: "Not accepting input" } },
+            { status: rejectionStatus },
+          );
+        const command = requests.at(-1)!;
+        snapshot.messages = [
+          ...(snapshot.messages ?? []).filter(
+            (message) => message.message_id !== `user-${command.input_id}`,
+          ),
+          {
+            message_id: `user-${command.input_id}`,
+            role: "user",
+            text: command.text ?? "",
+            parts: command.parts?.map((part) =>
+              typeof part === "string" ? part : attachment,
+            ),
+            created_at: "2026-11-12T00:00:00Z",
+          },
+        ];
         return Response.json({
-          input_id: requests.at(-1)!.input_id,
+          input_id: command.input_id,
+          text: command.text,
+          parts: command.parts?.map((part) =>
+            typeof part === "string" ? part : attachment,
+          ),
+          source: "user",
+          created_at: "2026-11-12T00:00:00Z",
           state: "admitted",
         });
       }
+      if (path === `/api/threads/${BOT_THREAD_ID}/attachments`) {
+        if (uploadFailure)
+          return Response.json({ message: "Upload failed" }, { status: 400 });
+        return Response.json(attachment);
+      }
+      if (path.endsWith(`/attachments/${attachment.attachment_id}/metadata`))
+        return Response.json(attachment);
+      if (path === "/api/bot" && botReadGate) await botReadGate;
       if (path === "/api/bot/pause") {
         snapshot = {
           ...snapshot,
@@ -308,10 +357,11 @@ it("submits human input while busy or paused through Bot admission only", async 
       status: "running",
     },
   };
-  mount();
-  await screen.findByText("Automation paused · You can still chat");
+  mount("/bot", true);
+  await screen.findByText("Automation paused");
+  expect(screen.getByText("Working…")).toBeTruthy();
   typeMessage("Change direction now");
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }));
   await waitFor(() => expect(requests).toHaveLength(1));
   const paths = vi
     .mocked(fetch)
@@ -335,7 +385,7 @@ it("retains drafts and uncertain exact commands across navigation without automa
     "Do once",
   );
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await screen.findByRole("button", { name: "Retry" });
+  await screen.findByRole("button", { name: "Retry exactly" });
   expect(requests).toHaveLength(1);
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
@@ -343,7 +393,7 @@ it("retains drafts and uncertain exact commands across navigation without automa
     screen.getByRole("textbox", { name: "Message" }).closest("[inert]"),
   ).not.toBeNull();
   reject = false;
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry exactly" }));
   await waitFor(() => expect(requests).toHaveLength(2));
   expect(requests[1]).toEqual(requests[0]);
 });
@@ -721,7 +771,10 @@ it("offers Settings recovery and keeps busy chat available without queue warning
   await act(async () => {
     queries.setQueryData(["bot"], snapshot);
   });
-  expect(await screen.findByText("Working…")).toBeTruthy();
+  const working = await screen.findByText("Preparing…");
+  expect(working.closest("[role='status']")?.querySelector("svg")).toBeTruthy();
+  expect(working.closest("[class*='reading_']")).toBeTruthy();
+  expect(screen.getAllByText("Preparing…")).toHaveLength(1);
   expect(screen.queryByText(/will be queued/)).toBeNull();
   expect(screen.queryByRole("link", { name: "Model" })).toBeNull();
   typeMessage("Change direction now");
@@ -821,4 +874,244 @@ it("asks for an existing model rather than adding one when no default is configu
       .getByRole("button", { name: "Turn on Bot" })
       .hasAttribute("disabled"),
   ).toBe(true);
+});
+
+it("uploads ordered attachments and renders admitted input before a slow snapshot refresh", async () => {
+  const view = mount();
+  await screen.findByRole("button", { name: "Attach files" });
+  typeMessage("Inspect ");
+  fireEvent.change(view.container.querySelector("input[type=file]")!, {
+    target: {
+      files: [new File(["hello"], "notes.txt", { type: "text/plain" })],
+    },
+  });
+  await screen.findByRole("button", { name: "notes.txt" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  let release!: () => void;
+  botReadGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].parts).toEqual([
+    { attachment_id: attachment.attachment_id },
+    "Inspect ",
+  ]);
+  await waitFor(() => expect(draft.doc.getText("text").toString()).toBe(""));
+  expect(screen.getByText("Inspect")).toBeTruthy();
+  expect(screen.getByText("notes.txt")).toBeTruthy();
+  await act(async () => {
+    release();
+  });
+});
+
+it("retains failed uploads, retries them, and submits attachment-only exact commands", async () => {
+  uploadFailure = true;
+  const view = mount();
+  await screen.findByRole("button", { name: "Attach files" });
+  fireEvent.change(view.container.querySelector("input[type=file]")!, {
+    target: {
+      files: [new File(["hello"], "notes.txt", { type: "text/plain" })],
+    },
+  });
+  const failed = await screen.findByRole("button", {
+    name: /^notes.txt - upload failed/,
+  });
+  expect(
+    screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+  ).toBe(true);
+  uploadFailure = false;
+  fireEvent.click(failed);
+  await screen.findByRole("button", { name: "notes.txt" });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  reject = true;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByRole("button", { name: "Retry exactly" });
+  expect(requests[0].text).toBe("");
+  expect(requests[0].parts).toEqual([
+    { attachment_id: attachment.attachment_id },
+  ]);
+  expect(
+    screen
+      .getByRole("button", { name: "Attach files" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByText("Leave"));
+  fireEvent.click(screen.getByText("Return"));
+  reject = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry exactly" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1]).toEqual(requests[0]);
+});
+
+it("removes transcript activity when work settles or requires a decision", async () => {
+  snapshot.inputs = [
+    {
+      input_id: "active",
+      source: "user",
+      text: "Watch",
+      state: "admitted",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+  mount();
+  await screen.findByText("Preparing…");
+  await act(async () => {
+    queries.setQueryData(["bot"], {
+      ...snapshot,
+      pending_decision: true,
+      operation: {
+        status: "running",
+        receipt: { receipt_id: "receipt-active", thread_id: BOT_THREAD_ID },
+      },
+    });
+  });
+  await waitFor(() => expect(screen.queryByText("Preparing…")).toBeNull());
+  await act(async () => {
+    queries.setQueryData(["bot"], { ...snapshot, inputs: [] });
+  });
+  await waitFor(() => expect(screen.queryByText("Preparing…")).toBeNull());
+});
+
+it("echoes the input before admission and reconciles it without clearing a newer draft", async () => {
+  let release!: () => void;
+  sendGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  typeMessage("Immediate echo");
+  const send = screen.getByRole("button", { name: "Send" });
+  fireEvent.click(send);
+  fireEvent.click(send);
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(draft.doc.getText("text").toString()).toBe("");
+  expect(screen.getByText("Immediate echo")).toBeTruthy();
+  expect(screen.getAllByText("Sending…").length).toBeGreaterThan(0);
+  typeMessage("Next draft");
+  await act(async () => {
+    release();
+  });
+  await waitFor(() => expect(screen.queryByText("Sending…")).toBeNull());
+  expect(screen.getAllByText("Immediate echo")).toHaveLength(1);
+  expect(draft.doc.getText("text").toString()).toBe("Next draft");
+});
+
+it("resolves an unknown submission from a snapshot without replaying it", async () => {
+  reject = true;
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  typeMessage("Observe only");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Not confirmed");
+  snapshot.messages = [
+    {
+      message_id: `user-${requests[0].input_id}`,
+      role: "user",
+      text: "Observe only",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+  fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(screen.queryByText("Not confirmed")).toBeNull());
+  expect(screen.queryByRole("button", { name: "Retry exactly" })).toBeNull();
+  expect(screen.getAllByText("Observe only")).toHaveLength(1);
+  expect(requests).toHaveLength(1);
+  expect(
+    screen.getByRole("textbox", { name: "Message" }).closest("[inert]"),
+  ).toBeNull();
+});
+
+it("keeps a rejected row until explicit edit or discard, then uses a new identity", async () => {
+  rejectionStatus = 409;
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  typeMessage("Correct this");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Not sent");
+  expect(draft.doc.getText("text").toString()).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Edit message" }));
+  expect(draft.doc.getText("text").toString()).toBe("Correct this");
+  rejectionStatus = undefined;
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1].input_id).not.toBe(requests[0].input_id);
+});
+
+it("blocks preparation without sending or losing the draft and offers Stop for active work", async () => {
+  snapshot.operation = {
+    receipt: {
+      receipt_id: "receipt-preparing",
+      thread_id: BOT_THREAD_ID,
+      submitted_at: "2026-11-12T00:00:00Z",
+    },
+    status: "preparing",
+  };
+  mount();
+  await screen.findByText(
+    "Bot is starting. Your draft is kept; send when it is working.",
+  );
+  expect(
+    screen.getByRole("button", { name: "Stop" }).hasAttribute("disabled"),
+  ).toBe(false);
+  typeMessage("Keep this draft");
+  expect(
+    screen.getByRole("button", { name: "Steer" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(requests).toHaveLength(0);
+  expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
+  snapshot = {
+    ...snapshot,
+    operation: { ...snapshot.operation, status: "running" },
+  };
+  await act(async () => {
+    queries.setQueryData(["bot"], snapshot);
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Steer" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+});
+
+it("retains unknown input and exact recovery when interruption precedes user publication", async () => {
+  reject = true;
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  typeMessage("Keep this interrupted input");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Not confirmed");
+  snapshot = {
+    ...snapshot,
+    inputs: [
+      {
+        input_id: requests[0].input_id,
+        source: "user",
+        text: requests[0].text ?? "",
+        state: "interrupted",
+        created_at: "2026-11-12T00:00:00Z",
+      },
+    ],
+  };
+  await act(async () => {
+    await queries.invalidateQueries({ queryKey: ["bot"] });
+  });
+  expect(screen.getByText("Keep this interrupted input")).toBeTruthy();
+  expect(screen.getByText("Not confirmed")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry exactly" })).toBeTruthy();
+  expect(requests).toHaveLength(1);
+  reject = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry exactly" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1]).toEqual(requests[0]);
 });

@@ -162,3 +162,39 @@ describe("Bot conversation projection", () => {
     ).toEqual(["Work is in progress."]);
   });
 });
+
+it("keeps a final publication at its first correlated prose position across a later steer", () => {
+  const first = "2026-11-12T00:00:01Z";
+  const later = "2026-11-12T00:00:02Z";
+  const end = "2026-11-12T00:00:03Z";
+  const result = botConversation(
+    [
+      {
+        message_id: "steer",
+        role: "user",
+        text: "More context",
+        created_at: later,
+      },
+      {
+        message_id: "final",
+        role: "assistant",
+        text: "Done",
+        created_at: end,
+        display_ids: ["native"],
+      },
+    ],
+    [{ item_id: "native", text: "Done", created_at: first, final: true }],
+    [],
+  );
+  expect(result.map((row) => row.message_id)).toEqual(["final", "steer"]);
+  expect(result[0].created_at).toBe(end);
+});
+
+it("places untimed live prose after saved messages instead of at the beginning", () => {
+  const result = botConversation(
+    [{ message_id: "human", role: "user", text: "Start", created_at: time }],
+    [],
+    [live("untimed", "Progress", { timestamp: undefined })],
+  );
+  expect(result.map((row) => row.message_id)).toEqual(["human", "untimed"]);
+});

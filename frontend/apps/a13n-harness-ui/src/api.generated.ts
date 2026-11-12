@@ -3642,6 +3642,11 @@ export interface components {
             /** Text */
             text: string;
             /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["ThreadAttachment"])[];
+            /**
              * Created At
              * Format: date-time
              */
@@ -3679,6 +3684,11 @@ export interface components {
             role: "user" | "assistant";
             /** Text */
             text: string;
+            /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["ThreadAttachment"])[];
             /**
              * Created At
              * Format: date-time
@@ -9972,12 +9982,28 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
+        /**
+         * InputAttachmentReference
+         * @description An ordered input reference to a file staged in the same Thread.
+         */
+        InputAttachmentReference: {
+            /** Attachment Id */
+            attachment_id: string;
+        };
         /** BotSubmit */
         BotSubmit: {
             /** Input Id */
             input_id: string;
-            /** Text */
-            text: string;
+            /**
+             * Text
+             * @default
+             */
+            text?: string;
+            /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[];
         };
         /** BotPause */
         BotPause: {
@@ -10622,11 +10648,6 @@ export interface components {
             options_update_base64?: string | null;
         };
         FastSelection: boolean | "ultrafast";
-        /** InputAttachmentReference */
-        InputAttachmentReference: {
-            /** Attachment Id */
-            attachment_id: string;
-        };
         /** @enum {string} */
         ReasoningMode: "standard" | "pro";
         /** SkillReference */

@@ -3397,5 +3397,12 @@
   "Microphone unavailable": "麦克风不可用",
   "Recording limit reached": "已达到录音长度上限",
   "Microphone disconnected": "麦克风已断开",
-  "Clear annotations": "清除全部批注"
+  "Clear annotations": "清除全部批注",
+  "Not confirmed": "尚未确认",
+  "Not sent": "未发送",
+  "Didn't finish": "未完成",
+  "Bot is starting. Your draft is kept; send when it is working.": "Bot 正在启动。草稿已保留，请在开始工作后发送。",
+  "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.": "尚未确认是否送达。请查询状态或原样重试，同一条消息不会重复发送。",
+  "This message was not sent. Edit it or discard it before continuing.": "这条消息未发送。请编辑或丢弃后继续。",
+  "Retry exactly": "原样重试"
 }

@@ -2336,6 +2336,8 @@ class HarnessUiApp:
 
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
+            if thread_id == BOT_THREAD_ID:
+                await self._threads.bot_thread()
             await self._threads.require_interactive(thread_id)
             return await self._thread_files.stage(thread_id, upload)
 
@@ -4189,6 +4191,8 @@ async def open_harness_ui_app(
                     runs=root_runs,
                     projections=projections,
                     summaries=summary_hub,
+                    files=thread_files,
+                    prepare_input=lambda prompt: app._prepare_input(BOT_THREAD_ID, prompt, ()),
                     notify=web_push.enqueue if web_push is not None else None,
                 )
                 from pydantic_ai.capabilities import CombinedCapability

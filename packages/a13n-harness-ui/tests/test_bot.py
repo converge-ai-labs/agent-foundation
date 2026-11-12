@@ -371,15 +371,24 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
             names = {tool.name for tool in info.function_tools}
             if thread_id != BOT_THREAD_ID:
                 assert not {"create_project", "read_project_memory", "publish_bot_message"} & names
+                assert "ask_user_question" in names
                 yield "Working Thread result"
                 return
-            assert {"create_project", "create_thread", "read_project_memory"} <= names
+            assert {
+                "create_project",
+                "create_thread",
+                "read_project_memory",
+                "offer_connector_setup",
+            } <= names
+            assert "ask_user_question" not in names
             if steps == 0:
                 projected = str(messages) + str(info.instructions)
                 assert "Main memory sentinel" not in projected and "Other memory sentinel" not in projected
                 assert "Custom Bot policy sentinel" in projected
                 assert "Global Bot policy sentinel" in projected
                 assert "Agent-only policy sentinel" not in projected
+                assert "Bot does not use ask_user_question" in projected
+                assert "use offer_connector_setup" in projected
             if steps == 1:
                 assert "Main memory sentinel" in str(messages)
             if steps == 2:
@@ -453,6 +462,7 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         assert len(composition.root.global_guidance) == 1
         assert composition.root.global_guidance[0].endswith("Global Bot policy sentinel")
         assert "Drive working Threads" in "\n".join(composition.root.system_prompt)
+        assert "user_interaction" not in {item.capability for item in composition.root.capabilities}
         assert not composition.root.children
 
 
@@ -895,3 +905,166 @@ async def test_bot_publications_notify_once_per_message_not_per_run(tmp_path: Pa
         first = (await bot.snapshot()).messages[0]
         assert first.connector_setups == offers
         assert first.display_ids == ("display-first",)
+
+
+@pytest.mark.parametrize("busy", [False, True])
+@pytest.mark.parametrize("attachment_only", [False, True])
+@pytest.mark.parametrize("image", [False, True])
+async def test_human_attachments_use_native_input_and_survive_exact_retry(
+    tmp_path: Path, monkeypatch, busy: bool, attachment_only: bool, image: bool
+) -> None:
+    from io import BytesIO
+
+    from a13n_harness.content import ContentItem
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.thread_files import AttachmentUpload, InputAttachmentReference
+    from anyio import Event, sleep_forever
+    from PIL import Image
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.messages import TextContent
+    from pydantic_ai.models.function import FunctionModel
+
+    started, release = Event(), Event()
+    image_file = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(image_file, format="PNG")
+    data = image_file.getvalue() if image else b"hello"
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            started.set()
+            if busy:
+                await sleep_forever()
+            await release.wait()
+            yield "Received"
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        # Explicit attachment selection can prepare an unused Bot without a Run.
+        attachment = await app.stage_thread_attachment(
+            thread_id=BOT_THREAD_ID,
+            upload=AttachmentUpload(
+                "diagram.png" if image else "notes.txt", data, "image/png" if image else "text/plain"
+            ),
+        )
+        assert await app._root_runs.active(BOT_THREAD_ID) is None
+        if busy:
+            await bot.submit(BotSubmit(input_id="initial", text="Keep working"))
+            with fail_after(5):
+                await started.wait()
+        captured = []
+        method = "steer" if busy else "submit_prompt"
+        original = getattr(app._root_runs, method)
+
+        async def observe(**kwargs):
+            captured.append(kwargs["message" if busy else "prompt"])
+            return await original(**kwargs)
+
+        monkeypatch.setattr(app._root_runs, method, observe)
+        reference = InputAttachmentReference(attachment_id=attachment.attachment_id)
+        parts = (reference,) if attachment_only else ("Before ", reference, " after")
+        command = BotSubmit(input_id="with-file", text="" if attachment_only else "Before  after", parts=parts)
+        admitted = await bot.submit(command)
+        assert admitted.state == "admitted"
+        assert await bot.submit(command) == admitted
+        assert len(captured) == 1
+        visible = [part for part in captured[0] if isinstance(part, TextContent)]
+        assert any("attachments/" + attachment.attachment_id in part.content for part in visible)
+        media = [part for part in captured[0] if isinstance(part, ContentItem)]
+        assert len(media) == int(image)
+        if image:
+            assert isinstance(media[0].value, BinaryContent)
+            assert media[0].value.data == data
+            assert media[0].value.media_type == "image/png"
+        if not attachment_only:
+            assert [part.content for part in visible][1::2] == ["Before ", " after"]
+        message = next(message for message in (await bot.snapshot()).messages if message.input_id == "with-file")
+        assert message.parts == ((attachment,) if attachment_only else ("Before ", attachment, " after"))
+        assert (await app.read_thread_attachment(thread_id=BOT_THREAD_ID, attachment_id=attachment.attachment_id))[
+            1
+        ] == data
+        other = await app.stage_thread_attachment(
+            thread_id=BOT_THREAD_ID, upload=AttachmentUpload("other.txt", b"world", "text/plain")
+        )
+        with pytest.raises(HarnessUiError, match="different content"):
+            await bot.submit(
+                BotSubmit(input_id="with-file", parts=(InputAttachmentReference(attachment_id=other.attachment_id),))
+            )
+        if busy:
+            await app.cancel_root_operation(admitted.receipt_id)
+        else:
+            release.set()
+        await consumed(app, "with-file")
+        assert await bot.submit(command)
+        assert len(captured) == 1
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        message = next(
+            message for message in (await (await ready(app)).snapshot()).messages if message.input_id == "with-file"
+        )
+        assert any(
+            not isinstance(part, str) and part.attachment_id == attachment.attachment_id for part in message.parts
+        )
+
+
+async def test_user_publication_invalidates_after_commit_once(tmp_path: Path, monkeypatch) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await app._threads.bot_thread()
+        hints = []
+        original = bot._summaries.publish
+
+        async def observe(**kwargs):
+            hints.append(kwargs)
+            assert any(message.input_id == "published" for message in await app._store.bot.messages())
+            await original(**kwargs)
+
+        monkeypatch.setattr(bot._summaries, "publish", observe)
+        item = BotInput(input_id="published", source="user", text="Hello", created_at=datetime.now(UTC))
+        await app._store.bot.retain(item)
+        await bot._publish_user(item)
+        await bot._publish_user(item)
+        assert hints == [{"kind": "thread", "root_thread_id": BOT_THREAD_ID, "thread_id": BOT_THREAD_ID}]
+
+
+@pytest.mark.parametrize("silent", [False, True])
+async def test_settlement_invalidates_after_all_correlated_inputs_complete(
+    tmp_path: Path, monkeypatch, silent: bool
+) -> None:
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            if silent:
+                yield {0: DeltaToolCall(name="finish_silently", tool_call_id="quiet", json_args="{}")}
+            else:
+                yield "Done"
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        async with bot._settlement_lock:
+            item = await bot.submit(BotSubmit(input_id="settle", text="Work"))
+            await app.wait_root_operation(item.receipt_id)
+            await app._store.bot.retain(item.model_copy(update={"input_id": "correlated"}))
+            hints = []
+            original = bot._summaries.publish
+
+            async def observe(**kwargs):
+                hints.append(kwargs)
+                if kwargs["kind"] == "thread":
+                    assert (await app._store.bot.get_input("settle")).state == "completed"
+                    assert (await app._store.bot.get_input("correlated")).state == "completed"
+                await original(**kwargs)
+
+            monkeypatch.setattr(bot._summaries, "publish", observe)
+            await bot._finish(item)
+            assert hints[-1] == {"kind": "thread", "root_thread_id": BOT_THREAD_ID, "thread_id": BOT_THREAD_ID}
+            assert sum(hint["kind"] == "thread" for hint in hints) == 1

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
+from a13n_harness.input import RunInputValue
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
 from filelock import AsyncFileLock, Timeout
@@ -33,6 +34,7 @@ from a13n_harness_ui.surfaces import (
     ThreadDeferredResponse,
     ThreadSummary,
 )
+from a13n_harness_ui.thread_files import ComposerAttachmentReference, ComposerInput, ThreadAttachment, ThreadFiles
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import ThreadService
 
@@ -93,10 +95,13 @@ class BotController:
         runs: RootRunCoordinator,
         projections: ThreadProjectionService,
         summaries: HarnessUiSummaryHub,
+        files: ThreadFiles,
+        prepare_input: Callable[[ComposerInput], Awaitable[RunInputValue]],
         notify: Callable[[str, RootOperationNotice], None] | None = None,
     ) -> None:
         self._store, self._threads, self._configurations = store, threads, configurations
         self._runs, self._projections, self._summaries, self._notify = runs, projections, summaries, notify
+        self._files, self._prepare_input = files, prepare_input
         self._lock = Lock()
         self._settlement_lock = Lock()
         self._inbox_changed = Event()
@@ -181,8 +186,6 @@ class BotController:
 
     async def submit(self, command: BotSubmit) -> BotInput:
         await self._require_enabled()
-        if not command.text.strip():
-            raise ThreadError("A non-empty message is required.", code="thread_message_empty")
         retained: BotInput | None = None
         with CancelScope(shield=True):
             async with self._lock:
@@ -194,10 +197,21 @@ class BotController:
         """Ordinary user admission, shared by assisted introduction and direct chat."""
         await self._require_enabled()
         await self._threads.bot_thread()
+        parts: list[str | ThreadAttachment] = []
+        for part in command.parts:
+            parts.append(
+                part if isinstance(part, str) else (await self._files.read(BOT_THREAD_ID, part.attachment_id))[0]
+            )
         previous = await self._store.bot.get_input(command.input_id)
         if previous is not None:
             item = await self._store.bot.retain(
-                BotInput(input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC))
+                BotInput(
+                    input_id=command.input_id,
+                    source="user",
+                    text=command.text,
+                    parts=tuple(parts),
+                    created_at=datetime.now(UTC),
+                )
             )
             if item.state == "discarded":
                 raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
@@ -209,10 +223,21 @@ class BotController:
                 "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
             )
         thread = await self._threads.get(BOT_THREAD_ID)
+        authored = await self._prepare_input(
+            ComposerInput(
+                parts=tuple(
+                    part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
+                    for part in command.parts
+                )
+                if command.parts
+                else (command.text,),
+            )
+        )
         proposed = BotInput(
             input_id=command.input_id,
             source="user",
             text=command.text,
+            parts=tuple(parts),
             created_at=datetime.now(UTC),
             state="dispatching",
             continuation_id=thread.continuation.logical_digest if thread.continuation else None,
@@ -223,7 +248,7 @@ class BotController:
                 f"Bot input {item.input_id} ({item.source})",
                 metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
             ),
-            TextContent(item.text, metadata={"display": True}),
+            *([authored] if isinstance(authored, str) else authored),
         ]
         active = await self._runs.active(BOT_THREAD_ID)
         if active is None:
@@ -277,15 +302,18 @@ class BotController:
                         await self._publish_user(item)
 
     async def _publish_user(self, item: BotInput) -> None:
-        await self._store.bot.publish(
+        published = await self._store.bot.publish(
             BotMessage(
                 message_id=f"user-{item.input_id}",
                 role="user",
                 text=item.text,
+                parts=item.parts,
                 input_id=item.input_id,
                 created_at=item.created_at,
             )
         )
+        if published:
+            await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)
 
     async def respond(
         self,
@@ -536,7 +564,7 @@ class BotController:
         """Produce Heartbeats independently of direct human input and Run settlement."""
         await self.reconcile_policy(now=now)
 
-    async def _admit(self, item: BotInput, prompt: list[TextContent]) -> bool:
+    async def _admit(self, item: BotInput, prompt: RunInputValue) -> bool:
         try:
             receipt = await self._runs.submit_prompt(
                 thread_id=BOT_THREAD_ID,
@@ -639,6 +667,8 @@ class BotController:
                         value,
                         "Bot did not complete this input. Review the reported error and working Thread results before continuing.",
                     )
+            if related:
+                await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)
 
     async def _receipt_inputs(self, item: BotInput) -> tuple[BotInput, ...]:
         return tuple(
