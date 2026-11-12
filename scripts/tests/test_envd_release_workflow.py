@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
 import tarfile
+import zipfile
 from graphlib import TopologicalSorter
 from pathlib import Path
 
@@ -213,6 +216,43 @@ def test_linux_release_archives_select_embedded_vm_backends(jobs, tmp_path, monk
         binary = archive.extractfile("a13n-envd")
         assert binary is not None
         assert binary.read() == b"vm-enabled"
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="PowerShell is required to execute the Windows release step")
+@pytest.mark.parametrize("target", ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"])
+@pytest.mark.parametrize("variant", ["default", "slim"])
+def test_windows_release_preserves_feature_arguments_and_archive_bytes(jobs, tmp_path, monkeypatch, target, variant):
+    step = next(step for step in jobs["build-binaries"]["steps"] if step["name"] == "Build Windows binary archive")
+    assert step["shell"] == "pwsh"
+    for key, value in {"TARGET": target, "VERSION": "1.2.3", "ENVD_VARIANT": variant}.items():
+        monkeypatch.setenv(key, value)
+    (tmp_path / "LICENSE").write_text("license")
+    # Execute the actual release script, replacing only the expensive compilation.
+    script = tmp_path / "build.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        "function cargo {\n"
+        "  ConvertTo-Json -InputObject @($args) | Set-Content cargo-args.json\n"
+        '  New-Item -ItemType Directory -Force "target/$env:TARGET/release" | Out-Null\n'
+        '  [System.IO.File]::WriteAllBytes("$PWD/target/$env:TARGET/release/a13n-envd.exe", [byte[]](1, 2, 3))\n'
+        "}\n" + step["run"]
+    )
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script)], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads((tmp_path / "cargo-args.json").read_text(encoding="utf-8-sig")) == [
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "a13n-envd",
+        "--target",
+        target,
+        *(["--no-default-features"] if variant == "slim" else []),
+    ]
+    suffix = "-slim" if variant == "slim" else ""
+    with zipfile.ZipFile(tmp_path / f"a13n-envd-1.2.3-{target}{suffix}.zip") as archive:
+        assert archive.read("a13n-envd.exe") == bytes([1, 2, 3])
+        assert archive.read("LICENSE") == b"license"
 
 
 def test_release_publishes_three_flavors_without_a_cartesian_vm_matrix(jobs):

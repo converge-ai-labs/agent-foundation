@@ -195,6 +195,7 @@ class Connectors:
             connector_id=connector_id,
             kind=configuration.kind,
             name=configuration.name or configuration.kind,
+            group_name=configuration.group_name,
             version=configuration.version,
             enabled=configuration.enabled,
             deliver_to_bot=configuration.deliver_to_bot,
@@ -291,6 +292,8 @@ class Connectors:
                         Capture(
                             connector_id=configuration.connector_id,
                             connector_key=configuration.kind,
+                            connector_name=configuration.name,
+                            group_name=configuration.group_name,
                             configuration_version=configuration.version,
                             implementation=self.catalog.items[configuration.kind].implementation,
                             binding=binding,
@@ -324,7 +327,7 @@ class Connectors:
 
     async def model_context(self, captures: tuple[Capture, ...]) -> dict[str, JsonValue]:
         instances: list[JsonValue] = []
-        captured = {item.connector_id for item in captures}
+        captured = {item.connector_id: item.group_name for item in captures}
         for instance in await self.instances():
             controller = self._controllers.get(instance.connector_id)
             safe: dict[str, JsonValue] = {}
@@ -340,6 +343,7 @@ class Connectors:
                     "name": instance.name,
                     "status": instance.status.model_dump(mode="json"),
                     "captured": instance.connector_id in captured,
+                    "group_name": captured.get(instance.connector_id),
                     "context": safe,
                 }
             )

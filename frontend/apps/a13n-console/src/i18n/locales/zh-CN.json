@@ -4374,5 +4374,7 @@
   "Waiting for next use": "下次使用时同步",
   "Awaiting Session creation": "创建 Session 时应用",
   "Unconfirmed Sessions": "Session 状态未确认",
-  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "统计涵盖全部分页，每个绑定版本只计一次。选中的凭据全部应用后，才计为已确认。"
+  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "统计涵盖全部分页，每个绑定版本只计一次。选中的凭据全部应用后，才计为已确认。",
+  "Native tool discovery": "原生工具发现",
+  "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed.": "原生工具发现：模型先搜索工具，再直接调用，无需分组。"
 }

@@ -595,7 +595,7 @@ _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
 
 class AutomaticToolSearch(_Frozen):
-    """Group Service-owned sources individually, following the agent's selections."""
+    """Select Service-owned sources for on-demand discovery."""
 
     capabilities: tuple[BuiltinToolsetKey, ...] = tuple(
         cast(BuiltinToolsetKey, toolset.key) for toolset in _TOOLSETS if toolset.discover_by_default
@@ -775,6 +775,16 @@ def discovery_members(
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
+
+
+def discovery_tool_ids(selected: AutomaticToolSearch) -> frozenset[str]:
+    """Select builtin identities without enabling tools or changing their runtime owners."""
+    return frozenset(
+        tool.execution_id
+        for toolset in _TOOLSETS
+        if toolset.key in selected.capabilities or (toolset.platform and not selected.exclude_platform)
+        for tool in toolset.tools
+    )
 
 
 def platform_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolIdentity]:

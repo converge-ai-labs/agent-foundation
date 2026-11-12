@@ -4374,5 +4374,7 @@
   "Waiting for next use": "Waiting for next use",
   "Awaiting Session creation": "Awaiting Session creation",
   "Unconfirmed Sessions": "Unconfirmed Sessions",
-  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied."
+  "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.",
+  "Native tool discovery": "Native tool discovery",
+  "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed.": "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed."
 }

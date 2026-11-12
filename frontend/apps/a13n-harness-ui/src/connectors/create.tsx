@@ -5,9 +5,11 @@ import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { GroupNameHelp } from "./group-name-help";
 import { useConnectors } from "./data";
 import { ConnectorSetup } from "./setup";
 import { ConnectorIcon } from "./presentation";
+import { defaultGroupName, groupNameError } from "./group-name";
 import styles from "./connectors.module.css";
 
 export function CreateConnector({
@@ -29,15 +31,26 @@ export function CreateConnector({
       candidate = `${typeName} ${number}`;
     return candidate;
   });
+  const [groupDraft, setGroupDraft] = useState<string | null>(null);
   const [connectorId] = useState(() => `connector-${crypto.randomUUID()}`);
+  const usedGroups =
+    instances.data
+      ?.filter((entry) => entry.connector_id !== connectorId)
+      .map((entry) => entry.group_name) ?? [];
+  const groupName = groupDraft ?? defaultGroupName(name, item.key, usedGroups);
   const [created, setCreated] = useState<Schema<"Instance"> | null>(null);
   const [cleanup, setCleanup] = useState(false);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState<unknown>(null);
+  const groupError =
+    groupNameError(groupName, usedGroups) ??
+    (error instanceof ApiError && error.code === "connector_group_conflict"
+      ? "Group name is already used by another connection."
+      : undefined);
   const id = useId();
   async function create() {
-    if (pending.current || !name.trim()) return;
+    if (pending.current || !name.trim() || groupError) return;
     pending.current = true;
     setBusy(true);
     setError(null);
@@ -45,7 +58,7 @@ export function CreateConnector({
       const instance = await result(
         client.PUT("/api/connectors/{connector_id}", {
           params: { path: { connector_id: connectorId } },
-          body: { kind: item.key, name: name.trim() },
+          body: { kind: item.key, name: name.trim(), group_name: groupName },
         }),
       ).catch(async (failure: unknown) => {
         if (
@@ -169,7 +182,11 @@ export function CreateConnector({
           <Button variant="outline" disabled={busy} onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button form={id} type="submit" disabled={busy || !name.trim()}>
+          <Button
+            form={id}
+            type="submit"
+            disabled={busy || !name.trim() || !!groupError}
+          >
             {t("Continue")}
           </Button>
         </>
@@ -177,18 +194,45 @@ export function CreateConnector({
     >
       <form
         id={id}
+        className={styles.fields}
         onSubmit={(event) => {
           event.preventDefault();
           void create();
         }}
       >
-        <ErrorNotice error={error} />
+        <ErrorNotice
+          error={
+            error instanceof ApiError &&
+            error.code === "connector_group_conflict"
+              ? null
+              : error
+          }
+        />
         <FormField label={t("Connection name")}>
           <Input
             autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
             disabled={busy}
+            required
+          />
+        </FormField>
+        <FormField
+          label={t("Group name")}
+          labelAction={<GroupNameHelp />}
+          error={groupError ? t(groupError) : undefined}
+        >
+          <Input
+            value={groupName}
+            onChange={(event) => {
+              setGroupDraft(event.target.value);
+              setError(null);
+            }}
+            disabled={busy}
+            autoCapitalize="none"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={32}
             required
           />
         </FormField>

@@ -80,6 +80,7 @@ from a13n_service.resources.models.runtime import open_model
 from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
 from a13n_service.runs.definitions import Definition
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.tool_discovery import native_discovery
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -369,6 +370,8 @@ class _Host:
         if (web := toolsets.web_tools(config.toolsets)) is not None:
             sources["web"] = WebCapability(toolsets.web_configuration(web))
             features.append(sources["web"])
+        if (discovery := native_discovery(config, agent.connections)) is not None:
+            features.append(discovery)
         if config.summarize:
             features.append(HandoffCapability())
         if config.user_questions:

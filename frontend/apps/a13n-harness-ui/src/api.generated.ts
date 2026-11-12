@@ -6083,6 +6083,8 @@ export interface components {
             kind: string;
             /** Name */
             name: string;
+            /** Group Name */
+            group_name: string;
             /** Version */
             version: number;
             /** Enabled */
@@ -10038,6 +10040,8 @@ export interface components {
              * @default
              */
             name?: string;
+            /** Group Name */
+            group_name: string;
             /** Expected Version */
             expected_version?: number | null;
             /**

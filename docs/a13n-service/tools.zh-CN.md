@@ -190,6 +190,20 @@ Grant 支持续期时，token 在使用时续期，并发调用者共享同一�
 
 保存修订版本、启动运行，并要求 agent 搜索文档。先检查工具结果，再测试写入。连接必须为 `ready`；每次调用都检查它仍启用且已授权，并确认运行允许发出调用。调用使用 `providers.tool_call_seconds`，不会自动重试。
 
+### 原生工具发现
+
+在 **工具可用性** 中选择 **原生工具发现**。模型先搜索工具，再直接调用，无需分组或 `call_tool`：
+
+```json
+{"tool_search": {"mode": "native", "sources": {}}}
+```
+
+默认包括 Computer、Browser、平台工具和已连接的工具。通过 **添加工具来源** 可以加入 Files、Terminal、Web、Memory 或 Asset。JSON 的 `sources.capabilities` 选择内置来源；`connections: false` 让所有连接直接提供工具，`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。来源选择不会启用工具或改变权限。插件保留自身发现设置，客户端工具和控制工具保留原有展示方式，来源的说明和初始化仍然生效。
+
+Harness 在模型支持时使用供应商原生搜索，否则提供本地 `search_tools`。发现后使用原工具名称调用，凭证、审批和续跑规则保持不变。native 配置不接受 `groups`、proxy `config` 或自定义搜索策略。具名子 agent 使用自己的修订配置，动态创建的子 agent 在其已选工具范围内继承来源策略。运行覆盖替换整个配置块；空 proxy 配置 `{"groups": {}}` 可恢复 Service 工具的直接展示。
+
+现有 proxy 配置继续有效。保存 native 配置前，应先升级 Control 和全部 Worker；旧版本不能读取新的 JSON 配置形式。无需数据库迁移或回填。
+
 ### 分组工具发现
 
 在 Console 的**工具提供方式**中选择**按需发现工具**。**按需发现**列表默认包含 **Computer**、**Browser**、**Platform tools** 和 **MCP tools**。Files、Terminal、Web、Memory 和 Asset 默认直接提供。通过**添加工具来源**可将它们纳入按需发现；从列表移除来源后，其工具定义恢复为直接提供。这个设置只改变工具的提供方式，不会启用已关闭的工具，也不会改变原有权限。

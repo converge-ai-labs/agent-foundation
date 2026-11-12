@@ -210,10 +210,10 @@ async def test_oauth_reconciliation_holds_configuration_acceptance_lock(tmp_path
         ("notion", {}, "/mcp", None),
     ],
 )
+@pytest.mark.parametrize("codeact", [False, True])
 async def test_thin_oauth_provider_native_and_typed_paths_share_account(
-    tmp_path, monkeypatch, kind, settings, endpoint, scope
+    tmp_path, monkeypatch, kind, settings, endpoint, scope, codeact
 ):
-    import hashlib
     import time
 
     from a13n_harness_ui import mcp_adapters
@@ -227,7 +227,9 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(
     from .test_mcp_oauth import bundle
 
     root = _write_configuration(tmp_path)
-    root.write_text(root.read_text() + "tools: {enable_codeact: false, execution: {mode: inline}}\n")
+    root.write_text(
+        root.read_text() + f"tools: {{enable_codeact: {str(codeact).lower()}, execution: {{mode: inline}}}}\n"
+    )
     server = FastMCP("oauth-native")
     calls = []
     authenticated = []
@@ -252,10 +254,15 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(
 
     monkeypatch.setattr(mcp_adapters, "_no_redirect_client", client_factory)
     connector_id = "connector-oauth"
-    group = "connector_" + hashlib.sha256(connector_id.encode()).hexdigest()[:16]
+    group = "oauth-documents"
+    source = f"""found = await discover_connector_tools(group={group!r}, query='lookup', detail='full')
+assert found['tools'][0]['codeact_eligible']
+await call_connector_tool(group={group!r}, tool='lookup', arguments={{'query': 'native'}})"""
     commands = [
         ("discover_connector_tools", {"group": group, "query": ""}),
-        ("call_connector_tool", {"group": group, "tool": "lookup", "arguments": {"query": "native"}}),
+        ("run_code", {"code": source})
+        if codeact
+        else ("call_connector_tool", {"group": group, "tool": "lookup", "arguments": {"query": "native"}}),
     ]
 
     async def model(messages, info):
@@ -274,7 +281,8 @@ async def test_thin_oauth_provider_native_and_typed_paths_share_account(
         async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
             await ready(app)
             await app.configure_connector(
-                ConnectorConfiguration(connector_id=connector_id, kind=kind, settings=settings), expected_version=None
+                ConnectorConfiguration(connector_id=connector_id, kind=kind, group_name=group, settings=settings),
+                expected_version=None,
             )
             controller = app.connectors()._controllers[connector_id]
             assert await controller.capture() is None
@@ -319,7 +327,9 @@ async def test_linear_access_change_requires_fresh_authorization(tmp_path, initi
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         await ready(app)
-        candidate = ConnectorConfiguration(connector_id="connector-linear", kind="linear", settings={"access": initial})
+        candidate = ConnectorConfiguration(
+            connector_id="connector-linear", kind="linear", group_name="linear", settings={"access": initial}
+        )
         await app.configure_connector(candidate, expected_version=None)
         controller = app.connectors()._controllers[candidate.connector_id]
         recipe = await controller.authorization_recipe()

@@ -17612,6 +17612,12 @@
             "type": "string",
             "title": "Name"
           },
+          "group_name": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Group Name"
+          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -17657,6 +17663,7 @@
           "connector_id",
           "kind",
           "name",
+          "group_name",
           "version",
           "enabled",
           "deliver_to_bot",
@@ -28083,6 +28090,12 @@
             "title": "Name",
             "type": "string"
           },
+          "group_name": {
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Group Name",
+            "type": "string"
+          },
           "expected_version": {
             "anyOf": [
               {
@@ -28122,7 +28135,8 @@
           }
         },
         "required": [
-          "kind"
+          "kind",
+          "group_name"
         ],
         "title": "Save",
         "type": "object"

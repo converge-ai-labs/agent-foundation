@@ -273,7 +273,8 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
     assert effects == ([] if permission == "deny" else [4])
 
 
-async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_checks(service) -> None:
+@pytest.mark.parametrize("native", [False, True])
+async def test_revision_and_host_mcp_keep_dispatch_and_live_connection_checks(service, native: bool) -> None:
     from a13n_service.infra.db import short_session
     from a13n_service.providers.tools import ToolDispatch
     from a13n_service.resources.connections.runtime import open_connections
@@ -307,7 +308,9 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             model_key,
             toolsets={},
             connection_tools=[{"connection_id": connection_id, "permission": "allow"}],
-            tool_search={
+            tool_search={"mode": "native"}
+            if native
+            else {
                 "config": {"mode": "proxy"},
                 "groups": {
                     "knowledge": {
@@ -358,6 +361,24 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             async def stream(messages, info):
                 nonlocal called
                 tools = {tool.name: tool for tool in info.function_tools}
+                if native:
+                    assert {"search_tools", "list_images"} <= set(tools) and "call_tool" not in tools
+                    if not called:
+                        called = True
+                        if phase == "discover":
+                            assert "echo" not in tools
+                            yield {
+                                0: DeltaToolCall(
+                                    name="search_tools", json_args='{"queries":["echo"]}', tool_call_id="search"
+                                )
+                            }
+                        else:
+                            assert "echo" in tools
+                            name = "echo"
+                            yield {0: DeltaToolCall(name=name, json_args='{"text":"hello"}', tool_call_id="invoke")}
+                    else:
+                        yield "found" if phase == "discover" else "done"
+                    return
                 assert set(tools) == {
                     "discover_tools",
                     "describe_tool",
@@ -384,7 +405,9 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
                     yield "found" if phase == "discover" else "done"
 
             async def model_resolver(context, model_id):
-                return FunctionModel(stream_function=stream, profile=anthropic_model_profile("claude-sonnet-4-6"))
+                from pydantic_ai.profiles import ModelProfile
+
+                return FunctionModel(stream_function=stream, profile=ModelProfile(supported_native_tools=frozenset()))
 
             executable = build(
                 root,

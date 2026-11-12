@@ -190,6 +190,20 @@ Add `connection_tools` to the agent configuration. This fragment allows document
 
 Save the revision, start a run, and ask for a document search. Inspect the tool result before testing a write. The connection must be `ready`; every call checks that it is still enabled and authorized and that the run can dispatch. Calls use `providers.tool_call_seconds` and are never retried automatically.
 
+### Native tool discovery
+
+Select **Native tool discovery** under **Tool availability** to search for tools and then call them directly, without groups or `call_tool`:
+
+```json
+{"tool_search": {"mode": "native", "sources": {}}}
+```
+
+The default sources are Computer, Browser, Platform tools and connected tools. Add Files, Terminal, Web, Memory or Asset with **Add tool source**. In `sources`, use `capabilities` to select builtin sources, `connections: false` to leave all connections direct, `exclude_connections` to leave specific connection IDs direct, or `exclude_platform: true` to leave platform tools direct. These choices do not enable tools or change permissions. Plugins retain their own discovery settings; client tools and control tools retain their normal presentation. Source instructions and initialization remain active.
+
+Harness uses provider-native search when supported and local `search_tools` otherwise. Once discovered, a tool is called under its original name with normal credentials, approval and resume behavior. Native configuration accepts no `groups`, proxy `config`, or custom search strategies. Named subagents use their own revisions; dynamically spawned subagents inherit this policy within their selected scope. Run overrides replace the whole block; an empty proxy plan (`{"groups": {}}`) returns Service tools to direct presentation.
+
+Existing proxy configurations continue to work. Upgrade Control and all Workers before saving native configurations; old versions cannot read the new JSON variant. No database migration or backfill is needed.
+
 ### Grouped tool discovery
 
 Select **Discover tools on demand** under **Tool availability** in Console. The **On-demand tools** list starts with **Computer**, **Browser**, **Platform tools** and **MCP tools**. Files, Terminal, Web, Memory and Asset stay directly available. Use **Add tool source** to include any of them in discovery, or remove a source to provide its definitions directly. This selection changes presentation only: disabled tools stay disabled and existing permissions still apply.
@@ -220,7 +234,7 @@ The model searches with `discover_tools`, reads definitions with `describe_tool`
 
 Groups accept selected `connections`, `plugins` by instance name, `capabilities` (`files`, `shell`, `computer`, `browser`, `web`, `memory`, `assets`), and `platform: true` for enabled platform tools. A source belongs to at most one group. Names start with a letter, contain at most 32 letters, digits, underscores or hyphens, and exclude `__`.
 
-Ungrouped sources stay directly exposed. Keep tools requiring approval/resume direct; `client_tools` retain their external-call protocol. Each child agent uses its own revision's groups. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. See [Harness ToolSearch](../a13n-harness/tool-search.md) for optional `config`, control names and pagination limits.
+Ungrouped sources stay directly exposed. `client_tools` retain their external-call protocol. Each child agent uses its own revision's groups. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. See [Harness ToolSearch](../a13n-harness/tool-search.md) for optional `config`, control names and pagination limits.
 
 ### Caller headers
 

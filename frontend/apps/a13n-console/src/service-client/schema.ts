@@ -5377,7 +5377,11 @@ export interface components {
        * @default false
        */
       summarize?: boolean;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5460,7 +5464,11 @@ export interface components {
        * @default false
        */
       summarize?: boolean;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5566,7 +5574,11 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       subagents?: components["schemas"]["Subagents-Input"] | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5615,7 +5627,11 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       subagents?: components["schemas"]["Subagents-Output"] | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -6211,7 +6227,7 @@ export interface components {
     };
     /**
      * AutomaticToolSearch
-     * @description Group Service-owned sources individually, following the agent's selections.
+     * @description Select Service-owned sources for on-demand discovery.
      */
     AutomaticToolSearch: {
       /**
@@ -10944,6 +10960,18 @@ export interface components {
        * @enum {string}
        */
       mode: "native";
+    };
+    /**
+     * NativeToolSearch
+     * @description Ungrouped native discovery of selected Service tools; plugins keep their own settings.
+     */
+    NativeToolSearch: {
+      /**
+       * Mode
+       * @constant
+       */
+      mode: "native";
+      sources?: components["schemas"]["AutomaticToolSearch"];
     };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
