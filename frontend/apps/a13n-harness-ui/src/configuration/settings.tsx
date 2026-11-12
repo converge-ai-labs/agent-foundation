@@ -1,3 +1,4 @@
+import { ConnectorsSection } from "../connectors/connections";
 import { LanguageChoice } from "../i18n/language";
 import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
@@ -176,10 +177,12 @@ export function ConnectionsPage() {
         title={t("Connections")}
         description={t("Tools and services your agents can use.")}
       />
+      <ConnectorsSection />
       <SourcesPage
         kinds={["mcp_server"]}
         headingLevel={2}
         title={t("MCP servers")}
+        description={t("Defined in configuration files, selected per Agent.")}
       />
       <SourcesPage
         kinds={["harness_plugin"]}

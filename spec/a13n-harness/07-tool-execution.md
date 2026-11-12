@@ -178,7 +178,7 @@ When installed, permission declaration overrides consume the complete candidate 
 
 ### Grouped ToolSearch Discovery
 
-Grouped tool discovery uses one fixed local proxy surface, configured through `ToolSearchPlan.config` or `ToolSearchCapability.config`. `ToolSearchConfig` aliases `ProxyToolSearchConfig`; `mode` may be omitted or set to `proxy`. Discovered tools always execute through `call_tool` and never enter the model-facing schema. Control schemas, descriptions, and generated guidance contain no inventory-dependent group enum or directory text. This keeps the proxy surface stable as members change and supports model prompt caching.
+Grouped tool discovery uses stable local proxy surfaces, configured through `ToolSearchPlan.config` or `ToolSearchCapability.config`. `ToolSearchConfig` aliases `ProxyToolSearchConfig`; `mode` may be omitted or set to `proxy`. Discovered tools always execute through `call_tool` and never enter the model-facing schema. Control schemas, descriptions, and generated guidance contain no inventory-dependent group enum or directory text. This keeps the proxy surface stable as members change and supports model prompt caching.
 
 ToolSearch is an optional code-first discovery and call presentation for large collections of locally executable tools. It changes what the model sees, not who executes tools. `ToolSearchCapability(groups=..., config=...)` is the concrete-source installation entry: its mapping assigns each group name to a passive `ToolSearchGroup(source=..., description=...)` value. A source is a concrete native Toolset or Capability instance. The Capability assembles selected sources and one search/call surface through native composition; the descriptors are not independently installed Capabilities. Ungrouped tools remain directly exposed.
 
@@ -207,6 +207,8 @@ Grouped sources retain native Capability Agent/run binding before their local To
 | `groups_name`      | `list_tool_groups` | Distinct control tool name      |
 | `max_results`      | `10`               | Integer from 1 through 100      |
 | `max_search_bytes` | `32768`            | Integer from 1024 through 32768 |
+
+A Host can install multiple disjoint presentations with distinct `surface_id` Capability identities and control names. Both `ToolSearchPlan` and `ToolSearchCapability` default to `surface_id="a13n.tool-search"`. Each surface owns only its declared groups; group ownership is exclusive across surfaces. Discovery, group listing, tool listing, description, corrective diagnostics, native forwarding, deferred-resume validation, and CodeAct resolve against that same scope in the current prepared directory. Configuring a second presentation never creates another execution registry. An empty surface contributes no controls or instructions, even when another surface has members. Captured surface identities remain subject to native protected-Capability provenance checks across Run binding.
 
 The five distinct control names match `[A-Za-z_][A-Za-z0-9_-]{0,63}`. All controls and their generated Toolset instructions are absent when no grouped members survive preparation. Their schemas and descriptions remain independent of group names, descriptions, and member counts. Configured names are reflected consistently in descriptions and instructions. The default names coexist with upstream `search_tools` for separate ungrouped tools.
 

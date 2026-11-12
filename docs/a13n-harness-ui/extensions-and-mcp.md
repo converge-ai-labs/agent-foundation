@@ -14,6 +14,8 @@ To give an Agent a new tool, first identify who provides it. Most built-in featu
 | Change the execution machine or isolation            | An Environment profile             | [Environments](environments-and-projects.md)                |
 | Add installed Python middleware                      | A Harness Plugin resource          | [Plugin files](#harness-plugin-and-run-extension-files)     |
 
+For instance-wide WebUI accounts, use [Connectors](connectors.md). Concrete service integrations such as GitHub have private account setup and join new root WebUI Runs automatically. Remote MCP support in the Connector SDK is a developer library; arbitrary MCP servers belong in the separate MCP configuration. File-defined MCP servers remain explicitly selected Agent resources, including in the terminal.
+
 ## Agent Capabilities
 
 Use an existing [Agent](agents-and-subagents.md#create-an-agent-from-files). Run `a13n-harness-ui config path` to find its configuration tree. Edit the appropriate file under `agents/`, beside the root YAML shown as `configuration_path`.

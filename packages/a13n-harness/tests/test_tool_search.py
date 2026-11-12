@@ -548,7 +548,9 @@ async def test_final_directory_rejects_deferral_added_by_outer_capability() -> N
         id="late-source",
         defer_loading=True,
     )
-    result, returns = await _run((_ToolSearchSurfaceCapability(), source), [])
+    result, returns = await _run(
+        (_ToolSearchSurfaceCapability(ProxyToolSearchConfig(), frozenset({"late"})), source), []
+    )
     assert result.status == "failed"
     assert returns == []
 
@@ -1459,7 +1461,8 @@ async def test_list_pages_enumerate_every_tool_without_expanding_model_schema(de
     definitions = []
 
     def inspect(step: int, info: AgentInfo) -> None:
-        definitions.append(info.function_tools)
+        # Compare model-facing definitions, excluding private dispatch bindings.
+        definitions.append([replace(tool, metadata=None) for tool in info.function_tools])
         assert {tool.name for tool in info.function_tools} == {
             "discover_tools",
             "describe_tool",
@@ -1492,7 +1495,8 @@ async def test_proxy_schemas_stay_identical_across_different_group_inventories()
     definitions = []
 
     def inspect(step: int, info: AgentInfo) -> None:
-        definitions.append(info.function_tools)
+        # Compare model-facing definitions, excluding private dispatch bindings.
+        definitions.append([replace(tool, metadata=None) for tool in info.function_tools])
 
     for group, count in (("alpha", 1), ("beta", 12)):
         result, returns = await _run(
@@ -1699,3 +1703,202 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
         await runtime.close()
+
+
+def _connector_surface(*tools: Any, group: str = "github") -> ToolSearchCapability:
+    return ToolSearchCapability(
+        groups={
+            group: ToolSearchGroup(
+                CodeActPolicyToolset(
+                    FunctionToolset(list(tools), id="connector-source"), CodeActToolPolicy(default=True)
+                ),
+                "GitHub operations",
+            )
+        },
+        config=ProxyToolSearchConfig(
+            search_name="search_connector_tools",
+            describe_name="describe_connector_tool",
+            call_name="call_connector_tool",
+            list_name="list_connector_tools",
+            groups_name="list_connector_groups",
+        ),
+        surface_id="test.connector-tools",
+    )
+
+
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_disjoint_proxy_surfaces_keep_all_controls_and_guidance_scoped(use_plan: bool) -> None:
+    effects = []
+
+    def customer() -> str:
+        effects.append("crm")
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("github")
+        return "pull request"
+
+    capabilities = [_connector_surface(pull_request)]
+    plan = None
+    if use_plan:
+        source = Capability(tools=[customer], id="crm-source")
+        capabilities.append(source)
+        plan = ToolSearchPlan(groups={"crm": ToolSearchSelection("Customer operations", capabilities=(source,))})
+    else:
+        capabilities.append(_group(customer))
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+            "search_connector_tools",
+            "describe_connector_tool",
+            "call_connector_tool",
+            "list_connector_tools",
+            "list_connector_groups",
+        }
+        assert "search_connector_tools" in info.instructions
+        assert "discover_tools" in info.instructions
+
+    result, returns = await _run(
+        tuple(capabilities),
+        [
+            ("discover_tools", {"query": ""}),
+            ("search_connector_tools", {"query": ""}),
+            ("list_tool_groups", {}),
+            ("list_connector_groups", {}),
+            ("list_tools", {}),
+            ("list_connector_tools", {}),
+            ("describe_tool", {"group": "crm", "tool": "customer"}),
+            ("describe_connector_tool", {"group": "github", "tool": "pull_request"}),
+            ("call_tool", {"group": "crm", "tool": "customer", "arguments": {}}),
+            ("call_connector_tool", {"group": "github", "tool": "pull_request", "arguments": {}}),
+        ],
+        inspect=inspect,
+        tool_search=plan,
+    )
+    assert result.output_or_raise() == "done"
+    assert [entry["group"] for entry in returns[0].content["tools"]] == ["crm"]
+    assert [entry["group"] for entry in returns[1].content["tools"]] == ["github"]
+    assert [entry["group"] for entry in returns[2].content["groups"]] == ["crm"]
+    assert [entry["group"] for entry in returns[3].content["groups"]] == ["github"]
+    assert [entry["group"] for entry in returns[4].content["tools"]] == ["crm"]
+    assert [entry["group"] for entry in returns[5].content["tools"]] == ["github"]
+    assert returns[6].content["tool"]["tool"] == "customer"
+    assert returns[7].content["tool"]["tool"] == "pull_request"
+    assert [part.content for part in returns[-2:]] == ["customer", "pull request"]
+    assert effects == ["crm", "github"]
+
+
+@pytest.mark.parametrize("control", ["discover_tools", "list_tools", "describe_tool", "call_tool"])
+async def test_proxy_controls_cannot_target_another_surface_group(control: str) -> None:
+    effects = []
+
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("write")
+        return "pull request"
+
+    arguments: dict[str, Any] = {"group": "github"}
+    if control == "discover_tools":
+        arguments["query"] = ""
+    if control in {"describe_tool", "call_tool"}:
+        arguments["tool"] = "pull_request"
+    if control == "call_tool":
+        arguments["arguments"] = {}
+    result, returns = await _run((_group(customer), _connector_surface(pull_request)), [(control, arguments)])
+    assert result.output_or_raise() == "done"
+    assert not effects
+    assert len(returns) == 1
+    retry = returns[0]
+    assert retry.outcome == "retried"
+    assert retry.tool_name == control
+    assert "pull_request" not in str(retry.content)
+    assert "GitHub operations" not in str(retry.content)
+
+
+async def test_codeact_uses_the_selected_proxy_controls_native_forwarder() -> None:
+    effects = []
+
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("github")
+        return "pull request"
+
+    result, returns = await _run(
+        (_group(customer), _connector_surface(pull_request), CodeActCapability()),
+        [
+            ("run_code", {"code": "await call_tool(group='github', tool='pull_request', arguments={})"}),
+            ("run_code", {"code": "await call_connector_tool(group='github', tool='pull_request', arguments={})"}),
+        ],
+    )
+    assert result.output_or_raise() == "done"
+    assert effects == ["github"]
+    failure = json.loads(returns[0].content)
+    assert failure["codeact"]["status"] == "failed"
+    assert failure["error"]["nested_errors"][0]["type"] == "ModelRetry"
+    assert "pull request" in str(returns[-1].content)
+
+
+async def test_empty_proxy_surface_does_not_claim_another_surfaces_members() -> None:
+    def customer() -> str:
+        return "customer"
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
+
+    result, _ = await _run(
+        (_group(customer), ToolSearchCapability(groups={}, surface_id="test.empty-surface")),
+        [],
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+
+
+async def test_overlapping_surface_groups_fail_instead_of_sharing_members() -> None:
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        return "pull request"
+
+    result, returns = await _run(
+        (_group(customer), _connector_surface(pull_request, group="crm")), [("list_tool_groups", {})]
+    )
+    assert result.status == "failed"
+    assert returns == []
+
+
+@pytest.mark.parametrize("binding_change", ["drop", "rename"])
+async def test_scoped_proxy_surface_cannot_disappear_or_change_identity_during_run_binding(
+    monkeypatch, binding_change: str
+) -> None:
+    from a13n_harness.capabilities.tool_search import _ToolSearchSurfaceCapability
+    from a13n_harness.errors import DefinitionError
+
+    async def bind(self, ctx):
+        if self.id != "test.connector-tools":
+            return self
+        return Capability() if binding_change == "drop" else replace(self, id="test.unrecorded-surface")
+
+    monkeypatch.setattr(_ToolSearchSurfaceCapability, "for_run", bind)
+
+    def pull_request() -> str:
+        return "pull request"
+
+    with pytest.raises(DefinitionError) as error:
+        await _run((_connector_surface(pull_request),), [("list_connector_groups", {})])
+    assert error.value.code == "capability_scope_invalid"

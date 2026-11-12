@@ -48,9 +48,10 @@ async def test_thread_report_retains_host_provenance_while_off_and_delivers_on_e
         await bot.deliver_automatic_inputs()
         assert not (await bot.snapshot()).thread
         assert await app._store.bot_inbox.pending() == batch
-        await policy(app, root, enabled=True)
-        app._root_runs._executor._agents = _CompletedReconstructor()
+        # Pause before enabling: configuration publication signals immediate delivery.
         await bot.pause(True)
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        await policy(app, root, enabled=True)
         await bot.deliver_automatic_inputs()
         assert await app._store.bot_inbox.pending() == batch
         await bot.pause(False)

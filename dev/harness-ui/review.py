@@ -18,6 +18,8 @@ from a13n_harness.content import project_input_content, request_input_content
 from a13n_harness_ui import model_catalog
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
+from a13n_harness_ui.connector_models import ConnectorConfiguration
+from a13n_harness_ui.connectors.models import SetupOffer
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults
@@ -464,6 +466,47 @@ async def serve(root: Path, port: int):
                     if operation.status != "completed":
                         raise RuntimeError("The follow-up fixture did not finish")
                 print(f"  {title}: /threads/{thread.thread_id}", flush=True)
+            await app.configure_connector(
+                ConnectorConfiguration(connector_id="connector-github-review", kind="github", name="GitHub · Personal"),
+                expected_version=None,
+            )
+            # Fictional saved account for list/management review. Seeding and
+            # saving never contact GitHub; do not test this illustrative token.
+            from a13n_harness_ui.connectors.models import SetupCommand
+
+            await app.configure_connector(
+                ConnectorConfiguration(connector_id="connector-github-work", kind="github", name="GitHub · Work"),
+                expected_version=None,
+            )
+            setup = await app.begin_connector_setup("connector-github-work")
+            saved = await app.act_connector_setup(
+                setup.session_id,
+                SetupCommand(
+                    operation_id="fixture-save",
+                    version=setup.version,
+                    action="save",
+                    values={"token": "fictional-review-token"},
+                ),
+            )
+            await app.act_connector_setup(
+                setup.session_id, SetupCommand(operation_id="fixture-done", version=saved.version, action="done")
+            )
+            connection_chat = await app.create_thread(
+                title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            from datetime import UTC, datetime
+
+            await app._store.connectors.offer(
+                SetupOffer(
+                    offer_id="offer-github-review",
+                    thread_id=connection_chat.thread_id,
+                    connector_key="github",
+                    connector_id="connector-github-review",
+                    text="Connect GitHub to inspect repository issues with your own permissions.",
+                    created_at=datetime.now(UTC),
+                )
+            )
+            print(f"  Connector setup: /threads/{connection_chat.thread_id}", flush=True)
             question = await app.create_thread(
                 title="Choose the review scope", defaults=NewThreadDefaults(project_id="project-research")
             )

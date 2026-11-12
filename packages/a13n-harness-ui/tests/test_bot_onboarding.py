@@ -121,10 +121,14 @@ async def test_existing_bot_activity_suppresses_introduction(tmp_path: Path, scr
                     message_id="legacy-message", role="assistant", text="Saved history", created_at=datetime.now(UTC)
                 )
             )
+        if existing == "manual":
+            # Hold automatic activation while the first real human message establishes history.
+            await bot.pause(True)
         await policy(app, root, enabled=True)
         if existing == "manual":
             await bot.submit(BotSubmit(input_id="human-first", text="My actual first question"))
             await consumed(app, "human-first")
+            await bot.pause(False)
         await bot.introduce_workspace()
         assert await app._store.bot.get_input(WORKSPACE_INTRODUCTION.input_id) is None
         assert len(scripted_bot) == (1 if existing == "manual" else 0)
@@ -206,13 +210,10 @@ async def test_failed_introduction_is_visible_and_never_automatically_replayed(
 
             monkeypatch.setattr(HarnessUiModelResolver, "resolve", unavailable)
         await policy(app, root, enabled=True)
-        if failure == "admission":
-            with pytest.raises(ThreadError, match="Scripted admission failure"):
-                await bot.introduce_workspace()
-        else:
-            await bot.introduce_workspace()
+        # Policy acceptance wakes automation immediately; observe its durable outcome.
         item = await consumed(app, WORKSPACE_INTRODUCTION.input_id)
         assert item.state == "interrupted"
+        assert len(attempts) == 1
         assert [m.text for m in await app._store.bot.messages() if m.role == "user"] == [WORKSPACE_INTRODUCTION.text]
         await bot.pause(False)
         await bot.introduce_workspace()

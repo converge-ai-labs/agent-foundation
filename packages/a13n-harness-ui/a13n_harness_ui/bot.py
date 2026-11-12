@@ -16,6 +16,7 @@ from pydantic_ai.messages import TextContent
 from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotNotesPage, BotProse, BotState, BotSubmit
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration.models import BotConfiguration
+from a13n_harness_ui.connectors.models import SetupOffer
 from a13n_harness_ui.display_history import assistant_text
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
@@ -338,21 +339,43 @@ class BotController:
             await self._store.bot.save_state(
                 state.model_copy(update={"paused": paused, "last_error": state.last_error if paused else None})
             )
+        if not paused:
+            self.signal_inputs()
         return await self.snapshot()
 
     async def publish(
-        self, *, message_id: str, text: str, receipt_id: str | None = None, display_ids: tuple[str, ...] = ()
+        self,
+        *,
+        message_id: str,
+        text: str,
+        receipt_id: str | None = None,
+        connector_setups: tuple[SetupOffer, ...] = (),
+        display_ids: tuple[str, ...] = (),
     ) -> BotMessage:
         if receipt_id is None:
             # A tool can run before native admission returns. Wait for its input
             # correlation before publishing so quiet completion retains unread state.
             async with self._lock:
-                return await self._publish(message_id=message_id, text=text)
+                return await self._publish(
+                    message_id=message_id, text=text, connector_setups=connector_setups, display_ids=display_ids
+                )
         # Settlement already owns the control lock.
-        return await self._publish(message_id=message_id, text=text, receipt_id=receipt_id, display_ids=display_ids)
+        return await self._publish(
+            message_id=message_id,
+            text=text,
+            receipt_id=receipt_id,
+            connector_setups=connector_setups,
+            display_ids=display_ids,
+        )
 
     async def _publish(
-        self, *, message_id: str, text: str, receipt_id: str | None = None, display_ids: tuple[str, ...] = ()
+        self,
+        *,
+        message_id: str,
+        text: str,
+        receipt_id: str | None = None,
+        connector_setups: tuple[SetupOffer, ...] = (),
+        display_ids: tuple[str, ...] = (),
     ) -> BotMessage:
         if not text.strip():
             raise ThreadError("A non-empty message is required.", code="bot_message_empty")
@@ -372,6 +395,7 @@ class BotController:
             text=text,
             created_at=datetime.now(UTC),
             input_id=current.input_id if current is not None else None,
+            connector_setups=connector_setups,
             display_ids=display_ids,
         )
         if await self._store.bot.publish(message):
@@ -394,33 +418,40 @@ class BotController:
                 self._notify(BOT_THREAD_ID, notice)
         return message
 
-    async def run(self) -> None:
+    async def run(self, owned: bool | None = None) -> None:
+        if owned is not None:
+            if owned:
+                await self._run_owned()
+            return
         try:
             async with AsyncFileLock(self._store.layout.root / ".bot-runtime.lock", timeout=0):
-                try:
-                    # An old admission may have caused effects even without a saved checkpoint.
-                    # Retain it for inspection; never replay it or infer success from idle state.
-                    for item in await self._store.bot.inputs(pending_only=True):
-                        if item.state in {"queued", "dispatching", "admitted"}:
-                            await self._interrupt(
-                                item,
-                                "Bot was interrupted. Review the reported error and any effects before continuing.",
-                            )
-                    self._owned = True
-                    async with create_task_group() as group:
-                        group.start_soon(self._automatic_loop)
-                        group.start_soon(self._settlement_loop)
-                        while True:
-                            try:
-                                await self.introduce_workspace()
-                                await self.tick()
-                            except Exception:
-                                get_logger(__name__).exception("Bot heartbeat processing failed")
-                            await sleep(1)
-                finally:
-                    self._owned = False
+                await self._run_owned()
         except Timeout:
             get_logger(__name__).info("Bot processing belongs to another App using this data root")
+
+    async def _run_owned(self) -> None:
+        try:
+            for item in await self._store.bot.inputs(pending_only=True):
+                if item.state in {"queued", "dispatching", "admitted"}:
+                    await self._interrupt(
+                        item, "Bot was interrupted. Review the reported error and any effects before continuing."
+                    )
+            self._owned = True
+            async with create_task_group() as group:
+                group.start_soon(self._automatic_loop)
+                group.start_soon(self._settlement_loop)
+                while True:
+                    try:
+                        await self.introduce_workspace()
+                        await self.tick()
+                    except Exception:
+                        get_logger(__name__).exception("Bot heartbeat processing failed")
+                    await sleep(1)
+        finally:
+            self._owned = False
+
+    def signal_inputs(self) -> None:
+        self._inbox_changed.set()
 
     async def _require_enabled(self) -> None:
         if not (await self._policy()).enabled:
@@ -442,8 +473,9 @@ class BotController:
     async def _automatic_loop(self) -> None:
         while True:
             try:
+                signal = self._inbox_changed
                 with move_on_after((await self._policy()).connector_interval_seconds):
-                    await self._inbox_changed.wait()
+                    await signal.wait()
                 self._inbox_changed = Event()
                 await self.deliver_automatic_inputs()
             except Exception:
