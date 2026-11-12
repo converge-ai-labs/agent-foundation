@@ -261,3 +261,57 @@ async def test_displayable_host_notices_are_excluded_from_composer_recall(source
     assert notice.metadata.display
     assert input_excerpt((notice,)) == ""
     assert input_excerpt((notice, ContentItem("Human task"))) == "Human task"
+
+
+@pytest.mark.usefixtures("migrated_databases")
+async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeypatch):
+    from pydantic_ai.models.function import DeltaToolCall
+
+    from .test_dynamic_subagents import new_thread, open_app, returned
+
+    offering, release = Event(), Event()
+
+    async def model(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            yield "Child result"
+        elif not returned(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="spawn_subagent",
+                    json_args='{"name":"worker","instructions":"Child task","prompt":"Work"}',
+                )
+            }
+        else:
+            yield "Parent finished"
+
+    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+        original = app._subagent_operator._deliver_parent
+
+        async def offer(thread_id, prompt, execution_ids):
+            offering.set()
+            await release.wait()
+            await original(thread_id, prompt, execution_ids)
+
+        monkeypatch.setattr(app._subagent_operator, "_deliver_parent", offer)
+        parent = await new_thread(app)
+        try:
+            receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start child")
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+            with fail_after(10):
+                await offering.wait()
+            (head,) = (await app.query_child_executions(parent_thread_id=parent.thread_id)).executions
+            assert head.persisted_status == "succeeded"
+            assert head.execution_id in await app._subagent_operator.active_execution_ids()
+            active = app._subagent_operator._active[head.execution_id]
+            assert not active.done.is_set()
+            stored = await app._store.child_executions.get(head.execution_id)
+            assert stored is not None
+            checkpoint = await app._store.read_child_checkpoint(stored)
+            assert checkpoint.display.final_answer == "Child result"
+            assert active.display.final_answer is None
+            release.set()
+            with fail_after(10):
+                await active.done.wait()
+            assert head.execution_id not in await app._subagent_operator.active_execution_ids()
+        finally:
+            release.set()

@@ -481,8 +481,7 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        if node.children or (root and subagent_capability is not None):
-            assert subagent_capability is not None
+        if subagent_capability is not None and (root or node.children):
             capabilities.append(subagent_capability)
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.

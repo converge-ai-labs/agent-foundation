@@ -181,8 +181,7 @@ def test_deleted_thread_migration_starts_empty_and_downgrade_only_discards_evide
     try:
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
-        # Pin this reversible historical migration before the new forward-only boundary.
-        migrator._run(lambda config: command.upgrade(config, "60710c8b48e4"), write=True)
+        migrator.upgrade()
         with engine.begin() as connection:
             assert connection.execute(text("SELECT count(*) FROM deleted_thread")).scalar_one() == 0
             connection.execute(text("INSERT INTO deleted_thread (thread_id) VALUES ('thread-deleted')"))
@@ -552,6 +551,40 @@ def test_default_model_migration_preserves_populated_configuration(tmp_path: Pat
                 connection.execute(text("SELECT default_model_id FROM thread_configuration")).scalar_one()
                 == "model-secondary"
             )
+        migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
+def test_dynamic_source_blocks_constraint_downgrade_until_removed(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator.upgrade()
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO thread (thread_id, metadata_version, archived, created_at, updated_at, "
+                    "initial_state_schema_version, initial_state_digest) "
+                    "VALUES ('child', 1, 0, '2026-11-13', '2026-11-13', '1', :digest)"
+                ),
+                {"digest": "a" * 64},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO thread_configuration (thread_id, version, agent_source_kind, agent_source_id, "
+                    "environment_profile_id, harness_plugin_ids_json, environment_run_extension_ids_json, mcp_server_ids_json) "
+                    "VALUES ('child', 1, 'dynamic', 'dynamic-worker', 'environment-native', '[]', '[]', '[]')"
+                )
+            )
+        with pytest.raises(RuntimeError, match="dynamic child Threads exist"):
+            migrator._run(lambda config: command.downgrade(config, "60710c8b48e4"), write=True)
+        migrator.verify_current()
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE thread_configuration SET agent_source_kind = 'agent'"))
+        migrator._run(lambda config: command.downgrade(config, "60710c8b48e4"), write=True)
+        migrator.upgrade()
         migrator.verify_current()
     finally:
         engine.dispose()

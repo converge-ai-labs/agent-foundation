@@ -369,6 +369,9 @@ async def test_async_child_selects_and_reads_its_own_guidance_bundle(tmp_path, m
     from .test_builtin_subagents import _source
 
     path = _source(tmp_path, ())
+    document = yaml.safe_load(path.read_text())
+    document["subagents"]["result_delivery"] = "manual"
+    path.write_text(yaml.safe_dump(document))
     monkeypatch.setenv("TEST_KEY", "test-key")
     child_references = not parent_references
 

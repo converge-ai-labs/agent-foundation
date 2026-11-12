@@ -38,6 +38,7 @@ from pydantic_ai import BinaryContent, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
+from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -2808,7 +2809,12 @@ class HarnessUiApp:
         return await self._deliver_background_input(thread_id, prompt, execution_ids, source="async_subagent")
 
     async def _deliver_background_input(
-        self, thread_id: str, prompt: str, execution_ids: tuple[str, ...], *, source: str
+        self,
+        thread_id: str,
+        prompt: str,
+        execution_ids: tuple[str, ...],
+        *,
+        source: Literal["async_subagent", "tool_execution"],
     ) -> bool:
         if thread_id == BOT_THREAD_ID:
             # Results stay available for inspection on the next permitted input.
@@ -2817,8 +2823,7 @@ class HarnessUiApp:
             return False
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
-            # Grandchild inputs never retain an idle-child wake for a later segment.
-            return source == "async_subagent" and detail.thread.parent_thread_id is not None
+            return False
 
         def before_accept() -> None:
             if self._state is not AppState.ready:
@@ -2841,20 +2846,7 @@ class HarnessUiApp:
 
         # Lifecycle hints are model context, not human-authored messages. Keep
         # the annotation through active steering and idle continuation alike.
-        content = (
-            ContentItem(
-                prompt,
-                ContentMetadata.model_validate(
-                    {
-                        "source_id": "tool_execution.completion"
-                        if source == "tool_execution"
-                        else "a13n.async_subagent",
-                        "execution_ids": list(execution_ids),
-                        "a13n.steering-source": source,
-                    }
-                ),
-            ),
-        )
+        content = background_input(prompt, execution_ids, source=source)
         if detail.thread.parent_thread_id is not None:
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept

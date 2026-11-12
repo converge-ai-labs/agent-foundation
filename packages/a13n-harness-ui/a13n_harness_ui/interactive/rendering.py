@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.skill_input import retained_skill_spans
 
 from .context_activity import ContextActivity
@@ -61,9 +62,6 @@ def _elapsed_text(elapsed: float) -> str:
     if minutes:
         return f"{minutes}m {seconds:02d}s"
     return f"{seconds}s"
-
-
-_ACTIVITY_SOURCES = {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
 
 
 @dataclass(slots=True)
@@ -846,7 +844,7 @@ class StreamRenderer:
                     if content.get("role") == "user"
                     else "text"
                 )
-                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in _ACTIVITY_SOURCES
+                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in ACTIVITY_SOURCES
                 if activity:
                     kind = "tool"
                 if activity:
@@ -1028,7 +1026,7 @@ class StreamRenderer:
         thinking = event_type.startswith("REASONING_MESSAGE")
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
-        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in _ACTIVITY_SOURCES
+        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in ACTIVITY_SOURCES
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
             # the identity across repeated model boundaries of this operation.

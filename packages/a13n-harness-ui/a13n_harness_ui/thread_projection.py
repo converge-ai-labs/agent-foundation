@@ -37,6 +37,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
@@ -86,9 +87,6 @@ _JSON_ADAPTER = TypeAdapter(JsonValue)
 _ROOT_INACTIVE = RootActivityView(state=RootActivityState.inactive)
 type RootActivityLookup = Callable[[str], Awaitable[RootActivityView]]
 type RootActivityBatchLookup = Callable[[tuple[str, ...]], Awaitable[Mapping[str, RootActivityView]]]
-
-
-_ACTIVITY_SOURCES = {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
 
 
 class _ThreadCursor(SurfaceModel):
@@ -891,7 +889,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source") in _ACTIVITY_SOURCES
+            or metadata.get("a13n.steering-source") in ACTIVITY_SOURCES
         ):
             continue
         visible = [
@@ -899,7 +897,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             for item in request_input_content(message)
             if (projected := project_input_content(item)) is not None
             and projected[1].display
-            and (projected[1].model_extra or {}).get("a13n.steering-source") not in _ACTIVITY_SOURCES
+            and (projected[1].model_extra or {}).get("a13n.steering-source") not in ACTIVITY_SOURCES
         ]
         if not visible:
             continue

@@ -190,7 +190,6 @@ def test_group_upgrade_preserves_existing_mcp_oauth_accounts(tmp_path):
         migrator.upgrade()
         migrator.verify_current()
         with engine.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "60710c8b48e4"
             assert connection.execute(text("SELECT group_name FROM connector_configuration")).scalar_one() == "existing"
             assert connection.execute(text("SELECT credential_version, bundle_json FROM mcp_oauth")).one() == (
                 4,

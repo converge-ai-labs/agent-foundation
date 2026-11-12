@@ -82,6 +82,7 @@ from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
@@ -156,6 +157,18 @@ _DEFAULT_WAIT_SECONDS = 30.0
 _MAX_ACTIVITY_TEXT = 32 * 1024
 _MAX_DISPLAY_ACTIVITIES = 512
 _MAX_TOOL_VALUE_TEXT = 8 * 1024
+_PARENT_CONTROL_TOOLS = frozenset(
+    {
+        "delegate",
+        "resume_subagent",
+        "spawn_subagent",
+        "subagent_info",
+        "wait_subagent",
+        "steer_subagent",
+        "cancel_subagent",
+    }
+)
+
 _MAX_FAILURE_CODE = 256
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_FAILURE_DETAILS_BYTES = 64 * 1024
@@ -639,20 +652,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "children": (),
                 "tools": None
                 if scope.composition.root.tools is None
-                else tuple(
-                    tool
-                    for tool in scope.composition.root.tools
-                    if tool
-                    not in {
-                        "delegate",
-                        "resume_subagent",
-                        "spawn_subagent",
-                        "subagent_info",
-                        "wait_subagent",
-                        "steer_subagent",
-                        "cancel_subagent",
-                    }
-                ),
+                else tuple(tool for tool in scope.composition.root.tools if tool not in _PARENT_CONTROL_TOOLS),
             }
         )
         composition = scope.composition.model_copy(
@@ -729,18 +729,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     await self.steer_execution(
                         parent_thread_id=head.parent_thread_id,
                         execution_id=head.execution_id,
-                        message=(
-                            ContentItem(
-                                text,
-                                ContentMetadata.model_validate(
-                                    {
-                                        "source_id": "a13n.async_subagent",
-                                        "execution_ids": list(execution_ids),
-                                        "a13n.steering-source": "async_subagent",
-                                    }
-                                ),
-                            ),
-                        ),
+                        message=background_input(text, execution_ids, source="async_subagent"),
                         immediate=False,
                     )
             elif self._tool_executions is not None:
@@ -1672,28 +1661,35 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     )
         finally:
             with CancelScope(shield=True):
-                await self._remove_superseded_checkpoint(current.head, active.run_checkpoint)
-                async with self._lock:
-                    self._active.pop(current.head.execution_id, None)
-                    if self._tool_executions is not None:
-                        self._tool_executions.run_settled(current.state.thread_id)
-                    self._release_completion_continuation(current.state.thread_id)
-                    if self._restart is not None:
-                        self._restart.finished(current.state.thread_id)
-                    active.done.set()
-                    self._signal_change_locked()
-                # Persisted terminal status precedes cleanup; publish again only
-                # after process-local activity is no longer observable as active.
-                await self._publish_summary_by_execution(current.head.execution_id)
-                if current.scope.composition.subagents.result_delivery == "automatic":
-                    head = await self._store.child_executions.get(current.head.execution_id)
-                    if head is not None and head.status != "running":
-                        view = await self._execution_view(head)
-                        name, _, _ = await self._execution_identity(head)
-                        text = format_execution_header("Subagent result", name, head.execution_id, head.status)
-                        text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
-                        text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
-                        await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
+                try:
+                    if current.scope.composition.subagents.result_delivery == "automatic":
+                        head = await self._store.child_executions.get(current.head.execution_id)
+                        if head is not None and head.status != "running":
+                            display = (
+                                (await self._read_checkpoint(head)).display
+                                if head.selected_checkpoint is not None
+                                else CompactChildDisplay()
+                            )
+                            view = await self._execution_view(head, display=display)
+                            name, _, _ = await self._execution_identity(head)
+                            text = format_execution_header("Subagent result", name, head.execution_id, head.status)
+                            text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
+                            text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
+                            await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
+                finally:
+                    await self._remove_superseded_checkpoint(current.head, active.run_checkpoint)
+                    async with self._lock:
+                        self._active.pop(current.head.execution_id, None)
+                        if self._tool_executions is not None:
+                            self._tool_executions.run_settled(current.state.thread_id)
+                        self._release_completion_continuation(current.state.thread_id)
+                        if self._restart is not None:
+                            self._restart.finished(current.state.thread_id)
+                        active.done.set()
+                        self._signal_change_locked()
+                    # Persisted terminal status precedes cleanup; publish again only
+                    # after process-local activity is no longer observable as active.
+                    await self._publish_summary_by_execution(current.head.execution_id)
 
     async def _finish_restart(
         self,

@@ -357,7 +357,7 @@ The continuation read model includes the optional Goal projection. Current-proce
 
 Thread configuration accepts `agent_source.kind="dynamic"` for Host-created children. Its ID identifies the retained child definition; the existing immutable child Run composition retains the complete role, Model and tool recipes. It is not a configured Agent resource. Resume uses the trusted Host-defined Harness path and the retained child composition rather than looking up a fabricated roster entry.
 
-The forward migration replaces the `thread_configuration.agent_source_kind` CHECK constraint with a set that includes `dynamic`. SQLite copies that table without transforming its rows; existing identifiers, references and foreign keys remain intact. Migration runs against the ordinary exclusive startup boundary and verifies foreign keys. An interrupted transaction is rolled back and can be retried. In-place downgrade is unsupported; repair proceeds forward or restores a pre-upgrade backup.
+The forward migration replaces the `thread_configuration.agent_source_kind` CHECK constraint with a set that includes `dynamic`. SQLite copies that table without transforming its rows; existing identifiers, references and foreign keys remain intact. Migration runs against the ordinary exclusive startup boundary and verifies foreign keys. An interrupted transaction is rolled back and can be retried. The CHECK cannot be reverted while `dynamic` rows remain.
 
 Stop every Harness UI process sharing the data root before upgrading. Upgrade TUI and WebUI together, then reopen the data root. Mixed-version access to the migrated data root is unsupported.
 

@@ -262,7 +262,11 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
                 finish.set()
                 delivery_allowed.set()
                 release.set()
-            while await app._subagent_operator.active_execution_ids() or app._tool_executions.busy_thread_ids():
+            while (
+                await app._subagent_operator.active_execution_ids()
+                or app._tool_executions.busy_thread_ids()
+                or await app._root_runs.active(thread.thread_id) is not None
+            ):
                 await sleep(0)
             deleted = await app.delete_thread(thread_id=thread.thread_id, expected_version=thread.metadata_version)
             assert set(deleted) == {thread.thread_id, child_id}
