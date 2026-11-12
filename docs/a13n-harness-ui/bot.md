@@ -44,13 +44,17 @@ When memory is enabled, Bot receives global memory normally. It can discover con
 
 ## Bot Notes
 
-Agents manage one short Markdown handoff per ordinary root Thread. A working Thread uses `read_bot_note()`, `write_bot_note(content)` and `clear_bot_note()` for its own slot. Bot can address any ordinary root's slot and list bounded summaries with `list_bot_notes`. There is no human Notes management form.
+Agents manage one short Markdown handoff per ordinary root Thread. When Bot is enabled, working Threads record sustained work early, update meaningful progress and blockers, and reconcile the note before yielding. They remove completed or cancelled work and clear the note when no follow-up remains. A working Thread uses `read_bot_note()`, `write_bot_note(content)` and `clear_bot_note()` for its own slot. Its current note and Bot's enabled/paused status appear automatically in its model context. Bot can address ordinary root slots and list bounded summaries with `list_bot_notes`.
 
-Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. On the next legitimate input, Bot can inspect saved results, follow up, update notes and clear handled items.
+Open **Work notes** in Bot's supporting pane to browse Thread links, Projects, update times and Markdown previews. Expand a note to read it in full. The ordinary Thread's Notes inspector also shows its own Bot Note, separately from private working notes. Both views are read-only.
+
+Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. To request attention for a handoff, result, blocker or question, a working Thread first updates its note, then sends one substantive `send_thread_message(thread_id='thread_bot', kind='report', message=...)`. The Host retains its source Thread identity and notifies Bot's existing delivery loop. Reports remain pending while Bot is off, paused, unavailable or waiting for a human decision. Managed workers report through their Coordinator. Bot's outgoing Thread inputs include hidden return-address guidance; recipients retain their saved final result as well as reporting back.
 
 ## Messages and decisions
 
-The Bot conversation shows your messages, all ordinary final text replies, and intentional proactive messages. The same rule applies to human, Heartbeat and Connector inputs, whether they start or steer a Run. Tool calls and intermediate text stay out of this conversation. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
+The Bot conversation shows your messages, ordinary assistant prose while it streams and after refresh, final replies, and intentional proactive messages. Bot responds briefly before slow work and provides meaningful progress. Tool calls, reasoning, child execution and hidden context stay out of the conversation. Intermediate prose creates no notification. Final replies appear once and use the existing unread and notification behavior.
+
+Internal coordination stays quiet unless there is a meaningful result, blocker or human decision. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without publishing a message. This does not retract prose already shown. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker or question.
 
 Answer pending human decisions directly in the Bot conversation. Bot has one chat view; notification actions and old Bot Thread links open that chat. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 
@@ -58,7 +62,7 @@ The text draft stays in the current tab. Reloading can lose an unsent draft. If 
 
 ## Pause and recover
 
-Use the pause icon to hold automatic processing. Heartbeat ticks and selected Connector events keep collecting; direct messages remain usable. Pause does not cancel a Run or reset the Heartbeat clock. Turn off Heartbeat separately to stop ticks while allowing Connector delivery.
+Use the pause icon to hold automatic processing. Heartbeat ticks, selected Connector events and explicit Thread reports keep collecting; direct human messages remain usable. Pause does not cancel a Run or reset the Heartbeat clock. Turn off Heartbeat separately to stop ticks while allowing Connector delivery.
 
 Turn off Bot in Settings to stop new ticks and delivery. History, settings, Notes and pending inputs are retained; already admitted work and other Threads continue. The conversation becomes read-only. Re-enable in Settings; a later normal delivery opportunity can process retained input. Pending human decisions can resume only after re-enable.
 

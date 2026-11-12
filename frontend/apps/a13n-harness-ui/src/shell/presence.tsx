@@ -141,6 +141,9 @@ export function useLiveWorkbench(
             (query) => query.queryKey[0] === "unsent-threads",
           );
         if (event?.kind === "thread_work") {
+          scheduleRefresh(queries, (query) =>
+            ["bot-note", "bot-notes"].includes(String(query.queryKey[0])),
+          );
           const id = event.root_thread_id ?? event.thread_id;
           if (id) refreshThread(queries, id, "work");
         } else if (

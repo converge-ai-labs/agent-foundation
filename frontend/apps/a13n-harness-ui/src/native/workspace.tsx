@@ -1,5 +1,6 @@
 import { useTranslation } from "../i18n";
 import { BotActions, BOT_THREAD_ID, useBot } from "../bot";
+import { BotWorkNotes } from "../bot-notes";
 import { ViewLink } from "./view-link";
 import {
   useContext,
@@ -41,6 +42,7 @@ import {
   SlidersHorizontal,
   ShareNetwork,
   ChatCircle,
+  Notebook,
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
@@ -161,12 +163,14 @@ export function NativeWorkspace({
   if (isWorkspace && !projectLoading) retainedRoots.current = selectedRoots;
   const localRoots = isWorkspace ? selectedRoots : retainedRoots.current;
   const projectRoot = localRoots[0] ?? "";
-  const hasSupportingViews = !!(
-    status.data?.features?.host_files ||
-    status.data?.features?.host_git ||
-    status.data?.features?.browser ||
-    status.data?.features?.host_terminal
-  );
+  const hasSupportingViews =
+    botMode ||
+    !!(
+      status.data?.features?.host_files ||
+      status.data?.features?.host_git ||
+      status.data?.features?.browser ||
+      status.data?.features?.host_terminal
+    );
   const [tabLayout, setTabLayout] = useState(
     () => readPreference("native-layout", "sidebar") === "tabs",
   );
@@ -256,7 +260,7 @@ export function NativeWorkspace({
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
   const [pane, setPane] = useState<
-    "files" | "changes" | "browser" | "terminal" | null
+    "files" | "changes" | "browser" | "terminal" | "work-notes" | null
   >(null);
   const tabSequence = useRef(0);
   const nextTabId = () => `view-${++tabSequence.current}`;
@@ -360,7 +364,7 @@ export function NativeWorkspace({
   }, [directory, pane, view]);
   useEffect(() => {
     if (projectLoading) return;
-    const context = `${projectId ?? ""}:${projectRoot}`;
+    const context = botMode ? "bot" : `${projectId ?? ""}:${projectRoot}`;
     if (appliedProject === context) return;
     if (appliedProject) {
       projectViews.current.set(appliedProject, {
@@ -387,7 +391,7 @@ export function NativeWorkspace({
     setFileLine(undefined);
     setTerminalRequest(undefined);
     setTerminalId(saved?.terminalId ?? "");
-  }, [projectId, projectRoot, projectLoading]);
+  }, [projectId, projectRoot, projectLoading, botMode]);
   useEffect(() => {
     setOpening(false);
     return () => openingRequest.current?.abort();
@@ -407,6 +411,10 @@ export function NativeWorkspace({
       setTerminalOpened(true);
       setView("page");
       setFocusedArea("terminal");
+    } else if (tab.kind === "work-notes") {
+      setPane("work-notes");
+      setView("page");
+      setFocusedArea("native");
     } else if (tab.kind === "browser") {
       setPane("browser");
       setView("page");
@@ -747,7 +755,9 @@ export function NativeWorkspace({
     openingRequest.current?.abort();
     setOpening(false);
   };
-  const show = (next: "files" | "changes" | "browser" | "terminal") => {
+  const show = (
+    next: "files" | "changes" | "browser" | "terminal" | "work-notes",
+  ) => {
     revealTab(
       next === "files"
         ? {
@@ -902,6 +912,13 @@ export function NativeWorkspace({
   );
   const viewChoices = [
     {
+      key: "work-notes" as const,
+      label: t("Work notes"),
+      description: t("Follow ongoing work across chats"),
+      icon: Notebook,
+      available: botMode,
+    },
+    {
       key: "files" as const,
       label: t("Files"),
       description: t("Browse and open a file"),
@@ -974,7 +991,9 @@ export function NativeWorkspace({
                   ? t("Changes")
                   : tab.kind === "terminal"
                     ? t("Terminal")
-                    : t("Browser"),
+                    : tab.kind === "work-notes"
+                      ? t("Work notes")
+                      : t("Browser"),
       icon:
         tab.kind === "new"
           ? Plus
@@ -986,7 +1005,9 @@ export function NativeWorkspace({
                 ? GitDiff
                 : tab.kind === "terminal"
                   ? TerminalWindow
-                  : Globe,
+                  : tab.kind === "work-notes"
+                    ? Notebook
+                    : Globe,
       tab,
     })),
   ];
@@ -1091,7 +1112,20 @@ export function NativeWorkspace({
               />
             )}
             {profile}
-            {botMode && <BotActions />}
+            {botMode && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t("Work notes")}
+                  title={t("Work notes")}
+                  onClick={() => show("work-notes")}
+                >
+                  <Notebook />
+                </Button>
+                <BotActions />
+              </>
+            )}
             {threadId && !botMode && !unavailableThread && (
               <Menu>
                 <MenuTrigger
@@ -1334,6 +1368,21 @@ export function NativeWorkspace({
               }}
             />
           )}
+          {isWorkspace && pane === "work-notes" && (
+            <aside
+              id={`${workspaceId}-native`}
+              role="tabpanel"
+              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+              hidden={!supportingExpanded}
+              style={{ "--panel-width": `${width}%` } as CSSProperties}
+              ref={paneElement}
+              tabIndex={-1}
+              className={styles.pane}
+              aria-label={t("Work notes")}
+            >
+              {supportingExpanded && <BotWorkNotes />}
+            </aside>
+          )}
           {isWorkspace && pane === "browser" && (
             <aside
               id={`${workspaceId}-native`}
@@ -1364,253 +1413,259 @@ export function NativeWorkspace({
               )}
             </aside>
           )}
-          {isWorkspace && pane && pane !== "browser" && pane !== "terminal" && (
-            <aside
-              id={`${workspaceId}-native`}
-              role="tabpanel"
-              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={!supportingExpanded}
-              style={{ "--panel-width": `${width}%` } as CSSProperties}
-              ref={paneElement}
-              tabIndex={-1}
-              onFocusCapture={() =>
-                setFocusedArea(view === "page" ? "explorer" : "native")
-              }
-              onPointerDown={() =>
-                setFocusedArea(view === "page" ? "explorer" : "native")
-              }
-              className={`${styles.pane} a13n-scrollbar`}
-              aria-label={t("File explorer")}
-            >
-              <header className={styles.paneHeader}>
-                {view === "page" && folderBreadcrumbs ? (
-                  folderBreadcrumbs
-                ) : (
-                  <div className={styles.panelTools}>
-                    {view !== "page" ? (
+          {isWorkspace &&
+            pane &&
+            pane !== "browser" &&
+            pane !== "terminal" &&
+            pane !== "work-notes" && (
+              <aside
+                id={`${workspaceId}-native`}
+                role="tabpanel"
+                aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+                hidden={!supportingExpanded}
+                style={{ "--panel-width": `${width}%` } as CSSProperties}
+                ref={paneElement}
+                tabIndex={-1}
+                onFocusCapture={() =>
+                  setFocusedArea(view === "page" ? "explorer" : "native")
+                }
+                onPointerDown={() =>
+                  setFocusedArea(view === "page" ? "explorer" : "native")
+                }
+                className={`${styles.pane} a13n-scrollbar`}
+                aria-label={t("File explorer")}
+              >
+                <header className={styles.paneHeader}>
+                  {view === "page" && folderBreadcrumbs ? (
+                    folderBreadcrumbs
+                  ) : (
+                    <div className={styles.panelTools}>
+                      {view !== "page" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={pane === "files" ? directory : root}
+                          onClick={() => {
+                            if (pane === "files") {
+                              const position = (activeTab.kind === "file" &&
+                                activeTab.position) || { directory, path };
+                              navigateTab({
+                                kind: "files",
+                                directory: position.directory,
+                                root,
+                                position,
+                              });
+                            } else {
+                              cancelOpening();
+                              select(null);
+                              setView("page");
+                              setFocusedArea("explorer");
+                            }
+                          }}
+                        >
+                          <ArrowLeft />
+                          {pane === "files"
+                            ? t("Back to files")
+                            : t("Back to changes")}
+                        </Button>
+                      ) : (
+                        <strong>
+                          {pane === "files" ? t("Files") : t("Changes")}
+                        </strong>
+                      )}
+                    </div>
+                  )}
+                  <div
+                    className={
+                      view === "file"
+                        ? styles.fileHeaderActions
+                        : styles.actions
+                    }
+                  >
+                    {view === "file" && <div ref={setFileActionsHost} />}
+                    <ViewLink
+                      getLink={() => {
+                        const target = nativeTarget();
+                        return target
+                          ? new URL(
+                              pageLink({ target, root_thread_id: threadId })!,
+                              window.location.origin,
+                            ).href
+                          : undefined;
+                      }}
+                    />
+                    {view !== "file" && (
                       <Button
                         variant="ghost"
-                        size="sm"
-                        title={pane === "files" ? directory : root}
-                        onClick={() => {
-                          if (pane === "files") {
-                            const position = (activeTab.kind === "file" &&
-                              activeTab.position) || { directory, path };
-                            navigateTab({
-                              kind: "files",
-                              directory: position.directory,
-                              root,
-                              position,
-                            });
-                          } else {
-                            cancelOpening();
-                            select(null);
-                            setView("page");
-                            setFocusedArea("explorer");
-                          }
-                        }}
+                        size="icon"
+                        aria-label={t("Refresh files and changes")}
+                        onClick={refresh}
                       >
-                        <ArrowLeft />
-                        {pane === "files"
-                          ? t("Back to files")
-                          : t("Back to changes")}
+                        <ArrowClockwise />
                       </Button>
-                    ) : (
-                      <strong>
-                        {pane === "files" ? t("Files") : t("Changes")}
-                      </strong>
                     )}
                   </div>
+                </header>
+                {nativeFeedback}
+                {opening && (
+                  <span role="status" className={styles.directoryLoading}>
+                    {t("Opening…")}
+                  </span>
                 )}
-                <div
-                  className={
-                    view === "file" ? styles.fileHeaderActions : styles.actions
-                  }
-                >
-                  {view === "file" && <div ref={setFileActionsHost} />}
-                  <ViewLink
-                    getLink={() => {
-                      const target = nativeTarget();
-                      return target
-                        ? new URL(
-                            pageLink({ target, root_thread_id: threadId })!,
-                            window.location.origin,
-                          ).href
-                        : undefined;
-                    }}
-                  />
-                  {view !== "file" && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("Refresh files and changes")}
-                      onClick={refresh}
-                    >
-                      <ArrowClockwise />
-                    </Button>
-                  )}
-                </div>
-              </header>
-              {nativeFeedback}
-              {opening && (
-                <span role="status" className={styles.directoryLoading}>
-                  {t("Opening…")}
-                </span>
-              )}
-              {!projectLoading &&
-                directory &&
-                ((view !== "page" && folderBreadcrumbs) ||
-                  (localRoots.length > 1 &&
-                    view === "page" &&
-                    pane === "changes")) && (
-                  <div className={styles.location}>
-                    {pane === "changes" && localRoots.length > 1 && (
-                      <nav
-                        className={styles.projectFolders}
-                        aria-label={t("Working folders")}
-                      >
-                        {localRoots.map((folder) => (
-                          <Button
-                            key={folder}
-                            size="sm"
-                            variant="ghost"
-                            title={folder}
-                            aria-pressed={root === folder}
-                            onClick={() => {
-                              navigateTab(
-                                pane === "changes"
-                                  ? {
-                                      kind: "changes",
-                                      root: folder,
-                                      selection: null,
-                                      choices: [],
-                                    }
-                                  : {
-                                      kind: "files",
-                                      directory: folder,
-                                      root: folder,
-                                    },
-                              );
-                            }}
-                          >
-                            <Folder />
-                            {basename(folder)}
-                          </Button>
-                        ))}
-                      </nav>
-                    )}
-                    {view !== "page" && folderBreadcrumbs}
-                  </div>
-                )}
-              {view !== "page" && (
-                <div
-                  ref={editorElement}
-                  tabIndex={-1}
-                  className={`${styles.editorPage} a13n-scrollbar`}
-                  onFocusCapture={() => setFocusedArea("native")}
-                  onPointerDown={() => setFocusedArea("native")}
-                >
-                  {view === "file" && path && (
-                    <OpenHostFile value={(target) => void open(target)}>
-                      <FileView
-                        toolbarHost={fileActionsHost}
-                        key={path}
-                        path={path}
-                        line={fileLine}
-                        threadId={threadId}
-                        open={(target) => void open(target)}
-                      />
-                    </OpenHostFile>
-                  )}
-                  {view === "diff" && selected && (
-                    <DiffView
-                      key={`${selected.repository_path}:${selected.path}:${selected.comparison}`}
-                      selection={selected}
-                      choices={diffChoices}
-                      navigate={select}
-                      threadId={threadId}
-                      openFile={(target, line) => void open(target, line)}
-                    />
-                  )}
-                </div>
-              )}
-
-              {projectLoading ? (
-                <p className={styles.empty} role="status">
-                  {t("Loading project…")}
-                </p>
-              ) : !(pane === "files" ? directory : root) ? (
-                <p className={styles.empty}>
-                  {project
-                    ? t("This project has no folders configured.")
-                    : t(
-                        "Open a chat in a project to see its files and changes.",
+                {!projectLoading &&
+                  directory &&
+                  ((view !== "page" && folderBreadcrumbs) ||
+                    (localRoots.length > 1 &&
+                      view === "page" &&
+                      pane === "changes")) && (
+                    <div className={styles.location}>
+                      {pane === "changes" && localRoots.length > 1 && (
+                        <nav
+                          className={styles.projectFolders}
+                          aria-label={t("Working folders")}
+                        >
+                          {localRoots.map((folder) => (
+                            <Button
+                              key={folder}
+                              size="sm"
+                              variant="ghost"
+                              title={folder}
+                              aria-pressed={root === folder}
+                              onClick={() => {
+                                navigateTab(
+                                  pane === "changes"
+                                    ? {
+                                        kind: "changes",
+                                        root: folder,
+                                        selection: null,
+                                        choices: [],
+                                      }
+                                    : {
+                                        kind: "files",
+                                        directory: folder,
+                                        root: folder,
+                                      },
+                                );
+                              }}
+                            >
+                              <Folder />
+                              {basename(folder)}
+                            </Button>
+                          ))}
+                        </nav>
                       )}
-                </p>
-              ) : !status.data?.features?.host_files ? (
-                <div className={styles.empty}>
-                  <h3>{t("Computer sharing is off")}</h3>
-                  <p>
-                    {t(
-                      "Computer sharing is off on the server. Chats still work. Turn it on in server settings to access files and terminals.",
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <>
+                      {view !== "page" && folderBreadcrumbs}
+                    </div>
+                  )}
+                {view !== "page" && (
                   <div
-                    hidden={view !== "page"}
-                    data-pane={pane}
-                    className={`${styles.paneBody} a13n-scrollbar`}
+                    ref={editorElement}
+                    tabIndex={-1}
+                    className={`${styles.editorPage} a13n-scrollbar`}
+                    onFocusCapture={() => setFocusedArea("native")}
+                    onPointerDown={() => setFocusedArea("native")}
                   >
-                    {pane === "files" ? (
-                      <Files
-                        key={JSON.stringify([tabs.active, directory, view])}
-                        position={
-                          activeTab.kind === "files"
-                            ? activeTab.position
-                            : undefined
-                        }
-                        fileManager={status.data?.features?.file_manager}
-                        directory={directory}
-                        roots={localRoots}
-                        path={path}
-                        open={(target, kind, position) =>
-                          void open(
-                            target,
-                            undefined,
-                            kind === "file",
-                            position,
-                          )
-                        }
-                        refresh={refresh}
-                        openTerminal={
-                          status.data?.features?.host_terminal && projectId
-                            ? openTerminal
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      <Changes
-                        path={root}
-                        selected={selected}
-                        onChoices={setDiffChoices}
-                        select={(next, choices) => {
-                          cancelOpening();
-                          select(next, choices ?? diffChoices);
-                          if (next) {
-                            setView("diff");
-                            setFocusedArea("native");
-                          }
-                        }}
-                        openFile={(target) => void open(target)}
+                    {view === "file" && path && (
+                      <OpenHostFile value={(target) => void open(target)}>
+                        <FileView
+                          toolbarHost={fileActionsHost}
+                          key={path}
+                          path={path}
+                          line={fileLine}
+                          threadId={threadId}
+                          open={(target) => void open(target)}
+                        />
+                      </OpenHostFile>
+                    )}
+                    {view === "diff" && selected && (
+                      <DiffView
+                        key={`${selected.repository_path}:${selected.path}:${selected.comparison}`}
+                        selection={selected}
+                        choices={diffChoices}
+                        navigate={select}
+                        threadId={threadId}
+                        openFile={(target, line) => void open(target, line)}
                       />
                     )}
                   </div>
-                </>
-              )}
-            </aside>
-          )}
+                )}
+
+                {projectLoading ? (
+                  <p className={styles.empty} role="status">
+                    {t("Loading project…")}
+                  </p>
+                ) : !(pane === "files" ? directory : root) ? (
+                  <p className={styles.empty}>
+                    {project
+                      ? t("This project has no folders configured.")
+                      : t(
+                          "Open a chat in a project to see its files and changes.",
+                        )}
+                  </p>
+                ) : !status.data?.features?.host_files ? (
+                  <div className={styles.empty}>
+                    <h3>{t("Computer sharing is off")}</h3>
+                    <p>
+                      {t(
+                        "Computer sharing is off on the server. Chats still work. Turn it on in server settings to access files and terminals.",
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      hidden={view !== "page"}
+                      data-pane={pane}
+                      className={`${styles.paneBody} a13n-scrollbar`}
+                    >
+                      {pane === "files" ? (
+                        <Files
+                          key={JSON.stringify([tabs.active, directory, view])}
+                          position={
+                            activeTab.kind === "files"
+                              ? activeTab.position
+                              : undefined
+                          }
+                          fileManager={status.data?.features?.file_manager}
+                          directory={directory}
+                          roots={localRoots}
+                          path={path}
+                          open={(target, kind, position) =>
+                            void open(
+                              target,
+                              undefined,
+                              kind === "file",
+                              position,
+                            )
+                          }
+                          refresh={refresh}
+                          openTerminal={
+                            status.data?.features?.host_terminal && projectId
+                              ? openTerminal
+                              : undefined
+                          }
+                        />
+                      ) : (
+                        <Changes
+                          path={root}
+                          selected={selected}
+                          onChoices={setDiffChoices}
+                          select={(next, choices) => {
+                            cancelOpening();
+                            select(next, choices ?? diffChoices);
+                            if (next) {
+                              setView("diff");
+                              setFocusedArea("native");
+                            }
+                          }}
+                          openFile={(target) => void open(target)}
+                        />
+                      )}
+                    </div>
+                  </>
+                )}
+              </aside>
+            )}
           {terminalOpened && status.data?.features?.host_terminal && (
             <aside
               className={`${styles.pane} ${styles.terminalPane}`}

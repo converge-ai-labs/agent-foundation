@@ -1,5 +1,6 @@
 import { useTranslation } from "../i18n";
 import { HelpTip } from "../shell/help-tip";
+import { ThreadBotNote } from "../bot-notes";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
@@ -326,6 +327,7 @@ export function WorkInspector({
                     <p>{t("Notes unavailable.")}</p>
                   )}
                   <NoteList page={work.notes.data?.notes.page} />
+                  {!guest && <ThreadBotNote threadId={threadId} />}
                 </>
               )}
               {key === "children" && tab === key && (

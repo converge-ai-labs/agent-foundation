@@ -34,6 +34,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261112_7f64c893cc4a_retain_thread_messages_in_bot_inbox.py").unlink()
     (newer / "versions/20261112_9450d8b1a589_add_shared_thread_read_state.py").unlink()
     (newer / "versions/20261111_f196302d868f_retain_latest_thread_external_context.py").unlink()
     (newer / "versions/20261111_2e9f82450690_add_notification_scope_and_language.py").unlink()
