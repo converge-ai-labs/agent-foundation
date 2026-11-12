@@ -32,7 +32,7 @@ import {
   isReadyAttachment,
 } from "./inline-attachments";
 import { ImagePreview } from "../shell/image-preview";
-import { useTransport } from "../transport/context";
+import { TransportContext, useTransport } from "../transport/context";
 import {
   ApiError,
   result,
@@ -111,7 +111,7 @@ function beginInput(
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
 export function useDraft(threadId: string, historyOnly = false) {
   const drafts = useContext(ComposerDrafts);
-  const { shareId } = useTransport();
+  const shareId = useContext(TransportContext)?.shareId;
   let draft = drafts.get(threadId);
   if (!draft) {
     draft = new ThreadDraft();
