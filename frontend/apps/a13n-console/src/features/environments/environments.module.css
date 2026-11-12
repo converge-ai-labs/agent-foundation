@@ -381,3 +381,51 @@
     flex-wrap: wrap;
   }
 }
+
+.envdFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .envdFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.envdSettings {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.envdFields.envdFields > :global([data-slot="field"]) {
+  grid-column: auto;
+}
+
+.configurationGroup {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.configurationGroupHeading h4,
+.configurationGroupHeading h5 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.configurationGroupHeading h4 {
+  font-size: var(--a13n-text-lg);
+  font-weight: 600;
+}
+.configurationGroupHeading p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}

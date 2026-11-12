@@ -1,5 +1,0 @@
-Use `shell_exec` for shell commands. On process-capable mounts, commands automatically yield after the configured foreground wait, even in inline mode. With Host-held tool execution, a fast command returns its result; expiry or immediate steering returns an `exec-*` execution receipt for the same running command. Foreground-only mounts follow the Host's generic inline/automatic policy. Do not reissue it. Use the exposed execution controls for status, cancellation and the final result.
-
-Without runtime ownership, including Shell calls inside CodeAct, a process-capable Environment returns native output and, when still running after the configured wait, a `process-*` reference. Nested CodeAct calls return actual values, not separate execution receipts. Only the outer runner can hand off.
-
-Prefer file tools for ordinary file reading, listing, searching and content editing. Use the `cwd` argument instead of embedding `cd` in a command. `execution_timeout_seconds` requests a provider-enforced hard deadline and can be unsupported. The Host's initial wait and bounded control waits only bound waiting. Harness adds no Agent-wide tool timeout.

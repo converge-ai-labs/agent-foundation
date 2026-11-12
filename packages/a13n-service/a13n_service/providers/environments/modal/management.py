@@ -111,7 +111,8 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                             "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
                             "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                             "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-                        }
+                        },
+                        self.config.envd,
                     )
                 ),
             )

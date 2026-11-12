@@ -1,0 +1,132 @@
+{
+  "defaults": {
+    "max_device_spool_bytes": 4294967296,
+    "max_device_spool_objects": 65536,
+    "max_device_staged_file_bytes": 34359738368,
+    "max_device_staged_file_objects": 2048,
+    "max_device_concurrent_operations": 256,
+    "max_device_processes": 512,
+    "max_device_operation_records": 65536,
+    "max_device_process_records": 4096,
+    "max_device_file_transfers": 128,
+    "max_device_file_transfer_records": 2048,
+    "max_sessions": 128,
+    "max_file_bytes": 8589934592,
+    "max_request_bytes": 16777216,
+    "max_response_bytes": 16777216,
+    "max_concurrent_operations": 128,
+    "max_processes": 128,
+    "max_operation_duration_ms": 86400000,
+    "max_output_preview_bytes": 2097152,
+    "max_output_bytes_per_stream": 268435456,
+    "max_spool_bytes": 1073741824,
+    "max_spool_objects": 16384,
+    "max_operation_records": 16384,
+    "operation_record_ttl_ms": 86400000,
+    "max_process_records": 1024,
+    "max_transfer_frame_bytes": 4194304,
+    "max_concurrent_file_transfers": 64,
+    "max_file_transfer_records": 512,
+    "file_transfer_record_ttl_ms": 86400000,
+    "max_staged_file_bytes": 8589934592,
+    "max_staged_file_objects": 512,
+    "file_transfer_idle_ttl_ms": 600000,
+    "max_file_transfer_duration_ms": 7200000
+  },
+  "cases": [
+    {
+      "limits": {},
+      "valid": true
+    },
+    {
+      "limits": {
+        "max_concurrent_file_transfers": 32
+      },
+      "valid": true
+    },
+    {
+      "limits": {
+        "max_transfer_frame_bytes": 1
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_transfer_frame_bytes": 25
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_transfer_frame_bytes": 26
+      },
+      "valid": true
+    },
+    {
+      "limits": {
+        "max_sessions": 0
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_sessions": true
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_sessions": "3"
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_sessions": 18446744073709551616
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_spool_bytes": 1
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_processes": 513
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_process_records": 127
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_concurrent_file_transfers": 129
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_file_transfer_records": 63
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_output_preview_bytes": 268435457
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_device_spool_objects": 1
+      },
+      "valid": false
+    }
+  ]
+}

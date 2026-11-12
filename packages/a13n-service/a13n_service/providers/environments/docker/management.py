@@ -258,13 +258,7 @@ class DockerManagement(DockerReference, ManagementBackend):
                                 if self._metrics is not None
                                 else {}
                             ),
-                            "limits": {
-                                "max_file_bytes": self.config.max_file_bytes,
-                                "max_output_preview_bytes": self.config.max_output_preview_bytes,
-                                "max_output_bytes_per_stream": self.config.max_output_bytes_per_stream,
-                                "max_spool_bytes": self.config.max_spool_bytes,
-                                "max_processes": self.config.max_concurrent_processes,
-                            },
+                            "limits": self.config.launch_limits(),
                         }
                     ),
                 }
@@ -277,18 +271,8 @@ class DockerManagement(DockerReference, ManagementBackend):
                 for mount in self.config.mounts
             ):
                 raise provider_error(_KEY, "envd_credential_not_private", EnvironmentProviderErrorCategory.INVALID)
-            environment = self.bootstrap_environment(environment)
-            environment["A13N_ENVD_CONFIG_JSON"] = json.dumps(
-                {
-                    "limits": {
-                        "max_file_bytes": self.config.max_file_bytes,
-                        "max_output_preview_bytes": self.config.max_output_preview_bytes,
-                        "max_output_bytes_per_stream": self.config.max_output_bytes_per_stream,
-                        "max_spool_bytes": self.config.max_spool_bytes,
-                        "max_processes": self.config.max_concurrent_processes,
-                    }
-                }
-            )
+            environment["A13N_ENVD_CONFIG_JSON"] = json.dumps({"limits": self.config.launch_limits()})
+        environment = self.bootstrap_environment(environment, self.config.envd)
         return client.containers.create(
             image_id,
             name="a13n-" + self.allocation_id,

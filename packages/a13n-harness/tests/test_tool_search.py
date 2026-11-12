@@ -123,7 +123,7 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
         assert "enum" not in definitions["call_tool"].parameters_json_schema["properties"]["group"]
         assert "crm operations" not in definitions["discover_tools"].description
         assert "Double a customer" not in definitions["discover_tools"].description
-        assert "Grouped tool discovery" in info.instructions
+        assert "<tool-name>tool_search</tool-name>" in info.instructions
         assert "Use exact customer IDs." not in info.instructions
 
     result, returns = await _run(
@@ -702,7 +702,7 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> Non
 
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
             instructions = info.instructions or ""
-            assert ("Grouped tool discovery" in instructions) is enabled
+            assert ("<tool-name>tool_search</tool-name>" in instructions) is enabled
             assert "discover_tools" not in instructions
             assert "call_tool" not in instructions
             if enabled:
@@ -804,7 +804,7 @@ async def test_empty_groups_leave_direct_tools_unchanged() -> None:
 
     def inspect(_step: int, info: AgentInfo) -> None:
         assert [tool.name for tool in info.function_tools] == ["status"]
-        assert "Grouped tool discovery" not in (info.instructions or "")
+        assert "<tool-name>tool_search</tool-name>" not in (info.instructions or "")
 
     result, returns = await _run(
         (ToolSearchCapability(groups={}), Capability(toolsets=[FunctionToolset([status])])),

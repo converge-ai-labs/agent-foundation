@@ -27,7 +27,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
@@ -156,13 +156,10 @@ class ShellToolset:
             )
         if allowed_names is not None:
             tools = [tool for tool in tools if tool.name in allowed_names]
-        sections = [tool.name for tool in tools]
-        if any(name != "shell_exec" for name in sections):
-            sections.insert(0, "shell_processes")
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[tool_instruction("environment-shell", *sections)] if tools else [],
+            instructions=[tool_guidance("environment-shell")] if tools else [],
         )
 
     async def wrap_run(

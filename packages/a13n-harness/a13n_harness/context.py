@@ -168,6 +168,7 @@ class RunBindings:
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
+    instruction_reference_root: str | None = field(default=None, kw_only=True)
     deferred_tools_supported: bool = True
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     browser_backend: BrowserBackend | None = None
@@ -224,6 +225,8 @@ class RunBindings:
                 parse_mount_path(self.shell_output_directory)
             except ValueError as exc:
                 raise ValueError("shell_output_directory must be a canonical absolute Environment path") from exc
+        if self.instruction_reference_root is not None:
+            parse_mount_path(self.instruction_reference_root)
         if self.retained_history_directory is not None:
             parse_mount_path(self.retained_history_directory)
         if self.context_recovery_scope_id is not None and not self.context_recovery_scope_id:
@@ -272,6 +275,7 @@ class RunBindings:
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
+        instruction_reference_root: str | None = None,
         deferred_tools_supported: bool = True,
         model_context: ModelContextMiddleware | None = None,
         model_call_check: ModelCallCheck | None = None,
@@ -308,6 +312,7 @@ class RunBindings:
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
+            instruction_reference_root=instruction_reference_root,
             deferred_tools_supported=deferred_tools_supported,
             model_context=model_context,
             model_call_check=model_call_check,
@@ -448,6 +453,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    instruction_reference_root: str | None = field(default=None, kw_only=True)
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
     request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True

@@ -400,7 +400,14 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
         usage_limits=None,
         identity=AgentIdentityRef(issuer="test", subject="child"),
         state=state,
-        environment=cast(Any, SimpleNamespace(runtime=RunBindings.embedded().environment, tool_result_directory=None)),
+        environment=cast(
+            Any,
+            SimpleNamespace(
+                runtime=RunBindings.embedded().environment,
+                instruction_reference_root=None,
+                tool_result_directory=None,
+            ),
+        ),
         execution_id="execution_test",
         parent=cast(Any, SimpleNamespace(agent_instance_id="parent-agent")),
         agent_instance_id="child-agent",

@@ -38,6 +38,7 @@ class _Context:
     def __init__(self) -> None:
         self.spills: list[bytes] = []
         self.toolset_instructions = True
+        self.instruction_reference_root = None
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
         self.spills.append(data)
@@ -122,33 +123,26 @@ def _toolset(**kwargs: Any) -> WebToolset:
     )
 
 
-async def test_web_instructions_follow_provider_activation() -> None:
+async def test_web_group_guidance_preserves_provider_tool_activation() -> None:
     ctx, _ = _run_context()
 
-    base_parts = (
-        await _toolset(configuration=WebConfiguration(search=WebSearchConfiguration(mode="off")))
-        .get_toolset()
-        .get_instructions(ctx)
-    )
+    base_toolset = _toolset(configuration=WebConfiguration(search=WebSearchConfiguration(mode="off"))).get_toolset()
+    assert set(base_toolset.tools) == {"fetch", "download"}
+    base_parts = await base_toolset.get_instructions(ctx)
     assert base_parts is not None
     base = "\n".join(part.content for part in base_parts)
-    assert '<tool-instruction name="fetch">' in base
-    assert '<tool-instruction name="download">' in base
-    assert '<tool-instruction name="search">' not in base
-    assert '<tool-instruction name="scrape">' not in base
+    assert base.count("<tool-name>web</tool-name>") == 1
+    for section in ("search", "scrape", "fetch", "download"):
+        assert f"<{section}>" in base
 
-    provider_parts = (
-        await _toolset(
-            search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
-            scrape_backends=(WebScrapeBackendBinding("default", _ScrapeProvider()),),
-        )
-        .get_toolset()
-        .get_instructions(ctx)
-    )
+    provider_toolset = _toolset(
+        search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
+        scrape_backends=(WebScrapeBackendBinding("default", _ScrapeProvider()),),
+    ).get_toolset()
+    assert set(provider_toolset.tools) == {"search", "scrape", "fetch", "download"}
+    provider_parts = await provider_toolset.get_instructions(ctx)
     assert provider_parts is not None
-    provider = "\n".join(part.content for part in provider_parts)
-    assert '<tool-instruction name="search">' in provider
-    assert '<tool-instruction name="scrape">' in provider
+    assert "\n".join(part.content for part in provider_parts) == base
 
 
 def test_tool_output_size_uses_serialized_characters_not_utf8_bytes() -> None:

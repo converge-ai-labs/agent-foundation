@@ -422,9 +422,10 @@ it("acknowledges the rendered completion, preserves a scrolled-up reader, and ex
   expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 4, 4);
 });
 
-it("offers inline setup while off and enables with one policy save, without submitting work", async () => {
+it("discloses Host introduction and enables with one policy save without a duplicate browser submission", async () => {
   snapshot.enabled = false;
   mount();
+  await screen.findByText(/Turning on sends one visible first message/);
   const enable = await screen.findByRole("button", { name: "Turn on Bot" });
   await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
   expect(
@@ -440,6 +441,7 @@ it("offers inline setup while off and enables with one policy save, without subm
   expect(configurationWrites).toHaveLength(1);
   expect(configurationWrites[0]).toContain("# Keep this comment");
   expect(configurationWrites[0]).toContain("Track release progress");
+  // The Host owns the one-time submission; the browser only publishes policy.
   expect(requests).toHaveLength(0);
 });
 
@@ -582,7 +584,7 @@ it("keeps setup edits across navigation and describes Heartbeat-off accurately",
   fireEvent.change(instructions, { target: { value: "Retain my setup" } });
   fireEvent.click(screen.getByRole("switch", { name: "Heartbeat" }));
   expect(
-    screen.getByText(/Heartbeat is off; you can message Bot anytime/),
+    screen.getByText(/Heartbeat is off; you can chat anytime/),
   ).toBeTruthy();
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
