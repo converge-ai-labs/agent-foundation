@@ -6830,6 +6830,22 @@
             }
           },
           {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unread"
+            }
+          },
+          {
             "name": "sort",
             "in": "query",
             "required": false,
@@ -6917,6 +6933,73 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateThreadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/read": {
+      "post": {
+        "summary": "Acknowledge Threads Read",
+        "operationId": "acknowledge_threads_read_api_threads_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadReadAcknowledgement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/unread": {
+      "post": {
+        "summary": "Mark Thread Unread",
+        "operationId": "mark_thread_unread_api_threads__thread_id__unread_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -22951,6 +23034,17 @@
             "title": "Starred",
             "type": "boolean"
           },
+          "unread": {
+            "default": false,
+            "title": "Unread",
+            "type": "boolean"
+          },
+          "read_state_version": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Read State Version",
+            "type": "integer"
+          },
           "configuration": {
             "$ref": "#/components/schemas/ThreadConfigurationView"
           },
@@ -28261,6 +28355,53 @@
         },
         "title": "CreateThreadRequest",
         "type": "object"
+      },
+      "ThreadReadReceipt": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Thread Id"
+          },
+          "read_state_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Read State Version"
+          },
+          "completion_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completion Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "read_state_version",
+          "completion_version"
+        ],
+        "title": "ThreadReadReceipt"
+      },
+      "ThreadReadAcknowledgement": {
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadReadReceipt"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Threads"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "threads"
+        ],
+        "title": "ThreadReadAcknowledgement"
       },
       "ThreadMetadataPatch": {
         "additionalProperties": false,

@@ -54,6 +54,8 @@ def test_session_cutover_preserves_thread_and_converts_saved_policies(tmp_path):
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
                 **before,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
             after = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
             converted = json.loads(after.pop("environment_bindings_json"))

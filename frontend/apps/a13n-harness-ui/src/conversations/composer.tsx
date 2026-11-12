@@ -57,7 +57,6 @@ import {
   type LoadSkills,
 } from "./skill-references";
 import styles from "./conversation.module.css";
-import { useResults } from "./results";
 import { useTrackUnsent } from "./unsent";
 import { previewInput, type LocalInput } from "./local-input";
 import type { OrderedInputPart } from "./inline-attachments";
@@ -427,7 +426,6 @@ export function Composer({
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const promotion = useCoordinatorMutation({ thread_id: threadId });
-  const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [contextCleared, setContextCleared] = useState(false);
@@ -742,7 +740,7 @@ export function Composer({
         loadSkills,
         controller.signal,
         undefined,
-        prepareThread || promote || results || !draft.synchronized
+        prepareThread || promote || !draft.synchronized
           ? async () => {
               if (prepareThread) {
                 await prepareThread();
@@ -756,7 +754,6 @@ export function Composer({
                   }),
                 );
               }
-              if (results) await results.beforeRun(threadId);
               // Explicit Send/Steer waits for the complete shared snapshot while
               // retaining ownership against other submission entry points.
               if (!draft.synchronized)

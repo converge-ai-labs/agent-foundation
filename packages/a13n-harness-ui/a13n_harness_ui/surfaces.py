@@ -25,7 +25,7 @@ from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
-from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution
+from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution, ThreadReadReceipt
 from a13n_harness_ui.thread_files import ThreadAttachment
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
@@ -162,6 +162,8 @@ class ThreadSummary(SurfaceModel):
     touched_at: datetime | None = None
     archived: bool
     starred: bool = False
+    unread: bool = False
+    read_state_version: int = Field(default=0, ge=0)
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
@@ -199,6 +201,10 @@ class ThreadPage(SurfaceModel):
     threads: tuple[ThreadSummary, ...]
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class ThreadReadAcknowledgement(SurfaceModel):
+    threads: tuple[ThreadReadReceipt, ...] = Field(min_length=1, max_length=100)
 
 
 class ThreadMetadataPatch(SurfaceModel):

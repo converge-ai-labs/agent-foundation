@@ -313,10 +313,24 @@ class ThreadRecord(Base):
     read_model_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_execution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    read_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_run_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     completion_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
+Index(
+    "ix_thread_unread",
+    ThreadRecord.memory_scope,
+    ThreadRecord.unread,
+    ThreadRecord.parent_thread_id,
+    ThreadRecord.archived,
+    ThreadRecord.updated_at,
+    ThreadRecord.thread_id,
+    sqlite_where=text("unread = 1 AND memory_scope IS NULL AND parent_thread_id IS NULL AND archived IS 0"),
+)
 
 
 class LiveTranscriptHeadRecord(Base):

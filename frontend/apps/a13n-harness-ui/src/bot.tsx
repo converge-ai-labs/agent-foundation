@@ -67,9 +67,6 @@ function useBotComposer() {
     retry: false,
     mutationFn: async () => {
       command.current ??= { input_id: crypto.randomUUID(), text };
-      const data = queries.getQueryData<Schema<"BotSnapshot">>(["bot"]);
-      if (data?.thread) await results.tracker?.follow(data.thread);
-      else await results.tracker?.followVersion(BOT_THREAD_ID, 0);
       return result(client.POST("/api/bot/inputs", { body: command.current }));
     },
     onSuccess: () => {

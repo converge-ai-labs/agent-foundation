@@ -12,6 +12,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { ThreadRow } from "./thread-row";
+import { ResultTracker, ResultsContext } from "./results";
 import { NewConversationDrafts } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
 import { values } from "./draft";
@@ -21,10 +22,12 @@ let requests: Request[];
 let fail: boolean;
 let queries: QueryClient;
 let newDrafts: NewDraftStore;
+let results: ResultTracker;
 beforeEach(() => {
   requests = [];
   localStorage.clear();
   newDrafts = new NewDraftStore();
+  results = new ResultTracker(createTransport("test", () => {}));
   fail = false;
   queries = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -118,7 +121,9 @@ function mount({
           initialEntries={[selected ? "/threads/thread-one" : "/settings"]}
         >
           <NewConversationDrafts value={newDrafts}>
-            <ThreadRow row={current} activeWorkerCount={workers} />
+            <ResultsContext value={results}>
+              <ThreadRow row={current} activeWorkerCount={workers} />
+            </ResultsContext>
           </NewConversationDrafts>
           <Location />
         </MemoryRouter>
@@ -502,4 +507,56 @@ it("disables deletion while a chat is running and hides it for Live", async () =
   );
   await screen.findByRole("menu");
   expect(screen.queryByRole("menuitem", { name: "Delete chat" })).toBeNull();
+});
+
+it("marks unread without navigation, waits for confirmation, and keeps failure explicit", async () => {
+  const { row } = mount({ running: true });
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      requests.push(request.clone());
+      await pending;
+      return Response.json({
+        ...row.thread,
+        unread: true,
+        read_state_version: 1,
+      });
+    }),
+  );
+  const actions = screen.getByRole("button", { name: "Actions for Example" });
+  await userEvent.click(actions);
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Mark unread" }),
+  );
+  await waitFor(() => expect(actions.getAttribute("aria-busy")).toBe("true"));
+  expect(screen.queryByRole("img", { name: "New result" })).toBeNull();
+  expect(new URL(requests[0].url).pathname).toBe(
+    "/api/threads/thread-one/unread",
+  );
+  expect(requests[0].method).toBe("POST");
+  release();
+  await screen.findByRole("img", { name: "New result" });
+  expect(screen.getByLabelText("Location").textContent).toBe(
+    "/threads/thread-one",
+  );
+  expect(document.activeElement).toBe(actions);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json(
+        { error: { message: "Reading state unavailable" } },
+        { status: 503 },
+      ),
+    ),
+  );
+  await userEvent.click(actions);
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Mark unread" }),
+  );
+  await screen.findByText("Reading state unavailable");
+  expect(results.isUnread("thread-one")).toBe(true);
 });
