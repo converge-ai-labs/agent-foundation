@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import boxd
 import pytest
-from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.commands import CommandLimits, CommandRequest, ShellCommand
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
@@ -29,6 +29,7 @@ class Fake:
         self.clients: list[dict] = []
         self.created: list[dict] = []
         self.hidden: set[str] = set()
+        self.exec_timeouts: list[float] = []
 
     def client(self, **options):
         self.clients.append(options)
@@ -109,6 +110,7 @@ class Fake:
 
             async def exec(self, machine_id, argv, *, timeout):
                 fake.calls.append(("exec", machine_id))
+                fake.exec_timeouts.append(timeout)
                 process = await asyncio.create_subprocess_exec(
                     *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
@@ -308,6 +310,34 @@ def test_boxd_idle_hibernation_policy_and_stop_reconciliation(tmp_path, fake):
         with pytest.raises(EnvironmentProviderError) as failed:
             await provider.start(config, environment_id="env-idle", state=state, operation_id="op-start")
         assert failed.value.code == "provider_unavailable"
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_command_longer_than_the_request_timeout_ends_as_timed_out(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "request_timeout_seconds": 1}
+        )
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        state = await provider.create(config, environment_id="env-long", operation_id="op-create")
+        execution = await definition.execution.execution_connector(
+            config, configuration=ACCOUNT, credential=CREDENTIAL, environment_id="env-long", state=state
+        ).open()
+        # The command asks for more wall time than the request timeout allows; the helper caps it.
+        result = await execution.operations.shell.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="default", script="sleep 30"),
+                limits=CommandLimits(wall_time_seconds=30),
+                output_policy=OUTPUT,
+            )
+        )
+        assert (result.status.phase, result.receipt.outcome) == ("timed_out", "timed_out")
+        # The exec call outlives the helper's bound plus its process group cleanup.
+        assert min(fake.exec_timeouts) > config.request_timeout_seconds + 10 + 5
+        await execution.close()
         await provider.close()
 
     asyncio.run(scenario())

@@ -18,7 +18,7 @@ from pydantic import ValidationError
 MACHINE = "0f1e2d3c-0000-4000-8000-000000000001"
 
 
-def execution(machine, *, exec_result=None, exec_error=None, labels=None):
+def execution(machine, *, exec_result=None, exec_error=None, labels=None, seen=None):
     config = BoxdEnvironmentConfiguration()
     state = EnvironmentState(
         provider_key="boxd",
@@ -36,6 +36,8 @@ def execution(machine, *, exec_result=None, exec_error=None, labels=None):
         return SimpleNamespace(id=MACHINE, status=machine, labels=labels or owned)
 
     async def run(machine_id, argv, *, timeout):
+        if seen is not None:
+            seen["timeout"] = timeout
         if exec_error:
             raise exec_error
         return exec_result
@@ -114,6 +116,14 @@ def test_exit_codes_and_sdk_failures_map_to_dispatch_certainty():
     denied = code(execution("running", exec_error=boxd.AuthenticationError("bad key")).execute([], 5))
     assert denied.code == "provider_denied"
     assert "bad key" not in str(denied)
+
+
+def test_exec_deadline_outlasts_the_guest_helper_bound():
+    seen = {}
+    ok = execution("running", exec_result=SimpleNamespace(stdout="{}", stderr="", exit_code=0), seen=seen)
+    asyncio.run(ok.execute(["true"], 130))
+    # The helper ends the command at the request timeout and then cleans up for up to 5 s more.
+    assert seen["timeout"] >= 130 + 30
 
 
 def test_file_path_errors_are_not_reported_as_a_missing_target():

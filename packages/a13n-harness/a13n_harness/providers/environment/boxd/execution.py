@@ -12,6 +12,10 @@ from a13n_harness.providers.environment.native.environment import NativeExecutio
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.transfers import file_chunks
 
+# The guest helper bounds the command and then needs a few seconds to end its process group.
+# The call's own deadline sits well above that, so it never ends a command the helper still owns.
+EXEC_DEADLINE_MARGIN_SECONDS = 30
+
 
 class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration, TargetState]):
     async def open(self, *, execution_id: str) -> None:
@@ -40,7 +44,9 @@ class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration,
     async def execute(self, argv: list[str], timeout: float) -> str:
         assert self.target
         with sdk_errors(mutation=True):
-            result = await self.client().machines.exec(self.target.target_id, argv, timeout=timeout)
+            result = await self.client().machines.exec(
+                self.target.target_id, argv, timeout=timeout + EXEC_DEADLINE_MARGIN_SECONDS
+            )
         if result.exit_code < 0:
             # The stream ended without an exit status: the command may or may not have run.
             raise failure(
