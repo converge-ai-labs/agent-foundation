@@ -106,12 +106,12 @@ download_concurrency: 4
 
 手写 Agent 时，显式选择搜索模式：
 
-| `search.mode` | 效果                                                                                       |
-| ------------- | ------------------------------------------------------------------------------------------ |
-| `host`        | 提供已绑定的 Host 搜索实现。标准 Harness UI 绑定 `default`。                               |
-| `off`         | 移除此 Capability 的搜索功能，适合搭配独立原生搜索条目。                                   |
-| `native`      | 注册上游原生 Web Search 工具。此快捷方式提供 `search_context_size`，而非完整原生工具选项。 |
-| `auto`        | 注册原生搜索，并提供已绑定的 Host 搜索。不会探测兼容性，也不会在原生工具被拒后重试。       |
+| `search.mode` | 效果                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `host`        | 提供已绑定的 Host 搜索实现。标准 Harness UI 绑定 `default`。                                    |
+| `off`         | 移除此 Capability 的搜索功能，适合搭配独立原生搜索条目。                                        |
+| `native`      | 注册上游原生 Web Search 工具。此快捷方式提供 `search_context_size` 和上游 `provider_settings`。 |
+| `auto`        | 注册原生搜索，并提供已绑定的 Host 搜索。不会探测兼容性，也不会在原生工具被拒后重试。            |
 
 schema 默认值为 `auto`；设置向导会显式写入模式。抓取使用独立的 `host` 或 `off` 模式。向导写入以下组合：
 
@@ -125,6 +125,22 @@ schema 默认值为 `auto`；设置向导会显式写入模式。抓取使用独
 移除整个 `web` Capability 会移除其 Host 工具集。修改搜索或抓取模式后，普通获取/下载仍按各自配置工作。
 
 `backend` 选择已绑定的实现。`backend_priority` 指定已绑定实现间的优先顺序，不能与 `backend` 同时使用。标准 Harness UI 只提供 `default`；在 YAML 中填写其他供应商名称不会安装提供方。自定义 Host 通过 `WebBinding` 提供实现，并负责其凭据和生命周期；见 [Harness Capability](../a13n-harness/capabilities.md)。不要在 Agent Capability 值中存放凭据。
+
+通过 `provider_settings` 传入提供方专用的原生搜索选项。例如，以下 Agent 片段选择 OpenRouter 原生 Exa 引擎，而非 Host 后端：
+
+```yaml
+capabilities:
+  - capability: web
+    configuration:
+      search:
+        mode: auto
+        provider_settings:
+          openrouter:
+            engine: exa
+            max_results: 5
+```
+
+支持情况和验证由所选适配器负责。Host 回退忽略原生提供方设置。域名限制、allowed-host 策略和工具权限仍控制原生工具的可用性。已有顶层原生字段继续按上游兼容规则读取；提供方专用选项优先使用嵌套设置。Codex 的 `external_web_access` 保持顶层。
 
 嵌入代码未传配置而直接构造 `WebCapability()` 时，可以读取 `A13N_HARNESS_WEB_SEARCH_MODE`、`..._SEARCH_BACKEND`、`..._SEARCH_BACKEND_PRIORITY`、`..._SEARCH_CONTEXT_SIZE`，以及对应的抓取模式/后端变量。Harness UI 传入显式配置，因此应编辑 Agent YAML 来改变行为。
 
@@ -144,7 +160,9 @@ schema 默认值为 `auto`；设置向导会显式写入模式。抓取使用独
          external_web_access: true
      - capability: native_image_generation
        configuration:
-         quality: auto
+         provider_settings:
+           openai:
+             quality: auto
          output_format: png
      - capability: web
        configuration:
@@ -196,7 +214,10 @@ capabilities:
   - capability: native_image_generation
     configuration:
       output_format: png
-      quality: auto
+      provider_settings:
+        openai:
+          quality: high
+          background: transparent
 ```
 
 Harness UI 自动提供保存器。使用此 Capability，不要再添加第二个原始原生图像工具。它将完成的图像保存到当前 Thread 的 `tmp/`，包括子级 Run 生成的图像，并指示模型在回复中展示保存位置。

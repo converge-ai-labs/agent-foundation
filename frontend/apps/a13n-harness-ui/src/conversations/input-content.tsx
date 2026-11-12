@@ -12,7 +12,7 @@ import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { MessageActionButton, MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
-import { retainedSkillSpans } from "./skill-references";
+import { retainedSkillSpans, skillDisplayName } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
 import type { Schema } from "../transport/client";
 import { useGuestAccess, useTransport } from "../transport/context";
@@ -344,7 +344,7 @@ export function InputContent({
             title={t("Skill: {{name}}", { name: span.name })}
             data-skill={span.name}
           >
-            {points.slice(span.start, span.end).join("")}
+            {skillDisplayName(span.name)}
           </span>,
         );
         end = span.end;

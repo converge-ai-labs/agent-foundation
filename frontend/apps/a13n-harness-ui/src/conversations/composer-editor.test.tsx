@@ -545,13 +545,17 @@ it("completes dollar skills without sending, and retains the editor across catal
     editor.current!.focus();
     startCompletion(editor.current!);
   });
-  await screen.findByRole("option", { name: /\$review/ });
+  await screen.findByRole("option", { name: /Review/ });
   expect(screen.getByText("Review carefully")).toBeTruthy();
   // CodeMirror compares Date.now against the completion's opening timestamp.
   now.mockReturnValue(1_100);
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   fireEvent.keyDown(textbox, { key: "Enter" });
   expect(submit).not.toHaveBeenCalled();
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  fireEvent.keyDown(textbox, { key: "Backspace" });
+  expect(draft.doc.getText("text").toString()).toBe("Use ");
+  act(() => draft.undo.undo());
   expect(draft.doc.getText("text").toString()).toBe("Use $review ");
   fireEvent.keyDown(textbox, { key: "Enter" });
   expect(submit).toHaveBeenCalledOnce();
@@ -577,10 +581,10 @@ it("completes dollar skills without sending, and retains the editor across catal
     editor.current!.focus();
     startCompletion(editor.current!);
   });
-  await screen.findByRole("option", { name: /\$review/ });
+  await screen.findByRole("option", { name: /Review/ });
 });
 
-it("sends immediately after ordinary typing even while completion checks are pending", async () => {
+it("sends ordinary text without starting skill completion", async () => {
   const { completionStatus } = await import("@codemirror/autocomplete");
   const editor = { current: null as EditorView | null };
   const submit = vi.fn();
@@ -602,7 +606,7 @@ it("sends immediately after ordinary typing even while completion checks are pen
       selection: { anchor: 5 },
       userEvent: "input.type",
     });
-    expect(completionStatus(editor.current!.state)).toBe("pending");
+    expect(completionStatus(editor.current!.state)).toBeNull();
     fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
   });
   expect(submit).toHaveBeenCalledOnce();
@@ -676,7 +680,7 @@ it("focuses when the initial page becomes ready without rebuilding or reclaiming
   expect(editor.current).toBe(original);
 });
 
-it("styles manually typed and remote skill text without atomic editing, and discards stale catalogs", async () => {
+it("renders manually typed and remote skill references, and discards stale catalogs", async () => {
   const catalog = {
     catalog_id: "a".repeat(64),
     context_kind: "draft" as const,
@@ -734,7 +738,7 @@ it("styles manually typed and remote skill text without atomic editing, and disc
   await waitFor(() =>
     expect(
       page.container.querySelector('[data-skill="review"]')?.textContent,
-    ).toBe("$review"),
+    ).toBe("Review"),
   );
   expect(editor.current).toBe(original);
   expect(draft.doc.getText("text").toString()).toBe("😀 $review $unknown");
@@ -761,6 +765,7 @@ it("styles manually typed and remote skill text without atomic editing, and disc
 it("opens skill suggestions without a typing debounce and filters each edit synchronously", async () => {
   const { currentCompletions, completionStatus } =
     await import("@codemirror/autocomplete");
+  const submit = vi.fn();
   const editor = { current: null as EditorView | null };
   const loadSkills = vi.fn(async () => ({
     catalog_id: "catalog",
@@ -779,7 +784,7 @@ it("opens skill suggestions without a typing debounce and filters each edit sync
       <ComposerEditor
         draft={new ThreadDraft()}
         editor={editor}
-        submit={vi.fn()}
+        submit={submit}
         loadSkills={loadSkills}
         profile={{ display_name: "Test", color: "#000000" }}
         presence={() => {}}
@@ -832,14 +837,25 @@ it("opens skill suggestions without a typing debounce and filters each edit sync
     });
     expect(labels()).toEqual(["$release"]);
     expect(loadSkills).toHaveBeenCalledTimes(requests);
-    act(() => {
-      editor.current!.dispatch({
-        changes: { from: 4, insert: " " },
-        selection: { anchor: 5 },
-        userEvent: "input.type",
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Escape" });
+    const type = async (text: string) => {
+      await act(async () => {
+        const view = editor.current!;
+        view.dispatch(view.state.replaceSelection(text), {
+          userEvent: "input.type",
+        });
+        await vi.advanceTimersByTimeAsync(100);
       });
-    });
+    };
+    await type("e");
+    expect(editor.current!.state.doc.toString()).toBe("$rele");
     expect(labels()).toEqual([]);
+    await type(" /");
+    expect(labels()).toEqual(["$release", "$review"]);
+    await type("tmp");
+    expect(labels()).toEqual([]);
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+    expect(submit).toHaveBeenCalledOnce();
   } finally {
     cleanup();
     vi.useRealTimers();

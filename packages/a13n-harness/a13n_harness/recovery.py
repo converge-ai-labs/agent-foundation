@@ -9,9 +9,10 @@ import ssl
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import httpx2
+from pydantic_ai import RunContext
 from pydantic_ai.exceptions import (
     ModelAPIError,
     ModelConnectionError,
@@ -52,6 +53,9 @@ from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
 from a13n_harness.tools.deferred import DeferredToolRequests, DeferredToolResume
 
+if TYPE_CHECKING:
+    from a13n_harness.context import AgentContext
+
 RecoveryPromptFactory = Callable[
     [BaseException, int, Sequence[ModelMessage]],
     RunInputValue | Awaitable[RunInputValue],
@@ -59,7 +63,9 @@ RecoveryPromptFactory = Callable[
 
 DEFAULT_RECOVERY_PROMPT = (
     "The previous model stream ended before the task finished. Continue from the available "
-    "history and avoid repeating completed work. A tool operation may have partially or fully "
+    "history and avoid repeating completed work. Continue unfinished text without repeating it; "
+    "for structured output or a tool call, generate a complete new value or call, not a suffix. "
+    "A tool operation may have partially or fully "
     "completed even when no result was recorded, so check the current state before retrying "
     "side-effecting work such as shell commands."
 )
@@ -158,6 +164,8 @@ class ModelRecoveryState:
     attempt_id: str | None = None
     consecutive_failures: int = 0
     request_error: BaseException | None = None
+    output_limit_error: BaseException | None = None
+    output_tool_names: tuple[str, ...] = ()
     context_replacement: tuple[ModelMessage, ...] | None = None
     context_recovery_pending: bool = False
 
@@ -185,6 +193,7 @@ class ModelRecoveryPolicy:
     prompt_factory: RecoveryPromptFactory | None = None
     backoff_initial_seconds: float = 1.0
     backoff_max_seconds: float = 30.0
+    retry_output_limit: bool = True
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -197,8 +206,19 @@ class ModelRecoveryPolicy:
         error: BaseException,
         attempt_index: int,
         messages: Sequence[ModelMessage],
+        *,
+        undispatched_tool_names: tuple[str, ...] = (),
     ) -> RunInputValue:
         if self.prompt_factory is None:
+            if undispatched_tool_names and self.continuation_prompt == DEFAULT_RECOVERY_PROMPT:
+                return (
+                    f"{DEFAULT_RECOVERY_PROMPT}\n\n"
+                    "The previous response reached its output token limit and its tool calls were not executed "
+                    f"(tools: {', '.join(undispatched_tool_names)}). Do not repeat the same oversized calls. "
+                    "Use smaller arguments per call, or split the work into steps such as chunked writes or "
+                    "small edits where the available tools support them. If the operation cannot be split, "
+                    "explain the limitation."
+                )
             return self.continuation_prompt
         detached_messages = deepcopy(tuple(messages))
         value = self.prompt_factory(error, attempt_index, detached_messages)
@@ -243,12 +263,35 @@ class InterruptedResponseTracker:
         else:
             self._observe_part(event.index, event.part, finalized=True)
 
+    def sanitize_output_limit(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
+        """Discard ordinary calls rejected before dispatch, retaining safe partial output."""
+        if not messages or not isinstance(messages[-1], ModelResponse):
+            return tuple(messages)
+        tail = messages[-1]
+        # Native exceptions can leave an interrupted response without a finish reason.
+        if tail.state == "suspended":
+            return tuple(messages)
+        if self._observed and self._response_history_count == len(messages) - 1:
+            parts = self._safe_parts()
+        else:
+            parts = [part for part in tail.parts if isinstance(part, TextPart) and part.content]
+        parts = [part for part in parts if not isinstance(part, ToolCallPart)]
+        if not _native_parts_are_balanced(parts):
+            parts = [part for part in parts if not isinstance(part, NativeToolCallPart | NativeToolReturnPart)]
+        # Reasoning items need a surviving assistant successor on replay. Removing
+        # rejected calls can leave a finalized reasoning item at the tail.
+        while parts and isinstance(parts[-1], ThinkingPart):
+            parts.pop()
+        return (*messages[:-1], replace(tail, parts=parts, state="interrupted")) if parts else tuple(messages[:-1])
+
     def sanitize(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
         """Replace Pydantic's interrupted tail with observed text and finalized parts."""
         sanitized = list(messages)
         if not sanitized:
             return ()
         tail = sanitized[-1]
+        if isinstance(tail, ModelResponse) and tail.finish_reason == "length" and tail.state != "suspended":
+            return self.sanitize_output_limit(sanitized)
         if not isinstance(tail, ModelResponse) or tail.state != "interrupted":
             return tuple(sanitized)
         if not self._observed or self._response_history_count != len(sanitized) - 1 or not tail.parts:
@@ -310,6 +353,17 @@ class InterruptedResponseTracker:
                 if index in self._finalized_indices:
                     safe.append(part)
         return safe
+
+
+def is_primary_output_limit(ctx: RunContext[AgentContext], response: ModelResponse) -> bool:
+    """Recognize explicit primary truncation before structural validators or dispatch."""
+    recovery = ctx.deps._model_recovery
+    return (
+        recovery.attempt_id is not None
+        and ctx.run_id == recovery.attempt_id
+        and response.state != "suspended"
+        and response.finish_reason == "length"
+    )
 
 
 def normalize_interrupted_history(

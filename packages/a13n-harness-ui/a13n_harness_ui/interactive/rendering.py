@@ -1398,7 +1398,12 @@ class StreamRenderer:
                         if not child or detailed:
                             self.finish()
                             label = f" · {identity}" if child else ""
-                            self.append(f"[System{label}] Retrying model request…\n", kind="notice")
+                            notice = (
+                                "Output token limit reached; continuing…"
+                                if recovery.get("reason") == "output_token_limit"
+                                else "Retrying model request…"
+                            )
+                            self.append(f"[System{label}] {notice}\n", kind="notice")
                     elif isinstance(recovery, dict) and recovery.get("type") == "context_recovery":
                         self.finish()
                         label = f" · {terminal_text(identity)}" if child else ""

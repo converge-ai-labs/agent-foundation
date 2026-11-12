@@ -29,7 +29,7 @@ it("retries with the original audio and reading context and inserts the response
     .mockRejectedValueOnce(new Error("Unavailable"))
     .mockResolvedValueOnce({ data: { text: "Run Pyright." } });
   const transport = { client: { POST: post } } as unknown as Transport;
-  const insert = vi.fn(() => true),
+  const insert = vi.fn(),
     onActive = vi.fn(),
     reader = document.createElement("div");
   reader.innerHTML = '<p data-reply-source="reply">Check Pyright now</p>';
@@ -38,10 +38,8 @@ it("retries with the original audio and reading context and inserts the response
       <Dictation
         target={{ title: "Type check", reader: { current: reader }, words: 4 }}
         quote={{ source: "reply", start: 6, text: "Pyright", raw: "Pyright" }}
-        capture={() => ({
-          draft: { before: "Run ", selected: "Mypy", after: " now" },
-          insert,
-        })}
+        readDraft={() => ({ before: "Run ", selected: "Mypy", after: " now" })}
+        insert={insert}
         onActive={onActive}
       />
     </TransportContext>,
@@ -55,7 +53,7 @@ it("retries with the original audio and reading context and inserts the response
   expect(insert).not.toHaveBeenCalled();
   fireEvent.click(retry);
   await waitFor(() =>
-    expect(insert).toHaveBeenCalledWith("Run Pyright.", false),
+    expect(insert).toHaveBeenCalledExactlyOnceWith("Run Pyright."),
   );
   expect(post.mock.calls[0][1].body.context).toContain(
     "Selected assistant text: Pyright",
@@ -65,7 +63,7 @@ it("retries with the original audio and reading context and inserts the response
   expect(finish).toHaveBeenCalledTimes(1);
 });
 
-function setup(post: ReturnType<typeof vi.fn>, insert = vi.fn(() => true)) {
+function setup(post: ReturnType<typeof vi.fn>, insert = vi.fn()) {
   vi.mocked(recordAudio).mockResolvedValue(
     vi.fn(async () => new Blob(["sample"])),
   );
@@ -77,10 +75,8 @@ function setup(post: ReturnType<typeof vi.fn>, insert = vi.fn(() => true)) {
       <Dictation
         target={{ words: 4 }}
         onActive={onActive}
-        capture={() => ({
-          draft: { before: "Please ", selected: "old", after: "." },
-          insert,
-        })}
+        readDraft={() => ({ before: "Please ", selected: "old", after: "." })}
+        insert={insert}
       />
     </TransportContext>,
   );
@@ -92,23 +88,27 @@ async function record() {
     await screen.findByRole("button", { name: "Stop recording" }),
   );
 }
-it("holds text when the draft changed until explicitly inserted at the current selection", async () => {
-  const insert = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
-  const { onActive } = setup(
-    vi.fn().mockResolvedValue({
-      data: { text: "new speech", warning: "cleanup_failed" },
-    }),
-    insert,
+it("waits for the final text and inserts it once without preview or confirmation", async () => {
+  let resolve!: (value: unknown) => void;
+  const { insert, onActive } = setup(
+    vi.fn(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    ),
   );
   await record();
-  const button = await screen.findByRole("button", {
-    name: "Insert at current selection",
-  });
-  expect(insert).toHaveBeenCalledExactlyOnceWith("new speech", false);
+  await waitFor(() => expect(resolve).toBeTypeOf("function"));
+  expect(insert).not.toHaveBeenCalled();
   expect(onActive).toHaveBeenLastCalledWith(true);
-  fireEvent.click(button);
-  expect(insert).toHaveBeenLastCalledWith("new speech", true);
+  resolve({ data: { text: "new speech", warning: "cleanup_failed" } });
+  await waitFor(() =>
+    expect(insert).toHaveBeenCalledExactlyOnceWith("new speech"),
+  );
   expect(onActive).toHaveBeenLastCalledWith(false);
+  expect(screen.queryByText("new speech")).toBeNull();
+  expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy();
   expect(
     screen.getByText("Cleanup unavailable; using the original transcript."),
   ).toBeTruthy();

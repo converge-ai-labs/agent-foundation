@@ -24,11 +24,11 @@ from a13n_harness_ui.connectors.models import SetupOffer
 from a13n_harness_ui.dictation import DictationResult
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from a13n_harness_ui.surfaces import NewThreadDefaults
+from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
 from a13n_harness_ui.webui import create_webui
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -144,11 +144,21 @@ def seed_workspace(workspace: Path) -> None:
 def configuration(root: Path) -> Path:
     workspace = root / "workspace"
     seed_workspace(workspace)
+    for source, name, description in (
+        (root, "codex-delegate", "Hand off a focused coding task and review the result."),
+        (root, "design-review", "Review a screen for hierarchy, spacing, and interaction details."),
+        (root, "release-notes", "Turn merged changes into concise release notes."),
+        (workspace, "checkout-audit", "Review the checkout flow for duplicate submissions."),
+        (workspace, "test-plan", "Build a focused set of tests for a proposed change."),
+    ):
+        skill = source / ".agents/skills" / name / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_text(f"---\nname: {name}\ndescription: {description}\n---\n\n{description}\n")
     docs = {
         "a13n-harness-ui.yaml": {
             "schema_version": "1",
             "defaults": {"agent": "agent-review"},
-            "dictation": {"backend": "codex", "codex": {"group": "codex-review"}},
+            "dictation": {"backend": "codex", "model": "model-review", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
             "memory": {"auto_organize": {"enabled": False}},
         },
@@ -166,6 +176,7 @@ def configuration(root: Path) -> Path:
             "id": "model-review",
             "name": "GPT-5",
             "route": "openai-responses:gpt-5",
+            "model_characteristics": {"capabilities": ["audio_understanding"]},
             "model_configuration": {"base_url": "https://api.openai.com/v1"},
             "authentication": {"kind": "api_key", "env": "REVIEW_MODEL_KEY"},
         },
@@ -174,6 +185,7 @@ def configuration(root: Path) -> Path:
             "kind": "agent",
             "id": "agent-review",
             "name": "Builder",
+            "capabilities": [{"capability": "skills"}],
             "model": "model-review",
         },
         "mcp/tinyfish.yaml": {
@@ -247,6 +259,9 @@ async def model(messages, info):
         if (part := project_input_content(item)) and isinstance(text := part[0], str)
     ]
     separator = "："  # noqa: RUF001 -- Chinese review conversation.
+    if any("$codex-delegate" in text for text in authored):
+        yield "The checkout form keeps the first request pending. A second click should reuse the same order identifier."
+        return
     if any("店名" + separator in text for text in authored):
         if "慢速" in authored[-1]:
             yield "正在整理当前方案…\n\n"
@@ -413,22 +428,32 @@ async def serve(root: Path, port: int):
             **kwargs,
         )
 
-    async def resolve(self, context, model_id):
-        return FunctionModel(stream_function=model)
+    def dictation(messages, info):
+        return ModelResponse(
+            parts=[
+                TextPart(
+                    "Please review how the checkout form handles a second click while the first request is pending. "
+                    "Keep the user's input if the request fails, and explain when it is safe to retry."
+                )
+            ]
+        )
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(function=dictation, stream_function=model)
 
     async def directory():
         return model_catalog.bundled_models()
 
     AgentReconstructor.reconstruct = reconstruct
-    HarnessUiModelResolver.__call__ = resolve
+    HarnessUiModelResolver.resolve = resolve
     model_catalog.fetch_directory = directory
 
-    async def dictation(self, request, source):
-        # Exercise real capture, frozen insertion and review without provider I/O.
+    async def subscription_dictation(self, request, source):
+        # Exercise real recording and one final insertion without provider I/O.
         await asyncio.sleep(3)
-        return DictationResult(text="Run Pyright, but do not change the timeout of fifteen seconds.")
+        return DictationResult(text="Add a regression test for dictation.")
 
-    app_module.HarnessUiApp._transcribe_subscription = dictation
+    app_module.HarnessUiApp._transcribe_subscription = subscription_dictation
     settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
 
     @asynccontextmanager
@@ -439,6 +464,20 @@ async def serve(root: Path, port: int):
             status = await app.status()
             if status.candidate_error_message:
                 raise RuntimeError(status.candidate_error_message)
+            picker = await app.create_thread(
+                title="Skills playground", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            catalog = await app.skill_catalog(thread_id=picker.thread_id)
+            skill = next(item for item in catalog.items if item.name == "codex-delegate")
+            receipt = await app.submit_thread(
+                thread_id=picker.thread_id,
+                prompt="Use $codex-delegate to review the checkout flow.",
+                skill_references=(
+                    SkillReference(catalog_id=catalog.catalog_id, item_id=skill.item_id, name=skill.name),
+                ),
+            )
+            await app.wait_root_operation(receipt.receipt_id)
+            print(f"  Skills playground: /threads/{picker.thread_id}", flush=True)
             demo = await app.create_thread(
                 title="白昼咖啡 · 品牌方案", defaults=NewThreadDefaults(project_id="project-research")
             )

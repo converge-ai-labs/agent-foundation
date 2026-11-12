@@ -1774,7 +1774,7 @@ it("keeps private quotations on rejection and clears only their accepted version
 });
 
 it.each([false, true])(
-  "dictation preserves the frozen selection and asks before overwriting changed drafts (%s)",
+  "dictation inserts the final text at the current selection without confirmation (%s)",
   async (changed) => {
     const draft = new ThreadDraft();
     vi.spyOn(draft, "connect").mockReturnValue({
@@ -1840,15 +1840,10 @@ it.each([false, true])(
       ),
     );
     await act(async () => resolve({ data: { text: "Pyright" } }));
-    if (changed) {
-      expect(editor.state.doc.toString()).toBe("Use Mypy now!");
-      fireEvent.click(
-        screen.getByRole("button", { name: "Insert at current selection" }),
-      );
-      expect(editor.state.doc.toString()).toBe("PyrightUse Mypy now!");
-    } else {
-      expect(editor.state.doc.toString()).toBe("Use Pyright now");
-    }
+    expect(editor.state.doc.toString()).toBe(
+      changed ? "PyrightUse Mypy now!" : "PyrightUse Mypy now",
+    );
+    expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy();
     expect(post).toHaveBeenCalledTimes(1);
   },
 );

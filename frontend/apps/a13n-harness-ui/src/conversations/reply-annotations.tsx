@@ -153,6 +153,7 @@ export function ReplyAnnotations({
       {children}
       {enabled && session && (
         <SelectionPopup
+          key={session.note?.id ?? "new"}
           dictation={dictation}
           session={session}
           onStart={() => setSession({ ...session, stage: "new" })}
@@ -190,6 +191,7 @@ function SelectionPopup({
 }) {
   const { t } = useTranslation();
   const [dictating, setDictating] = useState(false);
+  const [comment, setComment] = useState(session.note?.comment ?? "");
   const input = useRef<HTMLTextAreaElement>(null);
   const focusComment = useCallback((field: HTMLTextAreaElement | null) => {
     input.current = field;
@@ -242,42 +244,36 @@ function SelectionPopup({
       return () => CSS.highlights.delete("reply-annotation");
     }
   }, [stage, range, note]);
+  // Dictation writes while the textarea is hidden. Measure only after the
+  // updated text and the idle controls are both committed to the visible form.
+  useLayoutEffect(() => {
+    if (!dictating && input.current) layoutComment(input.current);
+  }, [comment, dictating, stage]);
   const microphone = dictation && (
     <Dictation
       target={dictation}
       quote={session.quote}
       onActive={setDictating}
-      capture={() => {
+      readDraft={() => {
         const field = input.current;
         if (!field) return;
-        const value = field.value;
-        const from = field.selectionStart,
-          to = field.selectionEnd;
         return {
-          draft: {
-            before: value.slice(0, from),
-            selected: value.slice(from, to),
-            after: value.slice(to),
-          },
-          insert: (text, atCurrentSelection) => {
-            if (
-              input.current !== field ||
-              (!atCurrentSelection && field.value !== value)
-            )
-              return false;
-            field.setRangeText(
-              text,
-              atCurrentSelection ? field.selectionStart : from,
-              atCurrentSelection ? field.selectionEnd : to,
-              "end",
-            );
-            requestAnimationFrame(() => {
-              layoutComment(field);
-              field.focus();
-            });
-            return true;
-          },
+          before: field.value.slice(0, field.selectionStart),
+          selected: field.value.slice(field.selectionStart, field.selectionEnd),
+          after: field.value.slice(field.selectionEnd),
         };
+      }}
+      insert={(text) => {
+        const field = input.current;
+        if (!field) return;
+        field.setRangeText(
+          text,
+          field.selectionStart,
+          field.selectionEnd,
+          "end",
+        );
+        setComment(field.value);
+        requestAnimationFrame(() => field.focus());
       }}
     />
   );
@@ -330,8 +326,8 @@ function SelectionPopup({
             <textarea
               key={note?.id ?? "new"}
               ref={focusComment}
-              defaultValue={note?.comment ?? ""}
-              onInput={(e) => layoutComment(e.currentTarget)}
+              value={comment}
+              onChange={(e) => setComment(e.currentTarget.value)}
               rows={1}
               aria-label={t("Annotation comment")}
               placeholder={t("Optional comment…")}

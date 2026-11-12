@@ -250,7 +250,7 @@ Except for explicitly stored values in the portable Capability namespace, the de
 
 The Harness integrates only with public Pydantic AI `RunContext.tool_manager`, `ToolManager`, Toolset, Capability, usage, message, and deferred APIs and public Monty asynchronous session/snapshot APIs. The selected dependency versions must preserve nested validation/execution hooks, successful-call accounting, runner sequential behavior, cancellation, and configured resource limits in conformance tests.
 
-CodeAct source is written for Monty's supported Python subset, not CPython. Harness pins `pydantic-monty==1.5.0`; changes in supported syntax or pure modules require an explicit dependency update and runner conformance validation. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
+CodeAct source is written for Monty's supported Python subset, not CPython. Harness pins `pydantic-monty==1.6.0`; changes in supported syntax or pure modules require an explicit dependency update and runner conformance validation. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
 
 ## Invariants
 

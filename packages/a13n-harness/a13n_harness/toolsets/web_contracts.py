@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Annotated, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_ai.native_tools import WebSearchProviderSettings
 
 from a13n_harness.errors import DefinitionError
 from a13n_harness.providers.web.contracts import (
@@ -83,6 +84,7 @@ class WebSearchConfiguration(DomainRestrictions):
     backend: str | None = Field(default=None, min_length=1)
     backend_priority: tuple[Annotated[str, Field(min_length=1)], ...] = ()
     search_context_size: WebSearchContextSize = "medium"
+    provider_settings: WebSearchProviderSettings | None = None
 
     @model_validator(mode="after")
     def _validate_backend_selection(self) -> WebSearchConfiguration:

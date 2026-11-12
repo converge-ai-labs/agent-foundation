@@ -6,7 +6,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import {
   dictationSnapshot,
-  type DictationCapture,
+  type DictationDraft,
   type DictationTarget,
 } from "./dictation-context";
 import type { ReplyQuote } from "./reply-quote";
@@ -21,18 +21,20 @@ export function Dictation({
   quote,
   disabled,
   onActive,
-  capture,
+  readDraft,
+  insert,
 }: {
   target: DictationTarget;
   quote?: ReplyQuote;
   disabled?: boolean;
   onActive: (active: boolean) => void;
-  capture: () => DictationCapture | undefined;
+  readDraft: () => DictationDraft | undefined;
+  insert: (text: string) => void;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
   const [phase, setPhase] = useState<
-    "idle" | "requesting" | "recording" | "transcribing" | "failed" | "review"
+    "idle" | "requesting" | "recording" | "transcribing" | "failed"
   >("idle");
   const [levels, setLevels] = useState<{ id: number; value: number }[]>([]);
   const rail = useRef<HTMLDivElement>(null);
@@ -54,8 +56,6 @@ export function Dictation({
   }, [phase]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [transcript, setTranscript] = useState("");
-  const destination = useRef<DictationCapture>(undefined);
   const controller = useRef<AbortController | null>(null);
   const finish = useRef<() => Promise<void>>(undefined);
   const pending = useRef<Schema<"DictationInput">>(undefined);
@@ -82,13 +82,10 @@ export function Dictation({
       );
       if (ctl.signal.aborted) return;
       if (!response.text.trim()) throw new Error(t("No speech detected."));
-      deliver(
-        response.text,
-        false,
-        response.warning
-          ? t("Cleanup unavailable; using the original transcript.")
-          : "",
-      );
+      reset();
+      insert(response.text);
+      if (response.warning)
+        setNotice(t("Cleanup unavailable; using the original transcript."));
     } catch (e) {
       if (!ctl.signal.aborted) {
         setError(e instanceof Error ? e.message : t("Voice input failed."));
@@ -98,38 +95,21 @@ export function Dictation({
       if (controller.current === ctl) sending.current = false;
     }
   }
-  function deliver(
-    text: string,
-    atCurrentSelection: boolean,
-    warning = notice,
-  ) {
-    if (destination.current?.insert(text, atCurrentSelection)) {
-      reset();
-      setNotice(warning);
-    } else {
-      setTranscript(text);
-      setNotice(warning);
-      setPhase("review");
-    }
-  }
   function reset() {
     controller.current?.abort();
     controller.current = null;
     pending.current = undefined;
-    destination.current = undefined;
     sending.current = false;
     setError("");
     setNotice("");
-    setTranscript("");
     finish.current = undefined;
     setPhase("idle");
     onActive(false);
   }
   async function start() {
     if (controller.current) return;
-    const snapshot = capture();
-    if (!snapshot) return;
-    destination.current = snapshot;
+    const draft = readDraft();
+    if (!draft) return;
     const ctl = new AbortController();
     controller.current = ctl;
     const fail = (e: unknown) => {
@@ -150,7 +130,7 @@ export function Dictation({
     onActive(true);
     setPhase("requesting");
     try {
-      const context = dictationSnapshot(target, quote, snapshot.draft);
+      const context = dictationSnapshot(target, quote, draft);
       let sequence = 0;
       let smoothedLevel = 0;
       const stop = await recordAudio(
@@ -225,15 +205,7 @@ export function Dictation({
       >
         <X />
       </Button>
-      {phase === "review" ? (
-        <div role="status" className={styles.review}>
-          <span>{t("Draft changed. Review before inserting.")}</span>
-          <span className={styles.preview} title={transcript}>
-            {transcript}
-          </span>
-          {notice && <span>{notice}</span>}
-        </div>
-      ) : phase === "failed" ? (
+      {phase === "failed" ? (
         <span role="alert" className={styles.failed} title={error}>
           {t("Transcription failed.")}
         </span>
@@ -247,7 +219,7 @@ export function Dictation({
         </div>
       )}
       <span role="status" className="sr-only">
-        {phase === "failed" || phase === "review"
+        {phase === "failed"
           ? ""
           : phase === "recording"
             ? t("Recording")
@@ -255,18 +227,7 @@ export function Dictation({
               ? t("Opening microphone…")
               : t("Transcribing…")}
       </span>
-      {phase === "review" ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={styles.insert}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => deliver(transcript, true)}
-        >
-          {t("Insert at current selection")}
-        </Button>
-      ) : phase === "failed" ? (
+      {phase === "failed" ? (
         <Button
           type="button"
           size="sm"

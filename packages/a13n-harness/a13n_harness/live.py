@@ -80,6 +80,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
     def __init__(self, stream: HarnessLiveStream) -> None:
         self.stream = stream
         self.initial = ModelContextProjection()
+        self._initial_instructions: str | None = None
         self.delivered = ModelContextProjection()
         self.pending: dict[str, ModelContextProjection] = {}
         self.ambiguous: set[tuple[str, str | None]] = set()
@@ -137,6 +138,12 @@ class _LiveCapability(AbstractCapability[AgentContext]):
 
     async def instructions(self, ctx: RunContext[AgentContext]) -> str:
         self.stream._native_context = ctx
+        if self.stream._cancel_event.is_set():
+            ctx.cancel()
+        # Native realtime re-resolves instructions before tool results. Keep the
+        # connection baseline and its dispatcher adapter stable across refreshes.
+        if self._initial_instructions is not None:
+            return self._initial_instructions
         manager = ctx.tool_manager
         assert manager is not None and manager.root_capability is not None
         # Decorate only the prepared native tool dispatcher, not the Agent's
@@ -144,8 +151,6 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         # tools, or ordering requirements; run-step managers retain the wrapper.
         if not isinstance(manager.root_capability, _LiveDeferredResults):
             manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
-        if self.stream._cancel_event.is_set():
-            ctx.cancel()
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
@@ -154,7 +159,8 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ),
         )
         self.initial = projection
-        return "\n\n".join(block.content for block in projection.blocks)
+        self._initial_instructions = "\n\n".join(block.content for block in projection.blocks)
+        return self._initial_instructions
 
     async def wrap_tool_execute(
         self,

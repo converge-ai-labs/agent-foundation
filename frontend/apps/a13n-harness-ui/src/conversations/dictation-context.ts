@@ -14,11 +14,6 @@ export type DictationDraft = {
   after: string;
 };
 
-export type DictationCapture = {
-  draft: DictationDraft;
-  insert: (text: string, atCurrentSelection: boolean) => boolean;
-};
-
 export function dictationSnapshot(
   target: DictationTarget,
   quote: ReplyQuote | undefined,

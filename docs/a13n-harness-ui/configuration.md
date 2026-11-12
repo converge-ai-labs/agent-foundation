@@ -255,7 +255,7 @@ Back up `memory/` separately from application data. `.a13n-memory/` holds locks 
 
 ### Dictation
 
-Set **Settings → General → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and draft review.
+Set **Settings → General → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and text insertion.
 
 ```yaml
 dictation:

@@ -62,7 +62,7 @@ A13N_HARNESS_UI_URL=http://127.0.0.1:8876 pnpm --dir frontend --filter a13n-harn
 
 Open `http://127.0.0.1:5184` and log in with `test-only-key`. Connections includes a fictional TinyFish MCP server with dozens of local tools; only `search` and `fetch_content` start enabled. The Research assistant Agent demonstrates tool search. Load tools, change selections, and save through the real configuration API; this fixture never contacts TinyFish or makes external tool requests. The disposable instance seeds fictional Projects and chats with Markdown, code, tables, tool steps, long output, and failure states. Prompts containing `[slow]`, `[long]`, `[failure]`, or `[question]` exercise those states through the real App. Model output and tool results are scripted; the shell tool never executes its supplied command. The Host browser is disabled. Native Files and Terminal use the local Host, so deliberate native actions retain their normal effects. Ctrl+C removes the temporary configuration, history, and fixture workspace; existing configuration and credentials are not copied.
 
-Dictation starts in Codex subscription mode with a fictional group. Microphone capture and frozen-selection insertion use the real WebUI flow; the fixture returns a scripted transcript after three seconds and never invokes Codex. Edit the draft during that delay to inspect the explicit insertion review state.
+Dictation starts in Codex subscription mode with a fictional group. Microphone capture and final-text insertion use the real WebUI flow; the fixture returns scripted final text after three seconds and never invokes Codex. Stop recording to inspect the waiting indicator, then the single insertion without a preview or confirmation.
 
 ## Disposable MCP Apps demo
 

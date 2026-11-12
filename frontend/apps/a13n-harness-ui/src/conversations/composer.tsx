@@ -1410,35 +1410,22 @@ export function Composer({
                 target={dictation}
                 disabled={preparing || pending || queuedInput?.locked}
                 onActive={setDictating}
-                capture={() => {
+                readDraft={() => {
                   const view = editor.current;
                   if (!view) return;
-                  const doc = view.state.doc;
-                  const { from, to } = view.state.selection.main;
+                  const { doc, selection } = view.state;
+                  const { from, to } = selection.main;
                   return {
-                    draft: {
-                      before: doc.sliceString(0, from),
-                      selected: doc.sliceString(from, to),
-                      after: doc.sliceString(to),
-                    },
-                    insert: (text, atCurrentSelection) => {
-                      if (
-                        editor.current !== view ||
-                        (!atCurrentSelection && !view.state.doc.eq(doc))
-                      )
-                        return false;
-                      view.dispatch(
-                        atCurrentSelection
-                          ? view.state.replaceSelection(text)
-                          : {
-                              changes: { from, to, insert: text },
-                              selection: { anchor: from + text.length },
-                            },
-                      );
-                      requestAnimationFrame(() => view.focus());
-                      return true;
-                    },
+                    before: doc.sliceString(0, from),
+                    selected: doc.sliceString(from, to),
+                    after: doc.sliceString(to),
                   };
+                }}
+                insert={(text) => {
+                  const view = editor.current;
+                  if (!view) return;
+                  view.dispatch(view.state.replaceSelection(text));
+                  requestAnimationFrame(() => view.focus());
                 }}
               />
             )}

@@ -43,7 +43,7 @@ Determine the language from the audio. If there is no intelligible speech, retur
 
 CLEANUP_INSTRUCTIONS = (
     """Lightly correct the supplied automatic speech transcript for insertion
-at a frozen editor selection. Edit only transcript; return only its corrected text.
+using the supplied draft context. Edit only transcript; return only its corrected text.
 """
     + _RULES
 )

@@ -695,6 +695,10 @@ class HandoffCapability(AbstractModelContextCapability):
         response: ModelResponse,
     ) -> ModelResponse:
         del request_context
+        from a13n_harness.recovery import is_primary_output_limit
+
+        if is_primary_output_limit(ctx, response):
+            return response
         calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
         handoff = any(
             (definition := ctx.tools.get(call.tool_name)) is not None
