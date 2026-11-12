@@ -14,7 +14,7 @@ from pydantic_ai.capabilities import WrapperCapability
 from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
-from a13n_harness_ui.configuration.models import McpPrivateValueSource
+from a13n_harness_ui.configuration.models import McpPrivateValueSource, McpRemoteTransport
 from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP, prepare_mcp_transport
@@ -46,11 +46,32 @@ class RemoteMcp(Controller):
     def services(self) -> dict[tuple[str, int], object]:
         return {("mcp", 1): self.mcp}
 
+    async def authorization_recipe(self, *, replace_configuration: bool = False) -> ResolvedMcpRecipe | None:
+        current = await self.context.configuration()
+        recipe = self.connection(current)
+        if (
+            recipe is not None
+            and isinstance(recipe.transport, McpRemoteTransport)
+            and recipe.transport.oauth is not None
+        ):
+            if self.context.oauth is None:
+                return None
+            return await self.context.oauth.bind(
+                recipe, owner=f"connector:{current.connector_id}", replace_configuration=replace_configuration
+            )
+        return recipe
+
     async def status(self) -> Status:
         current = await self.context.configuration()
         if not current.enabled:
             return Status(state="disabled", summary="Connection is disabled.")
-        ready = self.connection(current) is not None
+        recipe = await self.authorization_recipe()
+        ready = recipe is not None
+        if recipe is not None and recipe.oauth_binding is not None and self.context.oauth is not None:
+            account = await self.context.oauth.repository.get(recipe.oauth_binding)
+            ready = bool(account.bundle and account.bundle.tokens and not account.refresh_pending)
+            if account.refresh_pending:
+                return Status(state="degraded", summary="Authorization needs attention. Reconnect to continue.")
         return Status(
             state="ready" if ready else "unconfigured",
             summary="Configured. Upstream access is checked when connecting."
@@ -60,7 +81,11 @@ class RemoteMcp(Controller):
 
     async def capture(self) -> dict[str, JsonValue] | None:
         current = await self.context.configuration()
-        recipe = self.connection(current) if current.enabled else None
+        recipe = await self.authorization_recipe() if current.enabled else None
+        if recipe is not None and recipe.oauth_binding is not None and self.context.oauth is not None:
+            account = await self.context.oauth.repository.get(recipe.oauth_binding)
+            if account.bundle is None or account.bundle.tokens is None or account.refresh_pending:
+                return None
         return {"mcp": recipe.model_dump(mode="json")} if recipe is not None else None
 
     async def _private_value(self, source: McpPrivateValueSource) -> str:
@@ -79,7 +104,9 @@ class RemoteMcp(Controller):
         async def guard() -> None:
             await self.context.require_available(capture)
 
-        return _ProgrammaticMcp(HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard))
+        return _ProgrammaticMcp(
+            HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard, oauth=self.context.oauth)
+        )
 
 
 @dataclass
@@ -109,7 +136,7 @@ class RemoteMcpService:
             raise HarnessUiError("Complete connection setup first.", code="connector_service_unavailable")
         recipe = ResolvedMcpRecipe.model_validate(binding["mcp"])
         transport, _, timeout = await prepare_mcp_transport(
-            recipe, None, private_values=self._controller._private_value
+            recipe, None, private_values=self._controller._private_value, oauth=self._controller.context.oauth
         )
         async with Client(transport, mode=recipe.protocol, init_timeout=timeout) as client:
             # Recheck after connecting, before submitting a provider operation.

@@ -648,6 +648,9 @@ class AgentCompositionResolver:
                 "source_id": "bot",
                 "roster_name": "bot",
                 "system_prompt": (PACKAGE_SYSTEM_PROMPT, BOT_INSTRUCTIONS),
+                # Bot keeps clarification in ordinary chat rather than suspending
+                # its coordination Run for structured user questions.
+                "capabilities": tuple(item for item in node.capabilities if item.capability != "user_interaction"),
             }
         )
 

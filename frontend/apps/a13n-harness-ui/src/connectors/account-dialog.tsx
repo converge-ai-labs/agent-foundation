@@ -5,6 +5,7 @@ import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { GroupNameHelp } from "./group-name-help";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
@@ -271,13 +272,25 @@ export function AccountDialog({
                   required
                 />
               </SettingsRow>
-              <SettingsRow label={t("Group name")} stackOnNarrow>
+              <SettingsRow
+                label={
+                  <span className="inline-flex items-center gap-1">
+                    {t("Group name")}
+                    <GroupNameHelp />
+                  </span>
+                }
+                stackOnNarrow
+              >
                 <FormField
                   label={t("Group name")}
                   hideLabel
-                  description={t(
-                    "Changing this group requires a new Run to use its tools.",
-                  )}
+                  description={
+                    groupName !== base.group_name
+                      ? t(
+                          "Changing this group requires a new Run to use its tools.",
+                        )
+                      : undefined
+                  }
                   error={groupError ? t(groupError) : undefined}
                 >
                   <Input

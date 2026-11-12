@@ -58,6 +58,7 @@ from a13n_harness_ui.composition import (
     ResolvedRunComposition,
     RunCompositionService,
 )
+from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration import (
     ConfigurationMutationResult,
     ExternalSubagentImportCandidate,
@@ -85,6 +86,7 @@ from a13n_harness_ui.configuration.mcp_tools import (
 from a13n_harness_ui.configuration.models import (
     BrowserConfiguration,
     DeviceResource,
+    McpRemoteTransport,
     PairedDeviceAuthentication,
     ProjectResource,
 )
@@ -186,6 +188,9 @@ from a13n_harness_ui.mcp_apps.operations import AppOperation, AppOperations, App
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_oauth.login import Logins as McpLogins
+from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationTarget, OAuthError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
@@ -464,6 +469,8 @@ class HarnessUiApp:
         mcp_operations: AppOperations | None = None,
         mcp_connections: HostConnections | None = None,
         mcp_inputs: Inputs | None = None,
+        mcp_oauth: McpOAuth | None = None,
+        mcp_logins: McpLogins | None = None,
         compaction: BackgroundCompaction | None = None,
     ) -> None:
         self._browsers = browsers
@@ -473,6 +480,8 @@ class HarnessUiApp:
         self._settings = settings
         self.shutdown = Shutdown()
         self._mcp_apps = mcp_apps
+        self._mcp_oauth = mcp_oauth
+        self.mcp_logins = mcp_logins
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
         self._mcp_operations = mcp_operations
@@ -865,7 +874,9 @@ class HarnessUiApp:
     async def discover_mcp_tools(self, server_id: str) -> tuple[McpToolDescriptor, ...]:
         async with self._operation():
             source = await self._configurations.current()
-            return await discover_tools(source, server_id, self._require_configuration_path().parent)
+            return await discover_tools(
+                source, server_id, self._require_configuration_path().parent, oauth=self._mcp_oauth
+            )
 
     async def select_mcp_tools(self, server_id: str, request: McpToolSelection) -> ConfigurationMutationResult:
         async with self._operation(), self._configuration_lock:
@@ -2336,6 +2347,8 @@ class HarnessUiApp:
 
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
+            if thread_id == BOT_THREAD_ID:
+                await self._threads.bot_thread()
             await self._threads.require_interactive(thread_id)
             return await self._thread_files.stage(thread_id, upload)
 
@@ -3463,24 +3476,91 @@ class HarnessUiApp:
         await self._summary_hub.publish(kind="project")
         return result
 
+    async def mcp_authorization_recipe(self, target: AuthorizationTarget) -> ResolvedMcpRecipe:
+        async with self._operation():
+            if self._mcp_oauth is None:
+                raise OAuthError("MCP OAuth is unavailable.", code="mcp_oauth_unavailable")
+            if target.kind == "connector":
+                recipe = await self.connectors().oauth_recipe(target.id)
+            else:
+                source = await self._configurations.current()
+                resource = source.mcp_servers.get(target.id) if source else None
+                recipe = ResolvedMcpRecipe(server_id=target.id, transport=resource.transport) if resource else None
+                if recipe is not None:
+                    recipe = await self._mcp_oauth.bind(recipe)
+            if (
+                recipe is None
+                or not isinstance(recipe.transport, McpRemoteTransport)
+                or recipe.transport.oauth is None
+                or recipe.oauth_binding is None
+            ):
+                raise OAuthError("This server is not configured for MCP OAuth.", code="mcp_oauth_not_configured")
+            return recipe
+
+    async def mcp_authorization_status(self, target: AuthorizationTarget) -> AuthorizationStatus:
+        import time
+
+        recipe = await self.mcp_authorization_recipe(target)
+        assert self._mcp_oauth is not None and recipe.oauth_binding is not None
+        account = await self._mcp_oauth.repository.get(recipe.oauth_binding)
+        login = self.mcp_logins.current(account.owner) if self.mcp_logins is not None else None
+        if account.refresh_pending:
+            return AuthorizationStatus(state="reconnect_required", login=login)
+        bundle = account.bundle
+        if bundle is None or bundle.tokens is None:
+            return AuthorizationStatus(state="disconnected", login=login)
+        expired = bundle.expires_at is not None and bundle.expires_at <= time.time()
+        state = "expired" if expired and not bundle.tokens.refresh_token else "connected"
+        return AuthorizationStatus(
+            state=state, login=login, scopes=tuple((bundle.tokens.scope or "").split()), expires_at=bundle.expires_at
+        )
+
+    async def start_mcp_authorization(self, target: AuthorizationTarget, origin: str):
+        if self.mcp_logins is None:
+            raise OAuthError("Start MCP authorization in WebUI.", code="mcp_oauth_webui_required")
+        recipe = await self.mcp_authorization_recipe(target)
+        result = await self.mcp_logins.start(recipe, origin)
+        async with self._configuration_lock:
+            source = await self._configurations.current()
+            if source is not None:
+                await self._retire_mcp_bindings(source)
+        return result
+
+    async def disconnect_mcp_authorization(self, target: AuthorizationTarget) -> None:
+        recipe = await self.mcp_authorization_recipe(target)
+        assert self._mcp_oauth is not None and recipe.oauth_binding is not None
+        account = await self._mcp_oauth.repository.get(recipe.oauth_binding)
+        if self._mcp_oauth.cancel_logins is not None:
+            await self._mcp_oauth.cancel_logins(account.owner)
+        current = await self._mcp_oauth.bind(recipe.model_copy(update={"oauth_binding": None}), owner=account.owner)
+        assert current.oauth_binding is not None
+        await self._mcp_oauth.repository.replace(current.oauth_binding)
+        async with self._configuration_lock:
+            source = await self._configurations.current()
+            if source is not None:
+                await self._retire_mcp_bindings(source)
+        await self._summary_hub.publish(kind="configuration")
+
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
+        if self._mcp_oauth is not None:
+            await self._mcp_oauth.reconcile(source)
         if self._mcp_connections is not None:
             settings = source.document.webui.mcp_apps
             app_servers = set(settings.servers) if self._mcp_apps is not None and settings.enabled else set()
             retained = set(source.document.mcp.host_owned_servers) | app_servers
-            self._mcp_connections.retain_bindings(
-                {
-                    identity: repr(
-                        (
-                            server.transport.model_dump_json(),
-                            source.document.mcp.protocol_overrides.get(identity, "auto"),
-                            identity in app_servers,
-                        )
-                    )
-                    for identity, server in source.mcp_servers.items()
-                    if identity in retained
-                }
-            )
+            bindings = {}
+            for identity, server in source.mcp_servers.items():
+                if identity not in retained:
+                    continue
+                recipe = ResolvedMcpRecipe(
+                    server_id=identity,
+                    transport=server.transport,
+                    protocol=source.document.mcp.protocol_overrides.get(identity, "auto"),
+                )
+                if self._mcp_oauth is not None:
+                    recipe = await self._mcp_oauth.bind(recipe)
+                bindings[identity] = recipe.binding_key(apps=identity in app_servers)
+            self._mcp_connections.retain_bindings(bindings)
 
         await self._retire_mcp_owners()
 
@@ -3808,7 +3888,15 @@ async def open_harness_ui_app(
             )
             resolver = AgentCompositionResolver(catalog, host_mode=host_mode)
             configurations = CompositionAcceptanceService(store, resolver)
-            compositions = RunCompositionService(store, resolver)
+            mcp_oauth = McpOAuth(
+                store.mcp_oauth,
+                store.layout.root,
+                configuration_path.expanduser().resolve().parent if configuration_path else store.layout.root,
+            )
+            mcp_logins = McpLogins(mcp_oauth) if host_mode == "webui" else None
+            if mcp_logins is not None:
+                resources.push_async_callback(mcp_logins.close)
+            compositions = RunCompositionService(store, resolver, oauth=mcp_oauth)
             candidate_error: HarnessUiError | None = configuration_error
             candidate: LoadedHarnessUiConfiguration | None = None
             if configuration_path is not None and configuration_path.exists():
@@ -3918,6 +4006,7 @@ async def open_harness_ui_app(
                 catalog,
                 mcp_apps=app_connections,
                 mcp_connections=mcp_connections,
+                mcp_oauth=mcp_oauth,
                 instrumentation=observation.instrumentation,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
                 configuration_root=configuration_path.expanduser().resolve().parent
@@ -3963,6 +4052,7 @@ async def open_harness_ui_app(
                     mcp_apps,
                     CurrentOwners(store, configurations, resolver),
                     configuration_path.expanduser().resolve().parent,
+                    oauth=mcp_oauth,
                 )
                 # Drain admitted operations while their MCP transports and store still exist.
                 resources.push_async_callback(mcp_operations.close)
@@ -4146,6 +4236,8 @@ async def open_harness_ui_app(
                 mcp_operations=mcp_operations,
                 mcp_connections=mcp_connections,
                 mcp_inputs=mcp_inputs,
+                mcp_oauth=mcp_oauth,
+                mcp_logins=mcp_logins,
                 configuration_path=configuration_path,
                 catalog=catalog,
                 configurations=configurations,
@@ -4181,6 +4273,9 @@ async def open_harness_ui_app(
                 memory_organizer=memory_organizer,
                 restart_coordinator=restart_coordinator,
             )
+            accepted_source = await configurations.current()
+            if accepted_source is not None:
+                await mcp_oauth.reconcile(accepted_source)
             if host_mode == "webui":
                 app._bot = BotController(
                     store=store,
@@ -4189,6 +4284,8 @@ async def open_harness_ui_app(
                     runs=root_runs,
                     projections=projections,
                     summaries=summary_hub,
+                    files=thread_files,
+                    prepare_input=lambda prompt: app._prepare_input(BOT_THREAD_ID, prompt, ()),
                     notify=web_push.enqueue if web_push is not None else None,
                 )
                 from pydantic_ai.capabilities import CombinedCapability
@@ -4205,6 +4302,7 @@ async def open_harness_ui_app(
                     owned=automation_owned,
                     signal=app._bot.signal_inputs,
                     changed=connector_changed,
+                    oauth=mcp_oauth,
                 )
                 compositions.connector_capture = app._connectors.capture
                 if configuration_path is not None:

@@ -712,9 +712,32 @@ it("edits the saved group independently and keeps collision recovery beside the 
   expect((screen.getByLabelText("Group name") as HTMLInputElement).value).toBe(
     "work-account",
   );
+  expect(
+    screen.queryByText(
+      "Changing this group requires a new Run to use its tools.",
+    ),
+  ).toBeNull();
+  const help = screen.getByRole("button", { name: "About group names" });
+  expect(
+    screen.queryByText(
+      "Unique tool group used by the model. You can change it later.",
+    ),
+  ).toBeNull();
+  await userEvent.click(help);
+  expect(
+    await screen.findByText(
+      "Unique tool group used by the model. You can change it later.",
+    ),
+  ).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
   fireEvent.change(screen.getByLabelText("Group name"), {
     target: { value: "new-group" },
   });
+  expect(
+    screen.getByText(
+      "Changing this group requires a new Run to use its tools.",
+    ),
+  ).toBeTruthy();
   transport.client.PUT.mockRejectedValueOnce(
     new ApiError(
       "Group name is already used by another connection.",

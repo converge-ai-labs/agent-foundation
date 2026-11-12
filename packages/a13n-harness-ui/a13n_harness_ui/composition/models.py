@@ -19,6 +19,7 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
+from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
 
@@ -84,12 +85,17 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Historical recipes were all generically selected, including Apps-enabled ones.
     generic_selected: bool = Field(default=True, exclude_if=lambda value: value)
     host_owned: bool = Field(default=False, exclude_if=lambda value: not value)
     protocol: Literal["auto", "legacy", "2026-07-28"] = Field(default="auto", exclude_if=lambda value: value == "auto")
+
+    def binding_key(self, *, apps: bool | None = None) -> str:
+        base = (self.transport.model_dump_json(), self.protocol, self.apps_enabled if apps is None else apps)
+        return repr(base if self.oauth_binding is None else (*base, self.oauth_binding.model_dump_json()))
 
 
 class ResolvedRunExtensionRecipe(CompositionModel):

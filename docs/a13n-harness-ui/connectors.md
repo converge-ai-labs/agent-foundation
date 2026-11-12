@@ -21,6 +21,16 @@ The first save requires a non-blank token. Leading and trailing spaces are remov
 
 The GitHub Connector provides MCP tools. It does not poll notifications, create automatic Bot inputs or implement a separate GitHub OAuth application.
 
+## Connect Linear or Notion
+
+1. In **Settings → Connections → Connectors**, choose **Add connection → Linear** or **Notion**, name the account and continue.
+2. Choose **Connect** and complete browser consent. Use **Continue authorization** if the popup was blocked. Authorization is saved privately in this instance; tokens refresh automatically.
+3. Choose **Test connection** to check the MCP connection separately, then **Done**. Send a new message to capture the connection's tools.
+
+Linear defaults to read/write access. To switch modes, open the account settings, set **Access** to `read_only` or `read_write`, and choose **Save settings**. Then open **Edit connection** and authorize again. Read-only mode uses the read-only endpoint and exact `read` scope; read/write mode uses the standard endpoint and discovered scopes. Changing modes in either direction clears the previous local authorization. Send a new message after authorizing to capture the selected tools. Notion requests discovered scopes and has no local read-only switch; review its consent page and workspace permissions. Neither integration declares automatic events or Bot wakeups. GitHub continues to use its PAT setup.
+
+Use **Reconnect** when authorization expires or a refresh cannot be completed safely. **Disconnect** clears local authorization. Closing an unfinished setup cancels its pending login; completed authorization remains saved. Initial login and reconnect require WebUI. These concrete providers use the same [DCR OAuth service](mcp.md#oauth-authorization) as ordinary MCP resources, with no separate OAuth application or token store.
+
 ## Connectors and MCP servers
 
 Connectors present concrete services such as GitHub, with account setup defined by that service's provider. The Add connection chooser lists installed service integrations.
@@ -82,7 +92,7 @@ All Connectors use the same account list and setup renderer. In `Declaration`, o
 
 Subclass `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` to reuse native tools and typed programmatic access. This is a Controller base, not a registered Definition. Your Definition owns the concrete service's name, configuration model and setup. Its `open()` yields your Controller. Implement `connection(configuration)` to return a safe `ResolvedMcpRecipe`, or `None` while the account is incomplete. Fix the service endpoint and transport policy in code, and use `McpPrivateValueSource` for private headers. Never put credential values in the recipe.
 
-The library supplies native MCP capture, Capability creation, credential resolution and generation/enabled-state checks. A provider can select native tools in its recipe (`None` permits all; an empty tuple permits none) without exposing MCP transport controls in the frontend. See the [GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py) for a concrete implementation.
+The library supplies native MCP capture, Capability creation, credential resolution and generation/enabled-state checks. For DCR OAuth, set the remote recipe's `oauth` configuration and consume the bound Context's application-owned OAuth service; use an `oauth` setup action for the shared authorization controls. Linear and Notion demonstrate this path without duplicating token storage or refresh. A provider can select native tools in its recipe (`None` permits all; an empty tuple permits none) without exposing MCP transport controls in the frontend. See the [GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py) for a concrete implementation.
 
 The Controller also publishes version 1 of a typed `mcp` service without exporting credentials:
 

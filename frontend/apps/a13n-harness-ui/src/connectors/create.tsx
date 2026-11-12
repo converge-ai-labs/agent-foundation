@@ -5,6 +5,7 @@ import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import { GroupNameHelp } from "./group-name-help";
 import { useConnectors } from "./data";
 import { ConnectorSetup } from "./setup";
 import { ConnectorIcon } from "./presentation";
@@ -218,9 +219,7 @@ export function CreateConnector({
         </FormField>
         <FormField
           label={t("Group name")}
-          description={t(
-            "Unique tool group used by the model. You can change it later.",
-          )}
+          labelAction={<GroupNameHelp />}
           error={groupError ? t(groupError) : undefined}
         >
           <Input

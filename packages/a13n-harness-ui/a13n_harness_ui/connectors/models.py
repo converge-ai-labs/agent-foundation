@@ -63,7 +63,7 @@ class SetupAction(Value):
     id: str
     label: str
     icon: str | None = None
-    kind: Literal["submit", "open_url", "copy", "confirm"] = "submit"
+    kind: Literal["submit", "open_url", "copy", "confirm", "oauth"] = "submit"
     url: str | None = None
     value: str | None = None
 

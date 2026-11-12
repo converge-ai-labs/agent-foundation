@@ -34,7 +34,9 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261112_be2873ae217e_merge_connector_groups_and_mcp_oauth.py").unlink()
     (newer / "versions/20261112_60710c8b48e4_add_explicit_connector_group_names.py").unlink()
+    (newer / "versions/20261112_5304b6a9760a_add_application_owned_mcp_oauth_accounts.py").unlink()
     (newer / "versions/20261112_b816fd5edbe8_add_connector_plugin_state_and_.py").unlink()
     (newer / "versions/20261112_7f64c893cc4a_retain_thread_messages_in_bot_inbox.py").unlink()
     (newer / "versions/20261112_9450d8b1a589_add_shared_thread_read_state.py").unlink()
@@ -119,6 +121,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "bot_input",
                 "bot_message",
                 "connector_configuration",
+                "mcp_oauth",
                 "connector_state",
                 "connector_setup_offer",
                 "bot_inbox",

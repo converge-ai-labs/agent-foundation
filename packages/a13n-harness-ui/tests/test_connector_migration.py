@@ -165,6 +165,54 @@ def test_group_backfill_preserves_accounts_relations_and_resolves_collisions(tmp
         engine.dispose()
 
 
+@pytest.mark.parametrize("starting_revision", ["60710c8b48e4", "5304b6a9760a"])
+def test_merge_upgrades_either_branch_without_losing_saved_accounts(tmp_path, starting_revision):
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, starting_revision), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO connector_configuration "
+                    "(connector_id, kind, name, enabled, deliver_to_bot, selected_events, settings, credentials) "
+                    "VALUES ('account', 'github', 'Existing', 1, 0, '[]', '{}', '{}')"
+                    if starting_revision == "5304b6a9760a"
+                    else "INSERT INTO connector_configuration "
+                    "(connector_id, kind, name, group_name, enabled, deliver_to_bot, selected_events, settings, credentials) "
+                    "VALUES ('account', 'github', 'Existing', 'saved-alias', 1, 0, '[]', '{}', '{}')"
+                )
+            )
+            if starting_revision == "5304b6a9760a":
+                connection.execute(
+                    text(
+                        "INSERT INTO mcp_oauth "
+                        "(binding_id, owner, configuration_digest, generation, credential_version, refresh_pending, bundle_json) "
+                        "VALUES ('binding', 'connector:account', :digest, 'generation', 4, 0, :bundle)"
+                    ),
+                    {"digest": "a" * 64, "bundle": '{"retained":"private-fixture"}'},
+                )
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "be2873ae217e"
+            assert connection.execute(text("SELECT group_name FROM connector_configuration")).scalar_one() == (
+                "existing" if starting_revision == "5304b6a9760a" else "saved-alias"
+            )
+            assert "mcp_oauth" in inspect(connection).get_table_names()
+            if starting_revision == "5304b6a9760a":
+                assert connection.execute(text("SELECT credential_version, bundle_json FROM mcp_oauth")).one() == (
+                    4,
+                    '{"retained":"private-fixture"}',
+                )
+            assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
+        migrator.upgrade()
+        migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
 def test_failed_group_backfill_rolls_back_and_can_be_retried(tmp_path):
     from sqlalchemy.exc import IntegrityError
 
