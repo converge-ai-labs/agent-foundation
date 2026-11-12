@@ -229,12 +229,17 @@ def test_subagent_capability_requires_one_coherent_mode() -> None:
     operator = RecordingSubagentOperator()
 
     default = SubagentCapability()
+    assert default.result_delivery == "automatic"
     assert default.async_enabled is False
     assert default.operator is None
 
     enabled = SubagentCapability(async_enabled=True, operator=operator)
     assert enabled.async_enabled is True
     assert enabled.operator is operator
+    assert enabled.result_delivery == "automatic"
+    assert SubagentCapability(result_delivery="manual").result_delivery == "manual"
+    with pytest.raises(ValueError, match="result_delivery"):
+        SubagentCapability(result_delivery="invalid")
 
     with pytest.raises(DefinitionError) as missing:
         SubagentCapability(async_enabled=True)
@@ -326,6 +331,12 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
                 )
             }
             return
+        for returned in returns:
+            if returned.tool_name in {"subagent_info", "wait_subagent"}:
+                assert returned.content["executions"][0]["reply_tool"] == "resume_subagent"
+                assert returned.content["executions"][0]["header"] == (
+                    "Subagent result · reviewer · execution_id=execution-1 · succeeded"
+                )
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -581,3 +592,30 @@ async def test_host_resume_is_opt_in_and_declared_wire_shape_is_unchanged() -> N
             ),
             AsyncResumeRequest(execution_id="execution-1", prompt="continue"),
         )
+
+
+@pytest.mark.parametrize("mode", ["automatic", "manual"])
+async def test_result_delivery_reaches_run_guidance_and_host_context(mode):
+    operator = RecordingSubagentOperator()
+    capability = SubagentCapability(async_enabled=True, operator=operator, result_delivery=mode)
+
+    async def model(messages, info):
+        instructions = info.instructions or ""
+        if mode == "automatic":
+            assert "Final results arrive automatically" in instructions
+            assert "do not poll only to get them" in instructions
+            assert "You may end your turn" in instructions
+            assert "Collect final results" not in instructions
+        else:
+            assert "Collect final results with `wait_subagent` or `subagent_info`" in instructions
+            assert "Final results arrive automatically" not in instructions
+        if not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield {0: DeltaToolCall(name="delegate", json_args='{"subagent_name":"reviewer","prompt":"inspect"}')}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(_definition(FunctionModel(stream_function=model), capability))
+    result = await executable.run("start", bindings=_bindings())
+    assert result.output_or_raise() == "done"
+    assert capability.result_delivery == mode
+    assert operator.plans[0].parent.result_delivery == mode

@@ -13,6 +13,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+from a13n_harness.tools._output import tool_execution_value
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -76,7 +77,7 @@ async def test_execution_surface_and_summary_require_capability_and_runtime(capa
         else:
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             code = next(part for part in returns if part.tool_name == "run_code")
-            assert code.content == 42
+            assert tool_execution_value(code.content, code.metadata) == 42
             if visible:
                 inspected = returns[-1].content
                 assert inspected[0]["execution_id"] == records[0].execution_id

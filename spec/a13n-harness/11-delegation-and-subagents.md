@@ -12,6 +12,7 @@ class SubagentCapability(AbstractCapability[AgentContext]):
         self,
         *,
         async_enabled: bool = False,
+        result_delivery: Literal["automatic", "manual"] = "automatic",
         operator: SubagentOperator | None = None,
     ) -> None: ...
 ```
@@ -22,6 +23,12 @@ class SubagentCapability(AbstractCapability[AgentContext]):
 Construction rejects async mode without an operator and rejects an operator in inline mode. There is no fallback between modes, per-call lifecycle-mode argument, default async manager, or Harness execution-store protocol.
 
 The Capability owns standard tool names, schemas, guidance, authored child resolution, context and identity ceilings, usage-limit intersection, and bounded model-facing projections. The Host operator owns every complete asynchronous use case and every lifecycle fact behind it. This boundary is part of the [Hosting Contract](13-hosting-contract.md); cross-Run consequences follow [Async Subagent Lifecycle](20-async-components-and-lifecycle.md).
+
+`result_delivery` selects final async subagent result delivery and defaults to `automatic`. It applies to declared, built-in, and Host-defined children; it has no effect on inline execution. The Capability exposes the effective value as a read-only property, preserves it in its Run replacement, and includes it in detached `SubagentOperatorContext` (also through `SubagentDelegationPlan.parent`). The Host reads this value to implement delivery; Harness owns no delivery task.
+
+In `automatic` mode the Host delivers final results to the parent through its input boundary. In `manual` mode the parent collects them with `wait_subagent` or `subagent_info`. Explicit child-to-parent messages are independent of this switch and remain deliverable in either mode. The Host owns active-parent routing, idle wake eligibility, admission, and restart suppression. Enabling delivery does not authorize waking a stopped, failed, suspended, interrupted, or otherwise ineligible parent.
+
+Standard async guidance reflects the effective mode. Automatic guidance says results arrive automatically, discourages polling solely for results, and permits ending the turn while telling the user what still runs. Manual guidance directs the parent to collect results through the info or wait tools. Toolset-instruction enablement still governs whether this guidance is included.
 
 ## Child Definitions and Built Collection
 
@@ -105,6 +112,7 @@ class SubagentOperatorContext:
     parent_run_id: str
     parent_agent_instance_id: str
     host_refs: Mapping[str, str]
+    result_delivery: Literal["automatic", "manual"] = "automatic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,7 +217,7 @@ The operator owns:
 - Environment association selection, current state loading, and fresh adapter construction;
 - child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings, including replacement Identity and usage-limit derivation;
 - execution storage, checkpoint acknowledgement, and bounded activity projection;
-- wait and wake behavior, steering, cancellation, linked resume, loss, cleanup, and retention;
+- wait and wake behavior, final-result delivery according to the effective `result_delivery` mode, steering, cancellation, linked resume, loss, cleanup, and retention;
 - Host shutdown policy and any background task or worker lifecycle.
 
 Harness does not require a storage interface. An operator can use memory, files, SQLite, PostgreSQL, a workflow engine, or remote workers without adapting its persistence to a Harness-owned begin/append/commit protocol.
@@ -299,6 +307,12 @@ Parent `AgentContextState` is authoritative only for inline continuation. Async 
 Inline execution forwards child Harness events with their original child Run and Thread provenance into the parent stream, then emits parent-scoped delegation completion or failure. Each Run reports its own usage, excluding child usage. Hosts may aggregate the attributed parent and child usage records for display without applying a shared tree-wide enforcement budget.
 
 For async work, the Host owns observation storage, subscriptions, wake policy, and activity compaction. The operator consumes each child `HarnessRunStream` as the narrow ordered public-recording boundary; Harness emits only public `HarnessStreamEvent` values and imports no AG-UI or Host presentation type. Standard result models provide bounded status and closed activity projections when the operator returns them. Activity contains no separate raw `output`; a final answer is represented by closed text activity. Harness does not retain a weak observer, enqueue completion into a later parent Run, or infer current status from an old parent projection. Host wake and protocol delivery are separate from execution authority as defined by [Observation](19-observation-model.md) and the [Agent Stream Protocol](../a13n-stream-protocol/README.md).
+
+### Model-Facing Execution Identity
+
+Each `subagent_info` and `wait_subagent` execution entry includes a `header` alongside its existing bounded fields: `Subagent result · <name> · execution_id=<id> · <state>`. This is a tool-facing projection; the operator's typed views remain execution facts. Host-delivered final results use the same header and execution ID. Explicit child messages use `Subagent message · <name> · execution_id=<id> · <state>` with the current state. Messages and results identify `steer_subagent` for a running child and `resume_subagent` when resumable. Hosts use the shared `a13n_harness.execution_identity.format_execution_header` formatter for delivered observations.
+
+Retrieval and automatic delivery proceed independently. Repeated results carrying the same execution ID are allowed; there is no delivered/read flag for async subagents. Execution identity grants correlation, not authority.
 
 ## Failure and Cancellation Semantics
 

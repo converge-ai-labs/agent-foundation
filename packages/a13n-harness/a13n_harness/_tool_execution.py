@@ -17,6 +17,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tool_execution import (
     _OWNED_TOOL_EXECUTION,
     StoredToolExecution,
@@ -146,6 +147,12 @@ class RunToolExecutions:
         return value
 
     def delivered_result(self, call_id: str, record: ToolExecutionRecord, result: Any) -> Any:
+        header = format_execution_header("Tool result", record.tool_name, record.execution_id, record.status)
+        if isinstance(result, ToolReturn):
+            content = [result.content] if isinstance(result.content, str) else list(result.content or ())
+            result = replace(result, content=[header, *content])
+        else:
+            result = ToolReturn(return_value=result, content=[header])
         self.returns[call_id] = result
         self.deliveries[call_id] = record.execution_id
         # Stream consumers may observe results after canonical acknowledgement or

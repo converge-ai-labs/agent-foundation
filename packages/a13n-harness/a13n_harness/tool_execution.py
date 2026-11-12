@@ -22,6 +22,7 @@ from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
 from a13n_harness._retained_scope import RetainedScope as RetainedScope
 from a13n_harness.environment.process_recovery import ShellExecutionState
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tools.diagnostics import system_error, system_failure, tool_error_text
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
@@ -62,6 +63,7 @@ class ToolExecutionRecord(BaseModel):
     def receipt(self) -> dict[str, str]:
         """Close a foreground call without delivering or reissuing its owned invocation."""
         return {
+            "header": format_execution_header("Tool notification", self.tool_name, self.execution_id, self.status),
             "type": "tool_execution_receipt",
             "execution_id": self.execution_id,
             "tool_name": self.tool_name,

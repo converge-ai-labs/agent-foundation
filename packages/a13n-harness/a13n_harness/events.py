@@ -45,7 +45,15 @@ type HarnessExtensionKind = Literal[
 
 
 type InputSource = Literal[
-    "user", "steering", "context", "recovery", "async_subagent", "background_process", "envd_session"
+    "user",
+    "steering",
+    "context",
+    "recovery",
+    "async_subagent",
+    "background_process",
+    "envd_session",
+    "parent_agent",
+    "tool_execution",
 ]
 
 
@@ -97,7 +105,10 @@ def enqueued_input_events(event: EnqueuedMessagesEvent) -> list[InputEvent]:
             continue
         notification = (message.metadata or {}).get("a13n.steering-source")
         source: InputSource = (
-            notification if notification in {"async_subagent", "background_process", "envd_session"} else "steering"
+            notification
+            if notification
+            in {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
+            else "steering"
         )
         observed.extend(input_events(request_input_content(message), source=source, input_id=event.enqueue_id))
     return observed
@@ -291,7 +302,9 @@ class SteeringInputEnqueuedPayload(_FirstPartyPayload):
 
     type: Literal["steering_input_enqueued"] = "steering_input_enqueued"
     enqueue_id: str = Field(min_length=1, max_length=256)
-    source: Literal["external", "async_subagent", "background_process", "envd_session"]
+    source: Literal[
+        "external", "async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"
+    ]
     references: tuple[str, ...] = Field(default=(), max_length=16)
     handoff_requested: bool = False
 

@@ -15,6 +15,7 @@ from pydantic_ai.toolsets import DynamicToolset
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -127,10 +128,13 @@ async def tool_execution_info(
 async def _result(ctx: RunContext[AgentContext], execution: StoredToolExecution | None) -> Any:
     if execution is None:
         return {"status": "unavailable"}
+    header = format_execution_header(
+        "Tool notification", execution.record.tool_name, execution.record.execution_id, execution.record.status
+    )
     if execution.retry_prompt is not None:
         # The original call has already handed off. Return its correction as data
         # rather than charging the retrieval tool's native retry budget.
-        return {**execution.record.model_dump(mode="json"), "retry_prompt": execution.retry_prompt}
+        return {"header": header, **execution.record.model_dump(mode="json"), "retry_prompt": execution.retry_prompt}
     if execution.record.result_available:
         assert ctx.tool_call_id is not None
         paths: dict[str, str] = {}
@@ -143,7 +147,7 @@ async def _result(ctx: RunContext[AgentContext], execution: StoredToolExecution 
             paths[artifact.path] = path
         result = _replace_artifact_paths(execution.result, paths) if paths else execution.result
         return ctx.deps._tool_executions.delivered_result(ctx.tool_call_id, execution.record, result)
-    return execution.record.model_dump(mode="json")
+    return {"header": header, **execution.record.model_dump(mode="json")}
 
 
 def _replace_artifact_paths(value: Any, paths: dict[str, str]) -> Any:

@@ -22,6 +22,7 @@ from a13n_harness.capabilities.subagents import (
     SubagentInfoResult,
     SubagentOperator,
     SubagentOperatorContext,
+    SubagentResultDelivery,
     SubagentSteerRequest,
     SubagentSteerResult,
     SubagentToolCallContext,
@@ -30,6 +31,7 @@ from a13n_harness.capabilities.subagents import (
 )
 from a13n_harness.context import AgentContext, BuiltSubagent
 from a13n_harness.errors import DefinitionError
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tools.metadata import (
     MAX_OUTPUT_BYTES,
     HarnessTool,
@@ -66,12 +68,14 @@ class AsyncSubagentToolset:
         owner: AbstractCapability[AgentContext],
         context: AgentContext,
         operator: SubagentOperator,
+        result_delivery: SubagentResultDelivery = "automatic",
     ) -> None:
         if not isinstance(operator, SubagentOperator):
             raise TypeError("operator must be a SubagentOperator")
         self._owner = owner
         self._context = context
         self._operator = operator
+        self._result_delivery: SubagentResultDelivery = result_delivery
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = [
@@ -101,7 +105,15 @@ class AsyncSubagentToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-async-subagent-tools",
-            instructions=tool_instruction("subagents").format(available_subagents=available),
+            instructions=tool_instruction("subagents").format(
+                available_subagents=available,
+                result_delivery_guidance=(
+                    "Final results arrive automatically; do not poll only to get them. You may end your turn "
+                    "while work runs; tell the user what is still running."
+                    if self._result_delivery == "automatic"
+                    else "Collect final results with `wait_subagent` or `subagent_info`."
+                ),
+            ),
         )
 
     async def delegate(
@@ -140,7 +152,7 @@ class AsyncSubagentToolset:
         )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
-        return result.model_dump(mode="json")
+        return _execution_page(result)
 
     async def wait_subagent(
         self,
@@ -163,7 +175,7 @@ class AsyncSubagentToolset:
         )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
-        return result.model_dump(mode="json")
+        return _execution_page(result)
 
     async def steer_subagent(
         self,
@@ -278,6 +290,7 @@ class AsyncSubagentToolset:
             parent_run_id=self._context.run_id,
             parent_agent_instance_id=self._context.instance.agent_instance_id,
             host_refs=self._context.instance.host_refs,
+            result_delivery=self._result_delivery,
         )
 
     def _require_child(self, name: str) -> BuiltSubagent:
@@ -314,6 +327,28 @@ class AsyncSubagentToolset:
                 output_policy=output_policy,
             ),
         )
+
+
+def _execution_page(result: SubagentInfoResult | SubagentWaitResult) -> JsonValue:
+    return {
+        **result.model_dump(mode="json"),
+        "executions": [
+            {
+                "header": format_execution_header(
+                    "Subagent result", view.subagent_name, view.execution_id, view.status
+                ),
+                **view.model_dump(mode="json"),
+                **(
+                    {"reply_tool": "steer_subagent"}
+                    if view.status == "running"
+                    else {"reply_tool": "resume_subagent"}
+                    if view.resumable
+                    else {}
+                ),
+            }
+            for view in result.executions
+        ],
+    }
 
 
 def _validate_model(model_type, value):

@@ -229,7 +229,13 @@ def test_runner_descriptions_require_complete_sections(missing_tag: str) -> None
                 list_name="list_ops",
             ),
         ),
-        ("subagents", dict(available_subagents="researcher: bounded research")),
+        (
+            "subagents",
+            dict(
+                available_subagents="researcher: bounded research",
+                result_delivery_guidance="Final results arrive automatically.",
+            ),
+        ),
         ("delegate", dict(available_subagents="researcher: bounded research")),
     ],
 )
