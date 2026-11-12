@@ -17,6 +17,7 @@ from a13n_harness_ui.configuration.models import (
     SidekickConfiguration,
     SubscriptionGroupResource,
 )
+from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
@@ -201,6 +202,7 @@ class ResolvedRunComposition(CompositionModel):
         default_factory=dict, exclude_if=lambda value: not value
     )
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
+    connectors: tuple[ConnectorCapture, ...] = Field(default=(), exclude_if=lambda value: not value)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)

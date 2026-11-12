@@ -364,6 +364,16 @@ def _validate_capability_source(
             or (source == "run" and type(capability) in _RUN_TYPES)
         )
         reserved_type = isinstance(capability, _SOURCE_RESERVED_TYPES)
+        if (
+            reserved_type
+            and capability.id not in _SOURCE_RESERVED_IDS
+            and type(capability) is not _ToolSearchSurfaceCapability
+        ):
+            raise DefinitionError(
+                "A protected Harness Capability requires its reserved ID.",
+                code="capability_scope_invalid",
+                details={"capability_id": capability.id, "source": source},
+            )
         if reserved_type or capability.id in _SOURCE_RESERVED_IDS:
             if not allowed:
                 raise DefinitionError(
@@ -418,6 +428,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             None,
         ),
     }
+    # Source admission permits custom protected IDs only for explicitly scoped
+    # ToolSearch surfaces. Retain their provenance even if run binding drops one.
+    for surface_id in provenance.definition_ids - _RESERVED_IDS:
+        expected[surface_id] = ((_ToolSearchSurfaceCapability,), provenance.definition_ids)
     reserved_types = tuple(capability_type for item in expected.values() for capability_type in item[0])
     for capability_id, capability in ctx.capabilities.items():
         if capability.id is not None:

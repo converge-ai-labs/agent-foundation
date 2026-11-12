@@ -8,6 +8,8 @@ description: 从 Python 运行已配置的 Agent，检查结果，并基于已�
 
 如果应用自己负责配置和持久化，请[直接使用 Harness](../a13n-harness/hosting.md)。需要能由其他 worker 恢复的托管执行时，选择 [Service](../a13n-service/index.md)。
 
+可信 WebUI 集成可通过 `HarnessUiIntegrations(connectors=(definition,))` 注册 Connector 定义，并传给 `open_harness_ui_app(..., integrations=...)`。[Connector](connectors.md#develop-a-trusted-connector) 介绍 SDK、配置生命周期和事件入站。Connector 所有权随 WebUI 生命周期启动；单独嵌入 App 不会激活后台运行时。
+
 ## 打开、提交与等待
 
 运行脚本前：
@@ -117,6 +119,24 @@ flowchart TD
 通用工具默认内联执行。设置 `tools.execution.mode: auto` 可开启超时移交。支持进程的顶层 Shell 调用在两种模式下都可在前台等待到期后让出；仅支持前台执行的挂载遵循通用模式。App 提供即时 steering 和保留执行所需的运行时。
 
 用 `app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；用 `app.cancel_tool_execution(thread_id, execution_id)` 请求取消工具。取消对话和取消工具是两件事。取消对话还会禁止完成事件自动唤醒，直到收到新的用户输入。保留的记录和已完成结果跨 App 重启存续。结果在首次消费后一小时过期，且不超过完成后一天。原外部 daemon 和 Session 存活时，Envd Shell 工作可以恢复；其他未完成的进程内调用标为 `lost`，不重放。
+
+## 持久保留外部业务上下文
+
+可信集成可以独立于对话历史保存 JSON 业务元数据和请求头：
+
+```python
+from a13n_harness_ui.external_context import ExternalContext
+
+await app.set_thread_external_context(
+    thread_id=thread_id,
+    context=ExternalContext(metadata={"tenant": "acme"}, headers={"x-trace-id": "trace-123"}),
+)
+receipt = await app.submit_thread(thread_id=thread_id, prompt="Continue")
+```
+
+更新完整替换原值，并独立于输入提交完成持久化。后续 Run，包括空闲时的工具完成唤醒和 App 重启后的运行，使用最新保存值。即使运行期间更新，活动 Run 仍保留受理时的快照。不更新则保留；传入 `ExternalContext()` 则清空。清除对话历史不会清除此独立业务上下文。
+
+可信 Capability 和适配器通过 `ctx.deps.metadata` 与 `ctx.deps.request_context.headers` 读取。上下文不会自动进入提示词、检查结果、Shell 环境或已配置的 MCP 请求。凭据继续通过原有凭据 API 管理。新委派的异步子线程继承父 Run 的快照，随后拥有自己的线程级上下文；用子线程 ID 更新其后续 Run 的值。异步子线程的快照以单个流执行段为界：显式恢复、工具完成后续运行和计划重启都会打开新执行段，读取该子线程最新保存的上下文；活动执行段内部的模型重试继续使用原快照。
 
 ## Thread 查询与修改
 

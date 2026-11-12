@@ -282,6 +282,8 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
             assert delivered.status is RootOperationStatus.completed, delivered.model_dump_json()
             assert reported.is_set()
         own = results[origin_id]["get_thread"]
+        # The native output policy can wrap this inspection as guidance grows.
+        own = own.get("result", own)
         assert own["current_run"]["project_id"] == "project-main"
         assert own["current_run"]["agent_id"] == "agent-assistant"
         assert results[origin_id]["list_agents"]["total"] == 2

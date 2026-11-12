@@ -68,6 +68,7 @@ from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
+from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
@@ -145,6 +146,7 @@ class RootRunAdmission:
     display: DisplayArchive | None = None
     browser_binding: str | None = None
     browser_unavailable: str = ""
+    external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
 
 
 class RootRunExecutor:
@@ -325,6 +327,7 @@ class RootRunExecutor:
             display=archive,
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
+            external_context=await self._store.threads.external_context(thread_id),
         )
 
     async def execute(
@@ -567,6 +570,8 @@ class RootRunExecutor:
                 display.observe(item)
 
             bindings = RunBindings(
+                metadata=admission.external_context.model_copy(deep=True).metadata,
+                request_context=admission.external_context.request_context(),
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
                 codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
                 instance=instance,
@@ -622,6 +627,7 @@ class RootRunExecutor:
                 instance=instance,
                 composition=published.value,
                 composition_ref=published.reference,
+                external_context=admission.external_context,
             ):
                 stream_entry_attempted = True
                 async with stream:
@@ -876,6 +882,7 @@ class RootRunExecutor:
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
         composition_ref: ObjectRef,
+        external_context: ExternalContext,
     ) -> AsyncGenerator[None]:
         with execution_composition(composition_ref):
             operator = self._subagent_operator
@@ -885,6 +892,7 @@ class RootRunExecutor:
                     run_id=run_id,
                     instance=instance,
                     composition=composition,
+                    external_context=external_context,
                 ):
                     yield
                 return

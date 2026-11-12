@@ -1043,10 +1043,10 @@
     "editor editor editor"
     "attach actions send";
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   border: 1px solid var(--a13n-input-border);
   border-radius: var(--harness-radius-composer);
-  padding: var(--composer-inset, 8px);
+  padding: var(--composer-inset, 6px);
   background: var(--card);
   box-shadow: none;
   transition:
@@ -1062,7 +1062,7 @@
     padding: 16px 12px;
   }
   .composerInput {
-    padding: var(--composer-inset, 8px);
+    padding: var(--composer-inset, 6px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1195,8 +1195,8 @@
   justify-content: flex-end;
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 32px;
+  gap: 2px;
+  min-height: 30px;
 }
 .composerInput > button,
 .composerActions > button {
@@ -1234,7 +1234,7 @@
     height: 16px;
   }
   .composerActions {
-    gap: 4px;
+    gap: 2px;
   }
 }
 @media (max-width: 600px), (pointer: coarse) {
@@ -2225,4 +2225,27 @@ div:has(+ .execution) > .assistantMessage {
 }
 .conversationFeedback:empty {
   display: none;
+}
+
+.composerInput[data-dictating] {
+  grid-template-areas: "actions";
+  grid-template-columns: minmax(0, 1fr);
+}
+.composerInput[data-dictating] > :not(.composerActions),
+.composerInput[data-dictating]
+  .composerActions
+  > :not([data-dictation-active]) {
+  display: none;
+}
+
+@media (pointer: fine) {
+  .composerInput .attachButton,
+  .composerActions > button[data-size^="icon"] {
+    inline-size: 28px;
+    block-size: 28px;
+  }
+}
+
+.composerActions > button[data-dictation-mic] {
+  margin-inline-end: 4px;
 }

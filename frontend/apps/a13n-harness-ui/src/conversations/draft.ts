@@ -125,9 +125,47 @@ export class ThreadDraft {
   localInputs: LocalInput[] = [];
   // Unsent quotations belong to this participant, not the shared text replica.
   annotations: ReplyAnnotation[] = [];
+  private annotationKey?: string;
+  bindAnnotations(threadId: string, shareId?: string) {
+    const key =
+      "a13n-harness-ui.annotations:" +
+      JSON.stringify([shareId ?? null, threadId]);
+    if (this.annotationKey === key) return;
+    this.annotationKey = key;
+    this.annotations = [];
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (raw) {
+        const notes = JSON.parse(raw);
+        if (Array.isArray(notes))
+          this.annotations = notes.filter(
+            (note) =>
+              note &&
+              typeof note.id === "string" &&
+              typeof note.source === "string" &&
+              Number.isInteger(note.start) &&
+              note.start >= 0 &&
+              typeof note.text === "string" &&
+              typeof note.raw === "string" &&
+              typeof note.comment === "string",
+          );
+      }
+    } catch {
+      /* Storage can be unavailable in private browsing. */
+    }
+  }
   getAnnotations = () => this.annotations;
   setAnnotations(notes: ReplyAnnotation[]) {
     this.annotations = notes;
+    if (this.annotationKey) {
+      try {
+        if (notes.length)
+          sessionStorage.setItem(this.annotationKey, JSON.stringify(notes));
+        else sessionStorage.removeItem(this.annotationKey);
+      } catch {
+        /* Keep annotations usable in memory if storage is unavailable. */
+      }
+    }
     this.notify();
   }
   get optionsUninitialized() {

@@ -4,16 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from html import escape
 from typing import Any, Literal, Protocol, cast
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.input import RunInputValue
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextNext,
+    ModelContextPlacement,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+)
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_logging import get_logger
 from pydantic import Field
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -239,13 +247,6 @@ class ThreadToolController:
             "Sending a message does not wait for an answer; do not invent a reply. "
             "Do not send acknowledgement-only replies or delegate the same task back to its requester."
         )
-        if source_thread_id == BOT_THREAD_ID:
-            context = (
-                f"Task from Bot Thread {BOT_THREAD_ID}. Work within this objective and authorization. "
-                "Leave substantive findings, questions, blockers and validation in your saved final response. "
-                "Bot inspects saved results on heartbeat; sending Bot a message cannot wake it. "
-                "If blocked, state the question and finish. Do not wait for a message acknowledgement."
-            )
         if is_coordinator:
             context += (
                 " The requester is the Coordinator coordinating this work. "
@@ -331,8 +332,28 @@ class ThreadToolController:
         self, *, source_thread_id: str, thread_id: str, message: str, kind: Literal["task", "report"] = "task"
     ) -> dict[str, Any]:
         if thread_id in {"bot", BOT_THREAD_ID}:
-            raise ThreadError(
-                "Bot inspects saved reports on heartbeat; messages cannot wake it.", code="bot_wake_rejected"
+            if not message.strip() or len(message) > 16384:
+                raise ThreadError(
+                    "A non-empty message of at most 16384 characters is required.", code="thread_message_invalid"
+                )
+            source = await self._threads.get(source_thread_id)
+            owners = await self._threads.worker_owners((source_thread_id,))
+            if (
+                source is None
+                or source.parent_thread_id is not None
+                or source.memory_scope is not None
+                or source_thread_id == BOT_THREAD_ID
+                or source_thread_id in owners
+                or source.configuration.agent_source.kind == "live"
+            ):
+                raise ThreadError(
+                    "Report through your Coordinator; only independent roots can message Bot.",
+                    code="thread_access_denied",
+                )
+            if self.bot is None:
+                raise ThreadError("Bot is unavailable.", code="bot_unavailable")
+            return await self.bot.receive_thread_message(
+                source_thread_id=source_thread_id, source_thread_title=source.title, text=message, kind=kind
             )
         target = None if thread_id == "live" else await self._threads.get(thread_id)
         if thread_id == "live" or (target is not None and target.configuration.agent_source.kind == "live"):
@@ -393,7 +414,7 @@ class ThreadToolController:
 
 
 @dataclass(kw_only=True, slots=True)
-class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
+class ThreadCollaborationCapability(AbstractModelContextCapability):
     """Expose bounded cross-Thread operations only to one root invocation."""
 
     controller: ThreadToolController
@@ -471,12 +492,49 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             )
         if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
             instructions += (
-                "\nBot Notes are Agent-managed Markdown handoffs. Use write_bot_note to retain concise objectives, "
-                "references, verified findings and next follow-up in your own slot; read_bot_note recovers it and "
-                "clear_bot_note empties it. Writing notes never wakes Bot or grants execution authority. "
-                "Notes remain available while Bot is off. After an uncertain write, read before retrying."
+                "\nBot Notes are Agent-managed Markdown handoffs. When the projected Bot collaboration status is enabled, "
+                "actively record unfinished work needing sustained follow-up in your own slot EARLY, not only at the end. "
+                "Use write_bot_note for objectives, references, verified progress, blockers and next actions; update on "
+                "significant changes and before yielding or handoff. Preserve still-open work, remove completed/cancelled "
+                "parts and clear_bot_note when nothing needs follow-up. Simple one-shot answers need no note. "
+                "The slot itself registers work; do not create a separate registration system. Read the latest projected "
+                "note before replacing it; read_bot_note recovers it after an uncertain write. Last committed write wins. "
+                "Notes are durable handoffs; send_thread_message(thread_id='thread_bot', kind='report', message=...) "
+                "asks Bot for attention now. For an initial handoff, blocker, question or verified result requiring "
+                "attention, update the note first, then send one substantive message; never send acknowledgement-only "
+                "replies. Managed workers route coordination through their Coordinator. Writing or clearing notes never "
+                "wakes Bot or grants execution authority. While Bot is off, existing notes remain editable offline "
+                "without active follow-up. Paused automation retains messages for later delivery."
             )
         return instructions
+
+    async def wrap_model_context(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if not self._notes_available or self.source_thread_id == BOT_THREAD_ID:
+            return projection
+        self._require_context(ctx)
+        assert self.controller.bot is not None
+        status = await self.controller.bot.collaboration_status()
+        note = await self.controller.bot.notes.read(caller=self.source_thread_id, thread_id=self.source_thread_id)
+        owned = (
+            ModelContextBlock(
+                source_id="a13n-harness-ui.bot-collaboration",
+                context_group="runtime_state",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=f'<bot-collaboration enabled="{str(status["enabled"]).lower()}" paused="{str(status["paused"]).lower()}" />',
+            ),
+            ModelContextBlock(
+                source_id="a13n-harness-ui.bot-note",
+                context_group="runtime_state",
+                placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                content=f'<bot-note thread_id="{escape(self.source_thread_id, quote=True)}">\n{escape(note.content, quote=False) if note.content else "No Bot Note."}\n</bot-note>',
+            ),
+        )
+        return ModelContextProjection(
+            blocks=(*projection.blocks, *(block for block in owned if not request.history.matches_latest(block)))
+        )
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         # Native construction and Run preparation request the same static tools.
@@ -924,6 +982,13 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
 
 def _thread_input(source: ThreadSummary, text: str, *, context: str | None = None) -> tuple[TextContent, TextContent]:
     """Keep model context separate from the attributed, surface-visible message."""
+    if source.thread_id == BOT_THREAD_ID:
+        context = (context or f"Message from Bot Thread {BOT_THREAD_ID}.") + (
+            " Work within the objective and authorization. Update your Bot Note before sending substantive findings, "
+            "questions, blockers or results with send_thread_message(thread_id='thread_bot', kind='report', message=...). "
+            "Also keep findings and validation in your saved final response for inspection. Sending does not wait "
+            "for an answer; finish the turn if blocked. Do not send acknowledgement-only replies or redispatch this task."
+        )
     if source.configuration.agent_source.kind == "live":
         context = (context or f"Task from Live Thread {source.thread_id}.") + (
             " Report progress or results with send_thread_message(thread_id='live', kind='report', message=...). "

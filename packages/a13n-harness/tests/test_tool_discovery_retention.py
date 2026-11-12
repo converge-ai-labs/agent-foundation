@@ -11,6 +11,7 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     CompactionPolicy,
     HandoffCapability,
+    ProxyToolSearchConfig,
     ToolSearchCapability,
     ToolSearchGroup,
 )
@@ -83,7 +84,7 @@ def _call(name, args, index):
 
 @pytest.mark.parametrize("names", [set(), {"lookup"}])
 async def test_pruning_notice_is_model_context_not_authored_input(names):
-    messages = discovery._discovery_messages(names, [], None, "retained-test")
+    messages = discovery._discovery_messages(names, {}, "retained-test")
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(messages))
     items = request_input_content(restored[0])
     assert len(items) == 1
@@ -882,3 +883,62 @@ async def test_replacement_commits_only_unchanged_snapshot_evictions(monkeypatch
     assert [item["name"] for item in state["called"]] == seen
     # Late completion is retained for a future selection, not inserted into the already-built request.
     assert snapshots[-1][1].model_request_parameters.revealed_tool_names == set()
+
+
+@pytest.mark.parametrize("nested", [False, True])
+async def test_scoped_proxy_retention_uses_each_current_surface_and_omits_removed_surfaces(nested):
+    effects = []
+
+    def issue() -> str:
+        effects.append("github")
+        return "issue"
+
+    connector = ToolSearchCapability(
+        groups={"github": ToolSearchGroup(FunctionToolset([issue], id="github"), "GitHub operations")},
+        surface_id="test.connector-tools",
+        config=ProxyToolSearchConfig(
+            search_name="search_connector_tools",
+            describe_name="describe_connector_tool",
+            call_name="call_connector_tool",
+            list_name="list_connector_tools",
+            groups_name="list_connector_groups",
+        ),
+    )
+    calls = [
+        ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 20}}),
+        ("call_connector_tool", {"group": "github", "tool": "issue", "arguments": {}}),
+    ]
+    if nested:
+        # Both controls still use the same native target directory inside CodeAct.
+        calls = [
+            (name, args)
+            if name != "call_tool"
+            else ("run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 20})"})
+            for name, args in calls
+        ]
+    capabilities = (_source(effects, proxy=True), connector, CodeActCapability(), HandoffCapability())
+    result, snapshots = await _run_calls(capabilities, [*calls, ("summarize", {"content": "Continue both tasks"})])
+
+    def retained(messages):
+        return {
+            part.tool_name: part.content["tools"]
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict) and part.content.get("retained")
+        }
+
+    entries = retained(snapshots[-1][0])
+    assert set(entries) == {"discover_tools", "search_connector_tools"}
+    assert [(item["group"], item["tool"]) for item in entries["discover_tools"]] == [("math", "double")]
+    assert [(item["group"], item["tool"]) for item in entries["search_connector_tools"]] == [("github", "issue")]
+    assert effects == [20, "github"]
+    assert result.state is not None
+    state = HarnessState.model_validate_json(result.state.model_dump_json())
+    _, resumed = await _run_calls(
+        (connector, HandoffCapability()),
+        [("summarize", {"content": "Only GitHub remains available"})],
+        previous_state=state,
+    )
+    entries = retained(resumed[-1][0])
+    assert set(entries) == {"search_connector_tools"}
+    assert [item["tool"] for item in entries["search_connector_tools"]] == ["issue"]

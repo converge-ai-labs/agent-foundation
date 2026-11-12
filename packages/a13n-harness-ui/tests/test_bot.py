@@ -210,7 +210,8 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             if thread_id != BOT_THREAD_ID:
                 assert "publish_bot_message" not in names
                 assert not any(tool.name == "finish_silently" for tool in info.output_tools)
-                assert "Leave substantive findings" in str(messages)
+                assert "kind='report'" in str(messages)
+                assert "saved final response" in str(messages)
                 working_runs += 1
                 yield "analysis complete" if working_runs == 1 else "follow-up complete"
                 return
@@ -222,7 +223,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
                 "properties": {},
                 "additionalProperties": False,
             }
-            assert "Only human input, Host heartbeat" in str(messages) + (info.instructions or "")
+            assert "explicit Thread messages can wake you" in str(messages) + (info.instructions or "")
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             if bot_steps == 1:
                 created = next(part.content for part in returns if part.tool_name == "create_thread")
@@ -864,17 +865,33 @@ async def test_early_automatic_publication_waits_for_receipt_correlation(tmp_pat
 
 
 async def test_bot_publications_notify_once_per_message_not_per_run(tmp_path: Path) -> None:
+    from a13n_harness_ui.connectors.models import SetupOffer
+
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
         await app._threads.bot_thread()
         notices = []
         bot._notify = lambda thread_id, notice: notices.append((thread_id, notice))
-        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
-        await bot.publish(message_id="one", text="First message", receipt_id="same-run")
+        offers = (
+            SetupOffer(
+                offer_id="setup-offer", thread_id=BOT_THREAD_ID, connector_key="github", created_at=datetime.now(UTC)
+            ),
+        )
+        for _ in range(2):
+            await bot.publish(
+                message_id="one",
+                text="First message",
+                receipt_id="same-run",
+                connector_setups=offers,
+                display_ids=("display-first",),
+            )
         await bot.publish(message_id="two", text="Second message", receipt_id="same-run")
         assert len(notices) == 2
         assert [notice.message_id for _, notice in notices] == ["one", "two"]
         assert [notice.receipt_id for _, notice in notices] == ["same-run", "same-run"]
         assert [notice.brief for _, notice in notices] == ["First message", "Second message"]
         assert all(thread_id == BOT_THREAD_ID for thread_id, _ in notices)
+        first = (await bot.snapshot()).messages[0]
+        assert first.connector_setups == offers
+        assert first.display_ids == ("display-first",)

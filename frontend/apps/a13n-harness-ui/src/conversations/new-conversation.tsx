@@ -459,6 +459,11 @@ function NewConversation({
             </p>
           )}
           <Composer
+            dictation={
+              selectors.data?.dictation?.model
+                ? { words: selectors.data.dictation.context_words ?? 2000 }
+                : undefined
+            }
             autoFocus={pageReady}
             threadId={threadId}
             activity={{ state: "inactive" }}

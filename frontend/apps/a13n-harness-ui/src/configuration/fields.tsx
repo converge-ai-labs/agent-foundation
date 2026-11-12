@@ -411,6 +411,44 @@ export function ResourceFields({
                 </div>
               </details>
             </SettingsSection>
+            <SettingsSection title={t("Dictation")} variant="grouped">
+              <SettingsRow label={t("Dictation model")}>
+                <ChoiceField
+                  label={t("Dictation model")}
+                  hideLabel
+                  className={styles.settingControl}
+                  value={String(get(["dictation", "model"]) ?? "")}
+                  onValueChange={(v) => set(["dictation", "model"], v || null)}
+                  options={[
+                    { value: "", label: t("Not configured") },
+                    ...(selectors.data?.models ?? [])
+                      .filter((m) => m.media_capabilities?.includes("audio"))
+                      .map((m) => ({
+                        value: m.model_id,
+                        label: m.name,
+                        icon: <ModelIcon model={m} />,
+                      })),
+                  ]}
+                />
+              </SettingsRow>
+              <SettingsRow
+                label={t("Context words on each side")}
+                controlId="dictation-context-words"
+              >
+                <Input
+                  id="dictation-context-words"
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={Number(get(["dictation", "context_words"]) ?? 2000)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isInteger(n) && n >= 0 && n <= 10000)
+                      set(["dictation", "context_words"], n);
+                  }}
+                />
+              </SettingsRow>
+            </SettingsSection>
             <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
                 label={t("File memory")}

@@ -298,7 +298,6 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
     for field in options:
         assert frozen[field] == submitted["run"]["options"][field]
     changes = (
-        ("context", {"headers": {"x-task": "different"}}, "request_context_immutable"),
         ("configuration", {"extensions": {"test.role": "different"}}, "run_configuration_immutable"),
         ("execution", {"environment": {"TASK": "different"}}, "execution_policy_immutable"),
         ("max_usage", {"requests": 4}, "usage_limit_immutable"),
@@ -343,6 +342,18 @@ async def test_snapshot_options_reject_changes_and_preserve_omitted_values(servi
     assert omitted.status_code == 201, omitted.text
     for field in options:
         assert omitted.json()["run"]["options"][field] == frozen[field]
+    scripted_model.say("Omitted values retained")
+    await (await runs_kit.attempt(service))
+    # Business context can advance without changing the immutable definition,
+    # configuration, execution policy or request limit.
+    replacement = {"headers": {"x-task": "different"}}
+    changed = await runs_kit.submit(
+        service, child.thread_id, runs_kit.message(parent, "Update context", options={"context": replacement})
+    )
+    assert changed.status_code == 201, changed.text
+    assert changed.json()["run"]["options"]["context"] == replacement
+    for field in ("configuration", "execution", "max_usage"):
+        assert changed.json()["run"]["options"][field] == frozen[field]
 
 
 @pytest.mark.anyio

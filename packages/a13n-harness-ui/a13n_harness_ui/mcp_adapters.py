@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import httpx2
 from a13n_harness.configuration import RunConfiguration
@@ -18,6 +21,7 @@ from fastmcp.client.transports import ClientTransport, StdioTransport, Streamabl
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.loader import read_mcp_file_values
@@ -25,6 +29,7 @@ from a13n_harness_ui.configuration.models import (
     EnvironmentVariableSource,
     McpCommandTransport,
     McpFileValueSource,
+    McpPrivateValueSource,
     McpRemoteTransport,
     McpValueSource,
 )
@@ -45,11 +50,15 @@ class HarnessUiMCP(MCP[AgentContext]):
         configuration_root: Path | None = None,
         apps: Connections | None = None,
         connections: HostConnections | None = None,
+        private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
+        operation_guard: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         if not isinstance(recipe, ResolvedMcpRecipe):
             raise TypeError("recipe must be a ResolvedMcpRecipe")
         self._recipe = recipe.model_copy(deep=True)
         self._configuration_root = configuration_root
+        self._private_values = private_values
+        self._operation_guard = operation_guard
         self._apps = apps
         self._connections = apps or connections
         transport = recipe.transport
@@ -78,6 +87,7 @@ class HarnessUiMCP(MCP[AgentContext]):
             self._recipe,
             self._configuration_root,
             configuration=ctx.deps.configuration,
+            private_values=self._private_values,
         )
         if self._connections is not None and (self._recipe.host_owned or self._apps is not None):
             connection = await self._connections.acquire(
@@ -112,6 +122,8 @@ class HarnessUiMCP(MCP[AgentContext]):
         else:
             client = Client(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
             toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
+        if self._operation_guard is not None:
+            toolset = _GuardedToolset(toolset, self._operation_guard)
         capability = AppMCP if self._apps is not None else MCP[AgentContext]
         replacement = capability(
             id=self._recipe.server_id,
@@ -123,18 +135,34 @@ class HarnessUiMCP(MCP[AgentContext]):
         return replacement
 
 
+@dataclass
+class _GuardedToolset(WrapperToolset[AgentContext]):
+    guard: Callable[[], Awaitable[None]]
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        await self.guard()
+        return await self.wrapped.get_tools(ctx)
+
+    async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        await self.guard()
+        return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+
+
 async def prepare_mcp_transport(
     recipe: ResolvedMcpRecipe,
     configuration_root: Path | None,
     *,
     configuration: RunConfiguration | None = None,
+    private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
 ) -> tuple[ClientTransport, str, float]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
     transport = recipe.transport
     configuration = configuration or RunConfiguration()
     if isinstance(transport, McpRemoteTransport):
         configuration.authorize_url(transport.url)
-        values = await resolve_mcp_values(transport.headers, configuration_root)
+        values = await resolve_mcp_values(transport.headers, configuration_root, private_values=private_values)
         client_transport = StreamableHttpTransport(
             transport.url,
             headers=values or None,
@@ -142,7 +170,7 @@ async def prepare_mcp_transport(
         )
         init_timeout = transport.init_timeout_seconds or (30 if recipe.host_owned or recipe.apps_enabled else 5)
     elif isinstance(transport, McpCommandTransport):
-        values = await resolve_mcp_values(transport.environment, configuration_root)
+        values = await resolve_mcp_values(transport.environment, configuration_root, private_values=private_values)
         client_transport = StdioTransport(
             command=transport.command, args=list(transport.arguments), env=values or None, keep_alive=False
         )
@@ -168,6 +196,8 @@ async def prepare_mcp_transport(
 async def resolve_mcp_values(
     values: dict[str, McpValueSource],
     configuration_root: Path | None,
+    *,
+    private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
 ) -> dict[str, str]:
     """Resolve values once per Run, without adding secret bytes to its recipe."""
     files: dict[tuple[str, str], list[McpFileValueSource]] = {}
@@ -196,6 +226,12 @@ async def resolve_mcp_values(
     for name, source in values.items():
         if isinstance(source, EnvironmentVariableSource):
             result[name] = _required_environment(source.env, purpose="MCP value")
+        elif isinstance(source, McpPrivateValueSource):
+            if private_values is None:
+                raise RunError(
+                    "Private MCP credentials are unavailable in this execution.", code="runtime_credential_missing"
+                )
+            result[name] = await private_values(source)
         else:
             template = literals[(source.file, source.source_digest, source.path)]
             result[name] = re.sub(

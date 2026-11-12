@@ -19,7 +19,6 @@ import { createTransport } from "../transport/client";
 import { ConversationNavigation } from "./navigation";
 import { useLiveWorkbench } from "../shell/presence";
 import { watchSummary } from "../transport/events";
-import { IDBFactory } from "fake-indexeddb";
 import { ResultTracker, ResultsContext } from "./results";
 import type { Schema } from "../transport/client";
 import { UnsentProvider, useTrackUnsent } from "./unsent";
@@ -43,6 +42,8 @@ function thread(id: string, project: string | null = "project-one") {
     root_activity: { state: "inactive" },
     archived: false,
     starred: false,
+    unread: false,
+    read_state_version: 0,
     metadata_version: 1,
     touched_at: undefined as string | undefined,
     role: "ordinary" as Schema<"ThreadSummary">["role"],
@@ -158,6 +159,20 @@ beforeEach(async () => {
           (item) => url.pathname === `/api/threads/${item.thread_id}`,
         );
         if (unsent) return json({ thread: unsent });
+      }
+      if (url.pathname === "/api/threads/read") {
+        const body = await request.json();
+        return json({
+          threads: body.threads.map((receipt: Schema<"ThreadReadReceipt">) => ({
+            ...thread(receipt.thread_id),
+            ...[...activeThreads, ...workerThreads].find(
+              (row) => row.thread_id === receipt.thread_id,
+            ),
+            unread: false,
+            read_state_version: receipt.read_state_version + 1,
+          })),
+          total: body.threads.length,
+        });
       }
       if (url.pathname === "/api/threads/lookup") {
         const body = await request.json();
@@ -1216,7 +1231,6 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
 });
 
 it("pins off-page unread results, counts collapsed groups, and keeps running dots independent of archive and pagination", async () => {
-  vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   const completion = {
@@ -1247,8 +1261,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     },
   ];
   for (const item of [unread, running, archived]) {
-    await results.follow({ ...item, completion: null });
-    results.observe(item);
+    results.observe({ ...item, unread: true, read_state_version: 1 });
   }
   mount("/", false, results);
   const group = await screen.findByRole("region", { name: "One" });
@@ -1284,8 +1297,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     completion,
   } as Schema<"ThreadSummary">;
   await act(async () => {
-    await results.follow({ ...otherProject, completion: null });
-    results.observe(otherProject);
+    results.observe({ ...otherProject, unread: true, read_state_version: 1 });
   });
   fireEvent.click(
     within(group).getByRole("button", { name: "Mark all results read in One" }),
@@ -1798,7 +1810,6 @@ it("reports failed follow-up changes without hiding or changing the Coordinator"
 });
 
 it("counts an unread Coordinator once and retains its anchor after fresh pagination", async () => {
-  vi.stubGlobal("indexedDB", new IDBFactory());
   coordinators = [{ ...thread("owner"), role: "coordinator" }];
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
@@ -1811,8 +1822,7 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
       completed_at: "2026-09-23T00:00:00Z",
     },
   } as Schema<"ThreadSummary">;
-  await results.follow({ ...unread, completion: null });
-  results.observe(unread);
+  results.observe({ ...unread, unread: true, read_state_version: 1 });
   mount("/", false, results);
   const group = await screen.findByRole("region", { name: "One" });
   expect(within(group).getByLabelText("1 chat with new results")).toBeTruthy();
@@ -2061,7 +2071,6 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
 });
 
 it("limits read history while retaining every active, unread and selected chat", async () => {
-  vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   activeThreads = Array.from({ length: 7 }, (_, i) => ({
@@ -2078,8 +2087,7 @@ it("limits read history while retaining every active, unread and selected chat",
         completed_at: "2026-09-16T00:00:00Z",
       },
     } as Schema<"ThreadSummary">;
-    await results.follow({ ...item, completion: null });
-    results.observe(item);
+    results.observe({ ...item, unread: true, read_state_version: 1 });
   }
   mount("/threads/selected-old", false, results);
   const group = await screen.findByRole("region", { name: "One" });
@@ -2149,7 +2157,6 @@ it("previews project paths on keyboard focus without loading collapsed history",
 });
 
 it("keeps older history reachable when every loaded recent row becomes unread", async () => {
-  vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   mount("/", false, results);
@@ -2166,8 +2173,7 @@ it("keeps older history reachable when every loaded recent row becomes unread", 
           completed_at: "2026-09-16T00:00:00Z",
         },
       } as Schema<"ThreadSummary">;
-      await results.follow({ ...item, completion: null });
-      results.observe(item);
+      results.observe({ ...item, unread: true, read_state_version: 1 });
     }
   });
   expect(screen.getByRole("heading", { name: "New results - 5" })).toBeTruthy();
@@ -2180,7 +2186,6 @@ it("keeps older history reachable when every loaded recent row becomes unread", 
 });
 
 it("keeps the owner of an unread worker above read history", async () => {
-  vi.stubGlobal("indexedDB", new IDBFactory());
   coordinators = [
     { ...thread("worker-owner"), role: "coordinator", archived: true },
   ];
@@ -2197,8 +2202,7 @@ it("keeps the owner of an unread worker above read history", async () => {
       completed_at: "2026-09-16T00:00:00Z",
     },
   } as Schema<"ThreadSummary">;
-  await results.follow({ ...worker, completion: null });
-  results.observe(worker);
+  results.observe({ ...worker, unread: true, read_state_version: 1 });
   mount("/", false, results);
   fireEvent.click(await screen.findByRole("button", { name: /^One/ }));
   const owner = await screen.findByRole("link", {
@@ -2638,7 +2642,6 @@ it("keeps an archived Coordinator reachable for an unselected active worker in R
 
 it("keeps the archived owner of an off-page unread worker reachable in Recent", async () => {
   localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
-  vi.stubGlobal("indexedDB", new IDBFactory());
   coordinators = [
     { ...thread("unread-owner"), role: "coordinator", archived: true },
   ];
@@ -2655,8 +2658,7 @@ it("keeps the archived owner of an off-page unread worker reachable in Recent", 
       completed_at: "2026-10-30T00:00:00Z",
     },
   } as Schema<"ThreadSummary">;
-  await results.follow({ ...worker, completion: null });
-  results.observe(worker);
+  results.observe({ ...worker, unread: true, read_state_version: 1 });
   mount("/", false, results);
   const recent = await screen.findByRole("region", {
     name: "Recent chats",

@@ -8,6 +8,8 @@ Use `HarnessUiApp` when your Python application needs Harness UI's configuration
 
 Choose [Harness directly](../a13n-harness/hosting.md) if your application will own configuration and persistence. Choose [Service](../a13n-service/index.md) for managed execution that can recover on another worker.
 
+Trusted WebUI integrations can register Connector definitions through `HarnessUiIntegrations(connectors=(definition,))`, passed to `open_harness_ui_app(..., integrations=...)`. [Connectors](connectors.md#develop-a-trusted-connector) explains the SDK, setup lifecycle and event ingress. Connector ownership starts with the WebUI lifecycle; embedding an App alone does not activate its background runtime.
+
 ## Open, submit, and wait
 
 Before running the script:
@@ -117,6 +119,24 @@ Root and child steering follow the current global `input.steering_mode`: `immedi
 Generic tools run inline by default. Set `tools.execution.mode: auto` for timeout-based handoff. Process-backed top-level Shell calls can yield after the foreground wait in either mode; foreground-only mounts follow the generic mode. The App supplies the runtime needed for immediate steering and retained execution.
 
 Use `app.tool_executions(thread_id, offset=0, limit=20)` for non-consuming, exact-Thread status and `app.cancel_tool_execution(thread_id, execution_id)` to request tool cancellation. Conversation cancellation and tool cancellation are separate. Cancelling a conversation also suppresses automatic completion wake until new user input. Retained records and completed results survive App restart. Results expire one hour after first consumption, bounded by one day after completion. Envd Shell work can recover while its original external daemon and Session survive; other unfinished in-process calls become `lost` without replay.
+
+## Persist external business context
+
+Trusted integrations can retain JSON business metadata and request headers independently of conversation history:
+
+```python
+from a13n_harness_ui.external_context import ExternalContext
+
+await app.set_thread_external_context(
+    thread_id=thread_id,
+    context=ExternalContext(metadata={"tenant": "acme"}, headers={"x-trace-id": "trace-123"}),
+)
+receipt = await app.submit_thread(thread_id=thread_id, prompt="Continue")
+```
+
+The update replaces the complete value and commits independently of input submission. Later Runs, including idle tool-completion wakes and App restarts, use the latest saved value. An active Run keeps its admitted snapshot even if you update the head while it is running. Omitting an update preserves context; passing `ExternalContext()` clears it. Clearing conversation history leaves this separate business context intact.
+
+Trusted capabilities and adapters read `ctx.deps.metadata` and `ctx.deps.request_context.headers`. Context is not automatically included in prompts, inspection results, shell environments or configured MCP requests. Store credentials through their existing credential APIs. A newly delegated async child inherits the parent Run's snapshot and then has its own Thread-local context; use the child's Thread ID to update its future Runs. For an async child, the snapshot lasts for one stream segment: explicit resume, tool-completion continuation and planned restart each open a new segment and read the child's latest saved context. Internal model retries within the active segment keep its snapshot.
 
 ## Thread queries and mutations
 

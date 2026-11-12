@@ -115,6 +115,8 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "bot_input",
             "bot_message",
             "connector_configuration",
+            "connector_state",
+            "connector_setup_offer",
             "bot_inbox",
             "bot_note",
             "child_execution",

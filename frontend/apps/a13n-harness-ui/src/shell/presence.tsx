@@ -120,8 +120,13 @@ export function useLiveWorkbench(
           event?.thread_id === "thread_bot"
         )
           scheduleRefresh(queries, (query) => query.queryKey[0] === "bot");
-        if (!event || event.kind === "configuration") results?.invalidate();
-        else if (["thread", "root_operation"].includes(event.kind))
+        if (!event || event.kind === "configuration") {
+          results?.invalidate();
+          scheduleRefresh(
+            queries,
+            (query) => query.queryKey[0] === "connectors",
+          );
+        } else if (["thread", "root_operation"].includes(event.kind))
           results?.invalidate(
             event.root_thread_id ?? event.thread_id ?? undefined,
           );
@@ -141,6 +146,9 @@ export function useLiveWorkbench(
             (query) => query.queryKey[0] === "unsent-threads",
           );
         if (event?.kind === "thread_work") {
+          scheduleRefresh(queries, (query) =>
+            ["bot-note", "bot-notes"].includes(String(query.queryKey[0])),
+          );
           const id = event.root_thread_id ?? event.thread_id;
           if (id) refreshThread(queries, id, "work");
         } else if (

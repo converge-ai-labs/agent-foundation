@@ -51,7 +51,8 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.tools.tool_search import proxy_control, proxy_membership, resolve_proxy_call
+from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder
+from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
 from ._instructions import tool_instruction
 
@@ -451,7 +452,10 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
             prepared = catalog.prepared_tools[canonical_name]
             if proxy_control(prepared.tool_def) == "call":
-                canonical_name, kwargs = resolve_proxy_call(active_tools, kwargs)
+                forwarder = (prepared.tool_def.metadata or {}).get(FORWARDED_TOOL_KEY)
+                if not isinstance(forwarder, ToolCallForwarder):
+                    raise RuntimeError("ToolSearch call control is missing its native forwarder")
+                canonical_name, kwargs = forwarder.resolve(active_tools, kwargs)
                 prepared = active_tools[canonical_name]
                 if not is_codeact_tool_eligible(canonical_name, prepared):
                     raise RuntimeError(
