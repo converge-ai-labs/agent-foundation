@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.platform import PLATFORM_GROUPS
-from a13n_service.resources.agents.schemas import AgentConfig, Instructions
+from a13n_service.resources.agents.schemas import AgentConfig, Instructions, ToolSearch
 from a13n_service.resources.agents.validation import validate_config
 from a13n_service.resources.models.service import model_settings, resolve_model
 from a13n_service.runs.runtime import Runtime
@@ -100,7 +100,7 @@ async def derive(
     client_tools = _select({item.name: item for item in parent.client_tools}, selection.client_tools, "client_tools")
     plugins = _select({item.instance_name: item for item in parent.plugins}, selection.plugins, "plugins")
     search = parent.tool_search
-    if search is not None:
+    if isinstance(search, ToolSearch):
         search = search.model_copy(
             update={
                 "groups": {

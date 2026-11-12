@@ -244,6 +244,13 @@ class ToolSearch(ToolSearchConfiguration):
         return frozenset(source for group in self.groups.values() for source in group.connections)
 
 
+class NativeToolSearch(_Frozen):
+    """Ungrouped native discovery of selected Service tools; plugins keep their own settings."""
+
+    mode: Literal["native"]
+    sources: AutomaticToolSearch = Field(default_factory=AutomaticToolSearch)
+
+
 class AgentConfig(_Frozen):
     execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     model: Key
@@ -258,7 +265,7 @@ class AgentConfig(_Frozen):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
-    tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
+    tool_search: ToolSearch | NativeToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     builtin_skills: frozenset[BuiltinSkillName] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
@@ -309,7 +316,7 @@ class AgentConfig(_Frozen):
                 if any(selector.startswith(source) and selector != source for source in connection_prefixes):
                     continue
                 raise ValueError("Reviewer rule references an unavailable MCP tool identity")
-        if self.tool_search is not None:
+        if isinstance(self.tool_search, ToolSearch):
             connections = {item.connection_id for item in self.connection_tools}
             plugins = {item.instance_name for item in self.plugins}
             for name, group in self.tool_search.groups.items():
@@ -338,7 +345,7 @@ class AgentConfigurationChanges(_Frozen):
     skills: tuple[SkillSelection, ...] | MISSING = Field(default=MISSING, max_length=512)
     skill_sync: SkillSync | MISSING = Field(default=MISSING)
     connection_tools: tuple[ConnectionSelection, ...] | MISSING = Field(default=MISSING, max_length=128)
-    tool_search: ToolSearch | MISSING | None = Field(default=MISSING)
+    tool_search: ToolSearch | NativeToolSearch | MISSING | None = Field(default=MISSING)
     builtin_skills: frozenset[BuiltinSkillName] | MISSING = Field(default=MISSING)
     client_tools: tuple[ClientToolDefinition, ...] | MISSING = Field(default=MISSING, max_length=128)
     user_questions: bool | MISSING = Field(default=MISSING)
@@ -391,7 +398,7 @@ class AgentOverride(_Frozen):
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
-    tool_search: ToolSearch | None = None
+    tool_search: ToolSearch | NativeToolSearch | None = None
     builtin_skills: frozenset[BuiltinSkillName] | None = None
     subagents: Subagents | None = None
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)

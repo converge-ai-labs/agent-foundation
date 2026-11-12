@@ -375,3 +375,62 @@ it("edits individual connection exclusions under advanced grouping and keeps the
     }),
   );
 });
+
+it("edits native discovery without grouping and preserves selections across mode switches", async () => {
+  const submit = vi.fn();
+  function Editor() {
+    const draft = useAgentDraft({
+      model: "test",
+      connection_tools: [{ connection_id: id }],
+      tool_search: { mode: "native", sources: {} },
+    });
+    return (
+      <>
+        <ToolSearchSection draft={draft} readOnly={false} />
+        <button
+          onClick={() => {
+            const result = buildDraftConfig(draft, undefined, (key) => key);
+            if (result.ok) submit(result.config);
+          }}
+        >
+          Save
+        </button>
+      </>
+    );
+  }
+  const user = userEvent.setup();
+  render(<Editor />);
+  expect(
+    screen.queryByRole("button", { name: /Advanced grouping/ }),
+  ).toBeNull();
+  await user.click(screen.getByRole("checkbox", { name: "Knowledge" }));
+  await user.click(screen.getByRole("button", { name: "Add tool source" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Files" }));
+  await user.click(screen.getByRole("combobox", { name: "Mode" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Discover tools on demand" }),
+  );
+  expect(
+    screen.getByRole("button", { name: /Advanced grouping/ }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("combobox", { name: "Mode" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Native tool discovery" }),
+  );
+  expect(
+    screen.queryByRole("button", { name: /Advanced grouping/ }),
+  ).toBeNull();
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Knowledge" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(submit.mock.calls[0][0].tool_search).toEqual({
+    mode: "native",
+    sources: {
+      capabilities: ["computer", "browser", "files"],
+      exclude_connections: [id],
+    },
+  });
+});

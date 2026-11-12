@@ -1,9 +1,17 @@
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
-import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
+import {
+  Button,
+  Checkbox,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { FieldHelp } from "../../../shared/forms";
 import {
   automaticSources,
+  discoveryPolicy,
   toggleDiscoverySource,
   usesToolDiscovery,
   type SearchSource,
@@ -25,7 +33,7 @@ export function ToolSearchSources({
 }) {
   const { t } = useTranslation();
   const choices =
-    draft.toolSearch.automatic != null
+    discoveryPolicy(draft.toolSearch) != null
       ? automaticSources(sources, catalog).map((source) =>
           source.id === "all" ? { ...source, label: t(source.label) } : source,
         )
@@ -42,7 +50,7 @@ export function ToolSearchSources({
   );
   const direct = [
     ...remaining.filter((source) => source.kind !== "plugins"),
-    ...(draft.toolSearch.automatic != null &&
+    ...(discoveryPolicy(draft.toolSearch) != null &&
     selected.some((source) => source.id === "all")
       ? excluded
       : []),
@@ -150,5 +158,64 @@ export function ToolSearchSources({
         </div>
       )}
     </div>
+  );
+}
+
+export function ToolSearchConnections({
+  draft,
+  sources,
+  catalog,
+  readOnly,
+}: {
+  draft: AgentDraft;
+  sources: SearchSource[];
+  catalog: Schema["ToolsetCatalog"];
+  readOnly: boolean;
+}) {
+  const { t } = useTranslation();
+  const policy = discoveryPolicy(draft.toolSearch);
+  if (
+    policy == null ||
+    !sources.some((source) => source.kind === "connections")
+  )
+    return null;
+  return (
+    <fieldset
+      className={styles.searchSourceList}
+      disabled={
+        readOnly ||
+        !(policy.connections ?? catalog.discovery_defaults.connections)
+      }
+    >
+      <legend className={styles.searchLabel}>
+        {t("MCP connections")}
+        <FieldHelp label={t("About connection discovery")}>
+          {t(
+            "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
+          )}
+        </FieldHelp>
+      </legend>
+      {sources
+        .filter((source) => source.kind === "connections")
+        .map((source) => (
+          <label key={source.id} className={styles.searchSource}>
+            <Checkbox
+              checked={usesToolDiscovery(draft.toolSearch, source)}
+              onCheckedChange={(checked) =>
+                draft.setToolSearch((current) =>
+                  toggleDiscoverySource(
+                    current,
+                    source,
+                    checked === true,
+                    sources,
+                  ),
+                )
+              }
+            />
+            <span className={styles.searchSourceLabel}>{source.label}</span>
+            {!source.available && <small>{t("No enabled tools")}</small>}
+          </label>
+        ))}
+    </fieldset>
   );
 }
