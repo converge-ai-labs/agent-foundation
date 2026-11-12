@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import a13n_harness_ui.app as app_module
 import uvicorn
 import yaml
 from a13n_harness.content import project_input_content, request_input_content
@@ -20,6 +21,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
 from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.dictation import DictationResult
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
@@ -156,9 +158,17 @@ def configuration(root: Path) -> Path:
         "a13n-harness-ui.yaml": {
             "schema_version": "1",
             "defaults": {"agent": "agent-review"},
+            "dictation": {"backend": "codex", "model": "model-review", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
-            "dictation": {"model": "model-review"},
             "memory": {"auto_organize": {"enabled": False}},
+        },
+        "subscription_groups/review.yaml": {
+            "schema_version": "1",
+            "kind": "subscription_group",
+            "id": "codex-review",
+            "name": "Codex · Design review",
+            "provider": "codex",
+            "accounts": [],
         },
         "models/review.yaml": {
             "schema_version": "1",
@@ -437,6 +447,13 @@ async def serve(root: Path, port: int):
     AgentReconstructor.reconstruct = reconstruct
     HarnessUiModelResolver.resolve = resolve
     model_catalog.fetch_directory = directory
+
+    async def subscription_dictation(self, request, source):
+        # Exercise real recording and one final insertion without provider I/O.
+        await asyncio.sleep(3)
+        return DictationResult(text="Add a regression test for dictation.")
+
+    app_module.HarnessUiApp._transcribe_subscription = subscription_dictation
     settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
 
     @asynccontextmanager
@@ -519,7 +536,7 @@ async def serve(root: Path, port: int):
                 expected_version=None,
             )
             setup = await app.begin_connector_setup("connector-github-work")
-            saved = await app.act_connector_setup(
+            await app.act_connector_setup(
                 setup.session_id,
                 SetupCommand(
                     operation_id="fixture-save",
@@ -527,9 +544,6 @@ async def serve(root: Path, port: int):
                     action="save",
                     values={"token": "fictional-review-token"},
                 ),
-            )
-            await app.act_connector_setup(
-                setup.session_id, SetupCommand(operation_id="fixture-done", version=saved.version, action="done")
             )
             connection_chat = await app.create_thread(
                 title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")

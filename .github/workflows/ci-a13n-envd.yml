@@ -178,6 +178,8 @@ jobs:
 
   protocol:
     name: EIP protocol
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true'
     runs-on: ubuntu-24.04
@@ -219,7 +221,7 @@ jobs:
         env:
           PYTEST_ADDOPTS: --durations=30 -r a
           EIP_TEST_REPORT_DIR: ${{ github.workspace }}/test-results
-        run: make eip-verify eip-integration-test
+        run: make eip-verify eip-integration-test ENVD_CARGO_ARGS=--no-default-features
 
       - name: Retain EIP test reports
         if: always()
@@ -278,6 +280,8 @@ jobs:
   daemon:
     name: a13n-envd (${{ matrix.name }}, ${{ matrix.envd-variant }})
     env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
       BOXLITE_DEPS_STUB: "2"
       BOXLITE_EMBED_RUNTIME: "1"
     needs: changes
@@ -290,26 +294,54 @@ jobs:
           - name: Linux x86_64
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            envd-variant: default
+            envd-variant: slim
             features: ""
-            cache-key: linux-x86_64
+            cache-key: slim-linux-x86_64
             complete: true
             linux: true
             components: clippy, rustfmt
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            envd-variant: default
+            envd-variant: slim
             features: ""
-            cache-key: linux-aarch64
+            cache-key: slim-linux-aarch64
             complete: false
             linux: true
             components: ""
           - name: Windows
             runner: windows-2025
             target: x86_64-pc-windows-msvc
-            envd-variant: default
+            envd-variant: slim
             features: ""
+            cache-key: slim-windows
+            complete: false
+            linux: false
+            components: ""
+          # macOS exercises the Seatbelt-backed execution-isolation path.
+          - name: macOS
+            runner: macos-15
+            target: aarch64-apple-darwin
+            envd-variant: slim
+            features: ""
+            cache-key: slim-macos
+            complete: false
+            linux: false
+            components: ""
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: default
+            features: desktop
+            cache-key: linux-x86_64
+            complete: false
+            linux: true
+            components: clippy, rustfmt
+          - name: Windows
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            envd-variant: default
+            features: desktop
             cache-key: windows
             complete: false
             linux: false
@@ -319,7 +351,7 @@ jobs:
             runner: macos-15
             target: aarch64-apple-darwin
             envd-variant: default
-            features: ""
+            features: desktop
             cache-key: macos
             complete: false
             linux: false
@@ -332,7 +364,7 @@ jobs:
             cache-key: linux-x86_64-vm
             complete: false
             linux: true
-            components: ""
+            components: clippy
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
@@ -355,15 +387,18 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap xvfb xauth xclip protobuf-compiler \
-            dbus-daemon dbus-x11 at-spi2-core libatk-adaptor python3-gi gir1.2-gtk-3.0
+          sudo apt-get install --yes bubblewrap
+          if [[ "${{ matrix.envd-variant }}" == default ]]; then
+            sudo apt-get install --yes xvfb xauth xclip dbus-daemon dbus-x11 at-spi2-core libatk-adaptor python3-gi gir1.2-gtk-3.0
+          fi
+          if [[ "${{ matrix.envd-variant }}" == vm ]]; then sudo apt-get install --yes protobuf-compiler; fi
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
       # setup-python changes PKG_CONFIG_PATH, which native Cargo build scripts
       # track. Set it up before compiling so later tests reuse those artifacts.
-      - name: Set up Python for size and native EIP tests
+      - name: Set up Python for native EIP tests
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -377,7 +412,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          shared-key: a13n-envd-${{ matrix.cache-key }}
+          shared-key: a13n-envd-tests-${{ matrix.cache-key }}
 
       - name: Run complete a13n-envd checks
         if: matrix.complete
@@ -385,18 +420,222 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
-          make rust-check rust-package 2>&1 | tee test-results/native.log
+          make rust-format-check
+          cargo clippy --locked --package a13n-envd --no-default-features --all-targets -- -D warnings 2>&1 | tee test-results/lint.log
 
-      # Integration tests compile the distributable binary too; size reporting
-      # consumes that exact binary without a second cargo build.
+      # Run behavior tests without release optimization or debug symbols.
+      # Production binaries and size budgets are checked in parallel below.
       - name: Run a13n-envd tests
         shell: bash
         env:
           FEATURES: ${{ matrix.features }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
           set -o pipefail
           mkdir -p test-results
-          cargo test --release --locked --package a13n-envd --features "$FEATURES" 2>&1 | tee test-results/native.log
+          args=(--locked --package a13n-envd --no-default-features --features "$FEATURES")
+          if [[ "$ENVD_VARIANT" == slim ]]; then
+            cargo test "${args[@]}" 2>&1 | tee test-results/native.log
+          else
+            cargo test "${args[@]}" --bin a13n-envd --test device_startup --test version_cli
+            if [[ "$ENVD_VARIANT" == default ]]; then
+              cargo test "${args[@]}" --lib computer
+              cargo test "${args[@]}" --lib accessibility
+            else
+              cargo test "${args[@]}" --lib vm
+            fi
+          fi
+
+      - name: Lint desktop and VM paths
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant != 'slim'
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: cargo clippy --locked --package a13n-envd --no-default-features --features "$FEATURES" --all-targets -- -D warnings
+
+      - name: Verify crate contents
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'default'
+        run: cargo package --locked --allow-dirty --package a13n-envd --no-verify
+
+      - name: Compile native AppKit accessibility fixture
+        if: matrix.name == 'macOS' && matrix.envd-variant == 'default'
+        shell: bash
+        run: |
+          xcrun clang -fobjc-arc -framework AppKit dev/fixtures/macos-desktop/accessibility.m -o "$RUNNER_TEMP/accessibility-fixture"
+
+      - name: Test native X11 clipboard under Xvfb
+        if: matrix.linux && matrix.envd-variant == 'default'
+        shell: bash
+        run: |
+          set -o pipefail
+          # Tests close every X client between cases; keep the server from
+          # resetting while the next test connects.
+          xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --locked --package a13n-envd --features "${{ matrix.features }}" --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
+
+      - name: Set up uv for native EIP tests
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Test native AT-SPI in an isolated desktop and user bus
+        if: matrix.linux && matrix.envd-variant == 'default'
+        shell: bash
+        env:
+          ENVD_FEATURES: ${{ matrix.features }}
+          ENVD_CARGO_PROFILE: dev
+          # Reuse cargo test's binary; a standalone cargo build changes the
+          # dev-dependency feature graph and needlessly rebuilds dependencies.
+          ENVD_BINARY: ${{ github.workspace }}/target/debug/a13n-envd
+        run: |
+          set -o pipefail
+          make accessibility-linux-test 2>&1 | tee test-results/accessibility-linux.log
+
+      - name: Exercise native system information and metrics through every EIP carrier
+        if: matrix.envd-variant == 'slim'
+        shell: bash
+        env:
+          EXE_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          export A13N_ENVD_TEST_BINARY="$PWD/target/debug/a13n-envd$EXE_SUFFIX"
+          uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest \
+            packages/a13n-envd-client/tests/eip/test_device_sessions.py \
+            -k monitoring -q --junitxml=test-results/monitoring-eip.xml
+
+      # A plain Python runtime supplies the test driver, not an Envd release.
+      # Mount the binary built above; namespace permissions allow managed bootstrap.
+      - name: Test current Envd binary against real cgroup limits
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'slim'
+        shell: bash
+        run: |
+          set -o pipefail
+          docker run --rm --network=none --cap-add=SYS_ADMIN \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            --cgroupns=private --cpus=0.5 --memory=512m --user 0 \
+            --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=/test-bin/a13n-envd,readonly" \
+            --mount "type=bind,src=$PWD/crates/a13n-envd/tests,dst=/tests,readonly" \
+            --entrypoint python3 python:3.13-slim-trixie \
+            /tests/monitoring_linux.py /test-bin/a13n-envd 2>&1 | tee test-results/monitoring-managed.log
+
+      - name: Test managed OTLP export and Session credential isolation
+        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'slim'
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked --package a13n-envd --no-default-features --test otlp --no-run --message-format=json > test-results/otlp-build.jsonl
+          test_binary=$(python3 -c 'import json; from pathlib import Path; artifacts = [json.loads(line) for line in Path("test-results/otlp-build.jsonl").read_text().splitlines()]; print(next(item["executable"] for item in artifacts if item.get("target", {}).get("name") == "otlp" and item.get("executable")))')
+          docker run --rm --network=none --cap-add=SYS_ADMIN \
+            --security-opt seccomp=unconfined --security-opt apparmor=unconfined --user 0 \
+            --mount "type=bind,src=$PWD/target/debug/a13n-envd,dst=$PWD/target/debug/a13n-envd,readonly" \
+            --mount "type=bind,src=$test_binary,dst=/otlp-test,readonly" \
+            --entrypoint /otlp-test python:3.13-slim-trixie \
+            managed_mtls_export_keeps_credentials_out_of_sessions --ignored --nocapture 2>&1 | tee test-results/otlp-managed.log
+
+      - name: Exercise native Windows EIP process ownership and fail-closed isolation
+        if: matrix.runner == 'windows-2025' && matrix.envd-variant == 'slim'
+        env:
+          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}\target\debug\a13n-envd.exe
+        run: >-
+          uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest
+          packages/a13n-envd-client/tests/eip/test_windows_process_e2e.py
+          packages/a13n-envd-client/tests/eip/test_stdio_e2e.py
+          -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
+          -q --junitxml=test-results/windows-eip.xml
+
+      - name: Retain native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: envd-${{ matrix.cache-key }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7
+
+  size:
+    name: Envd release size (${{ matrix.target }}, ${{ matrix.envd-variant }})
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      BOXLITE_DEPS_STUB: "2"
+      BOXLITE_EMBED_RUNTIME: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: slim
+            features: ""
+            cache-key: slim-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            envd-variant: slim
+            features: ""
+            cache-key: slim-linux-aarch64
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            envd-variant: slim
+            features: ""
+            cache-key: slim-windows
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            envd-variant: slim
+            features: ""
+            cache-key: slim-macos
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: default
+            features: desktop
+            cache-key: linux-x86_64
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            envd-variant: default
+            features: desktop
+            cache-key: windows
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            envd-variant: default
+            features: desktop
+            cache-key: macos
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            envd-variant: vm
+            features: vm
+            cache-key: linux-x86_64-vm
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            envd-variant: vm
+            features: vm
+            cache-key: linux-aarch64-vm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install VM build dependency
+        if: matrix.envd-variant == 'vm'
+        run: sudo apt-get update && sudo apt-get install --yes protobuf-compiler
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache production Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          shared-key: a13n-envd-${{ matrix.cache-key }}
+
+      - name: Build production binary without test executables
+        shell: bash
+        env:
+          FEATURES: ${{ matrix.features }}
+        run: cargo build --release --locked --package a13n-envd --no-default-features --features "$FEATURES"
 
       - name: Measure release binary and archive size
         if: ${{ !cancelled() }}
@@ -418,97 +657,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Compile native AppKit accessibility fixture
-        if: matrix.name == 'macOS'
-        shell: bash
-        run: |
-          xcrun clang -fobjc-arc -framework AppKit dev/fixtures/macos-desktop/accessibility.m -o "$RUNNER_TEMP/accessibility-fixture"
-
-      - name: Test native X11 clipboard under Xvfb
-        if: matrix.linux
-        shell: bash
-        run: |
-          set -o pipefail
-          # Tests close every X client between cases; keep the server from
-          # resetting while the next test connects.
-          xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --release --locked --package a13n-envd --features "${{ matrix.features }}" --lib clipboard -- --include-ignored --test-threads=1 2>&1 | tee test-results/clipboard-x11.log
-
-      - name: Set up uv for native EIP tests
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Test native AT-SPI in an isolated desktop and user bus
-        if: matrix.linux
-        shell: bash
-        env:
-          ENVD_FEATURES: ${{ matrix.features }}
-        run: |
-          set -o pipefail
-          make accessibility-linux-test 2>&1 | tee test-results/accessibility-linux.log
-
-      - name: Exercise native system information and metrics through every EIP carrier
-        shell: bash
-        env:
-          EXE_SUFFIX: ${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: |
-          export A13N_ENVD_TEST_BINARY="$PWD/target/release/a13n-envd$EXE_SUFFIX"
-          uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest \
-            packages/a13n-envd-client/tests/eip/test_device_sessions.py \
-            -k monitoring -q --junitxml=test-results/monitoring-eip.xml
-
-      # A plain Python runtime supplies the test driver, not an Envd release.
-      # Mount the binary built above; namespace permissions allow managed bootstrap.
-      - name: Test current Envd binary against real cgroup limits
-        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'default'
-        shell: bash
-        run: |
-          set -o pipefail
-          docker run --rm --network=none --cap-add=SYS_ADMIN \
-            --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
-            --cgroupns=private --cpus=0.5 --memory=512m --user 0 \
-            --mount "type=bind,src=$PWD/target/release/a13n-envd,dst=/test-bin/a13n-envd,readonly" \
-            --mount "type=bind,src=$PWD/crates/a13n-envd/tests,dst=/tests,readonly" \
-            --entrypoint python3 python:3.13-slim-trixie \
-            /tests/monitoring_linux.py /test-bin/a13n-envd 2>&1 | tee test-results/monitoring-managed.log
-
-      - name: Test managed OTLP export and Session credential isolation
-        if: matrix.runner == 'ubuntu-24.04' && matrix.envd-variant == 'default'
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo test --release --locked --package a13n-envd --test otlp --no-run --message-format=json > test-results/otlp-build.jsonl
-          test_binary=$(python3 -c 'import json; from pathlib import Path; artifacts = [json.loads(line) for line in Path("test-results/otlp-build.jsonl").read_text().splitlines()]; print(next(item["executable"] for item in artifacts if item.get("target", {}).get("name") == "otlp" and item.get("executable")))')
-          docker run --rm --network=none --cap-add=SYS_ADMIN \
-            --security-opt seccomp=unconfined --security-opt apparmor=unconfined --user 0 \
-            --mount "type=bind,src=$PWD/target/release/a13n-envd,dst=$PWD/target/release/a13n-envd,readonly" \
-            --mount "type=bind,src=$test_binary,dst=/otlp-test,readonly" \
-            --entrypoint /otlp-test python:3.13-slim-trixie \
-            managed_mtls_export_keeps_credentials_out_of_sessions --ignored --nocapture 2>&1 | tee test-results/otlp-managed.log
-
-      - name: Exercise native Windows EIP process ownership and fail-closed isolation
-        if: matrix.runner == 'windows-2025'
-        env:
-          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}\target\release\a13n-envd.exe
-        run: >-
-          uv run --locked --package a13n-envd-client --group test --no-default-groups python -m pytest
-          packages/a13n-envd-client/tests/eip/test_windows_process_e2e.py
-          packages/a13n-envd-client/tests/eip/test_stdio_e2e.py
-          -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
-          -q --junitxml=test-results/windows-eip.xml
-
-      - name: Retain native test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: envd-${{ matrix.cache-key }}-${{ github.run_attempt }}
-          path: test-results/
-          retention-days: 7
 
   validation:
     name: a13n-envd checks
-    needs: [changes, protocol, client, daemon]
+    needs: [changes, protocol, client, daemon, size]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -519,12 +671,14 @@ jobs:
           PROTOCOL_RESULT: ${{ needs.protocol.result }}
           CLIENT_RESULT: ${{ needs.client.result }}
           DAEMON_RESULT: ${{ needs.daemon.result }}
+          SIZE_RESULT: ${{ needs.size.result }}
           PROTOCOL_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true' }}
           CLIENT_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true' }}
+          SIZE_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
           DAEMON_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
         run: |
           test "$CHANGES_RESULT" = success
-          for component in PROTOCOL CLIENT DAEMON; do
+          for component in PROTOCOL CLIENT DAEMON SIZE; do
             selected="${component}_SELECTED"
             result="${component}_RESULT"
             expected=skipped

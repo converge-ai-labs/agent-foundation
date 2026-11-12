@@ -17,6 +17,7 @@ import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
 import styles from "./conversation.module.css";
+import chipRemove from "./chip-remove.module.css";
 import type { TFunction } from "i18next";
 
 export type ComposerAttachmentView = {
@@ -25,14 +26,13 @@ export type ComposerAttachmentView = {
   metadata: Map<string, Schema<"ThreadAttachment">>;
   preview: (id: string, attachment?: Schema<"ThreadAttachment">) => void;
   previewLocal: (file: File) => void;
-  upload: (files: File[], at?: number) => void;
+  upload: (files: File[], from: number, to: number) => void;
   retry: (key: string) => void;
 };
 export const refreshAttachments = StateEffect.define<null>();
 const clipboardType = "application/x-a13n-composer";
 // CodeMirror can give an equal new widget the old DOM without calling toDOM.
 const imageDisposers = new WeakMap<HTMLElement, () => void>();
-const widgets = new WeakMap<HTMLElement, AttachmentWidget>();
 
 class AttachmentWidget extends WidgetType {
   readonly file: File | undefined;
@@ -44,6 +44,7 @@ class AttachmentWidget extends WidgetType {
     readonly context: ComposerAttachmentView,
     readonly removeLabel: string,
     readonly title: string,
+    readonly selected: boolean,
   ) {
     super();
     this.file = draft.uploads.get(key)?.file;
@@ -53,7 +54,8 @@ class AttachmentWidget extends WidgetType {
       this.sameAttachment(other) &&
       this.name === other.name &&
       this.removeLabel === other.removeLabel &&
-      this.title === other.title
+      this.title === other.title &&
+      this.selected === other.selected
     );
   }
   sameAttachment(other: AttachmentWidget) {
@@ -67,21 +69,24 @@ class AttachmentWidget extends WidgetType {
         other.context.metadata.get(other.id ?? "")
     );
   }
-  updateDOM(dom: HTMLElement) {
-    const previous = widgets.get(dom);
-    if (!previous || !this.sameAttachment(previous)) return false;
-    const open = dom.querySelector("button")!;
+  updateDOM(dom: HTMLElement, _view: EditorView, previous: AttachmentWidget) {
+    if (!this.sameAttachment(previous)) return false;
+    this.updatePresentation(dom);
+    return true;
+  }
+  private updatePresentation(dom: HTMLElement) {
+    const [open, remove] = dom.querySelectorAll("button");
+    const upload = this.draft.uploads.get(this.key);
     open.querySelector("span")!.textContent =
-      this.draft.uploads.get(this.key)?.status === "staged"
-        ? this.draft.uploads.get(this.key)!.file.name
-        : this.name;
+      upload?.status === "staged" ? upload.file.name : this.name;
     open.title = this.title;
     open.setAttribute("aria-label", this.name);
-    dom
-      .querySelectorAll("button")[1]
-      .setAttribute("aria-label", this.removeLabel);
-    widgets.set(dom, this);
-    return true;
+    remove.setAttribute("aria-label", this.removeLabel);
+    dom.toggleAttribute("data-selected", this.selected);
+    dom.toggleAttribute(
+      "data-preview",
+      this.id !== "failed" && !!open.querySelector("img"),
+    );
   }
   toDOM(view: EditorView) {
     const chip = document.createElement("span");
@@ -93,6 +98,7 @@ class AttachmentWidget extends WidgetType {
     const attachment = this.id ? this.context.metadata.get(this.id) : undefined;
     if (attachment?.media_type.startsWith("image/")) {
       const image = document.createElement("img");
+      image.draggable = false;
       imageDisposers.set(
         chip,
         retainedImage(
@@ -107,21 +113,19 @@ class AttachmentWidget extends WidgetType {
       const file = this.draft.uploads.get(this.key)?.file;
       if (file?.type.startsWith("image/")) {
         const image = document.createElement("img");
+        image.draggable = false;
         const url = URL.createObjectURL(file);
+        image.onerror = () => {
+          image.dataset.failed = "";
+          image.hidden = true;
+        };
         image.src = url;
         image.alt = "";
         imageDisposers.set(chip, () => URL.revokeObjectURL(url));
         open.append(image);
       }
     }
-    const label = document.createElement("span");
-    const upload = this.draft.uploads.get(this.key);
-    const stagedName =
-      upload?.status === "staged" ? upload.file.name : undefined;
-    label.textContent = stagedName ?? this.name;
-    open.append(label);
-    open.title = this.title;
-    open.setAttribute("aria-label", this.name);
+    open.append(document.createElement("span"));
     open.onclick = () => {
       if (isReadyAttachment(this.id)) this.context.preview(this.id, attachment);
       else {
@@ -137,14 +141,18 @@ class AttachmentWidget extends WidgetType {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = styles.inlineAttachmentRemove;
-    remove.setAttribute("aria-label", this.removeLabel);
-    remove.textContent = "×";
+    const cross = document.createElement("span");
+    cross.className = chipRemove.face;
+    cross.setAttribute("aria-hidden", "true");
+    remove.append(cross);
     remove.onclick = () => {
-      this.draft.removeAttachment(this.key, view.posAtDOM(chip));
+      const at = view.posAtDOM(chip);
+      this.draft.removeAttachment(this.key, at);
+      view.dispatch({ selection: { anchor: at } });
       view.focus();
     };
     chip.append(open, remove);
-    widgets.set(chip, this);
+    this.updatePresentation(chip);
     return chip;
   }
   coordsAt(dom: HTMLElement, pos: number) {
@@ -152,12 +160,16 @@ class AttachmentWidget extends WidgetType {
     const after = pos > 0;
     const rtl = getComputedStyle(dom).direction === "rtl";
     const x = after !== rtl ? bounds.right + 1 : bounds.left - 1;
-    return { left: x, right: x, top: bounds.top, bottom: bounds.bottom };
+    const height = Math.min(
+      bounds.height,
+      parseFloat(getComputedStyle(dom.parentElement!).fontSize) * 1.2,
+    );
+    const top = bounds.top + (bounds.height - height) / 2;
+    return { left: x, right: x, top, bottom: top + height };
   }
   destroy(dom: HTMLElement) {
     imageDisposers.get(dom)?.();
     imageDisposers.delete(dom);
-    widgets.delete(dom);
   }
   ignoreEvent() {
     return true;
@@ -201,6 +213,12 @@ export function composerAttachments(
                 name: draft.uploads.get(match[1])!.file.name,
               })
             : label(match[1]),
+          view.state.selection.ranges.some(
+            (range) =>
+              !range.empty &&
+              range.from < match.index + match[0].length &&
+              range.to > match.index,
+          ),
         ),
       }).range(match.index, match.index + match[0].length),
     );
@@ -215,6 +233,9 @@ export function composerAttachments(
       update(update: ViewUpdate) {
         if (
           update.docChanged ||
+          (update.selectionSet &&
+            (!update.startState.selection.main.empty ||
+              !update.state.selection.main.empty)) ||
           update.transactions.some((tr) =>
             tr.effects.some((effect) => effect.is(refreshAttachments)),
           )
@@ -291,7 +312,8 @@ export function composerAttachments(
         const files = Array.from(event.clipboardData?.files ?? []);
         if (files.length) {
           event.preventDefault();
-          context().upload(files, view.state.selection.main.head);
+          const { from, to } = view.state.selection.main;
+          context().upload(files, from, to);
           return true;
         }
         const internal = event.clipboardData?.getData(clipboardType);
@@ -326,11 +348,10 @@ export function composerAttachments(
         const files = Array.from(event.dataTransfer?.files ?? []);
         if (!files.length) return false;
         event.preventDefault();
-        context().upload(
-          files,
+        const at =
           view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
-            view.state.selection.main.head,
-        );
+          view.state.selection.main.head;
+        context().upload(files, at, at);
         return true;
       },
       dragover: (event) => {

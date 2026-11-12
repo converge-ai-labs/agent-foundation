@@ -91,10 +91,9 @@ async def save_github(app, connector_id="connector-test"):
     result = await app.act_connector_setup(
         setup.session_id, SetupCommand(operation_id="save", version=setup.version, action="save", values=values)
     )
-    assert result.step.key == "saved", result.step.error
-    return await app.act_connector_setup(
-        setup.session_id, SetupCommand(operation_id="done", version=result.version, action="done")
-    )
+    assert result.step.state == "completed", result.step.error
+    assert result.step.actions == ()
+    return result
 
 
 async def test_remote_mcp_setup_uses_private_references_and_native_capture(tmp_path):
@@ -484,7 +483,7 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
                     await wait_all_tasks_blocked()
                     requests.start_soon(reopen)
                     await wait_all_tasks_blocked()
-        assert completed[0].step.key == "saved"
+        assert completed[0].step.state == "completed"
         assert (await runtime.instance("connector-test")).status.state == "ready"
 
 
@@ -647,7 +646,8 @@ async def test_connector_http_setup_cas_private_projection_and_guest_exclusion(t
         assert (await client.post(path, headers=guest, json=command)).status_code == 401
         saved = await client.post(path, headers=owner, json=command)
         assert saved.status_code == 200, saved.text
-        assert saved.json()["step"]["key"] == "saved"
+        assert saved.json()["step"]["state"] == "completed"
+        assert saved.json()["step"]["actions"] == []
         assert (await client.post(path, headers=owner, json=command)).json() == saved.json()
         instances = await client.get("/api/connectors", headers=owner)
         assert "fixture-private-token" not in saved.text + instances.text
@@ -763,10 +763,16 @@ async def test_shutdown_rejects_setup_queued_before_sealing_and_keeps_session_it
         assert not runtime._workers
 
 
-async def test_github_rejects_transport_settings_and_setup_exposes_saved_test_done(tmp_path):
+async def test_github_save_completes_and_test_remains_an_explicit_separate_flow(tmp_path, monkeypatch):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
         await create_github(app)
         initial = await app.begin_connector_setup("connector-test")
+        from unittest.mock import AsyncMock
+
+        list_tools = AsyncMock(return_value=[])
+        monkeypatch.setattr(
+            app.connectors()._sessions[initial.session_id].flow.controller.mcp, "list_tools", list_tools
+        )
         assert set(initial.step.form["properties"]) == {"token"}
         assert "test" not in {action.id for action in initial.step.actions}
         assert "clear_token" not in initial.step.form["properties"]
@@ -774,10 +780,19 @@ async def test_github_rejects_transport_settings_and_setup_exposes_saved_test_do
             initial.session_id,
             SetupCommand(operation_id="save", version=initial.version, action="save", values={"token": "fake-token"}),
         )
-        assert saved.step.key == "saved"
-        assert {action.id for action in saved.step.actions} == {"edit", "test", "done"}
+        assert saved.step.state == "completed", saved.step.error
+        assert saved.step.actions == ()
+        list_tools.assert_not_awaited()
+        test = await app.begin_connector_setup("connector-test", intent="test")
+        assert {action.id for action in test.step.actions} == {"edit", "test", "done"}
+        list_tools.assert_not_awaited()
+        tested = await app.act_connector_setup(
+            test.session_id, SetupCommand(operation_id="test", version=test.version, action="test")
+        )
+        assert tested.step.description == "Connection test succeeded."
+        list_tools.assert_awaited_once()
         edited = await app.act_connector_setup(
-            initial.session_id, SetupCommand(operation_id="edit", version=saved.version, action="edit")
+            test.session_id, SetupCommand(operation_id="edit", version=tested.version, action="edit")
         )
         assert edited.step.form["x-a13n-saved"] == ["/token"]
         assert "clear_token" in edited.step.form["properties"]
@@ -810,7 +825,7 @@ async def test_github_reopen_replaces_setup_after_account_settings_change(tmp_pa
             reopened.session_id,
             SetupCommand(operation_id="save", version=reopened.version, action="save", values={"token": "fake-token"}),
         )
-        assert saved.step.key == "saved", saved.step.error
+        assert saved.step.state == "completed", saved.step.error
         current = await app._store.connectors.configuration("connector-test")
         assert all(getattr(current, key) == value for key, value in change.items())
         assert current.credentials["token"] == "Bearer fake-token"
@@ -856,13 +871,13 @@ async def test_github_first_save_requires_token_and_corrected_submission_can_sav
                 operation_id="corrected", version=invalid.version, action="save", values={"token": "  fake-token  "}
             ),
         )
-        assert saved.step.key == "saved", saved.step.error
+        assert saved.step.state == "completed", saved.step.error
         assert (await app._store.connectors.configuration("connector-test")).credentials == {
             "token": "Bearer fake-token"
         }
 
 
-async def test_github_blank_keeps_saved_token_and_removal_reports_incomplete_setup(tmp_path):
+async def test_github_blank_keeps_saved_token_and_removal_completes(tmp_path):
     async with open_harness_ui_app(_settings(tmp_path / "data"), host_mode="webui") as app:
         await save_github(app)
         setup = await app.begin_connector_setup("connector-test")
@@ -870,15 +885,14 @@ async def test_github_blank_keeps_saved_token_and_removal_reports_incomplete_set
             setup.session_id,
             SetupCommand(operation_id="keep", version=setup.version, action="save", values={"token": "   "}),
         )
-        assert kept.step.key == "saved", kept.step.error
+        assert kept.step.state == "completed", kept.step.error
         assert (await app._store.connectors.configuration("connector-test")).credentials == {
             "token": "Bearer test-private-token"
         }
-        edited = await app.act_connector_setup(
-            setup.session_id, SetupCommand(operation_id="edit", version=kept.version, action="edit")
-        )
+        edited = await app.begin_connector_setup("connector-test")
+        assert edited.session_id != setup.session_id
         invalid = await app.act_connector_setup(
-            setup.session_id,
+            edited.session_id,
             SetupCommand(
                 operation_id="ambiguous",
                 version=edited.version,
@@ -888,10 +902,10 @@ async def test_github_blank_keeps_saved_token_and_removal_reports_incomplete_set
         )
         assert invalid.step.error == "Choose either a replacement token or removal, not both."
         removed = await app.act_connector_setup(
-            setup.session_id,
+            edited.session_id,
             SetupCommand(operation_id="remove", version=invalid.version, action="save", values={"clear_token": True}),
         )
-        assert removed.step.title == "Setup incomplete"
-        assert "test" not in {action.id for action in removed.step.actions}
+        assert removed.step.state == "completed", removed.step.error
+        assert removed.step.actions == ()
         assert not (await app._store.connectors.configuration("connector-test")).credentials
         assert (await app.connectors().instance("connector-test")).status.state == "unconfigured"

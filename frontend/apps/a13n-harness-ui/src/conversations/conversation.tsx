@@ -819,7 +819,7 @@ function ConversationContent({
         }
       : undefined;
   const dictation =
-    !guest && selectors.data?.dictation?.model
+    !guest && selectors.data?.dictation
       ? {
           words: selectors.data.dictation.context_words ?? 2000,
           reader,

@@ -4,11 +4,11 @@
 function Show-EnvdInstallerHelp {
     @'
 Usage: install-a13n-envd.ps1 [--version X.Y.Z[-rc.N]] [--install-dir ABSOLUTE_PATH]
-                             [--add-to-path | --no-add-to-path] [--help]
+                             [--variant default|slim] [--add-to-path | --no-add-to-path] [--help]
 
 Install a verified a13n-envd release from converge-ai-labs/agent-foundation.
 Without --version, select the newest stable a13n-envd GitHub Release.
-Defaults: A13N_ENVD_VERSION, A13N_ENVD_INSTALL_DIR, A13N_ENVD_ADD_TO_PATH (1/0).
+Defaults: A13N_ENVD_VARIANT (default), A13N_ENVD_VERSION, A13N_ENVD_INSTALL_DIR, A13N_ENVD_ADD_TO_PATH (1/0).
 Flags override environment values. The default directory is %LOCALAPPDATA%\A13N\bin.
 PATH is unchanged by default; --add-to-path updates only the Windows user PATH.
 The installer does not run the binary, register a service, or start a daemon.
@@ -34,6 +34,8 @@ function Resolve-EnvdInstallDirectory {
 
 function Read-EnvdInstallerOptions {
     param([string[]]$Arguments)
+    $variant = $env:A13N_ENVD_VARIANT
+    if ([string]::IsNullOrEmpty($variant)) { $variant = 'default' }
     $version = $env:A13N_ENVD_VERSION
     $directory = $env:A13N_ENVD_INSTALL_DIR
     $pathFlag = $null
@@ -41,6 +43,12 @@ function Read-EnvdInstallerOptions {
     for ($i = 0; $i -lt $Arguments.Count; $i++) {
         $arg = $Arguments[$i]
         switch -CaseSensitive ($arg) {
+            '--variant' {
+                if (++$i -ge $Arguments.Count -or [string]::IsNullOrEmpty($Arguments[$i])) {
+                    throw '--variant requires default or slim.'
+                }
+                $variant = $Arguments[$i]
+            }
             '--version' {
                 if (++$i -ge $Arguments.Count -or [string]::IsNullOrEmpty($Arguments[$i])) {
                     throw '--version requires a canonical version.'
@@ -66,6 +74,7 @@ function Read-EnvdInstallerOptions {
         }
     }
     if ($help) { return @{ Help = $true } }
+    if ($variant -cne 'default' -and $variant -cne 'slim') { throw 'Variant must be default or slim; VM builds are Linux-only.' }
     if ($version -and -not (Test-EnvdVersion $version)) {
         throw 'Version must be canonical X.Y.Z or X.Y.Z-rc.N (N >= 1); latest is not accepted.'
     }
@@ -87,7 +96,7 @@ function Read-EnvdInstallerOptions {
     if ($pathFlag -and $directory -match '[;\r\n]') {
         throw 'The install directory cannot contain a semicolon or newline when adding to PATH.'
     }
-    return @{ Help = $false; Version = $version; InstallDirectory = $directory; AddToPath = $pathFlag }
+    return @{ Help = $false; Variant = $variant; Version = $version; InstallDirectory = $directory; AddToPath = $pathFlag }
 }
 
 function Get-EnvdNativeArchitecture {
@@ -237,7 +246,8 @@ function Install-Envd {
         [Net.ServicePointManager]::SecurityProtocol = $oldTls -bor [Net.SecurityProtocolType]::Tls12
         $version = $options.Version
         if ([string]::IsNullOrEmpty($version)) { $version = Get-EnvdLatestStableVersion }
-        $asset = "a13n-envd-$version-$target.zip"
+        $suffix = if ($options.Variant -ceq 'slim') { '-slim' } else { '' }
+        $asset = "a13n-envd-$version-$target$suffix.zip"
         $baseUrl = "https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v$version"
         $directory = $options.InstallDirectory
         [IO.Directory]::CreateDirectory($directory) | Out-Null

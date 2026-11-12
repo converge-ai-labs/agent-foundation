@@ -18,11 +18,13 @@ export function retainedImage(
   let url: string | undefined;
   image.alt = attachment.name;
   image.className = styles.attachmentThumbnail;
+  delete image.dataset.failed;
   image.hidden = true;
   image.onload = () => {
     image.hidden = false;
   };
   image.onerror = () => {
+    image.dataset.failed = "";
     image.hidden = true;
   };
   if (attachment.media_type.startsWith("image/"))
@@ -37,7 +39,7 @@ export function retainedImage(
         image.src = url;
       })
       .catch(() => {
-        /* The filename and explicit download remain available. */
+        if (!controller.signal.aborted) image.dataset.failed = "";
       });
   return () => {
     controller.abort();

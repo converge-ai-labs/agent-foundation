@@ -299,15 +299,10 @@
   overflow: hidden;
   border: 0;
   border-radius: 50%;
-  background: var(--a13n-text);
-  color: var(--a13n-canvas);
+  background: transparent;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-}
-.clearChip svg {
-  width: 12px;
-  height: 12px;
 }
 .chipGroup:is(:hover, :focus-within, :has([aria-expanded="true"])) .clearChip {
   width: 18px;
