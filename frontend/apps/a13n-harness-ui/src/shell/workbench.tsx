@@ -381,9 +381,10 @@ function WorkbenchContent({
         <main id="main-content" tabIndex={-1} className={styles.main}>
           <div className={styles.workbenchFeedback}>
             {disconnected && <ConnectionNotice retry={live.retrySummary} />}
-            {(results.storageError || results.lookupError) && (
+            {(results.mutationError ||
+              (!disconnected && results.lookupError)) && (
               <div role="alert" className={styles.notice}>
-                <p>{results.storageError || results.lookupError}</p>
+                <p>{results.mutationError || results.lookupError}</p>
                 <Button
                   variant="ghost"
                   size="sm"

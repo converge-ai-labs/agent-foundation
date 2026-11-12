@@ -327,6 +327,7 @@ from a13n_harness_ui.surfaces import (
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
     ThreadPage,
+    ThreadReadAcknowledgement,
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
@@ -1636,6 +1637,7 @@ class HarnessUiApp:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
@@ -1648,6 +1650,7 @@ class HarnessUiApp:
                 query=query,
                 project_id=project_id,
                 include_archived=include_archived,
+                unread=unread,
                 project_ids=project_ids,
                 sort=sort,
                 cursor=cursor,
@@ -1673,6 +1676,19 @@ class HarnessUiApp:
     async def lookup_threads(self, *, thread_ids: tuple[str, ...], memory: bool = False) -> ThreadPage:
         async with self._operation():
             return await self._projections.lookup_threads(thread_ids, memory=memory)
+
+    async def mark_thread_unread(self, thread_id: str) -> ThreadSummary:
+        async with self._operation():
+            await self._threads.mark_unread(thread_id)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
+
+    async def acknowledge_threads_read(self, request: ThreadReadAcknowledgement) -> ThreadPage:
+        async with self._operation():
+            changed = await self._store.threads.acknowledge_read(request.threads)
+            for thread_id in changed:
+                await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.lookup_threads(tuple(item.thread_id for item in request.threads))
 
     async def memory_files(self, *, project_id: str | None = None) -> tuple[MemoryFileEntry, ...]:
         async with self._operation():

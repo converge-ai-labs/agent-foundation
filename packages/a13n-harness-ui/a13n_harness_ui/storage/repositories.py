@@ -32,6 +32,7 @@ from .contracts import (
     ThreadConfiguration,
     ThreadExecution,
     ThreadReadModel,
+    ThreadReadReceipt,
 )
 from .database import DatabaseSessions, short_session, transaction
 from .models import (
@@ -575,6 +576,7 @@ class ThreadRepository:
         include_archived: bool = False,
         archived_only: bool = False,
         starred: bool | None = None,
+        unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         thread_ids: tuple[str, ...] | None = None,
@@ -637,6 +639,8 @@ class ThreadRepository:
                 predicates.append(ThreadRecord.archived.is_(False))
             if starred is not None:
                 predicates.append(ThreadRecord.starred.is_(starred))
+            if unread is not None:
+                predicates.append(ThreadRecord.unread == unread)
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
@@ -747,6 +751,54 @@ class ThreadRepository:
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
+
+    async def mark_unread(self, thread_id: str) -> None:
+        # A new manual intent fences acknowledgements already in flight, even
+        # when the previous generation was also unread. No history is appended.
+        async with transaction(self._sessions) as session:
+            await session.execute(
+                update(ThreadRecord)
+                .where(
+                    ThreadRecord.thread_id == thread_id,
+                    ThreadRecord.parent_thread_id.is_(None),
+                    ThreadRecord.memory_scope.is_(None),
+                )
+                .values(unread=True, read_state_version=ThreadRecord.read_state_version + 1)
+            )
+
+    async def acknowledge_read(self, receipts: tuple[ThreadReadReceipt, ...]) -> tuple[str, ...]:
+        if not 1 <= len(receipts) <= 100:
+            raise ValueError("Read acknowledgement is outside supported bounds")
+        predicate = and_(
+            ThreadRecord.unread == True,  # noqa: E712 - literal matches the partial index
+            ThreadRecord.parent_thread_id.is_(None),
+            ThreadRecord.memory_scope.is_(None),
+            or_(
+                *(
+                    and_(
+                        ThreadRecord.thread_id == receipt.thread_id,
+                        ThreadRecord.read_state_version == receipt.read_state_version,
+                        ThreadRecord.completion_version == receipt.completion_version,
+                    )
+                    for receipt in receipts
+                )
+            ),
+        )
+        # Most visibility reports are duplicates. Avoid writer admission and
+        # BEGIN IMMEDIATE entirely when no observed generation can change.
+        async with short_session(self._sessions) as session:
+            eligible = await session.scalar(select(ThreadRecord.thread_id).where(predicate).limit(1))
+        if eligible is None:
+            return ()
+        async with transaction(self._sessions) as session:
+            return tuple(
+                await session.scalars(
+                    update(ThreadRecord)
+                    .where(predicate)
+                    .values(unread=False, read_state_version=ThreadRecord.read_state_version + 1)
+                    .returning(ThreadRecord.thread_id)
+                )
+            )
 
     async def continuation_references(self, thread_ids: tuple[str, ...]) -> dict[str, ObjectRef]:
         if not thread_ids:
@@ -871,6 +923,9 @@ class ThreadRepository:
                     raise ValueError("Only root Threads have completion markers")
                 if record.completion_run_id != completed_run_id:
                     record.completion_version += 1
+                    if record.memory_scope is None:
+                        record.unread = True
+                        record.read_state_version += 1
                     record.completion_run_id = completed_run_id
                     record.completion_digest = replacement.logical_digest
                     record.completed_at = now
@@ -1401,6 +1456,8 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         touched_at=record.touched_at,
         archived=record.archived,
         starred=record.starred,
+        unread=record.unread,
+        read_state_version=record.read_state_version,
         configuration=configuration,
         initial_state=ObjectRef(
             object_kind=ObjectKind.thread_initial_state,

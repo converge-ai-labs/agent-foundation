@@ -156,8 +156,7 @@ function ConversationContent({
   const results = useResults();
   const tracker = readOnly ? undefined : results.tracker;
   useEffect(() => {
-    if (detail.data)
-      void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
+    if (detail.data) tracker?.observe(detail.data.thread, detail.dataUpdatedAt);
   }, [detail.data, detail.dataUpdatedAt, tracker]);
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
@@ -414,22 +413,27 @@ function ConversationContent({
     (history.isPreviousHistory || history.isError
       ? 0
       : (history.data?.pages[0]?.completion_version ?? 0));
-  const acknowledged = results.followed.get(threadId);
+  const readState = results.threads.get(threadId)?.thread;
   useEffect(() => {
     if (
       hasLater ||
       !pageReady ||
       !tracker ||
-      !completionVersion ||
-      acknowledged === undefined ||
-      acknowledged >= completionVersion
+      (!publication &&
+        (!history.data || history.isPreviousHistory || history.isError)) ||
+      !readState?.unread ||
+      (readState.completion?.version ?? 0) !== completionVersion
     )
       return;
     const element = reader.current;
     if (!element) return;
     const check = () => {
       if (!olderAnchor.current && savedResultVisible(element))
-        void tracker.acknowledge(threadId, completionVersion);
+        void tracker.acknowledge(
+          threadId,
+          completionVersion,
+          readState.read_state_version ?? 0,
+        );
     };
     // The effect runs after transcript commit; the frame observes layout and the
     // actual scroll position, never the optimistic follow/smooth-scroll flag.
@@ -457,7 +461,11 @@ function ConversationContent({
     tracker,
     threadId,
     completionVersion,
-    acknowledged,
+    readState?.unread,
+    readState?.read_state_version,
+    readState?.completion?.version,
+    history.isPreviousHistory,
+    history.isError,
     hasLater,
     history.data,
     publication?.revision,
@@ -772,7 +780,7 @@ function ConversationContent({
                 draft,
                 transport,
                 threadId,
-                tracker ? () => tracker.beforeRun(threadId) : undefined,
+                undefined,
                 () => appContexts?.capture(threadId) ?? [],
               ).finally(reconcile);
             }

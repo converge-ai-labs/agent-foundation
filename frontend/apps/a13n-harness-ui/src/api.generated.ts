@@ -2436,6 +2436,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acknowledge Threads Read */
+        post: operations["acknowledge_threads_read_api_threads_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Thread Unread */
+        post: operations["mark_thread_unread_api_threads__thread_id__unread_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}": {
         parameters: {
             query?: never;
@@ -7988,6 +8022,16 @@ export interface components {
              * @default false
              */
             starred?: boolean;
+            /**
+             * Unread
+             * @default false
+             */
+            unread?: boolean;
+            /**
+             * Read State Version
+             * @default 0
+             */
+            read_state_version?: number;
             configuration: components["schemas"]["ThreadConfigurationView"];
             /**
              * Continuation State
@@ -9929,6 +9973,20 @@ export interface components {
             defaults?: components["schemas"]["NewThreadDefaults"] | null;
             /** Title */
             title?: string | null;
+        };
+        /** ThreadReadReceipt */
+        ThreadReadReceipt: {
+            /** Thread Id */
+            thread_id: string;
+            /** Read State Version */
+            read_state_version: number;
+            /** Completion Version */
+            completion_version: number;
+        };
+        /** ThreadReadAcknowledgement */
+        ThreadReadAcknowledgement: {
+            /** Threads */
+            threads: components["schemas"]["ThreadReadReceipt"][];
         };
         /**
          * ThreadMetadataPatch
@@ -14829,6 +14887,7 @@ export interface operations {
                 query?: string | null;
                 project_id?: string | null;
                 include_archived?: boolean;
+                unread?: boolean | null;
                 sort?: "updated" | "activity" | "touched";
                 cursor?: string | null;
                 limit?: number;
@@ -14879,6 +14938,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+        };
+    };
+    acknowledge_threads_read_api_threads_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadReadAcknowledgement"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPage"];
+                };
+            };
+        };
+    };
+    mark_thread_unread_api_threads__thread_id__unread_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

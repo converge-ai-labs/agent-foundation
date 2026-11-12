@@ -138,6 +138,12 @@ class ThreadConfigurationMutation(StoredContract):
         return self
 
 
+class ThreadReadReceipt(StoredContract):
+    thread_id: str = Field(min_length=1, max_length=80)
+    read_state_version: int = Field(ge=0)
+    completion_version: int = Field(ge=0)
+
+
 class ThreadCompletion(StoredContract):
     """Latest successfully selected root result; independent of current operation state."""
 
@@ -189,6 +195,8 @@ class Thread(StoredContract):
     touched_at: datetime | None = None
     archived: bool = False
     starred: bool = False
+    unread: bool = False
+    read_state_version: int = Field(default=0, ge=0)
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ObjectRef | None = None

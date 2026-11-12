@@ -32,17 +32,29 @@ vi.mock("./conversations/live-threads", async () => {
 });
 
 const tracker = vi.hoisted(() => ({
-  follow: vi.fn(async () => {}),
-  followVersion: vi.fn(async () => {}),
-  beforeRun: vi.fn(async () => {}),
+  observe: vi.fn(),
   acknowledge: vi.fn(async () => {}),
   invalidate: vi.fn(),
 }));
 vi.mock("./conversations/results", () => ({
   useResults: () => ({
     tracker,
-    followed: new Map([[BOT_THREAD_ID, 0]]),
-    threads: new Map(),
+    threads: new Map(
+      snapshot?.thread
+        ? [
+            [
+              BOT_THREAD_ID,
+              {
+                thread: {
+                  ...snapshot.thread,
+                  unread: true,
+                  read_state_version: snapshot.thread.completion?.version ?? 0,
+                },
+              },
+            ],
+          ]
+        : [],
+    ),
   }),
 }));
 
@@ -269,7 +281,7 @@ function mount(initial = "/bot", withActions = false) {
     </TransportContext>,
   );
 }
-it("registers the lazy root's zero baseline before its first admission and clears accepted input", async () => {
+it("submits to the lazy root without browser registration and clears accepted input", async () => {
   mount();
   await screen.findByRole("textbox", { name: "Message" });
   typeMessage("Track this");
@@ -281,10 +293,6 @@ it("registers the lazy root's zero baseline before its first admission and clear
   expect(screen.queryByText("Ready when you are")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(requests).toHaveLength(1));
-  expect(tracker.followVersion).toHaveBeenCalledWith(BOT_THREAD_ID, 0);
-  expect(tracker.followVersion.mock.invocationCallOrder[0]).toBeLessThan(
-    vi.mocked(fetch).mock.invocationCallOrder.at(-1)!,
-  );
   await waitFor(() => expect(draft.doc.getText("text").toString()).toBe(""));
 });
 it("submits human input while busy or paused through Bot admission only", async () => {
@@ -372,7 +380,7 @@ it("acknowledges the rendered completion, preserves a scrolled-up reader, and ex
   );
   fireEvent.scroll(visibleReader);
   await waitFor(() =>
-    expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 3),
+    expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 3, 3),
   );
   tracker.acknowledge.mockClear();
   const reader = view.container.querySelector<HTMLElement>(
@@ -411,7 +419,7 @@ it("acknowledges the rendered completion, preserves a scrolled-up reader, and ex
   ).toBe(true);
   reader.scrollTop = 800;
   fireEvent.scroll(reader);
-  expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 4);
+  expect(tracker.acknowledge).toHaveBeenCalledWith(BOT_THREAD_ID, 4, 4);
 });
 
 it("offers inline setup while off and enables with one policy save, without submitting work", async () => {

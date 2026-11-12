@@ -74,6 +74,7 @@ function fixture(request: Request): Response | Promise<Response> {
       shared_with_cli: false,
     });
   if (path === "/api/status") return json(status);
+  if (path === "/api/threads") return json({ threads: [], total: 0 });
   if (path === "/api/threads/activity")
     return json({ rows: [], total: 0, next_cursor: null });
   if (path === "/api/setup")
@@ -247,6 +248,8 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
     if (url.pathname === "/api/projects")
       return json([{ project_id: "project-main", name: "Main" }]);
     if (url.pathname === "/api/threads") {
+      if (url.searchParams.get("unread") === "true")
+        return json({ threads: [], total: 0 });
       expect(url.searchParams.get("memory")).toBe("true");
       return json({
         threads: url.searchParams.has("project_id") ? [] : [thread],
