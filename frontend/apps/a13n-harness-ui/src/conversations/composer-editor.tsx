@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { X } from "@phosphor-icons/react";
 import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
 import {
@@ -6,16 +7,25 @@ import {
   EditorView,
   keymap,
   placeholder,
+  tooltips,
 } from "@codemirror/view";
-import { Compartment, Prec } from "@codemirror/state";
+import { Compartment, Prec, type Transaction } from "@codemirror/state";
 import {
   autocompletion,
   completionKeymap,
   acceptCompletion,
   closeCompletion,
-  completionStatus,
+  currentCompletions,
+  pickedCompletion,
+  startCompletion,
 } from "@codemirror/autocomplete";
-import { skillCompletion, type LoadSkills } from "./skill-references";
+import {
+  skillCompletion,
+  skillSourceLabel,
+  type SkillOption,
+  type LoadSkills,
+} from "./skill-references";
+import skillStyles from "./skill-chip.module.css";
 import { composerSkills, refreshSkills } from "./composer-skills";
 import { composerWordKeymap } from "./composer-word-motion";
 import { defaultKeymap, insertNewline } from "@codemirror/commands";
@@ -30,6 +40,15 @@ import {
   refreshAttachments,
   type ComposerAttachmentView,
 } from "./composer-attachments";
+
+function typedSkillTrigger(tr: Transaction) {
+  if (!tr.isUserEvent("input.type")) return false;
+  let triggered = false;
+  tr.changes.iterChanges((_from, _to, _newFrom, _newTo, inserted) => {
+    if (/[$/]/.test(inserted.toString())) triggered = true;
+  });
+  return triggered;
+}
 
 export function ComposerEditor({
   draft,
@@ -59,6 +78,7 @@ export function ComposerEditor({
   const { t } = useTranslation();
   const translate = useRef(t);
   translate.current = t;
+  const pickerHost = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
   const skills = useRef(new Compartment());
@@ -195,11 +215,10 @@ export function ComposerEditor({
           ...["Enter", "Mod-Enter"].map((key) => ({
             key,
             run: (editor: EditorView) => {
-              // Background completion checks run even for ordinary typing.
               // Only visible candidates may consume Enter instead of sending.
               if (
                 key === "Enter" &&
-                completionStatus(editor.state) === "active"
+                currentCompletions(editor.state).length > 0
               )
                 return true;
               if (!editor.compositionStarted) send.current();
@@ -356,14 +375,45 @@ export function ComposerEditor({
           ? [
               composerSkills,
               EditorView.updateListener.of((update) => {
+                if (
+                  update.transactions.some((tr) =>
+                    tr.annotation(pickedCompletion),
+                  )
+                ) {
+                  draft.undo.stopCapturing();
+                }
                 if (update.docChanged) loadIfNeeded();
+                if (update.transactions.some(typedSkillTrigger)) {
+                  // CodeMirror can open completion once this input update finishes.
+                  queueMicrotask(() => {
+                    if (!disposed) startCompletion(view);
+                  });
+                }
               }),
+              tooltips({ parent: pickerHost.current!, position: "absolute" }),
               autocompletion({
                 override: [skillCompletion(loadCatalog)],
-                activateOnTypingDelay: 0,
+                activateOnTyping: false,
                 defaultKeymap: false,
                 icons: false,
                 aboveCursor: true,
+                tooltipClass: () => skillStyles.picker,
+                optionClass: () => skillStyles.option,
+                addToOptions: [
+                  {
+                    position: 90,
+                    render: (option) => {
+                      const label = skillSourceLabel(
+                        (option as SkillOption).source,
+                      );
+                      if (!label) return null;
+                      const source = document.createElement("span");
+                      source.className = skillStyles.source;
+                      source.textContent = t(label);
+                      return source;
+                    },
+                  },
+                ],
               }),
               Prec.highest(
                 keymap.of([
@@ -371,62 +421,6 @@ export function ComposerEditor({
                   { key: "Tab", run: acceptCompletion },
                 ]),
               ),
-              EditorView.theme({
-                ".cm-tooltip.cm-tooltip-autocomplete": {
-                  backgroundColor: "var(--a13n-elevated)",
-                  color: "var(--a13n-text)",
-                  border: "none",
-                  borderRadius: "10px",
-                  boxShadow: "var(--a13n-shadow)",
-                  width: "min(480px, calc(100vw - 32px))",
-                  overflow: "hidden",
-                },
-                ".cm-tooltip.cm-tooltip-autocomplete > ul": {
-                  fontFamily: "var(--a13n-font)",
-                  fontSize: "var(--a13n-text-body)",
-                  boxSizing: "border-box",
-                  minWidth: "0",
-                  maxWidth: "100%",
-                  maxHeight: "min(280px, 40vh)",
-                  padding: "4px",
-                  scrollPadding: "4px",
-                  overscrollBehavior: "contain",
-                },
-                ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-                  padding: "8px 12px",
-                  borderRadius: "var(--a13n-radius-row)",
-                  lineHeight: "20px",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                },
-                ".cm-tooltip.cm-tooltip-autocomplete > ul > li + li": {
-                  marginTop: "4px",
-                },
-                ".cm-tooltip.cm-tooltip-autocomplete > ul > li:hover": {
-                  backgroundColor: "var(--a13n-hover)",
-                },
-                '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected="true"]':
-                  {
-                    backgroundColor: "var(--a13n-selected)",
-                    color: "var(--a13n-text)",
-                  },
-                ".cm-tooltip-autocomplete .cm-completionLabel": {
-                  display: "block",
-                  fontWeight: "500",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                },
-                ".cm-tooltip-autocomplete .cm-completionDetail": {
-                  display: "block",
-                  margin: "4px 0 0",
-                  fontSize: "var(--a13n-text-body)",
-                  lineHeight: "21px",
-                  color: "var(--a13n-secondary)",
-                  fontStyle: "normal",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                },
-              }),
             ]
           : [],
       ),
@@ -438,9 +432,35 @@ export function ComposerEditor({
     return () => {
       disposed = true;
     };
-  }, [draft, doc, editor, skillContext, !!loadSkills]);
+  }, [draft, doc, editor, skillContext, !!loadSkills, t]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);
-  return <div ref={host} data-presence-anchor="composer" />;
+  return (
+    <>
+      <div className={skillStyles.anchor}>
+        <div className={skillStyles.pickerHeader}>
+          <span>{t("Skills")}</span>
+          <button
+            type="button"
+            aria-label={t("Dismiss skill suggestions")}
+            aria-keyshortcuts="Escape"
+            title={t("Dismiss skill suggestions (Esc)")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const view = currentView.current;
+              if (view) {
+                closeCompletion(view);
+                view.focus();
+              }
+            }}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+        <div ref={pickerHost} />
+      </div>
+      <div ref={host} data-presence-anchor="composer" />
+    </>
+  );
 }

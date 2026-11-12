@@ -29,7 +29,10 @@
 }
 /* Menu focus guards can sit between the two action buttons while open. */
 @media (pointer: fine) {
-  .navigationHeadingActions > button,
+  .navigationHeadingActions > button {
+    inline-size: 24px;
+    block-size: 22px;
+  }
   .messageActions > button {
     inline-size: 22px;
     block-size: 22px;
@@ -410,18 +413,24 @@
      the row is hovered or focused, so idle titles use the full row width. */
   .threadActions {
     position: absolute;
-    top: 0;
+    top: 50%;
+    translate: 0 -50%;
     inset-inline-end: 0;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
     padding-inline-end: 32px;
   }
-  .threadRow:has(.threadStar):is(:hover, :focus-within, :has([data-popup-open]))
+  .threadRow:has(.threadStar, .threadStatus, .draftMarker, .resultDot):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
     .threadLink {
     padding-inline-end: 8px;
   }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
-    visibility: hidden;
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
+    :is(.threadStar, .threadStatus, .draftMarker, .resultDot) {
+    opacity: 0;
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
@@ -528,9 +537,14 @@
   }
 }
 .resultDot {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+}
+.resultDot::before {
+  content: "";
   width: 7px;
   height: 7px;
-  flex: 0 0 7px;
   border-radius: 50%;
   background: var(--info-foreground);
 }
@@ -1035,6 +1049,7 @@
   margin-top: 4px;
 }
 .composerInput {
+  position: relative;
   --harness-control-height: 32px;
   display: grid;
   --composer-text-inset: 8px;

@@ -109,7 +109,7 @@ Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the
 
 ### Skills and work inspection
 
-Type `$` and a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape dismisses. Insertion does not send. `$name` remains editable text and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
+Type `$` or `/` followed by a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape or the close button dismisses suggestions for the current word and leaves the typed text in place. Insertion does not send. A recognized Skill shows a puzzle icon and name; Backspace removes it as one item. The underlying `$name` text is preserved and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
 
 Use **Tasks**, **Notes**, **Subagents**, **Processes**, and **Tools** above the composer to open the corresponding activity view without replacing your draft. Counts show completed/total tasks, notes, active subagent executions, and observed running processes. In narrow chat columns, **More** contains Notes, Processes, and Tools. Closing the inspector returns focus to the entry that opened it. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
 
