@@ -112,14 +112,11 @@ async def test_reference_delivery_preserves_essentials_and_the_instruction_switc
 def test_operational_instructions_use_flat_attribute_free_xml_sections(root: str | None) -> None:
     from a13n_harness.toolsets._instructions import tool_instruction
 
-    model_prompts = {"compact", "tool_review"} | {
-        f"{kind}_understanding{suffix}" for kind in ("image", "audio", "video") for suffix in ("", "_default")
-    }
-    prompts = files("a13n_harness.toolsets.prompts")
+    prompts = files("a13n_harness.toolsets.prompts").joinpath("guidance")
     for path in prompts.iterdir():
-        name = path.name.removesuffix(".md")
-        if not path.name.endswith(".md") or name in model_prompts:
+        if not path.name.endswith(".md"):
             continue
+        name = path.name.removesuffix(".md")
         instruction = tool_instruction(name, reference_root=root)
         identity = f"<tool-name>{name}</tool-name>\n"
         assert instruction.startswith(identity)

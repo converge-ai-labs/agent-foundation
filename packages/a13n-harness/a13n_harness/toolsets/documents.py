@@ -25,10 +25,7 @@ from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 
-_DOCUMENT_INSTRUCTIONS = (
-    tool_guidance("pdf_convert"),
-    tool_guidance("office_to_markdown"),
-)
+_DOCUMENT_INSTRUCTIONS = (tool_guidance("documents"),)
 
 _SUPPORTED_OFFICE_EXTENSIONS = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".epub"})
 

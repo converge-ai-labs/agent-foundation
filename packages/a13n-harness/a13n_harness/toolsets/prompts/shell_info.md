@@ -1,3 +1,0 @@
-<best-practices>
-Use `shell_info(process_id=...)` for status only. No-ID discovery is available only when its schema permits omitting `process_id` and the selected/default mount allows `environment.process.list`; Direct Local does not support discovery. Listing and inspection are independently authorized. These queries do not attach, refresh or reset output. Recovery is best-effort; never assume missing commands succeeded or restart them automatically.
-</best-practices>

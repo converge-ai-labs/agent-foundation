@@ -209,7 +209,7 @@ async def test_root_run_reads_builtin_skill_navigation_and_documentation(
     documents = (
         ("SKILL.md", "references/navigation.md", "docs/configuration.md")
         if skill_name == SKILL_NAME
-        else ("SKILL.md", "harness/glob.md", "ui/threads.md")
+        else ("SKILL.md", "harness/files.md", "ui/threads.md")
     )
     expected_content = (
         ("Documentation map", "Documentation navigation", "Configuration reference")
@@ -230,7 +230,7 @@ async def test_root_run_reads_builtin_skill_navigation_and_documentation(
         if step == 0:
             assert f"{BUILTIN_SKILLS_PATH}/{skill_name}" in str(messages) + str(info)
             assert any(tool.name == "view" for tool in info.function_tools)
-            assert f"{BUILTIN_SKILLS_PATH}/harness-ui-operations/harness/glob.md" in info.instructions
+            assert f"{BUILTIN_SKILLS_PATH}/harness-ui-operations/harness/files.md" in info.instructions
             assert "Use brace alternatives" not in info.instructions
             assert "Your current Thread:" in info.instructions
             assert "admission only" in info.instructions
@@ -387,7 +387,7 @@ async def test_async_child_selects_and_reads_its_own_guidance_bundle(tmp_path, m
     child.pop("subagents")
     (tmp_path / "agents/child.yaml").write_text(yaml.safe_dump(child))
     calls = {"parent": 0, "child": 0}
-    guidance_path = f"{BUILTIN_SKILLS_PATH}/harness-ui-operations/harness/glob.md"
+    guidance_path = f"{BUILTIN_SKILLS_PATH}/harness-ui-operations/harness/files.md"
 
     async def model(messages, info):
         is_parent = "delegate" in {tool.name for tool in info.function_tools}

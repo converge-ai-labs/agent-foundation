@@ -308,12 +308,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 Tool(
                     self._run_code,
                     name=_RUN_CODE,
-                    description="\n\n".join(
-                        (
-                            tool_instruction("run_code"),
-                            tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
-                        )
-                    ),
+                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
@@ -328,12 +323,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 Tool(
                     self._run_program,
                     name=_RUN_PROGRAM,
-                    description="\n\n".join(
-                        (
-                            tool_instruction("run_program"),
-                            tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
-                        )
-                    ),
+                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,

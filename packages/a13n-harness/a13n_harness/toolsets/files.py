@@ -365,14 +365,10 @@ class FileToolset:
             tools = tuple(tool for tool in tools if tool.name in {"view", "ls", "glob", "grep"})
         if allowed_names is not None:
             tools = tuple(tool for tool in tools if tool.name in allowed_names)
-        instruction_names = {"view", "write", "edit", "multi_edit", "ls", "glob", "grep"}
-        if not shell_active:
-            instruction_names.update({"move", "copy", "delete"})
-        instructions = [tool_guidance(tool.name) for tool in tools if tool.name in instruction_names]
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-file-tools",
-            instructions=instructions,
+            instructions=[tool_guidance("files")] if tools else [],
         )
 
     def _tool(

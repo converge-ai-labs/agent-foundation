@@ -156,13 +156,10 @@ class ShellToolset:
             )
         if allowed_names is not None:
             tools = [tool for tool in tools if tool.name in allowed_names]
-        sections = [tool.name for tool in tools]
-        if any(name != "shell_exec" for name in sections):
-            sections.insert(0, "shell_processes")
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[tool_guidance("environment-shell", *sections)] if tools else [],
+            instructions=[tool_guidance("environment-shell")] if tools else [],
         )
 
     async def wrap_run(

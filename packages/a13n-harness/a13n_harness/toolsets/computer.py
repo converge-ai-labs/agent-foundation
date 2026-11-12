@@ -101,46 +101,7 @@ class ComputerToolset:
         ]
         tools.extend(self._accessibility.tools(allowed_names=allowed_names))
         names = {tool.name for tool in tools}
-        sections = [
-            section
-            for section, selected in (
-                ("computer_describe", {"computer_describe"}),
-                (
-                    "computer_observe",
-                    {
-                        "computer_observe",
-                        "computer_zoom",
-                        "computer_click",
-                        "computer_move",
-                        "computer_drag",
-                        "computer_scroll",
-                    },
-                ),
-                ("computer_zoom", {"computer_zoom"}),
-                ("computer_clipboard", {"computer_read_clipboard", "computer_write_clipboard"}),
-                (
-                    "computer_input",
-                    {method.__name__ for method, _, read_only in methods if not read_only}
-                    - {"computer_write_clipboard"},
-                ),
-                (
-                    "computer_accessibility",
-                    {name for name in names if name.startswith("computer_accessibility_")}
-                    | {"computer_ax", "computer_uia", "computer_atspi"},
-                ),
-                ("computer_accessibility_mutation", {"computer_ax", "computer_uia", "computer_atspi"}),
-                (
-                    "computer_uia",
-                    {"computer_uia"} if EnvironmentAction.COMPUTER_UIA_SELECTION_SELECT in actions else set(),
-                ),
-                (
-                    "computer_atspi",
-                    {"computer_atspi"} if EnvironmentAction.COMPUTER_ATSPI_SELECTION_ADD_CHILD in actions else set(),
-                ),
-            )
-            if names & selected
-        ]
-        instructions: list[ToolInstruction] = [tool_guidance("environment-computer", *sections)] if tools else []
+        instructions: list[ToolInstruction] = [tool_guidance("environment-computer")] if tools else []
         if names & {
             "computer_observe",
             "computer_zoom",

@@ -99,7 +99,7 @@ def _online_url(path: str, fragment: str) -> str:
 def _build_operations(package_root: Path, repository_root: Path) -> Path:
     """Reuse matching output or copy owned Markdown and regenerate its navigation."""
     sources = {
-        "harness": repository_root / "packages/a13n-harness/a13n_harness/toolsets/prompts",
+        "harness": repository_root / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance",
         "ui": package_root / "a13n_harness_ui/assets/guidance",
     }
     template = (package_root / "a13n_harness_ui/assets/operations_skill.md").read_text(encoding="utf-8")

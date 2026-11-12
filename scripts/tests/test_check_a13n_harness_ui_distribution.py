@@ -104,8 +104,8 @@ def _write_wheel(
         operations_prefix = checker.SKILL_PREFIX.parent / "harness-ui-operations"
         operations_files = {
             "SKILL.md": b"---\nname: harness-ui-operations\ndescription: Operate tools.\n---\n\n"
-            b"- [View](harness/view.md)\n- [Threads](ui/threads.md)\n",
-            "harness/view.md": b"Read in chunks.\n",
+            b"- [View](harness/files.md)\n- [Threads](ui/threads.md)\n",
+            "harness/files.md": b"Read in chunks.\n",
             "ui/threads.md": b"Inspect saved outcomes.\n",
         }
         for relative, content in operations_files.items():
@@ -436,7 +436,7 @@ def test_rebuild_compares_normalized_dependency_ranges(
         assert rebuilt.is_file()
 
 
-@pytest.mark.parametrize("missing", ["SKILL.md", "harness/view.md", "ui/threads.md"])
+@pytest.mark.parametrize("missing", ["SKILL.md", "harness/files.md", "ui/threads.md"])
 def test_rejects_incomplete_operation_skill(artifact: Artifact, missing: str) -> None:
     path, write = artifact
     write(path, omitted_skill_file=f"harness-ui-operations/{missing}")

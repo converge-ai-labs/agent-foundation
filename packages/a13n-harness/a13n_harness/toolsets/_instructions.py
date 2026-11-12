@@ -18,25 +18,21 @@ type ToolInstruction = str | Callable[[RunContext[AgentContext]], Awaitable[Inst
 
 
 @cache
-def tool_instruction(name: str, *sections: str, reference_root: str | None = None) -> str:
-    """Compose release-owned Markdown sections under one tool instruction name."""
-    prompts = files("a13n_harness.toolsets.prompts")
-    content = "\n\n".join(
-        render_guidance(
-            prompts.joinpath(f"{section}.md").read_text(encoding="utf-8"),
-            f"{reference_root}/harness/{section}.md" if reference_root is not None else None,
-        )
-        for section in (name, *sections)
+def tool_instruction(name: str, *, reference_root: str | None = None) -> str:
+    """Load one release-owned guidance file for a Toolset."""
+    content = render_guidance(
+        files("a13n_harness.toolsets.prompts").joinpath("guidance", f"{name}.md").read_text(encoding="utf-8"),
+        f"{reference_root}/harness/{name}.md" if reference_root is not None else None,
     )
     return f"<tool-name>{name}</tool-name>\n{content}"
 
 
-def tool_guidance(name: str, *sections: str) -> Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]:
+def tool_guidance(name: str) -> Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]:
     """Resolve delivery from fresh Run bindings without changing tool selection."""
 
     async def instructions(ctx: RunContext[AgentContext]) -> InstructionPart:
         return InstructionPart(
-            content=tool_instruction(name, *sections, reference_root=ctx.deps.instruction_reference_root),
+            content=tool_instruction(name, reference_root=ctx.deps.instruction_reference_root),
             dynamic=False,
         )
 

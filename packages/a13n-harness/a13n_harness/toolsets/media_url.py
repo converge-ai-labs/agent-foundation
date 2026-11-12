@@ -56,10 +56,8 @@ class MediaUrlToolset:
         if not kinds and not youtube:
             return None
         descriptions = [f"bounded direct HTTP(S) {kind} downloads" for kind in kinds]
-        sections = ["read_media_url_inline"] if kinds else []
         if youtube:
             descriptions.append("native YouTube links")
-            sections.append("read_media_url_youtube")
         tool = HarnessTool(
             self.read_media_url,
             name="read_media_url",
@@ -81,7 +79,7 @@ class MediaUrlToolset:
             ),
         )
         return InstructionFunctionToolset(
-            tools=[tool], id="a13n-media-url-functions", instructions=tool_guidance("read_media_url", *sections)
+            tools=[tool], id="a13n-media-url-functions", instructions=tool_guidance("read_media_url")
         )
 
     async def read_media_url(

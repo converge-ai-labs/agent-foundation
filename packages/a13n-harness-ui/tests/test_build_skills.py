@@ -29,12 +29,13 @@ def _source(tmp_path: Path) -> tuple[Path, Path]:
         "<essential-rules>\nReceipts confirm admission.\n</essential-rules>\n\n<!-- reference -->\n\n"
         "<best-practices>\nInspect outcomes.\n</best-practices>\n"
     )
-    prompts = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts"
+    prompts = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"
     prompts.mkdir(parents=True)
-    (prompts / "view.md").write_text(
+    (prompts / "files.md").write_text(
         "<essential-rules>\nRead in chunks.\n</essential-rules>\n\n<!-- reference -->\n\n"
         "<best-practices>\nUse focused media instructions.\n</best-practices>\n"
     )
+    (prompts.parent / "compact.md").write_text("Internal model instructions.\n")
     docs = repository / "docs/a13n-harness-ui"
     docs.mkdir(parents=True)
     (docs / "meta.json").write_text(
@@ -162,9 +163,11 @@ def test_operations_index_copies_each_content_owner_verbatim_and_removes_stale_f
     build_skills(package, repository)
     output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
     original = _files(output)
-    assert "harness/view.md" in original and "ui/threads.md" in original
+    assert "harness/files.md" in original and "ui/threads.md" in original
+    assert set(original) == {"SKILL.md", "harness/files.md", "ui/threads.md"}
+    assert "compact" not in original["SKILL.md"].decode()
     for owner, source in (
-        ("harness", repository / "packages/a13n-harness/a13n_harness/toolsets/prompts"),
+        ("harness", repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"),
         ("ui", package / "a13n_harness_ui/assets/guidance"),
     ):
         for path in source.glob("*.md"):
@@ -201,21 +204,21 @@ def test_operations_rebuilds_changed_inputs_or_incomplete_output(tmp_path: Path,
     prepare_skills(package)
     output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
     original = _files(output)
-    source = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/view.md"
+    source = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance/files.md"
     if change == "source":
         source.write_text(source.read_text().replace("Read in chunks.", "Read focused chunks."))
     elif change == "template":
         template = package / "a13n_harness_ui/assets/operations_skill.md"
         template.write_text(template.read_text() + "\nUpdated navigation guidance.\n")
     elif change == "missing":
-        (output / "harness/view.md").unlink()
+        (output / "harness/files.md").unlink()
     elif change == "corrupt":
-        (output / "harness/view.md").write_text("stale contents")
+        (output / "harness/files.md").write_text("stale contents")
     else:
         (output / "stale.md").write_text("removed source")
     prepare_skills(package)
     rebuilt = _files(output)
-    assert rebuilt["harness/view.md"] == source.read_bytes()
+    assert rebuilt["harness/files.md"] == source.read_bytes()
     if change in {"source", "template"}:
         assert rebuilt != original
     else:
@@ -229,7 +232,7 @@ def test_operations_validates_sources_before_reusing_existing_output(tmp_path: P
     output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
     original = _files(output)
     source = (
-        repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/view.md"
+        repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance/files.md"
         if owner == "harness"
         else package / "a13n_harness_ui/assets/guidance/threads.md"
     )
@@ -244,6 +247,6 @@ def test_sdist_preparation_rejects_missing_operations_reference(tmp_path: Path) 
     prepare_skills(package)
     (repository / "docs/a13n-harness-ui/meta.json").unlink()
     output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
-    (output / "harness/view.md").unlink()
+    (output / "harness/files.md").unlink()
     with pytest.raises(RuntimeError, match="operation guidance is incomplete"):
         prepare_skills(package)
