@@ -4,7 +4,11 @@
     reason = "EIP error values are the protocol boundary"
 )]
 #![cfg_attr(
-    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    not(any(
+        all(feature = "desktop", target_os = "macos"),
+        all(feature = "desktop", target_os = "linux"),
+        all(feature = "desktop", target_os = "windows")
+    )),
     allow(
         dead_code,
         reason = "native backend requires macOS, Linux X11 or Windows"
@@ -21,25 +25,29 @@ use std::{
 pub(crate) mod clipboard;
 pub(crate) mod startup;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 mod macos;
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 mod macos_clipboard;
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 use macos as native;
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "desktop", target_os = "linux"))]
 mod x11;
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "desktop", target_os = "linux"))]
 mod x11_clipboard;
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "desktop", target_os = "linux"))]
 use x11 as native;
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "desktop", target_os = "windows"))]
 pub(crate) mod windows;
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "desktop", target_os = "windows"))]
 mod windows_clipboard;
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "desktop", target_os = "windows"))]
 use windows as native;
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(
+    all(feature = "desktop", target_os = "macos"),
+    all(feature = "desktop", target_os = "linux"),
+    all(feature = "desktop", target_os = "windows")
+)))]
 mod native {
     use super::*;
     #[derive(Default)]
@@ -119,9 +127,9 @@ struct Basis {
 }
 
 fn accessibility_frame() -> AccessibilityDescriptionFrames {
-    if cfg!(target_os = "windows") {
+    if cfg!(all(feature = "desktop", target_os = "windows")) {
         AccessibilityDescriptionFrames::UiaPhysicalScreen
-    } else if cfg!(target_os = "macos") {
+    } else if cfg!(all(feature = "desktop", target_os = "macos")) {
         AccessibilityDescriptionFrames::AxScreen
     } else {
         AccessibilityDescriptionFrames::AtspiScreen
@@ -190,7 +198,11 @@ impl Basis {
 }
 
 // Shared image processing keeps native-pixel crop semantics identical across backends.
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+#[cfg(any(
+    all(feature = "desktop", target_os = "macos"),
+    all(feature = "desktop", target_os = "linux"),
+    all(feature = "desktop", target_os = "windows")
+))]
 fn encode_capture(
     mut image: image::DynamicImage,
     geometry: Geometry,
@@ -720,7 +732,11 @@ mod tests {
     }
 
     #[test]
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(
+        all(feature = "desktop", target_os = "macos"),
+        all(feature = "desktop", target_os = "linux"),
+        all(feature = "desktop", target_os = "windows")
+    ))]
     fn zoom_crops_native_pixels_before_resize_and_covers_fractional_edges() {
         let basis = basis();
         // Native pixels deliberately differ from display geometry, as with Retina.

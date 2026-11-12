@@ -445,6 +445,11 @@ impl Config {
                 "computer_use_permission_timeout_ms must be positive",
             ));
         }
+        if computer_use && !cfg!(feature = "desktop") {
+            return Err(ConfigError::new(
+                "computer_use is unavailable in the slim build; install the default or VM variant",
+            ));
+        }
         if computer_use
             && (!cfg!(any(
                 target_os = "macos",

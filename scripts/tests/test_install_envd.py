@@ -84,7 +84,7 @@ def release(
     bad: str = "",
     variant: str = "default",
 ) -> Path:
-    suffix = "-vm" if variant == "vm" else ""
+    suffix = "" if variant == "default" else f"-{variant}"
     archive = fixtures / f"a13n-envd-{version}-{target}{suffix}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         names = ["a13n-envd", "LICENSE"]
@@ -112,7 +112,7 @@ def release(
 
 
 @pytest.mark.parametrize("downloader", ["curl", "wget"])
-@pytest.mark.parametrize("variant", ["default", "vm"])
+@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
 def test_pinned_install_without_python_jq_or_other_downloader(installer, downloader, variant):
     run, fixtures, destination, _, commands = installer
     release(fixtures, variant=variant)
@@ -174,15 +174,16 @@ def test_install_and_replace_without_path_mutation(installer, system, machine, t
     assert "release/a13n-envd-v0.0.6/" in (fixtures / "requests").read_text()
 
 
+@pytest.mark.parametrize("variant", ["slim", "vm"])
 @pytest.mark.parametrize("use_flag", [True, False])
-def test_vm_variant_selects_separate_asset(installer, use_flag):
+def test_variant_selects_separate_asset(installer, use_flag, variant):
     run, fixtures, destination, _, _ = installer
-    release(fixtures, variant="vm")
-    args = ("--variant", "vm") if use_flag else ()
-    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else "vm")
+    release(fixtures, variant=variant)
+    args = ("--variant", variant) if use_flag else ()
+    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else variant)
     assert result.returncode == 0, result.stderr
     assert (destination / "a13n-envd").read_bytes() == BINARY
-    assert "x86_64-unknown-linux-gnu-vm.tar.gz" in (fixtures / "requests").read_text()
+    assert f"x86_64-unknown-linux-gnu-{variant}.tar.gz" in (fixtures / "requests").read_text()
 
 
 @pytest.mark.parametrize("variant,system", [("unknown", "Linux"), ("vm", "Darwin")])
@@ -375,3 +376,17 @@ def test_unsupported_target_and_help_have_no_side_effects(installer):
     assert run("--help", MOCK_OS="Unknown").returncode == 0
     assert not (fixtures / "requests").exists()
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("variant", ["slim", "vm"])
+def test_missing_flavor_never_falls_back_to_ordinary(installer, variant):
+    run, fixtures, destination, _, _ = installer
+    release(fixtures)
+    destination.mkdir()
+    (destination / "a13n-envd").write_bytes(b"existing")
+    result = run("--version", "0.0.6", "--variant", variant)
+    assert_failed(result, destination)
+    assert (destination / "a13n-envd").read_bytes() == b"existing"
+    requests = (fixtures / "requests").read_text()
+    assert f"-{variant}.tar.gz" in requests
+    assert "x86_64-unknown-linux-gnu.tar.gz" not in requests

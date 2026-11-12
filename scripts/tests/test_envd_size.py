@@ -23,7 +23,7 @@ def test_release_artifacts_strip_symbols_before_size_measurement():
     assert manifest["profile"]["release"]["strip"] is True
 
 
-@pytest.mark.parametrize("variant", ["default", "vm"])
+@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
 @pytest.mark.parametrize("field", ["binary", "archive"])
 @pytest.mark.parametrize("excess", [0, 1])
 def test_budgets_are_inclusive_and_check_both_artifacts(tmp_path, monkeypatch, variant, field, excess):
