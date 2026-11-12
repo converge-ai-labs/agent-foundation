@@ -276,6 +276,8 @@ The target starts the local PostgreSQL service when needed, rebuilds schema hist
 
 A schema-change pull request must explain lock duration, scans or rewrites, rolling old/new compatibility, index strategy, bounded backfill, interruption and rerun behavior, and rollback or forward repair. Prefer additive expand-and-contract changes. The shared image auto-migrates `all` and `control` replicas under advisory locking; deployments with a dedicated migration job disable replica auto migration. Worker-only processes never migrate.
 
+After merging or rebasing schema changes, run `uv run --locked python scripts/check_migration_heads.py`. This database-free check reads the Harness UI and Service OSS Alembic graphs and reports every conflicting head and revision file. The pre-commit hook always runs it, including merge commits whose migration files have no textual conflict. Reconcile concurrent branches with a reviewed merge revision; preserve revisions that may already be applied.
+
 Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/concurrency tests. Record any required timeout override and its rationale in the pull request.
 
 ## Documentation Changes
