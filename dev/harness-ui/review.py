@@ -519,7 +519,7 @@ async def serve(root: Path, port: int):
                 expected_version=None,
             )
             setup = await app.begin_connector_setup("connector-github-work")
-            saved = await app.act_connector_setup(
+            await app.act_connector_setup(
                 setup.session_id,
                 SetupCommand(
                     operation_id="fixture-save",
@@ -527,9 +527,6 @@ async def serve(root: Path, port: int):
                     action="save",
                     values={"token": "fictional-review-token"},
                 ),
-            )
-            await app.act_connector_setup(
-                setup.session_id, SetupCommand(operation_id="fixture-done", version=saved.version, action="done")
             )
             connection_chat = await app.create_thread(
                 title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")
