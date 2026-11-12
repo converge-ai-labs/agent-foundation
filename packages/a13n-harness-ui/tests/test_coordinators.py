@@ -364,8 +364,11 @@ async def test_restart_refreshes_historical_role_without_changing_captured_depen
     tmp_path: Path, worker: bool
 ) -> None:
     from a13n_harness_ui.composition import ResolvedRunComposition
+    from a13n_harness_ui.errors import RunCoordinationError
     from a13n_harness_ui.restart_models import RestartItem
+    from a13n_harness_ui.storage.continuations import publish_continuation
     from a13n_harness_ui.storage.objects import ObjectKind
+    from a13n_harness_ui.storage.read_models import project_continuation
 
     root = coordinator_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
@@ -394,9 +397,31 @@ async def test_restart_refreshes_historical_role_without_changing_captured_depen
             checkpoint=saved_thread.continuation,
             composition=envelope.ref,
         )
+        # A handoff cannot pair the selected checkpoint with a different
+        # composition, even when that composition has a readable older shape.
+        with pytest.raises(RunCoordinationError, match="restart composition changed") as conflict:
+            await app._root_runs._executor.capture(thread_id=thread.thread_id, restart=restart)
+        assert conflict.value.code == "restart_conflict"
+        assert (await app._threads.get(thread.thread_id)).continuation == saved_thread.continuation
+
+        # Model the actual historical writer: its checkpoint references the
+        # same historical capture as the restart handoff. Publish a new test
+        # object rather than changing either immutable object in place.
+        saved = await app._store.read_continuation(thread.thread_id, saved_thread.continuation, include_display=True)
+        historical_checkpoint = saved.model_copy(update={"run_composition": envelope.ref})
+        checkpoint = await publish_continuation(app._store.objects, historical_checkpoint)
+        await app._store.threads.select_continuation(
+            thread_id=thread.thread_id,
+            expected=saved_thread.continuation,
+            replacement=checkpoint,
+            read_model=project_continuation(historical_checkpoint),
+        )
+        restart = restart.model_copy(update={"checkpoint": checkpoint})
         restored = await app._root_runs._executor.capture(thread_id=thread.thread_id, restart=restart)
         assert restored.published.value.role == ("worker" if worker else "coordinator")
         assert restored.published.value.coordinator_thread_id == (owner.thread_id if worker else None)
         assert restored.published.value.model_dump(mode="json", exclude={"role", "coordinator_thread_id"}) == historical
         assert (await app._store.objects.read_model(envelope.ref, ResolvedRunComposition)).role is None
-        assert (await app._threads.get(thread.thread_id)).continuation == saved_thread.continuation
+        assert (await app._threads.get(thread.thread_id)).continuation == checkpoint
+        original = await app._store.read_object(saved_thread.continuation)
+        assert original.ref == saved_thread.continuation

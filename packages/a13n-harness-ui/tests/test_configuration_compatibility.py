@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Literal
@@ -159,6 +160,38 @@ async def test_legacy_run_composition_reads_context_window_without_rewriting_obj
     envelope = await store.publish(object_kind=ObjectKind.run_composition, object_schema_version="1", payload=payload)
     assert await store.read_model(envelope.ref, ResolvedRunComposition) == composition
     assert await store.read(envelope.ref) == envelope
+
+
+async def test_pre_group_connector_composition_retains_original_namespace_and_object(tmp_path):
+    from a13n_harness_ui.composition import AgentCompositionResolver, ResolvedRunComposition
+
+    from .test_composition import _catalog, _write_source
+    from .test_composition import _selection as composition_selection
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, composition_selection())
+    payload = composition.model_dump(mode="json")
+    # Fixed 0.34.0 Capture wire shape, before editable groups and account names.
+    payload["connectors"] = [
+        {
+            "connector_id": "connector-first",
+            "connector_key": "documents",
+            "configuration_version": 1,
+            "implementation": "example:Documents",
+            "binding": {"safe_recipe": "original"},
+        }
+    ]
+    store, _ = _object_store(tmp_path / "state")
+    envelope = await store.publish(object_kind=ObjectKind.run_composition, object_schema_version="1", payload=payload)
+    original_bytes = store._path_for(envelope.ref).read_bytes()
+    restored = await store.read_model(envelope.ref, ResolvedRunComposition)
+    capture = restored.connectors[0]
+    assert capture.group_name == "connector_" + hashlib.sha256(b"connector-first").hexdigest()[:16]
+    assert capture.connector_name == ""
+    assert capture.binding == {"safe_recipe": "original"}
+    assert ResolvedRunComposition.model_validate_json(restored.model_dump_json()) == restored
+    assert await store.read(envelope.ref) == envelope
+    assert store._path_for(envelope.ref).read_bytes() == original_bytes
 
 
 @pytest.mark.parametrize("canonical", [256000, True, "128000"])

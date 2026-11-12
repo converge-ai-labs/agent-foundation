@@ -255,9 +255,15 @@ class RootRunExecutor:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
+        if restart is not None and restart.cause == "process_loss":
+            execution = thread.last_execution
+            if execution is None or execution.status != "running" or execution.run_id != restart.run_id:
+                raise RunCoordinationError("The interrupted execution is no longer selected.", code="restart_conflict")
         previous_state, deferred, previous_composition, accepted, positions, archive = await self._load_run_state(
             thread
         )
+        if restart is not None and previous_composition != restart.composition:
+            raise RunCoordinationError("The saved restart composition changed.", code="restart_conflict")
         if prompt is not None and deferred is not None:
             assert thread.continuation is not None
             response = ThreadDeferredResponse(
@@ -425,6 +431,21 @@ class RootRunExecutor:
                     raise selected.error
                 run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
+                if (
+                    self._restart is not None
+                    and admission.organization is None
+                    and published.value.root.source_kind not in {"live", "bot"}
+                ):
+                    await self._restart.boundary(
+                        RestartItem(
+                            thread_id=thread_id,
+                            root_thread_id=thread_id,
+                            run_id=stream.run_id,
+                            cause="process_loss",
+                            composition=published.reference,
+                            checkpoint=selected.reference,
+                        )
+                    )
                 if self._summary_hub is not None:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
                 return selected.reference.logical_digest, str(frozen.position)
@@ -462,7 +483,12 @@ class RootRunExecutor:
                 root_capabilities=(
                     MainAccountCapability(published.value.root.model.model_id, on_main_account),
                     goal_capability,
-                    RootCheckpointCapability(save_checkpoint),
+                    RootCheckpointCapability(
+                        save_checkpoint,
+                        before_response=partial(self._restart.invalidate, thread_id)
+                        if self._restart is not None
+                        else None,
+                    ),
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
@@ -711,6 +737,13 @@ class RootRunExecutor:
                     )
                 finalization_span.set_attribute("a13n.phase.step", "continuation")
                 paused_state = self._restart.saved_state(thread_id) if self._restart is not None else None
+                interrupted = (
+                    self._restart.interrupted_boundary(thread_id)
+                    if self._restart is not None
+                    and paused_state is None
+                    and isinstance(run_error, get_cancelled_exc_class())
+                    else None
+                )
                 if paused_state is not None:
                     continuation = await self._select_state(
                         thread=thread,
@@ -724,6 +757,13 @@ class RootRunExecutor:
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
+                elif interrupted is not None:
+                    # The old model request joined without a response. Reuse its
+                    # exact selected checkpoint, including saved display and
+                    # metadata, rather than persisting partial streamed output.
+                    await self._store.read_continuation(thread_id, interrupted.checkpoint, include_display=True)
+                    continuation = RootContinuationSelection(status="selected", reference=interrupted.checkpoint)
+                if paused_state is not None or interrupted is not None:
                     if (
                         continuation.reference is not None
                         and continuation.status == "selected"

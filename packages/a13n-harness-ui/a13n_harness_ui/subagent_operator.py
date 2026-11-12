@@ -1248,11 +1248,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
             )
             self._active[prepared.head.execution_id] = active
             if self._restart is not None:
-                self._restart.register(prepared.state.thread_id, prepared.head.execution_id)
+                self._restart.register(
+                    prepared.state.thread_id, prepared.head.execution_id, root_thread_id=prepared.scope.root_thread_id
+                )
             try:
                 task_group.start_soon(self._run_segment, prepared, active)
             except BaseException:
                 self._active.pop(prepared.head.execution_id, None)
+                if self._restart is not None:
+                    self._restart.finished(prepared.state.thread_id)
                 if previous is None:
                     self._completion_continuations.pop(prepared.state.thread_id, None)
                 else:
@@ -2084,13 +2088,23 @@ class HarnessUiSubagentOperator(SubagentOperator):
         subagent_name, child_definition_id = await self._execution_identity(head)
         if display is None:
             display = await self._execution_display(head)
+        failure: JsonValue = None if head.failure is None else head.failure.model_dump(mode="json")
+        if head.status == "running" and await self._active_segment(head) is None:
+            # Keep the persisted observation, while telling native callers the
+            # same ownership fact exposed by the App's child query projection.
+            failure = {
+                "code": "subagent_execution_unavailable",
+                "message": "This saved execution has no active owner in this App and was not restarted. "
+                "Its saved running status does not establish liveness. Inspect retained results and external "
+                "effects before retrying work.",
+            }
         return SubagentExecutionView(
             execution_id=head.execution_id,
             subagent_name=subagent_name,
             child_definition_id=child_definition_id,
             status=head.status,
             resumed_from=head.resumed_from,
-            failure=None if head.failure is None else head.failure.model_dump(mode="json"),
+            failure=failure,
             resumable=head.resumable,
             thread_id=head.child_thread_id,
             child_run_id=head.child_run_id,

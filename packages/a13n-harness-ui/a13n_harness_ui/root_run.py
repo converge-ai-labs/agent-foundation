@@ -629,8 +629,9 @@ class RootRunCoordinator:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
-        operation.cancel_requested = True
         if self._restart is not None:
+            # Acknowledged Stop must outlive a process kill during cancellation.
+            await self._restart.invalidate(operation.receipt.thread_id, suppress=True)
             self._restart.active.pop(operation.receipt.thread_id, None)
             self._restart.signal()
         await self._request_cancel(operation)
@@ -773,8 +774,6 @@ class RootRunCoordinator:
                 )
             operation.scope = None
             operation.stream = None
-            if self._active_by_thread.get(operation.receipt.thread_id) == operation.receipt.receipt_id:
-                self._active_by_thread.pop(operation.receipt.thread_id, None)
             thread_id = operation.receipt.thread_id
             self._latest_terminal.pop(thread_id, None)
             self._latest_terminal[thread_id] = _view(operation)
@@ -799,6 +798,20 @@ class RootRunCoordinator:
                 self._start_interaction(operation, outcome)
             if self._restart is not None and admission.organization is None:
                 self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
+                try:
+                    await self._restart.invalidate(operation.receipt.thread_id)
+                except Exception as exc:
+                    # Terminal execution and selected-checkpoint checks also
+                    # fence recovery. Failed retirement must not strand waiters.
+                    get_logger(__name__).warning(
+                        "Could not retire root recovery boundary",
+                        extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+                    )
+            # Retirement can wait for another root's durable candidate write.
+            # Keep this Thread's admission slot through retirement, so cleanup
+            # cannot remove a newly registered successor or its boundary.
+            if self._active_by_thread.get(thread_id) == operation.receipt.receipt_id:
+                self._active_by_thread.pop(thread_id, None)
             operation.done.set()
             if self._tool_executions is not None:
                 self._tool_executions.run_settled(thread_id)

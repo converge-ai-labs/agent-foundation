@@ -1,4 +1,4 @@
-"""One locally coordinated planned restart, with a single atomic startup claim."""
+"""Locally owned safe-boundary handoffs, with a single atomic startup claim."""
 
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.restart_models import RestartBatch
@@ -37,7 +37,7 @@ class RestartRepository:
             if record is None:
                 return None
             batch = RestartBatch.model_validate_json(record.payload)
-            if batch.state != "ready":
+            if batch.state not in {"watching", "ready"} or not batch.items:
                 return None
             claimed = batch.model_copy(update={"state": "consumed", "error": "Startup recovery did not finish."})
             record.payload = claimed.model_dump_json()

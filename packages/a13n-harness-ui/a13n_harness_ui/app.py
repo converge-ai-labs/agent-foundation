@@ -4076,7 +4076,7 @@ async def open_harness_ui_app(
                 # Drain admitted operations while their MCP transports and store still exist.
                 resources.push_async_callback(mcp_operations.close)
 
-            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
+            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui" and automation_owned)
             tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
             operator = HarnessUiSubagentOperator(
                 tool_executions=tool_executions,
