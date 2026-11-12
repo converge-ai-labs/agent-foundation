@@ -23,7 +23,7 @@ from a13n_harness.tools.metadata import (
     recovery_retryable,
 )
 
-from ._instructions import InstructionFunctionToolset
+from ._instructions import InstructionFunctionToolset, ToolInstruction
 
 MemoryName = Annotated[str, Field(description="The memory's mount name")]
 
@@ -47,7 +47,7 @@ def memory_toolset[K: str](
     tools: Mapping[K, MemoryTool],
     enabled: Collection[K],
     mounts: Mapping[str, Mount],
-    instruction: str,
+    instruction: ToolInstruction,
 ) -> InstructionFunctionToolset | None:
     """The enabled tools some mount's access allows, each implemented by `owner`'s method of the tool's key.
 

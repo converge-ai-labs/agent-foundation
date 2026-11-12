@@ -13,7 +13,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import AbstractModelContextCapability
-from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
+from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_guidance
 from a13n_harness.toolsets._media import resolve_media_understanding
 from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.files import FileToolset
@@ -133,7 +133,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
                 0,
                 InstructionFunctionToolset(
                     id="a13n-environment-routing",
-                    instructions=[tool_instruction("environment-routing")],
+                    instructions=[tool_guidance("environment-routing")],
                 ),
             )
         return CombinedToolset(toolsets)

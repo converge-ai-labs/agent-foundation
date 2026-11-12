@@ -63,9 +63,6 @@ _INVALID_IDENT_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _CODEACT_CONTRACT_VERSION = 1
 _MAX_DIAGNOSTIC_BYTES = 4096
 
-_RUN_CODE_DESCRIPTION = "\n\n".join((tool_instruction("run_code"), tool_instruction("codeact")))
-_RUN_PROGRAM_DESCRIPTION = "\n\n".join((tool_instruction("run_program"), tool_instruction("codeact")))
-
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CodeActToolPolicy:
@@ -312,7 +309,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 Tool(
                     self._run_code,
                     name=_RUN_CODE,
-                    description=_RUN_CODE_DESCRIPTION,
+                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
@@ -327,7 +324,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 Tool(
                     self._run_program,
                     name=_RUN_PROGRAM,
-                    description=_RUN_PROGRAM_DESCRIPTION,
+                    description=tool_instruction("codeact", reference_root=ctx.deps.instruction_reference_root),
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,

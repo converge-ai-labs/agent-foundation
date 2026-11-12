@@ -45,6 +45,7 @@ from a13n_harness.providers.environment.local_envd.configuration import local_en
 from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
 from anyio import CancelScope, fail_after, to_thread
 
+from a13n_harness_ui.builtin_guidance import instruction_reference_root
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
 from a13n_harness_ui.configuration.models import DeviceResource, HttpDeviceTransport, canonical_digest
@@ -271,6 +272,7 @@ class EnvironmentRunPlan:
         tool_result_directory: str,
         retained_history_directory: str,
         default_environment: str,
+        instruction_reference_root: str | None = None,
     ) -> None:
         self._publications = tuple(publications)
         self.path_layout = path_layout
@@ -283,6 +285,7 @@ class EnvironmentRunPlan:
             {item.alias: item.environment for item in mounts}
         )
         self.default_environment = default_environment
+        self.instruction_reference_root = instruction_reference_root
 
     @property
     def finalization(self) -> EnvironmentFinalization:
@@ -520,6 +523,7 @@ class EnvironmentRunService:
             extensions=extensions,
         )
         return EnvironmentRunPlan(
+            instruction_reference_root=instruction_reference_root(composition.root),
             publications=publications,
             path_layout=path_layout,
             profile=profile,

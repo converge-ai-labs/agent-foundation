@@ -85,100 +85,51 @@ async def capture(actions, *, selected=None, instructions=True, computer=True, o
 
 
 @pytest.mark.parametrize(
-    "actions,selected,present,absent",
+    "actions,selected",
     [
-        (frozenset(), None, (), ("environment-computer",)),
-        ({Action.COMPUTER_DESCRIBE}, None, ("computer_describe",), ("obs-", "Clipboard", "Native accessibility")),
-        (
-            {Action.COMPUTER_OBSERVE},
-            None,
-            ("obs-", "coordinate_space"),
-            ("computer_zoom", "Clipboard", "Native accessibility", "input_cleanup_complete"),
-        ),
-        (
-            {Action.COMPUTER_ZOOM},
-            None,
-            ("computer_zoom", "source_observation_id"),
-            ("Clipboard", "Native accessibility"),
-        ),
-        (
-            {Action.COMPUTER_READ_CLIPBOARD},
-            None,
-            ("Clipboard", "cleanup_complete"),
-            ("obs-", "coordinate_space", "Native accessibility", "input_cleanup_complete"),
-        ),
-        (
-            ACCESSIBILITY_READ_ACTIONS,
-            None,
-            ("Native accessibility", "range-"),
-            (
-                "Computer coordinate_space",
-                "input_cleanup_complete",
-                "application_outcome",
-                "selection_select",
-                "selection_add_child",
-            ),
-        ),
-        (
-            {Action.COMPUTER_UIA_INVOKE},
-            None,
-            ("application_outcome",),
-            ("Computer coordinate_space", "selection_select", "selection_add_child", "Clipboard"),
-        ),
-        (
-            {Action.COMPUTER_ATSPI_DO_ACTION},
-            None,
-            ("application_outcome",),
-            ("selection_select", "selection_add_child", "Computer coordinate_space"),
-        ),
-        (
-            {Action.COMPUTER_UIA_SELECTION_SELECT},
-            None,
-            ("selection_select",),
-            ("selection_add_child",),
-        ),
-        (
-            {Action.COMPUTER_ATSPI_SELECTION_ADD_CHILD},
-            None,
-            ("selection_add_child",),
-            ("selection_select",),
-        ),
-        (
-            {Action.COMPUTER_AX_PERFORM_ACTION},
-            None,
-            ("application_outcome",),
-            ("selection_select", "selection_add_child", "Computer coordinate_space"),
-        ),
-        (
-            COMPUTER_ACTIONS,
-            frozenset({"computer_observe"}),
-            ("obs-",),
-            ("Native accessibility", "computer_zoom", "Clipboard"),
-        ),
-        (COMPUTER_ACTIONS, frozenset(), (), ("environment-computer", "Computer coordinate_space")),
+        (frozenset(), None),
+        ({Action.COMPUTER_DESCRIBE}, None),
+        ({Action.COMPUTER_OBSERVE}, None),
+        ({Action.COMPUTER_ZOOM}, None),
+        ({Action.COMPUTER_READ_CLIPBOARD}, None),
+        (ACCESSIBILITY_READ_ACTIONS, None),
+        ({Action.COMPUTER_UIA_INVOKE}, None),
+        ({Action.COMPUTER_ATSPI_DO_ACTION}, None),
+        ({Action.COMPUTER_UIA_SELECTION_SELECT}, None),
+        ({Action.COMPUTER_ATSPI_SELECTION_ADD_CHILD}, None),
+        ({Action.COMPUTER_AX_PERFORM_ACTION}, None),
+        (COMPUTER_ACTIONS, frozenset({"computer_observe"})),
+        (COMPUTER_ACTIONS, frozenset()),
     ],
 )
-async def test_computer_instruction_sections_follow_actions_and_exact_tool_selection(
-    actions, selected, present, absent
-):
+async def test_computer_guidance_is_grouped_while_tool_selection_and_coordinates_remain_exact(actions, selected):
     names, instructions = await capture(frozenset(actions), selected=selected)
     if selected is not None:
         assert names == selected
-    for text in present:
-        assert text in instructions
-    for text in absent:
-        assert text not in instructions
+    assert ("<tool-name>environment-computer</tool-name>" in instructions) is bool(names)
+    for text in ("Clipboard", "Native accessibility", "selection_select", "selection_add_child"):
+        assert (text in instructions) is bool(names)
+    pointer_tools = {
+        "computer_observe",
+        "computer_zoom",
+        "computer_click",
+        "computer_move",
+        "computer_drag",
+        "computer_scroll",
+    }
+    assert ("Computer coordinate_space" in instructions) is bool(names & pointer_tools)
 
 
-async def test_mixed_mounts_contribute_only_their_available_workflows_without_activation():
+async def test_mixed_mounts_contribute_one_group_without_activation():
     names, instructions = await capture(frozenset({Action.COMPUTER_OBSERVE}), other_actions=ACCESSIBILITY_READ_ACTIONS)
     assert "computer_observe" in names
     assert "computer_accessibility_roots" in names
     assert "Native accessibility" in instructions
     assert "Computer coordinate_space" in instructions
-    assert "Clipboard" not in instructions
-    assert "application_outcome" not in instructions
-    assert "selection_select" not in instructions
+    assert instructions.count("<tool-name>environment-computer</tool-name>") == 1
+    assert "Clipboard" in instructions
+    assert "application_outcome" in instructions
+    assert "selection_select" in instructions
 
 
 async def test_environment_instruction_switch_preserves_tools_but_removes_guidance():
@@ -190,43 +141,25 @@ async def test_environment_instruction_switch_preserves_tools_but_removes_guidan
 
 
 @pytest.mark.parametrize(
-    "actions,selected,present,absent",
+    "actions,selected",
     [
-        (
-            {Action.SHELL_EXEC},
-            None,
-            ("Agent-wide tool timeout",),
-            ("Use `shell_wait`", "Use `shell_info", "Use `shell_input`", "Use `shell_signal`"),
-        ),
-        (
-            {Action.PROCESS_INSPECT},
-            None,
-            ("Use `shell_info", "process-*"),
-            ("Use `shell_exec`", "Use `shell_wait`", "Use `shell_input`", "Use `shell_signal`"),
-        ),
-        (
-            frozenset(Action),
-            frozenset({"shell_exec"}),
-            ("Use `shell_exec`",),
-            ("Use `shell_wait`", "Use `shell_info", "Use `shell_input`", "Use `shell_signal`"),
-        ),
-        (
-            frozenset(Action),
-            frozenset({"shell_wait"}),
-            ("Use `shell_wait`",),
-            ("Use `shell_exec`", "Use `shell_info", "Use `shell_input`", "Use `shell_signal`"),
-        ),
+        ({Action.SHELL_EXEC}, None),
+        ({Action.PROCESS_INSPECT}, None),
+        (frozenset(Action), frozenset({"shell_exec"})),
+        (frozenset(Action), frozenset({"shell_wait"})),
     ],
 )
-async def test_shell_instruction_sections_follow_exposed_controls(actions, selected, present, absent):
-    _, instructions = await capture(frozenset(actions), selected=selected, computer=False)
-    for text in present:
+async def test_shell_guidance_is_grouped_while_exposed_controls_remain_selected(actions, selected):
+    names, instructions = await capture(frozenset(actions), selected=selected, computer=False)
+    if selected is not None:
+        assert names == selected
+    assert instructions.count("<tool-name>environment-shell</tool-name>") == 1
+    for text in ("Use `shell_exec`", "Use `shell_wait`", "Use `shell_info", "Use `shell_input`", "Use `shell_signal`"):
         assert text in instructions
-    for text in absent:
-        assert text not in instructions
 
 
-async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instructions():
+@pytest.mark.parametrize("reference_root", [None, "/guidance/release"])
+async def test_lazy_support_narrows_context_tools_and_schemas_while_retaining_group_guidance(reference_root):
     class Source(_Binding):
         @property
         def descriptor(self):
@@ -252,7 +185,9 @@ async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instru
         computer = ComputerToolset(env)
         before = computer.get_toolset()
         assert "computer_ax" in before.tools
-        ctx = SimpleNamespace(deps=SimpleNamespace(toolset_instructions=True))
+        ctx = SimpleNamespace(
+            deps=SimpleNamespace(toolset_instructions=True, instruction_reference_root=reference_root)
+        )
         before_instructions = await before.get_instructions(ctx)
         assert "Clipboard" in str(before_instructions)
         assert "selection_select" in str(before_instructions)
@@ -267,9 +202,9 @@ async def test_lazy_support_narrowing_refreshes_context_tools_schemas_and_instru
         after_instructions = str(await after.get_instructions(ctx))
         assert "Native accessibility" in after_instructions
         assert "application_outcome" in after_instructions
-        assert "Clipboard" not in after_instructions
-        assert "selection_select" not in after_instructions
-        assert "selection_add_child" not in after_instructions
+        assert "Clipboard" in after_instructions
+        assert "selection_select" in after_instructions
+        assert "selection_add_child" in after_instructions
         assert "Computer coordinate_space" not in after_instructions
         schema = after.tools["computer_uia"].function_schema.json_schema
         assert schema["$defs"]["UIACommand"]["properties"]["op"]["const"] == "invoke"

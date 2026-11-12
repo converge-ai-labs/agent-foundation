@@ -29,7 +29,7 @@ from a13n_harness.media_types import is_text_media_type, text_charset
 from a13n_harness.providers.web.contracts import _validate_headers
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .output import disclose_sequence_field, disclose_text_fields
@@ -89,10 +89,7 @@ _CLOSE_GRACE_SECONDS = 0.05
 # drain and close tasks rooted until completion, then release them in the callback.
 _RESPONSE_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 
-_SEARCH_INSTRUCTION = tool_instruction("search")
-_SCRAPE_INSTRUCTION = tool_instruction("scrape")
-_FETCH_INSTRUCTION = tool_instruction("fetch")
-_DOWNLOAD_INSTRUCTION = tool_instruction("download")
+_WEB_INSTRUCTION = tool_guidance("web")
 
 
 def _prefer_native_web_search(
@@ -143,12 +140,9 @@ class WebToolset:
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools: list[HarnessTool] = []
-        instructions: list[str] = []
         search_mode = self.configuration.search.mode
         host_search = search_mode in {"host", "auto"} and bool(self._binding.search_backends)
         search_enabled = host_search or search_mode in {"native", "auto"}
-        if search_enabled:
-            instructions.append(_SEARCH_INSTRUCTION)
         if host_search:
             tools.append(
                 self._tool(
@@ -162,7 +156,6 @@ class WebToolset:
                 )
             )
         if self.configuration.scrape.mode == "host" and self._binding.scrape_backends:
-            instructions.append(_SCRAPE_INSTRUCTION)
             tools.append(
                 self._tool(
                     self.scrape,
@@ -172,7 +165,6 @@ class WebToolset:
                 )
             )
         if self.configuration.fetch.enabled:
-            instructions.append(_FETCH_INSTRUCTION)
             tools.append(
                 self._tool(
                     self.fetch,
@@ -182,7 +174,6 @@ class WebToolset:
                 )
             )
         if self.configuration.download.enabled:
-            instructions.append(_DOWNLOAD_INSTRUCTION)
             tools.append(
                 self._tool(
                     self.download,
@@ -194,7 +185,7 @@ class WebToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-web-tool-functions",
-            instructions=instructions,
+            instructions=[_WEB_INSTRUCTION] if tools or search_enabled else [],
         )
 
     def _tool(

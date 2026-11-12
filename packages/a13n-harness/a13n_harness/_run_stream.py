@@ -620,6 +620,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 else _normalize_toolset_instructions(agent_spec)
             ),
             _toolset_instructions_override=bindings.toolset_instructions,
+            instruction_reference_root=bindings.instruction_reference_root,
             model_context=bindings.model_context,
             model_call_check=bindings.model_call_check,
             usage_reporter=bindings.usage_reporter,

@@ -607,6 +607,7 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
     captured = SimpleNamespace(
         project_id=project_id,
         project_roots=("/captured/root",),
+        root=SimpleNamespace(capabilities=(), tools=None),
         webui_sidekick=None,
         role="ordinary",
         coordinator_thread_id=None,
