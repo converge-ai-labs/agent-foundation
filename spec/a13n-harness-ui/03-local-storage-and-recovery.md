@@ -443,7 +443,11 @@ A saved `running` status means only that no terminal checkpoint or explicit loca
 
 ### Child Checkpoint
 
-A child checkpoint contains the exact execution correlation, Run composition reference, `HarnessState`, bounded compact display, terminal fact, and creation time. Terminal publication follows:
+A child checkpoint contains the exact execution correlation, Run composition reference, `HarnessState`, bounded compact display, terminal fact, and creation time. Before each model request, the Host saves and compare-and-selects a nonterminal checkpoint using the same request-boundary capability as root execution. This costs one full-state write per model request per running child. A successful selection advances the expected pointer and removes the superseded checkpoint from the same Run; failed compare-and-select preserves the newer writer's selection. Checkpoint reads and removal coordinate under the existing Thread checkpoint lock. Database sessions end before object I/O or model execution.
+
+Progress selection does not change execution status or resumability. Only `succeeded` executions with eligible terminal checkpoints are resumable; stopped, failed, cancelled, lost, and running children remain ineligible. An unplanned exit can leave a selected progress checkpoint and a saved `running` head that is locally unavailable. Existing explicit loss recording can mark the execution `lost`; neither case removes readable progress or creates takeover authority. Startup does not infer new loss facts.
+
+Terminal publication follows:
 
 1. finish the child Run and Environment cleanup;
 2. construct and validate the complete terminal checkpoint;

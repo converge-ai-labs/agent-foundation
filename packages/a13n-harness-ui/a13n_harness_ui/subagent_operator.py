@@ -114,6 +114,7 @@ from a13n_harness_ui.observation import (
 )
 from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
 from a13n_harness_ui.restart_models import RestartItem
+from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -129,6 +130,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfiguration,
 )
+from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.contracts import (
     DynamicAgentSource,
     StoredChildAuthority,
@@ -220,6 +222,10 @@ class _ActiveSegment:
     done: Event
     display: CompactChildDisplay
     root_thread_id: str = ""
+    prepared: _PreparedSegment | None = None
+    checkpoint: ObjectRef | None = None
+    run_checkpoint: ObjectRef | None = None
+    checkpoint_run_id: str | None = None
     cleanup_succeeded: bool = False
     status: Literal["running", "cancelling", "succeeded", "cancelled"] = "running"
     settlement_lock: Lock = field(default_factory=Lock)
@@ -557,9 +563,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             pricing_catalog=pricing_catalog,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=()
-            if self._restart is None
-            else (RestartPauseCapability(self._restart, state.thread_id),),
+            root_capabilities=self._checkpoint_capabilities(state.thread_id),
         )
         initial = await self._store.objects.publish_model(
             object_kind=ObjectKind.thread_initial_state,
@@ -1289,9 +1293,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=()
-            if self._restart is None
-            else (RestartPauseCapability(self._restart, thread.thread_id),),
+            root_capabilities=self._checkpoint_capabilities(thread.thread_id),
         )
         captured = await self._environments.admit(published.value)
         envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
@@ -1399,7 +1401,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=() if self._restart is None else (RestartPauseCapability(self._restart, item.thread_id),),
+            root_capabilities=self._checkpoint_capabilities(item.thread_id),
         )
         environment = await self._environments.prepare(composition)
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
@@ -1443,6 +1445,52 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         await self._start_segment(prepared)
         return execution_id, stream.run_id
+
+    def _checkpoint_capabilities(self, thread_id: str):
+        return (
+            RootCheckpointCapability(partial(self._save_request_checkpoint, thread_id)),
+            *((RestartPauseCapability(self._restart, thread_id),) if self._restart is not None else ()),
+        )
+
+    async def _save_request_checkpoint(self, thread_id: str, state: HarnessState) -> str:
+        async with self._lock:
+            active = next((entry for entry in self._active.values() if entry.stream.thread_id == thread_id), None)
+        if active is None or active.prepared is None:
+            raise RunCoordinationError("Child checkpoint has no active execution.", code="subagent_not_active")
+        prepared = active.prepared
+        run_id = active.stream.run_id
+        superseded = active.run_checkpoint if active.checkpoint_run_id == run_id else None
+        reference = await self._publish_checkpoint(
+            prepared=prepared,
+            run_id=run_id,
+            state=state,
+            deferred_requests=None,
+            display=active.display.model_copy(update={"final_answer": None}),
+            terminal=False,
+            expected=active.checkpoint,
+            accepted=active.stream.pending_deferred_input,
+            superseded=superseded,
+            memory_positions=prepared.reconstructed.memory_cursors.snapshot(),
+        )
+        active.checkpoint = active.run_checkpoint = reference
+        active.checkpoint_run_id = run_id
+        if self._summary_hub is not None:
+            await self._summary_hub.publish(
+                kind="thread", thread_id=thread_id, root_thread_id=prepared.scope.root_thread_id
+            )
+        return reference.logical_digest
+
+    async def _remove_replaced_request_checkpoint(self, prepared: _PreparedSegment, active: _ActiveSegment) -> None:
+        superseded = active.run_checkpoint
+        if superseded is None:
+            return
+        try:
+            async with checkpoint_lock(self._store.layout.root, prepared.head.child_thread_id):
+                current = await self._store.child_executions.get(prepared.head.execution_id)
+                if current is not None and current.status != "running" and current.selected_checkpoint != superseded:
+                    await self._store.objects.remove(superseded)
+        except Exception:
+            get_logger(__name__).warning("Could not remove superseded child checkpoint", exc_info=True)
 
     async def _new_stream(
         self,
@@ -1507,6 +1555,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             stream=prepared.stream,
             done=done,
             display=prepared.display,
+            prepared=prepared,
         )
         async with self._lock:
             self._require_started_locked()
@@ -1556,17 +1605,17 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
     async def _execute_segment(self, prepared: _PreparedSegment, active: _ActiveSegment, span: Span) -> None:
         current = prepared
-        expected_checkpoint: ObjectRef | None = None
         try:
             while True:
+                active.prepared = current
                 result, display, terminal_events = await self._consume_run(current, active)
-                if await self._finish_restart(current, active, expected_checkpoint):
+                if await self._finish_restart(current, active, active.checkpoint):
                     return
                 if result.status == "suspended":
                     state = result.state
                     deferred = result.deferred
                     assert state is not None and deferred is not None
-                    expected_checkpoint = await self._publish_checkpoint(
+                    active.checkpoint = await self._publish_checkpoint(
                         prepared=current,
                         memory_positions=current.reconstructed.memory_cursors.snapshot(),
                         run_id=result.run_id,
@@ -1574,8 +1623,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         deferred_requests=deferred,
                         display=display,
                         terminal=False,
-                        expected=expected_checkpoint,
+                        expected=active.checkpoint,
+                        superseded=active.run_checkpoint,
                     )
+                    active.run_checkpoint = None
                     next_environment = await self._environments.prepare(current.composition)
                     accepted = _deny_deferred(deferred)
                     next_stream, external_context = await self._new_stream(
@@ -1619,7 +1670,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     current,
                     result,
                     display,
-                    expected_checkpoint,
+                    active.checkpoint,
                     terminal_events,
                     active=active,
                     accepted=current.stream.pending_deferred_input,
@@ -1645,7 +1696,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             with CancelScope(shield=True):
-                if await self._finish_restart(current, active, expected_checkpoint):
+                if await self._finish_restart(current, active, active.checkpoint):
                     return
                 checkpoint: ObjectRef | None = None
                 try:
@@ -1669,18 +1720,19 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 if isinstance(exc, get_cancelled_exc_class()):
                     await self._lose_after_acceptance(
                         current.head.execution_id,
-                        expected_checkpoint=expected_checkpoint,
+                        expected_checkpoint=active.checkpoint,
                         checkpoint=checkpoint,
                     )
                 else:
                     await self._fail_after_acceptance(
                         current.head.execution_id,
                         exc,
-                        expected_checkpoint=expected_checkpoint,
+                        expected_checkpoint=active.checkpoint,
                         checkpoint=checkpoint,
                     )
         finally:
             with CancelScope(shield=True):
+                await self._remove_replaced_request_checkpoint(current, active)
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
                     if self._tool_executions is not None:
@@ -1996,24 +2048,33 @@ class HarnessUiSubagentOperator(SubagentOperator):
         terminal: bool,
         expected: ObjectRef | None,
         memory_positions: Mapping[str, str | None] | None = None,
+        superseded: ObjectRef | None = None,
+        accepted: DeferredToolResume | None = None,
     ) -> ObjectRef:
         head = prepared.head
-        reference = await self._publish_checkpoint_object(
-            prepared=prepared,
-            memory_positions=memory_positions,
-            run_id=run_id,
-            state=state,
-            deferred_requests=deferred_requests,
-            display=display,
-            terminal=terminal,
-        )
-        await self._store.child_executions.select_checkpoint(
-            execution_id=head.execution_id,
-            expected=expected,
-            checkpoint=reference,
-            child_run_id=run_id,
-            tool_completions=completion_ids(state.message_history),
-        )
+        async with checkpoint_lock(self._store.layout.root, head.child_thread_id):
+            reference = await self._publish_checkpoint_object(
+                prepared=prepared,
+                memory_positions=memory_positions,
+                run_id=run_id,
+                state=state,
+                deferred_requests=deferred_requests,
+                display=display,
+                terminal=terminal,
+                accepted=accepted,
+            )
+            await self._store.child_executions.select_checkpoint(
+                execution_id=head.execution_id,
+                expected=expected,
+                checkpoint=reference,
+                child_run_id=run_id,
+                tool_completions=completion_ids(state.message_history),
+            )
+            if superseded is not None and superseded == expected and superseded != reference:
+                try:
+                    await self._store.objects.remove(superseded)
+                except Exception:
+                    get_logger(__name__).warning("Could not remove superseded child checkpoint", exc_info=True)
         async with self._lock:
             self._signal_change_locked()
         return reference
@@ -2231,7 +2292,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child execution has no selected checkpoint.",
                 code="subagent_checkpoint_missing",
             )
-        checkpoint = await self._store.objects.read_model(reference, StoredChildCheckpoint)
+        checkpoint = await self._store.read_child_checkpoint(head)
         if (
             checkpoint.execution_id != head.execution_id
             or checkpoint.child_thread_id != head.child_thread_id

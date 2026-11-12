@@ -23,7 +23,7 @@ from .checkpoint_pruning import CheckpointPruner
 from .compaction import CompactionRepository
 from .connectors import ConnectorRepository
 from .continuations import read_continuation
-from .contracts import Continuation, StoredThreadInitialState
+from .contracts import ChildExecutionHead, Continuation, StoredChildCheckpoint, StoredThreadInitialState
 from .database import Database, open_database, short_session, transaction
 from .drafts import DraftRepository
 from .envd_sessions import EnvdSessionRepository
@@ -125,6 +125,20 @@ class LocalStore:
                     code="thread_continuation_conflict",
                 )
             return await read_continuation(self.objects, reference, include_display=include_display)
+
+    async def read_child_checkpoint(self, head: ChildExecutionHead) -> StoredChildCheckpoint:
+        """Coordinate exact selected-child reads with same-Run checkpoint removal."""
+        async with checkpoint_lock(self.layout.root, head.child_thread_id):
+            current = await self.child_executions.get(head.execution_id)
+            if (
+                head.selected_checkpoint is None
+                or current is None
+                or current.selected_checkpoint != head.selected_checkpoint
+            ):
+                raise StoreConflictError(
+                    "The selected child checkpoint changed; refetch.", code="child_checkpoint_conflict"
+                )
+            return await self.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
 
     async def publish_work(self, thread_id: str, reference: ObjectRef, state: HarnessState) -> bool:
         """Best-effort derived publication cannot invalidate a selected checkpoint."""

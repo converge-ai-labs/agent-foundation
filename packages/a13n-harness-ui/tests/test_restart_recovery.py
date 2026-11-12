@@ -390,6 +390,11 @@ async def test_child_restores_with_active_or_completed_parent(
                 assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
             else:
                 await parent_waiting.wait()
+        heads, _ = await app._store.child_executions.list_for_parent(thread.thread_id)
+        mid_head = heads[0]
+        mid_checkpoint = mid_head.selected_checkpoint
+        assert mid_checkpoint is not None
+        assert not (await app._store.read_child_checkpoint(mid_head)).terminal
         group.start_soon(release_during_shutdown, app, release_child)
         if finalization_failure:
             fail_environment_finalization(monkeypatch, finalization_failure)
@@ -409,6 +414,22 @@ async def test_child_restores_with_active_or_completed_parent(
         assert batch is not None and batch.state == "ready", batch
         assert len(batch.items) == (1 if parent_completes else 2)
         child_item = next(item for item in batch.items if item.execution_id is not None)
+        assert child_item.checkpoint != mid_checkpoint
+        selected = await store.child_executions.get(child_item.execution_id)
+        assert selected is not None and selected.selected_checkpoint == child_item.checkpoint
+        # A stale request-boundary pointer cannot replace the exact terminal handoff.
+        from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+
+        operator = HarnessUiSubagentOperator(
+            store=store,
+            configurations=None,
+            compositions=None,
+            agent_reconstructor=None,
+            environment_service=None,
+        )
+        with pytest.raises(RunCoordinationError, match="handoff checkpoint changed"):
+            await operator.resume_restart(child_item.model_copy(update={"checkpoint": mid_checkpoint}), batch.batch_id)
+
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         recovered = await app._store.restarts.get()
         assert recovered is not None and recovered.state in {"consumed", "watching"}

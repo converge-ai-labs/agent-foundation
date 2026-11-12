@@ -1233,6 +1233,20 @@ class ChildExecutionRepository:
             )
             return None if record is None else _child_value(record)
 
+    async def latest_checkpoint_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
+        """The newest segment with a selected checkpoint, including progress checkpoints."""
+        async with short_session(self._sessions) as session:
+            record = await session.scalar(
+                select(ChildExecutionRecord)
+                .where(
+                    ChildExecutionRecord.child_thread_id == child_thread_id,
+                    ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
+                )
+                .order_by(ChildExecutionRecord.segment_index.desc())
+                .limit(1)
+            )
+            return None if record is None else _child_value(record)
+
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
         async with short_session(self._sessions) as session:
             record = (
