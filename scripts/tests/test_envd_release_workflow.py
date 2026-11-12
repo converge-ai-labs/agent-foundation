@@ -38,13 +38,13 @@ def test_client_publication_waits_for_downloads_without_a_registry_cycle(jobs: d
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
-@pytest.mark.parametrize("variant", ["default", "vm"])
+@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
 @pytest.mark.parametrize("missing_arch", [None, "amd64", "arm64"])
 def test_sandbox_binary_staging_preserves_target_bytes_and_requires_both_archives(
     jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, missing_arch: str | None, variant: str
 ) -> None:
     monkeypatch.setenv("ENVD_VARIANT", variant)
-    suffix = "-vm" if variant == "vm" else ""
+    suffix = "" if variant == "default" else f"-{variant}"
     archives = tmp_path / "dist/linux"
     archives.mkdir(parents=True)
     targets = {"amd64": "x86_64-unknown-linux-gnu", "arm64": "aarch64-unknown-linux-gnu"}
@@ -164,7 +164,7 @@ def test_native_release_checks_binary_version_without_inner_isolation(
 
 
 @pytest.mark.parametrize("target", ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"])
-@pytest.mark.parametrize("variant", ["default", "vm"])
+@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
 def test_linux_release_archives_select_embedded_vm_backends(jobs, tmp_path, monkeypatch, target, variant):
     job = jobs["build-binaries"]
     entry = next(
@@ -176,7 +176,7 @@ def test_linux_release_archives_select_embedded_vm_backends(jobs, tmp_path, monk
     assert job["env"]["BOXLITE_DEPS_STUB"] == "2"
     assert job["env"]["BOXLITE_EMBED_RUNTIME"] == "1"
     dependencies = next(step for step in job["steps"] if step["name"] == "Install Linux SDK build dependencies")
-    assert dependencies["if"] == "runner.os == 'Linux'"
+    assert dependencies["if"] == "runner.os == 'Linux' && matrix.envd-variant == 'vm'"
     assert "protobuf-compiler" in dependencies["run"]
     step = next(step for step in job["steps"] if step["name"] == "Build Unix binary archive")
     cargo = tmp_path / "cargo"
@@ -201,14 +201,36 @@ def test_linux_release_archives_select_embedded_vm_backends(jobs, tmp_path, monk
             "--locked",
             "--package",
             "a13n-envd",
+            "--no-default-features",
             "--features",
-            "vm" if variant == "vm" else "",
+            {"default": "desktop", "slim": "", "vm": "vm"}[variant],
             "--target",
             target,
         ]
     )
-    suffix = "-vm" if variant == "vm" else ""
+    suffix = "" if variant == "default" else f"-{variant}"
     with tarfile.open(tmp_path / f"a13n-envd-1.2.3-{target}{suffix}.tar.gz") as archive:
         binary = archive.extractfile("a13n-envd")
         assert binary is not None
         assert binary.read() == b"vm-enabled"
+
+
+def test_release_publishes_three_flavors_without_a_cartesian_vm_matrix(jobs):
+    rows = jobs["build-binaries"]["strategy"]["matrix"]["include"]
+    targets = {
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+    }
+    assert len(rows) == 14
+    assert {(row["target"], row["envd-variant"]) for row in rows} == {
+        *((target, variant) for target in targets for variant in ("default", "slim")),
+        *((target, "vm") for target in targets if "linux" in target),
+    }
+    windows = next(step for step in jobs["build-binaries"]["steps"] if step["name"] == "Build Windows binary archive")
+    assert windows["env"]["ENVD_VARIANT"] == "${{ matrix.envd-variant }}"
+    assert "--no-default-features" in windows["run"]
+    assert "$env:TARGET$suffix.zip" in windows["run"]

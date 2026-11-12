@@ -6,12 +6,12 @@ fail() { printf 'a13n-envd installer: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
 Usage: sh install-a13n-envd.sh [--version X.Y.Z[-rc.N]] [--install-dir /absolute/path]
-                               [--variant default|vm] [--add-to-path | --no-add-to-path]
+                               [--variant default|slim|vm] [--add-to-path | --no-add-to-path]
 
 Install the native a13n-envd binary for Linux or macOS; do not start it.
 Defaults: newest stable envd release; ~/.local/bin (/usr/local/bin for root);
 no PATH changes. Explicit flags override these environment variables:
-  A13N_ENVD_VARIANT       default (non-VM) or vm (Linux only)
+  A13N_ENVD_VARIANT       default (desktop), slim (core), or vm (Linux only)
   A13N_ENVD_VERSION       Exact canonical release version
   A13N_ENVD_INSTALL_DIR   Absolute destination directory
   A13N_ENVD_ADD_TO_PATH   1 to opt in, 0 to leave PATH unchanged
@@ -57,8 +57,9 @@ esac
 suffix=
 case "$variant" in
     default) ;;
+    slim) suffix=-slim ;;
     vm) case "$target" in *-linux-*) suffix=-vm ;; *) fail 'VM builds are available only for Linux' ;; esac ;;
-    *) fail 'variant must be default or vm' ;;
+    *) fail 'variant must be default, slim or vm' ;;
 esac
 command -v tar >/dev/null 2>&1 || fail 'tar is required'
 if command -v curl >/dev/null 2>&1; then downloader=curl

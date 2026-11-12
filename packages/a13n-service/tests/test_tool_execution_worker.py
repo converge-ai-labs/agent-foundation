@@ -132,7 +132,7 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
     runs_kit,
     monkeypatch,
 ):
-    runtime, lease, _ = await _setup(service, scripted_model, runs_kit, lease_seconds=0.6)
+    runtime, lease, _ = await _setup(service, scripted_model, runs_kit)
     entered, cancelled, cleanup = asyncio.Event(), asyncio.Event(), asyncio.Event()
     cancellations = 0
 
@@ -169,6 +169,10 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
             repeated.set()
 
     monkeypatch.setattr(runtime.executions, "request_cancellation", request_cancellation)
+    # Start at the renewal threshold without squeezing cleanup/publication into a 0.2-second window.
+    runtime.executions.lease_deadlines[record.execution_id] = (
+        asyncio.get_running_loop().time() + runtime.settings.worker.lease_seconds / 3
+    )
     supervisor = asyncio.create_task(Worker(runtime, execute)._supervise())
     try:
         await asyncio.wait_for(cancelled.wait(), 2)
@@ -178,8 +182,7 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
         cleanup.set()
         await runtime.executions.join()
         result = await runtime.executions.result(lease.thread_id, record.execution_id)
-        # The artificial lease may have expired before publication; either way the invocation is stopped.
-        assert result is None or result.record.status in {"cancelled", "lost"}
+        assert result is not None and result.record.status == "cancelled"
         assert not runtime.executions.active
     finally:
         cleanup.set()

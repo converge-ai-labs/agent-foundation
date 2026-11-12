@@ -15,6 +15,8 @@ All variants launch Envd as root and execute Session commands and file operation
 
 Start with the default `inherit` egress mode. Ordinary use needs no `--privileged`, extra capabilities or disabled Docker security profiles. The Linux runtime must support Envd's native process operations; custom runtimes and reduced capability sets can reject them. For destination filtering, follow [controlled egress](#opt-in-controlled-egress).
 
+Standard and slim tooling images use the slim Envd binary; desktop images use ordinary. Existing `*-vm` tags use the VM binary. Local source builds resolve `ENVD_VARIANT=auto` from the tooling selection; use `--build-arg ENVD_VARIANT=default` when a custom standard image needs native desktop backends. Prebuilt builds must copy the selected flavor and pass it explicitly; image construction checks `--build-variant` before accepting the binary. See [binary flavors](installation.md#choose-a-binary-flavor).
+
 ## Build and check
 
 Run the build and smoke-check pair for your chosen variant from the repository root:

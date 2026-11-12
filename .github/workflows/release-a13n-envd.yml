@@ -147,6 +147,30 @@ jobs:
             target: aarch64-unknown-linux-gnu
             windows: false
             envd-variant: vm
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            windows: false
+            envd-variant: slim
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            windows: false
+            envd-variant: slim
+          - os: macos-15
+            target: x86_64-apple-darwin
+            windows: false
+            envd-variant: slim
+          - os: macos-15
+            target: aarch64-apple-darwin
+            windows: false
+            envd-variant: slim
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            windows: true
+            envd-variant: slim
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            windows: true
+            envd-variant: slim
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v6
@@ -165,7 +189,7 @@ jobs:
           git clean -f -- release-version.patch
 
       - name: Install Linux SDK build dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.envd-variant == 'vm'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Set up Rust
@@ -185,10 +209,12 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
-          features=""
+          features=desktop
           suffix=""
-          if [[ "$ENVD_VARIANT" == vm ]]; then features=vm; suffix=-vm; fi
-          cargo build --release --locked --package a13n-envd --features "$features" --target "$TARGET"
+          if [[ "$ENVD_VARIANT" != default ]]; then suffix="-$ENVD_VARIANT"; fi
+          if [[ "$ENVD_VARIANT" == slim ]]; then features=""; fi
+          if [[ "$ENVD_VARIANT" == vm ]]; then features=vm; fi
+          cargo build --release --locked --package a13n-envd --no-default-features --features "$features" --target "$TARGET"
           mkdir -p staging
           cp "target/$TARGET/release/a13n-envd" staging/a13n-envd
           cp LICENSE staging/LICENSE
@@ -209,12 +235,15 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
-          cargo build --release --locked --package a13n-envd --target $env:TARGET
+          $features = if ($env:ENVD_VARIANT -eq 'slim') { @("--no-default-features") } else { @() }
+          $suffix = if ($env:ENVD_VARIANT -eq 'slim') { '-slim' } else { '' }
+          cargo build --release --locked --package a13n-envd --target $env:TARGET @features
           New-Item -ItemType Directory -Force staging | Out-Null
           Copy-Item "target/$env:TARGET/release/a13n-envd.exe" staging/a13n-envd.exe
           Copy-Item LICENSE staging/LICENSE
-          $archive = "a13n-envd-$env:VERSION-$env:TARGET.zip"
+          $archive = "a13n-envd-$env:VERSION-$env:TARGET$suffix.zip"
           Compress-Archive -Path staging/a13n-envd.exe, staging/LICENSE -DestinationPath $archive
 
       - name: Set up Python for size validation
@@ -232,7 +261,7 @@ jobs:
           EXTENSION: ${{ matrix.windows && 'zip' || 'tar.gz' }}
         run: |
           suffix=""
-          if [[ "$ENVD_VARIANT" == vm ]]; then suffix=-vm; fi
+          if [[ "$ENVD_VARIANT" != default ]]; then suffix="-$ENVD_VARIANT"; fi
           python3 scripts/envd_size.py --binary "target/$TARGET/release/a13n-envd$EXE_SUFFIX" \
             --archive "a13n-envd-${VERSION}-${TARGET}${suffix}.$EXTENSION" \
             --target "$TARGET" --variant "$ENVD_VARIANT" --build-dir "target/$TARGET/release" \
@@ -334,8 +363,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [standard, slim, desktop]
-        envd-variant: [default, vm]
+        include:
+          - {variant: standard, envd-variant: slim}
+          - {variant: slim, envd-variant: slim}
+          - {variant: desktop, envd-variant: default}
+          - {variant: standard, envd-variant: vm}
+          - {variant: slim, envd-variant: vm}
+          - {variant: desktop, envd-variant: vm}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -359,7 +393,7 @@ jobs:
           ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
           suffix=""
-          if [[ "$ENVD_VARIANT" == vm ]]; then suffix=-vm; fi
+          if [[ "$ENVD_VARIANT" != default ]]; then suffix="-$ENVD_VARIANT"; fi
           for platform in amd64:x86_64-unknown-linux-gnu arm64:aarch64-unknown-linux-gnu; do
             arch="${platform%%:*}"
             target="${platform#*:}"
