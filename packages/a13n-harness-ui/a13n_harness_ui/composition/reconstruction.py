@@ -241,6 +241,7 @@ class AgentReconstructor:
             enabled=composition.memory_enabled,
             project_id=composition.project_id,
             positions=memory_positions,
+            bot=composition.root.source_kind == "bot",
         )
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
@@ -468,6 +469,16 @@ class AgentReconstructor:
                 if tool_search is not None
                 else frozenset()
             )
+            if root:
+                controls |= frozenset(
+                    {
+                        "discover_connector_tools",
+                        "describe_connector_tool",
+                        "call_connector_tool",
+                        "list_connector_tools",
+                        "list_connectors",
+                    }
+                )
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())

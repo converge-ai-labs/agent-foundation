@@ -504,6 +504,7 @@ class TerminalProjectionService:
         }
         return ThreadSelectorCatalog(
             sidekick_enabled=True,
+            dictation=source.document.dictation if source.document.dictation.model else None,
             media_understanding=source.document.media_understanding.selections(),
             media_understanding_environment=environment_media_kinds(),
             agents=tuple(

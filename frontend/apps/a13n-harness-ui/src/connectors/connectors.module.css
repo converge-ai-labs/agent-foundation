@@ -1,0 +1,227 @@
+.section {
+  display: grid;
+  gap: 16px;
+  margin-block: 24px 32px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+.header h2,
+.fields h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+.header > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header > button {
+  flex-shrink: 0;
+}
+.description {
+  margin: 0;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.description:empty {
+  display: none;
+}
+.empty {
+  padding: 24px 16px;
+  border-radius: 16px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  margin: 0;
+}
+.identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.identity > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.instanceRow > :first-child > p {
+  padding-inline-start: 28px;
+}
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.catalogMenu {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+.menuDescription {
+  display: block;
+  white-space: normal;
+  color: var(--a13n-secondary);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.editor,
+.setup,
+.fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.editor {
+  gap: 32px;
+}
+.setupFooter {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.setup form:empty {
+  display: none;
+}
+.field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.field small,
+.array small {
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.array {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.array legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+.array > button {
+  justify-self: start;
+}
+.arrayRow {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.arrayRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.arrayRow > button {
+  flex-shrink: 0;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.actions:empty {
+  display: none;
+}
+/* Link actions share the dialog's text start instead of a button inset. */
+.actions > a[data-variant="link"] {
+  padding-inline: 0;
+}
+.error {
+  color: var(--destructive);
+  margin: 0;
+}
+.warning {
+  color: var(--a13n-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+.summaryValue {
+  max-width: 250px;
+  overflow-wrap: anywhere;
+  text-align: end;
+  user-select: text;
+}
+.offer {
+  display: grid;
+  gap: 12px;
+  border-radius: 16px;
+  background: var(--a13n-surface);
+  padding: 16px;
+  margin-block: 16px;
+  font-size: var(--a13n-font-interface, 14px);
+}
+.accountPicker {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.accountPicker legend {
+  margin-bottom: 8px;
+}
+.accountChoice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 8px;
+  cursor: pointer;
+}
+.accountChoice > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .header {
+    gap: 8px;
+  }
+  .summaryValue {
+    max-width: 170px;
+  }
+  /* Phones keep each connection's name with its type and give status and
+     actions a full-width second line instead of wrapping beside the name. */
+  .instanceRow.instanceRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .instanceRow.instanceRow > :first-child {
+    display: block;
+  }
+  .instanceRow.instanceRow > :first-child > p {
+    margin: 4px 0 0;
+  }
+  .instanceRow.instanceRow > :last-child {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: stretch;
+  }
+  .rowActions {
+    width: 100%;
+    gap: 4px;
+  }
+  .rowActions > :last-child {
+    margin-inline-start: auto;
+  }
+  .offer .header {
+    align-items: start;
+  }
+}

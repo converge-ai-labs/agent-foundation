@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from a13n_harness_ui.connectors.models import SetupOffer
+
 
 class BotModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -36,11 +38,35 @@ class BotState(BotModel):
 
 
 class BotMessage(BotModel):
+    connector_setups: tuple[SetupOffer, ...] = ()
     message_id: str
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
     input_id: str | None = None
+    display_ids: tuple[str, ...] = ()
+
+
+class BotProse(BotModel):
+    item_id: str
+    text: str
+    created_at: datetime
+    final: bool = False
+
+
+class BotNoteSummary(BotModel):
+    thread_id: str
+    title: str | None = None
+    project_id: str | None = None
+    archived: bool
+    summary: str
+    updated_at: datetime
+    last_writer_thread_id: str
+
+
+class BotNotesPage(BotModel):
+    notes: tuple[BotNoteSummary, ...]
+    next_offset: int | None = None
 
 
 class BotSubmit(BotModel):
@@ -54,8 +80,10 @@ class BotPause(BotModel):
 
 class BotInboxInput(BotModel):
     input_id: str
-    source: Literal["connector", "heartbeat"]
+    source: Literal["connector", "heartbeat", "thread"]
     connector_id: str | None = None
+    source_thread_id: str | None = None
+    source_thread_title: str | None = None
     source_event_id: str
     event_type: str
     text: str
@@ -65,6 +93,8 @@ class BotInboxInput(BotModel):
     def consistent_source(self) -> "BotInboxInput":
         if (self.source == "connector") != (self.connector_id is not None):
             raise ValueError("Connector identity must match the input source")
+        if (self.source == "thread") != (self.source_thread_id is not None):
+            raise ValueError("Thread identity must match the input source")
         return self
 
 

@@ -370,7 +370,7 @@ def test_declared_resource_dependency_prevents_whole_package_fallback(workspace:
     assert _tests(workspace, "packages/a13n-core/a13n_core/assets/system_prompt.md") == {"packages/a13n-core/tests"}
 
 
-def test_real_migrations_select_their_database_checks() -> None:
+def test_real_migrations_select_their_database_and_graph_checks() -> None:
     for revision, test in [
         (
             "packages/a13n-service/a13n_service/migrations/versions/new.py",
@@ -381,7 +381,7 @@ def test_real_migrations_select_their_database_checks() -> None:
             "packages/a13n-harness-ui/tests/test_coordinator_migration.py",
         ),
     ]:
-        assert verify.plan([revision]).python_tests == {test}
+        assert verify.plan([revision]).python_tests == {test, "scripts/tests/test_migration_heads.py"}
 
 
 def test_real_license_and_vite_changes_select_build_fixture_without_application_suites() -> None:

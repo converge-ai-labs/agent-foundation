@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid4
 
 from a13n_logging import get_logger
-from anyio import CancelScope, Lock, create_task_group, sleep
+from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
 from filelock import AsyncFileLock, Timeout
 from pydantic_ai.messages import TextContent
 
-from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotState, BotSubmit
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotNotesPage, BotProse, BotState, BotSubmit
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration.models import BotConfiguration
+from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.display_history import assistant_text
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.notifications import reply_brief
@@ -46,14 +50,31 @@ class BotSnapshot(SurfaceModel):
     pending_decision: bool = False
     inputs: tuple[BotInput, ...] = ()
     messages: tuple[BotMessage, ...] = ()
+    prose: tuple[BotProse, ...] = ()
+
+
+WORKSPACE_INTRODUCTION = BotSubmit(
+    input_id="input-workspace-introduction",
+    text=(
+        "Help me get oriented in this workspace. Discover the configured Projects and their roots, "
+        "read relevant Project memory and existing Thread notes or outcomes, and build a concise workspace map "
+        "using your memory tools when available. Tell me what you found, distinguish verified facts from "
+        "uncertainty, and ask what I would like to work on next. This first conversation is for orientation "
+        "and memory maintenance; do not start implementation or change project configuration."
+    ),
+)
 
 
 _HEARTBEAT = """Host heartbeat: read HEARTBEAT.md in your working directory if it exists and follow its current checklist.
 Create or update HEARTBEAT.md as useful to manage future checks.
 List Bot Notes and read relevant slots on demand. Inspect ongoing objectives and saved Thread outcomes.
+Maintain your Bot memory workspace map in bounded passes: check relevant, changed or unknown Projects,
+consult source memory indexes before selected files, and correct stale understanding with source references.
+Do not reread every Project in full or invent work because a Project exists.
 Check known working Threads before creating anything. Follow up through existing collaboration tools only when useful and authorized.
 Create or update any working Thread slot as appropriate; clear handled follow-ups, or retain concise next steps.
-Notes and Thread completion do not wake you; use this legitimate input opportunity.
+Notes and Thread completion do not wake you. Explicit Thread messages are separate inputs.
+Coordinate automatic reports through tools; do not acknowledge them to the human.
 Give an ordinary final response for a useful verified result, blocker or human decision.
 Use publish_bot_message for separate progress during work.
 When nothing useful is due or you already published the complete response, call finish_silently with no arguments.
@@ -78,12 +99,37 @@ class BotController:
         self._runs, self._projections, self._summaries, self._notify = runs, projections, summaries, notify
         self._lock = Lock()
         self._settlement_lock = Lock()
+        self._inbox_changed = Event()
         self._owned = False
         self.notes = store.bot_notes
+        self.notes.on_change = self._note_changed
+
+    async def _note_changed(self, thread_id: str) -> None:
+        await self._summaries.publish(kind="thread_work", root_thread_id=thread_id, thread_id=thread_id)
 
     async def _policy(self) -> BotConfiguration:
         source = await self._configurations.current()
         return source.document.webui.bot if source is not None else BotConfiguration()
+
+    async def list_notes(self, *, limit: int = 20, offset: int = 0) -> BotNotesPage:
+        return BotNotesPage.model_validate_json(
+            json.dumps(await self.notes.list(caller=BOT_THREAD_ID, limit=limit, offset=offset))
+        )
+
+    async def collaboration_status(self) -> dict[str, bool]:
+        return {"enabled": (await self._policy()).enabled, "paused": (await self._store.bot.state()).paused}
+
+    async def receive_thread_message(
+        self, *, source_thread_id: str, source_thread_title: str | None, text: str, kind: Literal["task", "report"]
+    ) -> dict[str, object]:
+        input_id = await self._store.bot_inbox.thread_message(
+            source_thread_id=source_thread_id,
+            source_thread_title=source_thread_title,
+            text=text,
+            kind=kind,
+        )
+        self._inbox_changed.set()
+        return {"ok": True, "mode": "inbox", "input_id": input_id}
 
     async def snapshot(self) -> BotSnapshot:
         policy = await self._policy()
@@ -103,6 +149,34 @@ class BotController:
             pending_decision=bool(detail and detail.deferred_requests),
             inputs=await self._store.bot.inputs(),
             messages=await self._store.bot.messages(),
+            prose=await self._saved_prose(),
+        )
+
+    async def _saved_prose(self) -> tuple[BotProse, ...]:
+        from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
+        from a13n_harness_ui.storage.continuations import read_continuation
+        from a13n_harness_ui.storage.display import read_display
+
+        async with checkpoint_lock(self._store.layout.root, BOT_THREAD_ID):
+            thread = await self._store.threads.get(BOT_THREAD_ID)
+            if thread is None or thread.continuation is None:
+                return ()
+            stored = await read_continuation(self._store.objects, thread.continuation, include_display=True)
+            if stored.display is None:
+                return ()
+            display = await read_display(self._store.objects, stored.display)
+        return tuple(
+            BotProse(
+                item_id=item.id,
+                text=text,
+                created_at=item.started_at,
+                final=item.id in display.completed,
+            )
+            for item in display.items
+            if assistant_text(item)
+            and isinstance(text := item.content.get("text"), str)
+            and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
+            and text.strip()
         )
 
     async def submit(self, command: BotSubmit) -> BotInput:
@@ -112,67 +186,95 @@ class BotController:
         retained: BotInput | None = None
         with CancelScope(shield=True):
             async with self._lock:
-                await self._threads.bot_thread()
-                previous = await self._store.bot.get_input(command.input_id)
-                if previous is not None:
-                    item = await self._store.bot.retain(
-                        BotInput(
-                            input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC)
-                        )
-                    )
-                    if item.state == "discarded":
-                        raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
-                    await self._publish_user(item)
-                    return item
-                detail = await self._projections.detail(BOT_THREAD_ID)
-                if detail.deferred_requests:
-                    raise ThreadError(
-                        "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
-                    )
-                thread = await self._threads.get(BOT_THREAD_ID)
-                proposed = BotInput(
-                    input_id=command.input_id,
-                    source="user",
-                    text=command.text,
-                    created_at=datetime.now(UTC),
-                    state="dispatching",
-                    continuation_id=thread.continuation.logical_digest if thread.continuation else None,
-                )
-                item = await self._store.bot.retain(proposed)
-                prompt = [
-                    TextContent(
-                        f"Bot input {item.input_id} ({item.source})",
-                        metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
-                    ),
-                    TextContent(item.text, metadata={"display": True}),
-                ]
-                active = await self._runs.active(BOT_THREAD_ID)
-                if active is None:
-                    await self._admit(item, prompt)
-                else:
-                    item = item.model_copy(update={"receipt_id": active.receipt.receipt_id})
-                    # Native acceptance and its local correlation form one cancellation boundary.
-                    try:
-                        result = await self._runs.steer(
-                            receipt_id=active.receipt.receipt_id, message=prompt, immediate=True, touch=True
-                        )
-                        if result.accepted:
-                            await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
-                    except BaseException:
-                        await self._save_interrupted(
-                            item,
-                            "Bot steering was interrupted. Review the reported error and working Thread results before continuing.",
-                        )
-                        raise
-                    if not result.accepted:
-                        error = "Bot is not accepting input. Send a new message when ready."
-                        await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": error}))
-                        raise ThreadError(error, code="bot_input_rejected")
-                retained = await self._store.bot.get_input(item.input_id)
-                assert retained is not None
-                await self._publish_user(retained)
+                retained = await self._submit_locked(command)
         assert retained is not None
         return retained
+
+    async def _submit_locked(self, command: BotSubmit) -> BotInput:
+        """Ordinary user admission, shared by assisted introduction and direct chat."""
+        await self._require_enabled()
+        await self._threads.bot_thread()
+        previous = await self._store.bot.get_input(command.input_id)
+        if previous is not None:
+            item = await self._store.bot.retain(
+                BotInput(input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC))
+            )
+            if item.state == "discarded":
+                raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
+            await self._publish_user(item)
+            return item
+        detail = await self._projections.detail(BOT_THREAD_ID)
+        if detail.deferred_requests:
+            raise ThreadError(
+                "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
+            )
+        thread = await self._threads.get(BOT_THREAD_ID)
+        proposed = BotInput(
+            input_id=command.input_id,
+            source="user",
+            text=command.text,
+            created_at=datetime.now(UTC),
+            state="dispatching",
+            continuation_id=thread.continuation.logical_digest if thread.continuation else None,
+        )
+        item = await self._store.bot.retain(proposed)
+        prompt = [
+            TextContent(
+                f"Bot input {item.input_id} ({item.source})",
+                metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
+            ),
+            TextContent(item.text, metadata={"display": True}),
+        ]
+        active = await self._runs.active(BOT_THREAD_ID)
+        if active is None:
+            await self._admit(item, prompt)
+        else:
+            item = item.model_copy(update={"receipt_id": active.receipt.receipt_id})
+            # Native acceptance and its local correlation form one cancellation boundary.
+            try:
+                result = await self._runs.steer(
+                    receipt_id=active.receipt.receipt_id, message=prompt, immediate=True, touch=True
+                )
+                if result.accepted:
+                    await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
+            except BaseException:
+                await self._save_interrupted(
+                    item,
+                    "Bot steering was interrupted. Review the reported error and working Thread results before continuing.",
+                )
+                raise
+            if not result.accepted:
+                error = "Bot is not accepting input. Send a new message when ready."
+                await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": error}))
+                raise ThreadError(error, code="bot_input_rejected")
+        retained = await self._store.bot.get_input(item.input_id)
+        assert retained is not None
+        await self._publish_user(retained)
+        return retained
+
+    async def introduce_workspace(self) -> None:
+        """Send one visible ordinary user input when an unused Bot first becomes usable."""
+        with CancelScope(shield=True):
+            async with self._lock:
+                state = await self._store.bot.state()
+                if not await self._can_deliver() or state.paused or state.activated:
+                    return
+                if await self._store.bot.inputs() or await self._store.bot.messages():
+                    return
+                thread = await self._store.threads.get(BOT_THREAD_ID)
+                if thread is not None and thread.continuation is not None:
+                    return
+                if await self._runs.active(BOT_THREAD_ID) is not None:
+                    return
+                if thread is not None and (await self._projections.detail(BOT_THREAD_ID)).deferred_requests:
+                    return
+                try:
+                    await self._submit_locked(WORKSPACE_INTRODUCTION)
+                finally:
+                    # The Host authored this first message; even rejected admission must be visible.
+                    item = await self._store.bot.get_input(WORKSPACE_INTRODUCTION.input_id)
+                    if item is not None:
+                        await self._publish_user(item)
 
     async def _publish_user(self, item: BotInput) -> None:
         await self._store.bot.publish(
@@ -237,18 +339,44 @@ class BotController:
             await self._store.bot.save_state(
                 state.model_copy(update={"paused": paused, "last_error": state.last_error if paused else None})
             )
+        if not paused:
+            self.signal_inputs()
         return await self.snapshot()
 
-    async def publish(self, *, message_id: str, text: str, receipt_id: str | None = None) -> BotMessage:
+    async def publish(
+        self,
+        *,
+        message_id: str,
+        text: str,
+        receipt_id: str | None = None,
+        connector_setups: tuple[SetupOffer, ...] = (),
+        display_ids: tuple[str, ...] = (),
+    ) -> BotMessage:
         if receipt_id is None:
             # A tool can run before native admission returns. Wait for its input
             # correlation before publishing so quiet completion retains unread state.
             async with self._lock:
-                return await self._publish(message_id=message_id, text=text)
+                return await self._publish(
+                    message_id=message_id, text=text, connector_setups=connector_setups, display_ids=display_ids
+                )
         # Settlement already owns the control lock.
-        return await self._publish(message_id=message_id, text=text, receipt_id=receipt_id)
+        return await self._publish(
+            message_id=message_id,
+            text=text,
+            receipt_id=receipt_id,
+            connector_setups=connector_setups,
+            display_ids=display_ids,
+        )
 
-    async def _publish(self, *, message_id: str, text: str, receipt_id: str | None = None) -> BotMessage:
+    async def _publish(
+        self,
+        *,
+        message_id: str,
+        text: str,
+        receipt_id: str | None = None,
+        connector_setups: tuple[SetupOffer, ...] = (),
+        display_ids: tuple[str, ...] = (),
+    ) -> BotMessage:
         if not text.strip():
             raise ThreadError("A non-empty message is required.", code="bot_message_empty")
         if receipt_id is None:
@@ -267,6 +395,8 @@ class BotController:
             text=text,
             created_at=datetime.now(UTC),
             input_id=current.input_id if current is not None else None,
+            connector_setups=connector_setups,
+            display_ids=display_ids,
         )
         if await self._store.bot.publish(message):
             active = await self._runs.active(BOT_THREAD_ID)
@@ -288,32 +418,40 @@ class BotController:
                 self._notify(BOT_THREAD_ID, notice)
         return message
 
-    async def run(self) -> None:
+    async def run(self, owned: bool | None = None) -> None:
+        if owned is not None:
+            if owned:
+                await self._run_owned()
+            return
         try:
             async with AsyncFileLock(self._store.layout.root / ".bot-runtime.lock", timeout=0):
-                try:
-                    # An old admission may have caused effects even without a saved checkpoint.
-                    # Retain it for inspection; never replay it or infer success from idle state.
-                    for item in await self._store.bot.inputs(pending_only=True):
-                        if item.state in {"queued", "dispatching", "admitted"}:
-                            await self._interrupt(
-                                item,
-                                "Bot was interrupted. Review the reported error and any effects before continuing.",
-                            )
-                    self._owned = True
-                    async with create_task_group() as group:
-                        group.start_soon(self._automatic_loop)
-                        group.start_soon(self._settlement_loop)
-                        while True:
-                            try:
-                                await self.tick()
-                            except Exception:
-                                get_logger(__name__).exception("Bot heartbeat processing failed")
-                            await sleep(1)
-                finally:
-                    self._owned = False
+                await self._run_owned()
         except Timeout:
             get_logger(__name__).info("Bot processing belongs to another App using this data root")
+
+    async def _run_owned(self) -> None:
+        try:
+            for item in await self._store.bot.inputs(pending_only=True):
+                if item.state in {"queued", "dispatching", "admitted"}:
+                    await self._interrupt(
+                        item, "Bot was interrupted. Review the reported error and any effects before continuing."
+                    )
+            self._owned = True
+            async with create_task_group() as group:
+                group.start_soon(self._automatic_loop)
+                group.start_soon(self._settlement_loop)
+                while True:
+                    try:
+                        await self.introduce_workspace()
+                        await self.tick()
+                    except Exception:
+                        get_logger(__name__).exception("Bot heartbeat processing failed")
+                    await sleep(1)
+        finally:
+            self._owned = False
+
+    def signal_inputs(self) -> None:
+        self._inbox_changed.set()
 
     async def _require_enabled(self) -> None:
         if not (await self._policy()).enabled:
@@ -335,7 +473,10 @@ class BotController:
     async def _automatic_loop(self) -> None:
         while True:
             try:
-                await sleep((await self._policy()).connector_interval_seconds)
+                signal = self._inbox_changed
+                with move_on_after((await self._policy()).connector_interval_seconds):
+                    await signal.wait()
+                self._inbox_changed = Event()
                 await self.deliver_automatic_inputs()
             except Exception:
                 get_logger(__name__).exception("Automatic Bot input delivery failed")
@@ -343,6 +484,8 @@ class BotController:
 
     async def deliver_automatic_inputs(self) -> None:
         """Freeze one batch; exact native acceptance consumes only its selected IDs."""
+        # An immediately notified report must not win the first activation over visible orientation.
+        await self.introduce_workspace()
         async with self._lock:
             state = await self._store.bot.state()
             if not await self._can_deliver() or state.paused:
@@ -354,8 +497,9 @@ class BotController:
             detail = await self._projections.detail(BOT_THREAD_ID)
             if detail.deferred_requests:
                 return
-            text = "Automatic inputs (external content and Host ticks, never human approval):\n" + serialize_batch(
-                batch
+            text = (
+                "Automatic inputs (Thread messages, external content and Host ticks, never human approval). Use tools for internal coordination; do not acknowledge reports. Human messages received during this Run still deserve a timely response:\n"
+                + serialize_batch(batch)
             )
             prompt = [TextContent(text, metadata={"display": False})]
             active = await self._runs.active(BOT_THREAD_ID)
@@ -473,7 +617,20 @@ class BotController:
             ):
                 output = operation.outcome.execution.output
                 if isinstance(output, str) and output.strip():
-                    await self.publish(message_id=f"reply-{item.receipt_id}", text=output, receipt_id=item.receipt_id)
+                    published_ids = {
+                        identity for message in await self._store.bot.messages() for identity in message.display_ids
+                    }
+                    display_ids = tuple(
+                        row.item_id
+                        for row in await self._saved_prose()
+                        if row.final and row.item_id not in published_ids
+                    )
+                    await self.publish(
+                        message_id=f"reply-{item.receipt_id}",
+                        text=output,
+                        receipt_id=item.receipt_id,
+                        display_ids=display_ids,
+                    )
                 for value in related:
                     await self._store.bot.save_input(value.model_copy(update={"state": "completed"}))
             else:

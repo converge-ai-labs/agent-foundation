@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotSubmit
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInboxInput, BotSubmit
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
+from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorInput
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.storage.bot_inbox import serialize_batch
 from a13n_harness_ui.surfaces import RootControlResult
@@ -15,9 +16,38 @@ from anyio import Event, fail_after
 from .test_app import _CompletedReconstructor, _settings, _SlowReconstructor
 from .test_app import _write_configuration as base_configuration
 from .test_bot import _write_configuration, consumed, ready
-from .test_connectors import configure, event, retain
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+def event(source_id: str, *, event_type: str = "changed", connector_id: str = "connector-example") -> BotInboxInput:
+    return BotInboxInput(
+        input_id=f"input-{source_id}",
+        source="connector",
+        created_at=datetime.now(UTC),
+        connector_id=connector_id,
+        event_type=event_type,
+        source_event_id=source_id,
+        text=f"Event {source_id}",
+    )
+
+
+async def retain(app, connector_id, inputs):
+    await app._store.connectors.retain(
+        connector_id,
+        tuple(
+            ConnectorInput.model_validate(
+                item.model_dump(exclude={"source", "source_thread_id", "source_thread_title"})
+            )
+            for item in inputs
+        ),
+    )
+
+
+async def configure(app) -> ConnectorConfiguration:
+    return await app._store.connectors.configure(
+        ConnectorConfiguration(connector_id="connector-example", kind="example", deliver_to_bot=True)
+    )
 
 
 async def policy(app, root, **changes):
@@ -30,7 +60,7 @@ async def policy(app, root, **changes):
     )
 
 
-async def test_default_off_enable_arms_without_run_and_first_due_tick_needs_no_chat(tmp_path: Path) -> None:
+async def test_heartbeat_policy_arms_independently_and_first_due_tick_needs_no_chat(tmp_path: Path) -> None:
     root = base_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)
@@ -128,7 +158,8 @@ async def test_off_pause_missing_model_and_heartbeat_policy_preserve_selected_in
         assert len(remaining) == 2 and all(item.source == "connector" for item in remaining)
         await policy(app, root, enabled=True)
         assert not (await bot.snapshot()).inputs
-        await bot.pause(False)
+        # Keep delivery paused while removing the effective model so the background
+        # dispatcher cannot legitimately consume the batch between these mutations.
         # A missing effective model holds the same batch instead of attempting admission.
         import yaml
 
@@ -138,6 +169,7 @@ async def test_off_pause_missing_model_and_heartbeat_policy_preserve_selected_in
             relative_path=root.name, request=ResourceMutationRequest(content=yaml.safe_dump(document))
         )
         assert not (await bot.snapshot()).available
+        await bot.pause(False)
         await bot.deliver_automatic_inputs()
         assert await app._store.bot_inbox.pending() == remaining
         document["defaults"]["agent"] = "agent-assistant"
@@ -155,10 +187,14 @@ async def test_serialized_batch_limit_and_delivery_opt_in(tmp_path: Path) -> Non
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         configuration = await configure(app)
-        await app._store.connectors.configure(configuration.model_copy(update={"deliver_to_bot": False}))
-        await retain(app, configuration.connector_id, (event("ignored"),))
+        disabled = await app._store.connectors.configure(
+            configuration.model_copy(update={"deliver_to_bot": False}), expected_version=configuration.version
+        )
+        with pytest.raises(HarnessUiError) as error:
+            await retain(app, configuration.connector_id, (event("ignored"),))
+        assert error.value.code == "connector_delivery_disabled"
         assert not await app._store.bot_inbox.pending()
-        await app._store.connectors.configure(configuration)
+        await app._store.connectors.configure(configuration, expected_version=disabled.version)
         for index in range(10):
             await retain(app, configuration.connector_id, (event(str(index)).model_copy(update={"text": "界" * 5000}),))
         batch = await app._store.bot_inbox.pending()

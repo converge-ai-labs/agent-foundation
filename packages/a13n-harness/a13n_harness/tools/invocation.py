@@ -945,7 +945,7 @@ def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
-    if isinstance(current, ToolSearchSurfaceToolset):
+    while isinstance(current, ToolSearchSurfaceToolset):
         current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(

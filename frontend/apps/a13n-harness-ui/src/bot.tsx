@@ -18,6 +18,8 @@ import type { Profile } from "./shell/presence";
 import { Conversation } from "./conversations/conversation";
 import { Composer, useDraft } from "./conversations/composer";
 import { PublishedTranscript } from "./conversations/transcript";
+import { useLiveThread } from "./conversations/live-threads";
+import { botConversation } from "./bot-conversation";
 import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
 import styles from "./bot.module.css";
@@ -67,9 +69,6 @@ function useBotComposer() {
     retry: false,
     mutationFn: async () => {
       command.current ??= { input_id: crypto.randomUUID(), text };
-      const data = queries.getQueryData<Schema<"BotSnapshot">>(["bot"]);
-      if (data?.thread) await results.tracker?.follow(data.thread);
-      else await results.tracker?.followVersion(BOT_THREAD_ID, 0);
       return result(client.POST("/api/bot/inputs", { body: command.current }));
     },
     onSuccess: () => {
@@ -165,6 +164,11 @@ export function BotPage({
   const { t } = useTranslation();
   const bot = useBot();
   const data = bot.data;
+  const { display } = useLiveThread(BOT_THREAD_ID);
+  const messages = botConversation(data?.messages ?? [], data?.prose ?? [], [
+    ...(display.retainedPresentation?.blocks.values() ?? []),
+    ...display.blocks.values(),
+  ]);
   const composer = useContext(BotComposerContext);
   if (!composer) throw new Error("Bot composer is missing.");
   const { send, uncertain } = composer;
@@ -195,9 +199,9 @@ export function BotPage({
       publication={{
         threadAvailable: !!data?.thread,
         ready: !!data || bot.isError,
-        revision: JSON.stringify(data?.messages ?? []),
+        revision: JSON.stringify(messages),
         completionVersion: data?.thread?.completion?.version ?? 0,
-        messages: <PublishedTranscript messages={data?.messages ?? []} />,
+        messages: <PublishedTranscript messages={messages} />,
         status: status ? (
           <span className={styles.status} role="status" title={status}>
             {status}

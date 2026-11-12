@@ -99,6 +99,356 @@
         }
       }
     },
+    "/api/connectors/catalog": {
+      "get": {
+        "summary": "Connector Catalog",
+        "operationId": "connector_catalog_api_connectors_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogItem"
+                  },
+                  "type": "array",
+                  "title": "Response Connector Catalog Api Connectors Catalog Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors": {
+      "get": {
+        "summary": "Connector Instances",
+        "operationId": "connector_instances_api_connectors_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Instance"
+                  },
+                  "type": "array",
+                  "title": "Response Connector Instances Api Connectors Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{connector_id}": {
+      "get": {
+        "summary": "Connector Instance",
+        "operationId": "connector_instance_api_connectors__connector_id__get",
+        "parameters": [
+          {
+            "name": "connector_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connector Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save Connector",
+        "operationId": "save_connector_api_connectors__connector_id__put",
+        "parameters": [
+          {
+            "name": "connector_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connector Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Save"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Connector",
+        "operationId": "delete_connector_api_connectors__connector_id__delete",
+        "parameters": [
+          {
+            "name": "connector_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connector Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Delete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/{connector_id}/setup": {
+      "post": {
+        "summary": "Begin Connector Setup",
+        "operationId": "begin_connector_setup_api_connectors__connector_id__setup_post",
+        "parameters": [
+          {
+            "name": "connector_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connector Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Begin"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connector-setups/{session_id}": {
+      "get": {
+        "summary": "Connector Setup",
+        "operationId": "connector_setup_api_connector_setups__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connector-setups/{session_id}/actions": {
+      "post": {
+        "summary": "Connector Setup Action",
+        "operationId": "connector_setup_action_api_connector_setups__session_id__actions_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/connector-setup-offers": {
+      "get": {
+        "summary": "Connector Setup Offers",
+        "operationId": "connector_setup_offers_api_threads__thread_id__connector_setup_offers_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SetupOffer"
+                  },
+                  "title": "Response Connector Setup Offers Api Threads  Thread Id  Connector Setup Offers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bot": {
       "get": {
         "summary": "Bot Status",
@@ -110,6 +460,98 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BotSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/notes": {
+      "get": {
+        "summary": "Bot Notes",
+        "operationId": "bot_notes_api_bot_notes_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotNotesPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/notes/{thread_id}": {
+      "get": {
+        "summary": "Bot Note",
+        "operationId": "bot_note_api_bot_notes__thread_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotNote"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -3321,6 +3763,35 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dictation": {
+      "post": {
+        "summary": "Dictate",
+        "operationId": "dictate_api_dictation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DictationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "title": "Response Dictate Api Dictation Post"
                 }
               }
             }
@@ -6801,6 +7272,22 @@
             }
           },
           {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unread"
+            }
+          },
+          {
             "name": "sort",
             "in": "query",
             "required": false,
@@ -6888,6 +7375,73 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateThreadRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/read": {
+      "post": {
+        "summary": "Acknowledge Threads Read",
+        "operationId": "acknowledge_threads_read_api_threads_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadReadAcknowledgement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/unread": {
+      "post": {
+        "summary": "Mark Thread Unread",
+        "operationId": "mark_thread_unread_api_threads__thread_id__unread_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -10177,6 +10731,14 @@
       },
       "BotMessage": {
         "properties": {
+          "connector_setups": {
+            "items": {
+              "$ref": "#/components/schemas/SetupOffer"
+            },
+            "type": "array",
+            "title": "Connector Setups",
+            "default": []
+          },
           "message_id": {
             "type": "string",
             "title": "Message Id"
@@ -10208,6 +10770,14 @@
               }
             ],
             "title": "Input Id"
+          },
+          "display_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Display Ids",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -10219,6 +10789,163 @@
           "created_at"
         ],
         "title": "BotMessage"
+      },
+      "BotNote": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "last_writer_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Writer Thread Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id"
+        ],
+        "title": "BotNote"
+      },
+      "BotNoteSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "archived": {
+            "type": "boolean",
+            "title": "Archived"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "last_writer_thread_id": {
+            "type": "string",
+            "title": "Last Writer Thread Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "archived",
+          "summary",
+          "updated_at",
+          "last_writer_thread_id"
+        ],
+        "title": "BotNoteSummary"
+      },
+      "BotNotesPage": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/BotNoteSummary"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "notes"
+        ],
+        "title": "BotNotesPage"
+      },
+      "BotProse": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "final": {
+            "type": "boolean",
+            "title": "Final",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "text",
+          "created_at"
+        ],
+        "title": "BotProse"
       },
       "BotSnapshot": {
         "properties": {
@@ -10296,6 +11023,14 @@
             },
             "type": "array",
             "title": "Messages",
+            "default": []
+          },
+          "prose": {
+            "items": {
+              "$ref": "#/components/schemas/BotProse"
+            },
+            "type": "array",
+            "title": "Prose",
             "default": []
           }
         },
@@ -11217,6 +11952,51 @@
           "omitted_children"
         ],
         "title": "CapturedConfiguration"
+      },
+      "CatalogItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "declaration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Declaration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "implementation": {
+            "type": "string",
+            "title": "Implementation",
+            "default": ""
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": true
+          },
+          "diagnostic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "CatalogItem"
       },
       "CatalogKey": {
         "type": "string",
@@ -12589,6 +13369,41 @@
         "type": "object",
         "title": "ConnectionMetrics"
       },
+      "ConnectorRule": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Event",
+            "type": "string"
+          },
+          "conditions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Conditions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "event"
+        ],
+        "title": "ConnectorRule",
+        "type": "object"
+      },
       "ConsumptionTotals": {
         "properties": {
           "model_requests": {
@@ -13458,6 +14273,90 @@
           }
         }
       },
+      "Declaration": {
+        "properties": {
+          "api_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Api Version",
+            "default": 1
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "configuration_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Configuration Schema"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventDeclaration"
+            },
+            "type": "array",
+            "title": "Events",
+            "default": []
+          },
+          "bot_delivery": {
+            "type": "boolean",
+            "title": "Bot Delivery",
+            "default": false
+          },
+          "setup_intents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Setup Intents",
+            "default": [
+              "configure"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "description",
+          "configuration_schema"
+        ],
+        "title": "Declaration"
+      },
       "DeferredRequestView": {
         "additionalProperties": false,
         "properties": {
@@ -13643,6 +14542,32 @@
           "transport"
         ],
         "title": "DeviceSummary"
+      },
+      "DictationConfiguration": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context_words": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Context Words",
+            "default": 2000
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "DictationConfiguration"
       },
       "DirectoryEntry": {
         "properties": {
@@ -14807,6 +15732,46 @@
           "message"
         ],
         "title": "EnvironmentReadiness"
+      },
+      "EventDeclaration": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "conditions_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions Schema"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "EventDeclaration"
       },
       "ExecutionIdentity": {
         "additionalProperties": false,
@@ -16299,6 +17264,73 @@
         "type": "object",
         "title": "ImageInputPolicy",
         "description": "Preparation limits for one model's image input, not native ModelSettings."
+      },
+      "Instance": {
+        "properties": {
+          "connector_id": {
+            "type": "string",
+            "title": "Connector Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "deliver_to_bot": {
+            "type": "boolean",
+            "title": "Deliver To Bot"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorRule"
+            },
+            "type": "array",
+            "title": "Rules",
+            "default": []
+          },
+          "configured_secrets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Configured Secrets",
+            "default": []
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connector_id",
+          "kind",
+          "name",
+          "version",
+          "enabled",
+          "deliver_to_bot",
+          "settings",
+          "status"
+        ],
+        "title": "Instance"
       },
       "JsonValue": {},
       "LimitedCpuLimit": {
@@ -20168,6 +21200,137 @@
         "title": "SessionLifecyclePolicy",
         "type": "object"
       },
+      "SetupAction": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "submit",
+              "open_url",
+              "copy",
+              "confirm"
+            ],
+            "title": "Kind",
+            "default": "submit"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "SetupAction"
+      },
+      "SetupOffer": {
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "title": "Offer Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "connector_key": {
+            "type": "string",
+            "title": "Connector Key"
+          },
+          "connector_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connector Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "default": ""
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "offer_id",
+          "thread_id",
+          "connector_key",
+          "created_at"
+        ],
+        "title": "SetupOffer"
+      },
       "SetupPreview": {
         "properties": {
           "files": {
@@ -20447,6 +21610,40 @@
           "environment_profile"
         ],
         "title": "SetupSelection"
+      },
+      "SetupSnapshot": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "connector_id": {
+            "type": "string",
+            "title": "Connector Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "step": {
+            "$ref": "#/components/schemas/Step"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session_id",
+          "connector_id",
+          "version",
+          "expires_at",
+          "step"
+        ],
+        "title": "SetupSnapshot"
       },
       "SetupStatus": {
         "properties": {
@@ -20849,6 +22046,121 @@
           "reset_at"
         ],
         "title": "SpendControlLimit"
+      },
+      "Status": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "unconfigured",
+              "ready",
+              "disabled",
+              "degraded",
+              "plugin_unavailable",
+              "runtime_unavailable"
+            ],
+            "title": "State"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "summary"
+        ],
+        "title": "Status"
+      },
+      "Step": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "input",
+              "working",
+              "waiting",
+              "completed",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "title": "State",
+            "default": "input"
+          },
+          "form": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Values"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/SetupAction"
+            },
+            "type": "array",
+            "title": "Actions",
+            "default": []
+          },
+          "wait": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Wait"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "title": "Step"
       },
       "StoreKind": {
         "type": "string",
@@ -22671,6 +23983,16 @@
       },
       "ThreadSelectorCatalog": {
         "properties": {
+          "dictation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DictationConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sidekick_enabled": {
             "type": "boolean",
             "title": "Sidekick Enabled",
@@ -22885,6 +24207,17 @@
             "default": false,
             "title": "Starred",
             "type": "boolean"
+          },
+          "unread": {
+            "default": false,
+            "title": "Unread",
+            "type": "boolean"
+          },
+          "read_state_version": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Read State Version",
+            "type": "integer"
           },
           "configuration": {
             "$ref": "#/components/schemas/ThreadConfigurationView"
@@ -24759,6 +26092,33 @@
         ],
         "title": "VoiceTurn"
       },
+      "Wait": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "poll_after_ms": {
+            "type": "integer",
+            "maximum": 60000.0,
+            "minimum": 250.0,
+            "title": "Poll After Ms"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message",
+          "poll_after_ms",
+          "expires_at"
+        ],
+        "title": "Wait"
+      },
       "WorkbenchPage": {
         "additionalProperties": false,
         "properties": {
@@ -26324,6 +27684,124 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "Save": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Name",
+            "type": "string"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "deliver_to_bot": {
+            "default": false,
+            "title": "Deliver To Bot",
+            "type": "boolean"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Settings",
+            "type": "object"
+          },
+          "rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConnectorRule"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "Save",
+        "type": "object"
+      },
+      "Delete": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "Delete",
+        "type": "object"
+      },
+      "Begin": {
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "default": "configure",
+            "title": "Intent",
+            "type": "string"
+          }
+        },
+        "title": "Begin",
+        "type": "object"
+      },
+      "SetupCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation_id",
+          "version",
+          "action"
+        ],
+        "title": "SetupCommand",
+        "type": "object"
+      },
       "BotSubmit": {
         "properties": {
           "input_id": {
@@ -26984,6 +28462,45 @@
         ],
         "title": "GitCaptureRequest",
         "type": "object"
+      },
+      "DictationInput": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "maxLength": 15000000,
+            "minLength": 1,
+            "title": "Audio"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1024,
+            "title": "Title",
+            "default": ""
+          },
+          "context": {
+            "type": "string",
+            "maxLength": 500000,
+            "title": "Context",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "DictationInput"
       },
       "ModelOptionsRequest": {
         "properties": {
@@ -28157,6 +29674,53 @@
         },
         "title": "CreateThreadRequest",
         "type": "object"
+      },
+      "ThreadReadReceipt": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Thread Id"
+          },
+          "read_state_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Read State Version"
+          },
+          "completion_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completion Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "read_state_version",
+          "completion_version"
+        ],
+        "title": "ThreadReadReceipt"
+      },
+      "ThreadReadAcknowledgement": {
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadReadReceipt"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Threads"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "threads"
+        ],
+        "title": "ThreadReadAcknowledgement"
       },
       "ThreadMetadataPatch": {
         "additionalProperties": false,

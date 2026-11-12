@@ -22,6 +22,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: migration-heads
+        name: Check migration graphs have one head (no database)
+        entry: uv run --locked python scripts/check_migration_heads.py
+        language: system
+        always_run: true
+        pass_filenames: false
+
       - id: mdformat
         name: mdformat
         entry: uv run --locked mdformat

@@ -4,14 +4,16 @@ import { scheduleRefresh } from "./refresh";
 
 type Thread = Schema<"ThreadSummary">;
 
-// Metadata and configuration have independent server versions. A late read or
-// mutation response must not roll either back, nor replace unversioned run state.
+// Mutable selections have independent server versions. A late response must
+// not roll them back, nor replace unversioned run state.
 export function mergeThreadSelections(thread: Thread, known?: Thread): Thread {
   if (!known || thread.thread_id !== known.thread_id) return thread;
   const metadata = known.metadata_version > thread.metadata_version;
   const configuration =
     known.configuration.version > thread.configuration.version;
-  if (!metadata && !configuration) return thread;
+  const reading =
+    (known.read_state_version ?? 0) > (thread.read_state_version ?? 0);
+  if (!metadata && !configuration && !reading) return thread;
   return {
     ...thread,
     ...(metadata
@@ -23,6 +25,13 @@ export function mergeThreadSelections(thread: Thread, known?: Thread): Thread {
         }
       : {}),
     ...(configuration ? { configuration: known.configuration } : {}),
+    ...(reading
+      ? {
+          unread: known.unread,
+          read_state_version: known.read_state_version,
+          completion: known.completion,
+        }
+      : {}),
     updated_at:
       known.updated_at > thread.updated_at
         ? known.updated_at

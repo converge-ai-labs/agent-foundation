@@ -161,6 +161,14 @@ async def test_scopes_and_fresh_cursors_are_configuration_owned(tmp_path: Path) 
     assert other.snapshot() == {}
     assert bind_memory(tmp_path, enabled=False, project_id=None)[0] is None
     assert bind_memory(None, enabled=True, project_id=None)[0] is None
+    bot_memory, bot_cursors = bind_memory(
+        tmp_path, enabled=True, project_id=None, bot=True, positions={"bot": "saved", "project:old": "old"}
+    )
+    assert bot_memory is not None
+    assert bot_cursors.snapshot() == {"bot": "saved"}
+    _, ordinary_cursors = bind_memory(tmp_path, enabled=True, project_id=None, positions={"bot": "saved"})
+    assert ordinary_cursors.snapshot() == {}
+    assert bind_memory(tmp_path, enabled=False, project_id=None, bot=True)[0] is None
     with pytest.raises(ValueError):
         memory_scopes(tmp_path, "../outside")
 

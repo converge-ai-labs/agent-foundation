@@ -9,9 +9,9 @@ Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing obj
 
 1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup; Bot uses built-in instructions, not a configured Agent.
 2. Optionally add custom instructions, such as your preferred coordination style. Custom instructions are appended alongside the built-in instructions and do not replace them. Captured global `AGENTS.md` guidance also applies.
-3. Choose **Turn on Bot**. This saves settings without running the Model. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
+3. Choose **Turn on Bot**. On first usable enable, the server sends a visible preset user message asking Bot to discover and explain your workspace. This uses an ordinary Model request and may incur cost. You can continue the conversation immediately. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
 
-The default heartbeat interval is **one hour**. Opening the page or saving settings starts no model request. The WebUI server must remain running for heartbeat processing. Bot is shared by instance-key participants and is unavailable to scoped guests. [Live mode](live-mode.md) is independent.
+The default heartbeat interval is **one hour**. Opening the page starts no model request. The first workspace introduction runs once, independently of Heartbeat and browser presence. Existing chat history or a previous attempt prevents repetition after restart or re-enabling; a failed attempt stays visible and requires an explicit follow-up. The WebUI server must remain running for heartbeat processing. Bot is shared by instance-key participants and is unavailable to scoped guests. [Live mode](live-mode.md) is independent.
 
 Merge these fields into the selected root YAML's existing `webui` mapping:
 
@@ -40,17 +40,23 @@ Bot manages recurring checks in `bot/HEARTBEAT.md`. Each heartbeat tells Bot to 
 
 Bot can use `create_project` to create a normal Project configuration and `create_thread` to start work with normal Sidekick/global Agent defaults. Project creation, Thread creation, Run admission, and task completion are separate outcomes. Bot is instructed to inspect saved results before reporting success.
 
-When memory is enabled, Bot receives global memory normally. It can discover configured Projects and call `read_project_memory` to read a Project's memory on demand. These reads are bounded and read-only. Project memories are not automatically injected into Bot's context. Keep coordination notes and tasks in Bot's own Thread.
+When memory is enabled, Bot uses the existing memory tools for global memory and its own `bot` scope in `memory/bot/` beside the root YAML. It keeps `MEMORY.md` as a concise workspace map and stores durable Project understanding with source references and uncertainty in topic files. Heartbeats check relevant, changed or unknown Projects in bounded passes. No separate project-profile database or memory extraction pipeline is introduced.
+
+Bot discovers current Project IDs and uses `read_project_memory` for bounded, read-only source context, starting with indexes and reading selected files as needed. Project memories are not automatically injected or writable from Bot. Before creating project work, Bot verifies the Project and passes its explicit ID to `create_thread`. Current handoffs belong in Bot Notes; global memory keeps cross-project preferences. The first introduction permits orientation and memory maintenance, not implementation or configuration changes.
 
 ## Bot Notes
 
-Agents manage one short Markdown handoff per ordinary root Thread. A working Thread uses `read_bot_note()`, `write_bot_note(content)` and `clear_bot_note()` for its own slot. Bot can address any ordinary root's slot and list bounded summaries with `list_bot_notes`. There is no human Notes management form.
+Agents manage one short Markdown handoff per ordinary root Thread. When Bot is enabled, working Threads record sustained work early, update meaningful progress and blockers, and reconcile the note before yielding. They remove completed or cancelled work and clear the note when no follow-up remains. A working Thread uses `read_bot_note()`, `write_bot_note(content)` and `clear_bot_note()` for its own slot. Its current note and Bot's enabled/paused status appear automatically in its model context. Bot can address ordinary root slots and list bounded summaries with `list_bot_notes`.
 
-Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. On the next legitimate input, Bot can inspect saved results, follow up, update notes and clear handled items.
+Open **Work notes** in Bot's supporting pane to browse Thread links, Projects, update times and Markdown previews. Expand a note to read it in full. The ordinary Thread's Notes inspector also shows its own Bot Note, separately from private working notes. Both views are read-only.
+
+Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. To request attention for a handoff, result, blocker or question, a working Thread first updates its note, then sends one substantive `send_thread_message(thread_id='thread_bot', kind='report', message=...)`. The Host retains its source Thread identity and notifies Bot's existing delivery loop. Reports remain pending while Bot is off, paused, unavailable or waiting for a human decision. Managed workers report through their Coordinator. Bot's outgoing Thread inputs include hidden return-address guidance; recipients retain their saved final result as well as reporting back.
 
 ## Messages and decisions
 
-The Bot conversation shows your messages, all ordinary final text replies, and intentional proactive messages. The same rule applies to human, Heartbeat and Connector inputs, whether they start or steer a Run. Tool calls and intermediate text stay out of this conversation. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without a message. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker, or question; publication participates in existing unread and notification behavior.
+The Bot conversation shows your messages, ordinary assistant prose while it streams and after refresh, final replies, and intentional proactive messages. Bot responds briefly before slow work and provides meaningful progress. Tool calls, reasoning, child execution and hidden context stay out of the conversation. Intermediate prose creates no notification. Final replies appear once and use the existing unread and notification behavior.
+
+Internal coordination stays quiet unless there is a meaningful result, blocker or human decision. When no reply is needed, Bot calls the native `finish_silently` output tool to finish successfully without publishing a message. This does not retract prose already shown. Its call and result are hidden in live and saved conversation views, while execution history remains available for inspection. Bot can explicitly publish a verified result, blocker or question.
 
 Answer pending human decisions directly in the Bot conversation. Bot has one chat view; notification actions and old Bot Thread links open that chat. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 
@@ -58,7 +64,7 @@ The text draft stays in the current tab. Reloading can lose an unsent draft. If 
 
 ## Pause and recover
 
-Use the pause icon to hold automatic processing. Heartbeat ticks and selected Connector events keep collecting; direct messages remain usable. Pause does not cancel a Run or reset the Heartbeat clock. Turn off Heartbeat separately to stop ticks while allowing Connector delivery.
+Use the pause icon to hold automatic processing. Heartbeat ticks, selected Connector events and explicit Thread reports keep collecting; direct human messages remain usable. Pause does not cancel a Run or reset the Heartbeat clock. Turn off Heartbeat separately to stop ticks while allowing Connector delivery.
 
 Turn off Bot in Settings to stop new ticks and delivery. History, settings, Notes and pending inputs are retained; already admitted work and other Threads continue. The conversation becomes read-only. Re-enable in Settings; a later normal delivery opportunity can process retained input. Pending human decisions can resume only after re-enable.
 
@@ -68,6 +74,6 @@ Inputs interrupted during admission or execution are retained across server rest
 
 The Host includes private database storage for Connector settings, credentials, and selected event envelopes. Heartbeat and selected Connector events share one automatic inbox, independent of active Model execution. A periodic delivery attempt fairly batches a pending tick with events across Connectors and submits or steers the exact Bot operation. Native acceptance consumes that batch; model acknowledgement or task completion is not required. Pending human decisions hold delivery.
 
-This release provides the common storage and delivery foundation. Concrete provider setup, polling, write tools, and a Connector management UI require provider-specific integration. Connector credentials are plaintext in the private local database; protect the data directory and its backups. External event content supplies context, not human authorization.
+Manage accounts in **Settings → Connections → Connectors**, or open a setup card offered in a conversation. [Connectors](connectors.md) supplies a trusted plugin SDK, structured setup and rule forms, private state and atomic event ingress. The built-in GitHub provider exposes service tools using the reusable Remote MCP library; that library adds no generic MCP configuration entry. Event-producing plugins own collection and matching. Connector credentials are plaintext in the private local database; protect the data directory and its backups. External event content supplies context, not human authorization.
 
 For client integration, see the [Bot HTTP API](http-api.md#bot). For root settings, see the [configuration reference](configuration.md#webui-bot).

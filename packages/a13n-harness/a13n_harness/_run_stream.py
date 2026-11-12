@@ -639,7 +639,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             _steering=SteeringBridge(
                 context_state,
                 run_id=self.run_id,
-                retain_inputs=bool(
+                # Overflow recovery compacts even without a compaction Capability, so it needs the ledger too.
+                retain_inputs=self._executable.definition.context_recovery.enabled
+                or bool(
                     {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
                     & self._executable._definition_reserved_capability_ids
                 ),
