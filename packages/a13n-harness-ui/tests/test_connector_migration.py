@@ -7,11 +7,12 @@ from sqlalchemy import create_engine, inspect, text
 
 
 @pytest.mark.parametrize(
-    "starting_revision", ["2e9f82450690", "ab7f852de318", "f196302d868f", "7daf652f9b5d", "9450d8b1a589"]
+    "starting_revision", ["2e9f82450690", "f196302d868f", "9450d8b1a589", "7f64c893cc4a", "b816fd5edbe8"]
 )
 def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, starting_revision):
-    has_external_context = starting_revision in {"f196302d868f", "7daf652f9b5d", "9450d8b1a589"}
-    has_read_state = starting_revision == "9450d8b1a589"
+    has_external_context = starting_revision != "2e9f82450690"
+    has_read_state = starting_revision in {"9450d8b1a589", "7f64c893cc4a", "b816fd5edbe8"}
+    has_thread_inbox = starting_revision in {"7f64c893cc4a", "b816fd5edbe8"}
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, starting_revision), write=True)
@@ -36,6 +37,14 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
                 connection.execute(text('UPDATE thread SET external_context_json = \'{"source":"retained"}\''))
             if has_read_state:
                 connection.execute(text("UPDATE thread SET unread = 1, read_state_version = 7"))
+            if has_thread_inbox:
+                connection.execute(
+                    text(
+                        "INSERT INTO bot_inbox (input_id, source, source_thread_id, source_thread_title, event_type, "
+                        "source_event_id, text, created_at) VALUES ('retained-report', 'thread', 'retained-thread', "
+                        "'Retained', 'report', 'retained-report', 'Verified progress', '2026-11-12')"
+                    )
+                )
         migrator.upgrade()
         migrator.verify_current()
         with engine.begin() as connection:
@@ -45,6 +54,10 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
             assert connection.execute(text("SELECT unread, read_state_version FROM thread")).one() == (
                 (1, 7) if has_read_state else (0, 0)
             )
+            if has_thread_inbox:
+                assert connection.execute(
+                    text("SELECT source_thread_id, source_thread_title, text FROM bot_inbox")
+                ).one() == ("retained-thread", "Retained", "Verified progress")
             connection.execute(insert, {"id": "old-writer"})
             rows = (
                 connection.execute(text("SELECT * FROM connector_configuration ORDER BY connector_id")).mappings().all()

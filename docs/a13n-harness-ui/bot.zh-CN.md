@@ -44,13 +44,17 @@ Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_t
 
 ## Bot Notes
 
-Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。工作 Thread 使用 `read_bot_note()`、`write_bot_note(content)` 和 `clear_bot_note()` 访问自己的 slot；Bot 可以访问任意普通根 Thread 的 slot，并用 `list_bot_notes` 分页读取摘要。此功能没有人工管理表单。
+Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。Bot 开启时，工作 Thread 应尽早记录需要持续跟进的工作，更新重要进展和阻塞，并在交接或结束本轮前整理笔记。已完成或取消的工作应移除；没有剩余跟进时清空笔记。工作 Thread 使用 `read_bot_note()`、`write_bot_note(content)` 和 `clear_bot_note()` 访问自己的 slot。当前笔记和 Bot 的开启、暂停状态会自动出现在模型上下文中。Bot 可以访问普通根 Thread 的 slot，并用 `list_bot_notes` 分页读取摘要。
 
-笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot；Bot 可在下一次合法输入时检查已保存结果、跟进并清除已处理事项。
+在 Bot 的辅助面板打开 **工作笔记**，可浏览 Thread 链接、Project、更新时间和 Markdown 预览，也可展开全文。普通 Thread 的 Notes 检查面板单独显示自己的 Bot Note，与私有工作笔记区分。两个视图均为只读。
+
+笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot。交接、结果、阻塞或问题需要关注时，工作 Thread 先更新笔记，再发送一条实质性 `send_thread_message(thread_id='thread_bot', kind='report', message=...)`。Host 保留来源 Thread 身份，并通知 Bot 现有的投递循环。Bot 关闭、暂停、不可用或等待人类决策时，报告保留待处理。受管 worker 通过 Coordinator 汇报。Bot 发出的 Thread 输入包含隐藏的回报地址指引；接收方除了回报，也保留已保存的最终结果。
 
 ## 消息与决策
 
-Bot 聊天页面显示你的消息、所有普通最终文本回复，以及有意发布的主动消息。人类、Heartbeat 和 Connector 输入都遵循同一规则，无论输入是启动 Run 还是 steer。聊天不显示工具调用和中间文本。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发送消息。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题；发布沿用现有未读和通知机制。
+Bot 聊天页面显示你的消息、实时流式及刷新后保留的普通助手文本、最终回复，以及有意发布的主动消息。Bot 在耗时工作前简短回应，并提供有意义的进展。聊天隐藏工具调用、推理、子执行和隐藏上下文。中间文本不产生通知；最终回复只显示一次，沿用现有未读和通知机制。
+
+内部协调保持安静，只有有意义的结果、阻塞或人类决策才需要对外说明。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发布消息；已经显示的文本仍会保留。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题。
 
 直接在 Bot 聊天中处理待回答的人类决策。Bot 只提供聊天视图，通知入口和旧的 Bot Thread 链接都会打开该聊天。heartbeat 和外部事件无法代答审批。服务器启用相应功能后，现有原生面板选择器提供文件和浏览器；Bot 不另做一套浏览器实现。
 
@@ -58,7 +62,7 @@ Bot 聊天页面显示你的消息、所有普通最终文本回复，以及有�
 
 ## 暂停与恢复
 
-使用暂停图标暂停自动处理。heartbeat 和所选 Connector 事件仍会收集，直接消息仍可使用。暂停不取消 Run，也不重置 heartbeat 时钟。单独关闭 Heartbeat 可停止 tick，同时保留 Connector 投递。
+使用暂停图标暂停自动处理。heartbeat、所选 Connector 事件和明确的 Thread 报告仍会收集，人类直接消息仍可使用。暂停不取消 Run，也不重置 heartbeat 时钟。单独关闭 Heartbeat 可停止 tick，同时保留 Connector 投递。
 
 在设置中关闭 Bot 会停止新的 tick 和投递。历史、设置、Notes 和待处理输入全部保留；已接受的运行和其他 Thread 继续执行。聊天变为只读。重新开启后，后续正常投递机会可以处理保留的输入。待回答的人类决策需重新开启后才能继续。
 

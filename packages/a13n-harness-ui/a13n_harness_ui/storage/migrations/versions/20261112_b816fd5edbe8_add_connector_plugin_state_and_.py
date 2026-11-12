@@ -1,8 +1,8 @@
 """add connector plugin state and configuration versions.
 
-Revision ID: ab7f852de318
-Revises: 2e9f82450690
-Create Date: 2026-11-11 09:17:45.520251+00:00
+Revision ID: b816fd5edbe8
+Revises: 7f64c893cc4a
+Create Date: 2026-11-12 05:18:21.167633+00:00
 """
 
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "ab7f852de318"
-down_revision: str | Sequence[str] | None = "2e9f82450690"
+revision: str = "b816fd5edbe8"
+down_revision: str | Sequence[str] | None = "7f64c893cc4a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -52,7 +52,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("connector_id", "key", name=op.f("pk_connector_state")),
     )
     with op.batch_alter_table("connector_configuration", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("name", sa.String(length=128), server_default="", nullable=False))
+        batch_op.add_column(sa.Column("name", sa.String(length=128), server_default=sa.text("('')"), nullable=False))
         batch_op.add_column(sa.Column("version", sa.Integer(), server_default="1", nullable=False))
         batch_op.add_column(sa.Column("credential_version", sa.Integer(), server_default="1", nullable=False))
         batch_op.add_column(sa.Column("rules", sa.Text(), server_default="[]", nullable=False))
