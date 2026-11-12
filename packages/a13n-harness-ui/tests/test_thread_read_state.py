@@ -193,7 +193,7 @@ async def test_http_two_devices_discovery_bulk_and_restart(tmp_path):
 def test_upgrade_keeps_historical_completions_read_and_preserves_children(tmp_path):
     from a13n_harness_ui.storage.migration import DatabaseMigrator
     from alembic import command
-    from sqlalchemy import create_engine
+    from sqlalchemy import Engine, create_engine
 
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
@@ -210,7 +210,18 @@ def test_upgrade_keeps_historical_completions_read_and_preserves_children(tmp_pa
                     {"id": "child", "parent": "root", "digest": "b" * 64, "version": 0},
                 ],
             )
-        migrator.upgrade()
+        statements = []
+
+        def executed(connection, cursor, statement, parameters, context, many):
+            statements.append(" ".join(statement.split()))
+
+        event.listen(Engine, "before_cursor_execute", executed)
+        try:
+            migrator.upgrade()
+        finally:
+            event.remove(Engine, "before_cursor_execute", executed)
+        assert sum(statement.startswith("ALTER TABLE thread ADD COLUMN ") for statement in statements) == 2
+        assert not any("_alembic_tmp_thread" in statement for statement in statements)
         migrator.verify_current()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT unread, read_state_version FROM thread")).all() == [(0, 0), (0, 0)]
@@ -222,6 +233,38 @@ def test_upgrade_keeps_historical_completions_read_and_preserves_children(tmp_pa
                 connection.execute(text("SELECT parent_thread_id FROM thread WHERE thread_id='child'")).scalar_one()
                 == "root"
             )
+        migrator.upgrade()
+        migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
+def test_shared_read_upgrade_rolls_back_native_columns_and_retries(tmp_path):
+    from a13n_harness_ui.storage.migration import DatabaseMigrator
+    from alembic import command
+    from sqlalchemy import Engine, create_engine, inspect
+
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "f196302d868f"), write=True)
+
+    def interrupted(connection, cursor, statement, parameters, context, many):
+        if statement.startswith("CREATE INDEX ix_thread_unread "):
+            raise RuntimeError("Interrupted before unread index creation")
+
+    event.listen(Engine, "before_cursor_execute", interrupted)
+    try:
+        with pytest.raises(RuntimeError, match="Interrupted before unread index creation"):
+            migrator.upgrade()
+    finally:
+        event.remove(Engine, "before_cursor_execute", interrupted)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "f196302d868f"
+            assert not {"unread", "read_state_version"} & {
+                column["name"] for column in inspect(connection).get_columns("thread")
+            }
         migrator.upgrade()
         migrator.verify_current()
     finally:
