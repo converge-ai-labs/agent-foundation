@@ -67,6 +67,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bot/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bot Notes */
+        get: operations["bot_notes_api_bot_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bot/notes/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bot Note */
+        get: operations["bot_note_api_bot_notes__thread_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bot/inputs": {
         parameters: {
             query?: never;
@@ -3526,6 +3560,69 @@ export interface components {
             created_at: string;
             /** Input Id */
             input_id?: string | null;
+            /**
+             * Display Ids
+             * @default []
+             */
+            display_ids?: string[];
+        };
+        /** BotNote */
+        BotNote: {
+            /** Thread Id */
+            thread_id: string;
+            /**
+             * Content
+             * @default
+             */
+            content?: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Last Writer Thread Id */
+            last_writer_thread_id?: string | null;
+        };
+        /** BotNoteSummary */
+        BotNoteSummary: {
+            /** Thread Id */
+            thread_id: string;
+            /** Title */
+            title?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Archived */
+            archived: boolean;
+            /** Summary */
+            summary: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Last Writer Thread Id */
+            last_writer_thread_id: string;
+        };
+        /** BotNotesPage */
+        BotNotesPage: {
+            /** Notes */
+            notes: components["schemas"]["BotNoteSummary"][];
+            /** Next Offset */
+            next_offset?: number | null;
+        };
+        /** BotProse */
+        BotProse: {
+            /** Item Id */
+            item_id: string;
+            /** Text */
+            text: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Final
+             * @default false
+             */
+            final?: boolean;
         };
         /** BotSnapshot */
         BotSnapshot: {
@@ -3562,6 +3659,11 @@ export interface components {
              * @default []
              */
             messages?: components["schemas"]["BotMessage"][];
+            /**
+             * Prose
+             * @default []
+             */
+            prose?: components["schemas"]["BotProse"][];
         };
         /** BotState */
         BotState: {
@@ -10242,6 +10344,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BotSnapshot"];
+                };
+            };
+        };
+    };
+    bot_notes_api_bot_notes_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotNotesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bot_note_api_bot_notes__thread_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotNote"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

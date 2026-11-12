@@ -146,8 +146,9 @@ class BotInboxRecord(Base):
     __tablename__ = "bot_inbox"
     __table_args__ = (
         CheckConstraint(
-            "(source = 'connector' AND connector_id IS NOT NULL) OR "
-            "(source = 'heartbeat' AND connector_id IS NULL AND event_type = 'heartbeat')",
+            "(source = 'connector' AND connector_id IS NOT NULL AND source_thread_id IS NULL) OR "
+            "(source = 'heartbeat' AND connector_id IS NULL AND source_thread_id IS NULL AND event_type = 'heartbeat') OR "
+            "(source = 'thread' AND connector_id IS NULL AND source_thread_id IS NOT NULL)",
             name="source",
         ),
         UniqueConstraint("connector_id", "source_event_id", name="connector_source_event"),
@@ -160,6 +161,8 @@ class BotInboxRecord(Base):
     connector_id: Mapped[str | None] = mapped_column(
         String(_ID), ForeignKey("connector_configuration.connector_id", ondelete="CASCADE"), nullable=True
     )
+    source_thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_thread_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     source_event_id: Mapped[str] = mapped_column(String(512), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)

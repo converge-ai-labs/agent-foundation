@@ -40,7 +40,9 @@ async def retain(app, connector_id, inputs):
     await app._store.connectors.retain(
         connector_id,
         tuple(
-            ConnectorInput.model_validate({k: v for k, v in item.model_dump().items() if k != "source"})
+            ConnectorInput.model_validate(
+                item.model_dump(exclude={"source", "source_thread_id", "source_thread_title"})
+            )
             for item in inputs
         ),
     )
@@ -95,7 +97,7 @@ async def test_connector_cursor_and_inbox_share_a_short_transaction(tmp_path: Pa
                     configuration.connector_id,
                     (
                         ConnectorInput.model_validate(
-                            {k: v for k, v in event("atomic").model_dump().items() if k != "source"}
+                            event("atomic").model_dump(exclude={"source", "source_thread_id", "source_thread_title"})
                         ),
                     ),
                 )
@@ -112,7 +114,7 @@ async def test_connector_cursor_and_inbox_share_a_short_transaction(tmp_path: Pa
                 configuration.connector_id,
                 (
                     ConnectorInput.model_validate(
-                        {k: v for k, v in event("atomic").model_dump().items() if k != "source"}
+                        event("atomic").model_dump(exclude={"source", "source_thread_id", "source_thread_title"})
                     ),
                 ),
             )
