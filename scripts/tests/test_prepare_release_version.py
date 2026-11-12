@@ -222,8 +222,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.8.0"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.33.0"),
-        ("a13n-harness-ui", "0.33.0"),
+        ("a13n-harness", "0.33.1"),
+        ("a13n-harness-ui", "0.33.3"),
         ("a13n-service", "0.0.101"),
     )
     for component, version in releases:
@@ -244,13 +244,16 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
         manifest = tomllib.loads((tmp_path / f"packages/{package}/pyproject.toml").read_text())
         assert f"a13n-envd-client{envd_requirement}" in manifest["project"]["dependencies"]
         assert "a13n-logging>=0.2.0,<0.3.0" in manifest["project"]["dependencies"]
+        expected_versions = released_versions.copy()
+        if package == "a13n-service":
+            expected_versions.update({"a13n-harness": "0.33.0", "a13n-stream-protocol": "0.33.0"})
         for dependency in manifest["project"]["dependencies"]:
             requirement = Requirement(dependency)
-            if requirement.name in released_versions:
-                assert released_versions[requirement.name] in requirement.specifier, dependency
+            if requirement.name in expected_versions:
+                assert expected_versions[requirement.name] in requirement.specifier, dependency
         if package in {"a13n-harness-ui", "a13n-service"}:
             harness = next(dep for dep in manifest["project"]["dependencies"] if dep.startswith("a13n-harness"))
-            pin = "==0.33.0"
+            pin = f"=={expected_versions['a13n-harness']}"
             assert harness.endswith(pin)
             assert f"a13n-stream-protocol{pin}" in manifest["project"]["dependencies"]
 
@@ -561,7 +564,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     ("component", "version", "requirement"),
     [
         ("a13n-service", "0.1.0", "==0.33.0"),
-        ("a13n-harness-ui", "0.33.0", "==0.33.0"),
+        ("a13n-harness-ui", "0.33.3", "==0.33.1"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
