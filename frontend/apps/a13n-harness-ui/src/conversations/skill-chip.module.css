@@ -27,6 +27,10 @@
   container-type: inline-size;
 }
 
+.anchor:not(:has(.picker)) {
+  pointer-events: none;
+}
+
 .anchor:has(.picker) {
   overflow: hidden;
   color: var(--a13n-text);
