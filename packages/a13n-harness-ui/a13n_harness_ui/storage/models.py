@@ -509,6 +509,24 @@ class ChildExecutionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class McpOAuthRecord(Base):
+    """App-private registration and grant; references alone enter captured recipes."""
+
+    __tablename__ = "mcp_oauth"
+    __table_args__ = (
+        UniqueConstraint("owner", name="owner"),
+        CheckConstraint("credential_version >= 0", name="credential_version"),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    generation: Mapped[str] = mapped_column(String(80), nullable=False)
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    refresh_pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    bundle_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class UsageModelRecord(Base):
     """The configured Model resource selected by an immutable Harness UI recipe."""
 

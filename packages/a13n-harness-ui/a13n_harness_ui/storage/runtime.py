@@ -29,6 +29,7 @@ from .drafts import DraftRepository
 from .envd_sessions import EnvdSessionRepository
 from .inspection import InspectionRepository
 from .layout import StorageLayout
+from .mcp_oauth import McpOAuthRepository
 from .models import UsageModelRecord
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
 from .read_models import project_continuation
@@ -82,6 +83,7 @@ class LocalStore:
         self.bot_inbox = BotInboxRepository(database.sessions)
         self.bot_notes = BotNoteRepository(database.sessions)
         self.connectors = ConnectorRepository(database.sessions)
+        self.mcp_oauth = McpOAuthRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)

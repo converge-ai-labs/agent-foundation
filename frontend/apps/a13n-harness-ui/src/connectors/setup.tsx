@@ -13,6 +13,7 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
+import { McpAuthorization } from "../configuration/mcp-authorization";
 import {
   ConnectorIcon,
   compactSetupAction,
@@ -373,6 +374,17 @@ export function ConnectorSetup({
                   </span>
                 </p>
               )}
+              {!terminal &&
+                snapshot.step.actions?.some(
+                  (action) => action.kind === "oauth",
+                ) && (
+                  <McpAuthorization
+                    target={{ kind: "connector", id: connectorId }}
+                    onConnected={() => {
+                      void read();
+                    }}
+                  />
+                )}
               <form
                 id={formId}
                 ref={formElement}

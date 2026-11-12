@@ -35,6 +35,8 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
+from a13n_harness_ui.mcp_oauth.models import OAuthError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
@@ -52,10 +54,12 @@ class HarnessUiMCP(MCP[AgentContext]):
         connections: HostConnections | None = None,
         private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
         operation_guard: Callable[[], Awaitable[None]] | None = None,
+        oauth: McpOAuth | None = None,
     ) -> None:
         if not isinstance(recipe, ResolvedMcpRecipe):
             raise TypeError("recipe must be a ResolvedMcpRecipe")
         self._recipe = recipe.model_copy(deep=True)
+        self._oauth = oauth
         self._configuration_root = configuration_root
         self._private_values = private_values
         self._operation_guard = operation_guard
@@ -88,6 +92,7 @@ class HarnessUiMCP(MCP[AgentContext]):
             self._configuration_root,
             configuration=ctx.deps.configuration,
             private_values=self._private_values,
+            oauth=self._oauth,
         )
         if self._connections is not None and (self._recipe.host_owned or self._apps is not None):
             connection = await self._connections.acquire(
@@ -96,7 +101,7 @@ class HarnessUiMCP(MCP[AgentContext]):
                 # Effective credentials are compared only in process memory, never persisted.
                 effective_recipe,
                 client_transport,
-                binding=repr((self._recipe.transport.model_dump_json(), self._recipe.protocol, self._apps is not None)),
+                binding=self._recipe.binding_key(apps=self._apps is not None),
                 protocol=self._recipe.protocol,
                 init_timeout=init_timeout,
                 client_factory=None if self._apps is not None else HostClient,
@@ -156,6 +161,7 @@ async def prepare_mcp_transport(
     *,
     configuration: RunConfiguration | None = None,
     private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
+    oauth: McpOAuth | None = None,
 ) -> tuple[ClientTransport, str, float]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
     transport = recipe.transport
@@ -163,8 +169,16 @@ async def prepare_mcp_transport(
     if isinstance(transport, McpRemoteTransport):
         configuration.authorize_url(transport.url)
         values = await resolve_mcp_values(transport.headers, configuration_root, private_values=private_values)
+        auth = None
+        if transport.oauth is not None:
+            if oauth is None or recipe.oauth_binding is None:
+                raise OAuthError(
+                    "The captured MCP OAuth account is unavailable; start a new Run.", code="mcp_oauth_login_required"
+                )
+            auth = oauth.auth(recipe.oauth_binding, transport.url)
         client_transport = StreamableHttpTransport(
             transport.url,
+            auth=auth,
             headers=values or None,
             httpx_client_factory=partial(_no_redirect_client, configuration=configuration),
         )
@@ -183,6 +197,7 @@ async def prepare_mcp_transport(
         repr(
             (
                 transport.model_dump(),
+                recipe.oauth_binding.model_dump() if recipe.oauth_binding else None,
                 values,
                 configuration.model_dump(mode="json"),
                 recipe.protocol,

@@ -25,9 +25,11 @@ class Catalog:
         self, definitions: tuple[Definition, ...] = (), *, installed: tuple[EntryPoint, ...] | None = None
     ) -> None:
         from .github import GitHub
+        from .linear import Linear
+        from .notion import Notion
 
         candidates: dict[str, list[tuple[Definition | None, CatalogItem]]] = {}
-        for definition in (GitHub(), *definitions):
+        for definition in (GitHub(), Linear(), Notion(), *definitions):
             declaration = definition.declaration()
             implementation = f"{type(definition).__module__}:{type(definition).__qualname__}"
             try:

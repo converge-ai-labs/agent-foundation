@@ -122,6 +122,8 @@ from a13n_harness_ui.mcp_apps.operations import AppDecision, AppOperation, AppTo
 from a13n_harness_ui.mcp_apps.origins import origin
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.sandbox import serve_sandbox
+from a13n_harness_ui.mcp_oauth.login import CALLBACK_PATH
+from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationTarget, OAuthLoginStatus
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
@@ -1802,6 +1804,85 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    def mcp_logins():
+        logins = app().mcp_logins
+        if logins is None:
+            raise HarnessUiError("MCP login is unavailable.", code="mcp_oauth_unavailable")
+        return logins
+
+    @server.get(CALLBACK_PATH, include_in_schema=False)
+    async def mcp_oauth_callback(request: Request) -> Response:
+        query = dict(request.query_params)
+        # Authorization codes and state must not enter the HTTP access log.
+        request.scope["query_string"] = b""
+        state = query.get("state", "")
+        logins = mcp_logins()
+        name = logins.cookie_name(state)
+        logins.receive(
+            state=state,
+            cookie=request.cookies.get(name),
+            origin=f"{request.url.scheme}://{request.url.netloc}",
+            code=query.get("code", ""),
+            issuer=query.get("iss"),
+            error=query.get("error"),
+        )
+        response = Response(
+            "Authorization received. Return to Harness UI to finish connecting.",
+            media_type="text/plain",
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+        response.delete_cookie(name, path=CALLBACK_PATH)
+        return response
+
+    @server.get("/api/mcp-authorization/status/{kind}/{target_id}", response_model=AuthorizationStatus)
+    async def mcp_oauth_status(kind: Literal["mcp", "connector"], target_id: str) -> AuthorizationStatus:
+        target = AuthorizationTarget.model_validate({"kind": kind, "id": target_id})
+        return await app().mcp_authorization_status(target)
+
+    @server.post(
+        "/api/mcp-authorization/start", response_model=OAuthLoginStatus, openapi_extra=_body(AuthorizationTarget)
+    )
+    async def mcp_oauth_start(request: Request) -> Response:
+        target = await _document(request, AuthorizationTarget)
+        source = await app().current_configuration()
+        oauth_origins = frozenset(source.document.webui.allowed_origins) if source is not None else frozenset()
+        incoming = f"{request.url.scheme}://{request.url.netloc}"
+        parsed = urlsplit(incoming)
+        listener = request.scope.get("server")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        local = parsed.hostname in {"localhost", "127.0.0.1", "::1"} and listener is not None and port == listener[1]
+        if not local and not (parsed.scheme == "https" and incoming in oauth_origins):
+            raise HarnessUiError(
+                "MCP OAuth requires the loopback listener or an explicit HTTPS webui.allowed_origins entry.",
+                code="mcp_oauth_origin_required",
+            )
+        status, cookie = await app().start_mcp_authorization(target, incoming)
+        response = JSONResponse(status.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
+        response.set_cookie(
+            f"mcpa_{status.attempt_id}",
+            cookie,
+            max_age=600,
+            httponly=True,
+            secure=parsed.scheme == "https",
+            samesite="lax",
+            path=CALLBACK_PATH,
+        )
+        return response
+
+    @server.get("/api/mcp-authorization/attempts/{attempt_id}", response_model=OAuthLoginStatus)
+    async def mcp_oauth_login_status(attempt_id: str) -> OAuthLoginStatus:
+        return mcp_logins().status(attempt_id)
+
+    @server.delete("/api/mcp-authorization/attempts/{attempt_id}")
+    async def mcp_oauth_cancel(attempt_id: str) -> Response:
+        await mcp_logins().cancel(attempt_id)
+        return Response(status_code=204)
+
+    @server.post("/api/mcp-authorization/disconnect", openapi_extra=_body(AuthorizationTarget))
+    async def mcp_oauth_disconnect(request: Request) -> Response:
+        await app().disconnect_mcp_authorization(await _document(request, AuthorizationTarget))
+        return Response(status_code=204)
 
     @server.get("/api/mcp/{server_id}/tools", response_model=McpToolSettings)
     async def mcp_tools_settings(server_id: str) -> McpToolSettings:

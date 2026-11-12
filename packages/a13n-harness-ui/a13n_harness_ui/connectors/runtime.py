@@ -18,6 +18,7 @@ from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.storage import LocalStore
 
 from .catalog import Catalog
@@ -65,8 +66,10 @@ class Connectors:
         owned: bool,
         signal: Callable[[], None],
         changed: Callable[[], Any],
+        oauth: McpOAuth | None = None,
     ) -> None:
         self.store, self.catalog, self.owned = store, catalog, owned
+        self.oauth = oauth
         self._signal, self._changed = signal, changed
         self._controllers: dict[str, Controller] = {}
         self._workers: dict[str, _Worker] = {}
@@ -104,6 +107,7 @@ class Connectors:
             controller, resource = await self._resource_group.start(self._hold_controller, configuration.kind, context)
             self._resources.append(resource)
             self._controllers[configuration.connector_id] = controller
+            await self._sync_oauth(configuration.connector_id)
         except Exception as exc:
             self._diagnostics[configuration.connector_id] = f"Controller failed to open ({type(exc).__name__})."
 
@@ -231,6 +235,7 @@ class Connectors:
             )
             self._diagnostics.pop(saved.connector_id, None)
             await self._open(saved)
+            await self._sync_oauth(saved.connector_id)
             await self._restart(saved)
         await self._changed()
         self._signal()
@@ -240,6 +245,10 @@ class Connectors:
         self.require_owner()
         async with self._lock:
             await self.store.connectors.delete(connector_id, expected_version=expected_version)
+            if self.oauth is not None:
+                if self.oauth.cancel_logins is not None:
+                    await self.oauth.cancel_logins(f"connector:{connector_id}")
+                await self.oauth.repository.remove(f"connector:{connector_id}")
             await self._stop_worker(connector_id)
             for session in tuple(self._sessions.values()):
                 if session.connector_id == connector_id:
@@ -247,6 +256,23 @@ class Connectors:
             # Controller resources stay alive until admitted root users have drained.
             self._controllers.pop(connector_id, None)
         await self._changed()
+
+    async def _sync_oauth(self, connector_id: str) -> None:
+        from .remote_mcp import RemoteMcp
+
+        controller = self._controllers.get(connector_id)
+        if isinstance(controller, RemoteMcp):
+            await controller.authorization_recipe(replace_configuration=True)
+
+    async def oauth_recipe(self, connector_id: str):
+        from .remote_mcp import RemoteMcp
+
+        self.require_owner()
+        controller = self._controllers.get(connector_id)
+        if not isinstance(controller, RemoteMcp):
+            raise HarnessUiError("This connection does not support MCP OAuth.", code="mcp_oauth_not_configured")
+        await controller.context.require_available()
+        return await controller.authorization_recipe()
 
     async def capture(self) -> tuple[Capture, ...]:
         if not self.owned or self._sealed:
