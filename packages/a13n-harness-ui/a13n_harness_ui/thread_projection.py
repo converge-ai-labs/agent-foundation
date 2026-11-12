@@ -100,6 +100,7 @@ class _ThreadCursor(SurfaceModel):
     include_archived: bool
     archived_only: bool = False
     starred: bool | None = None
+    unread: bool | None = None
     active_only: bool | None = None
     updated_at: datetime
     thread_id: str
@@ -166,6 +167,7 @@ class ThreadProjectionService:
         include_archived: bool = False,
         archived_only: bool = False,
         starred: bool | None = None,
+        unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
         coordinator_thread_id: str | None = None,
@@ -199,6 +201,7 @@ class ThreadProjectionService:
                 or decoded.include_archived is not include_archived
                 or decoded.archived_only is not archived_only
                 or decoded.starred is not starred
+                or decoded.unread is not unread
                 or (
                     decoded.project_ids_digest != project_ids_digest
                     if decoded.project_ids_digest is not None
@@ -220,6 +223,7 @@ class ThreadProjectionService:
             include_archived=include_archived,
             archived_only=archived_only,
             starred=starred,
+            unread=unread,
             project_ids=project_ids,
             projectless=projectless,
             coordinator_thread_id=coordinator_thread_id,
@@ -259,6 +263,7 @@ class ThreadProjectionService:
                     include_archived=include_archived,
                     archived_only=archived_only,
                     starred=starred,
+                    unread=unread,
                     active_only=active_only,
                     updated_at={
                         "updated": last.updated_at,
@@ -583,6 +588,8 @@ class ThreadProjectionService:
             touched_at=thread.touched_at,
             archived=thread.archived,
             starred=thread.starred,
+            unread=thread.unread,
+            read_state_version=thread.read_state_version,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,

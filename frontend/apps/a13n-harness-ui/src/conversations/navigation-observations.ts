@@ -83,6 +83,24 @@ export function useNavigationObservations({
       thread: selected,
     });
   }
+  // Metadata/activity responses can arrive after a read-state mutation. Their
+  // request timestamp does not supersede that independent durable revision.
+  for (const [id, row] of observed) {
+    const reading = results.threads.get(id)?.thread;
+    if (
+      reading &&
+      (reading.read_state_version ?? 0) > (row.thread.read_state_version ?? 0)
+    )
+      observed.set(id, {
+        ...row,
+        thread: {
+          ...row.thread,
+          unread: reading.unread,
+          read_state_version: reading.read_state_version,
+          completion: reading.completion,
+        },
+      });
+  }
   const ownerIds = [
     ...new Set(
       [...observed.values()]

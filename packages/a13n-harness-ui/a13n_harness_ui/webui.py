@@ -68,6 +68,7 @@ from a13n_harness_ui.configuration.views import (
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
+from a13n_harness_ui.dictation import DictationInput
 from a13n_harness_ui.envd_runtime import EnvdStatus
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_monitoring import MonitoringCatalog, MonitoringDetail
@@ -202,6 +203,7 @@ from a13n_harness_ui.surfaces import (
     ThreadLookup,
     ThreadMetadataMutation,
     ThreadPage,
+    ThreadReadAcknowledgement,
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
@@ -1591,6 +1593,10 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
+    @server.post("/api/dictation", response_model=str, openapi_extra=_body(DictationInput))
+    async def dictate(request: Request) -> str:
+        return await app().transcribe(await _document(request, DictationInput, max_bytes=16 * _MAX_BODY))
+
     @server.get("/api/models/choices", response_model=ModelChoices)
     async def model_choices() -> ModelChoices:
         return await app().model_choices()
@@ -2089,6 +2095,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        unread: bool | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -2099,10 +2106,19 @@ def create_webui(
             query=query,
             project_id=project_id,
             include_archived=include_archived,
+            unread=unread,
             sort=sort,
             cursor=cursor,
             limit=limit,
         )
+
+    @server.post("/api/threads/read", response_model=ThreadPage, openapi_extra=_body(ThreadReadAcknowledgement))
+    async def acknowledge_threads_read(request: Request) -> ThreadPage:
+        return await app().acknowledge_threads_read(await _document(request, ThreadReadAcknowledgement))
+
+    @server.post("/api/threads/{thread_id}/unread", response_model=ThreadSummary)
+    async def mark_thread_unread(thread_id: str) -> ThreadSummary:
+        return await app().mark_thread_unread(thread_id)
 
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
     async def create(request: Request) -> ThreadSummary:

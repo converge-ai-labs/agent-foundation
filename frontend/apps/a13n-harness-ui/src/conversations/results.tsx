@@ -8,42 +8,35 @@ import {
 } from "react";
 import { result, type Schema, type Transport } from "../transport/client";
 import { useTransport } from "../transport/context";
-import { ResultStore, type FollowedThread } from "./result-store";
 
 export type ResultObservation = {
   thread: Schema<"ThreadSummary">;
   observedAt: number;
 };
 type ResultSnapshot = {
-  followed: ReadonlyMap<string, number>;
   threads: ReadonlyMap<string, ResultObservation>;
-  storageError: string;
+  mutationError: string;
   lookupError: string;
 };
+type ReadReceipt = Schema<"ThreadReadReceipt">;
 
+// A query cache only: SQLite owns read state across browsers and restarts.
 export class ResultTracker {
   private snapshot: ResultSnapshot = {
-    followed: new Map(),
     threads: new Map(),
-    storageError: "",
+    mutationError: "",
     lookupError: "",
   };
   private listeners = new Set<() => void>();
-  private channel?: BroadcastChannel;
   private timer?: ReturnType<typeof setTimeout>;
   private refreshing?: Promise<void>;
   private dirty = false;
   private fullRefresh = false;
   private dirtyIds = new Set<string>();
   private acknowledgements = new Map<string, number>();
-  private failedFollows = new Map<string, number>();
-  private following = new Map<string, Promise<void>>();
-  private failedAcknowledgements = new Map<string, number>();
+  private failedAcknowledgements = new Map<string, ReadReceipt>();
 
-  constructor(
-    private readonly transport: Transport,
-    private readonly store = new ResultStore(),
-  ) {}
+  constructor(private readonly transport: Transport) {}
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -52,149 +45,132 @@ export class ResultTracker {
     };
   };
   private publish(patch: Partial<ResultSnapshot>) {
-    if (
-      Object.entries(patch).every(
-        ([key, value]) => this.snapshot[key as keyof ResultSnapshot] === value,
-      )
-    )
-      return;
     this.snapshot = { ...this.snapshot, ...patch };
     this.listeners.forEach((listener) => listener());
-  }
-  private saved(records: FollowedThread[]) {
-    let followed: Map<string, number> | undefined;
-    for (const record of records) {
-      const known = (followed ?? this.snapshot.followed).get(record.threadId);
-      const acknowledged = Math.max(known ?? 0, record.acknowledged);
-      if (known === acknowledged) continue;
-      followed ??= new Map(this.snapshot.followed);
-      followed.set(record.threadId, acknowledged);
-    }
-    if (followed) this.publish({ followed });
-  }
-  private storageFailed() {
-    this.publish({
-      storageError:
-        "New-result tracking could not be saved in this browser. Reminders may be incomplete or reappear after reload. Enable site storage, then retry.",
-    });
   }
   observe(thread: Schema<"ThreadSummary">, observedAt = Date.now()) {
     this.observeMany([thread], observedAt);
   }
-  private observeMany(rows: Schema<"ThreadSummary">[], observedAt: number) {
-    let threads: Map<string, ResultObservation> | undefined;
-    for (let thread of rows) {
-      let timestamp = observedAt;
-      const previous = (threads ?? this.snapshot.threads).get(thread.thread_id);
-      // Lookup, detail, and cross-tab invalidations may race. Never regress a marker.
-      if (previous && previous.observedAt > timestamp) {
-        if (
-          (thread.completion?.version ?? 0) <=
-          (previous.thread.completion?.version ?? 0)
-        )
-          continue;
-        thread = { ...previous.thread, completion: thread.completion };
-        timestamp = previous.observedAt;
-      }
-      if (previous?.thread === thread && previous.observedAt === timestamp)
-        continue;
-      threads ??= new Map(this.snapshot.threads);
+  private observeMany(
+    rows: readonly Schema<"ThreadSummary">[],
+    observedAt: number,
+  ) {
+    const threads = new Map(this.snapshot.threads);
+    for (const incoming of rows) {
+      const previous = threads.get(incoming.thread_id);
+      const current = previous?.thread;
+      let thread =
+        previous && previous.observedAt > observedAt
+          ? previous.thread
+          : incoming;
+      // Read state has its own monotonic revision; wall-clock query freshness
+      // cannot undo a read, a manual mark, or a newly completed result.
+      const reading =
+        current &&
+        (current.read_state_version ?? 0) > (incoming.read_state_version ?? 0)
+          ? current
+          : incoming;
+      const completion =
+        current &&
+        (current.completion?.version ?? 0) > (incoming.completion?.version ?? 0)
+          ? current.completion
+          : incoming.completion;
+      thread = {
+        ...thread,
+        unread: reading.unread,
+        read_state_version: reading.read_state_version,
+        completion,
+      };
       threads.set(thread.thread_id, {
-        observedAt: timestamp,
-        thread:
-          previous &&
-          (previous.thread.completion?.version ?? 0) >
-            (thread.completion?.version ?? 0)
-            ? { ...thread, completion: previous.thread.completion }
-            : thread,
+        thread,
+        observedAt: Math.max(previous?.observedAt ?? 0, observedAt),
       });
     }
-    if (threads) this.publish({ threads });
+    this.publish({ threads });
   }
-  follow = async (thread: Schema<"ThreadSummary">, observedAt = Date.now()) => {
-    if (thread.parent_thread_id) return;
-    this.observe(thread, observedAt);
-    await this.followVersion(thread.thread_id, thread.completion?.version ?? 0);
-  };
-  // A lazily allocated root can register its known baseline before its first Send.
-  followVersion = async (id: string, version: number) => {
-    if (this.snapshot.followed.has(id)) return;
-    const pending = this.following.get(id);
-    if (pending) return pending;
-    const baseline = this.failedFollows.get(id) ?? version;
-    const following = (async () => {
-      try {
-        const record = await this.store.update(id, baseline, true);
-        this.failedFollows.delete(id);
-        if (record) this.saved([record]);
-        this.channel?.postMessage(null);
-        this.invalidate(id);
-      } catch {
-        this.failedFollows.set(id, baseline);
-        this.storageFailed();
-      }
-    })().finally(() => this.following.delete(id));
-    this.following.set(id, following);
-    return following;
-  };
-  // Admission must not outrun initial interest registration, including a newly
-  // created Thread's first Send. A storage failure is visible, not a Send failure.
-  beforeRun = async (threadId: string) => {
-    if (this.snapshot.followed.has(threadId)) return;
-    const pending = this.following.get(threadId);
-    if (pending) return pending;
-    const detail = await result(
-      this.transport.client.GET("/api/threads/{thread_id}", {
-        params: { path: { thread_id: threadId } },
-      }),
-    );
-    await this.follow(detail.thread);
-  };
-  acknowledge = async (threadId: string, version: number) => {
-    const known = this.snapshot.followed.get(threadId);
+  acknowledge = async (
+    threadId: string,
+    completionVersion: number,
+    readStateVersion: number,
+  ) => {
+    const thread = this.snapshot.threads.get(threadId)?.thread;
     if (
-      known === undefined ||
-      version <= known ||
-      version <= (this.acknowledgements.get(threadId) ?? 0)
+      !thread?.unread ||
+      thread.read_state_version !== readStateVersion ||
+      (thread.completion?.version ?? 0) !== completionVersion
     )
       return;
-    this.acknowledgements.set(threadId, version);
-    try {
-      const record = await this.store.update(threadId, version, false);
-      if ((this.failedAcknowledgements.get(threadId) ?? 0) <= version)
-        this.failedAcknowledgements.delete(threadId);
-      if (record) this.saved([record]);
-      this.channel?.postMessage(null);
-    } catch {
-      this.failedAcknowledgements.set(
-        threadId,
-        Math.max(version, this.failedAcknowledgements.get(threadId) ?? 0),
+    await this.acknowledgeReceipts([
+      {
+        thread_id: threadId,
+        completion_version: completionVersion,
+        read_state_version: readStateVersion,
+      },
+    ]);
+  };
+  private acknowledgeReceipts = async (receipts: readonly ReadReceipt[]) => {
+    const pending = receipts.filter(
+      (item) =>
+        this.acknowledgements.get(item.thread_id) !== item.read_state_version,
+    );
+    for (let offset = 0; offset < pending.length; offset += 100) {
+      const batch = pending.slice(offset, offset + 100);
+      batch.forEach((item) =>
+        this.acknowledgements.set(item.thread_id, item.read_state_version),
       );
-      this.storageFailed();
-    } finally {
-      if (this.acknowledgements.get(threadId) === version)
-        this.acknowledgements.delete(threadId);
+      const observedAt = Date.now();
+      try {
+        const page = await result(
+          this.transport.client.POST("/api/threads/read", {
+            body: { threads: batch },
+          }),
+        );
+        this.observeMany(page.threads, observedAt);
+        batch.forEach((item) => {
+          if (
+            (this.failedAcknowledgements.get(item.thread_id)
+              ?.read_state_version ?? -1) <= item.read_state_version
+          )
+            this.failedAcknowledgements.delete(item.thread_id);
+        });
+        this.publish({
+          mutationError: this.failedAcknowledgements.size
+            ? this.snapshot.mutationError
+            : "",
+        });
+      } catch {
+        batch.forEach((item) =>
+          this.failedAcknowledgements.set(item.thread_id, item),
+        );
+        this.publish({
+          mutationError: "Read state could not be saved. Retry when connected.",
+        });
+      } finally {
+        batch.forEach((item) => {
+          if (
+            this.acknowledgements.get(item.thread_id) ===
+            item.read_state_version
+          )
+            this.acknowledgements.delete(item.thread_id);
+        });
+      }
     }
   };
   acknowledgeAll = async (threads: readonly Schema<"ThreadSummary">[]) => {
-    await Promise.all(
+    await this.acknowledgeReceipts(
       threads
-        .filter((thread) => this.isUnread(thread.thread_id))
-        .map((thread) =>
-          this.acknowledge(thread.thread_id, thread.completion?.version ?? 0),
-        ),
+        .filter((thread) => thread.unread)
+        .map((thread) => ({
+          thread_id: thread.thread_id,
+          read_state_version: thread.read_state_version ?? 0,
+          completion_version: thread.completion?.version ?? 0,
+        })),
     );
   };
   isUnread(threadId: string) {
-    const acknowledged = this.snapshot.followed.get(threadId);
-    return (
-      acknowledged !== undefined &&
-      (this.snapshot.threads.get(threadId)?.thread.completion?.version ?? 0) >
-        acknowledged
-    );
+    return this.snapshot.threads.get(threadId)?.thread.unread ?? false;
   }
   invalidate = (threadId?: string) => {
-    if (threadId && !this.snapshot.followed.has(threadId)) return;
     this.dirty = true;
     if (threadId) this.dirtyIds.add(threadId);
     else this.fullRefresh = true;
@@ -215,49 +191,59 @@ export class ResultTracker {
         this.dirty = false;
         const all = this.fullRefresh;
         this.fullRefresh = false;
-        const dirtyIds = this.dirtyIds;
-        this.dirtyIds = new Set();
+        const ids = new Set(this.dirtyIds);
+        this.dirtyIds.clear();
         try {
-          for (const [id, baseline] of this.failedFollows) {
-            const record = await this.store.update(id, baseline, true);
-            if (record) this.saved([record]);
-            this.failedFollows.delete(id);
-            dirtyIds.add(id);
-            this.channel?.postMessage(null);
+          if (all) {
+            // Reconcile previously unread identities even if another device
+            // already read/deleted them. Discover unseen roots independently
+            // of the sidebar's recent pages, in bounded keyset pages.
+            for (const { thread } of this.snapshot.threads.values())
+              if (thread.unread) ids.add(thread.thread_id);
+            let cursor: string | undefined;
+            do {
+              const observedAt = Date.now();
+              const page = await result(
+                this.transport.client.GET("/api/threads", {
+                  params: { query: { unread: true, limit: 100, cursor } },
+                }),
+              );
+              this.observeMany(page.threads, observedAt);
+              cursor = page.next_cursor ?? undefined;
+            } while (cursor);
           }
-          for (const [id, version] of this.failedAcknowledgements) {
-            const record = await this.store.update(id, version, false);
-            if (record) this.saved([record]);
-            if (this.failedAcknowledgements.get(id) === version)
-              this.failedAcknowledgements.delete(id);
-            this.channel?.postMessage(null);
-          }
-          this.saved(await this.store.read());
-          if (!this.failedFollows.size && !this.failedAcknowledgements.size)
-            this.publish({ storageError: "" });
-        } catch {
-          this.storageFailed();
-        }
-        const ids = all
-          ? [...this.snapshot.followed.keys()]
-          : [...dirtyIds].filter((id) => this.snapshot.followed.has(id));
-        try {
-          for (let offset = 0; offset < ids.length; offset += 100) {
+          const identities = [...ids];
+          for (let offset = 0; offset < identities.length; offset += 100) {
+            const batch = identities.slice(offset, offset + 100);
             const observedAt = Date.now();
             const page = await result(
               this.transport.client.POST("/api/threads/lookup", {
-                body: { thread_ids: ids.slice(offset, offset + 100) },
+                body: { thread_ids: batch },
               }),
             );
             this.observeMany(page.threads, observedAt);
+            const found = new Set(
+              page.threads.map((thread) => thread.thread_id),
+            );
+            const threads = new Map(this.snapshot.threads);
+            for (const id of batch)
+              if (
+                !found.has(id) &&
+                (threads.get(id)?.observedAt ?? 0) <= observedAt
+              )
+                threads.delete(id);
+            this.publish({ threads });
           }
+          if (this.failedAcknowledgements.size)
+            await this.acknowledgeReceipts([
+              ...this.failedAcknowledgements.values(),
+            ]);
           this.publish({ lookupError: "" });
         } catch {
           this.publish({
             lookupError:
               "New results could not be refreshed. Existing reminders are retained; retry when connected.",
           });
-          // Retry on the next event/focus/reconnect, not a failure spin loop.
           this.dirty = false;
           this.fullRefresh = true;
         }
@@ -268,13 +254,6 @@ export class ResultTracker {
     return this.refreshing;
   };
   start() {
-    try {
-      this.channel = new BroadcastChannel("a13n-harness-ui.results");
-      // Messages carry no state; the database owns atomic cross-tab updates.
-      this.channel.onmessage = () => this.invalidate();
-    } catch {
-      /* Focus/reconnect also rereads storage when BroadcastChannel is unavailable. */
-    }
     const foreground = () => {
       if (document.visibilityState === "visible") this.invalidate();
     };
@@ -284,8 +263,6 @@ export class ResultTracker {
     return () => {
       window.removeEventListener("focus", foreground);
       document.removeEventListener("visibilitychange", foreground);
-      this.channel?.close();
-      this.channel = undefined;
       clearTimeout(this.timer);
       this.timer = undefined;
     };
@@ -300,9 +277,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   return <ResultsContext value={tracker}>{children}</ResultsContext>;
 }
 const empty: ResultSnapshot = {
-  followed: new Map(),
   threads: new Map(),
-  storageError: "",
+  mutationError: "",
   lookupError: "",
 };
 const noSubscribe = () => () => {};

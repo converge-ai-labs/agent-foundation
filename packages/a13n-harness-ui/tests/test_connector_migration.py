@@ -6,8 +6,12 @@ from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 
-@pytest.mark.parametrize("starting_revision", ["2e9f82450690", "ab7f852de318", "f196302d868f"])
+@pytest.mark.parametrize(
+    "starting_revision", ["2e9f82450690", "ab7f852de318", "f196302d868f", "7daf652f9b5d", "9450d8b1a589"]
+)
 def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, starting_revision):
+    has_external_context = starting_revision in {"f196302d868f", "7daf652f9b5d", "9450d8b1a589"}
+    has_read_state = starting_revision == "9450d8b1a589"
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
     migrator._run(lambda config: command.upgrade(config, starting_revision), write=True)
@@ -28,13 +32,18 @@ def test_connector_upgrade_preserves_private_values_and_defaults(tmp_path, start
                 ),
                 {"digest": "a" * 64},
             )
-            if starting_revision == "f196302d868f":
+            if has_external_context:
                 connection.execute(text('UPDATE thread SET external_context_json = \'{"source":"retained"}\''))
+            if has_read_state:
+                connection.execute(text("UPDATE thread SET unread = 1, read_state_version = 7"))
         migrator.upgrade()
         migrator.verify_current()
         with engine.begin() as connection:
             assert connection.execute(text("SELECT external_context_json FROM thread")).scalar_one() == (
-                '{"source":"retained"}' if starting_revision == "f196302d868f" else None
+                '{"source":"retained"}' if has_external_context else None
+            )
+            assert connection.execute(text("SELECT unread, read_state_version FROM thread")).one() == (
+                (1, 7) if has_read_state else (0, 0)
             )
             connection.execute(insert, {"id": "old-writer"})
             rows = (
