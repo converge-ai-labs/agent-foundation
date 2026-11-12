@@ -72,6 +72,6 @@ Bot 聊天页面显示你的消息、实时流式及刷新后保留的普通助�
 
 Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。heartbeat 和所选 Connector 事件共用自动 inbox，收集不受模型运行状态影响。周期性投递会公平合并待处理 tick 与跨 Connector 事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
 
-本版本提供公共存储和投递基础。具体提供方的配置、轮询、写入工具和 Connector 管理界面仍需要专门集成。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
+在 **Settings → Connections → Connectors** 管理账户，也可以打开对话中的配置卡片。[Connector](connectors.md) 提供可信插件 SDK、结构化配置和规则表单、私有状态及原子事件入站。内置 GitHub provider 通过可复用的 Remote MCP 代码库提供服务工具；代码库不增加通用 MCP 配置入口。事件插件负责收集和匹配。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
 
 客户端集成参见 [Bot HTTP API](http-api.md#bot)，根设置参见[配置参考](configuration.md#webui-bot)。

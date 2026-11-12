@@ -1,3 +1,4 @@
+import { useConnectorOffers } from "../connectors/offers";
 import { MessageBranchProvider } from "./message-branch";
 import { ReaderFades } from "./reader-fades";
 import { useComposerRunChoices } from "./composer-run-choices";
@@ -137,6 +138,10 @@ function ConversationContent({
   const guest = useGuestAccess();
   const mcpInputs = useMcpInputRequests(threadId, !guest && !!detail.data);
   const readOnly = !!detail.data?.thread.memory_scope;
+  const connectorOffers = useConnectorOffers(
+    threadId,
+    !guest && !!detail.data && !readOnly,
+  );
   const isBot = threadId === BOT_THREAD_ID;
   const canCompose =
     !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
@@ -944,6 +949,9 @@ function ConversationContent({
                       }
                     >
                       <ConversationTranscript
+                        connectorOffers={
+                          !guest ? connectorOffers.data : undefined
+                        }
                         terminalTurn={terminalTurn}
                         currentFailureRunId={
                           thread?.last_execution?.status === "failed"

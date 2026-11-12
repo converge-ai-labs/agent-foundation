@@ -209,6 +209,10 @@ from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
 from a13n_harness_ui.bot import BotController
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.connector_models import ConnectorConfiguration
+from a13n_harness_ui.connectors.models import Instance, SetupCommand, SetupSnapshot
+from a13n_harness_ui.connectors.runtime import Connectors
+from a13n_harness_ui.connectors.sdk import Definition as ConnectorDefinition
 from a13n_harness_ui.dictation import DictationInput, transcribe_audio
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
@@ -367,6 +371,7 @@ class HarnessUiIntegrations:
     harness_plugin_factories: tuple[HarnessPluginFactory, ...] = ()
     environment_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = ()
     provider_runtime_factories: Mapping[str, ProviderRuntimeFactory] = field(default_factory=dict)
+    connectors: tuple[ConnectorDefinition, ...] = ()
 
 
 class AppState(StrEnum):
@@ -482,6 +487,7 @@ class HarnessUiApp:
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
         self._bot: BotController | None = None
+        self._connectors: Connectors | None = None
         self._web_push = web_push
         self._store = store
         self.sharing = Sharing(self, ShareRepository(store.database.sessions))
@@ -541,6 +547,30 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    def connectors(self) -> Connectors:
+        if self._connectors is None:
+            raise HarnessUiError("Connectors are available only in WebUI.", code="connector_runtime_unavailable")
+        return self._connectors
+
+    async def configure_connector(
+        self, configuration: ConnectorConfiguration, *, expected_version: int | None
+    ) -> Instance:
+        async with self._operation():
+            await self.connectors().save(configuration, expected_version=expected_version)
+            return await self.connectors().instance(configuration.connector_id)
+
+    async def begin_connector_setup(self, connector_id: str, *, intent: str = "configure") -> SetupSnapshot:
+        async with self._operation():
+            return await self.connectors().begin_setup(connector_id, intent=intent)
+
+    async def act_connector_setup(self, session_id: str, command: SetupCommand) -> SetupSnapshot:
+        async with self._operation():
+            return await self.connectors().act(session_id, command)
+
+    async def delete_connector(self, connector_id: str, *, expected_version: int) -> None:
+        async with self._operation():
+            await self.connectors().delete(connector_id, expected_version=expected_version)
 
     def bot(self) -> BotController:
         if self._bot is None:
@@ -3393,6 +3423,7 @@ class HarnessUiApp:
         self._memory_organizer.configuration_changed(result.configuration)
         if self._bot is not None:
             await self._bot.reconcile_policy()
+            self._bot.signal_inputs()
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
@@ -3599,6 +3630,8 @@ class HarnessUiApp:
                 return
             self._state = AppState.stopping
         self._tool_executions.stop()
+        if self._connectors is not None:
+            await self._connectors.stop()
         if self._browsers is not None:
             self._browsers.handback.stop()
         self._memory_organizer.stop()
@@ -3723,6 +3756,11 @@ async def open_harness_ui_app(
             open_local_store(settings.storage) as store,
             AsyncExitStack() as resources,
         ):
+            automation_owned = False
+            if host_mode == "webui":
+                from a13n_harness_ui.connectors.ownership import automation_owner
+
+                automation_owned = await resources.enter_async_context(automation_owner(store.layout.root))
             if settings.pricing_auto_update:
                 resources.enter_context(prices.update_in_background())
             subscription_accounts = SubscriptionAccounts(store.layout.root)
@@ -4126,6 +4164,22 @@ async def open_harness_ui_app(
                     summaries=summary_hub,
                     notify=web_push.enqueue if web_push is not None else None,
                 )
+                from pydantic_ai.capabilities import CombinedCapability
+
+                from a13n_harness_ui.connectors.capability import connector_capability
+                from a13n_harness_ui.connectors.catalog import Catalog as ConnectorCatalog
+
+                async def connector_changed() -> None:
+                    await summary_hub.publish(kind="configuration")
+
+                app._connectors = Connectors(
+                    store,
+                    ConnectorCatalog(selected_integrations.connectors),
+                    owned=automation_owned,
+                    signal=app._bot.signal_inputs,
+                    changed=connector_changed,
+                )
+                compositions.connector_capture = app._connectors.capture
                 if configuration_path is not None:
                     app._voice = VoiceController(
                         configuration_root=configuration_path.expanduser().resolve().parent,
@@ -4149,12 +4203,33 @@ async def open_harness_ui_app(
                     read_project_memory=app.read_project_memory,
                 )
                 root_executor.set_root_capability_factory(
-                    lambda composition: ThreadCollaborationCapability(
-                        controller=thread_tools,
-                        source_thread_id=composition.thread_id,
-                        composition=composition,
+                    lambda composition: CombinedCapability(
+                        [
+                            ThreadCollaborationCapability(
+                                controller=thread_tools, source_thread_id=composition.thread_id, composition=composition
+                            ),
+                            *(
+                                [
+                                    connector_capability(
+                                        app.connectors(),
+                                        thread_id=composition.thread_id,
+                                        captures=composition.connectors,
+                                        bot=app.bot(),
+                                    )
+                                ]
+                                if composition.root.source_kind != "live"
+                                else []
+                            ),
+                        ]
                     )
                 )
+            connector_resources = create_task_group()
+            await connector_resources.__aenter__()
+            # Join owned controller tasks without feeding an unrelated surface
+            # failure through a second TaskGroup exception boundary.
+            resources.push_async_callback(connector_resources.__aexit__, None, None, None)
+            if app._connectors is not None:
+                resources.push_async_callback(app._connectors.close)
             try:
                 await operator.start()
                 await root_runs.start()
@@ -4163,8 +4238,10 @@ async def open_harness_ui_app(
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
+                    if app._connectors is not None:
+                        await app._connectors.start(background, resources=connector_resources)
                     if app._bot is not None:
-                        background.start_soon(app._bot.run)
+                        background.start_soon(app._bot.run, automation_owned)
                     if app._voice is not None:
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)
@@ -4190,7 +4267,12 @@ async def open_harness_ui_app(
                             await app._stop(graceful=graceful)
                         background.cancel_scope.cancel()
             finally:
-                await app._close_collaborators()
+                try:
+                    await app._close_collaborators()
+                finally:
+                    if app._connectors is not None:
+                        with CancelScope(shield=True):
+                            await app._connectors.close()
                 with CancelScope(shield=True):
                     app.shutdown.enter("committing restart handoff")
                     await restart_coordinator.commit()

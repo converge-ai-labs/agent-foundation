@@ -30,7 +30,7 @@ from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness.context import AgentContext
 from a13n_harness.tools.identity import tool_identity
-from a13n_harness.tools.tool_search import proxy_control, proxy_membership
+from a13n_harness.tools.tool_search import proxy_control, proxy_control_groups, proxy_membership
 
 _DISCOVERY_ID = "a13n.tool-discovery"
 _MAX_TOOLS = 32
@@ -157,11 +157,15 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         from a13n_harness.toolsets.tool_search import proxy_discovery_entry
 
         tools = _tools(ctx)
-        proxy_search = next((name for name, tool in tools.items() if proxy_control(tool.tool_def) == "search"), None)
+        proxy_searches = {
+            name: proxy_control_groups(tool.tool_def)
+            for name, tool in tools.items()
+            if proxy_control(tool.tool_def) == "search" and _survives_replacement(ctx, tool.tool_def)
+        }
         call_id = f"retained-{token_urlsafe(9)}"
         selected: list[_CalledTool] = []
         native: set[str] = set()
-        proxy: list[dict[str, Any]] = []
+        proxy: dict[str, list[dict[str, Any]]] = {}
         async with self._lock:
             snapshot = tuple(self._state.called)
         if restore:
@@ -184,15 +188,22 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
                 or not _survives_replacement(ctx, tool.tool_def)
             ):
                 continue
-            if proxy_membership(tool.tool_def) is not None:
-                if proxy_search is None:
+            if (member := proxy_membership(tool.tool_def)) is not None:
+                search = next(
+                    (name for name, scope in proxy_searches.items() if scope is None or member.group in scope),
+                    None,
+                )
+                if search is None:
                     continue
                 proposed_native = native
-                proposed_proxy = [*proxy, await proxy_discovery_entry(ctx, tool)]
+                proposed_proxy = {
+                    **proxy,
+                    search: [*proxy.get(search, []), await proxy_discovery_entry(ctx, tool)],
+                }
             else:
                 proposed_native = native | {item.name}
                 proposed_proxy = proxy
-            history = _discovery_messages(proposed_native, proposed_proxy, proxy_search, call_id)
+            history = _discovery_messages(proposed_native, proposed_proxy, call_id)
             if _context_bytes(ctx, request, history, proposed_native) > _MAX_CONTEXT_BYTES:
                 continue
             selected.append(item)
@@ -200,7 +211,7 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         # Commit eviction only after the owning context capability installs history.
         selected_ids = {id(item) for item in selected}
         self._evicted = tuple(item for item in snapshot if id(item) not in selected_ids)
-        return _discovery_messages(native, proxy, proxy_search, call_id), native
+        return _discovery_messages(native, proxy, call_id), native
 
 
 def _completed_deferred_tool(ctx: RunContext[AgentContext], part: ToolReturnPart) -> _CalledTool | None:
@@ -227,9 +238,7 @@ def _completed_deferred_tool(ctx: RunContext[AgentContext], part: ToolReturnPart
     return None
 
 
-def _discovery_messages(
-    native: set[str], proxy: list[dict[str, Any]], proxy_search: str | None, call_id: str
-) -> list[ModelMessage]:
+def _discovery_messages(native: set[str], proxy: dict[str, list[dict[str, Any]]], call_id: str) -> list[ModelMessage]:
     messages: list[ModelMessage] = [
         ModelRequest(
             parts=[UserPromptPart([TextContent(_NOTICE, metadata={"display": False, "source_id": _DISCOVERY_ID})])]
@@ -250,10 +259,9 @@ def _discovery_messages(
                 ),
             ]
         )
-    if proxy:
-        assert proxy_search is not None
-        entries = sorted(proxy, key=lambda entry: (entry["group"], entry["tool"]))
-        proxy_id = f"{call_id}-proxy"
+    for index, (proxy_search, tools) in enumerate(sorted(proxy.items())):
+        entries = sorted(tools, key=lambda entry: (entry["group"], entry["tool"]))
+        proxy_id = f"{call_id}-proxy-{index}"
         messages.extend(
             [
                 ModelResponse(

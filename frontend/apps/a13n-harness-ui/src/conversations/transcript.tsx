@@ -1,7 +1,9 @@
+import { ConnectorOffer } from "../connectors/offers";
 import { useTranslation } from "../i18n";
 import { BOT_THREAD_ID } from "../bot-identity";
 import {
   memo,
+  Fragment,
   createContext,
   useContext,
   useEffect,
@@ -751,7 +753,12 @@ export const SavedEntry = memo(function SavedEntry({
 export function PublishedTranscript({
   messages,
 }: {
-  messages: { message_id: string; role: "user" | "assistant"; text: string }[];
+  messages: {
+    message_id: string;
+    role: "user" | "assistant";
+    text: string;
+    connector_setups?: Schema<"SetupOffer">[];
+  }[];
 }) {
   return messages.map((message) => {
     const row: Row =
@@ -763,16 +770,18 @@ export function PublishedTranscript({
           }
         : { id: message.message_id, kind: "assistant", text: message.text };
     return (
-      <Rows
-        key={row.id}
-        rows={[row]}
-        output={row.kind === "assistant" ? [row] : []}
-      />
+      <div key={row.id}>
+        <Rows rows={[row]} output={row.kind === "assistant" ? [row] : []} />
+        {message.connector_setups?.map((offer) => (
+          <ConnectorOffer key={offer.offer_id} offer={offer} />
+        ))}
+      </div>
     );
   });
 }
 
 export function ConversationTranscript({
+  connectorOffers = [],
   entries,
   blocks,
   localInputs,
@@ -788,6 +797,7 @@ export function ConversationTranscript({
   terminalTurn,
   running = false,
 }: {
+  connectorOffers?: Schema<"SetupOffer">[];
   terminalTurn?: { id: string; time: string; notice?: ReactNode };
   running?: boolean;
   currentFailureRunId?: string | null;
@@ -850,6 +860,7 @@ export function ConversationTranscript({
     <TerminalTurn value={terminalTurn}>
       <CurrentFailureRun value={currentFailureRunId}>
         <TurnRows
+          connectorOffers={connectorOffers}
           rows={rows}
           entries={entries}
           turns={turns}
@@ -868,6 +879,7 @@ export function ConversationTranscript({
 }
 
 function TurnRows({
+  connectorOffers,
   rows,
   entries,
   turns,
@@ -878,6 +890,7 @@ function TurnRows({
   continuation,
   pending,
 }: {
+  connectorOffers: Schema<"SetupOffer">[];
   pending?: PendingInteraction;
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
@@ -968,30 +981,61 @@ function TurnRows({
       presentationKey: "turn:ungrouped",
       rows: [],
     });
-  return groups.map((group, index) =>
-    group.id === "ungrouped" && !pending ? (
-      <Rows
-        key={group.presentationKey}
-        rows={questionRows(group.rows)}
-        threadId={threadId}
-      />
-    ) : (
-      <Turn
-        key={group.presentationKey}
-        {...group}
-        pending={index === groups.length - 1 ? pending : undefined}
-        entries={group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries}
-        threadId={threadId}
-        missing={
-          !!group.turn &&
-          indexed.byTurn.get(group.turn.turn_id)!.length <
-            group.turn.end_position - group.turn.input_position
-        }
-        loadDetails={loadDetails}
-        onSavedEntries={onSavedEntries}
-        continuation={continuation}
-      />
-    ),
+  const anchors = new Map<string, string>();
+  for (const group of groups)
+    for (const row of group.rows) {
+      if (row.kind === "tools")
+        for (const tool of row.tools)
+          if (tool.toolCallId) anchors.set(tool.toolCallId, group.id);
+    }
+  return (
+    <>
+      {groups.map((group, index) => (
+        <Fragment key={group.presentationKey}>
+          {group.id === "ungrouped" && !pending ? (
+            <Rows
+              key={group.presentationKey}
+              rows={questionRows(group.rows)}
+              threadId={threadId}
+            />
+          ) : (
+            <Turn
+              key={group.presentationKey}
+              {...group}
+              pending={index === groups.length - 1 ? pending : undefined}
+              entries={
+                group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries
+              }
+              threadId={threadId}
+              missing={
+                !!group.turn &&
+                indexed.byTurn.get(group.turn.turn_id)!.length <
+                  group.turn.end_position - group.turn.input_position
+              }
+              loadDetails={loadDetails}
+              onSavedEntries={onSavedEntries}
+              continuation={continuation}
+            />
+          )}
+          {connectorOffers
+            .filter(
+              (offer) =>
+                offer.tool_call_id &&
+                anchors.get(offer.tool_call_id) === group.id,
+            )
+            .map((offer) => (
+              <ConnectorOffer key={offer.offer_id} offer={offer} />
+            ))}
+        </Fragment>
+      ))}
+      {connectorOffers
+        .filter(
+          (offer) => !offer.tool_call_id || !anchors.has(offer.tool_call_id),
+        )
+        .map((offer) => (
+          <ConnectorOffer key={offer.offer_id} offer={offer} />
+        ))}
+    </>
   );
 }
 

@@ -92,6 +92,16 @@ The header divider appears only with the supporting right pane open. Saved ordin
 - Popups fit the viewport independently of trigger width. Opening a dialog hides its originating menu through entry and exit; closing restores focus without reopening the menu. Form footers pair Cancel and the primary action; information-only dialogs use Close.
 - Tabs retain recognizable selected, hover and focus states with aligned content edges. Reuse the accepted treatment for each role; do not interchange navigation tabs and mode selectors.
 
+## Connectors
+
+Every Connector follows the same account-first presentation in Settings and conversation setup. Use the backend's optional brand and logo hints through the shared brand renderer; keep the mark adjacent to the service or account name in the chooser, account list, setup header and chat offer. Missing, unknown or failed images use a generic mark. Do not introduce provider-specific page components or infer branding from action IDs.
+
+Account rows lead with the account name, then service name and a compact textual status. Keep one Add connection action. The account menu uses aligned semantic icons with visible labels. Supporting service descriptions belong in the chooser; avoid repeating them on every saved account.
+
+Setup has one primary action with a visible label. Known `edit` and `test` submit actions may use secondary icon-only buttons with translated tooltips and matching accessible names when they are not primary. Confirmation actions and unknown icon tokens retain visible labels. Open-URL and copy controls keep their descriptive labels beside their glyphs. The Host maps semantic tokens uniformly; a plugin supplies no CSS, arbitrary SVG markup, glyph-library names or icon-only override.
+
+Keep names, field labels, permissions, saved-versus-tested distinctions, destructive consequences, conflicts and recovery visible. Remove repeated instructions before shrinking text or replacing meaningful status with color alone. Icon-only targets retain focus and touch geometry under the shared accessibility rules. Presentation changes never dispatch actions or alter setup ordering and confirmation.
+
 ## Copy and States
 
 Use concise action labels, including **New**, **Search** and **Goal**. Remove repeated context and optional technical explanations from the resting view; keep consequential permission, deletion, conflict and retry information beside its action. Thinking and Speed reflect actual Model capabilities and distinguish inherited defaults from explicit values.

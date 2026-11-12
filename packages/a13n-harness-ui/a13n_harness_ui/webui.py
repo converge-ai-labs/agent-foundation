@@ -610,6 +610,9 @@ def create_webui(
     )
     server.add_middleware(RequestLog)
     register_voice_routes(server, lambda: app().voice(), api_key)
+    from a13n_harness_ui.connectors.api import register_connector_routes
+
+    register_connector_routes(server, app)
 
     @server.get("/api/bot", response_model=BotSnapshot)
     async def bot_status() -> BotSnapshot:
@@ -670,7 +673,7 @@ def create_webui(
             "browser_access_expired",
         }:
             status = 409
-        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready"}:
+        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready", "connector_runtime_unavailable"}:
             status = 503
         elif code == "browser_limit":
             status = 429
@@ -688,7 +691,7 @@ def create_webui(
             status = 503
         elif code == "host_git_timeout":
             status = 504
-        elif code.endswith("not_found"):
+        elif code in {"connector_missing", "connector_setup_missing"} or code.endswith("not_found"):
             status = 404
         return _error(code, str(exc), status)
 
