@@ -109,3 +109,63 @@ async def test_thread_tools_are_built_once_per_capability_without_sharing_root_b
     with pytest.raises(DefinitionError, match="scope"):
         await again.tools["list_threads"].function_schema.call({"limit": 5}, second_context)
     assert len(controller.calls) == 2
+
+
+@pytest.mark.parametrize("field", ["entries", "boundary_entries"])
+@pytest.mark.parametrize("spill_available", [True, False])
+async def test_thread_history_discloses_large_edit_evidence_without_losing_status_or_page(
+    field: str,
+    spill_available: bool,
+) -> None:
+    import json
+
+    from a13n_harness.toolsets.output import tool_output_size
+
+    files: dict[str, bytes] = {}
+
+    async def spill(data: bytes, *, suffix: str) -> str | None:
+        if not spill_available:
+            return None
+        files["/history.json"] = data
+        return "/history.json"
+
+    evidence = {"path": "example.py", "before": "before 界\n" * 20000, "after": "after 界\n" * 20000}
+    page = {
+        "entries": [],
+        "boundary_entries": [],
+        "older_cursor": "older-page",
+        "newer_cursor": None,
+        "continuation_id": "saved-continuation",
+    }
+    page[field] = [{"parts": [{"kind": "tool_return", "applied_edit": evidence}]}]
+
+    async def get(**kwargs):
+        return {"thread": {"thread_id": "target", "root_activity": {"state": "inactive"}}, "transcript": page}
+
+    controller = SimpleNamespace(get_thread=get)
+    capability = ThreadCollaborationCapability(controller=controller, source_thread_id="source")
+    context: Any = SimpleNamespace(deps=SimpleNamespace(thread_id="source", _spill_tool_result=spill))
+    result = (
+        await capability.get_toolset()
+        .tools["get_thread"]
+        .function_schema.call(
+            {"thread_id": "target", "history_limit": 3},
+            context,
+        )
+    )
+    assert tool_output_size(result) <= 12000
+    assert result["ok"] is True
+    assert result["thread"]["root_activity"]["state"] == "inactive"
+    assert result["transcript"]["older_cursor"] == "older-page"
+    assert result["transcript"]["continuation_id"] == "saved-continuation"
+    disclosure = result["disclosure"]
+    assert disclosure["content_complete"] is False
+    assert disclosure["output_chars"] > 169801
+    assert disclosure["output_bytes"] > disclosure["output_chars"]
+    if spill_available:
+        saved = json.loads(files[disclosure["output_file_path"]])
+        assert saved["transcript"] == page
+    else:
+        assert disclosure["output_file_path"] is None
+        assert "narrow the request" in disclosure["hint"]
+    assert page[field][0]["parts"][0]["applied_edit"] == evidence

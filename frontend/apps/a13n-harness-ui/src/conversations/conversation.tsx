@@ -37,6 +37,8 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
+import type { DictationTarget } from "./dictation-context";
+import { useDebug } from "../shell/debug";
 import {
   AppContextProvider,
   useAppContextSelection,
@@ -122,12 +124,14 @@ function ConversationContent({
     revision: string;
     completionVersion: number;
     messages: ReactNode;
-    composer: ReactNode;
+    composer:
+      ReactNode | ((dictation: DictationTarget | undefined) => ReactNode);
     status: ReactNode;
   };
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
+  const debug = useDebug();
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const queries = useQueryClient();
@@ -1084,7 +1088,7 @@ function ConversationContent({
               : t("New output")}
           </Button>
         )}
-        {!readOnly && detail.data && (
+        {!readOnly && detail.data && (!isBot || debug.enabled) && (
           <WorkInspector
             threadId={threadId}
             connectionStatus={publication?.status ?? connectionStatus}
@@ -1127,7 +1131,7 @@ function ConversationContent({
             }
           />
         )}
-        {readOnly && connectionStatus && (
+        {(readOnly || (isBot && !debug.enabled)) && connectionStatus && (
           <div className={styles.conversationFeedback}>{connectionStatus}</div>
         )}
         {(!canCompose || thread?.archived) && feedback && (
@@ -1138,7 +1142,9 @@ function ConversationContent({
             {publication.status}
           </div>
         )}
-        {publication?.composer}
+        {typeof publication?.composer === "function"
+          ? publication.composer(dictation)
+          : publication?.composer}
         {canCompose && !thread?.archived && (
           <Composer
             dictation={dictation}

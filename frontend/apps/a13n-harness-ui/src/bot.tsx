@@ -21,7 +21,8 @@ import { PublishedTranscript } from "./conversations/transcript";
 import { RunActivity } from "./conversations/run-activity";
 import { orderedInput } from "./conversations/inline-attachments";
 import { useLiveThread } from "./conversations/live-threads";
-import { botConversation } from "./bot-conversation";
+import { botConversation, botConversationError } from "./bot-conversation";
+import { useDebug } from "./shell/debug";
 import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
 import styles from "./bot.module.css";
@@ -277,6 +278,7 @@ export function BotPage({
   const bot = useBot();
   const data = bot.data;
   const { display } = useLiveThread(BOT_THREAD_ID);
+  const debug = useDebug();
   const messages = botConversation(data?.messages ?? [], data?.prose ?? [], [
     ...(display.retainedPresentation?.blocks.values() ?? []),
     ...display.blocks.values(),
@@ -382,7 +384,7 @@ export function BotPage({
             />
           </>
         ),
-        composer:
+        composer: (dictation) =>
           data && !data.enabled ? (
             <div className={styles.offBar}>
               <div>
@@ -400,6 +402,7 @@ export function BotPage({
           ) : (
             <Composer
               local
+              dictation={dictation}
               threadId={BOT_THREAD_ID}
               activity={activity}
               canRun={
@@ -465,7 +468,12 @@ export function BotPage({
                       </div>
                     </div>
                   )}
-                  <ErrorNotice error={data?.state.last_error} />
+                  <ErrorNotice
+                    error={botConversationError(
+                      data?.state.last_error,
+                      debug.enabled,
+                    )}
+                  />
                   {data && !data.available && (
                     <p>
                       {t(

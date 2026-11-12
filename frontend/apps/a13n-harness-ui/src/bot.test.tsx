@@ -19,6 +19,13 @@ import { ComposerDrafts } from "./conversations/composer";
 import { ThreadDraft } from "./conversations/draft";
 import { DraftContext, type SourceDraft } from "./configuration/drafts";
 import { readDocument } from "./configuration/documents";
+import { DebugProvider } from "./shell/debug";
+import { recordAudio } from "./conversations/dictation-audio";
+
+vi.mock("./conversations/dictation-audio", () => ({
+  recordAudio: vi.fn(),
+  encodeAudio: async () => "recorded-audio",
+}));
 
 vi.mock("./conversations/live-threads", async () => {
   const { FocusDisplay } = await import("./conversations/stream");
@@ -81,6 +88,8 @@ let saveGate: Promise<void> | undefined;
 let savedDrafts: Map<string, SourceDraft>;
 let queries: QueryClient;
 let transport: ReturnType<typeof createTransport>;
+let voiceResponse: Promise<string> | undefined;
+let voiceRequests: unknown[];
 let draft: ThreadDraft;
 const profile = { display_name: "Tester", color: "#666666" };
 const attachment: Schema<"ThreadAttachment"> = {
@@ -98,6 +107,7 @@ function typeMessage(text: string) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.removeItem("a13n-harness-ui.debug");
   draft = new ThreadDraft();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -123,6 +133,8 @@ beforeEach(() => {
     inputs: [],
   };
   requests = [];
+  voiceRequests = [];
+  voiceResponse = undefined;
   decisionResponses = [];
   rootSource =
     '# Keep this comment\nschema_version: "1"\ndefaults: {agent: agent-assistant}\nwebui:\n  bot: {enabled: false}\n';
@@ -141,6 +153,10 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
+      if (path === "/api/dictation") {
+        voiceRequests.push(await request.json());
+        return Response.json({ text: await voiceResponse });
+      }
       if (path === "/api/bot/inputs") {
         requests.push(await request.json());
         await sendGate;
@@ -190,7 +206,10 @@ beforeEach(() => {
           state: { ...snapshot.state, ...(await request.json()) },
         };
       }
-      if (path === `/api/threads/${BOT_THREAD_ID}`)
+      if (
+        path === `/api/threads/${BOT_THREAD_ID}` ||
+        path === "/api/threads/thread-ordinary"
+      )
         return Response.json({
           thread: {
             root_activity: { state: "inactive" },
@@ -220,6 +239,7 @@ beforeEach(() => {
       }
       if (path === "/api/selectors")
         return Response.json({
+          dictation: { context_words: 100 },
           agents: [
             {
               agent_id: "agent-assistant",
@@ -292,42 +312,51 @@ function CurrentLocation() {
 }
 function mount(initial = "/bot", withActions = false) {
   return render(
-    <TransportContext value={transport}>
-      <QueryClientProvider client={queries}>
-        <DraftContext value={savedDrafts}>
-          <ComposerDrafts value={new Map([[BOT_THREAD_ID, draft]])}>
-            <MemoryRouter initialEntries={[initial]}>
-              <BotComposerProvider>
-                <Link to="/elsewhere">Leave</Link>
-                <Link to="/bot">Return</Link>
-                <CurrentLocation />
-                <Routes>
-                  <Route
-                    path="/bot"
-                    element={
-                      <>
-                        {withActions && <BotActions />}
-                        <BotPage profile={profile} unauthorized={() => {}} />
-                      </>
-                    }
-                  />
-                  <Route
-                    path="/threads/:threadId"
-                    element={
-                      <ConversationPage
-                        profile={profile}
-                        unauthorized={() => {}}
-                      />
-                    }
-                  />
-                  <Route path="/elsewhere" element={<p>Elsewhere</p>} />
-                </Routes>
-              </BotComposerProvider>
-            </MemoryRouter>
-          </ComposerDrafts>
-        </DraftContext>
-      </QueryClientProvider>
-    </TransportContext>,
+    <DebugProvider>
+      <TransportContext value={transport}>
+        <QueryClientProvider client={queries}>
+          <DraftContext value={savedDrafts}>
+            <ComposerDrafts
+              value={
+                new Map([
+                  [BOT_THREAD_ID, draft],
+                  ["thread-ordinary", draft],
+                ])
+              }
+            >
+              <MemoryRouter initialEntries={[initial]}>
+                <BotComposerProvider>
+                  <Link to="/elsewhere">Leave</Link>
+                  <Link to="/bot">Return</Link>
+                  <CurrentLocation />
+                  <Routes>
+                    <Route
+                      path="/bot"
+                      element={
+                        <>
+                          {withActions && <BotActions />}
+                          <BotPage profile={profile} unauthorized={() => {}} />
+                        </>
+                      }
+                    />
+                    <Route
+                      path="/threads/:threadId"
+                      element={
+                        <ConversationPage
+                          profile={profile}
+                          unauthorized={() => {}}
+                        />
+                      }
+                    />
+                    <Route path="/elsewhere" element={<p>Elsewhere</p>} />
+                  </Routes>
+                </BotComposerProvider>
+              </MemoryRouter>
+            </ComposerDrafts>
+          </DraftContext>
+        </QueryClientProvider>
+      </TransportContext>
+    </DebugProvider>,
   );
 }
 it("submits to the lazy root without browser registration and clears accepted input", async () => {
@@ -1114,4 +1143,102 @@ it("retains unknown input and exact recovery when interruption precedes user pub
   fireEvent.click(screen.getByRole("button", { name: "Retry exactly" }));
   await waitFor(() => expect(requests).toHaveLength(2));
   expect(requests[1]).toEqual(requests[0]);
+});
+
+it("gates the entire Bot inspection footer with existing Debug without remounting its draft", async () => {
+  snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  typeMessage("Keep this draft");
+  expect(screen.queryByLabelText("Work inspection")).toBeNull();
+  expect(
+    await screen.findByRole("button", { name: "Voice input" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
+  fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
+  expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+  fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
+  expect(screen.queryByLabelText("Work inspection")).toBeNull();
+  expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
+});
+
+it.each([false, true])(
+  "keeps ordinary Thread inspection visible with Debug=%s",
+  async (debug) => {
+    localStorage.setItem("a13n-harness-ui.debug", debug ? "on" : "off");
+    mount("/threads/thread-ordinary");
+    expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+  },
+);
+
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  "dictates into Bot draft once without sending (busy=%s, debug=%s)",
+  async (busy, debug) => {
+    snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+    localStorage.setItem("a13n-harness-ui.debug", debug ? "on" : "off");
+    if (busy)
+      snapshot.operation = {
+        receipt: {
+          receipt_id: "busy",
+          thread_id: BOT_THREAD_ID,
+          submitted_at: "2026-11-12T00:00:00Z",
+        },
+        status: "running",
+      };
+    let finish!: (text: string) => void;
+    voiceResponse = new Promise((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(recordAudio).mockResolvedValue(
+      vi.fn(async () => new Blob(["sample"])),
+    );
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Stop recording" }),
+    );
+    await waitFor(() => expect(voiceRequests).toHaveLength(1));
+    typeMessage("Typed while waiting. ");
+    finish("Spoken draft");
+    await waitFor(() =>
+      expect(draft.doc.getText("text").toString()).toContain("Spoken draft"),
+    );
+    expect(draft.doc.getText("text").toString()).toContain(
+      "Typed while waiting.",
+    );
+    expect(
+      draft.doc
+        .getText("text")
+        .toString()
+        .match(/Spoken draft/g),
+    ).toHaveLength(1);
+    expect(requests).toHaveLength(0);
+    expect(recordAudio).toHaveBeenCalledTimes(1);
+    expect(voiceRequests).toHaveLength(1);
+    expect(voiceRequests[0]).toMatchObject({ thread_id: BOT_THREAD_ID });
+    expect(!!screen.queryByLabelText("Work inspection")).toBe(debug);
+  },
+);
+
+it("hides only the known Host interruption placeholder outside Debug", async () => {
+  const placeholder =
+    "Bot processing was interrupted. Review the reported error and working Thread results before continuing.";
+  snapshot.state.last_error = placeholder;
+  mount();
+  await screen.findByRole("textbox", { name: "Message" });
+  expect(screen.queryByText(placeholder)).toBeNull();
+  fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
+  expect(await screen.findByText(placeholder)).toBeTruthy();
+});
+
+it("preserves actionable Bot failures outside Debug", async () => {
+  snapshot.state.last_error =
+    "Provider rejected the request: account unavailable";
+  mount();
+  expect(await screen.findByText(snapshot.state.last_error)).toBeTruthy();
 });

@@ -617,31 +617,52 @@ class AgentCompositionResolver:
         model_id = source.bot_model_id
         if model_id is None:
             raise CompositionError("Select a Model in Bot settings.", code="bot_model_required")
-        # Reuse ordinary Model controls and built-in Capability composition, without
-        # selecting or inheriting a user Agent's instructions, tools or children.
-        node = self._agent_node(
-            source,
-            AgentResource(
-                schema_version="1",
-                kind="agent",
-                id="agent-bot",
-                name="Bot",
-                model=model_id,
-                instructions=source.document.webui.bot.instructions,
-                capabilities=(
+        # Reuse the default Agent's execution policy, not its conversational role.
+        # A standalone Bot Model remains usable without a configured default Agent.
+        default = source.document.defaults.agent
+        agent = (
+            source.agents[default]
+            if default is not None
+            else AgentResource(schema_version="1", kind="agent", id="agent-bot", name="Bot")
+        )
+        environment = next(
+            (item.configuration for item in agent.capabilities if item.capability == "dynamic_environment"), {}
+        )
+        agent = agent.model_copy(
+            update={
+                "model": model_id,
+                "instructions": source.document.webui.bot.instructions,
+                "capabilities": (
+                    *(item for item in agent.capabilities if item.capability != "dynamic_environment"),
                     CapabilitySelection(
                         capability="dynamic_environment",
-                        configuration={"files_enabled": True, "shell_enabled": False, "computer_enabled": False},
+                        configuration={
+                            **environment,
+                            "files_enabled": True,
+                            "shell_enabled": False,
+                            "computer_enabled": False,
+                        },
                     ),
                 ),
+            }
+        )
+        node = self._agent_node(
+            source,
+            agent,
+            plugin_catalog=self.catalog.plugin_catalog(
+                tuple(item.plugin_key for item in source.harness_plugins.values())
             ),
-            plugin_catalog=self.catalog.plugin_catalog(()),
-            root_plugins=(),
-            root_mcp=(),
+            root_plugins=None,
+            root_mcp=None,
             budget=[_MAX_RESOLVED_NODES],
             depth=1,
+            included_subagents=source.document.subagents.include,
             model_overrides=model_overrides,
         )
+        capabilities = tuple(item for item in node.capabilities if item.capability != "user_interaction")
+        # An inherited allowlist must not require tools deliberately disabled by
+        # Bot policy. Other unavailable selectors retain normal strict validation.
+        disabled = {"ask_user_question", "shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"}
         return node.model_copy(
             update={
                 "source_kind": "bot",
@@ -650,7 +671,21 @@ class AgentCompositionResolver:
                 "system_prompt": (PACKAGE_SYSTEM_PROMPT, BOT_INSTRUCTIONS),
                 # Bot keeps clarification in ordinary chat rather than suspending
                 # its coordination Run for structured user questions.
-                "capabilities": tuple(item for item in node.capabilities if item.capability != "user_interaction"),
+                "capabilities": capabilities,
+                "tools": (
+                    None
+                    if node.tools is None
+                    else tuple(name for name in node.tools if name not in disabled and not name.startswith("computer_"))
+                ),
+                "tool_search": (
+                    node.tool_search.selected(
+                        mcp_servers=tuple(item.server_id for item in node.mcp_servers),
+                        harness_plugins=tuple(item.plugin_id for item in node.harness_plugins),
+                        capabilities=tuple(item.capability for item in capabilities),
+                    )
+                    if node.tool_search is not None
+                    else None
+                ),
             }
         )
 

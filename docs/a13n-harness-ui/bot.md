@@ -7,7 +7,7 @@ Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing obj
 
 ## Start and configure Bot
 
-1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup; Bot uses built-in instructions, not a configured Agent.
+1. Open **Bot** in the sidebar. Bot is off by default. Select an existing Model in its inline setup, or follow the default Agent's Model. Bot uses the default Agent's execution settings with built-in Bot instructions.
 2. Optionally add custom instructions, such as your preferred coordination style. Custom instructions are appended alongside the built-in instructions and do not replace them. Captured global `AGENTS.md` guidance also applies.
 3. Choose **Turn on Bot**. On first usable enable, the server sends a visible preset user message asking Bot to discover and explain your workspace. This uses an ordinary Model request and may incur cost. You can continue the conversation immediately. The first Heartbeat is scheduled one interval later, even if you never send a message. Edit later in **Settings → General → Bot**.
 
@@ -26,7 +26,7 @@ webui:
     connector_interval_seconds: 60
 ```
 
-Use an existing Model ID. Null or omitted `model` follows only the Model of the global default Agent. Its Agent instructions, children, Plugins, and MCP selections are not inherited. A missing effective Model prevents execution. Model and instruction changes apply to later Runs.
+Bot inherits the global default Agent's execution settings: Capabilities (including compaction and handoff), tools and permissions, subagents, Plugins and MCP selections. It replaces that Agent's role instructions with built-in Bot policy and your optional Bot instructions. File tools remain enabled; Shell, Computer and structured `ask_user_question` stay disabled. Null or omitted `model` follows the default Agent's Model; an explicit existing Model ID overrides it. Without a default Agent, an explicit Bot Model uses the minimal built-in settings. A missing effective Model prevents execution. Changes apply to later Runs; captured Runs keep their original configuration.
 
 Heartbeat intervals accept 60–86,400 seconds. Connector delivery intervals accept 1–86,400 seconds. Custom instructions accept up to 1,048,576 characters. Validate file edits with `a13n-harness-ui config validate`.
 
@@ -53,6 +53,10 @@ Open **Work notes** in Bot's supporting pane to browse Thread links, Projects, u
 Notes hold objectives, references, findings and next follow-up, up to 16 KiB UTF-8. Empty clears; identical content changes nothing; the last committed mutation wins. Notes remain usable while Bot is off. Archive preserves them, forks start empty, and deleting a Thread removes its slot. Writing a note never wakes Bot. To request attention for a handoff, result, blocker or question, a working Thread first updates its note, then sends one substantive `send_thread_message(thread_id='thread_bot', kind='report', message=...)`. The Host retains its source Thread identity and notifies Bot's existing delivery loop. Reports remain pending while Bot is off, paused, unavailable or waiting for a human decision. Managed workers report through their Coordinator. Bot's outgoing Thread inputs include hidden return-address guidance; recipients retain their saved final result as well as reporting back.
 
 ## Messages and decisions
+
+The context/cost/tasks footer appears only in the existing **Debug** mode. Ordinary chats keep their usual footer. Context reflects the captured Run's Model capacity and latest root request tokens, not accumulated usage or your next Model selection. Missing capacity is shown as unknown. Connection feedback, actionable errors and approvals remain visible outside Debug; generic Host interruption placeholders remain available in Debug diagnostics.
+
+Use **Voice input** when dictation is configured. Bot shares the normal chat recorder and transcription settings, including subscription account selection. Stop recording to insert the final transcript into your draft once; it does not send automatically. Attachments and voice input stay available with Debug off, including while Bot is working.
 
 The Bot conversation shows your messages, ordinary assistant prose while it streams and after refresh, final replies, and intentional proactive messages. Bot responds briefly before slow work and provides meaningful progress. Tool calls, reasoning, child execution and hidden context stay out of the conversation. Intermediate prose creates no notification. Final replies appear once and use the existing unread and notification behavior.
 
