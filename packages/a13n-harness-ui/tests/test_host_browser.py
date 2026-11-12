@@ -1203,7 +1203,8 @@ async def test_handback_notifies_only_tool_blocked_threads_after_native_release(
         )
         for tool in ("browser_observe", "browser_screenshot"):
             result = await tools[tool].function_schema.call({}, None)
-            assert "notification is registered" in result
+            text = result.return_value if tool == "browser_screenshot" else result
+            assert "notification is registered" in text
         assert not delivered
         await browsers.control("thread-b", b.identity, human=False)
         await wait_all_tasks_blocked()

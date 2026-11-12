@@ -251,7 +251,7 @@ async def test_frame_dialog_scroll_and_host_file_tools(native_browser, workflow_
             except TimeoutError:
                 pytest.fail(f"{button} did not open a dialog: {response}")
             assert "JavaScript dialog:" in await call("browser_dialog")
-            assert "dialog" in (await call("browser_screenshot")).lower()
+            assert "dialog" in (await call("browser_screenshot")).return_value.lower()
             assert "JavaScript dialog" in await call("browser_observe")
             assert "answered" in await call("browser_dialog", action=action, text=text)
             if expected:
