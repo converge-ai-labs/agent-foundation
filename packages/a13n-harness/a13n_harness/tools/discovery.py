@@ -306,7 +306,6 @@ def _context_bytes(
     ctx: RunContext[AgentContext], request: ModelRequestContext, messages: list[ModelMessage], names: set[str]
 ) -> int:
     from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
-    from a13n_harness.toolsets.codeact import render_codeact_catalog
 
     size = len(
         ModelMessagesTypeAdapter.dump_json(
@@ -337,16 +336,8 @@ def _context_bytes(
     ):
         size += max(
             0,
-            len(
-                render_codeact_catalog(
-                    selected, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas
-                ).encode()
-            )
-            - len(
-                render_codeact_catalog(
-                    baseline, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas
-                ).encode()
-            ),
+            len(owner.render_catalog(selected, ctx=ctx).encode())
+            - len(owner.render_catalog(baseline, ctx=ctx).encode()),
         )
     return size
 

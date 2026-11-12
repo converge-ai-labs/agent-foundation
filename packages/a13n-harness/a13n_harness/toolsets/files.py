@@ -40,7 +40,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._media import dispatch_media
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
@@ -368,7 +368,6 @@ class FileToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-file-tools",
-            metadata={TOOL_GUIDANCE_KEY: "files"},
             instructions=[tool_guidance("files")] if tools else [],
         )
 

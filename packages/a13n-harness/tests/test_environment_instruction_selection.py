@@ -229,7 +229,8 @@ async def test_shell_and_routing_guidance_use_run_reference_root_without_activat
     assert "shell_exec" in names
     assert "Do not reissue it." in instructions
     assert "Choose the target before acting." in instructions
-    assert ("Reads are non-consuming" in instructions) is (reference_root is None)
+    assert "Reads are non-consuming" in instructions
+    assert ("Live Shell controls end at execution settlement" in instructions) is (reference_root is None)
     assert ("Absolute file paths and shell" in instructions) is (reference_root is None)
     for page in ("environment-shell", "environment-routing"):
         assert (f"/release-guidance/harness/{page}.md" in instructions) is (reference_root is not None)

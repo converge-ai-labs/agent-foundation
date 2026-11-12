@@ -14,7 +14,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
 )
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.toolsets import AbstractToolset
+from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.runtime import CodeActRunState
@@ -111,6 +111,9 @@ class CodeActCapability(AbstractModelContextCapability):
     def get_instructions(self):
         return self._live_instructions
 
+    def render_catalog(self, tools: dict[str, ToolsetTool[AgentContext]], *, ctx: RunContext[AgentContext]) -> str:
+        return render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=self.config.catalog_argument_schemas)
+
     async def _live_instructions(self, ctx: RunContext[AgentContext]) -> str:
         if not ctx.realtime:
             return ""
@@ -120,9 +123,7 @@ class CodeActCapability(AbstractModelContextCapability):
             return ""
         # Realtime resolves instructions after final tool preparation, but never
         # invokes before_model_request. Share one directory between both runners.
-        return render_codeact_catalog(
-            manager.tools, ctx=ctx, catalog_argument_schemas=self.config.catalog_argument_schemas
-        )
+        return self.render_catalog(manager.tools, ctx=ctx)
 
     async def before_model_request(
         self,
@@ -203,7 +204,7 @@ def refresh_codeact_catalog(
     if not isinstance(owner, CodeActCapability):
         return
     catalog = InstructionPart(
-        content=render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=owner.config.catalog_argument_schemas),
+        content=owner.render_catalog(tools, ctx=ctx),
         id=_CATALOG_INSTRUCTION_ID,
         dynamic=True,
         on_change="append",

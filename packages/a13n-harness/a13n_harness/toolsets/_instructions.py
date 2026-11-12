@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from functools import cache
-from importlib.resources import files
 
 from pydantic_ai import RunContext
 from pydantic_ai.messages import InstructionPart
@@ -12,35 +11,17 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
 
 from a13n_harness.context import AgentContext
-from a13n_harness.guidance import REFERENCE_MARKER, render_guidance
-
-TOOL_GUIDANCE_KEY = "a13n.guidance"
-
+from a13n_harness.guidance import guidance_reference_path, load_guidance, render_guidance
 
 type ToolInstruction = str | Callable[[RunContext[AgentContext]], Awaitable[InstructionPart]]
-
-
-@cache
-def _guidance_source(name: str) -> str:
-    if not name.replace("-", "").replace("_", "").isalnum():
-        raise ValueError("Guidance must name a release-owned page")
-    return files("a13n_harness.toolsets.prompts").joinpath("guidance", f"{name}.md").read_text(encoding="utf-8")
-
-
-@cache
-def guidance_has_reference(name: str) -> bool:
-    try:
-        return REFERENCE_MARKER in _guidance_source(name)
-    except (FileNotFoundError, ValueError):
-        return False
 
 
 @cache
 def tool_instruction(name: str, *, reference_root: str | None = None) -> str:
     """Load one release-owned guidance file for a Toolset."""
     content = render_guidance(
-        _guidance_source(name),
-        f"{reference_root}/harness/{name}.md" if reference_root is not None else None,
+        load_guidance(name),
+        guidance_reference_path(reference_root, name) if reference_root is not None else None,
     )
     return f"<tool-name>{name}</tool-name>\n{content}"
 

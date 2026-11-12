@@ -54,7 +54,7 @@ class MemoryRecordToolset:
         self._enabled = frozenset(tools)
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
-        return memory_toolset(self, "record", _TOOLS, self._enabled, self._mounts, _INSTRUCTION, "memory-records")
+        return memory_toolset(self, "record", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
 
     async def search(
         self,

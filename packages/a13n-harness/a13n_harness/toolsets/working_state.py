@@ -17,7 +17,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
 
-from ._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, tool_failure, validation_failure
 
 _WORKING_STATE_INSTRUCTION = tool_guidance("working-state")
@@ -121,7 +121,6 @@ class WorkingStateToolset:
             InstructionFunctionToolset(
                 tools=tools,
                 id="a13n-working-state-tools",
-                metadata={TOOL_GUIDANCE_KEY: "working-state"},
                 instructions=_WORKING_STATE_INSTRUCTION,
             )
             if tools

@@ -106,7 +106,7 @@ class MemoryFileToolset:
         self._reads = reads
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
-        return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _INSTRUCTION, "memory-files")
+        return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
 
     async def view(
         self,

@@ -49,11 +49,11 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.guidance import guidance_hint, retry_guidance_page
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY, guidance_hint, retry_guidance_page
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder
 from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
-from ._instructions import TOOL_GUIDANCE_KEY, tool_instruction
+from ._instructions import tool_instruction
 
 _RUN_CODE = "run_code"
 _RUN_PROGRAM = "run_program"
@@ -267,29 +267,26 @@ class _ExecutionBudget:
 
 
 def _runner_descriptions(guidance: str, *, inline: bool, programs: bool) -> dict[str, str]:
-    """Select runner sections while delivering the shared rules exactly once."""
-    sections: dict[str, tuple[str, str, str]] = {}
-    for name, tag in ((_RUN_CODE, "run-code"), (_RUN_PROGRAM, "run-program")):
-        before, opening, remaining = guidance.partition(f"<{tag}>")
-        body, closing, after = remaining.partition(f"</{tag}>")
-        if not opening or not closing:
-            raise ValueError(f"CodeAct guidance requires a complete <{tag}> section")
-        sections[name] = (before, body, after)
-
-    first_runner = _RUN_CODE if inline else _RUN_PROGRAM
+    """Split the two runner sections once, retaining the shared text and its spacing."""
+    prefix, code_open, remainder = guidance.partition("<run-code>")
+    code_body, code_close, remainder = remainder.partition("</run-code>")
+    gap, program_open, remainder = remainder.partition("<run-program>")
+    program_body, program_close, shared = remainder.partition("</run-program>")
+    if not code_open or not code_close:
+        raise ValueError("CodeAct guidance requires a complete <run-code> section")
+    if not program_open or not program_close:
+        raise ValueError("CodeAct guidance requires a complete <run-program> section")
+    code = code_open + code_body + code_close
+    program = program_open + program_body + program_close
     descriptions: dict[str, str] = {}
-    for name, enabled, tag in ((_RUN_CODE, inline, "run-code"), (_RUN_PROGRAM, programs, "run-program")):
-        if not enabled:
-            continue
-        if name == first_runner:
-            other = _RUN_PROGRAM if name == _RUN_CODE else _RUN_CODE
-            before, _, after = sections[other]
-            descriptions[name] = (before + after).strip()
-        else:
-            _, body, _ = sections[name]
-            descriptions[name] = (
-                f"<{tag}>{body}</{tag}>\n\nThe shared CodeAct rules are in the {first_runner} description."
-            )
+    if inline:
+        descriptions[_RUN_CODE] = (prefix + code + gap + shared).strip()
+    if programs:
+        descriptions[_RUN_PROGRAM] = (
+            program + "\n\nThe shared CodeAct rules are in the run_code description."
+            if inline
+            else (prefix + gap + program + shared).strip()
+        )
     return descriptions
 
 
@@ -842,7 +839,7 @@ def render_codeact_catalog(
     tools: dict[str, ToolsetTool[AgentContext]],
     *,
     ctx: RunContext[AgentContext],
-    catalog_argument_schemas: bool = False,
+    catalog_argument_schemas: bool,
 ) -> str:
     catalog = _build_catalog(tools, ctx=ctx)
     if not catalog.definitions:

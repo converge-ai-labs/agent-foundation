@@ -250,7 +250,7 @@ def test_formatted_guidance_has_no_reference_replacement_fields(page, kwargs) ->
 @pytest.mark.parametrize(
     "page,essential,detail",
     [
-        ("environment-shell", "Do not reissue it.", "Reads are non-consuming"),
+        ("environment-shell", "Do not reissue it.", "Live Shell controls end at execution settlement"),
         ("tool_search", "A summary is not a calling contract.", "Exact local or"),
         ("environment-routing", "Choose the target before acting.", "Absolute file paths and shell"),
     ],
@@ -263,3 +263,83 @@ def test_reference_pages_keep_essentials_and_inline_delivery_keeps_details(page,
     assert essential in inline and essential in reference
     assert detail in inline and detail not in reference
     assert f"/release-guidance/harness/{page}.md" in reference
+
+
+async def test_real_first_party_retry_tools_declare_reference_bearing_pages() -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities import BrowserUseCapability, CodeActCapability, ToolSearchCapability, ToolSearchGroup
+    from a13n_harness.capabilities.browser import BrowserBackend
+    from a13n_harness.guidance import TOOL_GUIDANCE_KEY, guidance_has_reference
+    from pydantic_ai import FunctionToolset
+
+    collected = {}
+
+    def lookup() -> int:
+        return 42
+
+    async def model(messages, info):
+        collected.update({tool.name: (tool.metadata or {}).get(TOOL_GUIDANCE_KEY) for tool in info.function_tools})
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            BrowserUseCapability(AsyncMock(spec=BrowserBackend)),
+            CodeActCapability(),
+            ToolSearchCapability(groups={"test": ToolSearchGroup(FunctionToolset([lookup]), "Test operations")}),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    browser = {name for name in collected if name.startswith("browser_")}
+    assert len(browser) == 11
+    expected = {
+        **dict.fromkeys(browser, "browser"),
+        **dict.fromkeys(("run_code", "run_program", "store", "load", "forget"), "codeact"),
+        **dict.fromkeys(
+            ("discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"), "tool_search"
+        ),
+    }
+    assert {name: page for name, page in collected.items() if page is not None} == expected
+    for page in set(expected.values()):
+        assert guidance_has_reference(page)
+
+
+def test_missing_guidance_page_raises_instead_of_disabling_hints() -> None:
+    from a13n_harness.guidance import guidance_has_reference
+
+    with pytest.raises(FileNotFoundError):
+        guidance_has_reference("missing-guidance-page")
+
+
+@pytest.mark.parametrize(
+    "page,sentence",
+    [
+        ("environment-shell", "Prefer file tools for ordinary file reading, listing, searching and content editing."),
+        ("environment-shell", "Use the `cwd` argument instead of embedding `cd` in a command."),
+        ("environment-shell", "Treat `exec-*` and `process-*` references as opaque."),
+        ("environment-shell", "Never invent or alter them or use them as native process IDs."),
+        (
+            "environment-shell",
+            "Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page.",
+        ),
+        ("environment-shell", "Reads are non-consuming, so repeating the same offsets is safe."),
+        (
+            "tool_search",
+            "Unless a complete current definition is already known, call `{describe_name}(group=..., tool=...)` with the returned exact identity.",
+        ),
+        ("tool_search", "On unavailable tools or schema errors, refresh the definition."),
+        ("tool_search", "When CodeAct is present, await these same functions with keyword arguments."),
+        ("tool_search", "Only business targets marked `codeact_eligible=true` may execute inside CodeAct."),
+        ("tool_search", "Do not call a discovered business name as a Python function."),
+    ],
+)
+def test_normal_operation_rules_remain_inline_without_duplicate_reference_text(page, sentence) -> None:
+    from a13n_harness.guidance import REFERENCE_MARKER, load_guidance
+
+    essentials, _, reference = load_guidance(page).partition(REFERENCE_MARKER)
+    assert essentials.count(sentence) == 1
+    assert sentence not in reference

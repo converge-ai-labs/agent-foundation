@@ -21,7 +21,7 @@ from a13n_harness.codeact.state import (
     CodeActStoredValues as CodeActStoredValues,
 )
 from a13n_harness.context import AgentContext
-from a13n_harness.toolsets._instructions import TOOL_GUIDANCE_KEY
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 
 

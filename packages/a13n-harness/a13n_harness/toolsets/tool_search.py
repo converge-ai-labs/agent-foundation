@@ -30,6 +30,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
 from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
@@ -48,7 +49,7 @@ from a13n_harness.tools.tool_search import (
     validate_group,
     validate_proxy_target,
 )
-from a13n_harness.toolsets._instructions import TOOL_GUIDANCE_KEY, tool_instruction
+from a13n_harness.toolsets._instructions import tool_instruction
 from a13n_harness.toolsets.codeact import (
     CodeActPolicyToolset,
     CodeActSourceToolCarrier,

@@ -1,6 +1,27 @@
 """Render release-owned guidance with optional file-backed operational details."""
 
+from functools import cache
+from importlib.resources import files
+
+from pydantic_ai.exceptions import ModelRetry, ToolRetryError
+
+TOOL_GUIDANCE_KEY = "a13n.guidance"
+
 REFERENCE_MARKER = "<!-- reference -->"
+
+
+@cache
+def load_guidance(page: str) -> str:
+    """Load one release-owned page; an invalid declaration fails at its source."""
+    return files("a13n_harness.toolsets.prompts").joinpath("guidance", f"{page}.md").read_text(encoding="utf-8")
+
+
+def guidance_has_reference(page: str) -> bool:
+    return REFERENCE_MARKER in load_guidance(page)
+
+
+def guidance_reference_path(reference_root: str, page: str) -> str:
+    return f"{reference_root}/harness/{page}.md"
 
 
 def render_guidance(content: str, reference_path: str | None = None) -> str:
@@ -12,9 +33,6 @@ def render_guidance(content: str, reference_path: str | None = None) -> str:
             + f"\n\n<reference>\nWorkflows and troubleshooting: `{reference_path}`. Read it with view before a multi-step task or after an error.\n</reference>"
         )
     return (essentials + details).strip()
-
-
-_GUIDANCE_PAGE_ATTRIBUTE = "_a13n_guidance_page"
 
 
 class _GuidanceRetryText(str):
@@ -32,21 +50,31 @@ class _GuidanceRetryText(str):
 
 
 def retry_guidance_page(error: BaseException) -> str | None:
-    """Find the boundary-owned marker through native and proxy exception wrapping."""
-    seen: set[int] = set()
-    current: BaseException | None = error
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        page = getattr(current, _GUIDANCE_PAGE_ATTRIBUTE, None)
-        if isinstance(page, str):
-            return page
-        part = getattr(current, "tool_retry", None)
-        content = getattr(part, "content", None)
-        if isinstance(content, _GuidanceRetryText):
-            return content.page
-        current = current.__cause__
-    return None
+    """Recognize only boundary-owned retry text, never tool-authored hint strings."""
+    content = (
+        error.message
+        if isinstance(error, ModelRetry)
+        else error.tool_retry.content
+        if isinstance(error, ToolRetryError)
+        else None
+    )
+    return content.page if isinstance(content, _GuidanceRetryText) else None
 
 
 def guidance_hint(reference_root: str, page: str) -> str:
-    return f"Guidance: `{reference_root}/harness/{page}.md`. Read with view before deciding whether to retry."
+    return (
+        f"Guidance: `{guidance_reference_path(reference_root, page)}`. Read with view before deciding whether to retry."
+    )
+
+
+def hinted_retry_text(content: object, *, reference_root: str | None, page: object) -> str | None:
+    """Append guidance once, only for reference-bearing pages in reference delivery."""
+    if (
+        reference_root is None
+        or not isinstance(page, str)
+        or not isinstance(content, str)
+        or isinstance(content, _GuidanceRetryText)
+        or not guidance_has_reference(page)
+    ):
+        return None
+    return _GuidanceRetryText(content + "\n" + guidance_hint(reference_root, page), page)

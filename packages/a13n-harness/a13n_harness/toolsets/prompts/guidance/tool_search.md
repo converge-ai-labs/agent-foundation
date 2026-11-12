@@ -9,19 +9,25 @@ Read the complete `parameters_json_schema` and `instructions`, then call `{call_
 
 On timeout, cancellation, or uncertain failure, inspect the outcome before retrying a mutation.
 
-Calls are not transactions and do not roll back earlier effects. </best-practices>
+Calls are not transactions and do not roll back earlier effects.
+
+Unless a complete current definition is already known, call `{describe_name}(group=..., tool=...)` with the returned exact identity.
+
+On unavailable tools or schema errors, refresh the definition.
+
+When CodeAct is present, await these same functions with keyword arguments. Only business targets marked `codeact_eligible=true` may execute inside CodeAct. Do not call a discovered business name as a Python function. </best-practices>
 
 <!-- reference -->
 
 <best-practices>
 Search with short operation keywords: any word can match the tool name, description, group identifier, or input parameter names and descriptions. Exact local or `group__tool` names rank first without hiding other candidates, followed by distinct keyword coverage and field relevance. Select a group when known; omit it when unsure. An empty query browses. `detail="auto"` returns summaries except when the entire candidate set is one exact match whose complete definition is small, at offset 0. Use `summary` to browse cheaply or `full` to request complete definitions explicitly.
 
-Check the returned `detail`. Unless a complete current definition is already known, use the description control with `group=...` and `tool=...` and the returned exact identity. If you already know the identity, describe it directly without searching.
+Check the returned `detail`. If you already know the identity, describe it directly without searching.
 
 Supply required fields and respect enums, nested objects, and omission versus null. Reuse known current schemas. A discovered business name is not a top-level callable.
 
 Follow `next_offset` with the same query, group, and detail to see another page. A byte budget can shorten a page; do not calculate the next offset yourself. Offsets apply to the current directory, not a stable snapshot. For an exhaustive inventory, use the tool-listing control and follow every page until `next_offset` is null. Use `detail="full"` when complete definitions are needed. Listing and discovery leave the model's callable tool definitions unchanged; execute discovered tools through the call control.
 
-Discovery and description never execute business operations. Calls can change external state. On unavailable tools or schema errors, refresh the definition.
+Discovery and description never execute business operations. Calls can change external state.
 
-When CodeAct is present, await these same functions with keyword arguments. Only business targets marked `codeact_eligible=true` may execute inside CodeAct. Do not call a discovered business name as a Python function. Select useful fields instead of returning a large catalog. A program may discover, describe, and call in one feed, but must understand and follow the complete definition. Calls through the call control execute sequentially; do not assume `asyncio.gather` makes them parallel. </best-practices>
+Select useful fields instead of returning a large catalog. A program may discover, describe, and call in one feed, but must understand and follow the complete definition. Calls through the call control execute sequentially; do not assume `asyncio.gather` makes them parallel. </best-practices>

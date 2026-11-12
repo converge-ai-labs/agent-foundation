@@ -63,7 +63,7 @@ async def test_runner_directory_uses_current_prepared_schemas_and_eligibility() 
     assert '"count"' in before
     assert '"query"' in after
     assert '"count"' not in after
-    default = render_codeact_catalog(tools, ctx=ctx)
+    default = render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=False)
     assert default == (
         "CodeAct callable host tools. Call them with the same keyword arguments as the matching tool definitions.\n"
         "`lookup_items` (tool `lookup-items`)"
@@ -90,7 +90,7 @@ async def test_deferred_catalog_tracks_current_discovery_and_prepared_membership
     for discovered in (False, True, False):
         ctx.discovered_tool_names = {"lookup"} if discovered else set()
         assert bool(_build_catalog(tools, ctx=ctx).definitions) is discovered
-        description = render_codeact_catalog(tools, ctx=ctx)
+        description = render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=False)
         assert ("`lookup`" in description) is discovered
         assert tools["lookup"].tool_def.defer_loading
     ctx.discovered_tool_names = {"lookup"}

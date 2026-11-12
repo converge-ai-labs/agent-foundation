@@ -12,8 +12,9 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
-from a13n_harness.toolsets._instructions import TOOL_GUIDANCE_KEY, InstructionFunctionToolset, tool_instruction
+from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
 
 from .actions import Action, Clip, Condition, ElementCondition, Ref, Visual
 

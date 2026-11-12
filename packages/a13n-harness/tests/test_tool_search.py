@@ -1916,7 +1916,8 @@ async def test_scoped_proxy_surface_cannot_disappear_or_change_identity_during_r
 
 
 @pytest.mark.parametrize("stage", ["validator", "execution"])
-async def test_proxy_retry_guidance_names_target_page_exactly_once(stage) -> None:
+@pytest.mark.parametrize("page", [None, "files"])
+async def test_proxy_retry_guidance_names_target_page_exactly_once(stage, page) -> None:
     from pydantic_ai import ModelRetry
 
     def validate(ctx, value: int):
@@ -1927,7 +1928,11 @@ async def test_proxy_retry_guidance_names_target_page_exactly_once(stage) -> Non
         raise ModelRetry("Use another value")
 
     result, returns = await _run(
-        (_group(Tool(lookup, args_validator=validate, max_retries=1, metadata={"a13n.guidance": "files"})),),
+        (
+            _group(
+                Tool(lookup, args_validator=validate, max_retries=1, metadata={"a13n.guidance": page} if page else {})
+            ),
+        ),
         [("call_tool", {"group": "crm", "tool": "lookup", "arguments": {"value": 1}})],
         bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
     )
@@ -1935,8 +1940,27 @@ async def test_proxy_retry_guidance_names_target_page_exactly_once(stage) -> Non
     part = returns[0]
     assert part.outcome == "retried"
     assert part.tool_name == "call_tool" and part.tool_call_id == "call-0"
-    assert part.content == (
-        "Use another value\nGuidance: `/release-guidance/harness/files.md`. "
-        "Read with view before deciding whether to retry."
-    )
+    expected = "Use another value"
+    if page:
+        expected += "\nGuidance: `/release-guidance/harness/files.md`. Read with view before deciding whether to retry."
+    assert part.content == expected
     assert part.retry.attempt == 1 and part.retry.max_retries == 1
+
+
+async def test_real_search_control_retry_points_to_its_own_guidance() -> None:
+    def lookup() -> int:
+        return 42
+
+    result, returns = await _run(
+        (_group(lookup),),
+        [("discover_tools", {"query": "!!!"})],
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    part = returns[0]
+    assert part.outcome == "retried" and part.tool_name == "discover_tools"
+    assert part.content == (
+        "Supply operation keywords or an exact tool name; use an empty query to browse.\n"
+        "Guidance: `/release-guidance/harness/tool_search.md`. Read with view before deciding whether to retry."
+    )
+    assert part.retry.attempt == 1 and part.retry.max_retries == 5
