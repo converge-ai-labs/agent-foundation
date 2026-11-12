@@ -326,7 +326,7 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 **Settings → General → Bot** selects a Model and optional custom instructions for the built-in personal assistant. `webui.bot.model` defaults to `null`, following only the global default Agent's Model. Bot uses its own instructions plus custom instructions and global `AGENTS.md`; no Agent selection is required.
 
-`webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. Reading the page or saving settings starts no work. Enabling schedules the first Heartbeat one interval later, without requiring a first message. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
+`webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. On first usable enable, the server sends one visible preset user message to introduce the workspace through an ordinary Model request. Previous activity or an introduction attempt prevents repetition. Reading the page starts no work. Enabling also schedules the first Heartbeat one interval later, independently of this introduction. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
 
 ### WebUI Sidekick
 

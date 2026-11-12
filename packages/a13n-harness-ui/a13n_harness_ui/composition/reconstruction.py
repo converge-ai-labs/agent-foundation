@@ -241,6 +241,7 @@ class AgentReconstructor:
             enabled=composition.memory_enabled,
             project_id=composition.project_id,
             positions=memory_positions,
+            bot=composition.root.source_kind == "bot",
         )
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
