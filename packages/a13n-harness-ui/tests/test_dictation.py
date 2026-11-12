@@ -114,7 +114,14 @@ async def subscription(tmp_path, monkeypatch):
     catalog, accounts, group = await _accounts(tmp_path)
     usage = SubscriptionUsage(catalog)
     configuration = RunConfiguration()
-    state = {"raw": "raw speech", "asr_errors": {}, "cleanup_errors": {}, "disable_after_asr": False}
+    state = {
+        "raw": "raw speech",
+        "asr_errors": {},
+        "cleanup_errors": {},
+        "disable_after_asr": False,
+        "cancel_cleanup": False,
+        "cleanup_started": anyio.Event(),
+    }
     calls = {"asr": [], "cleanup": []}
     clients = []
     create_client = dictation.create_model_http_client
@@ -122,6 +129,14 @@ async def subscription(tmp_path, monkeypatch):
     def client(**kwargs):
         assert kwargs == {"retry": None, "timeout": 30, "configuration": configuration}
         value = create_client(**kwargs)
+        if state["cancel_cleanup"]:
+            close = value.aclose
+
+            async def close_after_checkpoint():
+                await anyio.lowlevel.checkpoint()
+                await close()
+
+            monkeypatch.setattr(value, "aclose", close_after_checkpoint)
         clients.append(value)
         return value
 
@@ -148,6 +163,9 @@ async def subscription(tmp_path, monkeypatch):
         async def reply(messages, info):
             account_id = (await credential_source.load()).account_id
             calls["cleanup"].append(account_id)
+            if state["cancel_cleanup"]:
+                state["cleanup_started"].set()
+                await anyio.sleep_forever()
             await response_headers(
                 {
                     "x-codex-primary-used-percent": "24",
@@ -249,3 +267,21 @@ async def test_pinned_account_never_uses_other_accounts(subscription):
     with pytest.raises(ModelResolutionError):
         await run(group.model_copy(update={"accounts": group.accounts[:1]}))
     assert calls == {"asr": [accounts[0].id], "cleanup": []}
+
+
+@pytest.mark.anyio
+async def test_subscription_cancellation_closes_clients_without_delivering_transcript(subscription):
+    run, state, calls, accounts, _, _, clients = subscription
+    state["cancel_cleanup"] = True
+    with anyio.CancelScope() as scope:
+        async with anyio.create_task_group() as tasks:
+
+            async def dictate():
+                await run()
+                pytest.fail("Cancellation must discard the transcript")
+
+            tasks.start_soon(dictate)
+            await state["cleanup_started"].wait()
+            scope.cancel()
+    assert calls == {"asr": [accounts[0].id], "cleanup": [accounts[0].id]}
+    assert clients and all(client.is_closed for client in clients)

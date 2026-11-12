@@ -8,7 +8,7 @@ from typing import Any, Literal, cast
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.models.transport import create_model_http_client
-from anyio import fail_after
+from anyio import CancelScope, fail_after
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, BinaryContent
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
@@ -173,7 +173,12 @@ async def transcribe_subscription(
             def factory(account: SubscriptionAccount) -> Model:
                 # Each native provider installs account-specific auth and response hooks.
                 client = create_model_http_client(retry=None, timeout=30, configuration=configuration)
-                clients.push_async_callback(client.aclose)
+
+                async def close_client() -> None:
+                    with CancelScope(shield=True):
+                        await client.aclose()
+
+                clients.push_async_callback(close_client)
                 return CodexRequestModel(
                     model_name,
                     credential_source=credentials(account),
