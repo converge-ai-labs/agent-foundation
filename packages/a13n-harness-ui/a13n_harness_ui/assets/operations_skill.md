@@ -1,6 +1,6 @@
 ---
 name: harness-ui-operations
-description: Release-owned guidance for Harness UI tools, browser automation, CodeAct, files, shell processes, memory, handoff, and Thread coordination. Read the relevant reference before using an unfamiliar operation or interpreting a tool failure.
+description: Release-owned guidance for Harness UI tools, browser automation, CodeAct, files, memory, handoff, and Thread coordination. Read the relevant reference before using an unfamiliar operation or interpreting a tool failure.
 ---
 
 # Harness UI Operations
