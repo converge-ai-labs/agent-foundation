@@ -1,4 +1,5 @@
 <essential-rules>
+- This handbook covers the file Toolset; apply only the sections for tools exposed in this Run.
 - Read large text files in focused chunks.
 - Read an existing target before overwriting it.
 - Read the target snippet immediately before editing when context may be stale.

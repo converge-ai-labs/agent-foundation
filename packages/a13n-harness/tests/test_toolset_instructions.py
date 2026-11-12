@@ -139,6 +139,15 @@ def test_operational_instructions_use_flat_attribute_free_xml_sections(root: str
         assert section is None, name
 
 
+@pytest.mark.parametrize("root", [None, "/release-guidance"])
+def test_file_guidance_scopes_grouped_sections_in_both_delivery_modes(root: str | None) -> None:
+    from a13n_harness.toolsets._instructions import tool_instruction
+
+    instruction = tool_instruction("files", reference_root=root)
+    assert "apply only the sections for tools exposed in this Run" in instruction
+    assert ("/release-guidance/harness/files.md" in instruction) is (root is not None)
+
+
 @pytest.mark.parametrize("path", ["relative", "/guidance/../other", "/guidance/"])
 def test_instruction_reference_root_requires_a_canonical_environment_path(path: str) -> None:
     with pytest.raises(ValueError):
