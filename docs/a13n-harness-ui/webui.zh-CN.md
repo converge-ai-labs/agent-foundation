@@ -107,7 +107,7 @@ flowchart TB
 
 ### Skill 与工作检查
 
-输入 `$` 和 Skill 名称查找可用 Skill。上下箭头选择，Enter 或 Tab 插入，Escape 关闭。插入不会发送。`$name` 保持为可编辑文字，可用于新对话、保存对话和 steering。已识别名称按对应目录校验；未知名称仍是普通文字。安装或编写方法见 [Skills](skills-and-content-plugins.md)。
+在输入框中键入 `$` 或 `/`，再输入名称即可查找 Skill。上下箭头选择，Enter 或 Tab 插入，按 Esc 或点关闭按钮即可收起当前词的建议，继续编辑原文。插入不会发送。已识别的 Skill 显示为拼图图标和名称，退格可整体删除。底层保留原文 `$name`，可用于新对话、保存对话和 steering。已识别名称按对应目录校验；未知名称仍是普通文字。安装或编写方法见 [Skills](skills-and-content-plugins.md)。
 
 输入框上方的 **Tasks**、**Notes**、**Subagents**、**Processes** 和 **Tools** 可直接打开对应的活动视图，不替换草稿。计数分别显示已完成/总任务数、笔记数、活跃子代理执行数和观测到的运行中进程数。聊天栏较窄时，Notes、Processes 和 Tools 收入 **More** 菜单。关闭检查面板后，焦点回到打开它的入口。进程视图显示观测到的后台 handle、Run ID 和退出码；输出留在工具详情中。它是观测面板，不是进程控制台。
 

@@ -1035,6 +1035,7 @@
   margin-top: 4px;
 }
 .composerInput {
+  position: relative;
   --harness-control-height: 32px;
   display: grid;
   --composer-text-inset: 8px;
