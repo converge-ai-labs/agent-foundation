@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from typing import BinaryIO
 
+from a13n_harness.environment._streams import closing_stream
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.providers.environment.boxd.shared import BoxdEnvironmentConfiguration, BoxdReference, sdk_errors
@@ -26,8 +27,10 @@ class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration,
     async def read_stream(self, path: str) -> AsyncIterator[bytes]:
         assert self.target
         with sdk_errors(mutation=False):
-            async for chunk in self.client().machines.fs.read_stream(self.target.target_id, path):
-                yield chunk
+            # Close the download stream as soon as a bounded range read stops consuming it.
+            async with closing_stream(self.client().machines.fs.read_stream(self.target.target_id, path)) as stream:
+                async for chunk in stream:
+                    yield chunk
 
     async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None:
         assert self.target
@@ -38,12 +41,13 @@ class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration,
         assert self.target
         with sdk_errors(mutation=True):
             result = await self.client().machines.exec(self.target.target_id, argv, timeout=timeout)
+        if result.exit_code < 0:
+            # The stream ended without an exit status: the command may or may not have run.
+            raise failure(
+                self.provider_key, "provider_unknown_outcome", Category.UNKNOWN_OUTCOME, certainty=Certainty.UNKNOWN
+            )
         if result.exit_code != 0:
             raise failure(
                 self.provider_key, "provider_command_failed", Category.PROVIDER_FAILURE, certainty=Certainty.KNOWN
             )
-        if not isinstance(result.stdout, str):
-            raise failure(
-                self.provider_key, "provider_response_invalid", Category.UNKNOWN_OUTCOME, certainty=Certainty.UNKNOWN
-            )
-        return result.stdout
+        return str(result.stdout)

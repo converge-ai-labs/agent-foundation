@@ -28,6 +28,7 @@ class Fake:
         self.calls: list[tuple] = []
         self.clients: list[dict] = []
         self.created: list[dict] = []
+        self.hidden: set[str] = set()
 
     def client(self, **options):
         self.clients.append(options)
@@ -47,32 +48,44 @@ class Fake:
         class Machines:
             fs = Fs()
 
-            async def get(self, machine_id):
-                fake.calls.append(("get", machine_id))
-                if machine_id not in fake.machines:
-                    raise boxd.NotFoundError("machine not found")
-                return fake.machines[machine_id]
+            async def get(self, reference):
+                fake.calls.append(("get", reference))
+                for item in fake.machines.values():
+                    if reference in {item.id, item.name}:
+                        return item
+                raise boxd.NotFoundError("machine not found")
 
             async def list(self, *, org=None, labels=None):
                 fake.calls.append(("list", org, dict(labels or {})))
                 return [
                     item
                     for item in fake.machines.values()
-                    if all(item.labels.get(key) == value for key, value in (labels or {}).items())
+                    if item.id not in fake.hidden
+                    and all(item.labels.get(key) == value for key, value in (labels or {}).items())
                 ]
 
             async def create(self, name, **options):
                 fake.calls.append(("create", name))
+                if any(item.name == name for item in fake.machines.values()):
+                    raise boxd.ConflictError("name exists")
                 fake.created.append({"name": name, **options})
                 machine_id = f"0f1e2d3c-0000-4000-8000-{len(fake.created):012d}"
                 fake.machines[machine_id] = SimpleNamespace(
-                    id=machine_id, name=name, status="running", labels=dict(options["labels"])
+                    id=machine_id,
+                    name=name,
+                    status="running",
+                    labels=dict(options["labels"]),
+                    idle=SimpleNamespace(hibernate_after=14400),
                 )
                 return fake.machines[machine_id]
 
             async def wait_until_ready(self, machine_id, *, timeout):
                 fake.calls.append(("ready", machine_id))
                 return fake.machines[machine_id]
+
+            async def set_auto_hibernate_timeout(self, machine_id, seconds):
+                fake.calls.append(("auto_hibernate", machine_id, seconds))
+                fake.machines[machine_id].idle.hibernate_after = seconds
 
             async def hibernate(self, machine_id):
                 fake.calls.append(("hibernate", machine_id))
@@ -133,6 +146,7 @@ def test_boxd_roundtrip_lifecycle_and_reconstruction(tmp_path, fake):
         assert created["from_snapshot"] == "agent-base"
         assert created["org"] == "fixture-org" and created["region"] == "nyc"
         assert created["auto_suspend_timeout"] == 0
+        assert ("auto_hibernate", next(iter(fake.machines)), 0) in fake.calls
         assert created["labels"]["a13n_environment"] == "env-test"
         assert created["labels"]["a13n_configuration"] == config.fingerprint
         assert all(options["base_url"] == "https://boxd.sh:9443" for options in fake.clients)
@@ -234,7 +248,9 @@ def test_boxd_foreign_or_duplicate_machines_are_conflicts(tmp_path, fake):
         provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
         await provider.create(config, environment_id="env-dup", operation_id="op-create")
         [machine] = fake.machines.values()
-        fake.machines["copy"] = SimpleNamespace(id="copy", name="copy", status="running", labels=dict(machine.labels))
+        fake.machines["copy"] = SimpleNamespace(
+            id="copy", name="copy", status="running", labels=dict(machine.labels), idle=machine.idle
+        )
         with pytest.raises(EnvironmentProviderError) as duplicate:
             await provider.create(config, environment_id="env-dup", operation_id="op-create")
         assert duplicate.value.code == "provider_target_conflict"
@@ -244,6 +260,54 @@ def test_boxd_foreign_or_duplicate_machines_are_conflicts(tmp_path, fake):
             await provider.create(config, environment_id="env-dup", operation_id="op-create")
         assert foreign.value.code == "provider_target_conflict"
         assert len(fake.created) == 1
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_create_adopts_its_own_name_when_labels_miss_it_and_omits_size_by_default(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment({"root": str(tmp_path), "python": sys.executable})
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        first = await provider.create(config, environment_id="env-name", operation_id="op-create")
+        [machine_id] = fake.machines
+        assert (fake.created[0]["vcpu"], fake.created[0]["memory"]) == (None, None)
+        # The label listing has not caught up: the retried create meets its own name and adopts that machine.
+        fake.hidden.add(machine_id)
+        again = await provider.create(config, environment_id="env-name", operation_id="op-create")
+        assert again.state["target_id"] == first.state["target_id"] == machine_id
+        assert [call[0] for call in fake.calls].count("create") == 2 and len(fake.machines) == 1
+        # A machine with that name but other owners is never adopted.
+        fake.machines[machine_id].labels["a13n_environment"] = "someone-else"
+        with pytest.raises(EnvironmentProviderError) as foreign:
+            await provider.create(config, environment_id="env-name", operation_id="op-create")
+        assert foreign.value.code == "provider_target_conflict"
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_idle_hibernation_policy_and_stop_reconciliation(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "auto_hibernate_timeout_seconds": 3600}
+        )
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        state = await provider.create(config, environment_id="env-idle", operation_id="op-create")
+        [machine_id] = fake.machines
+        assert ("auto_hibernate", machine_id, 3600) in fake.calls
+        state = await provider.stop(config, environment_id="env-idle", state=state, operation_id="op-stop")
+        hibernations = fake.calls.count(("hibernate", machine_id))
+        # Repeated stop reconciles the hibernated machine without another call or a wake.
+        state = await provider.stop(config, environment_id="env-idle", state=state, operation_id="op-stop")
+        assert fake.calls.count(("hibernate", machine_id)) == hibernations == 1
+        assert ("wake", machine_id) not in fake.calls
+        fake.machines[machine_id].status = "failed"
+        with pytest.raises(EnvironmentProviderError) as failed:
+            await provider.start(config, environment_id="env-idle", state=state, operation_id="op-start")
+        assert failed.value.code == "provider_unavailable"
         await provider.close()
 
     asyncio.run(scenario())

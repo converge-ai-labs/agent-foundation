@@ -43,9 +43,14 @@ class BoxdEnvironmentConfiguration(CommandConfiguration):
         json_schema_extra={"x-primary-fields": ["size", "from_snapshot", "auto_suspend_timeout_seconds"]},
     )
     root: str = "/home/boxd"
-    size: Literal["1x4", "2x8", "4x16", "8x32"] = Field(default="2x8", description="vCPU x GiB memory.")
+    size: Literal["1x4", "2x8", "4x16", "8x32"] | None = Field(
+        default=None, description="vCPU x GiB memory. Omitted: the organization default, or the snapshot's size."
+    )
     from_snapshot: str | None = Field(default=None, min_length=1, max_length=128)
     auto_suspend_timeout_seconds: int = Field(default=0, ge=0, le=86400, description="0 disables idle standby.")
+    auto_hibernate_timeout_seconds: int = Field(
+        default=0, ge=0, le=604800, description="0 disables idle hibernation; a hibernated machine needs start()."
+    )
 
 
 @contextmanager
@@ -57,6 +62,9 @@ def sdk_errors(*, mutation: bool) -> Iterator[None]:
         yield
     except (EnvironmentError, EnvironmentProviderError):
         raise
+    except errors.MachineFilesystemError:
+        # A guest path failure, not a target failure; the guest helper already resolved the path.
+        raise EnvironmentError("Native file transfer failed.", code="environment_provider_failure") from None
     except (errors.AuthenticationError, errors.PermissionDeniedError):
         raise failure(PROVIDER_KEY, "provider_denied", Category.DENIED, certainty=Certainty.KNOWN) from None
     except errors.NotFoundError:
@@ -65,6 +73,15 @@ def sdk_errors(*, mutation: bool) -> Iterator[None]:
         raise failure(PROVIDER_KEY, "provider_target_conflict", Category.CONFLICT, certainty=Certainty.KNOWN) from None
     except errors.RateLimitError:
         raise failure(PROVIDER_KEY, "provider_unavailable", Category.UNAVAILABLE, certainty=Certainty.KNOWN) from None
+    except errors.APIStatusError as error:
+        if error.code in {"invalid_argument", "out_of_range"}:
+            raise failure(PROVIDER_KEY, "provider_spec_invalid", Category.INVALID, certainty=Certainty.KNOWN) from None
+        raise failure(
+            PROVIDER_KEY,
+            "provider_unknown_outcome" if mutation else "provider_unavailable",
+            Category.UNKNOWN_OUTCOME if mutation else Category.UNAVAILABLE,
+            certainty=Certainty.UNKNOWN if mutation else Certainty.KNOWN,
+        ) from None
     except Exception:
         raise failure(
             PROVIDER_KEY,
@@ -103,17 +120,20 @@ class BoxdReference(NativeReference[BoxdEnvironmentConfiguration, TargetState]):
             )
         return self._client
 
+    async def get(self, reference: str) -> Machine | None:
+        try:
+            with sdk_errors(mutation=False):
+                return await self.client().machines.get(reference)
+        except EnvironmentProviderError as error:
+            if error.code == "provider_target_missing":
+                return None
+            raise
+
     async def lookup(self) -> Machine | None:
         """Read the recorded machine, or find an interrupted allocation by its ownership labels."""
         machines = self.client().machines
         if self.target:
-            try:
-                with sdk_errors(mutation=False):
-                    machine = await machines.get(self.target.target_id)
-            except EnvironmentProviderError as error:
-                if error.code == "provider_target_missing":
-                    return None
-                raise
+            machine = await self.get(self.target.target_id)
         else:
             with sdk_errors(mutation=False):
                 found = await machines.list(org=self.backend.organization, labels={"a13n_environment": self.owner})

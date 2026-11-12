@@ -56,7 +56,8 @@ def code(awaitable):
 def test_definition_defaults_and_account_require_an_explicit_region():
     definition = ProviderCatalog(select_builtin_environment_providers(("boxd",))).require("boxd")
     config = definition.validate_environment({})
-    assert (config.root, config.size, config.auto_suspend_timeout_seconds) == ("/home/boxd", "2x8", 0)
+    assert (config.root, config.size, config.auto_suspend_timeout_seconds) == ("/home/boxd", None, 0)
+    assert config.auto_hibernate_timeout_seconds == 0
     assert definition.display_name == "boxd"
     with pytest.raises(ValidationError):
         BoxdConnectionConfiguration()
@@ -106,6 +107,19 @@ def test_exit_codes_and_sdk_failures_map_to_dispatch_certainty():
     assert (failed.code, failed.certainty) == ("provider_command_failed", "known")
     timed_out = code(execution("running", exec_error=boxd.BoxdError("exec timed out")).execute([], 5))
     assert (timed_out.code, timed_out.certainty) == ("provider_unknown_outcome", "unknown")
+    lost = code(execution("running", exec_result=SimpleNamespace(stdout="", stderr="", exit_code=-1)).execute([], 5))
+    assert (lost.code, lost.certainty) == ("provider_unknown_outcome", "unknown")
+    invalid = code(execution("running", exec_error=boxd.APIStatusError("bad", code="invalid_argument")).execute([], 5))
+    assert (invalid.code, invalid.certainty) == ("provider_spec_invalid", "known")
     denied = code(execution("running", exec_error=boxd.AuthenticationError("bad key")).execute([], 5))
     assert denied.code == "provider_denied"
     assert "bad key" not in str(denied)
+
+
+def test_file_path_errors_are_not_reported_as_a_missing_target():
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.boxd.shared import sdk_errors
+
+    with pytest.raises(EnvironmentError) as error, sdk_errors(mutation=False):
+        raise boxd.MachineFileNotFoundError("/missing: No such file or directory")
+    assert error.value.code == "environment_provider_failure"
