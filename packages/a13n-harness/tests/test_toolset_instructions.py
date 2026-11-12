@@ -298,7 +298,7 @@ async def test_real_first_party_retry_tools_declare_reference_bearing_pages() ->
     assert len(browser) == 11
     expected = {
         **dict.fromkeys(browser, "browser"),
-        **dict.fromkeys(("run_code", "run_program", "store", "load", "forget"), "codeact"),
+        **dict.fromkeys(("store", "load", "forget"), "codeact"),
         **dict.fromkeys(
             ("discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"), "tool_search"
         ),

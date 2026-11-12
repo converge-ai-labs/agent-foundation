@@ -49,7 +49,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.guidance import TOOL_GUIDANCE_KEY, guidance_hint, retry_guidance_page
+from a13n_harness.guidance import guidance_hint, retry_guidance_page
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder
 from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
@@ -344,7 +344,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
-                        TOOL_GUIDANCE_KEY: "codeact",
                         "code_arg_name": "code",
                         "code_arg_language": "python",
                         "a13n.tool-execution": "owned",
@@ -360,7 +359,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     sequential=True,
                     metadata={
                         "a13n.codeact.runner": True,
-                        TOOL_GUIDANCE_KEY: "codeact",
                         "a13n.codeact.program": True,
                         "a13n.tool-execution": "owned",
                     },
