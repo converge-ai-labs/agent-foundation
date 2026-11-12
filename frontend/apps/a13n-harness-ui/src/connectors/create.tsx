@@ -111,6 +111,7 @@ export function CreateConnector({
         declaration={item.declaration}
         name={created.name}
         onClose={closeSetup}
+        onComplete={onClose}
       />
     );
   if (cleanup)

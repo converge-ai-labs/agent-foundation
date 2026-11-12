@@ -265,6 +265,72 @@ it("projects nested write-only fields and nullable repeatable rows through the p
   ).toEqual({ headers: [{ name: "Authorization", secret: "" }], tools: [] });
 });
 
+it("finishes a new account with one save after refreshing its saved status", async () => {
+  const onClose = vi.fn();
+  const unconfigured = {
+    ...instance,
+    status: { state: "unconfigured", summary: "Complete setup" },
+  };
+  transport.client.PUT.mockResolvedValue({ data: unconfigured });
+  transport.client.GET.mockResolvedValue({ data: [unconfigured] });
+  mount(<CreateConnector item={catalog[0]} onClose={onClose} />);
+  await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+  fireEvent.change(
+    await screen.findByLabelText("GitHub personal access token"),
+    { target: { value: "fictional-private-value" } },
+  );
+  let finishRefresh!: (value: { data: Schema<"Instance">[] }) => void;
+  transport.client.GET.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRefresh = resolve;
+      }),
+  );
+  transport.client.POST.mockResolvedValueOnce({
+    data: {
+      ...snapshot,
+      version: 2,
+      step: { key: "completed", title: "Connection saved", state: "completed" },
+    },
+  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save connection" }),
+  );
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => {
+    finishRefresh({ data: [instance] });
+  });
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(screen.queryByText("Keep this connection for later?")).toBeNull();
+  expect(transport.client.POST).toHaveBeenCalledTimes(2);
+  expect(transport.client.POST.mock.calls[1][1].body.action).toBe("save");
+  expect(JSON.stringify(cache.getQueryCache().getAll())).not.toContain(
+    "fictional-private-value",
+  );
+});
+
+it("closes a completed setup recovered after a lost response without replay", async () => {
+  const onClose = vi.fn();
+  mount(<ConnectorSetup connectorId="connector-one" onClose={onClose} />);
+  await screen.findByLabelText("GitHub personal access token");
+  transport.client.POST.mockRejectedValueOnce(new TypeError("Response lost"));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save connection" }),
+  );
+  await screen.findByText(/The action outcome is unknown/);
+  expect(onClose).not.toHaveBeenCalled();
+  transport.client.GET.mockResolvedValueOnce({
+    data: {
+      ...snapshot,
+      version: 2,
+      step: { key: "completed", title: "Connection saved", state: "completed" },
+    },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(transport.client.POST).toHaveBeenCalledTimes(2);
+});
+
 it("cancels an in-flight setup action and ignores its late response", async () => {
   mount(<ConnectorSetup connectorId="connector-one" onClose={() => {}} />);
   await screen.findByLabelText("GitHub personal access token");
