@@ -30,7 +30,7 @@ async def policy(app, root, **changes):
     )
 
 
-async def test_default_off_enable_arms_without_run_and_first_due_tick_needs_no_chat(tmp_path: Path) -> None:
+async def test_heartbeat_policy_arms_independently_and_first_due_tick_needs_no_chat(tmp_path: Path) -> None:
     root = base_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         bot = await ready(app)

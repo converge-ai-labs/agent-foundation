@@ -9,9 +9,9 @@ Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，�
 
 1. 在侧边栏打开 **Bot**。Bot 默认关闭；在页面内选择已有 Model。Bot 使用内置指令，不需要选择 Agent。
 2. 按需添加自定义指令，例如偏好的工作协调方式。自定义指令追加到内置指令之外，两者共存，不会替换内置内容。捕获的全局 `AGENTS.md` 指引也会生效。
-3. 点击 **开启 Bot**。此操作只保存设置，不立即调用模型。首次 heartbeat 安排在一个间隔后，无需先发消息。之后可在 **设置 → 常规 → Bot** 中修改。
+3. 点击 **开启 Bot**。首次开启且 Model 可用时，服务器会代发一条可见的预设用户消息，让 Bot 了解并介绍工作区。这会正常调用模型，可能产生费用；你可以立即继续聊天。首次 heartbeat 安排在一个间隔后，无需先发消息。之后可在 **设置 → 常规 → Bot** 中修改。
 
-默认 heartbeat 间隔为 **一小时**。打开页面或保存设置不会发起模型请求。heartbeat 处理要求 WebUI 服务保持运行。持实例密钥的参与者共享 Bot；受限分享访客无法访问 Bot。[Live 模式](live-mode.md) 与其独立。
+默认 heartbeat 间隔为 **一小时**。打开页面不会发起模型请求。首次工作区引导独立于 Heartbeat 和浏览器页面，只尝试一次；已有聊天或尝试记录会阻止重启、重新开启时重复发送。失败的尝试仍可见，需要你明确发送后续消息。heartbeat 处理要求 WebUI 服务保持运行。持实例密钥的参与者共享 Bot；受限分享访客无法访问 Bot。[Live 模式](live-mode.md) 与其独立。
 
 将以下字段合并到所选根 YAML 已有的 `webui` 映射中：
 
@@ -40,7 +40,9 @@ Bot 通过 `bot/HEARTBEAT.md` 管理周期检查。每次 heartbeat 都会提醒
 
 Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_thread` 按正常的 Sidekick/全局 Agent 默认值启动工作。Project 创建、Thread 创建、Run 接受和任务完成是独立结果。内置指令要求 Bot 检查保存的结果后再报告成功。
 
-启用 memory 时，Bot 正常获得全局记忆。它可以发现已配置的 Project，再调用 `read_project_memory` 按需读取 Project 记忆。这些读取有大小限制且为只读；各 Project 的记忆不会自动注入 Bot 上下文。协调笔记和任务保留在 Bot 自己的 Thread 中。
+启用 memory 时，Bot 通过现有 memory tools 使用全局记忆，以及根 YAML 同级 `memory/bot/` 下专属的 `bot` scope。`MEMORY.md` 保持为简洁的工作区地图，主题文件保存持久的 Project 理解、来源引用和不确定之处。Heartbeat 分批检查相关、有变化或尚不了解的 Project，不另建项目档案数据库或记忆提取链路。
+
+Bot 先发现当前 Project ID，再通过 `read_project_memory` 从索引开始，按需读取相关文件。这些 Project 原始记忆只读、有大小限制，也不会自动注入。创建项目工作前，Bot 会核实 Project，并向 `create_thread` 传入明确的 Project ID。当前工作交接保存在 Bot Notes，全局记忆保留跨项目偏好。首次引导只授权了解工作区和维护记忆，不授权实现工作或修改配置。
 
 ## Bot Notes
 
