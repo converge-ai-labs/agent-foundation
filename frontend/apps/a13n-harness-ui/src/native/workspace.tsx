@@ -1394,6 +1394,7 @@ export function NativeWorkspace({
               tabIndex={-1}
               className={styles.pane}
               aria-label={t("Browser panel")}
+              data-native-find=""
             >
               {nativeFeedback}
               {opening && (
@@ -1434,6 +1435,7 @@ export function NativeWorkspace({
                 }
                 className={`${styles.pane} a13n-scrollbar`}
                 aria-label={t("File explorer")}
+                data-native-find=""
               >
                 <header className={styles.paneHeader}>
                   {view === "page" && folderBreadcrumbs ? (
@@ -1679,6 +1681,7 @@ export function NativeWorkspace({
                   : undefined
               }
               aria-label={t("Terminal")}
+              data-native-find=""
               hidden={!terminalVisible}
               onFocusCapture={() => setFocusedArea("terminal")}
               onPointerDown={() => setFocusedArea("terminal")}

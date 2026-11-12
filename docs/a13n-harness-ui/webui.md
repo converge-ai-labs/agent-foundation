@@ -74,6 +74,8 @@ Drag a Project's handle to reorder it, or use the menu's Move and Reset actions.
 
 **Home** and Project **+** buttons share one browser-local new-conversation draft. Changing Project preserves its text and explicit selections. Reload preserves text and settings, but local file bytes must be reattached. **Send** creates the Thread and clears the draft after acceptance. An uncertain submission retains recovery information and locks Project selection until reviewed.
 
+Use **Search** or Command+F on Apple platforms (Ctrl+F elsewhere) to search saved chats, even with the sidebar collapsed. Repeating the shortcut selects the current query; Escape closes search and restores focus to where you opened it. Focused file editors and terminal output keep their own Find controls. Files, Changes, Browser, and other open dialogs keep local or browser-native search rather than opening chat search.
+
 ### Send, steer and inspect
 
 | Action                        | Result                                             |

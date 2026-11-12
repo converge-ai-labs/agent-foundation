@@ -28,6 +28,7 @@ import { NewDraftStore } from "./new-draft";
 import { i18n } from "../i18n";
 import { ConversationPage } from "./conversation";
 import { ConversationNavigation } from "./navigation";
+import { ChatSearchProvider } from "./chat-search";
 import { LiveThreadsProvider } from "./live-threads";
 import type { Schema } from "../transport/client";
 
@@ -429,7 +430,11 @@ function mount(initial = path, sidebar = false) {
           <NewConversationDrafts value={creations}>
             <MemoryRouter initialEntries={[initial]}>
               <LiveThreadsProvider>
-                {sidebar && <ConversationNavigation />}
+                {sidebar && (
+                  <ChatSearchProvider>
+                    <ConversationNavigation />
+                  </ChatSearchProvider>
+                )}
                 <Link to="/settings">Settings</Link>
                 <Link to={initial}>Return to draft</Link>
                 <Link to="/">Home</Link>
