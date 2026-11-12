@@ -603,8 +603,9 @@ class HarnessUiApp:
     async def _transcribe_subscription(
         self, request: DictationInput, source: LoadedHarnessUiConfiguration
     ) -> DictationResult:
+        from a13n_harness.errors import ModelResolutionError
+
         from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
-        from a13n_harness_ui.model_accounts.routing import account_order, choose_account
 
         options = source.document.dictation.codex
         group = source.subscription_groups.get(options.group or "codex-default")
@@ -626,18 +627,17 @@ class HarnessUiApp:
             raise HarnessUiError(
                 "Codex subscription Models cannot enforce Run allowed hosts.", code="model_configuration_unsupported"
             )
-        account = await choose_account(
-            group, self.subscription_accounts, self.subscription_usage, options.model, account_order(group)
-        )
-        store = self.subscription_accounts.store(account)
-        assert isinstance(store, CodexAccountStore)
-        return await transcribe_subscription(
-            request,
-            BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
-            options.model,
-            configuration=configuration,
-            response_headers=lambda headers: self.subscription_usage.observe_headers(account, headers),
-        )
+        try:
+            return await transcribe_subscription(
+                request,
+                group,
+                self.subscription_accounts,
+                self.subscription_usage,
+                options.model,
+                configuration=configuration,
+            )
+        except ModelResolutionError as error:
+            raise HarnessUiError(str(error), code=error.code) from None
 
     async def _voice_model(self, source: LoadedHarnessUiConfiguration) -> tuple[CodexLiveModel, str]:
         from a13n_harness_ui.model_accounts.routing import account_order, choose_account

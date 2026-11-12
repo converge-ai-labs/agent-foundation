@@ -267,7 +267,7 @@ dictation:
   context_words: 2000
 ```
 
-Omitting `codex.group` and `codex.account` uses `codex-default`. Login alone does not enable dictation. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
+Omitting `codex.group` and `codex.account` uses `codex-default`. Speech recognition and correction select independently from that group; `codex.account` pins both to one account. Speech recognition tries another eligible member only after a definite HTTP 401 or 429 rejection, never after an ambiguous upload timeout or network failure. Correction uses normal group failover; if it fails, the original transcript remains available without uploading audio again. Login alone does not enable dictation. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
 
 ### Media understanding
 

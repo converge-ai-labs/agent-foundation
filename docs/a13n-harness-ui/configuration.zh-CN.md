@@ -267,7 +267,7 @@ dictation:
   context_words: 2000
 ```
 
-省略 `codex.group` 和 `codex.account` 时使用 `codex-default`。仅登录账号不会启用听写。已有的 `dictation.model: model-id` 配置仍通过 `backend: model`（默认值）使用所选音频输入 Model。将该 Model 设为 null 可关闭听写；已保存的 Codex 预设仍会保留，供以后启用。
+省略 `codex.group` 和 `codex.account` 时使用 `codex-default`。语音识别和文本校正分别从该组中选择账号；`codex.account` 将两步固定到单个账号。语音识别只在收到明确的 HTTP 401 或 429 拒绝后尝试其他可用成员，上传超时或网络失败时不会重传。文本校正沿用正常的订阅组故障切换；校正失败时保留原始转写，不再上传音频。仅登录账号不会启用听写。已有的 `dictation.model: model-id` 配置仍通过 `backend: model`（默认值）使用所选音频输入 Model。将该 Model 设为 null 可关闭听写；已保存的 Codex 预设仍会保留，供以后启用。
 
 ### 媒体理解
 

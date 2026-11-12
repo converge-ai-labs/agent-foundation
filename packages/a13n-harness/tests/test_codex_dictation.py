@@ -32,7 +32,9 @@ def upload(monkeypatch):
 @pytest.mark.anyio
 async def test_native_authenticated_file_only_upload(upload):
     source, requests, _ = upload
-    assert await codex_dictation.transcribe(b"wav-bytes", source) == "hello"
+    observed = AsyncMock()
+    assert await codex_dictation.transcribe(b"wav-bytes", source, response_headers=observed) == "hello"
+    observed.assert_awaited_once()
     assert len(requests) == 1
     request = requests[0]
     assert str(request.url) == codex_dictation.TRANSCRIBE_URL
@@ -62,11 +64,16 @@ async def test_upload_error_is_sanitized_and_not_replayed(upload, status, header
     with pytest.raises(codex_dictation.CodexDictationError, match=message) as error:
         await codex_dictation.transcribe(b"audio", source)
     assert "sensitive" not in str(error.value)
+    assert error.value.status_code == (status if status in {401, 429} else None)
     assert len([r for r in requests if str(r.url) == codex_dictation.TRANSCRIBE_URL]) == 1
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("body", [b"not-json", b"[]", b'{"text":3}', b"x" * (512 * 1024 + 1)])
+@pytest.mark.parametrize(
+    "body",
+    [b"not-json", b"[]", b'{"text":3}', b"x" * (512 * 1024 + 1)],
+    ids=["invalid-json", "array", "non-string-text", "oversized"],
+)
 async def test_invalid_or_oversized_response(upload, body):
     source, _, response = upload
     response["body"] = body
@@ -101,3 +108,51 @@ async def test_native_refresh_persists_and_replays_same_upload_on_authenticated_
     assert uploads[0][1] == uploads[1][1]
     source.save.assert_awaited_once()
     assert source.save.call_args.args[0].refresh_token == "new-refresh"
+
+
+@pytest.mark.anyio
+async def test_header_observer_failure_does_not_lose_transcript(upload):
+    source, requests, _ = upload
+    observer = AsyncMock(side_effect=RuntimeError("local cache failed"))
+    assert await codex_dictation.transcribe(b"audio", source, response_headers=observer) == "hello"
+    assert len(requests) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("after_refresh", [False, True])
+async def test_network_failure_has_no_retryable_status_even_after_rejected_upload(monkeypatch, after_refresh):
+    source = AsyncMock()
+    source.load.return_value = OpenAICodexCredentials(
+        access_token="test-access", refresh_token="test-refresh", account_id="account-test"
+    )
+    uploads = []
+
+    async def handle(request):
+        if request.url.host == "auth.openai.com":
+            return httpx2.Response(200, json={"access_token": "new-access", "refresh_token": "new-refresh"})
+        uploads.append(request)
+        if after_refresh and len(uploads) == 1:
+            return httpx2.Response(401)
+        raise httpx2.ReadTimeout("ambiguous upload")
+
+    monkeypatch.setattr(
+        codex_dictation,
+        "create_model_http_client",
+        lambda **kwargs: create_model_http_client(**kwargs, transport=httpx2.MockTransport(handle)),
+    )
+    with pytest.raises(codex_dictation.CodexDictationError, match="Could not reach") as error:
+        await codex_dictation.transcribe(b"audio", source)
+    assert error.value.status_code is None
+    assert len(uploads) == (2 if after_refresh else 1)
+
+
+@pytest.mark.anyio
+async def test_preflight_authentication_failure_does_not_invent_http_rejection(upload):
+    from pydantic_ai.exceptions import ModelAuthenticationError
+
+    source, requests, _ = upload
+    source.load.side_effect = ModelAuthenticationError("openai-codex", "missing credentials")
+    with pytest.raises(codex_dictation.CodexDictationError) as error:
+        await codex_dictation.transcribe(b"audio", source)
+    assert error.value.status_code is None
+    assert requests == []
