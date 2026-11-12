@@ -122,7 +122,7 @@ export function EnvdSettings({
                   ? String(fallback / scale)
                   : t("No limit")
               }
-              min={1 / scale}
+              min={Number(field.minimum ?? 1) / scale}
               max={
                 Math.min(
                   Number(field.maximum ?? Number.MAX_SAFE_INTEGER),

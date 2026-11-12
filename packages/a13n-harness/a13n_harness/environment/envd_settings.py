@@ -22,11 +22,11 @@ from pydantic import (
 MAX_RESOURCE = (2**64 - 1) >> 3
 
 
-def budget(default: int, group: str, unit: str) -> Any:
+def budget(default: int, group: str, unit: str, *, minimum: int = 1) -> Any:
     return Field(
         default=default,
         strict=True,
-        gt=0,
+        ge=minimum,
         le=MAX_RESOURCE,
         json_schema_extra={"x-envd-group": group, "x-envd-unit": unit},
     )
@@ -96,7 +96,7 @@ class EnvdLimits(_Overrides):
     max_operation_records: int = budget(16_384, "capacity", "count")
     operation_record_ttl_ms: int = budget(24 * 60 * 60 * 1000, "retention", "milliseconds")
     max_process_records: int = budget(1024, "capacity", "count")
-    max_transfer_frame_bytes: int = budget(4 * 1024 * 1024, "protocol", "bytes")
+    max_transfer_frame_bytes: int = budget(4 * 1024 * 1024, "protocol", "bytes", minimum=26)
     max_concurrent_file_transfers: int = budget(64, "capacity", "count")
     max_file_transfer_records: int = budget(512, "capacity", "count")
     file_transfer_record_ttl_ms: int = budget(24 * 60 * 60 * 1000, "retention", "milliseconds")

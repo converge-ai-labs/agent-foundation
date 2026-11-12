@@ -46,6 +46,24 @@
     },
     {
       "limits": {
+        "max_transfer_frame_bytes": 1
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_transfer_frame_bytes": 25
+      },
+      "valid": false
+    },
+    {
+      "limits": {
+        "max_transfer_frame_bytes": 26
+      },
+      "valid": true
+    },
+    {
+      "limits": {
         "max_sessions": 0
       },
       "valid": false

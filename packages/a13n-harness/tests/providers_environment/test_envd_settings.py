@@ -36,6 +36,11 @@ def test_defaults_and_cross_field_validation_match_daemon_fixture():
                 EnvdLimits.model_validate(case["limits"])
 
 
+def test_transfer_frame_schema_exposes_protocol_minimum():
+    schema = EnvdLimits.model_json_schema()
+    assert schema["properties"]["max_transfer_frame_bytes"]["minimum"] == 26
+
+
 def test_only_explicit_values_survive_frozen_recipe_round_trip():
     assert EnvdSettings().model_dump() == {}
     assert EnvdSettings(limits=EnvdLimits()).model_dump() == {}

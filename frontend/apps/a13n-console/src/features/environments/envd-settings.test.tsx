@@ -38,6 +38,13 @@ const limits = {
       default: 512,
       "x-envd-group": "capacity",
     },
+    max_transfer_frame_bytes: {
+      type: "integer",
+      default: 4194304,
+      minimum: 26,
+      "x-envd-group": "protocol",
+      "x-envd-unit": "bytes",
+    },
   },
 };
 const schema = {
@@ -104,6 +111,23 @@ it("keeps unrelated recipe fields, converts durations, and removes cleared overr
     image: "custom",
     environment: { APP: "kept" },
   });
+});
+
+it("enforces the protocol frame minimum from the schema", async () => {
+  const user = userEvent.setup();
+  function Editor() {
+    const [recipe, onChange] = useState<Record<string, unknown>>({});
+    return <EnvdSettings schema={schema} recipe={recipe} onChange={onChange} />;
+  }
+  render(<Editor />);
+  await user.click(screen.getByRole("button", { name: "Protocol sizing" }));
+  const frame = screen.getByRole("spinbutton", {
+    name: "Max transfer frame bytes",
+  }) as HTMLInputElement;
+  fireEvent.change(frame, { target: { value: "25" } });
+  expect(frame.checkValidity()).toBe(false);
+  fireEvent.change(frame, { target: { value: "26" } });
+  expect(frame.checkValidity()).toBe(true);
 });
 
 it("shows Envd settings for native execution and keeps read-only controls disabled", async () => {

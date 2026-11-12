@@ -157,8 +157,7 @@ class DockerEnvironmentConfiguration(BaseModel):
     @field_validator("envd", mode="before")
     @classmethod
     def validate_envd_settings(cls, value: Any, info: ValidationInfo) -> Any:
-        if info.data.get("execution", "native") == "native":
-            return value
+        # Saved Envd overrides keep the same Docker fallbacks across execution modes.
         defaults = {
             "max_file_bytes": info.data.get("max_file_bytes", cls.model_fields["max_file_bytes"].default),
             "max_output_preview_bytes": info.data.get(

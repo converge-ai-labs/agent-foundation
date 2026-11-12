@@ -708,6 +708,11 @@ fn validate_limits(limits: &DaemonLimits) -> Result<(), ConfigError> {
             "resource limits must be positive and fit this platform",
         ));
     }
+    if limits.max_transfer_frame_bytes < 26 {
+        return Err(ConfigError::new(
+            "max_transfer_frame_bytes must be at least 26 bytes for EIP data frames",
+        ));
+    }
     for (session, device) in [
         (limits.max_spool_bytes, limits.max_device_spool_bytes),
         (limits.max_spool_objects, limits.max_device_spool_objects),

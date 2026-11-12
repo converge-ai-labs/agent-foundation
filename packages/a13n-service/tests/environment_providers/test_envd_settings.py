@@ -93,7 +93,7 @@ def test_envd_validates_merged_limits_instead_of_overridden_native_values():
         DockerRecipe(execution="native", max_output_bytes_per_stream=32768)
 
 
-@pytest.mark.parametrize("execution", ["envd_http", "envd_ws"])
+@pytest.mark.parametrize("execution", ["native", "envd_http", "envd_ws"])
 @pytest.mark.parametrize(
     "limits, legacy",
     [
