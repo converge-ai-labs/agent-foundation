@@ -37,6 +37,14 @@ Connectors present concrete services such as GitHub, with account setup defined 
 
 Configure an arbitrary MCP server through the separate [MCP servers](mcp.md) settings. These remain Agent-selected resources usable through the TUI as well. Remote MCP support in the Connector SDK is a code library for developers implementing concrete service integrations, not another generic MCP setup screen.
 
+## Agent tool access
+
+Connector tools are discovered through `list_connectors`, `list_connector_tools`, `discover_connector_tools` and `describe_connector_tool`, then executed with `call_connector_tool`. Each account uses its saved **Group name**, such as `github` or `work-github`; the description names the account. Creation suggests a normalized name, which you can edit before continuing or later in **Manage → Account settings**. Group names must be unique across connections and use at most 32 lowercase letters, digits and single hyphens, starting with a letter. Changing the display name leaves the saved group unchanged. Changing the group requires a new Run to use its tools.
+
+On upgrade, existing accounts receive readable group names automatically, with numeric suffixes when needed. Account IDs, credentials and saved configuration remain intact. Captures from before explicit group names were introduced are unsupported; start a new Run.
+
+With CodeAct enabled, an agent can await those same controls inside `run_code` or `run_program`. GitHub and other providers built on the Remote MCP library support this path. Upstream methods stay behind `call_connector_tool`; they do not become separate Python functions. Other plugins declare their own CodeAct policy, reported as `codeact_eligible` in discovery results. Tool permissions and captured account checks still apply. Calls requiring an approval that cannot resolve inline should use the ordinary tool-call path; CodeAct does not save a suspended Python execution point or automatically replay earlier calls.
+
 ## Configure from a conversation
 
 An agent can offer a connection setup card. The offer accepts no credentials and creates no account or setup session by itself. Choose an existing account or **Add another account**, then open the same setup dialog as Settings. Forms never expand inside the transcript. A ready account resolves the card to a compact confirmation with a **Manage** link.

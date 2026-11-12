@@ -524,7 +524,12 @@ async def serve(root: Path, port: int):
                         raise RuntimeError("The follow-up fixture did not finish")
                 print(f"  {title}: /threads/{thread.thread_id}", flush=True)
             await app.configure_connector(
-                ConnectorConfiguration(connector_id="connector-github-review", kind="github", name="GitHub · Personal"),
+                ConnectorConfiguration(
+                    connector_id="connector-github-review",
+                    kind="github",
+                    name="GitHub · Personal",
+                    group_name="github-personal",
+                ),
                 expected_version=None,
             )
             # Fictional saved account for list/management review. Seeding and
@@ -532,7 +537,9 @@ async def serve(root: Path, port: int):
             from a13n_harness_ui.connectors.models import SetupCommand
 
             await app.configure_connector(
-                ConnectorConfiguration(connector_id="connector-github-work", kind="github", name="GitHub · Work"),
+                ConnectorConfiguration(
+                    connector_id="connector-github-work", kind="github", name="GitHub · Work", group_name="github-work"
+                ),
                 expected_version=None,
             )
             setup = await app.begin_connector_setup("connector-github-work")
