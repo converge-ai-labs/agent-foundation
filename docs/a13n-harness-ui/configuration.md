@@ -136,15 +136,19 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 
 ### Built-in tools and subagents
 
-| Root field                                | Default     | Purpose                                                                  |
-| ----------------------------------------- | ----------- | ------------------------------------------------------------------------ |
-| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                         |
-| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                              |
-| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch |
-| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools  |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                      |
-| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary       |
-| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`            |
+| Root field                                | Default     | Purpose                                                                                |
+| ----------------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                                       |
+| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                                            |
+| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch               |
+| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools                |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                                    |
+| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                     |
+| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
+| `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
+| `subagents.result_delivery`               | `automatic` | `automatic` delivers final results; `manual` requires info/wait retrieval              |
+| `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
+| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 

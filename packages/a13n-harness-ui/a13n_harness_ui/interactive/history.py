@@ -33,7 +33,15 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
     for part in parts:
         if not isinstance(part, TranscriptFailure):
             recovery_warning = (part.metadata.model_extra or {}).get("a13n.recovery") == "context_recovery"
-            if not part.metadata.display or part.kind == "system" or (part.kind == "other" and not recovery_warning):
+            if (
+                (
+                    not part.metadata.display
+                    and (part.metadata.model_extra or {}).get("a13n.steering-source")
+                    not in {"async_subagent", "parent_agent", "tool_execution"}
+                )
+                or part.kind == "system"
+                or (part.kind == "other" and not recovery_warning)
+            ):
                 continue
         if len(selected) >= _HISTORY_PARTS or _HISTORY_BYTES - size < 128:
             omitted = True
@@ -84,6 +92,8 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
             "background_process",
             "async_subagent",
             "envd_session",
+            "parent_agent",
+            "tool_execution",
         }:
             renderer.append("Activity · " + text, kind="tool")
         else:

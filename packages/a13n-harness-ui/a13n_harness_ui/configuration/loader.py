@@ -401,6 +401,14 @@ def _parse_complete_tree(
             )
         )
 
+    missing_dynamic_models = set(document.subagents.dynamic.allowed_models) - models.keys()
+    if missing_dynamic_models:
+        raise ConfigurationError(
+            "subagents.dynamic.allowed_models must name configured Models: "
+            + ", ".join(sorted(missing_dynamic_models)),
+            code="configuration_invalid",
+        )
+
     try:
         return LoadedHarnessUiConfiguration(
             document=document,

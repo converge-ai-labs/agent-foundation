@@ -9,7 +9,7 @@ import re
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial, wraps
 from types import CoroutineType
@@ -29,7 +29,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness import __version__ as harness_version
-from a13n_harness.builder import derive_child_identity
+from a13n_harness.builder import SubagentIdentityPolicy, derive_child_identity
 from a13n_harness.capabilities import (
     AsyncDelegateRequest,
     AsyncExecutionView,
@@ -43,6 +43,7 @@ from a13n_harness.capabilities import (
     SubagentInfoResult,
     SubagentOperator,
     SubagentOperatorContext,
+    SubagentResultDelivery,
     SubagentSteerRequest,
     SubagentSteerResult,
     SubagentToolCallContext,
@@ -50,6 +51,9 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
+from a13n_harness.content import ContentItem, content_items
+from a13n_harness.content import ContentMetadata as HarnessContentMetadata
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
@@ -99,6 +103,7 @@ from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
 from a13n_harness_ui.model_runtime import SubscriptionSource
+from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking
 from a13n_harness_ui.observation import (
     UiObservation,
     finish_operation,
@@ -125,6 +130,7 @@ from a13n_harness_ui.storage import (
     ThreadConfiguration,
 )
 from a13n_harness_ui.storage.contracts import (
+    DynamicAgentSource,
     StoredChildAuthority,
     StoredDeferredInput,
     StoredPrincipal,
@@ -186,6 +192,7 @@ class ParentRunScope:
     instance: AgentInstanceContext
     composition: ResolvedRunComposition
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
+    result_delivery: SubagentResultDelivery = "automatic"
 
     @property
     def agent_instance_id(self) -> str:
@@ -200,12 +207,19 @@ class _ChildCursor(SurfaceModel):
 
 
 @dataclass(slots=True)
+class _AdmissionLock:
+    lock: Lock = field(default_factory=Lock)
+    users: int = 0
+
+
+@dataclass(slots=True)
 class _ActiveSegment:
     execution_id: str
     parent_thread_id: str
     stream: HarnessRunStream[Any]
     done: Event
     display: CompactChildDisplay
+    root_thread_id: str = ""
     cleanup_succeeded: bool = False
     status: Literal["running", "cancelling", "succeeded", "cancelled"] = "running"
     settlement_lock: Lock = field(default_factory=Lock)
@@ -288,6 +302,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._summary_hub = summary_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._lock = Lock()
+        self._admission_locks: dict[str, _AdmissionLock] = {}
+        self.deliver: Callable[[str, str, tuple[str, ...]], Awaitable[bool]] | None = None
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
         self._completion_continuations: dict[str, _CompletionContinuation] = {}
@@ -416,6 +432,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=run_id,
             instance=instance,
             composition=composition,
+            result_delivery=composition.subagents.result_delivery,
             external_context=(external_context or ExternalContext()).model_copy(deep=True),
         )
         async with self._lock:
@@ -465,6 +482,75 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child definition changed after parent admission.",
                 code="subagent_plan_invalid",
             )
+        return await self._admit_child(
+            scope=scope,
+            published=published,
+            configuration=configuration,
+            state=state,
+            subagent_name=request.subagent_name,
+            input=plan.context.input,
+            identity_policy=plan.child.declaration.identity,
+            usage_limits=plan.usage_limits,
+        )
+
+    @asynccontextmanager
+    async def _admission(self, scope: ParentRunScope) -> AsyncGenerator[None]:
+        # Count holders and waiters before awaiting, so cancellation cannot remove
+        # a conversation's fence while another admission still references it.
+        fence = self._admission_locks.setdefault(scope.root_thread_id, _AdmissionLock())
+        fence.users += 1
+        try:
+            async with fence.lock:
+                async with self._lock:
+                    self._require_started_locked()
+                    running = sum(item.root_thread_id == scope.root_thread_id for item in self._active.values())
+                if running >= scope.composition.subagents.max_concurrent:
+                    raise _SubagentRequestError(
+                        "The conversation has reached subagents.max_concurrent; wait for a child to finish before starting another.",
+                        code="subagent_concurrency_limit",
+                    )
+                yield
+        finally:
+            fence.users -= 1
+            if not fence.users:
+                self._admission_locks.pop(scope.root_thread_id)
+
+    async def _admit_child(
+        self,
+        *,
+        scope: ParentRunScope,
+        published: PublishedRunComposition,
+        configuration: ThreadConfiguration,
+        state: HarnessState,
+        subagent_name: str,
+        input: RunInputValue,
+        identity_policy: SubagentIdentityPolicy,
+        usage_limits: UsageLimits | None,
+    ) -> AsyncExecutionView:
+        async with self._admission(scope):
+            return await self._prepare_child(
+                scope=scope,
+                published=published,
+                configuration=configuration,
+                state=state,
+                subagent_name=subagent_name,
+                input=input,
+                identity_policy=identity_policy,
+                usage_limits=usage_limits,
+            )
+
+    async def _prepare_child(
+        self,
+        *,
+        scope: ParentRunScope,
+        published: PublishedRunComposition,
+        configuration: ThreadConfiguration,
+        state: HarnessState,
+        subagent_name: str,
+        input: RunInputValue,
+        identity_policy: SubagentIdentityPolicy,
+        usage_limits: UsageLimits | None,
+    ) -> AsyncExecutionView:
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
             published.value,
@@ -484,7 +570,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent_thread_id=scope.thread_id,
             configuration=configuration,
             initial_state=initial.ref,
-            title=request.subagent_name,
+            title=subagent_name,
         )
         await self._store.threads.replace_external_context(state.thread_id, scope.external_context)
         # Preparation publishes binding state against this Thread, before execution is admitted.
@@ -498,15 +584,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
         identity = derive_child_identity(
             scope.instance.identity,
             reconstructed.executable.definition.definition_id,
-            plan.child.declaration.identity,
+            identity_policy,
         )
         usage_limits = intersect_usage_limits(
-            plan.usage_limits,
+            usage_limits,
             reconstructed.executable.definition_usage_limits(),
         )
         stream, external_context = await self._new_stream(
             reconstructed=reconstructed,
-            input=plan.context.input,
+            input=input,
             usage_limits=usage_limits,
             identity=identity,
             state=state,
@@ -527,7 +613,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             scope=scope,
             composition=published.value,
             reconstructed=reconstructed,
-            input=plan.context.input,
+            input=input,
             usage_limits=usage_limits,
             identity=identity,
             state=state,
@@ -545,9 +631,134 @@ class HarnessUiSubagentOperator(SubagentOperator):
         await self._publish_summary(head)
         return _async_view(
             head,
-            subagent_name=request.subagent_name,
+            subagent_name=subagent_name,
             child_definition_id=reconstructed.executable.definition.definition_id,
+            source="host" if published.value.root.source_kind == "dynamic" else "declared",
         )
+
+    @_subagent_tool
+    async def spawn(
+        self,
+        context: SubagentOperatorContext,
+        *,
+        name: str,
+        instructions: str,
+        prompt: str,
+        model: str | None = None,
+        thinking: ThinkingSelection | None = None,
+    ) -> AsyncExecutionView:
+        scope = await self._require_parent(context)
+        policy = scope.composition.subagents.dynamic
+        if scope.parent_thread_id is not None or not policy.enabled:
+            raise _SubagentRequestError("Dynamic subagents are disabled for this Run.", code="subagent_spawn_disabled")
+        if not name.strip() or not instructions.strip() or not prompt.strip():
+            raise _SubagentRequestError(
+                "name, instructions and prompt must not be blank.", code="subagent_input_invalid"
+            )
+        recipe = scope.composition.root.model
+        if model is not None:
+            if model not in policy.allowed_models:
+                raise _SubagentRequestError(
+                    "model must be in subagents.dynamic.allowed_models.", code="subagent_model_not_allowed"
+                )
+            source = await self._configurations.load(scope.composition.generation_digest)
+            recipe = self._compositions.resolve_model(source, model)
+        if thinking is not None:
+            try:
+                settings = apply_thinking(recipe.route, recipe.settings, thinking)
+            except HarnessUiError as exc:
+                raise _SubagentRequestError(str(exc), code="subagent_thinking_invalid") from exc
+            recipe = recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
+        state = HarnessState.new()
+        root = scope.composition.root.model_copy(
+            update={
+                "source_kind": "dynamic",
+                "source_id": _public_id("dynamic"),
+                "roster_name": name,
+                "instructions": (instructions,),
+                "model": recipe,
+                "children": (),
+            }
+        )
+        composition = scope.composition.model_copy(
+            update={
+                "thread_id": state.thread_id,
+                "thread_configuration_version": 1,
+                "root": root,
+                "is_subagent": True,
+            }
+        )
+        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=composition)
+        published = PublishedRunComposition(value=composition, reference=envelope.ref)
+        configuration = ThreadConfiguration(
+            version=1,
+            project_id=composition.project_id,
+            local_roots=composition.project_roots,
+            agent_source=DynamicAgentSource(id=root.source_id),
+            environment_profile_id=composition.environment_profile.profile_id,
+            environment_bindings=tuple(item.selection for item in composition.environment_bindings),
+            default_environment=composition.default_environment,
+            harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),
+            environment_run_extension_ids=tuple(item.extension_id for item in composition.environment_run_extensions),
+            mcp_server_ids=tuple(item.server_id for item in root.mcp_servers if item.generic_selected),
+        )
+        return await self._admit_child(
+            scope=scope,
+            published=published,
+            configuration=configuration,
+            state=state,
+            subagent_name=name,
+            input=prompt,
+            identity_policy=SubagentIdentityPolicy(),
+            usage_limits=None,
+        )
+
+    @_subagent_tool
+    async def resume_host(
+        self,
+        context: SubagentOperatorContext,
+        request: AsyncResumeRequest,
+        *,
+        tool_call: SubagentToolCallContext | None = None,
+    ) -> AsyncExecutionView:
+        scope = await self._require_parent(context)
+        previous = await self._require_execution(scope, request.execution_id)
+        composition = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
+        thread = await self._require_child_thread(previous)
+        if (
+            composition.root.source_kind != "dynamic"
+            or not previous.resumable
+            or thread.configuration.agent_source.kind != "dynamic"
+            or thread.configuration.agent_source.id != composition.root.source_id
+        ):
+            raise _SubagentRequestError("The Host-defined child is not resumable.", code="subagent_resume_incompatible")
+        identity = derive_child_identity(
+            scope.instance.identity, _definition_id(composition.root), SubagentIdentityPolicy()
+        )
+        return await self._resume_child(
+            scope=scope, previous=previous, input=request.prompt, identity=identity, usage_limits=None
+        )
+
+    async def send_parent_message(self, child_thread_id: str, execution_id: str, message: str) -> dict[str, bool]:
+        head = await self._store.child_executions.get(execution_id)
+        if head is None or head.child_thread_id != child_thread_id or head.status != "running":
+            raise ToolFailed("This child execution is no longer active.")
+        name, _ = await self._execution_identity(head)
+        text = format_execution_header("Subagent message", name, execution_id, head.status)
+        text += "\nReply with steer_subagent while this child is running.\n\n" + message
+        if self._task_group is None:
+            raise ToolFailed("The App is stopping.")
+        self._task_group.start_soon(self._deliver_parent, head.parent_thread_id, text, (execution_id,))
+        return {"accepted": True}
+
+    async def _deliver_parent(self, thread_id: str, text: str, execution_ids: tuple[str, ...]) -> None:
+        try:
+            if self._tool_executions is not None:
+                self._tool_executions.offer_subagent_input(thread_id, text, execution_ids)
+            elif self.deliver is not None:
+                await self.deliver(thread_id, text, execution_ids)
+        except Exception:
+            get_logger(__name__).warning("Could not deliver subagent input: %s", thread_id, exc_info=True)
 
     @_subagent_tool
     async def info(
@@ -565,6 +776,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             execution_offset=request.execution_offset,
             execution_limit=request.execution_limit,
         )
+
+    async def reminder(self, parent_thread_id: str) -> list[dict[str, str]]:
+        heads = await self._store.child_executions.attention_for_parent(parent_thread_id, limit=21)
+        values = []
+        for head in heads:
+            name, _ = await self._execution_identity(head)
+            values.append({"name": name, "execution_id": head.execution_id, "state": head.status})
+        return values
 
     async def inspect_executions(
         self,
@@ -783,7 +1002,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         return await self.steer_execution(
             parent_thread_id=scope.thread_id,
             execution_id=request.execution_id,
-            message=request.message,
+            message=_parent_input(request.message),
             immediate=request.immediate,
         )
 
@@ -924,6 +1143,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     agent_instance_id=_public_id("agent"),
                 ),
                 composition=composition,
+                result_delivery=composition.subagents.result_delivery,
             ),
             identity=AgentIdentityRef(
                 issuer=authority.identity.issuer, subject=authority.identity.subject, **authority.identity.claims
@@ -934,6 +1154,27 @@ class HarnessUiSubagentOperator(SubagentOperator):
             configuration_version=authority.configuration_version,
         )
         return self._completion_continuations.setdefault(thread_id, retained)
+
+    async def deliver_subagent_input(
+        self, thread_id: str, prompt: RunInputValue, *, before_accept: Callable[[], None] | None = None
+    ) -> bool:
+        """Offer a grandchild update only to the target's current child Run.
+
+        True also consumes an idle/rejected wake: no update is retried into a
+        later child segment. Final results remain in the operator's saved heads.
+        """
+        if not self._accepting:
+            return False
+        head = await self._store.child_executions.latest_for_child(thread_id)
+        if head is not None and await self._active_segment(head) is not None:
+            await self.steer_execution(
+                parent_thread_id=head.parent_thread_id,
+                execution_id=head.execution_id,
+                message=prompt,
+                immediate=False,
+                before_accept=before_accept,
+            )
+        return True
 
     async def deliver_tool_completion(
         self, thread_id: str, prompt: RunInputValue, *, before_accept: Callable[[], None] | None = None
@@ -999,6 +1240,28 @@ class HarnessUiSubagentOperator(SubagentOperator):
         before_accept: Callable[[], None] | None = None,
         automatic_completion: ChildCompletionGuard | None = None,
     ) -> AsyncExecutionView:
+        async with self._admission(scope):
+            return await self._prepare_resume_child(
+                scope=scope,
+                previous=previous,
+                input=input,
+                identity=identity,
+                usage_limits=usage_limits,
+                before_accept=before_accept,
+                automatic_completion=automatic_completion,
+            )
+
+    async def _prepare_resume_child(
+        self,
+        *,
+        scope: ParentRunScope,
+        previous: ChildExecutionHead,
+        input: RunInputValue,
+        identity: AgentIdentityRef,
+        usage_limits: UsageLimits | None,
+        before_accept: Callable[[], None] | None = None,
+        automatic_completion: ChildCompletionGuard | None = None,
+    ) -> AsyncExecutionView:
         subagent_name, _ = await self._execution_identity(previous)
         checkpoint = await self._read_checkpoint(previous)
         if not checkpoint.terminal or checkpoint.deferred_requests is not None:
@@ -1008,10 +1271,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
             )
         thread = await self._require_child_thread(previous)
         source = await self._configurations.load(scope.composition.generation_digest)
+        retained_root = None
+        if thread.configuration.agent_source.kind == "dynamic":
+            retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
+            retained_root = retained.root
         published = await self._compositions.publish(
             source,
             _selection(thread.thread_id, thread.configuration),
             parent_node=scope.composition.root,
+            dynamic_node=retained_root,
             run_configuration=scope.composition.run_configuration,
         )
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
@@ -1079,6 +1347,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             head,
             subagent_name=subagent_name,
             child_definition_id=reconstructed.executable.definition.definition_id,
+            source="host" if published.value.root.source_kind == "dynamic" else "declared",
         )
 
     async def cancel_restart(self, thread_id: str) -> None:
@@ -1105,6 +1374,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if checkpoint.deferred_requests is not None:
             raise RunCoordinationError("A child handoff contains deferred requests.", code="restart_incompatible")
         composition = await self._store.objects.read_model(item.composition, ResolvedRunComposition)
+        composition = composition.model_copy(update={"is_subagent": True})
         parent_composition = await self._store.objects.read_model(item.parent_composition, ResolvedRunComposition)
         parent_thread = await self._store.threads.get(item.parent_thread_id)
         if parent_thread is None:
@@ -1120,6 +1390,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=item.parent_run_id,
             instance=AgentInstanceContext(identity=parent_identity, agent_instance_id=_public_id("agent")),
             composition=parent_composition,
+            result_delivery=parent_composition.subagents.result_delivery,
         )
         pricing = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
@@ -1216,7 +1487,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
             reconstructed.definition_capability_ids,
         )
         stream = reconstructed.executable.stream(
-            input if deferred_resume is None or deferred_resume.recovery else None,
+            _parent_input(input)
+            if input is not None and (deferred_resume is None or deferred_resume.recovery)
+            else None,
             bindings=bindings,
             previous_state=state,
             resume_usage=resume_usage,
@@ -1230,6 +1503,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         active = _ActiveSegment(
             execution_id=prepared.head.execution_id,
             parent_thread_id=prepared.head.parent_thread_id,
+            root_thread_id=prepared.scope.root_thread_id,
             stream=prepared.stream,
             done=done,
             display=prepared.display,
@@ -1419,6 +1693,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 # Persisted terminal status precedes cleanup; publish again only
                 # after process-local activity is no longer observable as active.
                 await self._publish_summary_by_execution(current.head.execution_id)
+                if self.deliver is not None and current.scope.result_delivery == "automatic":
+                    head = await self._store.child_executions.get(current.head.execution_id)
+                    if head is not None and head.status != "running":
+                        view = await self._execution_view(head)
+                        name, _ = await self._execution_identity(head)
+                        text = format_execution_header("Subagent result", name, head.execution_id, head.status)
+                        text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
+                        text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
+                        await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
 
     async def _finish_restart(
         self,
@@ -1910,7 +2193,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The subagent request is outside the active parent Run.",
                 code="subagent_parent_scope_invalid",
             )
-        return scope
+        return replace(scope, result_delivery=context.result_delivery)
 
     async def _require_execution(
         self,
@@ -2099,6 +2382,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "effects before retrying work.",
             }
         return SubagentExecutionView(
+            source="host" if child_definition_id.startswith("a13n-harness-ui:dynamic:") else "declared",
             execution_id=head.execution_id,
             subagent_name=subagent_name,
             child_definition_id=child_definition_id,
@@ -2309,8 +2593,10 @@ def _async_view(
     *,
     subagent_name: str,
     child_definition_id: str,
+    source: Literal["declared", "host"] = "declared",
 ) -> AsyncExecutionView:
     return AsyncExecutionView(
+        source=source,
         execution_id=head.execution_id,
         subagent_name=subagent_name,
         child_definition_id=child_definition_id,
@@ -2535,3 +2821,17 @@ def _safe_failure(exc: BaseException, *, fallback_code: str) -> SafeFailure:
 
 
 __all__ = ["HarnessUiSubagentOperator", "ParentRunScope"]
+
+
+def _parent_input(value: RunInputValue) -> RunInputValue:
+    return tuple(
+        item
+        if (item.metadata.model_extra or {}).get("a13n.steering-source")
+        else ContentItem(
+            item.value,
+            HarnessContentMetadata.model_validate(
+                {**item.metadata.model_dump(), "a13n.steering-source": "parent_agent"}
+            ),
+        )
+        for item in content_items(value)
+    )

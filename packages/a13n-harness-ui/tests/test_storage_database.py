@@ -181,7 +181,8 @@ def test_deleted_thread_migration_starts_empty_and_downgrade_only_discards_evide
     try:
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
-        migrator.upgrade()
+        # Pin this reversible historical migration before the new forward-only boundary.
+        migrator._run(lambda config: command.upgrade(config, "60710c8b48e4"), write=True)
         with engine.begin() as connection:
             assert connection.execute(text("SELECT count(*) FROM deleted_thread")).scalar_one() == 0
             connection.execute(text("INSERT INTO deleted_thread (thread_id) VALUES ('thread-deleted')"))

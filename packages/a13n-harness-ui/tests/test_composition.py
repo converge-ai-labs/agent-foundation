@@ -1935,3 +1935,41 @@ async def test_unmapped_response_setting_survives_capture_and_reconstruction(tmp
     assert captured.root.model.settings["openai_include_unmapped_response_data"] is True
     reconstructed = AgentReconstructor(_catalog()).reconstruct(captured, subagent_operator=_UnusedOperator())
     assert reconstructed.executable.definition.agent.model_settings["openai_include_unmapped_response_data"] is True
+
+
+async def test_nested_declared_rosters_keep_delegation_in_definitions_and_child_runs(tmp_path):
+    from a13n_harness.capabilities import SubagentCapability
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator, _initial_child_configuration
+    from a13n_harness_ui.subagent_operator import _selection as child_selection
+    from a13n_harness_ui.subagent_tools import SubagentTools
+
+    path = _write_source(tmp_path)
+    reviewer = tmp_path / "agents/reviewer.yaml"
+    reviewer.write_text(reviewer.read_text().replace("subagents: []", "subagents: [{markdown: subagent-explorer}]"))
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    composition = resolver.resolve_run(source, _selection())
+    edge = next(item for item in composition.root.children if item.name == "agent-reviewer")
+    operator = HarnessUiSubagentOperator(
+        store=None,
+        configurations=None,
+        compositions=None,
+        agent_reconstructor=None,
+        environment_service=None,
+    )
+    reconstructor = AgentReconstructor(_catalog())
+    rebuilt = reconstructor.reconstruct(composition, subagent_operator=operator)
+    nested = rebuilt.executable.subagents.require("agent-reviewer").executable.definition
+    assert any(isinstance(cap, SubagentCapability) for cap in nested.capabilities)
+
+    child = resolver.resolve_run(
+        source,
+        child_selection("child-reviewer", _initial_child_configuration(composition, edge)),
+        parent_node=composition.root,
+    )
+    assert child.is_subagent and child.root.children
+    definition = reconstructor.reconstruct(child, subagent_operator=operator).executable.definition
+    assert any(isinstance(cap, SubagentCapability) for cap in definition.capabilities)
+    (ui_tools,) = [cap for cap in definition.capabilities if isinstance(cap, SubagentTools)]
+    assert ui_tools.has_children
+    assert set(ui_tools.get_toolset().tools) == {"send_parent_message"}

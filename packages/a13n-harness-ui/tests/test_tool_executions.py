@@ -6,6 +6,7 @@ import json
 
 import pytest
 from a13n_harness import StoredToolExecution, ToolExecutionRecord
+from a13n_harness.tools._output import tool_execution_value
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor
@@ -212,7 +213,7 @@ async def test_terminal_notifications_are_status_only_and_refresh_after_rejected
         owner._completed(record)
         with fail_after(10):
             await delivered.wait()
-        assert len(hints) == 1 and f"lookup ({status})" in hints[0]
+        assert len(hints) == 1 and f"Tool notification · lookup · execution_id=exec-terminal · {status}" in hints[0]
         assert "PRIVATE" not in hints[0]
         assert not (await owner.runtime.info("thread-a", record.execution_id)).delivery_acknowledged
         owner.deliver = None
@@ -446,6 +447,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
     from .test_builtin_subagents import _source
 
     path = _source(tmp_path, ("explorer",))
+    path.write_text(path.read_text().replace("subagents:", "subagents:\n  result_delivery: manual"))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, resumed, delivered = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}
@@ -703,6 +705,7 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
     from .test_builtin_subagents import _source
 
     path = _source(tmp_path, ("explorer",))
+    path.write_text(path.read_text().replace("subagents:", "subagents:\n  result_delivery: manual"))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, offered, resumed = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}
@@ -991,6 +994,7 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             )
             assert root.call_args.kwargs["immediate"] is (mode != "queued")
             assert child.call_args.kwargs["immediate"] is (mode != "queued")
+            assert child.call_args.kwargs["message"] == "Focus"  # Human input remains unmarked.
             await app._deliver_tool_completion(thread.thread_id, "Tool completed", ("exec-test",))
             assert root.call_args.kwargs["immediate"] is False
             content = root.call_args.kwargs["message"]
@@ -1049,7 +1053,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
         nonlocal model_calls, execution_id
         model_calls += 1
         returns = {
-            part.tool_call_id: part.content
+            part.tool_call_id: tool_execution_value(part.content, part.metadata)
             for message in messages
             for part in message.parts
             if isinstance(part, ToolReturnPart)
@@ -1137,7 +1141,8 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
             assert shown.count("Follow-up completed.") == 1
             assert not renderer.gap
             assert shown.count("Tool execution succeeded") == 1
-            assert "Tool executions completed. Inspect" not in shown
+            assert "Activity · Tool executions completed. Inspect" in shown
+            assert "> Tool executions completed. Inspect" not in shown
             assert shell.composer.text == "Unsent draft"
             assert not shell.busy and backend.receipt_id is None
             records = await app.tool_executions(backend.thread_id)

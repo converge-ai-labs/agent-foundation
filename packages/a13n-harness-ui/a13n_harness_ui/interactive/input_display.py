@@ -37,7 +37,11 @@ def composer_history(parts: tuple[TranscriptPart, ...]) -> list[TranscriptPart]:
     source_id: str | None = None
     seen: set[int] = set()
     for part in parts:
-        if not part.metadata.display:
+        if not part.metadata.display and (part.metadata.model_extra or {}).get("a13n.steering-source") not in {
+            "async_subagent",
+            "parent_agent",
+            "tool_execution",
+        }:
             continue
         piece = composer_piece(part.metadata) if part.kind in {"user", "media"} else None
         if piece is None:

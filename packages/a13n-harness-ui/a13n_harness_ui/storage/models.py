@@ -457,7 +457,7 @@ class ThreadConfigurationRecord(Base):
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
-            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot')", name="agent_source_kind"
+            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot', 'dynamic')", name="agent_source_kind"
         ),
     )
 

@@ -820,7 +820,8 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source") in {"background_process", "async_subagent", "envd_session"}
+            or metadata.get("a13n.steering-source")
+            in {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
         ):
             continue
         visible = [
@@ -829,7 +830,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             if (projected := project_input_content(item)) is not None
             and projected[1].display
             and (projected[1].model_extra or {}).get("a13n.steering-source")
-            not in {"background_process", "async_subagent", "envd_session"}
+            not in {"background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"}
         ]
         if not visible:
             continue

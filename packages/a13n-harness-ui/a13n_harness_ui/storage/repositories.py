@@ -1084,6 +1084,22 @@ class ChildExecutionRepository:
             record = await session.get(ChildExecutionRecord, execution_id)
             return None if record is None else _child_value(record)
 
+    async def attention_for_parent(self, parent_thread_id: str, *, limit: int = 21) -> tuple[ChildExecutionHead, ...]:
+        async with short_session(self._sessions) as session:
+            rows = (
+                await session.execute(
+                    select(ChildExecutionRecord)
+                    .where(ChildExecutionRecord.parent_thread_id == parent_thread_id)
+                    .order_by(
+                        (ChildExecutionRecord.status == "running").desc(),
+                        ChildExecutionRecord.created_at.desc(),
+                        ChildExecutionRecord.execution_id.desc(),
+                    )
+                    .limit(limit)
+                )
+            ).scalars()
+            return tuple(_child_value(row) for row in rows)
+
     async def list_for_parent(
         self,
         parent_thread_id: str,
@@ -1381,7 +1397,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
@@ -1390,6 +1406,8 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         if record.agent_source_kind == "live"
         else BotAgentSource()
         if record.agent_source_kind == "bot"
+        else DynamicAgentSource(id=record.agent_source_id)
+        if record.agent_source_kind == "dynamic"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)

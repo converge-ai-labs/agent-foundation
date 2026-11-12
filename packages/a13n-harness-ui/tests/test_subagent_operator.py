@@ -417,4 +417,4 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
         async for item in stream:
             if isinstance(item, HarnessRunResultEvent):
                 assert item.result.status == "completed"
-    assert ("new continuation instruction" in observed) is recovery
+    assert ("new continuation instruction" in str(observed)) is recovery

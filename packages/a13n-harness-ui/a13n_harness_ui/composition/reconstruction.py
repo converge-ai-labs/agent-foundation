@@ -22,6 +22,7 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     SubagentCapability,
     SubagentOperator,
+    SubagentResultDelivery,
     ToolExecutionCapability,
     ToolSearchPlan,
     ToolSearchSelection,
@@ -246,6 +247,16 @@ class AgentReconstructor:
             positions=memory_positions,
             bot=composition.root.source_kind == "bot",
         )
+        from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
+
+        child_tools = composition.is_subagent and isinstance(subagent_operator, HarnessUiSubagentOperator)
+        parent_tools = bool(composition.root.children) or (
+            not composition.is_subagent and composition.subagents.dynamic.enabled
+        )
+        if isinstance(subagent_operator, HarnessUiSubagentOperator) and (child_tools or parent_tools):
+            from a13n_harness_ui.subagent_tools import SubagentTools
+
+            root_capabilities = (*root_capabilities, SubagentTools(subagent_operator, composition))
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
@@ -277,6 +288,10 @@ class AgentReconstructor:
                 subagent_operator=subagent_operator,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
+                subagent_mode=composition.subagents.result_delivery,
+                child_run=composition.is_subagent,
+                child_tools=child_tools,
+                dynamic_subagents=composition.subagents.dynamic.enabled,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
                 native_default_tools=(
@@ -397,6 +412,10 @@ class AgentReconstructor:
         subagent_operator: SubagentOperator | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
+        subagent_mode: SubagentResultDelivery,
+        child_run: bool,
+        child_tools: bool,
+        dynamic_subagents: bool,
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
@@ -450,13 +469,15 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        if node.children:
+        if node.children or (root and not child_run and dynamic_subagents):
             if not isinstance(subagent_operator, SubagentOperator):
                 raise CompositionError(
                     "The resolved Agent roster requires the Harness UI subagent operator.",
                     code="subagent_operator_missing",
                 )
-            capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
+            capabilities.append(
+                SubagentCapability(async_enabled=True, operator=subagent_operator, result_delivery=subagent_mode)
+            )
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
@@ -483,7 +504,24 @@ class AgentReconstructor:
                         "list_connectors",
                     }
                 )
-            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
+            if root and child_run and node.source_kind == "dynamic":
+                controls |= frozenset(
+                    {
+                        "delegate",
+                        "resume_subagent",
+                        "spawn_subagent",
+                        "subagent_info",
+                        "wait_subagent",
+                        "steer_subagent",
+                        "cancel_subagent",
+                    }
+                )
+            host_tools = {"send_parent_message"} if root and child_run else {"spawn_subagent"} if root else set()
+            capabilities.append(
+                _ToolAllowlistCapability(
+                    names=frozenset(node.tools) | host_tools, optional_controls=controls | host_tools
+                )
+            )
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
         if root:
@@ -512,6 +550,10 @@ class AgentReconstructor:
                     subagent_operator=subagent_operator,
                     root_capabilities=(),
                     root=False,
+                    subagent_mode=subagent_mode,
+                    child_run=True,
+                    child_tools=False,
+                    dynamic_subagents=False,
                     path_layout=path_layout,
                     model_recipes=model_recipes,
                     native_default_tools=native_default_tools,
@@ -526,7 +568,7 @@ class AgentReconstructor:
                 model_settings=dict(node.model.settings),
                 model_characteristics=node.model.model_characteristics,
                 system_prompt=list(node.system_prompt),
-                instructions=list(node.instructions),
+                instructions=[] if child_tools else list(node.instructions),
             ),
             output_type=[str, ToolOutput(_finish_bot_silently, name="finish_silently")]
             if node.source_kind == "bot"

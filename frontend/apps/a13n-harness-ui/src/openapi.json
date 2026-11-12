@@ -9752,6 +9752,9 @@
           },
           {
             "$ref": "#/components/schemas/BotAgentSource"
+          },
+          {
+            "$ref": "#/components/schemas/DynamicAgentSource"
           }
         ]
       },
@@ -9764,7 +9767,8 @@
               "markdown",
               "memory",
               "live",
-              "bot"
+              "bot",
+              "dynamic"
             ],
             "title": "Kind",
             "type": "string"
@@ -11948,7 +11952,8 @@
               "markdown",
               "memory",
               "live",
-              "bot"
+              "bot",
+              "dynamic"
             ],
             "title": "Source Kind"
           },
@@ -15203,6 +15208,29 @@
           "unsent_since"
         ],
         "title": "DraftSummary"
+      },
+      "DynamicAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "dynamic",
+            "title": "Kind",
+            "default": "dynamic"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "DynamicAgentSource",
+        "description": "Host-defined child; its complete definition is retained in its Run composition."
       },
       "EgressDestinations": {
         "discriminator": {

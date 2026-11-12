@@ -3294,14 +3294,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"] | components["schemas"]["DynamicAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Id */
             id: string;
         };
@@ -4192,7 +4192,7 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Source Id */
             source_id: string;
             /** Model Id */
@@ -5270,6 +5270,20 @@ export interface components {
              * Format: date-time
              */
             unsent_since: string;
+        };
+        /**
+         * DynamicAgentSource
+         * @description Host-defined child; its complete definition is retained in its Run composition.
+         */
+        DynamicAgentSource: {
+            /**
+             * Kind
+             * @default dynamic
+             * @constant
+             */
+            kind?: "dynamic";
+            /** Id */
+            id: string;
         };
         EgressDestinations: components["schemas"]["PublicDestinations"] | components["schemas"]["AllowlistDestinations"];
         /**

@@ -524,8 +524,10 @@ class HarnessUiApp:
         self._root_runs = root_runs
         self._tool_executions = tool_executions
         tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.deliver_subagent = self._deliver_subagent_input
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
+        subagent_operator.deliver = self._deliver_subagent_input
         self._live_hub = live_hub
         self._summary_hub = summary_hub
         self._copilot_account = copilot_account
@@ -2749,6 +2751,14 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="tool_execution")
+
+    async def _deliver_subagent_input(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="async_subagent")
+
+    async def _deliver_background_input(
+        self, thread_id: str, prompt: str, execution_ids: tuple[str, ...], *, source: str
+    ) -> bool:
         if thread_id == BOT_THREAD_ID:
             # Results stay available for inspection on the next permitted input.
             return True
@@ -2756,7 +2766,8 @@ class HarnessUiApp:
             return False
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
-            return False
+            # Grandchild inputs never retain an idle-child wake for a later segment.
+            return source == "async_subagent" and detail.thread.parent_thread_id is not None
 
         def before_accept() -> None:
             if self._state is not AppState.ready:
@@ -2783,11 +2794,22 @@ class HarnessUiApp:
             ContentItem(
                 prompt,
                 ContentMetadata.model_validate(
-                    {"display": False, "source_id": "tool_execution.completion", "execution_ids": list(execution_ids)}
+                    {
+                        "display": False,
+                        "source_id": "tool_execution.completion"
+                        if source == "tool_execution"
+                        else "a13n.async_subagent",
+                        "execution_ids": list(execution_ids),
+                        "a13n.steering-source": source,
+                    }
                 ),
             ),
         )
         if detail.thread.parent_thread_id is not None:
+            if source == "async_subagent":
+                return await self._subagent_operator.deliver_subagent_input(
+                    thread_id, content, before_accept=before_accept
+                )
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept
             )

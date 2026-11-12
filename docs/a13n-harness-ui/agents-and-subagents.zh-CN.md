@@ -122,6 +122,29 @@ subagents:
 
 对同一内置 ID 的显式引用会去重。如果另一个子级也叫 `explorer`，则会冲突：重命名自定义子级或移除内置选择。`subagent-builtin-*` ID 归包所有。包升级和配置编辑影响后续 Run；活动 Run 保留已经捕获的定义。
 
+## 动态 subagent 与结果投递
+
+要允许主 Agent 按任务创建辅助角色，将以下片段合并到根 YAML。把 `model-primary` 换成已配置的 Model ID：
+
+```yaml
+subagents:
+  max_concurrent: 8
+  result_delivery: automatic
+  dynamic:
+    enabled: true
+    allowed_models: [model-primary]
+```
+
+省略 `enabled` 或设为 false 时，动态创建关闭。主 Agent 获得 `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`。省略 `model` 时继承父级 Model；显式选择必须属于 `allowed_models`。思考级别必须受所选 Model 支持。辅助角色继承工具和 Environment，接收全局指引、固定子级指引和自身角色指令，不接收父 Agent 指令或对话历史。动态子级不能继续委派或创建子级。
+
+运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 会收到明确错误，可以等待现有工作结束。通过返回的执行 ID 使用 `subagent_info`、`wait_subagent`、`steer_subagent`、`resume_subagent` 以及取消操作。
+
+`automatic` 将最终结果投递给父级；`manual` 需要主动查询或等待。在两种模式下，所有子级都可以用 `send_parent_message` 发送消息并继续工作。必须得到答复才能继续时，子级以问题结束本轮，主 Agent 可以带着答案恢复它。消息和结果包含子级名称、执行 ID 和状态。同一 ID 的结果可能重复出现。
+
+活动父级通过 steering 接收输入。父级正常完成后空闲时，可以启动新 Run，这会增加 Model 用量。停止、失败、挂起、中断、待处理用户决策和归档都会阻止自动重启。TUI 将有来源标记的父级输入和完成通知显示为 Activity。
+
+升级现有数据根目录前，停止所有使用它的 Harness UI 进程。TUI 和 WebUI 必须一起升级，然后重新打开。禁止混用新旧版本；架构修复只能向前推进，或恢复升级前备份。
+
 ## 编写 Markdown subagent
 
 辅助角色只需要不同指令、仍使用父级 Model 和 Capability 时，选择 Markdown。

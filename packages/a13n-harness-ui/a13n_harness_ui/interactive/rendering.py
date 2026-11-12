@@ -733,7 +733,11 @@ class StreamRenderer:
             child = isinstance(scope, str)
             identity = scope if child else run_id
             metadata = content.get("metadata")
-            if isinstance(metadata, dict) and metadata.get("display") is False:
+            if (
+                isinstance(metadata, dict)
+                and metadata.get("display") is False
+                and metadata.get("a13n.steering-source") not in {"async_subagent", "parent_agent", "tool_execution"}
+            ):
                 continue
             if child and self.status.mode != "detailed":
                 continue
@@ -843,7 +847,24 @@ class StreamRenderer:
                     if content.get("role") == "user"
                     else "text"
                 )
-                prefix = f"Subagent {identity} · " if child else "> " if kind == "user" else ""
+                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in {
+                    "async_subagent",
+                    "background_process",
+                    "envd_session",
+                    "parent_agent",
+                    "tool_execution",
+                }
+                if activity:
+                    kind = "tool"
+                prefix = (
+                    "Activity · "
+                    if activity
+                    else f"Subagent {identity} · "
+                    if child
+                    else "> "
+                    if kind == "user"
+                    else ""
+                )
                 rendered = terminal_text(prefix + text)
                 ranges = skill_ranges(text, meta, len(terminal_text(prefix))) if kind == "user" else ()
                 block = self._display_blocks.get(key)
@@ -943,7 +964,11 @@ class StreamRenderer:
             else payload.get("role")
         )
         metadata = ContentMetadata.from_native(payload.get("metadata"))
-        if not metadata.display:
+        if not metadata.display and (metadata.model_extra or {}).get("a13n.steering-source") not in {
+            "async_subagent",
+            "parent_agent",
+            "tool_execution",
+        }:
             return
         piece = composer_piece(metadata)
         if piece is not None and role == "user":
@@ -1019,6 +1044,8 @@ class StreamRenderer:
             "background_process",
             "async_subagent",
             "envd_session",
+            "parent_agent",
+            "tool_execution",
         }
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
@@ -1426,6 +1453,8 @@ class StreamRenderer:
                     "a13n.input.async_subagent",
                     "a13n.input.background_process",
                     "a13n.input.envd_session",
+                    "a13n.input.parent_agent",
+                    "a13n.input.tool_execution",
                 }:
                     return
                 if name == "a13n.input.media":
