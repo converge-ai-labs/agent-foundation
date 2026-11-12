@@ -15,6 +15,7 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     FileContextCapability,
     HandoffCapability,
+    ImageReuseCapability,
     SubagentCapability,
     UserInteractionCapability,
 )
@@ -371,6 +372,7 @@ def test_build_composes_the_definition_without_io() -> None:
     assert {type(capability) for capability in composed.capabilities} - {type(prices)} == {
         DynamicEnvironmentCapability,
         FileContextCapability,
+        ImageReuseCapability,
         ToolPermissionsCapability,
         CompactionCapability,
         WebCapability,
@@ -383,8 +385,19 @@ def test_build_composes_the_definition_without_io() -> None:
     assert composed.agent.model_settings == {"temperature": 0.5, "max_tokens": 64, "cache": True}
     assert [plugin.plugin_id for plugin in composed.plugins] == ["audit"]
     (subagent,) = composed.subagents
+    assert any(isinstance(item, ImageReuseCapability) for item in subagent.agent.capabilities)
     assert (subagent.name, subagent.description, subagent.agent.definition_id) == ("helper", "Helps", HELPER_REVISION)
     assert composed.model is None and composed.agent.model == subagent.agent.agent.model == MODEL
+
+
+@pytest.mark.parametrize("image_reuse", [False, True])
+def test_memory_only_configuration_keeps_image_reuse_separate_from_execution_purpose(image_reuse: bool) -> None:
+    from a13n_service.runs.memories.organizer import organizer_config
+
+    # Ordinary conversations may select the same toolsets as an organizer and still reuse native images.
+    root = resolved(new_object_id("ap"), new_object_id("apr"), organizer_config(MODEL))
+    built = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None, image_reuse=image_reuse)
+    assert any(isinstance(item, ImageReuseCapability) for item in built.definition.capabilities) is image_reuse
 
 
 @pytest.mark.parametrize("enabled", [False, True])

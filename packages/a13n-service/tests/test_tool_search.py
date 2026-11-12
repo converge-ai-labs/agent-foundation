@@ -358,7 +358,14 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             async def stream(messages, info):
                 nonlocal called
                 tools = {tool.name: tool for tool in info.function_tools}
-                assert set(tools) == {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"}
+                assert set(tools) == {
+                    "discover_tools",
+                    "describe_tool",
+                    "call_tool",
+                    "list_tools",
+                    "list_tool_groups",
+                    "list_images",
+                }
                 if not called:
                     called = True
                     if phase == "discover":
@@ -447,6 +454,7 @@ async def test_plugin_tools_compose_once_for_proxy_search(monkeypatch) -> None:
                 "call_tool",
                 "list_tools",
                 "list_tool_groups",
+                "list_images",
             }
             yield {
                 0: DeltaToolCall(

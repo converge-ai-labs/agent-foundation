@@ -119,6 +119,7 @@ class _Plan:
 
     session_id: str
     retain_tools: bool
+    image_reuse: bool
     subagent_controls: bool
     background_compaction: bool
     compaction_result: CompactionResult | None
@@ -324,8 +325,9 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         )
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
-        # Space organization keeps its memory-only surface and completes calls within the round.
+        # Memory organization keeps its restricted tool surface and completes calls within the round.
         retain_tools = thread.purpose == "conversation"
+        image_reuse = thread.purpose == "conversation"
         root_compaction = thread.origin != "child" and thread.agent_snapshot is None and retain_tools
         background_compaction = root_compaction and resolved.config.background_compaction.enabled
     own, base, tail = await asyncio.gather(
@@ -360,6 +362,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         background_compaction=background_compaction,
         compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
+        image_reuse=image_reuse,
         subagent_controls=subagent_controls,
         configuration=options.configuration or RunConfiguration(),
         request_context=RequestContext(options.context.headers if options.context else {}),
@@ -629,6 +632,7 @@ class _Attempt:
                 instrumentation=runtime.instrumentation,
                 compaction=self.compaction,
                 subagent_controls=self.plan.subagent_controls,
+                image_reuse=self.plan.image_reuse,
             )
             live = await stack.enter_async_context(
                 ThreadStream(

@@ -8,15 +8,19 @@ import re
 from contextlib import AsyncExitStack
 
 import pytest
-from a13n_harness import HarnessBuilder
-from a13n_harness.capabilities import ImageReuseCapability, ToolSearchCapability, ToolSearchGroup
+from a13n_harness import RunBindings
+from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
+from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.tools.mcp import DispatchTransport, mcp_capability
+from a13n_service.runs.agent import build
+from a13n_service.runs.memories.organizer import organizer_config
 from fastmcp import Client, FastMCP
 from mcp.types import ImageContent
 from pydantic_ai import BinaryContent
-from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+from .test_agents import MODEL, PLUGINS, resolved
 
 pytestmark = pytest.mark.anyio
 # A synthetic one-pixel PNG; no private image or external account is involved.
@@ -97,13 +101,17 @@ async def test_native_image_reuse_through_service_mcp(proxy, direct_input) -> No
             if proxy
             else tuple(capabilities)
         )
-        executable = HarnessBuilder().build(
-            AgentSpec(),
-            output_type=str,
-            model=FunctionModel(stream_function=stream),
-            capabilities=(ImageReuseCapability(), *sources),
+        # Even a conversation with memory-only configured toolsets gets Service's default image reuse.
+        root = resolved(new_object_id("ap"), new_object_id("apr"), organizer_config(MODEL))
+        executable = build(root, capabilities=lambda _: sources, plugins=PLUGINS, instrumentation=None)
+
+        async def model_resolver(context, model_id):
+            return FunctionModel(stream_function=stream)
+
+        result = await executable.run(
+            [BinaryContent(_PNG, media_type="image/png")] if direct_input else "copy image",
+            bindings=RunBindings.embedded(model_resolver=model_resolver),
         )
-        result = await executable.run([BinaryContent(_PNG, media_type="image/png")] if direct_input else "copy image")
     assert result.status == "completed"
     assert calls == (["consume"] if direct_input else ["produce", "consume"])
     assert received == [_PNG]

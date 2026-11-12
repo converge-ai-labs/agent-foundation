@@ -277,15 +277,17 @@ def build(
     instrumentation: HarnessInstrumentation | None,
     compaction: CompactionOperator | None = None,
     subagent_controls: bool = False,
+    image_reuse: bool = True,
 ) -> ExecutableAgent[Any]:
     """The executable agent over the worker's attempt-bound parts; its run resolves models by `model_resolver`.
 
     `capabilities` returns the worker's capabilities for one agent of the inline graph, the root included.
     `child_bindings` derives an inline child's run bindings from those the Harness gives it, for what the
     child binds of its own, such as web backends and media understanding. `operators` returns the operator
-    through which one async agent of the graph starts child runs over its own edges.
+    through which one async agent of the graph starts child runs over its own edges. Dedicated memory
+    organization attempts disable `image_reuse` to preserve their restricted tool surface.
     """
-    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(
+    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources, image_reuse).compose(
         agent, compaction=compaction, controls=subagent_controls
     )
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
@@ -342,6 +344,7 @@ class _Host:
     operators: Operators | None
     plugins: HarnessPluginFactoryCatalog
     tool_sources: ToolSources | None = None
+    image_reuse: bool = True
 
     def compose(
         self, agent: ResolvedAgent, *, compaction: CompactionOperator | None = None, controls: bool = False
@@ -355,7 +358,7 @@ class _Host:
             *self.capabilities(agent),
             environment,
             FileContextCapability(),
-            ImageReuseCapability(),
+            *([ImageReuseCapability()] if self.image_reuse else []),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
             CompactionCapability(

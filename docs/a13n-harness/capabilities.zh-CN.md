@@ -180,7 +180,7 @@ provider 对象放在当前 `RunBindings` 中。`WebBinding` 和 `TaskStateBindi
 
 ## 在工具参数中复用图像
 
-在嵌入式 Agent 的 `capabilities` 中加入 `ImageReuseCapability()`，即可将原生输入或工具返回的图像传给另一工具的 base64 字符串参数。Service 默认启用此能力。
+在嵌入式 Agent 的 `capabilities` 中加入 `ImageReuseCapability()`，即可将原生输入或工具返回的图像传给另一工具的 base64 字符串参数。Service 为普通对话及子 Agent 默认启用此能力；专用记忆整理运行保持受限的工具范围。
 
 ```python
 from a13n_harness.capabilities import ImageReuseCapability, ImageReuseLimits

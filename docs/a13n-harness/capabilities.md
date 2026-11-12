@@ -180,7 +180,7 @@ For inline children, `SubagentDefinition.run_bindings_factory` receives the chil
 
 ## Reuse Images in Tool Arguments
 
-Add `ImageReuseCapability()` to an embedded Agent's `capabilities` to pass native input or tool-return images to another tool's base64 string parameter. Service enables this capability by default.
+Add `ImageReuseCapability()` to an embedded Agent's `capabilities` to pass native input or tool-return images to another tool's base64 string parameter. Service enables this capability by default for ordinary conversations and child agents. Dedicated memory organization runs keep their restricted tool surface.
 
 ```python
 from a13n_harness.capabilities import ImageReuseCapability, ImageReuseLimits
