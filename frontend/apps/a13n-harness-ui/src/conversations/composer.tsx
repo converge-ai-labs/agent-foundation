@@ -859,16 +859,27 @@ export function Composer({
   }
   async function uploadFiles(
     files: File[],
-    at = editor.current?.state.selection.main.head ??
+    from = editor.current?.state.selection.main.from ??
       draft.doc.getText("text").length,
+    to = editor.current?.state.selection.main.to ?? from,
   ) {
     if (!files.length || preparation.current) return;
     setError("");
     try {
-      if (attachmentSelections(draft.doc).length + files.length > 8)
+      const attachments = attachmentSelections(draft.doc);
+      // A pointer drop or a partial DOM selection can land inside a widget.
+      for (const item of attachments) {
+        if (item.from < from && from < item.to)
+          from = from === to ? item.to : item.from;
+        if (item.from < to && to < item.to) to = item.to;
+      }
+      const remaining = attachments.filter(
+        (item) => item.to <= from || item.from >= to,
+      );
+      if (remaining.length + files.length > 8)
         throw new Error("Select up to eight attachments.");
       const total =
-        attachmentSelections(draft.doc).reduce((size, { key, id }) => {
+        remaining.reduce((size, { key, id }) => {
           const retained = queries.getQueryData<Schema<"ThreadAttachment">>([
             "thread",
             threadId,
@@ -886,13 +897,21 @@ export function Composer({
           setError("{{name}} exceeds 10 MiB.", { name: file.name });
           return;
         }
-      // Reserve every position synchronously, before any upload can finish.
-      const pending = files.map((file) => {
-        const key = draft.addAttachment("pending", at);
-        draft.uploads.set(key, { file, status: local ? "staged" : "pending" });
-        at += attachmentToken(key).length;
-        return { key, file };
+      // Replace the selection and reserve all positions as one undoable edit.
+      let at = from;
+      const pending = draft.doc.transact(() => {
+        if (to > from) draft.doc.getText("text").delete(from, to - from);
+        return files.map((file) => {
+          const key = draft.addAttachment("pending", at);
+          draft.uploads.set(key, {
+            file,
+            status: local ? "staged" : "pending",
+          });
+          at += attachmentToken(key).length;
+          return { key, file };
+        });
       });
+      draft.undo.stopCapturing();
       editor.current?.dispatch({
         selection: { anchor: at },
         scrollIntoView: true,
@@ -1314,7 +1333,7 @@ export function Composer({
                           text: "",
                           url: URL.createObjectURL(file),
                         }),
-                      upload: (files, at) => void uploadFiles(files, at),
+                      upload: uploadFiles,
                       retry: (key) => {
                         const item = draft.uploads.get(key);
                         if (

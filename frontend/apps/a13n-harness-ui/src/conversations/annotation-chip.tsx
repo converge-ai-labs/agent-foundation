@@ -1,14 +1,10 @@
 import { useContext, useRef, useState } from "react";
-import {
-  ChatTeardropText,
-  PencilSimple,
-  Trash,
-  X,
-} from "@phosphor-icons/react";
+import { ChatTeardropText, PencilSimple, Trash } from "@phosphor-icons/react";
 import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { AnnotationContext } from "./annotation-context";
 import styles from "./reply-annotations.module.css";
+import chipRemove from "./chip-remove.module.css";
 
 export function AnnotationChip() {
   const ctx = useContext(AnnotationContext);
@@ -49,7 +45,7 @@ export function AnnotationChip() {
               ctx.clear();
             }}
           >
-            <X aria-hidden />
+            <span className={chipRemove.face} aria-hidden />
           </button>
         </span>
         <PopoverPopup

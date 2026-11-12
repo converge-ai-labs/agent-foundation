@@ -1590,6 +1590,7 @@ dl.detailGrid > .detailLongRow dd {
 
 /* Attachment identities live in the editor text; widgets are their presentation. */
 .inlineAttachment {
+  position: relative;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
@@ -1619,21 +1620,13 @@ dl.detailGrid > .detailLongRow dd {
   padding: 0 7px;
   min-width: 0;
 }
-.inlineAttachmentOpen:has(img) {
-  padding-inline-start: 5px;
-}
 .inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
   padding-inline-end: 1px;
 }
-.inlineAttachment:has(img) {
-  height: 44px;
-}
 .inlineAttachmentOpen img {
   width: 36px;
-  height: 36px;
+  height: 100%;
   object-fit: contain;
-  border-radius: 4px;
-  flex-shrink: 0;
 }
 .inlineAttachmentOpen img[hidden] {
   display: none;
@@ -1668,6 +1661,72 @@ dl.detailGrid > .detailLongRow dd {
   .inlineAttachmentRemove {
     min-width: 44px;
   }
+}
+/* Reserve the same space through upload and thumbnail decoding. */
+.inlineAttachment[data-preview]:not(:has(img[data-failed])) {
+  width: 112px;
+  height: 60px;
+  border: 0;
+  border-radius: 7px;
+  outline: 1px solid var(--a13n-border-soft);
+  outline-offset: -1px;
+
+  .inlineAttachmentOpen {
+    width: 100%;
+    padding: 0;
+    cursor: zoom-in;
+  }
+  img {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+  }
+  .inlineAttachmentOpen span {
+    display: none;
+  }
+  .inlineAttachmentRemove {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  &:hover .inlineAttachmentRemove,
+  &:focus-within .inlineAttachmentRemove {
+    opacity: 1;
+    pointer-events: auto;
+    background: transparent;
+  }
+  @media (pointer: coarse) {
+    .inlineAttachmentRemove {
+      width: 44px;
+      height: 44px;
+      opacity: 1;
+      pointer-events: auto;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 5px;
+    }
+  }
+  @media (max-width: 640px) {
+    width: 96px;
+    height: 52px;
+  }
+}
+.inlineAttachment[data-selected] {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.inlineAttachment[data-selected]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--a13n-signal) 22%, transparent);
+  pointer-events: none;
 }
 .attachmentThumbnail {
   width: 36px;
