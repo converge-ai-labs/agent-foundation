@@ -237,7 +237,8 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           ENVD_VARIANT: ${{ matrix.envd-variant }}
         run: |
-          $features = if ($env:ENVD_VARIANT -eq 'slim') { @("--no-default-features") } else { @() }
+          $features = @()
+          if ($env:ENVD_VARIANT -eq 'slim') { $features += '--no-default-features' }
           $suffix = if ($env:ENVD_VARIANT -eq 'slim') { '-slim' } else { '' }
           cargo build --release --locked --package a13n-envd --target $env:TARGET @features
           New-Item -ItemType Directory -Force staging | Out-Null
