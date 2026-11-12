@@ -130,7 +130,9 @@ New Runs look up prices using the selected Model’s configured route. In chat u
 
 ## Voice input
 
-In **Settings → General → Dictation**, choose a configured Model that accepts audio. Set the number of context words on either side of the reading position (default 2,000). Click the microphone in the composer or an **Add to chat** comment, then click Stop. The selected Model receives the recording, chat title and nearby human and assistant text. It transcribes in the language you spoke. Review the inserted text and submit it when ready. After a transcription error, Retry sends the same recording again. Cancel discards it. Microphone capture requires localhost or HTTPS.
+In **Settings → General → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps use the same account. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
+
+Click the microphone in the composer or an **Add to chat** comment, then click Stop. Recording freezes the selected draft text, surrounding draft, chat title and nearby authored conversation. The result contains only the new fragment in the spoken language. It replaces the original selection if the draft is unchanged. If you edited the draft, review the fragment and choose **Insert at current selection**, or Cancel. Nothing is sent automatically. If correction fails, the original transcript remains available with a warning. After a recognition error, Retry uses the same recording and frozen context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
 ## Agent and Model settings
 

@@ -253,6 +253,22 @@ WebUI 输入可触发已变化记忆的整理。每个范围有只读 Memory Thr
 
 将 `memory/` 与应用数据分开备份。`.a13n-memory/` 保存锁和整理器状态。可选 Git 提供有界 diff 提示，不保存版本历史，也不修改你的仓库。
 
+### 听写
+
+在**设置 → 通用 → 听写 → 语音输入**中选择 **Codex 订阅**，再选择原生账号或订阅组。预设语音服务和 Luna 文本校正无需 Model 资源。高级设置提供校正模型和上下文预算。录音及草稿确认流程见[语音输入](webui.md#voice-input)。
+
+```yaml
+dictation:
+  backend: codex
+  codex:
+    group: codex-default
+    # 或改用 account: acct-work，并省略 group。
+    # model: gpt-6-luna  # 可选的校正 LLM 覆盖值。
+  context_words: 2000
+```
+
+省略 `codex.group` 和 `codex.account` 时使用 `codex-default`。仅登录账号不会启用听写。已有的 `dictation.model: model-id` 配置仍通过 `backend: model`（默认值）使用所选音频输入 Model。将该 Model 设为 null 可关闭听写；已保存的 Codex 预设仍会保留，供以后启用。
+
 ### 媒体理解
 
 `media_understanding.image`、`.video` 和 `.audio` 选择已保存 Model ID，供活动 Model 无法原生读取该媒体时的文件 `view` 使用。每项默认 `null`，保留对应 Harness 环境变量回退。在 **Settings → Models** 或 `/model defaults` 配置；见[选择规则和输入要求](models-and-authentication.md#media-understanding-defaults)。

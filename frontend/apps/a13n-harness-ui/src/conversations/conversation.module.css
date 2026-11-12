@@ -2228,10 +2228,10 @@ div:has(+ .execution) > .assistantMessage {
 }
 
 .composerInput[data-dictating] {
-  grid-template-areas: "actions";
+  grid-template-areas: "editor" "actions";
   grid-template-columns: minmax(0, 1fr);
 }
-.composerInput[data-dictating] > :not(.composerActions),
+.composerInput[data-dictating] > button,
 .composerInput[data-dictating]
   .composerActions
   > :not([data-dictation-active]) {

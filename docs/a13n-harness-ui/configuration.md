@@ -253,6 +253,22 @@ Disable `auto_organize.enabled` to keep memory without automatic requests. Disab
 
 Back up `memory/` separately from application data. `.a13n-memory/` holds locks and organizer state. Optional Git supplies bounded diff hints, not revision history, and does not modify your repository.
 
+### Dictation
+
+Set **Settings → General → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and draft review.
+
+```yaml
+dictation:
+  backend: codex
+  codex:
+    group: codex-default
+    # Alternatively: account: acct-work (omit group).
+    # model: gpt-6-luna  # Optional correction LLM override.
+  context_words: 2000
+```
+
+Omitting `codex.group` and `codex.account` uses `codex-default`. Login alone does not enable dictation. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
+
 ### Media understanding
 
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` when the active Model cannot read that media natively. Each defaults to `null`, retaining the corresponding Harness environment-variable fallback. Configure **Settings → Models** or `/model defaults`; see [selection and input requirements](models-and-authentication.md#media-understanding-defaults).

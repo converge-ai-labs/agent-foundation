@@ -8,6 +8,37 @@ export type DictationTarget = {
   reader?: RefObject<HTMLElement | null>;
 };
 
+export type DictationDraft = {
+  before: string;
+  selected: string;
+  after: string;
+};
+
+export type DictationCapture = {
+  draft: DictationDraft;
+  insert: (text: string, atCurrentSelection: boolean) => boolean;
+};
+
+export function dictationSnapshot(
+  target: DictationTarget,
+  quote: ReplyQuote | undefined,
+  draft: DictationDraft,
+) {
+  const before = takeWords(draft.before.slice(-100_000), target.words, true);
+  const after = takeWords(draft.after.slice(0, 100_000), target.words, false);
+  return {
+    draft: {
+      before: before.text,
+      selected: draft.selected.slice(0, 100_000),
+      after: after.text,
+    },
+    context: dictationContext(target, quote, {
+      before: target.words - before.used,
+      after: target.words - after.used,
+    }).slice(0, 500_000),
+  };
+}
+
 const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
 
 function takeWords(text: string, budget: number, backwards: boolean) {
@@ -32,7 +63,11 @@ function takeWords(text: string, budget: number, backwards: boolean) {
 }
 
 // Only authored input and reply prose carry these markers.
-export function dictationContext(target: DictationTarget, quote?: ReplyQuote) {
+export function dictationContext(
+  target: DictationTarget,
+  quote?: ReplyQuote,
+  budget = { before: target.words, after: target.words },
+) {
   const { words } = target;
   const reader = target.reader?.current;
   if (!reader || !words) return quote?.text ?? "";
@@ -66,7 +101,7 @@ export function dictationContext(target: DictationTarget, quote?: ReplyQuote) {
   }
   if (index < 0) return quote?.text ?? "";
   function side(backwards: boolean) {
-    let remaining = words;
+    let remaining = backwards ? budget.before : budget.after;
     const rows: string[] = [];
     for (
       let i = index;

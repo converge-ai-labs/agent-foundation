@@ -66,3 +66,27 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
 }
+
+.bar:has(.review) {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.review {
+  display: grid;
+  flex: 1 1 min(240px, calc(100% - 36px));
+  min-width: 0;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.preview {
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--a13n-text);
+}
+.bar .insert {
+  border-radius: 8px;
+  margin-inline-start: auto;
+}

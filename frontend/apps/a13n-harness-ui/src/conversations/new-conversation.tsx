@@ -460,7 +460,7 @@ function NewConversation({
           )}
           <Composer
             dictation={
-              selectors.data?.dictation?.model
+              selectors.data?.dictation
                 ? { words: selectors.data.dictation.context_words ?? 2000 }
                 : undefined
             }

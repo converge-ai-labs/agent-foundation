@@ -213,7 +213,7 @@ from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.connectors.models import Instance, SetupCommand, SetupSnapshot
 from a13n_harness_ui.connectors.runtime import Connectors
 from a13n_harness_ui.connectors.sdk import Definition as ConnectorDefinition
-from a13n_harness_ui.dictation import DictationInput, transcribe_audio
+from a13n_harness_ui.dictation import DictationInput, DictationResult, transcribe_audio, transcribe_subscription
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -582,11 +582,13 @@ class HarnessUiApp:
             raise HarnessUiError("Live is available in WebUI with a configuration directory.", code="live_unavailable")
         return self._voice
 
-    async def transcribe(self, request: DictationInput) -> str:
+    async def transcribe(self, request: DictationInput) -> DictationResult:
         async with self._operation():
             source = await self._configurations.current()
+            if source and source.document.dictation.backend == "codex":
+                return await self._transcribe_subscription(request, source)
             if not source or not (model_id := source.document.dictation.model):
-                raise HarnessUiError("Select a speech recognition Model in settings.", code="dictation_unconfigured")
+                raise HarnessUiError("Select a dictation source in settings.", code="dictation_unconfigured")
             recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
             key = model_recipe_id(recipe)
             resolver = HarnessUiModelResolver(
@@ -596,7 +598,46 @@ class HarnessUiApp:
                 configuration=source.document.run_configuration,
             )
             model = await resolver.resolve(key, thread_id=request.thread_id or "dictation")
-            return await transcribe_audio(request, model, recipe.settings)
+            return DictationResult(text=await transcribe_audio(request, model, recipe.settings))
+
+    async def _transcribe_subscription(
+        self, request: DictationInput, source: LoadedHarnessUiConfiguration
+    ) -> DictationResult:
+        from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
+        from a13n_harness_ui.model_accounts.routing import account_order, choose_account
+
+        options = source.document.dictation.codex
+        group = source.subscription_groups.get(options.group or "codex-default")
+        if options.account:
+            group = SubscriptionGroupResource(
+                schema_version="1",
+                kind="subscription_group",
+                id="dictation-account",
+                name="Dictation account",
+                provider="codex",
+                accounts=(SubscriptionGroupMember(account=options.account),),
+            )
+        if group is None or group.provider != "codex":
+            raise HarnessUiError(
+                "Select a Codex account or subscription group in Dictation settings.", code="dictation_unconfigured"
+            )
+        configuration = source.document.run_configuration
+        if configuration.allowed_hosts is not None:
+            raise HarnessUiError(
+                "Codex subscription Models cannot enforce Run allowed hosts.", code="model_configuration_unsupported"
+            )
+        account = await choose_account(
+            group, self.subscription_accounts, self.subscription_usage, options.model, account_order(group)
+        )
+        store = self.subscription_accounts.store(account)
+        assert isinstance(store, CodexAccountStore)
+        return await transcribe_subscription(
+            request,
+            BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
+            options.model,
+            configuration=configuration,
+            response_headers=lambda headers: self.subscription_usage.observe_headers(account, headers),
+        )
 
     async def _voice_model(self, source: LoadedHarnessUiConfiguration) -> tuple[CodexLiveModel, str]:
         from a13n_harness_ui.model_accounts.routing import account_order, choose_account
@@ -762,11 +803,7 @@ class HarnessUiApp:
             )
             published = await self.subscription_accounts.publish_default_groups(
                 path.parent,
-                frozenset(
-                    model.authentication.kind.removesuffix("_subscription")
-                    for model in candidate.models.values()
-                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-                ),
+                candidate.subscription_group_providers(),
                 existing_groups=frozenset(candidate.subscription_groups),
             )
             if published:
@@ -3395,11 +3432,7 @@ class HarnessUiApp:
         path = self._require_configuration_path()
         if await self.subscription_accounts.publish_default_groups(
             path.parent,
-            frozenset(
-                model.authentication.kind.removesuffix("_subscription")
-                for model in candidate.models.values()
-                if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-            ),
+            candidate.subscription_group_providers(),
             existing_groups=frozenset(candidate.subscription_groups),
         ):
             result = replace(
@@ -3791,13 +3824,7 @@ async def open_harness_ui_app(
                 configuration_path.expanduser().resolve().parent if configuration_path is not None else None,
                 grok_scope=grok_scope,
                 existing_groups=frozenset(candidate.subscription_groups) if candidate else frozenset(),
-                group_providers=frozenset(
-                    model.authentication.kind.removesuffix("_subscription")
-                    for model in candidate.models.values()
-                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-                )
-                if candidate is not None
-                else frozenset(),
+                group_providers=candidate.subscription_group_providers() if candidate is not None else frozenset(),
             )
             if candidate is not None and configuration_path is not None:
                 candidate = await load_harness_ui_configuration(

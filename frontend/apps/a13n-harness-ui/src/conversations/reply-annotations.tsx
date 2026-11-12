@@ -247,19 +247,37 @@ function SelectionPopup({
       target={dictation}
       quote={session.quote}
       onActive={setDictating}
-      insert={(text) => {
+      capture={() => {
         const field = input.current;
         if (!field) return;
-        field.setRangeText(
-          text,
-          field.selectionStart,
-          field.selectionEnd,
-          "end",
-        );
-        requestAnimationFrame(() => {
-          layoutComment(field);
-          field.focus();
-        });
+        const value = field.value;
+        const from = field.selectionStart,
+          to = field.selectionEnd;
+        return {
+          draft: {
+            before: value.slice(0, from),
+            selected: value.slice(from, to),
+            after: value.slice(to),
+          },
+          insert: (text, atCurrentSelection) => {
+            if (
+              input.current !== field ||
+              (!atCurrentSelection && field.value !== value)
+            )
+              return false;
+            field.setRangeText(
+              text,
+              atCurrentSelection ? field.selectionStart : from,
+              atCurrentSelection ? field.selectionEnd : to,
+              "end",
+            );
+            requestAnimationFrame(() => {
+              layoutComment(field);
+              field.focus();
+            });
+            return true;
+          },
+        };
       }}
     />
   );

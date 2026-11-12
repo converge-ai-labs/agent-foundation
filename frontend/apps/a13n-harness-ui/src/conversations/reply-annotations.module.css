@@ -255,10 +255,12 @@
 .form[data-voice] {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
-.form[data-dictating] > :not(.actions, [data-dictation-active]),
+.form[data-dictating] > button,
 .form[data-dictating] .actions > :not([data-dictation-active]) {
   display: none;
 }
+.form[data-dictating] textarea,
+.form[data-dictating] .actions,
 .form [data-dictation-active] {
   grid-column: 1/-1;
 }
@@ -272,7 +274,7 @@
   padding: 0;
 }
 
-.form[data-stage="new"][data-multiline]:not([data-dictating]) textarea {
+.form[data-stage="new"][data-multiline] textarea {
   grid-column: 1/-1;
 }
 .form[data-multiline] .addNote {

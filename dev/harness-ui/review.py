@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import a13n_harness_ui.app as app_module
 import uvicorn
 import yaml
 from a13n_harness.content import project_input_content, request_input_content
@@ -20,6 +21,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
 from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.dictation import DictationResult
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults
@@ -146,8 +148,17 @@ def configuration(root: Path) -> Path:
         "a13n-harness-ui.yaml": {
             "schema_version": "1",
             "defaults": {"agent": "agent-review"},
+            "dictation": {"backend": "codex", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
             "memory": {"auto_organize": {"enabled": False}},
+        },
+        "subscription_groups/review.yaml": {
+            "schema_version": "1",
+            "kind": "subscription_group",
+            "id": "codex-review",
+            "name": "Codex · Design review",
+            "provider": "codex",
+            "accounts": [],
         },
         "models/review.yaml": {
             "schema_version": "1",
@@ -411,6 +422,13 @@ async def serve(root: Path, port: int):
     AgentReconstructor.reconstruct = reconstruct
     HarnessUiModelResolver.__call__ = resolve
     model_catalog.fetch_directory = directory
+
+    async def dictation(self, request, source):
+        # Exercise real capture, frozen insertion and review without provider I/O.
+        await asyncio.sleep(3)
+        return DictationResult(text="Run Pyright, but do not change the timeout of fifteen seconds.")
+
+    app_module.HarnessUiApp._transcribe_subscription = dictation
     settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
 
     @asynccontextmanager

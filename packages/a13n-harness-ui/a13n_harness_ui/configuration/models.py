@@ -275,8 +275,25 @@ class WebUiConfiguration(ConfigurationModel):
         return tuple(value if value == "*" else origin(value) for value in values)
 
 
+DEFAULT_CODEX_DICTATION_MODEL = "gpt-6-luna"
+
+
+class CodexDictationConfiguration(ConfigurationModel):
+    group: ResourceId | None = None
+    account: str | None = Field(default=None, pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
+    model: str = Field(default=DEFAULT_CODEX_DICTATION_MODEL, pattern=r"^[^\s:]+$", max_length=480)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if self.group and self.account:
+            raise ValueError("Codex dictation selects either an account or a subscription group")
+        return self
+
+
 class DictationConfiguration(ConfigurationModel):
+    backend: Literal["model", "codex"] = "model"
     model: ResourceId | None = None
+    codex: CodexDictationConfiguration = Field(default_factory=CodexDictationConfiguration)
     context_words: int = Field(default=2000, ge=0, le=10000)
 
 
@@ -417,7 +434,7 @@ class HarnessUiDocument(ConfigurationModel):
         exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
     )
     dictation: DictationConfiguration = Field(
-        default_factory=DictationConfiguration, exclude_if=lambda v: not v.model and v.context_words == 2000
+        default_factory=DictationConfiguration, exclude_if=lambda v: v == DictationConfiguration()
     )
     media_understanding: MediaUnderstandingConfiguration = Field(
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
@@ -974,6 +991,16 @@ class SourceDocument(ConfigurationModel):
 class LoadedHarnessUiConfiguration(ConfigurationModel):
     """One complete graph-valid configuration-tree generation."""
 
+    def subscription_group_providers(self) -> frozenset[str]:
+        providers = frozenset(
+            model.authentication.kind.removesuffix("_subscription")
+            for model in self.models.values()
+            if model.authentication.kind in {"codex_subscription", "grok_subscription"}
+        )
+        if self.document.dictation.backend == "codex" and not self.document.dictation.codex.account:
+            providers |= {"codex"}
+        return providers
+
     document: HarnessUiDocument
     root_digest: SourceDigest
     source_digest: SourceDigest
@@ -1023,11 +1050,15 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             _require_reference(model_id, self.models, field)
             if kind not in self.models[model_id].media_capabilities():
                 raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
-        dictation = self.document.dictation.model
-        if dictation:
-            _require_reference(dictation, self.models, "dictation.model")
-            if "audio" not in self.models[dictation].media_capabilities():
+        dictation = self.document.dictation
+        if dictation.model:
+            _require_reference(dictation.model, self.models, "dictation.model")
+            if dictation.backend == "model" and "audio" not in self.models[dictation.model].media_capabilities():
                 raise ValueError("dictation.model requires a Model declaring audio_understanding")
+        if dictation.codex.group:
+            _require_reference(dictation.codex.group, self.subscription_groups, "dictation.codex.group")
+            if self.subscription_groups[dictation.codex.group].provider != "codex":
+                raise ValueError("dictation.codex.group requires a Codex subscription group")
         sidekick = self.document.webui.sidekick
         _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
         _require_reference(sidekick.model, self.models, "webui.sidekick.model")
