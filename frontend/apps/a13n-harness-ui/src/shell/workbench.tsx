@@ -73,6 +73,7 @@ import { ParticipantAvatars, ParticipantAvatar } from "./participant-avatars";
 import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
+import { ChatSearchProvider } from "../conversations/chat-search";
 import { ConversationPage } from "../conversations/conversation";
 import { useThread } from "../conversations/queries";
 import { MemoryNavigation, MemoryPage } from "../memory";
@@ -116,7 +117,9 @@ export function Workbench(props: {
       <LiveThreadsProvider>
         <UnsentProvider>
           <BotComposerProvider>
-            <WorkbenchContent {...props} />
+            <ChatSearchProvider>
+              <WorkbenchContent {...props} />
+            </ChatSearchProvider>
           </BotComposerProvider>
         </UnsentProvider>
       </LiveThreadsProvider>

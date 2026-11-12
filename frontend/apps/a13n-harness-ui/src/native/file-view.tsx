@@ -1,5 +1,11 @@
 import { useTranslation } from "../i18n";
-import { useContext, useEffect, useRef, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import {
@@ -37,6 +43,7 @@ import { FileMedia } from "./file-media";
 import { downloadFile, fileTransfer } from "./file-transfer";
 import { mediaKind, MAX_MEDIA_BYTES } from "./media-kind";
 import { modifierLabel } from "../platform";
+import { isFindShortcut } from "../platform/find-shortcut";
 import styles from "./native.module.css";
 
 type FileViewProps = {
@@ -49,7 +56,7 @@ type FileViewProps = {
 export function FileView(props: FileViewProps) {
   const { t } = useTranslation();
   return (
-    <div className={styles.previewStage}>
+    <div className={styles.previewStage} tabIndex={-1}>
       <div
         className={styles.loadingPreview}
         role="status"
@@ -79,6 +86,7 @@ function FileContent({
   const [error, setError] = useState<unknown>(null);
   const [wrap, setWrap] = useState(() => /\.(?:md|markdown|txt)$/i.test(path));
   const editor = useRef<SourceEditorHandle>(null);
+  const preview = useRef<HTMLElement>(null);
   const [cursor, setCursor] = useState<EditorCursor>();
   const [imageAttempt, setImageAttempt] = useState(0);
   const [chosenMode, setMode] = useState<"preview" | "text">();
@@ -125,6 +133,18 @@ function FileContent({
     refetchOnMount: "always",
   });
   const buffer = buffers.get(path);
+  const hasContent = !!buffer;
+  const editorReady = cursor !== undefined;
+  useLayoutEffect(() => {
+    const element = preview.current;
+    const stage = element?.parentElement;
+    if (!element || !stage) return;
+    const active = element.ownerDocument.activeElement;
+    // The editor loads lazily and hides the content until ready. Keep focus
+    // on its stage meanwhile, without stealing a newer focus choice.
+    if (active === element.ownerDocument.body || active === stage)
+      (editorReady ? element : stage).focus({ preventScroll: true });
+  }, [hasContent, editorReady]);
   if (!buffer)
     return (
       <>
@@ -255,7 +275,26 @@ function FileContent({
     </div>
   );
   return (
-    <section className={styles.file} aria-label={t("File content")}>
+    <section
+      ref={preview}
+      tabIndex={-1}
+      className={styles.file}
+      aria-label={t("File content")}
+      onKeyDownCapture={(event) => {
+        if (
+          mode !== "text" ||
+          !isText ||
+          !editor.current ||
+          !isFindShortcut(event.nativeEvent) ||
+          (event.target instanceof Element &&
+            event.target.closest(".cm-editor"))
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        editor.current.find();
+      }}
+    >
       {symlink && (
         <div className={styles.notice}>
           {t("Resolved path: {{path}}", {

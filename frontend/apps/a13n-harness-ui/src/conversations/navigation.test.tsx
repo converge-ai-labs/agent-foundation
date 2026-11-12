@@ -17,6 +17,7 @@ import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { ConversationNavigation } from "./navigation";
+import { ChatSearchProvider } from "./chat-search";
 import { useLiveWorkbench } from "../shell/presence";
 import { watchSummary } from "../transport/events";
 import { ResultTracker, ResultsContext } from "./results";
@@ -428,7 +429,9 @@ function mount(
           <ResultsContext value={results}>
             <UnsentProvider>
               {draft && <TrackDraft draft={draft} />}
-              {live ? <LiveNavigation /> : <ConversationNavigation />}
+              <ChatSearchProvider>
+                {live ? <LiveNavigation /> : <ConversationNavigation />}
+              </ChatSearchProvider>
             </UnsentProvider>
           </ResultsContext>
           <Location />

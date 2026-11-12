@@ -8,6 +8,7 @@ import {
 import { createPortal } from "react-dom";
 import { fileHighlighting } from "./file-highlighting";
 import { FileSearch } from "./file-search";
+import { isFindShortcut } from "../platform/find-shortcut";
 import { useAppearance } from "../appearance/react";
 import { basicSetup, EditorView } from "codemirror";
 import {
@@ -431,6 +432,13 @@ export function SourceEditor({
         )}
       <div
         ref={host}
+        data-native-find=""
+        onKeyDownCapture={(event) => {
+          if (!isFindShortcut(event.nativeEvent) || !editor.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          openSearchPanel(editor.current);
+        }}
         style={fill ? { height: "100%", minHeight: 0 } : undefined}
       />
     </>
