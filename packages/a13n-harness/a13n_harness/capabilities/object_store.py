@@ -29,6 +29,7 @@ from a13n_harness.objects import (
     ObjectStore,
     ObjectStoreError,
     contains_object_ref,
+    is_object_ref,
     object_id,
 )
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY
@@ -176,7 +177,7 @@ class _ObjectStoreToolset(WrapperToolset[AgentContext]):
 
             async def expand(value: Any) -> Any:
                 value = reference_values(value)
-                if isinstance(value, str) and value.startswith("a13n-object://"):
+                if isinstance(value, str) and is_object_ref(value):
                     if value not in snapshot:
                         snapshot[value] = base64.b64encode(await store.read(object_id(value))).decode("ascii")
                     return snapshot[value]

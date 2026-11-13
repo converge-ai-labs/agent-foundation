@@ -351,3 +351,53 @@ async def test_orphan_reconciliation_pages_past_live_objects(service, scripted_m
     assert await store.runtime.objects.get(orphan) is None
     assert await store.read(first.object_id) == b"one"
     assert await store.read(second.object_id) == b"two"
+
+
+@pytest.mark.parametrize("operation", ["evict", "delete", "backend_failure", "authority_lost"])
+async def test_inflight_read_distinguishes_catalog_removal_from_backend_failure(
+    service, scripted_model, runs_kit, monkeypatch, operation
+):
+    import asyncio
+
+    from a13n_service.infra.errors import ServiceError
+
+    store = await setup_store(service, scripted_model, runs_kit, count=1)
+    first = await store.put(b"one", media_type="image/png")
+    entered, release = asyncio.Event(), asyncio.Event()
+    backend_get = store.runtime.objects.get
+    backend_error = ServiceError("unavailable", "backend failure", {"dependency": "objects"})
+
+    async def delayed_get(key):
+        entered.set()
+        await release.wait()
+        if operation in {"backend_failure", "authority_lost"}:
+            raise backend_error
+        return await backend_get(key)
+
+    monkeypatch.setattr(store.runtime.objects, "get", delayed_get)
+    reader = asyncio.create_task(store.read(first.object_id))
+    await entered.wait()
+    try:
+        if operation == "evict":
+            await store.put(b"two", media_type="image/png")
+        elif operation == "delete":
+            await store.delete(first.object_id)
+        elif operation == "authority_lost":
+
+            async def lost(session):
+                raise LeaseLost()
+
+            monkeypatch.setattr(store, "_authorize", lost)
+    finally:
+        release.set()
+    expected = (
+        ObjectStoreError
+        if operation in {"evict", "delete"}
+        else (LeaseLost if operation == "authority_lost" else ServiceError)
+    )
+    with pytest.raises(expected) as error:
+        await reader
+    if operation in {"evict", "delete"}:
+        assert error.value.code == "object_ref_not_found"
+    elif operation == "backend_failure":
+        assert error.value is backend_error

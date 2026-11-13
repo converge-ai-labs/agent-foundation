@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +11,7 @@ OBJECT_URI_PREFIX = "a13n-object://"
 SUPPORTS_OBJECT_REFS = "a13n.harness.supports_object_refs"
 OBJECT_STORE_CAPABILITY_ID = "a13n.object-store"
 OBJECT_REF_MANAGEMENT = "a13n.harness.object-ref-management"
+_OBJECT_REF = re.compile(r"a13n-object://obj_[a-zA-Z0-9_-]+")
 
 
 class ObjectInfo(BaseModel):
@@ -64,21 +66,20 @@ class ObjectStore(Protocol):
 
 def object_id(ref: str) -> str:
     """Parse only the reserved complete URI, never paths or network locations."""
-    value = ref.removeprefix(OBJECT_URI_PREFIX)
-    if (
-        not ref.startswith(OBJECT_URI_PREFIX)
-        or not value.startswith("obj_")
-        or not all(char.isascii() and (char.isalnum() or char in "_-") for char in value)
-    ):
+    if not is_object_ref(ref):
         raise ObjectStoreError("object_ref_invalid", "Use an exact a13n-object://obj_ reference returned by the Store.")
-    return value
+    return ref.removeprefix(OBJECT_URI_PREFIX)
+
+
+def is_object_ref(value: str) -> bool:
+    return _OBJECT_REF.fullmatch(value) is not None
 
 
 def contains_object_ref(value: object) -> bool:
     if isinstance(value, BaseModel):
         value = dict(value)
     if isinstance(value, str):
-        return value.startswith(OBJECT_URI_PREFIX)
+        return is_object_ref(value)
     if isinstance(value, dict):
         return any(contains_object_ref(item) for item in value.values())
     if isinstance(value, list | tuple):

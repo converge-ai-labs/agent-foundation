@@ -770,3 +770,48 @@ async def test_custom_validator_denial_precedes_object_reads():
     assert result.output_or_raise() == "done"
     assert store.reads == 0
     assert "Business action denied" in str(result.all_messages())
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_reference_prefix_in_ordinary_text_is_not_a_reference(enabled):
+    store, seen = Store(), []
+    text = "a13n-object://obj_example is the screenshot, not an exact reference"
+
+    def send(description: str):
+        seen.append(description)
+        return "sent"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"description": text}),
+        capabilities=[
+            *([ObjectStoreCapability()] if enabled else []),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store if enabled else None))
+    assert result.output_or_raise() == "done"
+    assert seen == [text]
+    assert store.reads == 0
+
+
+async def test_reference_expansion_preserves_prefix_prose_beside_exact_reference():
+    store, seen = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+    text = f"{item.ref} is the screenshot"
+
+    def send(data: str, description: str):
+        seen.append((base64.b64decode(data), description))
+        return "sent"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data": item.ref, "description": text}),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, text)]
+    assert store.reads == 1

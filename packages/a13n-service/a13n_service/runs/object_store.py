@@ -13,6 +13,7 @@ from anyio import fail_after
 from sqlalchemy import select
 
 from a13n_service.infra.db import now, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.runs.attempts import Lease, LeaseLost
 from a13n_service.runs.runtime import Runtime
@@ -144,7 +145,16 @@ class ThreadObjectStore:
             row = await self._row(session, object_id)
             row.accessed_at = await now(session)
             ref = ObjectRef(row.content_ref, row.digest, row.size, row.content_type)
-        data = await read(self.runtime.objects, ref)
+        try:
+            data = await read(self.runtime.objects, ref)
+        except ServiceError:
+            # Eviction/deletion can reclaim bytes while this read is in flight.
+            # Re-prove authority and catalog availability before deciding whether
+            # this is expected unavailability or a real backend failure.
+            async with transaction(self.runtime.storage) as session:
+                await self._authorize(session)
+                await self._row(session, object_id)
+            raise
         async with transaction(self.runtime.storage) as session:
             await self._authorize(session)
         return data
