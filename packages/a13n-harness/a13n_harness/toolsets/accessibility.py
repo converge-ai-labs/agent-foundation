@@ -115,6 +115,18 @@ class _Atspi(AccessibilityModel):
     readback: bool = False
 
 
+_READ_TOOLS = {
+    "describe": _Describe,
+    "roots": _Roots,
+    "inspect": _Inspect,
+    "find": _Find,
+    "read": _Read,
+    "range": _Range,
+    "range_read": _RangeRead,
+}
+_MUTATION_TOOLS = {"ax": _AX, "uia": _UIA, "atspi": _Atspi}
+
+
 class AccessibilityToolset:
     def __init__(
         self,
@@ -133,29 +145,23 @@ class AccessibilityToolset:
         # References derived by later reads retain that same execution identity.
         self._aliases: dict[str, str] = {}
 
+    @staticmethod
+    def available_names() -> frozenset[str]:
+        return frozenset(f"computer_accessibility_{suffix}" for suffix in _READ_TOOLS) | frozenset(
+            f"computer_{backend}" for backend in _MUTATION_TOOLS
+        )
+
     def tools(self, *, allowed_names: frozenset[str] | None = None) -> list[Tool[AgentContext]]:
         actions = frozenset(
             action for mount in self._environment.snapshot.mounts for action in mount.permission_ceiling.operations
         )
         tools = []
-        for suffix, model, handler in (
-            ("describe", _Describe, self._describe),
-            ("roots", _Roots, self._roots),
-            ("inspect", _Inspect, self._inspect),
-            ("find", _Find, self._find),
-            ("read", _Read, self._read),
-            ("range", _Range, self._range),
-            ("range_read", _RangeRead, self._range_read),
-        ):
+        for suffix, model in _READ_TOOLS.items():
             name = f"computer_accessibility_{suffix}"
             action = EnvironmentAction(f"environment.computer.a11y_{suffix}")
             if action in actions and (allowed_names is None or name in allowed_names):
-                tools.append(self._tool(name, action.value, model, handler, read_only=True))
-        for backend, model, handler in (
-            ("ax", _AX, self._ax),
-            ("uia", _UIA, self._uia),
-            ("atspi", _Atspi, self._atspi),
-        ):
+                tools.append(self._tool(name, action.value, model, getattr(self, f"_{suffix}"), read_only=True))
+        for backend, model in _MUTATION_TOOLS.items():
             name = f"computer_{backend}"
             operations = frozenset(
                 action.value.removeprefix(f"environment.computer.{backend}_")
@@ -165,7 +171,12 @@ class AccessibilityToolset:
             if operations and (allowed_names is None or name in allowed_names):
                 tools.append(
                     self._tool(
-                        name, f"environment.computer.{backend}", model, handler, read_only=False, allowed_ops=operations
+                        name,
+                        f"environment.computer.{backend}",
+                        model,
+                        getattr(self, f"_{backend}"),
+                        read_only=False,
+                        allowed_ops=operations,
                     )
                 )
         return tools

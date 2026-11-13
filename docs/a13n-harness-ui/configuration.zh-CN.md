@@ -340,7 +340,7 @@ webui:
 
 ### WebUI Bot
 
-**设置 → 常规 → Bot** 为内置个人助手选择 Model，并按需添加自定义指令。Bot 继承全局默认 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用该 Agent 的 Model，也可显式覆盖。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，Environment 工具仅启用文件，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
+**设置 → 常规 → Bot** 为内置个人助手选择 Agent、Model，并按需添加自定义指令。`webui.bot.agent` 默认为 `null`，沿用全局默认 Agent。Bot 继承该 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用所选 Agent 的 Model，也可显式覆盖。`webui.bot` 下独立的 `files_enabled`、`shell_enabled`、`computer_enabled` 默认为 `null`（跟随 Agent）；显式 `true` 或 `false` 可覆盖 Bot 对应的访问开关，工具白名单和 Environment 限制仍然生效。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
 
 `webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。首次开启且 Model 可用时，服务器通过正常模型请求代发一条可见的预设用户消息，介绍工作区；已有活动或引导尝试会阻止重复发送。打开页面不会启动工作。开启后还会独立安排一个间隔后的首次 Heartbeat。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
 

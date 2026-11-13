@@ -1,4 +1,9 @@
 {
+  "Files access": "文件访问",
+  "Shell access": "Shell 访问",
+  "Computer access": "桌面访问",
+  "Follow Agent": "跟随智能体",
+  "Access follows the selected Agent, or built-in defaults without an Agent. Environment permissions still apply.": "默认沿用所选智能体的访问设置；未选择智能体时采用内置默认值。环境权限仍然生效。",
   "Authorization": "授权",
   "Read-only access to Linear issues, projects and teams.": "只读访问 Linear 议题、项目和团队。",
   "Read and write access to Linear. Review the permissions before authorizing.": "读写访问 Linear，请在授权前检查权限。",

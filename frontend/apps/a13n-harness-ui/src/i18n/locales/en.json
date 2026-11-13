@@ -1,4 +1,9 @@
 {
+  "Files access": "Files access",
+  "Shell access": "Shell access",
+  "Computer access": "Computer access",
+  "Follow Agent": "Follow Agent",
+  "Access follows the selected Agent, or built-in defaults without an Agent. Environment permissions still apply.": "Access follows the selected Agent, or built-in defaults without an Agent. Environment permissions still apply.",
   "Authorization": "Authorization",
   "Read-only access to Linear issues, projects and teams.": "Read-only access to Linear issues, projects and teams.",
   "Read and write access to Linear. Review the permissions before authorizing.": "Read and write access to Linear. Review the permissions before authorizing.",

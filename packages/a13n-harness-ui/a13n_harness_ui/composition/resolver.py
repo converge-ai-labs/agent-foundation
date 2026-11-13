@@ -679,9 +679,9 @@ class AgentCompositionResolver:
                         capability="dynamic_environment",
                         configuration={
                             **environment,
-                            "files_enabled": True,
-                            "shell_enabled": True,
-                            "computer_enabled": True,
+                            **source.document.webui.bot.model_dump(
+                                include={"files_enabled", "shell_enabled", "computer_enabled"}, exclude_none=True
+                            ),
                         },
                     ),
                 ),

@@ -27,7 +27,7 @@ from a13n_harness.capabilities import (
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
-from a13n_harness.environment.models import COMPUTER_ACTIONS
+from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.mcp import UnavailableMCPToolset
 from a13n_harness.model_context import (
@@ -45,7 +45,10 @@ from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.tools.tool_search import grouped_tool_name
+from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
+from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.shell import ShellToolset
 from pydantic_ai import RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
@@ -516,9 +519,16 @@ class AgentReconstructor:
             if node.source_kind == "bot":
                 # Captured targets add Computer tools only after being opened.
                 # Valid deferred selectors remain allowlisted, not mandatory at step one.
-                controls |= frozenset(
-                    action.value.removeprefix("environment.").replace(".", "_") for action in COMPUTER_ACTIONS
+                controls |= ComputerToolset.available_names()
+                environment = next(
+                    item.configuration for item in node.capabilities if item.capability == "dynamic_environment"
                 )
+                # Bot overrides may intentionally hide tools selected by its Agent.
+                # Keep their exact selectors without requiring disabled tools to exist.
+                if environment.get("files_enabled") is False:
+                    controls |= FileToolset.available_names((FILE_EXECUTION_ACTIONS,))
+                if environment.get("shell_enabled") is False:
+                    controls |= ShellToolset.available_names(FILE_EXECUTION_ACTIONS)
             capabilities.append(
                 _ToolAllowlistCapability(
                     names=frozenset(node.tools),
