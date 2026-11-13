@@ -112,6 +112,8 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
       {!section && <ErrorNotice error={bg.error} retry={bg.refresh} />}
       {section ? (
         <BackgroundList section={section} />
+      ) : target.kind === "tool" ? (
+        <ToolRecord target={target} item={item} />
       ) : !item ? (
         <p className={styles.empty}>
           {bg.loading || captured.isFetching
@@ -120,8 +122,6 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
         </p>
       ) : item.child ? (
         <ChildRecord item={item} />
-      ) : item.tool ? (
-        <ToolRecord item={item} />
       ) : (
         <div className={styles.reader}>
           <h3>{t("Command")}</h3>
@@ -244,17 +244,23 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
     </>
   );
 }
-function ToolRecord({ item }: { item: BackgroundItem }) {
+function ToolRecord({
+  target,
+  item,
+}: {
+  target: BackgroundTarget;
+  item?: BackgroundItem;
+}) {
   const { t } = useTranslation();
   const { client } = useTransport();
   const output = useQuery({
     queryKey: [
       "thread",
-      item.target.threadId,
+      target.threadId,
       "tool-executions",
       "output",
-      item.target.id,
-      item.state,
+      target.id,
+      item?.state,
     ],
     queryFn: ({ signal }) =>
       result(
@@ -263,18 +269,23 @@ function ToolRecord({ item }: { item: BackgroundItem }) {
           {
             params: {
               path: {
-                thread_id: item.target.threadId,
-                execution_id: item.target.id,
+                thread_id: target.threadId,
+                execution_id: target.id,
               },
             },
             signal,
           },
         ),
       ),
-    refetchInterval: item.running ? 2000 : false,
+    refetchInterval: (query) =>
+      (item?.running ?? query.state.data?.live) ? 2000 : false,
   });
-  const input = item.call?.input ?? parsed(output.data?.input);
-  const tool = { id: item.target.id, name: item.tool!.tool_name, input };
+  const input = item?.call?.input ?? parsed(output.data?.input);
+  const tool = {
+    id: target.id,
+    name: item?.tool?.tool_name ?? output.data?.execution?.tool_name ?? "",
+    input,
+  };
   const info = describeTool(tool);
   return (
     <div className={`${styles.reader} a13n-scrollbar`}>

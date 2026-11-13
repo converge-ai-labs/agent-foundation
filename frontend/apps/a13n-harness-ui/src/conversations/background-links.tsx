@@ -3,8 +3,8 @@ import { useTranslation } from "../i18n";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { useBackground } from "./background-context";
-import { executionReceipt, type BackgroundTarget } from "./background-work";
-import type { ToolView } from "./tool-presentation";
+import { type BackgroundTarget } from "./background-work";
+import { describeTool, toolLabel, type ToolView } from "./tool-presentation";
 import { SubagentGlyph } from "./background-card";
 import { Terminal, Wrench } from "@phosphor-icons/react";
 import styles from "./background.module.css";
@@ -129,31 +129,40 @@ export function BackgroundLink({ target }: { target: BackgroundTarget }) {
     </button>
   );
 }
-export function MovedToBackground({ tool }: { tool: ToolView }) {
+export function useBackgroundHandoff(tool?: ToolView) {
   const { t } = useTranslation();
   const bg = useBackground();
-  const receipt = executionReceipt(tool);
+  if (!tool) return null;
+  const info = describeTool(tool);
+  const receipt = info.executionReceipt;
   const item = bg.items.find(
     (item) =>
-      item.tool?.execution_id === receipt?.execution_id ||
-      (item.tool?.tool_call_id != null &&
-        item.tool.tool_call_id === tool.toolCallId),
+      item.tool?.foreground_released &&
+      (receipt
+        ? item.tool.execution_id === receipt.execution_id
+        : item.tool.tool_call_id === (tool.toolCallId ?? tool.id)),
   );
-  if (
-    receipt?.type !== "tool_execution_receipt" &&
-    !item?.tool?.foreground_released
-  )
-    return null;
-  return item ? (
+  if (!receipt && !item) return null;
+  const target: BackgroundTarget | undefined =
+    item?.target ??
+    (receipt && {
+      kind: "tool",
+      id: receipt.execution_id,
+      threadId: bg.threadId,
+      title: info.command || toolLabel(info, t),
+      icon: info.shell ? "terminal" : undefined,
+    });
+  const label = t("Moved to background");
+  return target && bg.threadId ? (
     <button
       type="button"
       className={styles.noticeLink}
-      onClick={() => bg.open(item.target)}
+      onClick={() => bg.open(target)}
     >
-      {t("Moved to background")}
+      {label}
     </button>
   ) : (
-    <span className={styles.noticeLink}>{t("Moved to background")}</span>
+    <span className={styles.noticeLink}>{label}</span>
   );
 }
 

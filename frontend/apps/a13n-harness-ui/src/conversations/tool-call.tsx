@@ -1,5 +1,5 @@
 import { useBackground } from "./background-context";
-import { BackgroundLink, MovedToBackground } from "./background-links";
+import { BackgroundLink, useBackgroundHandoff } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
@@ -576,6 +576,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
 function ToolOperation({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const detail = describeTool(tool);
+  const handoff = useBackgroundHandoff(tool);
   return (
     <section
       className={styles.operation}
@@ -592,10 +593,10 @@ function ToolOperation({ tool }: { tool: ToolView }) {
         <span className={styles.operationSummary} title={detail.summary}>
           {toolSummary(detail, t)}
         </span>
-        {detail.showPhase && (
+        {!handoff && detail.showPhase && (
           <small className={styles.phase}>{toolPhase(detail.phase, t)}</small>
         )}
-        <MovedToBackground tool={tool} />
+        {handoff}
         <ToolActions tool={tool} />
       </header>
       <ToolDetails tool={tool} />
@@ -776,6 +777,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
   const bg = useBackground();
+  const handoff = useBackgroundHandoff(tool);
   const child = tool.name === "spawn_subagent" &&
     bg.threadId &&
     typeof info.result.thread_id === "string" &&
@@ -806,16 +808,15 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             )}
           </span>
         }
-        actions={child ? <BackgroundLink target={child} /> : undefined}
+        actions={child ? <BackgroundLink target={child} /> : handoff}
         summary={
-          info.showPhase ? (
+          !handoff && info.showPhase ? (
             <span className={styles.phase}>{toolPhase(info.phase, t)}</span>
           ) : undefined
         }
       >
         <ToolDetails tool={tool} />
       </DisclosureSection>
-      <MovedToBackground tool={tool} />
       <ToolActions tool={tool} />
     </section>
   );
@@ -932,6 +933,9 @@ export const ToolActivity = memo(function ToolActivity({
 }) {
   const { t } = useTranslation();
   const kind = activityKind(tools[0]);
+  const handoff = useBackgroundHandoff(
+    kind && tools.length === 1 ? tools[0] : undefined,
+  );
   if (!kind)
     return (
       <>
@@ -965,8 +969,9 @@ export const ToolActivity = memo(function ToolActivity({
             {target && <span title={target}>{target}</span>}
           </span>
         }
+        actions={handoff}
         summary={
-          info.status ? (
+          !handoff && info.status && info.status !== "Moved to background" ? (
             <span className={styles.phase}>{activityText(info.status, t)}</span>
           ) : undefined
         }
@@ -982,7 +987,6 @@ export const ToolActivity = memo(function ToolActivity({
           )}
         </div>
       </DisclosureSection>
-      {tools.length === 1 && <MovedToBackground tool={tools[0]} />}
     </section>
   );
 });

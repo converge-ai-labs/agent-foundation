@@ -778,9 +778,9 @@ it("renders retained execution receipts as handoffs in live and saved tools", ()
     status: "running",
   };
   const tool = { id: "call", name: "lookup", result: receipt };
-  expect(describeTool(tool).phase).toBe("Execution handed off");
+  expect(describeTool(tool).phase).toBe("Moved to background");
   expect(describeTool({ ...tool, result: JSON.stringify(receipt) }).phase).toBe(
-    "Execution handed off",
+    "Moved to background",
   );
   expect(
     describeTool({ ...tool, result: { ...receipt, type: undefined } }).phase,
@@ -800,8 +800,8 @@ it("renders retained execution receipts as handoffs in live and saved tools", ()
     },
   ] as Schema<"TranscriptEntry">[];
   const saved = savedTools(entries).get(entries[0].parts[0])!;
-  expect(describeTool(saved).phase).toBe("Execution handed off");
+  expect(describeTool(saved).phase).toBe("Moved to background");
   render(<ToolCall tool={saved} />);
-  expect(screen.getByText("Execution handed off")).toBeTruthy();
+  expect(screen.getByText("Moved to background")).toBeTruthy();
   expect(screen.queryByText("Result received")).toBeNull();
 });

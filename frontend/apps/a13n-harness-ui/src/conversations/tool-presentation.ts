@@ -425,7 +425,7 @@ export function describeTool(tool: ToolView) {
     !tool.failure &&
     !["failed", "denied", "interrupted", "retried"].includes(tool.outcome ?? "")
   ) {
-    if (executionReceipt) phase = "Execution handed off";
+    if (executionReceipt) phase = "Moved to background";
     else if (result.accepted === false) phase = "Not accepted";
     else if (
       !failed &&
@@ -756,7 +756,7 @@ function shellGroupStatus(
     latest.set(key, info.phase);
   });
   const phases = [...latest.values()];
-  if (phases.includes("Execution handed off")) return "Execution handed off";
+  if (phases.includes("Moved to background")) return "Moved to background";
   if (phases.includes("Running at last check")) return "Running at last check";
   return "";
 }
