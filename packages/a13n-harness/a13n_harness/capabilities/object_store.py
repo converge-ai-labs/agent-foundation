@@ -131,9 +131,10 @@ class _ReferenceValidator:
 
 def _prepare_reference_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
     async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
-        # The outer permission gate reviews the reference-valued arguments. The
-        # target's original validators run on effective arguments at dispatch.
-        if not contains_object_ref(args) and tool.args_validator_func is not None:
+        # Custom validators can request business approval or deny a call. They
+        # must accept the opted-in reference transport before any Store read;
+        # native payload constraints run on effective arguments at dispatch.
+        if tool.args_validator_func is not None:
             result = tool.args_validator_func(ctx, **args)
             if inspect.isawaitable(result):
                 await result

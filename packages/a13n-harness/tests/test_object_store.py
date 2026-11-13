@@ -110,7 +110,7 @@ async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes
     result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
     assert result.status == "completed", result
     assert seen == [PAYLOAD]
-    assert validated == [base64.b64encode(PAYLOAD).decode()]
+    assert validated == [item.ref, base64.b64encode(PAYLOAD).decode()]
     assert store.reads == 1
     assert "a13n-object" in json.dumps(schemas)
     calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
@@ -268,7 +268,8 @@ async def test_original_validation_rejects_expanded_bytes_without_echoing_payloa
     item = await store.put(PAYLOAD, media_type="image/png")
 
     def validator(ctx, data_base64):
-        raise ModelRetry(f"bad: {data_base64}")
+        if not data_base64.startswith("a13n-object://"):
+            raise ModelRetry(f"bad: {data_base64}")
 
     def send(data_base64: Annotated[str, Field(max_length=5)] if not custom else str):
         pytest.fail("invalid effective arguments reached consumer")
@@ -611,3 +612,161 @@ async def test_host_capture_size_limit_keeps_native_media():
     part = next(part for message in result.all_messages() for part in message.parts if isinstance(part, ToolReturnPart))
     assert part.files == [media]
     assert "object_too_large" in str(part.content)
+
+
+@pytest.mark.parametrize("outcome", ["approved", "expired", "denied"])
+async def test_custom_validator_approval_precedes_object_reads(outcome):
+    from a13n_harness import DeferredToolResume
+    from pydantic_ai.exceptions import ApprovalRequired
+
+    store, seen, validated = Store(), [], []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    async def validate(ctx, data_base64):
+        validated.append((ctx.tool_call_approved, data_base64))
+        if not ctx.tool_call_approved:
+            assert store.reads == 0
+            raise ApprovalRequired(metadata={"reason": "Confirm sending media"})
+
+    def send(data_base64: str):
+        seen.append(base64.b64decode(data_base64))
+        return "sent"
+
+    def build():
+        return HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=model_call("send", {"data_base64": item.ref}),
+            capabilities=[
+                ObjectStoreCapability(),
+                Capability(tools=[Tool(send, args_validator=validate, metadata={SUPPORTS_OBJECT_REFS: True})]),
+                ToolPermissionsCapability(ToolPermissions(default="allow")),
+            ],
+        )
+
+    first = await build().run("send", bindings=RunBindings.embedded(object_store=store))
+    assert first.status == "suspended", first
+    assert store.reads == 0 and not seen
+    assert validated == [(False, item.ref)]
+    requests = first.deferred
+    assert requests is not None
+    approval = requests.approvals[0]
+    assert approval.target_call.args_as_dict() == {"data_base64": item.ref}
+    if outcome == "expired":
+        await store.delete(item.object_id)
+    resumed = await build().run(
+        previous_state=first.state,
+        bindings=RunBindings.embedded(object_store=store),
+        deferred_resume=DeferredToolResume(
+            requests, requests.build_results(approvals={approval.target_call.tool_call_id: outcome != "denied"})
+        ),
+    )
+    assert resumed.output_or_raise() == "done"
+    assert seen == ([PAYLOAD] if outcome == "approved" else [])
+    assert store.reads == (1 if outcome == "approved" else 0)
+    if outcome == "approved":
+        assert validated[-1] == (True, base64.b64encode(PAYLOAD).decode())
+    elif outcome == "expired":
+        assert "object_ref_not_found" in str(resumed.all_messages())
+
+
+@pytest.mark.parametrize("single", [False, True])
+@pytest.mark.parametrize("invalid", [None, "count", "payload"])
+async def test_reference_model_and_container_validators_defer_only_reference_subtrees(single, invalid):
+    from pydantic import AfterValidator, BaseModel, BeforeValidator, WrapValidator, model_validator
+
+    validated, seen = [], []
+    expected = b"wrong payload" if invalid == "payload" else PAYLOAD
+
+    def check_container(values, info):
+        for value in values:
+            assert base64.b64decode(value, validate=True) == expected
+        validated.append("container")
+        return values
+
+    def wrap_container(value, handler, info):
+        return check_container(handler(value), info)
+
+    class Payload(BaseModel):
+        data: Annotated[
+            list[str], BeforeValidator(check_container), WrapValidator(wrap_container), AfterValidator(check_container)
+        ]
+        count: Annotated[int, Field(ge=1)] = 2
+
+        @model_validator(mode="before")
+        @classmethod
+        def check_before(cls, value, info):
+            check_container(value["data"], info)
+            return value
+
+        @model_validator(mode="wrap")
+        @classmethod
+        def check_wrap(cls, value, handler, info):
+            result = handler(value)
+            check_container(result.data, info)
+            return result
+
+        @model_validator(mode="after")
+        def check_after(self, info):
+            check_container(self.data, info)
+            return self
+
+    def send(payload, label=1):
+        assert isinstance(payload, Payload)
+        seen.append((payload.data, payload.count, label))
+        return "sent"
+
+    def send_single(payload):
+        return send(payload)
+
+    target = send_single if single else send
+    target.__annotations__["payload"] = Payload
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+    payload = {"data": [item.ref], "count": 0 if invalid == "count" else "3"}
+    arguments = payload if single else {"payload": payload}
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call(target.__name__, arguments),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]))])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done", result
+    if invalid:
+        assert not seen
+        assert store.reads == (0 if invalid == "count" else 1)
+        if invalid == "payload":
+            assert "object_ref_arguments_invalid" in str(result.all_messages())
+    else:
+        assert seen == [([base64.b64encode(PAYLOAD).decode()], 3, 1)]
+        assert len(validated) >= 6
+        assert store.reads == 1
+
+
+async def test_custom_validator_denial_precedes_object_reads():
+    from pydantic_ai import ToolFailed
+
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def deny(ctx, data_base64):
+        assert data_base64 == item.ref
+        raise ToolFailed("Business action denied")
+
+    def send(data_base64: str):
+        pytest.fail("denied consumer executed")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data_base64": item.ref}),
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(tools=[Tool(send, args_validator=deny, metadata={SUPPORTS_OBJECT_REFS: True})]),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert store.reads == 0
+    assert "Business action denied" in str(result.all_messages())

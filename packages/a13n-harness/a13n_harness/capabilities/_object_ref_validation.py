@@ -1,17 +1,20 @@
 """Pinned Pydantic compatibility adapter for reference-preserving validation.
 
 Keep native defaults, coercion, nested types, and JSON/Python entry semantics.
-Only reference-valued string subtrees defer their payload validation; the
-original validator remains authoritative immediately before target dispatch.
+Reference-valued strings and enclosing user validators defer payload checks;
+native fields still validate, and the original validator remains authoritative
+immediately before target dispatch.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic.plugin._schema_validator import PluggableSchemaValidator
+from pydantic_ai._function_schema import _validate_single_arg
 from pydantic_core import SchemaValidator, core_schema
 
 from a13n_harness.errors import DefinitionError
@@ -37,6 +40,22 @@ def _preserve_ref(value: Any, handler: Any) -> Any:
     return handler(value)
 
 
+def _reference_callback(function: Any, *, wrapped: bool) -> Any:
+    # This native callback builds the kwargs envelope; it is structural, not a
+    # payload constraint. Preserve it while widening its inner model schema.
+    if isinstance(function, partial) and function.func is _validate_single_arg:
+        return function
+
+    def validate(value: Any, *args: Any) -> Any:
+        if contains_object_ref(value):
+            # Container/model validators can depend on payload bytes. Bypass
+            # only this callback, retaining native inner field validation.
+            return args[0](value) if wrapped else value
+        return function(value, *args)
+
+    return validate
+
+
 def _widen(schema: Any) -> Any:
     if isinstance(schema, list):
         return [_widen(value) for value in schema]
@@ -46,7 +65,13 @@ def _widen(schema: Any) -> Any:
     # fields and containers continue through the native validation machinery.
     if _string_schema(schema):
         return core_schema.no_info_wrap_validator_function(_preserve_ref, cast(core_schema.CoreSchema, schema))
-    return {key: _widen(value) for key, value in schema.items()}
+    result = {key: _widen(value) for key, value in schema.items()}
+    kind = schema.get("type")
+    if kind in {"function-before", "function-after", "function-wrap"} and isinstance(schema.get("function"), dict):
+        result["function"]["function"] = _reference_callback(
+            schema["function"]["function"], wrapped=kind == "function-wrap"
+        )
+    return result
 
 
 @dataclass

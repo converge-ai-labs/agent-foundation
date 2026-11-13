@@ -468,6 +468,8 @@ bindings = RunBindings.embedded(object_store=host_store)
 
 目标工具默认不支持引用。单个工具可设置元数据 `{"a13n.harness.supports_object_refs": True}`；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。只为字符串参数接受 base64 的工具启用。原生 Core schema 和自定义参数校验仍会在目标执行前检查实际参数。自定义工具集若使用非原生参数校验器，启用时会明确失败。
 
+原生工具的载荷检查应放在字段 validator 或包含载荷的 model validator 中：输入含引用的回调将载荷检查推迟到展开后，内部字段仍按原生规则校验。工具的自定义 `args_validator` 先接收带引用的类型化参数，以保留业务审批、延迟和拒绝语义；展开后再次接收实际参数。启用引用的回调必须接受引用和重复校验；预检失败会正常传播，不读取 Store。
+
 权限拒绝和待审批不会读取 Store。引用可能在审批期间过期；恢复调用会报告对象不可用。Agent 必须使用当前列出的引用或明确重新导入，不能编造 base64 或自动重放生产工具。临时 TTL 和 LRU 上限由 Host 管理；显式保留后，对象不再受临时过期策略影响。`ObjectStoreConfiguration(capture_media=False)` 关闭自动捕获，`max_object_bytes` 限制导入和捕获大小。Host 上限可更小；捕获因大小被拒绝时，原生媒体仍保留，并报告没有生成可复用对象。
 
 内置 Host 配置见 [Harness UI](../a13n-harness-ui/configuration.md#object-store) 和 [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools)。
