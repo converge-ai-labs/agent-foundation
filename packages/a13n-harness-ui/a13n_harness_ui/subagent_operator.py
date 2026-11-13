@@ -2318,14 +2318,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 code="subagent_execution_unavailable",
             )
         model = current.root.model
-        config = await self._configurations.load(current.generation_digest)
-        resource = config.models.get(model.model_id)
+        model_name = await self._store.configurations.resource_name(current.generation_digest, "model", model.model_id)
         identity = _ChildIdentity(
             initial.root.roster_name,
             _definition_id(current.root),
             _execution_source(current.root),
             ChildExecutionModel(
-                name=resource.name if resource else model.model_id,
+                name=model_name or model.model_id,
                 identity=model.base_model or model.route,
                 thinking=summarize_thinking(model.route, model.settings),
             ),
