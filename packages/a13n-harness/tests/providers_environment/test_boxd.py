@@ -18,8 +18,8 @@ from pydantic import ValidationError
 MACHINE = "0f1e2d3c-0000-4000-8000-000000000001"
 
 
-def execution(machine, *, exec_result=None, exec_error=None, labels=None, seen=None):
-    config = BoxdEnvironmentConfiguration()
+def execution(machine, *, exec_result=None, exec_error=None, labels=None, seen=None, read_stream=None, timeout=120):
+    config = BoxdEnvironmentConfiguration(request_timeout_seconds=timeout)
     state = EnvironmentState(
         provider_key="boxd",
         state_version="1",
@@ -45,7 +45,9 @@ def execution(machine, *, exec_result=None, exec_error=None, labels=None, seen=N
     async def close():
         return None
 
-    target._client = SimpleNamespace(machines=SimpleNamespace(get=get, exec=run), close=close)
+    target._client = SimpleNamespace(
+        machines=SimpleNamespace(get=get, exec=run, fs=SimpleNamespace(read_stream=read_stream)), close=close
+    )
     return target
 
 
@@ -126,6 +128,31 @@ def test_exec_deadline_outlasts_the_guest_helper_bound():
     assert seen["timeout"] >= 130 + 30
 
 
+def test_download_chunks_pass_through_and_a_stalled_download_ends_at_the_request_timeout():
+    seen = {}
+
+    async def content(machine_id, path):
+        yield b"one"
+        yield b"two"
+
+    async def stalled(machine_id, path):
+        try:
+            yield b"one"
+            # A download that stops sending content.
+            await asyncio.Event().wait()
+        finally:
+            seen["closed"] = True
+
+    async def read(target):
+        return [chunk async for chunk in target.read_stream("/file")]
+
+    assert asyncio.run(read(execution("running", read_stream=content))) == [b"one", b"two"]
+    target = execution("running", read_stream=stalled, timeout=0.2)
+    error = code(asyncio.wait_for(read(target), timeout=10))
+    assert (error.code, error.certainty) == ("provider_unavailable", "known")
+    assert seen == {"closed": True}
+
+
 def test_file_path_errors_are_not_reported_as_a_missing_target():
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.providers.environment.boxd.shared import sdk_errors
@@ -133,3 +160,7 @@ def test_file_path_errors_are_not_reported_as_a_missing_target():
     with pytest.raises(EnvironmentError) as error, sdk_errors(mutation=False):
         raise boxd.MachineFileNotFoundError("/missing: No such file or directory")
     assert error.value.code == "environment_provider_failure"
+    # A file request the machine cannot serve yet is a transfer failure, not an ownership conflict.
+    with pytest.raises(EnvironmentError) as outdated, sdk_errors(mutation=False):
+        raise boxd.MachineAgentOutdatedError("agent outdated")
+    assert outdated.value.code == "environment_provider_failure"

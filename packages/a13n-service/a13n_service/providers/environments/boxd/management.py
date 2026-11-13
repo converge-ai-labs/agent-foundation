@@ -54,11 +54,13 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
             try:
                 # Agents run untrusted code: the machine never joins the organization's private network.
                 with sdk_errors(mutation=True):
-                    machine = await self.client().machines.create(
+                    created = await self.client().machines.create(
                         self.name,
                         org=self.backend.organization,
                         isolated=True,
                         labels=self.labels,
+                        # A snapshot restore replays the captured machine and takes no creation environment.
+                        env=None if self.config.from_snapshot else self.config.environment or None,
                         vcpu=vcpu,
                         memory=memory,
                         from_snapshot=self.config.from_snapshot,
@@ -71,13 +73,17 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
                     machine = await self.get(self.name)
                     if machine is None:
                         raise
+                    self.remember(machine)
                 elif error.code == "provider_target_missing" and self.config.from_snapshot:
                     raise failure(
                         self.provider_key, "provider_spec_invalid", Category.INVALID, certainty=Certainty.KNOWN
                     ) from None
                 else:
                     raise
-            self.remember(machine)
+            else:
+                # The ID is this operation's own allocation, so it is recorded before any further read.
+                # start() then reads the machine back and validates its ownership labels on that read.
+                self.record(created.id)
         await self.start()
 
     async def apply_idle_policy(self, machine_id: str, hibernate_after: int) -> None:
@@ -104,7 +110,9 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
         await self.apply_idle_policy(machine.id, machine.idle.hibernate_after)
         # Readiness covers the first command, not only the scheduler's running state.
         with sdk_errors(mutation=False):
-            await self.client().machines.wait_until_ready(machine.id, timeout=self.config.request_timeout_seconds)
+            # One deadline bounds the whole readiness wait, including its first command.
+            async with asyncio.timeout(self.config.request_timeout_seconds):
+                await self.client().machines.wait_until_ready(machine.id, timeout=self.config.request_timeout_seconds)
 
     async def stop(self) -> None:
         machine = await self.lookup()

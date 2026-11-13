@@ -1,5 +1,6 @@
 """boxd execution implementation."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import BinaryIO
 
@@ -30,10 +31,18 @@ class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration,
 
     async def read_stream(self, path: str) -> AsyncIterator[bytes]:
         assert self.target
+        # One deadline bounds the whole download, across every wait for content.
+        deadline = asyncio.get_running_loop().time() + self.config.request_timeout_seconds
         with sdk_errors(mutation=False):
             # Close the download stream as soon as a bounded range read stops consuming it.
             async with closing_stream(self.client().machines.fs.read_stream(self.target.target_id, path)) as stream:
-                async for chunk in stream:
+                chunks = aiter(stream)
+                while True:
+                    try:
+                        async with asyncio.timeout_at(deadline):
+                            chunk = await anext(chunks)
+                    except StopAsyncIteration:
+                        break
                     yield chunk
 
     async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None:

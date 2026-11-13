@@ -30,6 +30,9 @@ class Fake:
         self.created: list[dict] = []
         self.hidden: set[str] = set()
         self.exec_timeouts: list[float] = []
+        self.partial_create = False
+        self.get_errors: list[Exception] = []
+        self.stalled_readiness = False
 
     def client(self, **options):
         self.clients.append(options)
@@ -51,6 +54,8 @@ class Fake:
 
             async def get(self, reference):
                 fake.calls.append(("get", reference))
+                if fake.get_errors:
+                    raise fake.get_errors.pop(0)
                 for item in fake.machines.values():
                     if reference in {item.id, item.name}:
                         return item
@@ -78,10 +83,18 @@ class Fake:
                     labels=dict(options["labels"]),
                     idle=SimpleNamespace(hibernate_after=14400),
                 )
+                if fake.partial_create:
+                    # A create result that carries the machine ID without its labels.
+                    return SimpleNamespace(
+                        id=machine_id, name=name, status="pending", labels={}, idle=SimpleNamespace(hibernate_after=0)
+                    )
                 return fake.machines[machine_id]
 
             async def wait_until_ready(self, machine_id, *, timeout):
                 fake.calls.append(("ready", machine_id))
+                if fake.stalled_readiness:
+                    # A readiness wait that never returns by itself.
+                    await asyncio.Event().wait()
                 return fake.machines[machine_id]
 
             async def set_auto_hibernate_timeout(self, machine_id, seconds):
@@ -146,6 +159,8 @@ def test_boxd_roundtrip_lifecycle_and_reconstruction(tmp_path, fake):
         assert created["isolated"] is True
         assert (created["vcpu"], created["memory"]) == (4, "16G")
         assert created["from_snapshot"] == "agent-base"
+        # A snapshot restore takes no creation environment.
+        assert created["env"] is None
         assert created["org"] == "fixture-org" and created["region"] == "nyc"
         assert created["auto_suspend_timeout"] == 0
         assert ("auto_hibernate", next(iter(fake.machines)), 0) in fake.calls
@@ -275,6 +290,7 @@ def test_boxd_create_adopts_its_own_name_when_labels_miss_it_and_omits_size_by_d
         first = await provider.create(config, environment_id="env-name", operation_id="op-create")
         [machine_id] = fake.machines
         assert (fake.created[0]["vcpu"], fake.created[0]["memory"]) == (None, None)
+        assert fake.created[0]["env"] is None
         # The label listing has not caught up: the retried create meets its own name and adopts that machine.
         fake.hidden.add(machine_id)
         again = await provider.create(config, environment_id="env-name", operation_id="op-create")
@@ -338,6 +354,95 @@ def test_boxd_command_longer_than_the_request_timeout_ends_as_timed_out(tmp_path
         # The exec call outlives the helper's bound plus its process group cleanup.
         assert min(fake.exec_timeouts) > config.request_timeout_seconds + 10 + 5
         await execution.close()
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_create_passes_recipe_environment_defaults_to_the_new_machine(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "environment": {"APP_MODE": "agent"}}
+        )
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        await provider.create(config, environment_id="env-defaults", operation_id="op-create")
+        assert fake.created[0]["env"] == {"APP_MODE": "agent"}
+        # A snapshot restore rejects a creation environment; commands still receive the defaults.
+        restored = definition.validate_environment(
+            {
+                "root": str(tmp_path),
+                "python": sys.executable,
+                "environment": {"APP_MODE": "agent"},
+                "from_snapshot": "agent-base",
+            }
+        )
+        await provider.create(restored, environment_id="env-restored", operation_id="op-create")
+        assert fake.created[1]["from_snapshot"] == "agent-base" and fake.created[1]["env"] is None
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_create_result_without_labels_keeps_the_machine_and_stays_retryable(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment({"root": str(tmp_path), "python": sys.executable})
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        fake.partial_create = True
+        # The create is acknowledged, then the next read of the machine fails too.
+        fake.get_errors.append(boxd.APIConnectionError("unavailable"))
+        with pytest.raises(EnvironmentProviderError) as interrupted:
+            await provider.create(config, environment_id="env-partial", operation_id="op-create")
+        [machine_id] = fake.machines
+        # The allocation is recorded and the failure is a retryable read, not a permanent ownership conflict.
+        assert (interrupted.value.code, interrupted.value.category) == ("provider_unavailable", "unavailable")
+        assert interrupted.value.state.state["target_id"] == machine_id
+        state = await provider.create(
+            config, environment_id="env-partial", operation_id="op-create", state=interrupted.value.state
+        )
+        assert state.state["target_id"] == machine_id
+        assert len(fake.created) == 1 and ("ready", machine_id) in fake.calls
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_create_result_without_labels_still_rejects_a_foreign_machine(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment({"root": str(tmp_path), "python": sys.executable})
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        fake.partial_create = True
+        state = await provider.create(config, environment_id="env-owned", operation_id="op-create")
+        [machine_id] = fake.machines
+        assert state.state["target_id"] == machine_id
+        # Ownership is validated on every read of the recorded machine.
+        fake.machines[machine_id].labels["a13n_environment"] = "someone-else"
+        with pytest.raises(EnvironmentProviderError) as foreign:
+            await provider.start(config, environment_id="env-owned", state=state, operation_id="op-start")
+        assert foreign.value.code == "provider_target_conflict"
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_stalled_readiness_ends_at_the_request_timeout_and_keeps_the_machine(tmp_path, fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "request_timeout_seconds": 0.2}
+        )
+        provider = await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL)
+        fake.stalled_readiness = True
+        with pytest.raises(EnvironmentProviderError) as stalled:
+            # The provider ends the wait itself, well before this outer bound.
+            await asyncio.wait_for(
+                provider.create(config, environment_id="env-stalled", operation_id="op-create"), timeout=10
+            )
+        [machine_id] = fake.machines
+        assert stalled.value.code == "provider_unavailable"
+        assert stalled.value.state.state["target_id"] == machine_id
         await provider.close()
 
     asyncio.run(scenario())

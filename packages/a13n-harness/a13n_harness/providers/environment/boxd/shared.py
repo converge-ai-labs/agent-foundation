@@ -62,8 +62,8 @@ def sdk_errors(*, mutation: bool) -> Iterator[None]:
         yield
     except (EnvironmentError, EnvironmentProviderError):
         raise
-    except errors.MachineFilesystemError:
-        # A guest path failure, not a target failure; the guest helper already resolved the path.
+    except (errors.MachineFilesystemError, errors.MachineAgentOutdatedError):
+        # A guest path failure or an unserved file request, not a target failure or an ownership conflict.
         raise EnvironmentError("Native file transfer failed.", code="environment_provider_failure") from None
     except (errors.AuthenticationError, errors.PermissionDeniedError):
         raise failure(PROVIDER_KEY, "provider_denied", Category.DENIED, certainty=Certainty.KNOWN) from None
@@ -110,7 +110,8 @@ class BoxdReference(NativeReference[BoxdEnvironmentConfiguration, TargetState]):
         if self._client is None:
             from boxd import AsyncBoxd
 
-            # No SDK retries: a mutation is never replayed after an uncertain dispatch.
+            # No SDK request retries: a mutation is never replayed after an uncertain dispatch.
+            # The SDK reruns a command only when the machine never received it.
             self._client = AsyncBoxd(
                 api_key=self.token.get_secret_value(),
                 base_url=API_URL,
@@ -147,10 +148,14 @@ class BoxdReference(NativeReference[BoxdEnvironmentConfiguration, TargetState]):
         return machine
 
     def remember(self, machine: Machine) -> None:
+        """Record a machine whose ownership labels came from a read of that machine."""
         self.validate_labels(machine.labels)
+        self.record(machine.id)
+
+    def record(self, machine_id: str) -> None:
         self.observe(
             TargetState(
-                target_id=machine.id, environment_id=self.owner, configuration_fingerprint=self.config.fingerprint
+                target_id=machine_id, environment_id=self.owner, configuration_fingerprint=self.config.fingerprint
             )
         )
 
