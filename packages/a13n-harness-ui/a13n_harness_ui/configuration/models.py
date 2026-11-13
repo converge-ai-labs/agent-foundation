@@ -252,6 +252,9 @@ class BotConfiguration(ConfigurationModel):
     enabled: bool = False
     agent: ResourceId | None = None
     model: ResourceId | None = None
+    files_enabled: bool | None = None
+    shell_enabled: bool | None = None
+    computer_enabled: bool | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     heartbeat_enabled: bool = True
     interval_seconds: int = Field(default=3600, ge=60, le=86400)

@@ -21,13 +21,16 @@ webui:
     enabled: true
     agent: null # 沿用 defaults.agent；填写已有 Agent ID 可选择其他执行设置
     model: null # 沿用所选 Agent 的 Model；填写已有 Model ID 可独立覆盖
+    files_enabled: null # 沿用 Agent；true/false 可独立覆盖 Bot 的对应开关
+    shell_enabled: null
+    computer_enabled: null
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
     interval_seconds: 3600
     connector_interval_seconds: 60
 ```
 
-Bot 继承所选 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。原生 Files、Shell 和 Computer 工具保持开启，并遵守所选执行策略和 Environment 限制。Browser 在启用时使用现有 Host Browser。结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`agent` 为 null 或省略时沿用 `defaults.agent`，填写已有 Agent ID 可选择其他执行基底。`model` 为 null 或省略时沿用所选 Agent 的 Model，填写已有 Model ID 可独立覆盖它。切换 Agent 会保留显式 Model 选择。没有有效 Agent 时，显式 Bot Model 使用最小内置执行设置。Agent 或 Model 引用无效时，配置更新会被拒绝，继续使用之前已接受的配置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
+Bot 继承所选 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。原生 Files、Shell 和 Computer 访问默认沿用所选 Agent 的 `dynamic_environment` 设置。`webui.bot` 下对应的 `files_enabled`、`shell_enabled`、`computer_enabled` 为 `null` 或省略时继承，显式 `true`/`false` 可独立覆盖该开关。没有 Agent 时，原生默认值开启这三项。工具白名单、权限和 Environment 限制仍然生效。Browser 在启用时使用现有 Host Browser。结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`agent` 为 null 或省略时沿用 `defaults.agent`，填写已有 Agent ID 可选择其他执行基底。`model` 为 null 或省略时沿用所选 Agent 的 Model，填写已有 Model ID 可独立覆盖它。切换 Agent 会保留显式 Model 选择。没有有效 Agent 时，显式 Bot Model 使用最小内置执行设置。Agent 或 Model 引用无效时，配置更新会被拒绝，继续使用之前已接受的配置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
 
 heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400 秒。自定义指令最多 1,048,576 个字符。编辑文件后，使用 `a13n-harness-ui config validate` 验证。
 

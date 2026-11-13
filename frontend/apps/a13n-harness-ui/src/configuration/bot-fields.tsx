@@ -146,6 +146,30 @@ export function BotFields({
               )}
             </p>
           )}
+          <p className={styles.fieldGroup}>
+            {t(
+              "Access follows the selected Agent, or built-in defaults without an Agent. Environment permissions still apply.",
+            )}
+          </p>
+          {[
+            { key: "files_enabled", label: t("Files access") },
+            { key: "shell_enabled", label: t("Shell access") },
+            { key: "computer_enabled", label: t("Computer access") },
+          ].map(({ key, label }) => (
+            <SettingsChoice
+              key={key}
+              label={label}
+              value={get(key) == null ? "inherit" : String(get(key))}
+              options={[
+                { value: "inherit", label: t("Follow Agent") },
+                { value: "true", label: t("Enabled") },
+                { value: "false", label: t("Disabled") },
+              ]}
+              onValueChange={(value) =>
+                set(key, value === "inherit" ? null : value === "true")
+              }
+            />
+          ))}
           <div className={styles.fieldGroup}>
             <FormField
               label={t("Custom instructions")}

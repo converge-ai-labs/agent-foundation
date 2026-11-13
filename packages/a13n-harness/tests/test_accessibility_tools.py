@@ -99,6 +99,21 @@ def test_nested_range_references_are_kind_checked_and_never_restored_in_new_regi
 
 
 @pytest.mark.anyio
+async def test_canonical_computer_names_match_actual_tools_and_exact_selection():
+    from a13n_harness.environment.models import COMPUTER_ACTIONS
+
+    mount, _ = _mount("one", actions=COMPUTER_ACTIONS)
+    runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")
+    async with runtime.bind(thread_id="thread-one", run_id="run-one", instance=_instance(), host_refs={}) as env:
+        tools = ComputerToolset(env)
+        assert ComputerToolset.available_names() == frozenset(tools.get_toolset().tools)
+        assert len(ComputerToolset.available_names()) == 21
+        for name in ComputerToolset.available_names():
+            assert set(tools.get_toolset(allowed_names=frozenset({name})).tools) == {name}
+        assert not tools.get_toolset(allowed_names=frozenset({"computer_a11y_roots"})).tools
+
+
+@pytest.mark.anyio
 async def test_tools_acquire_inspect_and_deny_hidden_operations_without_native_handle_input():
     mount, provider = _mount("one")
     runtime = create_environment_runtime(mounts={"one": mount}, default_mount="one")

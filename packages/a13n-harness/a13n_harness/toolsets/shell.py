@@ -89,6 +89,22 @@ class ShellToolset:
         self._execution_guard = execution_guard
         self._process_controller = _ProcessController(environment, execution_guard=self._guard_execution)
 
+    @staticmethod
+    def available_names(actions: frozenset[EnvironmentAction]) -> frozenset[str]:
+        """Canonical selectors with at least one authorized Shell or process branch."""
+        names = set()
+        if EnvironmentAction.SHELL_EXEC in actions:
+            names.add("shell_exec")
+        if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
+            names.add("shell_info")
+        if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
+            names.add("shell_wait")
+        if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
+            names.add("shell_input")
+        if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
+            names.add("shell_signal")
+        return frozenset(names)
+
     def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         arbitrary_command_effects: set[ToolEffect] = {
             "read",
@@ -105,8 +121,9 @@ class ShellToolset:
         actions = frozenset(
             action for mount in self._environment.snapshot.mounts for action in mount.permission_ceiling.operations
         )
+        names = self.available_names(actions)
         tools: list[HarnessTool] = []
-        if EnvironmentAction.SHELL_EXEC in actions:
+        if "shell_exec" in names:
             tools.append(
                 self._tool(
                     shell_callable,
@@ -117,7 +134,7 @@ class ShellToolset:
                     name="shell_exec",
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
+        if "shell_info" in names:
             tools.append(
                 self._tool(
                     self.shell_info if EnvironmentAction.PROCESS_LIST in actions else self.shell_inspect,
@@ -128,7 +145,7 @@ class ShellToolset:
                     name="shell_info",
                 )
             )
-        if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
+        if "shell_wait" in names:
             tools.append(
                 self._tool(
                     self.shell_wait,
@@ -138,13 +155,13 @@ class ShellToolset:
                     resources=self._process_resources,
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
+        if "shell_input" in names:
             tools.append(
                 self._tool(
                     self.shell_input, "environment.process_input", {"write"}, "none", resources=self._process_resources
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
+        if "shell_signal" in names:
             tools.append(
                 self._tool(
                     self.shell_signal,

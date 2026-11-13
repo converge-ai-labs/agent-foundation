@@ -21,13 +21,16 @@ webui:
     enabled: true
     agent: null # Follow defaults.agent; an existing Agent ID selects its execution settings
     model: null # Follow the selected Agent's Model; an existing Model ID overrides it
+    files_enabled: null # Follow the Agent; true/false overrides this axis for Bot
+    shell_enabled: null
+    computer_enabled: null
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
     interval_seconds: 3600
     connector_interval_seconds: 60
 ```
 
-Bot inherits the selected Agent's execution settings: Capabilities (including compaction and handoff), tools and permissions, subagents, Plugins and MCP selections. It replaces that Agent's role instructions with built-in Bot policy and your optional Bot instructions. Native Files, Shell and Computer tools are enabled under the selected execution policy and Environment limits. Browser uses the existing Host Browser when enabled. Structured `ask_user_question` stays disabled; clarification uses ordinary chat. Null or omitted `agent` follows `defaults.agent`; an explicit existing Agent ID selects a different execution base. Null or omitted `model` follows that selected Agent's Model; an explicit existing Model ID overrides it independently. Changing Agent preserves an explicit Model choice. Without an effective Agent, an explicit Bot Model uses the minimal built-in settings. Invalid Agent or Model references reject the configuration update, retaining the previous accepted configuration. A missing effective Model prevents execution. Changes apply to later Runs; captured Runs keep their original configuration.
+Bot inherits the selected Agent's execution settings: Capabilities (including compaction and handoff), tools and permissions, subagents, Plugins and MCP selections. It replaces that Agent's role instructions with built-in Bot policy and your optional Bot instructions. Native Files, Shell and Computer access follows the selected Agent's `dynamic_environment` settings. Each corresponding `webui.bot` flag (`files_enabled`, `shell_enabled`, `computer_enabled`) accepts `null` or omission to inherit, or `true`/`false` to override that axis independently. Without an Agent, the native defaults enable all three. Tool allowlists, permissions and Environment limits still apply. Browser uses the existing Host Browser when enabled. Structured `ask_user_question` stays disabled; clarification uses ordinary chat. Null or omitted `agent` follows `defaults.agent`; an explicit existing Agent ID selects a different execution base. Null or omitted `model` follows that selected Agent's Model; an explicit existing Model ID overrides it independently. Changing Agent preserves an explicit Model choice. Without an effective Agent, an explicit Bot Model uses the minimal built-in settings. Invalid Agent or Model references reject the configuration update, retaining the previous accepted configuration. A missing effective Model prevents execution. Changes apply to later Runs; captured Runs keep their original configuration.
 
 Heartbeat intervals accept 60–86,400 seconds. Connector delivery intervals accept 1–86,400 seconds. Custom instructions accept up to 1,048,576 characters. Validate file edits with `a13n-harness-ui config validate`.
 

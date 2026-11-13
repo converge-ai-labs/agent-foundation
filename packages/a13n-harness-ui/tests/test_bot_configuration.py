@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+from a13n_harness.environment.configuration import DynamicEnvironmentConfiguration
+from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotSubmit
 from a13n_harness_ui.composition import ThreadCompositionSelection
@@ -65,16 +67,130 @@ async def test_bot_inherits_selected_execution_policy_but_replaces_conversationa
         assert capabilities["runtime_context"]["context_window_tokens"] == 42000
         assert "handoff" in capabilities and "user_interaction" not in capabilities
         assert capabilities["ToolPermissionsCapability"]["rules"] == {"create_project": "ask"}
-        assert capabilities["dynamic_environment"] == {
-            "files_enabled": True,
-            "shell_enabled": True,
-            "computer_enabled": True,
-        }
+        assert capabilities["dynamic_environment"] == {"files_enabled": True, "shell_enabled": True}
         assert node.children[0].definition.instructions == ("Child policy",)
         inspection = await app.inspect_thread_configuration(BOT_THREAD_ID)
         assert inspection.next_model_id == node.model.model_id
         assert set(inspection.next_capability_ids) == set(capabilities)
         assert inspection.captured is None
+
+
+@pytest.mark.parametrize("key", ["files_enabled", "shell_enabled", "computer_enabled"])
+@pytest.mark.parametrize("agent_value", [False, True, None])
+@pytest.mark.parametrize("bot_value", [False, True, None, "omitted"])
+async def test_bot_environment_flags_inherit_and_override_independently(tmp_path, agent_value, bot_value, key):
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    keys = ("files_enabled", "shell_enabled", "computer_enabled")
+    environment = {
+        "computer_coordinate_space": "normalized_1000",
+        "file_tools": ["view"],
+        "shell_tools": ["shell_exec"],
+        "computer_tools": ["computer_accessibility_roots"],
+    }
+    if agent_value is not None:
+        environment.update(dict.fromkeys(keys, agent_value))
+    agent["capabilities"] = [{"capability": "dynamic_environment", "configuration": environment}]
+    agent_path.write_text(yaml.safe_dump(agent))
+    document = yaml.safe_load(root.read_text())
+    # Override one axis at a time; the other two must keep their Agent policy.
+    if bot_value != "omitted":
+        document["webui"]["bot"][key] = bot_value
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        source = await app.current_configuration()
+        thread = await app._threads.bot_thread()
+        node = app._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
+        selected = next(item.configuration for item in node.capabilities if item.capability == "dynamic_environment")
+        effective = DynamicEnvironmentConfiguration.model_validate(selected)
+        inherited = True if agent_value is None else agent_value
+        assert {axis: getattr(effective, axis) for axis in keys} == {
+            axis: bot_value if axis == key and isinstance(bot_value, bool) else inherited for axis in keys
+        }
+        assert effective.computer_coordinate_space == "normalized_1000"
+        assert effective.file_tools == frozenset({"view"})
+        assert effective.shell_tools == frozenset({"shell_exec"})
+        assert effective.computer_tools == frozenset({"computer_accessibility_roots"})
+
+
+@pytest.mark.parametrize("explicit_tools", [False, True])
+@pytest.mark.parametrize("agent_value,bot_value", [(False, None), (False, True), (True, False)])
+async def test_bot_access_policy_controls_actual_tools_and_long_input(
+    tmp_path, monkeypatch, agent_value, bot_value, explicit_tools
+):
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"] = [
+        {
+            "capability": "dynamic_environment",
+            "configuration": {"files_enabled": agent_value, "shell_enabled": agent_value, "computer_enabled": False},
+        }
+    ]
+    agent_path.write_text(yaml.safe_dump(agent))
+    document = yaml.safe_load(root.read_text())
+    if explicit_tools:
+        agent["tools"] = ["view", "write", "shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"]
+        agent_path.write_text(yaml.safe_dump(agent))
+    document["input"] = {"long_text_threshold_chars": 10}
+    document["webui"]["bot"].update(files_enabled=bot_value, shell_enabled=bot_value)
+    root.write_text(yaml.safe_dump(document))
+    observed = []
+    requests = []
+
+    async def stream(messages, info):
+        observed.extend(tool.name for tool in info.function_tools)
+        requests.append(str(messages))
+        yield "Policy checked"
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await bot.submit(
+            BotSubmit(input_id="access-policy", text="A sufficiently long Bot input for native file policy.")
+        )
+        assert (await consumed(app, "access-policy")).state == "completed"
+        enabled = agent_value if bot_value is None else bot_value
+        assert ("view" in observed) is enabled
+        assert ("write" in observed) is enabled
+        assert ("shell_exec" in observed) is enabled
+        assert "computer_observe" not in observed
+        assert ("Long text was kept inline" in requests[-1]) is not enabled
+
+
+@pytest.mark.parametrize(
+    "name", ["computer_a11y_roots", "computer_accessibility_typo", "computer_ax_typo", "file_typo", "shell_typo"]
+)
+async def test_bot_deferred_computer_allowlist_still_rejects_unknown_names(tmp_path, monkeypatch, name):
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["tools"] = [name]
+    agent_path.write_text(yaml.safe_dump(agent))
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"].update(files_enabled=False, shell_enabled=False, computer_enabled=False)
+    root.write_text(yaml.safe_dump(document))
+    requested = False
+
+    async def stream(messages, info):
+        nonlocal requested
+        requested = True
+        yield "must not run"
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await bot.submit(BotSubmit(input_id="unknown-tool", text="Coordinate"))
+        assert (await consumed(app, "unknown-tool")).state == "interrupted"
+        assert requested is False
+        assert (await bot.snapshot()).state.last_error is not None
 
 
 async def test_bot_compacts_automatically_with_selected_agent_and_model_override(tmp_path: Path, monkeypatch):
@@ -197,7 +313,8 @@ async def test_bot_retains_execution_allowlist_and_removes_only_blocking_questio
     root = _write_configuration(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent["tools"] = ["ask_user_question", "shell_exec", "shell_info", "computer_click", "list_threads"]
+    computer_names = sorted(ComputerToolset.available_names())
+    agent["tools"] = ["ask_user_question", "shell_exec", "shell_info", *computer_names, "list_threads"]
     agent_path.write_text(yaml.safe_dump(agent))
     observed = []
 
@@ -215,7 +332,7 @@ async def test_bot_retains_execution_allowlist_and_removes_only_blocking_questio
         assert (await consumed(app, "allowlist")).state == "completed"
         assert "list_threads" in observed
         assert {"shell_exec", "shell_info"} <= set(observed)
-        assert not ({"ask_user_question", "computer_click"} & set(observed))
+        assert not ({"ask_user_question", *computer_names} & set(observed))
         agent["tool_search"] = {
             "groups": {"questions": {"description": "Questions", "capabilities": ["user_interaction"]}}
         }
@@ -225,7 +342,7 @@ async def test_bot_retains_execution_allowlist_and_removes_only_blocking_questio
         node = app._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
         assert node.tool_search is not None
         assert all("user_interaction" not in group.capabilities for group in node.tool_search.groups.values())
-        assert node.tools == ("shell_exec", "shell_info", "computer_click", "list_threads")
+        assert node.tools == ("shell_exec", "shell_info", *computer_names, "list_threads")
 
 
 @pytest.mark.parametrize("default_agent", [False, True])
@@ -247,6 +364,8 @@ async def test_explicit_bot_model_does_not_require_a_default_agent_model(tmp_pat
         node = app._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
         assert node.model.model_id == "model-primary"
         assert node.base_agent_id == ("agent-assistant" if default_agent else None)
+        environment = next(item.configuration for item in node.capabilities if item.capability == "dynamic_environment")
+        assert DynamicEnvironmentConfiguration.model_validate(environment) == DynamicEnvironmentConfiguration()
         # Legacy model-only configurations load unchanged. Old captures remain
         # readable and do not acquire provenance from today's default Agent.
         legacy = node.model_dump(mode="json")

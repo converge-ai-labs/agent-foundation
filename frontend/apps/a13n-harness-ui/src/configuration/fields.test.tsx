@@ -139,6 +139,35 @@ it("configures Bot's Agent and Model defaults, custom instructions and hourly he
   });
 });
 
+it("preserves Bot access inheritance and independent true/false overrides", async () => {
+  const initial =
+    'schema_version: "1"\nwebui:\n  bot:\n    enabled: true\n    shell_enabled: false\n    computer_enabled: true\n';
+  renderFields(initial);
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  expect(
+    screen.getByRole("combobox", { name: "Files access" }).textContent,
+  ).toContain("Follow Agent");
+  expect(
+    screen.getByRole("combobox", { name: "Shell access" }).textContent,
+  ).toContain("Disabled");
+  expect(
+    screen.getByRole("combobox", { name: "Computer access" }).textContent,
+  ).toContain("Enabled");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Files access" }));
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("combobox", { name: "Shell access" }));
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  await user.click(screen.getByRole("combobox", { name: "Computer access" }));
+  await user.click(await screen.findByRole("option", { name: "Follow Agent" }));
+  expect(parse(screen.getByTestId("source").textContent!).webui.bot).toEqual({
+    enabled: true,
+    files_enabled: false,
+    shell_enabled: true,
+    computer_enabled: null,
+  });
+});
+
 it("shows Sidekick defaults for legacy null without rewriting source on load", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
