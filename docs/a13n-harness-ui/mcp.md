@@ -200,9 +200,25 @@ Keep the ordinary Agent/Thread selection from the earlier steps. `host_owned_ser
 
 Each Thread, including a child Thread, gets its own retained client. Run completion and browser disconnection leave that client open. Host shutdown, explicit close, Thread disposal, or a changed binding closes it. Connections remain process-local; continuations do not serialize client state or pending server input. A later Run selecting the server can establish a replacement connection. Calls are not automatically replayed after disconnection. Enabled [MCP Apps](mcp-apps.md) retain their clients automatically, and App activation can establish a replacement connection.
 
-Connection initialization retries transient timeouts, transport interruptions and temporary HTTP failures up to three attempts, waiting one second and then two seconds. Each attempt uses the configured initialization timeout. Cancellation stops retries; authentication, configuration and protocol errors need correction. Exhausted attempts fail the current Run without replaying tool calls. Bot keeps its Heartbeat schedule so a later opportunity can recover.
+Connection initialization retries transient timeouts, transport interruptions and temporary HTTP failures up to three attempts, waiting one second and then two seconds. Each attempt uses the configured initialization timeout. Authentication and protocol errors do not retry. Startup failure follows the server's [startup failure policy](#startup-failure-policy).
 
 Each protocol override accepts `auto`, `legacy`, or `2026-07-28`; omission uses `auto`. Use `auto` unless the server requires a specific mode. This setting controls Core protocol negotiation, separately from connection lifetime and the MCP Apps UI protocol.
+
+## Startup failure policy
+
+Every MCP server defaults to `on_error: skip`, for Bot, ordinary Threads and children alike. If connection initialization fails after any applicable retries, the current Run continues with the remaining capabilities. That server's tools stay unavailable for the rest of the Run, and the model receives an unavailability notice. Host logs identify the skipped server. A later Run tries again; Bot keeps its normal Heartbeat schedule.
+
+To make a server required, add this beside `transport` in its resource file:
+
+```yaml title="mcp/docs.yaml — merge fragment"
+on_error: raise
+```
+
+For a `mcpServers` wrapper, put `on_error` inside the selected server entry, beside `url` or `command`. `skip` and `raise` are the only values. Omission uses `skip`, including older resources and captured recipes.
+
+An Agent's explicit tool allowlist still limits callable tools. If a skipped server has selected tools, those names are treated as temporarily unavailable. If it allows all tools, unknown-name validation waits for a healthy Run because its inventory is unavailable.
+
+`raise` makes startup failure fail the current Run. Cancellation, transport authorization, credential-source validation and captured OAuth account checks keep their ordinary error behavior. Once connected, tool-list and business-call errors are returned normally; neither policy replays tool calls.
 
 ## Human input from MCP servers
 

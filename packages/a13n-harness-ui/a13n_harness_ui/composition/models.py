@@ -85,6 +85,7 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)

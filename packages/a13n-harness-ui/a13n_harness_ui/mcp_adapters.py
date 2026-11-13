@@ -15,12 +15,13 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.http import outbound_tls_verify
+from a13n_logging import get_logger
 from anyio import to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
+from pydantic_ai.toolsets import FunctionToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.loader import read_mcp_file_values
@@ -94,6 +95,45 @@ class HarnessUiMCP(MCP[AgentContext]):
             private_values=self._private_values,
             oauth=self._oauth,
         )
+        try:
+            toolset = await self._start_toolset(ctx, cache_id, client_transport, effective_recipe, init_timeout)
+            # Enter the SDK projection before returning the capability so all
+            # ownership modes share the same startup policy. Its reentrant outer
+            # entry spans internal Agent attempts until logical-Run cleanup.
+            await toolset.__aenter__()
+        except Exception as exc:
+            if self._recipe.on_error == "raise":
+                raise
+            get_logger(__name__).warning(
+                "MCP server skipped for this Run after startup failure",
+                extra={"server_id": self._recipe.server_id, "error_type": type(exc).__name__},
+            )
+            replacement = _UnavailableMCP(self._recipe.server_id, self._recipe.tools)
+        else:
+
+            async def close_projection() -> None:
+                await toolset.__aexit__(None, None, None)
+
+            ctx.deps._register_run_cleanup(f"{cache_id}.projection", close_projection)
+            local = _GuardedToolset(toolset, self._operation_guard) if self._operation_guard is not None else toolset
+            capability = AppMCP if self._apps is not None else MCP[AgentContext]
+            replacement = capability(
+                id=self._recipe.server_id,
+                native=False,
+                local=local,
+                allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
+            )
+        ctx.deps._record_run_capability(cache_id, replacement)
+        return replacement
+
+    async def _start_toolset(
+        self,
+        ctx: RunContext[AgentContext],
+        cache_id: str,
+        client_transport: ClientTransport,
+        effective_recipe: str,
+        init_timeout: float,
+    ) -> MCPToolset[AgentContext]:
         if self._connections is not None and (self._recipe.host_owned or self._apps is not None):
             connection = await self._connections.acquire(
                 ctx.deps.thread_id,
@@ -108,7 +148,7 @@ class HarnessUiMCP(MCP[AgentContext]):
                 client_factory=None if self._apps is not None else HostClient,
                 extensions=None if self._apps is not None else (),
             )
-            toolset = AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
+            return AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
         elif self._connections is not None and self._connections.input_handler is not None:
             connection = Connection(
                 ctx.deps.thread_id,
@@ -124,21 +164,31 @@ class HarnessUiMCP(MCP[AgentContext]):
             # a default Run-local client beyond the enclosing Harness Run.
             ctx.deps._register_run_cleanup(cache_id, connection.close)
             await connection.start()
-            toolset = HostToolset(connection)
-        else:
-            client = InitializingClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
-            toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
-        if self._operation_guard is not None:
-            toolset = _GuardedToolset(toolset, self._operation_guard)
-        capability = AppMCP if self._apps is not None else MCP[AgentContext]
-        replacement = capability(
-            id=self._recipe.server_id,
-            native=False,
-            local=toolset,
-            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
+            return HostToolset(connection)
+        client = InitializingClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+        return MCPToolset[AgentContext](client, id=self._recipe.server_id)
+
+
+class UnavailableMcpToolset(FunctionToolset[AgentContext]):
+    """An omitted MCP inventory, retaining its configured tool-name ceiling."""
+
+    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
+        super().__init__(id=server_id)
+        self.selected_tools = selected_tools
+
+
+class _UnavailableMCP(MCP[AgentContext]):
+    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
+        super().__init__(id=server_id, native=False, local=UnavailableMcpToolset(server_id, selected_tools))
+
+    def get_instructions(self) -> str:
+        # Capability instructions remain visible when ToolSearch defers source
+        # toolset guidance until discovery; an absent inventory cannot be found.
+        return (
+            f"MCP server {self.id} is unavailable after startup failure. "
+            "Its tools are omitted for this Run. Continue with the remaining capabilities; "
+            "do not claim operations on this server succeeded. A later Run can try connecting again."
         )
-        ctx.deps._record_run_capability(cache_id, replacement)
-        return replacement
 
 
 @dataclass
