@@ -507,6 +507,13 @@ async def serve(root: Path, port: int):
                 ),
                 ("A quick answer", "project-research", "[answer] Summarize the retry rule."),
                 ("A fresh idea", "project-research", None),
+                (
+                    "排查长标题显示问题 / Investigate the latest startup failure: "
+                    '{"version": "0.34.3", "platform": "Darwin", "phase": "root_operation", '
+                    '"diagnostics": "Keep the full title available without filling the toolbar"}',
+                    "project-atlas",
+                    None,
+                ),
             ):
                 thread = await app.create_thread(title=title, defaults=NewThreadDefaults(project_id=project))
                 if prompt:

@@ -66,6 +66,7 @@ import { BrowserPanel } from "../browser/panel";
 import { BrowserActivity } from "../browser/activity";
 import { usePanelSize } from "./panel-size";
 import { panelResize } from "./panel-resize";
+import { workspaceDocumentTitle } from "./workspace-title";
 import {
   emptyTabs,
   workspaceTabs,
@@ -722,7 +723,7 @@ export function NativeWorkspace({
           : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
-    document.title = `${title} - Harness UI`;
+    document.title = workspaceDocumentTitle(title);
     return () => {
       document.title = "Harness UI";
     };
@@ -1086,11 +1087,14 @@ export function NativeWorkspace({
             {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
             <div className={styles.workspaceHeading}>
               {resolvedProject && (
-                <span className={styles.projectBreadcrumb}>
-                  {resolvedProject.name}
+                <span
+                  className={styles.projectBreadcrumb}
+                  title={resolvedProject.name}
+                >
+                  <span>{resolvedProject.name}</span>
                 </span>
               )}
-              <ToolbarTitle className={styles.workspaceTitle}>
+              <ToolbarTitle className={styles.workspaceTitle} title={title}>
                 {title}
               </ToolbarTitle>
             </div>

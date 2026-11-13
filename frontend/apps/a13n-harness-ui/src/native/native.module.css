@@ -31,8 +31,9 @@
   background: var(--a13n-surface);
 }
 .workToolbar .workspaceTitle {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 56ch;
   margin: 0;
   font-size: var(--a13n-text-body);
   font-weight: 500;
@@ -63,17 +64,23 @@
   }
 }
 .projectBreadcrumb {
-  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
   white-space: nowrap;
+}
+.projectBreadcrumb > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .projectBreadcrumb::after {
   content: "/";
+  flex-shrink: 0;
   margin-left: 12px;
   color: var(--a13n-tertiary);
 }

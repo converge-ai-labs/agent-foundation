@@ -43,6 +43,8 @@ Floating menus, popovers and dialogs retain shared overlay shadows. When the flo
 
 Titles, text starts and trailing controls follow a few shared axes. Same-row text, icons and controls are optically centered. Short values stay compact; long paths wrap or move below labels before columns become unusable.
 
+The workbench header keeps Project and chat titles on one line. Chat titles have a bounded reading width even on wide screens and ellipsize further as space narrows; actions retain their space. A truncated Project name keeps its separator visible, and narrow layouts omit the Project breadcrumb. Hover exposes the complete names; chat actions retain the full-title Rename field for keyboard and touch. The browser document title uses a bounded preview. These display limits never rewrite saved titles.
+
 Navigation icons are 16px; disclosure carets are 12px. Model logo and name remain adjacent everywhere, including selectors, settings and usage attribution, using the shared brand registry and fallback. Transcript preparing/working uses the animated a13n logo with reduced-motion support.
 
 Reserve space for appearing actions and carets. Hover, loading and expansion never shift labels or resize targets. Keyboard focus stays visible; touch retains usable affordances without hover.
