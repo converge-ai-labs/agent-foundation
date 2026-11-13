@@ -231,6 +231,9 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
             return await original_delivery(thread_id, prompt, execution_ids)
 
         app._tool_executions.deliver = gated_delivery
+        # The parent waits explicitly; an automatic result copy may arrive after
+        # wait_subagent and wake it while deletion is checked.
+        app._tool_executions.deliver_subagent = None
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate")
         with fail_after(15):
@@ -262,11 +265,7 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
                 finish.set()
                 delivery_allowed.set()
                 release.set()
-            while (
-                await app._subagent_operator.active_execution_ids()
-                or app._tool_executions.busy_thread_ids()
-                or await app._root_runs.active(thread.thread_id) is not None
-            ):
+            while await app._subagent_operator.active_execution_ids() or app._tool_executions.busy_thread_ids():
                 await sleep(0)
             deleted = await app.delete_thread(thread_id=thread.thread_id, expected_version=thread.metadata_version)
             assert set(deleted) == {thread.thread_id, child_id}

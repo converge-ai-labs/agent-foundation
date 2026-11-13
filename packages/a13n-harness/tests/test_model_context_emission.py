@@ -251,7 +251,7 @@ async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_hist
 
     ctx.deps._tool_executions = RunToolExecutions()
     result_id = next(line.split(" | ")[0][2:] for line in text.splitlines() if "finished, result available" in line)
-    assert await tool_execution_result(ctx, result_id) == "unread"
+    assert (await tool_execution_result(ctx, result_id)).return_value == "unread"
     await runtime.close()
 
 
