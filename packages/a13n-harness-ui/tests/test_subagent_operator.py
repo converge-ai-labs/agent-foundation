@@ -300,7 +300,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
             Any,
             SimpleNamespace(
                 agent_instance_id="parent-agent",
-                composition=SimpleNamespace(subagents=SimpleNamespace(result_delivery="manual")),
+                composition=SimpleNamespace(),
             ),
         ),
         composition=unavailable,
@@ -419,7 +419,7 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
             Any,
             SimpleNamespace(
                 agent_instance_id="parent-agent",
-                composition=SimpleNamespace(subagents=SimpleNamespace(result_delivery="manual")),
+                composition=SimpleNamespace(),
             ),
         ),
         agent_instance_id="child-agent",

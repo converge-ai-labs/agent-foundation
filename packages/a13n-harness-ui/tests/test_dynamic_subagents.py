@@ -25,12 +25,11 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 def test_defaults_and_invalid_subagent_configuration():
     config = SubagentsConfiguration()
-    assert config.max_concurrent == 8 and config.result_delivery == "automatic"
+    assert config.max_concurrent == 8
     assert not config.dynamic.enabled and config.dynamic.allowed_models == ()
     for bad in (
         {"max_concurrent": 0},
         {"max_concurrent": True},
-        {"result_delivery": "auto"},
         {"dynamic": {"allowed_models": ["model-a", "model-a"]}},
     ):
         with pytest.raises(ValidationError):
@@ -45,7 +44,7 @@ async def test_dynamic_model_references_are_validated(tmp_path):
     assert "subagents.dynamic.allowed_models" in str(error.value)
 
 
-async def open_app(tmp_path, monkeypatch, model, *, mode="manual", enabled=True, limit=8, include=("explorer",)):
+async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, include=("explorer",)):
     path = _source(tmp_path, include)
     (tmp_path / "AGENTS.md").write_text("GLOBAL_GUIDANCE")
     path.write_text(
@@ -55,7 +54,6 @@ async def open_app(tmp_path, monkeypatch, model, *, mode="manual", enabled=True,
                 "subagents": {
                     "include": list(include),
                     "max_concurrent": limit,
-                    "result_delivery": mode,
                     "dynamic": {"enabled": enabled, "allowed_models": ["model-main"]},
                 },
             }
@@ -129,8 +127,8 @@ async def test_spawn_rejects_invalid_admission(tmp_path, monkeypatch, arguments,
         assert not (await app.query_child_executions(parent_thread_id=thread.thread_id)).executions
 
 
-@pytest.mark.parametrize("mode,message", [("automatic", False), ("manual", False), ("manual", True)])
-async def test_leaf_instructions_and_mode_aware_idle_delivery(tmp_path, monkeypatch, mode, message):
+@pytest.mark.parametrize("message", [False, True])
+async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, message):
     finish, child_done, wake_seen = Event(), Event(), Event()
     receipts, parent_inputs = [], []
 
@@ -183,7 +181,7 @@ async def test_leaf_instructions_and_mode_aware_idle_delivery(tmp_path, monkeypa
             receipts.append(returned(messages)[-1].content)
             yield "Work continues."
 
-    async with await open_app(tmp_path, monkeypatch, model, mode=mode) as app:
+    async with await open_app(tmp_path, monkeypatch, model) as app:
         thread = await new_thread(app)
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="ROOT_HISTORY_SECRET")
         assert (
@@ -196,11 +194,8 @@ async def test_leaf_instructions_and_mode_aware_idle_delivery(tmp_path, monkeypa
             await child_done.wait()
             while execution_id in await app._subagent_operator.active_execution_ids():
                 await sleep(0.01)
-            if mode == "automatic" or message:
-                await wake_seen.wait()
-                assert any(execution_id in text for text in parent_inputs[-1:])
-            else:
-                assert not wake_seen.is_set()
+            await wake_seen.wait()
+            assert any(execution_id in text for text in parent_inputs[-1:])
         view = await app._subagent_operator.inspect_executions(
             parent_thread_id=thread.thread_id, execution_id=execution_id
         )
@@ -421,7 +416,7 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
                 child_id = results[0].content["execution_id"]
             yield "Root finished."
 
-    context = await open_app(tmp_path, monkeypatch, model, mode="automatic", include=())
+    context = await open_app(tmp_path, monkeypatch, model, include=())
     root_file = tmp_path / "agents/main.yaml"
     resource = yaml.safe_load(root_file.read_text())
     resource["subagents"] = [{"agent": "agent-reviewer"}]

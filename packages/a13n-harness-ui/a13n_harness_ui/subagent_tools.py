@@ -104,17 +104,12 @@ class SubagentTools(AbstractModelContextCapability):
         records = await self.operator.reminder(ctx.deps.thread_id)
         if not records:
             return projection
-        delivery = (
-            "Final results arrive automatically; do not poll only to get them."
-            if self.composition.subagents.result_delivery == "automatic"
-            else "Collect final results with wait_subagent or subagent_info."
-        )
         block = ModelContextBlock(
             source_id="a13n-harness-ui.subagents.summary",
             context_group="runtime_state",
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
             content="Check outstanding subagent work before reporting completion. "
-            + delivery
+            + "Final results arrive automatically; do not poll only to get them."
             + "\n"
             + json.dumps(records[:20], ensure_ascii=False)
             + ("\nMore executions are available through subagent_info." if len(records) > 20 else ""),

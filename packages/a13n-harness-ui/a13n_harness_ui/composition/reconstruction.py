@@ -260,9 +260,7 @@ class AgentReconstructor:
                     "The resolved Agent roster requires the Harness UI subagent operator.",
                     code="subagent_operator_missing",
                 )
-            subagent_capability = SubagentCapability(
-                async_enabled=True, operator=subagent_operator, result_delivery=composition.subagents.result_delivery
-            )
+            subagent_capability = SubagentCapability(async_enabled=True, operator=subagent_operator)
         node = composition.root
         host_tools = set()
         if subagent:

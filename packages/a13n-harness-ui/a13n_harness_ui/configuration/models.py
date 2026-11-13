@@ -190,7 +190,6 @@ class SubagentsConfiguration(ConfigurationModel):
 
     include: tuple[BuiltinSubagentName, ...] = ()
     max_concurrent: int = Field(default=8, ge=1, strict=True)
-    result_delivery: Literal["automatic", "manual"] = "automatic"
     dynamic: DynamicSubagentsConfiguration = Field(default_factory=DynamicSubagentsConfiguration)
 
     @field_validator("include")

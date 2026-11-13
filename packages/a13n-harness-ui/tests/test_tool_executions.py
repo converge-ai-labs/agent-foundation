@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness import StoredToolExecution, ToolExecutionRecord
@@ -442,12 +443,14 @@ async def test_clear_context_replaces_codeact_owner_and_isolates_late_writes(tmp
 
 @pytest.mark.parametrize("change", [None, "source", "parent", "child", "stop", "stop_checkpoint", "stop_deferred"])
 async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monkeypatch, change):
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
     from a13n_harness_ui.surfaces import NewThreadDefaults
 
     from .test_builtin_subagents import _source
 
+    # Isolate retained-tool continuation authority from unrelated parent result delivery.
+    monkeypatch.setattr(HarnessUiSubagentOperator, "_deliver_parent", AsyncMock())
     path = _source(tmp_path, ("explorer",))
-    path.write_text(path.read_text().replace("subagents:", "subagents:\n  result_delivery: manual"))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, resumed, delivered = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}
@@ -708,8 +711,9 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
 
     from .test_builtin_subagents import _source
 
+    # Isolate retained-tool continuation authority from unrelated parent result delivery.
+    monkeypatch.setattr(HarnessUiSubagentOperator, "_deliver_parent", AsyncMock())
     path = _source(tmp_path, ("explorer",))
-    path.write_text(path.read_text().replace("subagents:", "subagents:\n  result_delivery: manual"))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, offered, resumed = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}

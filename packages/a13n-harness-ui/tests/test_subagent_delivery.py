@@ -102,13 +102,12 @@ async def test_child_inputs_coalesce_and_retry_in_existing_dispatch_lane():
     await owner.runtime.close()
 
 
-@pytest.mark.parametrize("mode", ["automatic", "manual"])
-async def test_reminder_is_bounded_mode_aware_and_appends_on_change(mode):
+async def test_reminder_is_bounded_and_appends_on_change():
     rows = [{"name": f"role-{i}", "execution_id": f"sa_{i}", "state": "running"} for i in range(21)]
     operator = SimpleNamespace(reminder=AsyncMock(return_value=rows))
     composition = SimpleNamespace(
         root=SimpleNamespace(children=("child",)),
-        subagents=SimpleNamespace(result_delivery=mode, dynamic=SimpleNamespace(enabled=False)),
+        subagents=SimpleNamespace(dynamic=SimpleNamespace(enabled=False)),
     )
     capability = SubagentTools(operator, composition, subagent=False, has_children=True)
     ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="parent"))
@@ -122,7 +121,7 @@ async def test_reminder_is_bounded_mode_aware_and_appends_on_change(mode):
     assert block.context_group == "runtime_state" and block.placement is ModelContextPlacement.REQUEST_EPILOGUE
     assert '"execution_id": "sa_19"' in block.content and '"execution_id": "sa_20"' not in block.content
     assert "before reporting completion" in block.content
-    assert ("arrive automatically" in block.content) == (mode == "automatic")
+    assert "arrive automatically" in block.content
     unchanged = ModelContextProjectionRequest(kind=request.kind, history=ModelContextHistory.from_blocks((block,)))
     assert not (await capability.wrap_model_context(ctx, unchanged, handler)).blocks
     operator.reminder.return_value = []
@@ -284,7 +283,7 @@ async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeyp
         else:
             yield "Parent finished"
 
-    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+    async with await open_app(tmp_path, monkeypatch, model) as app:
         original = app._subagent_operator._deliver_parent
 
         async def offer(thread_id, prompt, execution_ids):
@@ -340,7 +339,7 @@ async def test_result_offer_preparation_failure_settles_child_and_keeps_operator
         else:
             yield "Parent finished"
 
-    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+    async with await open_app(tmp_path, monkeypatch, model) as app:
         operator = app._subagent_operator
         monkeypatch.setattr(
             operator, "_read_checkpoint", AsyncMock(side_effect=RuntimeError("Offer preparation failed"))
@@ -392,7 +391,7 @@ async def test_user_stop_delivers_cancelled_child_result_to_parent(tmp_path, mon
         else:
             yield "Work is running"
 
-    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+    async with await open_app(tmp_path, monkeypatch, model) as app:
         parent = await new_thread(app)
         receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start child")
         await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)

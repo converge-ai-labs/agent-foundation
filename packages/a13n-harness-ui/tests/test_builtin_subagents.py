@@ -271,9 +271,6 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     path = _source(tmp_path, ("explorer",))
-    document = yaml.safe_load(path.read_text())
-    document["subagents"]["result_delivery"] = "manual"
-    path.write_text(yaml.safe_dump(document))
     if inject_apps:
         import sys
 

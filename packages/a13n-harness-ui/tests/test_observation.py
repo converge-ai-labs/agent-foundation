@@ -245,7 +245,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
         head=head,
         state=SimpleNamespace(thread_id="thread-test"),
         stream=SimpleNamespace(pending_deferred_input=None, run_id="run-test"),
-        scope=SimpleNamespace(composition=SimpleNamespace(subagents=SimpleNamespace(result_delivery="manual"))),
+        scope=SimpleNamespace(composition=SimpleNamespace()),
         reconstructed=SimpleNamespace(memory_cursors=MemoryCursors()),
     )
     active = SimpleNamespace(done=Event(), checkpoint=None, run_checkpoint=None)

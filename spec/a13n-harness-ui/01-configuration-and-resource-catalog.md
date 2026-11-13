@@ -70,7 +70,6 @@ tools:
 subagents:
   include: [code-reviewer, executor, explorer]
   max_concurrent: 8
-  result_delivery: automatic
   dynamic:
     enabled: false
     allowed_models: []
@@ -100,7 +99,7 @@ defaults:
 
 `subagents.max_concurrent` is a positive integer, default `8`, limiting locally running children in one root conversation across configured, built-in and dynamic children, including resumed segments. Admission through delegate, spawn and resume shares one serialized limit. `subagents.dynamic.enabled` defaults to `false`; only enabled root Runs expose `spawn_subagent`. `subagents.dynamic.allowed_models` is an ordered unique list of configured Model IDs, default `[]`; unknown references reject the generation. An omitted spawn Model inherits the parent's captured Model even when it is absent from the allowlist. Explicit Model choices must occur in the allowlist. Thinking choices use the selected Model's existing validated thinking controls.
 
-`subagents.result_delivery` is `automatic` (default) or `manual`, mapped directly to the Harness `SubagentCapability.result_delivery` setting. It covers configured, built-in and dynamic children. The Run capture freezes these settings; later configuration edits affect later Runs. Explicit child messages are independent of the final-result switch. Automatic results and explicit messages can start eligible parent Runs and incur Model use. [Runtime](05-runtime-subagents-and-surfaces.md#observation-and-checkpointing) owns delivery and wake eligibility.
+Terminal subagent results are delivered automatically. The Run capture freezes subagent settings; later configuration edits affect later Runs. Results and explicit messages can start eligible parent Runs and incur Model use. [Runtime](05-runtime-subagents-and-surfaces.md#observation-and-checkpointing) owns delivery and wake eligibility.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
 

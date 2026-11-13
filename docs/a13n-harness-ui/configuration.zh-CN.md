@@ -146,7 +146,6 @@ subagents:
 | `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界                |
 | `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer`      |
 | `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用 |
-| `subagents.result_delivery`               | `automatic` | `automatic` 自动投递最终结果；`manual` 通过查询或等待获取  |
 | `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`           |
 | `subagents.dynamic.allowed_models`        | `[]`        | 显式创建时可选的已配置 Model ID，不能重复                  |
 

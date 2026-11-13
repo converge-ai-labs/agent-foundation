@@ -1662,20 +1662,19 @@ class HarnessUiSubagentOperator(SubagentOperator):
         finally:
             with CancelScope(shield=True):
                 try:
-                    if current.scope.composition.subagents.result_delivery == "automatic":
-                        head = await self._store.child_executions.get(current.head.execution_id)
-                        if head is not None and head.status != "running":
-                            display = (
-                                (await self._read_checkpoint(head)).display
-                                if head.selected_checkpoint is not None
-                                else CompactChildDisplay()
-                            )
-                            view = await self._execution_view(head, display=display)
-                            name, _, _ = await self._execution_identity(head)
-                            text = format_execution_header("Subagent result", name, head.execution_id, head.status)
-                            text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
-                            text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
-                            await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
+                    head = await self._store.child_executions.get(current.head.execution_id)
+                    if head is not None and head.status != "running":
+                        display = (
+                            (await self._read_checkpoint(head)).display
+                            if head.selected_checkpoint is not None
+                            else CompactChildDisplay()
+                        )
+                        view = await self._execution_view(head, display=display)
+                        name, _, _ = await self._execution_identity(head)
+                        text = format_execution_header("Subagent result", name, head.execution_id, head.status)
+                        text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
+                        text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
+                        await self._deliver_parent(head.parent_thread_id, text, (head.execution_id,))
                 except Exception:
                     get_logger(__name__).warning(
                         "Could not deliver subagent result: %s", current.head.execution_id, exc_info=True

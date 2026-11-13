@@ -146,7 +146,6 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 | `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                     |
 | `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
 | `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
-| `subagents.result_delivery`               | `automatic` | `automatic` delivers final results; `manual` requires info/wait retrieval              |
 | `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
 | `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
 
