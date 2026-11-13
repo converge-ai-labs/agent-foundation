@@ -30,11 +30,11 @@ from a13n_service.infra.errors import conflict
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.tools import DispatchCheck, ToolDispatch
 from a13n_service.providers.tools.connectors import connector_toolset, list_connector_tools
-from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
+from a13n_service.providers.tools.mcp import AcquireClient, PrepareClient, mcp_capability, mcp_client
 from a13n_service.resources.connections.access import McpConnection, ResolvedConnection, resolve_connection
 from a13n_service.resources.connections.account import open_account
 from a13n_service.resources.connections.discovery import cache_tools, cached_tools
-from a13n_service.resources.connections.oauth import open_mcp_client
+from a13n_service.resources.connections.oauth import McpAuthentication
 from a13n_service.resources.connections.schemas import ConnectionSelection, exposed_tools
 from a13n_service.resources.connections.service import check_caller_headers
 from a13n_service.resources.connections.tables import ConnectionRow
@@ -101,19 +101,27 @@ async def open_connections(
     """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
     async with AsyncExitStack() as stack:
 
-        def client_source(connection: McpConnection, headers: Mapping[str, str]):
+        def client_source(connection: McpConnection, headers: Mapping[str, str]) -> PrepareClient:
             # One closure per authorized selection/definition use, never a URL-wide
             # pool or mutable caller-header map shared with another Agent.
             lock = anyio.Lock()
             entered: Client[ClientTransport] | None = None
 
-            async def acquire() -> Client[ClientTransport]:
-                nonlocal entered
+            prepared: Client[ClientTransport] | None = None
+            authentication: McpAuthentication | None = None
+
+            async def prepare() -> AcquireClient:
+                nonlocal prepared, authentication
                 async with lock:
-                    if entered is None:
-                        http = await stack.enter_async_context(
-                            open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
+                    if authentication is None:
+                        authentication = McpAuthentication(
+                            connection, storage=storage, keys=keys, policy=policy, settings=settings
                         )
+                    # Each logical Run preflights credentials outside isolation,
+                    # even when an earlier Run already prepared the HTTP client.
+                    await authentication.prepare()
+                    if prepared is None:
+                        http = await stack.enter_async_context(authentication.open_client())
                         if (
                             request_context is not None
                             and settings.forward_mcp_context_headers
@@ -127,17 +135,25 @@ async def open_connections(
                                 }
                             )
                         http.headers.update(headers)
-                        client = mcp_client(
+                        prepared = mcp_client(
                             connection.config.url,
                             connection.id,
                             http,
                             timeout=settings.tool_call_seconds,
                             apps=capture is not None,
                         )
-                        entered = await stack.enter_async_context(client)
+                return acquire
+
+            async def acquire() -> Client[ClientTransport]:
+                nonlocal entered
+                async with lock:
+                    if entered is None:
+                        assert prepared is not None
+                        entered = await stack.enter_async_context(prepared)
+                    # A ready client that disconnected is never reopened here.
                     return entered
 
-            return acquire
+            return prepare
 
         capabilities: list[AbstractCapability[AgentContext]] = []
         for selected in connections:
@@ -149,6 +165,7 @@ async def open_connections(
                         connection.id,
                         client_source(connection, selected.caller_headers),
                         tools=selected.tools,
+                        on_error=connection.config.on_error,
                         check=checked,
                         capture=partial(capture, selected) if capture is not None else None,
                     )

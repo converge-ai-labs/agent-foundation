@@ -742,6 +742,7 @@ class McpServerResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")

@@ -208,6 +208,7 @@ class AgentCompositionResolver:
             ResolvedMcpRecipe(
                 server_id=item,
                 transport=source.mcp_servers[item].transport,
+                on_error=source.mcp_servers[item].on_error,
                 tools=source.mcp_servers[item].tools,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,
