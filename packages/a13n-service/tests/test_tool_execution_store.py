@@ -946,3 +946,23 @@ async def test_published_result_keeps_only_fenced_cleanup_authority(service, scr
     with pytest.raises(LeaseLost):
         async with transaction(service.runtime.storage) as session:
             await lock_execution(session, lease, record.execution_id, cleanup=True)
+
+
+@pytest.mark.parametrize("sequential", [False, True])
+@pytest.mark.parametrize("legacy_json", [False, True])
+async def test_original_ordering_intent_uses_durable_column_including_legacy_json(
+    service, scripted_model, runs_kit, sequential, legacy_json
+):
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store = Store(service.runtime)
+    record = _record(lease).model_copy(update={"sequential": sequential})
+    await _save(store, lease, StoredToolExecution(record))
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, record.execution_id)
+        assert row.sequential is sequential
+        assert row.record["sequential"] is sequential
+        if legacy_json:
+            row.record = {key: value for key, value in row.record.items() if key != "sequential"}
+    restored = await store.get(lease.thread_id, record.execution_id)
+    assert restored.record.sequential is sequential
+    assert (await store.list(lease.thread_id, offset=0, limit=20))[0].sequential is sequential

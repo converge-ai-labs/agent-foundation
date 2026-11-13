@@ -23,6 +23,7 @@ from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
@@ -1641,9 +1642,11 @@ async def test_grouped_names_cannot_shadow_direct_tools_from_the_same_source(nam
         await agent.run("test")
 
 
-@pytest.mark.parametrize(("prior_sequential", "target_sequential"), [(True, False), (False, True), (False, False)])
-async def test_proxy_target_keeps_its_runtime_execution_policy(
-    monkeypatch, prior_sequential, target_sequential
+@pytest.mark.parametrize("prior_sequential", [False, True])
+@pytest.mark.parametrize("target_sequential", [False, True])
+@pytest.mark.parametrize("global_sequential", [False, True])
+async def test_proxy_target_separates_batch_ordering_from_thread_completion_policy(
+    monkeypatch, prior_sequential, target_sequential, global_sequential
 ) -> None:
     from a13n_harness import HarnessState
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
@@ -1667,9 +1670,10 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         sequential=prior_sequential,
     )
     original_inline = runtime.inline
+    runtime_policies = []
 
     async def inline(operation, *, thread_id, sequential):
-        assert sequential == target_sequential
+        runtime_policies.append(sequential)
         queued.set()
         return await original_inline(operation, thread_id=thread_id, sequential=sequential)
 
@@ -1697,12 +1701,14 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         capabilities=(ToolExecutionCapability(), _group(Tool(lookup, sequential=target_sequential))),
     )
     await entered.wait()
-    pending = asyncio.create_task(
-        executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
-    )
+    with ToolManager.parallel_execution_mode("sequential" if global_sequential else "parallel"):
+        pending = asyncio.create_task(
+            executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
+        )
     try:
         await asyncio.wait_for(queued.wait(), 2)
-        if prior_sequential or target_sequential:
+        assert runtime_policies == [global_sequential]
+        if prior_sequential or global_sequential:
             assert not invoked and not pending.done()
             finish.set()
         result = await asyncio.wait_for(pending, 2)

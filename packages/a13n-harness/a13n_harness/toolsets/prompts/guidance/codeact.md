@@ -21,6 +21,8 @@ Host calls:
 
 - Send a runner as the only tool call in a model response. Parallelize inside the code, not by sending sibling runner/tool calls.
 
+- After a background receipt, choose independent calls or explicit result/wait controls according to the task's dependencies. A receipt establishes neither readiness nor completion. Independent programs from later responses may overlap. `run_code` shares one inline session within this run: wait for its active execution before another inline feed or restart. A busy rejection leaves that session unchanged.
+
 - Arguments and results are finite JSON values, not arbitrary Python objects. Inspect and select useful fields rather than printing or returning entire large results.
 
 - Tool effects are not transactional or rolled back. After a failure, inspect what completed and recover deliberately; do not blindly replay code that may repeat external effects.

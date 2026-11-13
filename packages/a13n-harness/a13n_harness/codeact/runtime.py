@@ -37,6 +37,7 @@ class CodeActRunState:
     _pool_stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False, repr=False)
     _inline_stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False, repr=False)
     _inline_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
+    _pool_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     @property
     def limits(self) -> ResourceLimits:
@@ -50,15 +51,16 @@ class CodeActRunState:
         }
 
     async def _get_pool(self) -> AsyncMonty:
-        if self._pool is None:
-            self._pool = await self._pool_stack.enter_async_context(
-                AsyncMonty(
-                    min_processes=1,
-                    max_processes=2,
-                    request_timeout=self.config.timeout_seconds,
+        async with self._pool_lock:
+            if self._pool is None:
+                self._pool = await self._pool_stack.enter_async_context(
+                    AsyncMonty(
+                        min_processes=1,
+                        max_processes=2,
+                        request_timeout=self.config.timeout_seconds,
+                    )
                 )
-            )
-        return self._pool
+            return self._pool
 
     async def _get_inline_session(self) -> AsyncMontySession:
         if self._inline_session is None:
