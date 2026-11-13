@@ -1738,6 +1738,35 @@ dl.detailGrid > .detailLongRow dd {
 .attachmentThumbnail[hidden] {
   display: none;
 }
+.sentImage > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  min-width: 24px;
+  min-height: 26px;
+  margin-inline-end: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: zoom-in;
+}
+.sentImage img {
+  width: auto;
+  height: auto;
+  max-width: 36px;
+  max-height: 26px;
+  border-radius: 3px;
+}
+.sentImage > button:not(:has(img[data-failed])) > span {
+  display: none;
+}
+.sentImage > button:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
 .inputText {
   font-size: inherit;
   white-space: pre-wrap;
