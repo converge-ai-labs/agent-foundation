@@ -9,8 +9,13 @@ import {
   type ToolView,
 } from "./tool-presentation";
 
+export type BackgroundSection = "subagents" | "tools";
+export const SECTION_LABELS: Record<BackgroundSection, string> = {
+  subagents: "Subagents",
+  tools: "Tool calls",
+};
 export type BackgroundTarget = {
-  kind: "child" | "tool" | "process" | "history";
+  kind: "child" | "tool" | "process" | BackgroundSection;
   id: string;
   threadId: string;
   title: string;
@@ -30,6 +35,23 @@ export type BackgroundItem = {
 };
 export function backgroundKey(target: BackgroundTarget) {
   return `${target.kind}:${target.threadId}:${target.id}`;
+}
+export function targetSection(target: BackgroundTarget) {
+  return target.kind === "subagents" || target.kind === "tools"
+    ? target.kind
+    : undefined;
+}
+export function sectionTarget(
+  section: BackgroundSection,
+  threadId: string,
+  t: (key: string) => string,
+): BackgroundTarget {
+  return {
+    kind: section,
+    id: threadId,
+    threadId,
+    title: t(SECTION_LABELS[section]),
+  };
 }
 export const GLYPH_COLORS = 8;
 export const GLYPH_EYES = 4;
@@ -232,9 +254,11 @@ export function backgroundItems(
       backgroundKey(a.target).localeCompare(backgroundKey(b.target)),
   );
 }
-export function backgroundGroups(items: BackgroundItem[]) {
+export function backgroundGroups(
+  items: BackgroundItem[],
+): { section: BackgroundSection; items: BackgroundItem[] }[] {
   return [
-    { label: "Subagents", items: items.filter((item) => item.child) },
-    { label: "Tool calls", items: items.filter((item) => !item.child) },
+    { section: "subagents", items: items.filter((item) => item.child) },
+    { section: "tools", items: items.filter((item) => !item.child) },
   ];
 }

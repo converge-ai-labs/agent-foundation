@@ -3483,6 +3483,7 @@
   "Main agent": "Main agent",
   "Moved to background": "Moved to background",
   "Nothing is running.": "Nothing is running.",
+  "Nothing has run yet.": "Nothing has run yet.",
   "Output expired or unavailable.": "Output expired or unavailable.",
   "Output truncated. Showing the retained preview.": "Output truncated. Showing the retained preview.",
   "Subagent message": "Subagent message",

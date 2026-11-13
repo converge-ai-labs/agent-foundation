@@ -222,7 +222,7 @@ it("keeps the row action separate from opening a resource tab", async () => {
     }),
   );
 });
-it("limits each card section to three rows and opens one full-history resource", async () => {
+it("limits each card section to three rows and opens its own history tab", async () => {
   const test = setup([
     child("running", "running"),
     ...Array.from({ length: 24 }, (_, i) => child(String(i))),
@@ -236,10 +236,10 @@ it("limits each card section to three rows and opens one full-history resource",
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "View all" }));
   expect(test.open).toHaveBeenCalledWith({
-    kind: "history",
+    kind: "subagents",
     id: "root",
     threadId: "root",
-    title: "Background work",
+    title: "Subagents",
   });
   await userEvent.click(
     screen.getByRole("button", { name: "Close background work" }),
@@ -249,10 +249,10 @@ it("limits each card section to three rows and opens one full-history resource",
       "root",
       <BackgroundPanel
         target={{
-          kind: "history",
+          kind: "subagents",
           id: "root",
           threadId: "root",
-          title: "Background work",
+          title: "Subagents",
         }}
       />,
     ),
@@ -590,10 +590,10 @@ it("shares server tool cancellation progress across the card, history and item h
       <>
         <BackgroundPanel
           target={{
-            kind: "history",
+            kind: "tools",
             id: "root",
             threadId: "root",
-            title: "Background work",
+            title: "Tool calls",
           }}
         />
         <BackgroundPanel
@@ -650,10 +650,10 @@ it("requests another history page only after Show more", async () => {
       "root",
       <BackgroundPanel
         target={{
-          kind: "history",
+          kind: "subagents",
           id: "root",
           threadId: "root",
-          title: "Background work",
+          title: "Subagents",
         }}
       />,
     ),

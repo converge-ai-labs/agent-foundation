@@ -346,6 +346,6 @@ Standalone import preserves representable tool names and diagnoses unsupported M
 
 ## Background work in the WebUI
 
-The icon immediately after Share opens **Background work**. Its compact card shows up to three **Subagents** and three **Tool calls**, with running work first. Hover a row for its task or arguments. **View all** opens the full-history resource tab, with **Show more** for older pages. Select an item to inspect its own tab; narrow layouts close the card when opening a tab.
+The icon immediately after Share opens **Background work**. Its compact card shows up to three **Subagents** and three **Tool calls**, with running work first. Hover a row for its task or arguments. Each section's **View all** opens its own history tab, with **Show more** for older pages. Select an item to inspect its own tab; narrow layouts close the card when opening a tab.
 
 Subagent tabs show saved and live conversation with **Main agent** and **User** labels for existing inputs. You cannot type into a child conversation in the WebUI. Use the header's **Stop** when available; accepted stops show **Stopping…** until the item ends. Tool tabs show input and output, with explicit truncation, expiry and unavailable states. Observed Shell processes remain read-only. Closing a tab does not stop work.

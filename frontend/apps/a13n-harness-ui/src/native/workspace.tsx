@@ -6,6 +6,11 @@ import {
   SubagentGlyph,
 } from "../conversations/background-card";
 import { BackgroundPanel } from "../conversations/background-panel";
+import {
+  SECTION_LABELS,
+  sectionTarget,
+  targetSection,
+} from "../conversations/background-work";
 import { useTranslation } from "../i18n";
 import { BotActions, BOT_THREAD_ID, useBot } from "../bot";
 import { BotWorkNotes } from "../bot-notes";
@@ -617,12 +622,7 @@ export function NativeWorkspace({
       setBackgroundAvailable(true);
       revealTab({
         kind: "background",
-        target: {
-          kind: "history",
-          id: threadId,
-          threadId,
-          title: t("Background work"),
-        },
+        target: sectionTarget(link.background, threadId, t),
       });
     }
     if (link.terminal && status.data?.features?.host_terminal) {
@@ -994,8 +994,8 @@ export function NativeWorkspace({
       key: tab.id,
       label:
         tab.kind === "background"
-          ? tab.target.kind === "history"
-            ? t("Background work")
+          ? targetSection(tab.target)
+            ? t(SECTION_LABELS[targetSection(tab.target)!])
             : tab.target.title
           : tab.kind === "new"
             ? t("New tab")
@@ -1036,7 +1036,7 @@ export function NativeWorkspace({
         tab.kind === "background"
           ? tab.target.kind === "process" || tab.target.icon === "terminal"
             ? TerminalWindow
-            : tab.target.kind === "tool"
+            : tab.target.kind === "tool" || tab.target.kind === "tools"
               ? Wrench
               : CirclesThree
           : tab.kind === "new"

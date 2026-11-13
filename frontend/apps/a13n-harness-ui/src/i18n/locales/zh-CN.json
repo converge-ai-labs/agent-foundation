@@ -3451,6 +3451,7 @@
   "Main agent": "主智能体",
   "Moved to background": "已转入后台",
   "Nothing is running.": "没有正在运行的工作。",
+  "Nothing has run yet.": "还没有运行过的工作。",
   "Output expired or unavailable.": "输出已过期或不可用。",
   "Output truncated. Showing the retained preview.": "输出已截断，当前显示保留的预览。",
   "Subagent message": "子智能体消息",

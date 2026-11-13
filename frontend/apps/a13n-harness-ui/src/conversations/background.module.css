@@ -7,12 +7,14 @@
   height: 18px;
 }
 .card {
+  /* Clear the chat page padding and the transcript scrollbar gutter. */
+  --card-inset: 48px;
   pointer-events: auto;
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: var(--card-inset);
   z-index: 20;
-  width: min(320px, calc(100% - 16px));
+  width: min(320px, calc(100% - var(--card-inset) - 8px));
   max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
@@ -171,6 +173,11 @@
 .showMore:hover {
   background: none;
   color: var(--a13n-text);
+}
+@media (max-width: 760px) {
+  .card {
+    --card-inset: 36px;
+  }
 }
 @media (hover: none), (pointer: coarse) {
   .action button {

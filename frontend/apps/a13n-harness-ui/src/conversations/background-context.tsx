@@ -16,6 +16,7 @@ import { useTranslation } from "../i18n";
 import {
   backgroundItems,
   type BackgroundItem,
+  type BackgroundSection,
   type BackgroundTarget,
 } from "./background-work";
 import { readPreference, writePreference } from "../shell/preferences";
@@ -28,9 +29,9 @@ type BackgroundState = {
   display?: FocusDisplay;
   open: (target: BackgroundTarget) => void;
   cardOpen: boolean;
-  more: boolean;
-  loadingMore: boolean;
-  loadMore: () => void;
+  more: Record<BackgroundSection, boolean>;
+  loadingMore: Record<BackgroundSection, boolean>;
+  loadMore: (section: BackgroundSection) => void;
   setCardOpen: (open: boolean) => void;
   loading: boolean;
   error: unknown;
@@ -42,8 +43,8 @@ const Context = createContext<BackgroundState>({
   resolve: () => undefined,
   open: () => {},
   cardOpen: false,
-  more: false,
-  loadingMore: false,
+  more: { subagents: false, tools: false },
+  loadingMore: { subagents: false, tools: false },
   loadMore: () => {},
   setCardOpen: () => {},
   loading: false,
@@ -165,13 +166,18 @@ function ThreadBackgroundScope({
           if (closeOnOpen) setCardOpen(false);
         },
         cardOpen,
-        more: !!(childPage.hasNextPage || toolPage.hasNextPage),
-        loadingMore:
-          childPage.isFetchingNextPage || toolPage.isFetchingNextPage,
-        loadMore: () => {
-          if (childPage.hasNextPage) void childPage.fetchNextPage();
-          if (toolPage.hasNextPage) void toolPage.fetchNextPage();
+        more: {
+          subagents: !!childPage.hasNextPage,
+          tools: !!toolPage.hasNextPage,
         },
+        loadingMore: {
+          subagents: childPage.isFetchingNextPage,
+          tools: toolPage.isFetchingNextPage,
+        },
+        loadMore: (section) =>
+          void (section === "subagents"
+            ? childPage.fetchNextPage()
+            : toolPage.fetchNextPage()),
         setCardOpen,
         refresh,
         loading:

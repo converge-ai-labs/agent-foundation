@@ -22,7 +22,10 @@ import {
   backgroundGroups,
   backgroundKey,
   glyphIdentity,
+  sectionTarget,
+  SECTION_LABELS,
   type BackgroundItem,
+  type BackgroundSection,
 } from "./background-work";
 import { executionTime } from "./execution-time";
 import styles from "./background.module.css";
@@ -169,11 +172,11 @@ export function BackgroundCard() {
           <X />
         </Button>
       </header>
-      <BackgroundList compact />
+      <BackgroundList />
     </section>
   );
 }
-export function BackgroundList({ compact = false }: { compact?: boolean }) {
+export function BackgroundList({ section }: { section?: BackgroundSection }) {
   const { t } = useTranslation();
   const bg = useBackground();
   const [now, setNow] = useState(Date.now());
@@ -181,6 +184,11 @@ export function BackgroundList({ compact = false }: { compact?: boolean }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+  // The card previews both sections; a section tab lists one complete history.
+  const compact = !section;
+  const groups = backgroundGroups(bg.items).filter(
+    (group) => group.items.length && (compact || group.section === section),
+  );
   return (
     <ScrollArea
       autoHeight={compact}
@@ -189,7 +197,7 @@ export function BackgroundList({ compact = false }: { compact?: boolean }) {
       viewportProps={{ "aria-label": t("Background items"), role: "region" }}
     >
       <ErrorNotice error={bg.error} retry={bg.refresh} />
-      {bg.display?.processes.omitted && (
+      {bg.display?.processes.omitted && section !== "subagents" && (
         <p className={styles.empty}>
           {t("Some process observations are unavailable or omitted.")}
         </p>
@@ -199,53 +207,48 @@ export function BackgroundList({ compact = false }: { compact?: boolean }) {
           {t("Loading background work…")}
         </p>
       )}
-      {!bg.loading && !bg.error && !bg.items.length && (
-        <p className={styles.empty}>{t("Nothing is running.")}</p>
+      {!bg.loading && !bg.error && !groups.length && (
+        <p className={styles.empty}>
+          {t(compact ? "Nothing is running." : "Nothing has run yet.")}
+        </p>
       )}
-      {backgroundGroups(bg.items).map(
-        (group) =>
-          group.items.length > 0 && (
-            <section key={group.label} aria-label={t(group.label)}>
-              <div className={styles.groupHeader}>
-                <h3>{t(group.label)}</h3>
-                {compact && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      bg.open({
-                        kind: "history",
-                        id: bg.threadId,
-                        threadId: bg.threadId,
-                        title: t("Background work"),
-                      })
-                    }
-                  >
-                    {t("View all")}
-                  </Button>
-                )}
-              </div>
-              <ul>
-                {(compact ? group.items.slice(0, 3) : group.items).map(
-                  (item) => (
-                    <BackgroundRow
-                      key={backgroundKey(item.target)}
-                      item={item}
-                      now={now}
-                    />
-                  ),
-                )}
-              </ul>
-            </section>
-          ),
-      )}
-      {!compact && bg.more && (
+      {groups.map((group) => (
+        <section
+          key={group.section}
+          aria-label={t(SECTION_LABELS[group.section])}
+        >
+          {compact && (
+            <div className={styles.groupHeader}>
+              <h3>{t(SECTION_LABELS[group.section])}</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  bg.open(sectionTarget(group.section, bg.threadId, t))
+                }
+              >
+                {t("View all")}
+              </Button>
+            </div>
+          )}
+          <ul>
+            {(compact ? group.items.slice(0, 3) : group.items).map((item) => (
+              <BackgroundRow
+                key={backgroundKey(item.target)}
+                item={item}
+                now={now}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+      {section && bg.more[section] && (
         <Button
           className={styles.showMore}
           variant="ghost"
           size="sm"
-          loading={bg.loadingMore}
-          onClick={bg.loadMore}
+          loading={bg.loadingMore[section]}
+          onClick={() => bg.loadMore(section)}
         >
           {t("Show more")}
         </Button>

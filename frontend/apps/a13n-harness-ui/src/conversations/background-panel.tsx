@@ -10,6 +10,8 @@ import { ErrorNotice } from "../shell/ui";
 import { useBackground } from "./background-context";
 import {
   backgroundKey,
+  SECTION_LABELS,
+  targetSection,
   type BackgroundTarget,
   type BackgroundItem,
 } from "./background-work";
@@ -35,41 +37,37 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
   const item = bg.items.find(
     (item) => backgroundKey(item.target) === backgroundKey(target),
   );
+  const section = targetSection(target);
   return (
     <section className={styles.panel} aria-label={target.title}>
       <header className={styles.panelHeader}>
-        {target.kind === "child" && (
+        {target.kind === "child" ? (
           <SubagentGlyph id={target.id} running={item?.running} />
+        ) : target.kind === "subagents" ? (
+          <CirclesThree size={18} />
+        ) : target.icon === "terminal" || target.kind === "process" ? (
+          <TerminalWindow size={18} />
+        ) : (
+          <Wrench size={18} />
         )}
-        {target.kind !== "child" &&
-          (target.kind === "history" ? (
-            <CirclesThree size={18} />
-          ) : target.icon === "terminal" || target.kind === "process" ? (
-            <TerminalWindow size={18} />
-          ) : (
-            <Wrench size={18} />
-          ))}
         <h2 title={target.title}>
-          {target.kind === "history" ? t("Background work") : target.title}
+          {section ? t(SECTION_LABELS[section]) : target.title}
         </h2>
-        {target.kind === "history" && (
+        {section ? (
           <ViewLink
             getLink={() =>
-              `${window.location.origin}/threads/${encodeURIComponent(target.threadId)}?native=background`
+              `${window.location.origin}/threads/${encodeURIComponent(target.threadId)}?native=${section}`
             }
           />
-        )}
-        {target.kind !== "history" && (
+        ) : (
           <span>{item ? state(item.state) : t("Unavailable")}</span>
         )}
         {item?.child && <ChildStop item={item} />}
         {item?.tool && <ToolCancel item={item} />}
       </header>
-      {target.kind !== "history" && (
-        <ErrorNotice error={bg.error} retry={bg.refresh} />
-      )}
-      {target.kind === "history" ? (
-        <BackgroundList />
+      {!section && <ErrorNotice error={bg.error} retry={bg.refresh} />}
+      {section ? (
+        <BackgroundList section={section} />
       ) : !item ? (
         <p className={styles.empty}>
           {bg.loading
