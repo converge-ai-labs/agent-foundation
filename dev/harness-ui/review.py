@@ -163,10 +163,7 @@ def configuration(root: Path) -> Path:
             "defaults": {"agent": "agent-review"},
             "dictation": {"backend": "codex", "model": "model-review", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
-            "subagents": {
-                "dynamic": {"enabled": True, "allowed_models": ["model-review"]},
-                "result_delivery": "automatic",
-            },
+            "subagents": {"dynamic": {"enabled": True, "allowed_models": ["model-review"]}},
             "tools": {"execution": {"mode": "auto", "foreground_wait_seconds": 0.1}},
             "memory": {"auto_organize": {"enabled": False}},
         },
