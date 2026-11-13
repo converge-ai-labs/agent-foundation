@@ -8,6 +8,7 @@ import {
   type DisplayItem,
 } from "a13n-ui/display";
 import type { Schema, Transport } from "../transport/client";
+import { botInputId } from "../bot-identity";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
 import {
@@ -459,7 +460,19 @@ export class FocusDisplay {
       this.gap = true;
       return;
     }
-    if (object(payload.metadata) && payload.metadata.display === false) return;
+    if (
+      object(payload.metadata) &&
+      payload.metadata.display === false &&
+      !(
+        type === "CUSTOM" &&
+        !payload.subagentRunId &&
+        ["a13n.input.user", "a13n.input.steering"].includes(
+          string(payload.name),
+        ) &&
+        botInputId(payload.metadata)
+      )
+    )
+      return;
     const subagentRunId = string(payload.subagentRunId) || undefined;
     if (
       !subagentRunId &&
@@ -626,7 +639,15 @@ export class FocusDisplay {
       const event = this.custom(payload);
       if (
         !event ||
-        (object(event.metadata) && event.metadata.display === false)
+        (object(event.metadata) &&
+          event.metadata.display === false &&
+          !(
+            !event.subagentRunId &&
+            ["a13n.input.user", "a13n.input.steering"].includes(
+              string(event.name),
+            ) &&
+            botInputId(event.metadata)
+          ))
       )
         return;
       this.foldCustom(event);
@@ -651,7 +672,18 @@ export class FocusDisplay {
   private displayItem(item: DisplayItem) {
     const content = item.content;
     const metadata = object(content.metadata) ? content.metadata : undefined;
-    if (metadata?.display === false) return;
+    // Bot's hidden input marker joins its publication to native input. Retain
+    // the marker for transcript correlation; the transcript still hides it.
+    if (
+      metadata?.display === false &&
+      !(
+        item.kind === "text_message" &&
+        content.role === "user" &&
+        !content.subagentRunId &&
+        botInputId(metadata)
+      )
+    )
+      return;
     const sequence = Number(item.last_stream_id.split("-")[1]);
     if (item.kind === "observation") {
       const previous = new Map(this.blocks);

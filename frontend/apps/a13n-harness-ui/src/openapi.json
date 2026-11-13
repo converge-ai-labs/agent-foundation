@@ -567,7 +567,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BotSubmit"
+                "$ref": "#/components/schemas/BotSubmitRequest"
               }
             }
           },
@@ -11284,6 +11284,17 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
           "model_id": {
             "anyOf": [
               {
@@ -12008,6 +12019,17 @@
           "source_id": {
             "type": "string",
             "title": "Source Id"
+          },
+          "base_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Id"
           },
           "model_id": {
             "type": "string",
@@ -25474,6 +25496,18 @@
       },
       "TranscriptPart": {
         "properties": {
+          "display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Id",
+            "description": "Native display item identity, when available."
+          },
           "duration_ms": {
             "anyOf": [
               {
@@ -28344,6 +28378,42 @@
         "title": "SetupCommand",
         "type": "object"
       },
+      "DraftCapture": {
+        "additionalProperties": false,
+        "description": "Exact synchronized input to consume only after submission is accepted.",
+        "properties": {
+          "draft_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "update_base64": {
+            "maxLength": 700000,
+            "minLength": 1,
+            "title": "Update Base64",
+            "type": "string"
+          },
+          "options_update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options Update Base64"
+          }
+        },
+        "required": [
+          "draft_id",
+          "update_base64"
+        ],
+        "title": "DraftCapture",
+        "type": "object"
+      },
       "InputAttachmentReference": {
         "additionalProperties": false,
         "description": "An ordered input reference to a file staged in the same Thread.",
@@ -28361,7 +28431,7 @@
         "title": "InputAttachmentReference",
         "type": "object"
       },
-      "BotSubmit": {
+      "BotSubmitRequest": {
         "properties": {
           "input_id": {
             "type": "string",
@@ -28391,6 +28461,16 @@
             "maxItems": 1024,
             "title": "Parts",
             "default": []
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -28398,7 +28478,7 @@
         "required": [
           "input_id"
         ],
-        "title": "BotSubmit"
+        "title": "BotSubmitRequest"
       },
       "BotPause": {
         "properties": {
@@ -30407,42 +30487,6 @@
           "patch"
         ],
         "title": "ThreadMetadataMutation",
-        "type": "object"
-      },
-      "DraftCapture": {
-        "additionalProperties": false,
-        "description": "Exact synchronized input to consume only after submission is accepted.",
-        "properties": {
-          "draft_id": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Draft Id",
-            "type": "string"
-          },
-          "update_base64": {
-            "maxLength": 700000,
-            "minLength": 1,
-            "title": "Update Base64",
-            "type": "string"
-          },
-          "options_update_base64": {
-            "anyOf": [
-              {
-                "maxLength": 700000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Options Update Base64"
-          }
-        },
-        "required": [
-          "draft_id",
-          "update_base64"
-        ],
-        "title": "DraftCapture",
         "type": "object"
       },
       "FastSelection": {

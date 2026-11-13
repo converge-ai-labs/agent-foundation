@@ -20,7 +20,10 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 @pytest.mark.parametrize("override", [False, True])
-async def test_bot_inherits_default_execution_policy_but_replaces_conversational_role(tmp_path: Path, override: bool):
+@pytest.mark.parametrize("explicit_agent", [False, True])
+async def test_bot_inherits_selected_execution_policy_but_replaces_conversational_role(
+    tmp_path: Path, override: bool, explicit_agent: bool
+):
     root = _write_configuration(tmp_path, instructions="Ordinary Agent role must not leak")
     if override:
         (tmp_path / "models/alternate.yaml").write_text(
@@ -38,6 +41,10 @@ async def test_bot_inherits_default_execution_policy_but_replaces_conversational
         {"capability": "ToolPermissionsCapability", "configuration": {"rules": {"create_project": "ask"}}},
     ]
     agent["subagents"] = [{"agent": "agent-child"}]
+    if explicit_agent:
+        agent["id"] = "agent-coordinator"
+        agent_path = tmp_path / "agents/coordinator.yaml"
+        root.write_text(root.read_text() + "    agent: agent-coordinator\n")
     agent_path.write_text(yaml.safe_dump(agent))
     (tmp_path / "agents/child.yaml").write_text(
         'schema_version: "1"\nkind: agent\nid: agent-child\nname: Child\nmodel: model-primary\ninstructions: Child policy\n'
@@ -48,6 +55,7 @@ async def test_bot_inherits_default_execution_policy_but_replaces_conversational
         composition = app._mcp_app_owners.resolver.resolve_run(source, ThreadCompositionSelection.from_thread(thread))
         node = composition.root
         assert node.source_kind == "bot"
+        assert node.base_agent_id == ("agent-coordinator" if explicit_agent else "agent-assistant")
         assert node.model.model_id == ("model-alternate" if override else "model-primary")
         assert node.instructions == ("Custom Bot policy",)
         assert "Ordinary Agent role" not in str(node.system_prompt)
@@ -69,12 +77,15 @@ async def test_bot_inherits_default_execution_policy_but_replaces_conversational
         assert inspection.captured is None
 
 
-async def test_bot_compacts_automatically_after_inheriting_default_agent_capability(tmp_path: Path, monkeypatch):
+async def test_bot_compacts_automatically_with_selected_agent_and_model_override(tmp_path: Path, monkeypatch):
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents/assistant.yaml"
-    agent.write_text(
-        agent.read_text() + "capabilities:\n  - capability: compaction\n    configuration:\n      trigger_tokens: 10\n"
+    selected = tmp_path / "agents/coordinator.yaml"
+    selected.write_text(
+        agent.read_text().replace("agent-assistant", "agent-coordinator")
+        + "capabilities:\n  - capability: compaction\n    configuration:\n      trigger_tokens: 10\n"
     )
+    root.write_text(root.read_text() + "    agent: agent-coordinator\n    model: model-primary\n")
     model = tmp_path / "models/primary.yaml"
     model.write_text(model.read_text() + "model_characteristics: {context_window_tokens: 10000}\n")
     started, release = Event(), Event()
@@ -172,11 +183,14 @@ async def test_bot_context_uses_active_capture_then_selected_continuation_not_ne
             await started.wait()
         current = await app.context_usage(BOT_THREAD_ID)
         assert current.context_window == 90000
-        assert current.latest_request_tokens is None
-        assert current.record_id is None
+        assert current.latest_request_tokens == idle.latest_request_tokens
+        assert current.record_id == idle.record_id
+        assert current.context_breakdown == idle.context_breakdown
         release.set()
         assert (await consumed(app, "meter-second")).state == "completed"
-        assert (await app.context_usage(BOT_THREAD_ID)).context_window == 90000
+        updated = await app.context_usage(BOT_THREAD_ID)
+        assert updated.context_window == 90000
+        assert updated.record_id is not None and updated.record_id != current.record_id
 
 
 async def test_bot_narrows_inherited_tools_for_its_files_only_chat_policy(tmp_path: Path, monkeypatch):
@@ -231,4 +245,147 @@ async def test_explicit_bot_model_does_not_require_a_default_agent_model(tmp_pat
         source = await app.current_configuration()
         node = app._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
         assert node.model.model_id == "model-primary"
+        assert node.base_agent_id == ("agent-assistant" if default_agent else None)
+        # Legacy model-only configurations load unchanged. Old captures remain
+        # readable and do not acquire provenance from today's default Agent.
+        legacy = node.model_dump(mode="json")
+        legacy.pop("base_agent_id", None)
+        restored = type(node).model_validate(legacy)
+        assert restored.base_agent_id is None
+        assert restored.model_dump(mode="json") == legacy
         assert "user_interaction" not in {item.capability for item in node.capabilities}
+
+
+@pytest.mark.parametrize("agent_id", [None, "agent-coordinator"])
+@pytest.mark.parametrize("model_id", [None, "model-primary"])
+async def test_bot_agent_model_selection_matrix_and_default_changes(tmp_path: Path, agent_id, model_id):
+    root = _write_configuration(tmp_path)
+    (tmp_path / "models/alternate.yaml").write_text(
+        (tmp_path / "models/primary.yaml").read_text().replace("model-primary", "model-alternate")
+    )
+    (tmp_path / "agents/coordinator.yaml").write_text(
+        (tmp_path / "agents/assistant.yaml")
+        .read_text()
+        .replace("agent-assistant", "agent-coordinator")
+        .replace("model-primary", "model-alternate")
+    )
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"].update(agent=agent_id, model=model_id)
+    root.write_text(yaml.safe_dump(document))
+    original = root.read_bytes()
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app._threads.bot_thread()
+        source = await app.current_configuration()
+        composition = app._mcp_app_owners.resolver.resolve_run(source, ThreadCompositionSelection.from_thread(thread))
+        expected_agent = agent_id or "agent-assistant"
+        expected_model = model_id or ("model-alternate" if agent_id else "model-primary")
+        assert source.bot_agent_id == composition.root.base_agent_id == expected_agent
+        assert source.bot_model_id == composition.root.model.model_id == expected_model
+        assert root.read_bytes() == original
+        document["defaults"]["agent"] = "agent-coordinator"
+        root.write_text(yaml.safe_dump(document))
+        next_source = await app.reload_configuration()
+        assert next_source.bot_agent_id == "agent-coordinator"
+        assert next_source.bot_model_id == (model_id or "model-alternate")
+        assert next_source.source_digest != source.source_digest
+        # Immutable resolved composition retains the original policy provenance.
+        assert composition.root.base_agent_id == expected_agent
+        assert composition.root.model.model_id == expected_model
+
+
+@pytest.mark.parametrize("field", ["agent", "model"])
+@pytest.mark.parametrize("deleted", [False, True])
+async def test_bot_invalid_or_deleted_selection_retains_accepted_generation(tmp_path: Path, field: str, deleted: bool):
+    root = _write_configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"].update(agent="agent-assistant", model="model-primary")
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        source = await app.current_configuration()
+        if deleted:
+            path = "agents/assistant.yaml" if field == "agent" else "models/primary.yaml"
+            (tmp_path / path).unlink()
+        else:
+            document["webui"]["bot"][field] = f"{field}-missing"
+            root.write_text(yaml.safe_dump(document))
+        retained = await app.reload_configuration()
+        assert retained.source_digest == source.source_digest
+        assert retained.bot_agent_id == "agent-assistant"
+        assert retained.bot_model_id == "model-primary"
+        assert (await app.status()).candidate_error_code is not None
+
+
+async def test_bot_selected_agent_without_model_is_unavailable_until_model_override(tmp_path: Path):
+    root = _write_configuration(tmp_path)
+    (tmp_path / "agents/coordinator.yaml").write_text(
+        'schema_version: "1"\nkind: agent\nid: agent-coordinator\nname: Coordinator\n'
+    )
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"]["agent"] = "agent-coordinator"
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        assert (await app.current_configuration()).bot_model_id is None
+        assert (await app.bot().snapshot()).model_id is None
+        document["webui"]["bot"]["model"] = "model-primary"
+        root.write_text(yaml.safe_dump(document))
+        assert (await app.reload_configuration()).bot_model_id == "model-primary"
+
+
+async def test_bot_agent_changes_apply_to_next_run_without_relabeling_active_or_saved_capture(
+    tmp_path: Path, monkeypatch
+):
+    root = _write_configuration(tmp_path)
+    (tmp_path / "models/alternate.yaml").write_text(
+        (tmp_path / "models/primary.yaml").read_text().replace("model-primary", "model-alternate")
+        + "model_characteristics: {context_window_tokens: 42000}\n"
+    )
+    (tmp_path / "agents/coordinator.yaml").write_text(
+        (tmp_path / "agents/assistant.yaml")
+        .read_text()
+        .replace("agent-assistant", "agent-coordinator")
+        .replace("model-primary", "model-alternate")
+        + "capabilities:\n  - capability: runtime_context\n    configuration: {context_window_tokens: 42000}\n"
+    )
+    started, release = Event(), Event()
+
+    async def stream(messages, info):
+        started.set()
+        await release.wait()
+        yield "Bot answer"
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        await bot.submit(BotSubmit(input_id="selection-first", text="First"))
+        with fail_after(10):
+            await started.wait()
+        before = await app.inspect_thread_configuration(BOT_THREAD_ID)
+        assert before.captured.agent.base_agent_id == "agent-assistant"
+        document = yaml.safe_load(root.read_text())
+        document["webui"]["bot"]["agent"] = "agent-coordinator"
+        root.write_text(yaml.safe_dump(document))
+        await app.reload_configuration()
+        active = await app.inspect_thread_configuration(BOT_THREAD_ID)
+        assert active.next_model_id == "model-alternate"
+        assert active.captured == before.captured
+        assert (await bot.snapshot()).agent_id == "agent-coordinator"
+        release.set()
+        assert (await consumed(app, "selection-first")).state == "completed"
+        saved = await app.inspect_thread_configuration(BOT_THREAD_ID)
+        assert saved.capture_source == "selected_continuation"
+        assert saved.captured.agent.base_agent_id == "agent-assistant"
+        started, release = Event(), Event()
+        await bot.submit(BotSubmit(input_id="selection-next", text="Next"))
+        with fail_after(10):
+            await started.wait()
+        current = await app.inspect_thread_configuration(BOT_THREAD_ID)
+        assert current.captured.agent.base_agent_id == "agent-coordinator"
+        assert current.captured.agent.model_id == "model-alternate"
+        assert current.captured.generation_digest != saved.captured.generation_digest
+        assert current.captured.composition_id != saved.captured.composition_id
+        assert (await app.context_usage(BOT_THREAD_ID)).context_window == 42000
+        release.set()
+        assert (await consumed(app, "selection-next")).state == "completed"

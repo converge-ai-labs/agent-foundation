@@ -61,7 +61,6 @@ export function ComposerEditor({
   local = false,
   loadSkills,
   skillContext,
-  draftDescription,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -73,7 +72,6 @@ export function ComposerEditor({
   local?: boolean;
   loadSkills?: LoadSkills;
   skillContext?: string;
-  draftDescription?: string;
 }) {
   const { t } = useTranslation();
   const translate = useRef(t);
@@ -85,15 +83,13 @@ export function ComposerEditor({
   const load = useRef(loadSkills);
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
-  const description =
-    draftDescription ??
-    (local
-      ? t(
-          "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line.",
-        )
-      : t(
-          "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.",
-        ));
+  const description = local
+    ? t(
+        "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line.",
+      )
+    : t(
+        "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.",
+      );
   const contentAttributes = useMemo(
     () => [
       placeholder(t("Ask anything, or describe a task…")),

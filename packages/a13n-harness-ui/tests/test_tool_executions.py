@@ -1839,3 +1839,23 @@ async def test_user_stop_of_released_tool_delivers_cancelled_parent_input(tmp_pa
         with fail_after(10):
             await notified.wait()
         assert f"Tool notification · slow · execution_id={record.execution_id} · cancelled" in inputs[-1]
+
+
+@pytest.mark.parametrize("sequential", [False, True])
+async def test_persisted_execution_ordering_is_internal_to_recovery(tmp_path, sequential):
+    from a13n_harness_ui.storage.runtime import open_local_store
+    from a13n_harness_ui.tool_executions import execution_view
+
+    record = ToolExecutionRecord(
+        execution_id="exec-ordering",
+        thread_id="thread-a",
+        run_id="run-a",
+        tool_call_id="call-a",
+        tool_name="shell_exec",
+        sequential=sequential,
+    )
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        await store.tool_executions.save(StoredToolExecution(record))
+        saved = await store.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.sequential is sequential
+        assert "sequential" not in execution_view(saved.record).model_dump()

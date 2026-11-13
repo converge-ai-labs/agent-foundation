@@ -41,11 +41,13 @@ def _parts(item: Item) -> list[dict[str, Any]]:
                 else "assistant",
                 "text": json.dumps(media, ensure_ascii=False) if media is not None else str(content.get("text", "")),
                 "metadata": metadata,
+                "display_id": item.id,
                 "duration_ms": duration,
             }
         ]
     if item.kind == "tool_call":
         common = {
+            "metadata": metadata,
             "tool_name": content.get("toolCallName"),
             "tool_call_id": content.get("toolCallId"),
             "provider": content.get("provider"),

@@ -47,7 +47,9 @@ export function WorkInspector({
   onUseGoal,
   status,
   connectionStatus,
+  showDetails = true,
 }: {
+  showDetails?: boolean;
   status?: ReactNode;
   connectionStatus?: ReactNode;
   threadId: string;
@@ -88,7 +90,7 @@ export function WorkInspector({
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
     <div className={styles.strip} aria-label={t("Work inspection")}>
-      {(goal || active) && (
+      {showDetails && (goal || active) && (
         <div className={styles.summary}>
           {goal && (
             <GoalStatus
@@ -121,63 +123,66 @@ export function WorkInspector({
         }}
       >
         <div className={styles.shortcuts}>
-          {tabs.map((item) => {
-            const { Icon } = activityViews[item];
-            const label = labels[item];
-            return (
-              <DialogTrigger
-                key={item}
+          {showDetails &&
+            tabs.map((item) => {
+              const { Icon } = activityViews[item];
+              const label = labels[item];
+              return (
+                <DialogTrigger
+                  key={item}
+                  render={<Button variant="ghost" size="sm" />}
+                  className={styles.shortcut}
+                  aria-label={t("Inspect {{activity}}", {
+                    activity: label.toLowerCase(),
+                  })}
+                  onClick={(event) => {
+                    returnFocus.current = event.currentTarget;
+                    setTab(item);
+                  }}
+                >
+                  <Icon />
+                  {!!counts[item] && (
+                    <span className={styles.count}>{counts[item]}</span>
+                  )}
+                </DialogTrigger>
+              );
+            })}
+          {showDetails && (
+            <Menu>
+              <MenuTrigger
+                ref={moreTrigger}
                 render={<Button variant="ghost" size="sm" />}
-                className={styles.shortcut}
-                aria-label={t("Inspect {{activity}}", {
-                  activity: label.toLowerCase(),
-                })}
-                onClick={(event) => {
-                  returnFocus.current = event.currentTarget;
-                  setTab(item);
-                }}
+                className={styles.more}
+                aria-label={t("More activity")}
               >
-                <Icon />
-                {!!counts[item] && (
-                  <span className={styles.count}>{counts[item]}</span>
-                )}
-              </DialogTrigger>
-            );
-          })}
-          <Menu>
-            <MenuTrigger
-              ref={moreTrigger}
-              render={<Button variant="ghost" size="sm" />}
-              className={styles.more}
-              aria-label={t("More activity")}
-            >
-              <DotsThree />
-            </MenuTrigger>
-            <MenuPopup
-              align="end"
-              finalFocus={tab !== null ? false : undefined}
-            >
-              {tabs.map((item) => {
-                const { Icon } = activityViews[item];
-                const label = labels[item];
-                return (
-                  <MenuItem
-                    key={item}
-                    onClick={() => {
-                      returnFocus.current = moreTrigger.current;
-                      setTab(item);
-                    }}
-                  >
-                    <Icon />
-                    {label}
-                    {!!counts[item] && (
-                      <span className={styles.count}>{counts[item]}</span>
-                    )}
-                  </MenuItem>
-                );
-              })}
-            </MenuPopup>
-          </Menu>
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup
+                align="end"
+                finalFocus={tab !== null ? false : undefined}
+              >
+                {tabs.map((item) => {
+                  const { Icon } = activityViews[item];
+                  const label = labels[item];
+                  return (
+                    <MenuItem
+                      key={item}
+                      onClick={() => {
+                        returnFocus.current = moreTrigger.current;
+                        setTab(item);
+                      }}
+                    >
+                      <Icon />
+                      {label}
+                      {!!counts[item] && (
+                        <span className={styles.count}>{counts[item]}</span>
+                      )}
+                    </MenuItem>
+                  );
+                })}
+              </MenuPopup>
+            </Menu>
+          )}
           <div className={styles.connection}>{connectionStatus}</div>
           {status && <div className={styles.status}>{status}</div>}
         </div>

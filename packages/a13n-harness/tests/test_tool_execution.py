@@ -1147,3 +1147,96 @@ async def test_foreground_owned_return_keeps_native_value_without_execution_head
         assert not (await runtime.summarize(result.thread_id))[0].foreground_released
     finally:
         await runtime.close()
+
+
+@pytest.mark.parametrize("sequential", [False, True])
+async def test_shell_recovery_restores_original_ordering_intent(sequential):
+    from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.tool_execution import ToolExecutionRecord
+
+    record = ToolExecutionRecord(
+        execution_id="exec-original",
+        thread_id="thread-a",
+        run_id="run-old",
+        tool_call_id="call-old",
+        tool_name="shell_exec",
+        status="running",
+        sequential=sequential,
+    )
+    restored = ToolExecutionRecord.model_validate_json(record.model_dump_json())
+    assert restored.sequential is sequential
+    legacy = record.model_dump(exclude={"sequential"})
+    assert not ToolExecutionRecord.model_validate(legacy).sequential
+    shell = ShellExecutionState(
+        mount_name="workspace",
+        process=EnvdProcessState(
+            device_id="device",
+            session_id="session",
+            generation=1,
+            start_operation_id="op-start",
+            output_policy=EnvironmentOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096, overflow="retain"),
+        ),
+    )
+    entered, finish, later_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    runtime = ToolExecutionRuntime()
+
+    async def supervise():
+        entered.set()
+        await finish.wait()
+        return "original output"
+
+    async def later():
+        later_entered.set()
+        return "later"
+
+    try:
+        runtime.resume_shell(StoredToolExecution(restored, shell=shell), supervise)
+        await entered.wait()
+        successor = admit(runtime, later)
+        await runtime.wait("thread-a", successor.execution_id, timeout_seconds=0)
+        if sequential:
+            assert not later_entered.is_set()
+        else:
+            await asyncio.wait_for(later_entered.wait(), 5)
+        finish.set()
+        await runtime.join()
+        assert (await runtime.result("thread-a", record.execution_id)).record.sequential is sequential
+        assert (await runtime.result("thread-a", successor.execution_id)).result == "later"
+    finally:
+        finish.set()
+        await runtime.close()
+
+
+async def test_cancelling_queued_explicit_barrier_preserves_transitive_predecessors():
+    runtime = ToolExecutionRuntime()
+    entered, finish, later_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def first():
+        entered.set()
+        await finish.wait()
+
+    async def barrier():
+        pytest.fail("Cancelled queued barrier must not dispatch")
+
+    async def later():
+        later_entered.set()
+
+    try:
+        prior = admit(runtime, first)
+        await entered.wait()
+        serial = admit(runtime, barrier, sequential=True)
+        successor = admit(runtime, later)
+        await runtime.release_foreground("thread-a", prior.execution_id)
+        await runtime.cancel("thread-a", serial.execution_id)
+        assert (await runtime.wait("thread-a", serial.execution_id)).record.status == "cancelled"
+        assert serial.sequential and not prior.sequential
+        # The queued successor still owes the original predecessor after its barrier is cancelled.
+        assert not later_entered.is_set()
+        finish.set()
+        await runtime.join()
+        assert later_entered.is_set()
+        assert (await runtime.result("thread-a", successor.execution_id)).record.status == "succeeded"
+    finally:
+        finish.set()
+        await runtime.close()

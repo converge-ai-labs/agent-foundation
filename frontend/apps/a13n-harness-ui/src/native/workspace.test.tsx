@@ -339,6 +339,36 @@ function setup(
   );
   return { focus, get, queries };
 }
+it("keeps the full chat title available while bounding the document title", async () => {
+  const { queries } = setup("/threads/current");
+  await screen.findByRole("heading", { name: "Current chat" });
+  const title =
+    `Investigate the latest failure: ${"diagnostic details ".repeat(20)}`.trimEnd();
+  act(() => {
+    queries.setQueriesData<{ thread: { title: string } }>(
+      { queryKey: ["thread", "current", "detail"] },
+      (previous) =>
+        previous && {
+          ...previous,
+          thread: { ...previous.thread, title },
+        },
+    );
+  });
+  const heading = await screen.findByRole("heading", { name: title });
+  expect(heading.getAttribute("title")).toBe(title);
+  expect(document.title).toBe(`${title.slice(0, 79).trimEnd()}… - Harness UI`);
+  expect(screen.getByTitle("Current project").textContent).toBe(
+    "Current project",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+  expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+  await screen.findByRole("heading", { name: "New chat" });
+  expect(document.title).toBe("New chat - Harness UI");
+});
+
 it("opens Bot in the existing native workspace before activation without loading a missing Thread", async () => {
   localStorage.setItem("a13n-harness-ui.native-panel.thread_bot", "open");
   const { get } = setup("/bot");

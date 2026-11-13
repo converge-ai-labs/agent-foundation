@@ -151,6 +151,8 @@ sum(values)
 
 一个 Model 响应中只放一个 runner 工具调用。在代码内部组合所需调用，并只返回 Agent 需要的数据。
 
+使用 Host 持有的执行 runtime 时，收到后台回执后，Agent 可以选择独立工作，或显式等待结果。后续 runner 不会隐式等待无关的后台 Shell 命令退出；使用服务器前仍需单独检查就绪状态。不同 Model 响应中的独立 `run_program` 调用可以重叠执行。`run_code` 在一个逻辑 Run 中保留同一份内联会话，因此再次提交内联代码或 `restart=True` 前，要先等待正在使用该会话的执行完成。显式全局串行模式仍等待实际完成。
+
 对于设置了 `defer_loading=True` 的工具，先发现工具或加载其 Capability，再调用 runner。大型工具集合可使用 [ToolSearch 分组](tool-search.md#use-with-codeact)，在 runner 内发现工具。ToolSearch 代理调用始终顺序执行，包括放在 `asyncio.gather` 中时。
 
 ### 组合浏览器工具

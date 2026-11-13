@@ -216,7 +216,7 @@ if TYPE_CHECKING:
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
 from a13n_harness_ui.bot import BotController
-from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotSubmit
 from a13n_harness_ui.connector_models import ConnectorConfiguration
 from a13n_harness_ui.connectors.models import Instance, SetupCommand, SetupSnapshot
 from a13n_harness_ui.connectors.runtime import Connectors
@@ -1173,7 +1173,7 @@ class HarnessUiApp:
                 return await self._projections.context_usage(thread_id)
             reference = await self._root_runs.composition_reference(active.receipt.receipt_id)
             if reference is None:
-                return ContextUsageView(thread_id=thread_id)
+                return await self._projections.context_usage(thread_id)
             composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
             return await self._projections.context_usage(
                 thread_id, active_composition=composition, active_run_id=active.run_id
@@ -2079,7 +2079,11 @@ class HarnessUiApp:
 
     async def _load_shared_draft(self, thread_id: str) -> SharedDraft:
         """Load under the draft lock; editor registration shares its prune boundary."""
-        thread = await self._threads.require_interactive(thread_id)
+        if thread_id == BOT_THREAD_ID:
+            self.bot()
+            thread = await self._threads.bot_thread()
+        else:
+            thread = await self._threads.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
         await self._thread_files.touch(thread_id)
@@ -2115,6 +2119,15 @@ class HarnessUiApp:
 
             if await draft.command(participant, command, validate, edit_options=edit_options):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+
+    async def submit_bot_input(self, command: BotSubmit, *, draft: DraftCapture | None = None) -> BotInput:
+        """Admit Bot input and consume only its synchronized shared-draft capture."""
+        async with self._operation():
+            bot = self.bot()
+            prepared = self._prepare_draft_clear(BOT_THREAD_ID, draft)
+            accepted = await bot.submit(command)
+            await self._clear_submitted_draft(BOT_THREAD_ID, prepared)
+            return accepted
 
     def _prepare_draft_clear(
         self, thread_id: str, capture: DraftCapture | None, *, reset_mode: bool = False
