@@ -165,7 +165,6 @@ async def open_connections(
                         connection.id,
                         client_source(connection, selected.caller_headers),
                         tools=selected.tools,
-                        supports_object_refs=connection.config.supports_object_refs,
                         object_ref_tools=dict(connection.config.object_ref_tools),
                         on_error=connection.config.on_error,
                         check=checked,

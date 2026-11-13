@@ -457,7 +457,7 @@ from pydantic_ai.toolsets import FunctionToolset
 # `send_image` accepts base64; `host_store` implements ObjectStore.
 features = [
     ObjectStoreCapability(),
-    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]))]),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]), object_ref_tools={"send_*": True})]),
 ]
 bindings = RunBindings.embedded(object_store=host_store)
 ```
@@ -468,7 +468,9 @@ bindings = RunBindings.embedded(object_store=host_store)
 
 ### Object Reference Transport
 
-Object Reference Transport（对象引用传输）是 Harness 的工具扩展，在最终授权参数中把完整引用替换成 base64。目标工具默认不支持引用。单个工具通过元数据 `{"a13n.harness.supports_object_refs": True}` 接入；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。为字符串参数接受 base64 的工具启用。自定义工具集需要原生 Pydantic Core 参数校验器。
+Object Reference Transport（对象引用传输）是 Harness 的工具扩展，在最终授权参数中把完整引用替换成 base64。目标工具默认不支持引用。单个工具通过布尔元数据 `{"a13n.harness.supports_object_refs": True}` 接入。原生工具集使用 `ObjectRefToolset(toolset, object_ref_tools={"*_upload": True})`；两个 Host 的 MCP 配置暴露相同的 `object_ref_tools` 规则表。空表保留工具自身的声明，显式启用整个工具集则使用 `{"*": True}`。为字符串参数接受 base64 的工具启用。自定义工具集需要原生 Pydantic Core 参数校验器。
+
+规则匹配加前缀之前的原始工具名，并区分大小写。`*` 可以在任意位置匹配零个或多个字符，支持 `send_*`、`*_upload` 和 `image_*_upload`；其他字符按字面匹配。精确名称优先于通配模式；非 `*` 字符更多的模式优先于更宽泛的模式。具体程度相同时 false 优先，与条目顺序无关。匹配到的规则覆盖原生元数据；未匹配的工具沿用自身声明，未声明时默认不支持。例如，`{"*": False, "*_upload": True, "text_upload": False}` 启用除 `text_upload` 外的 upload 工具。直接调用、ToolSearch 和 CodeAct 共用选择规则，各自的权限规则保持不变。
 
 嵌套引用值支持字典、列表、元组（包括 `NamedTuple`）和 Pydantic 模型。带引用的参数应使用这些容器；dataclass 和集合不属于传输遍历契约。
 

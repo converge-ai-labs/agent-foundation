@@ -457,7 +457,7 @@ from pydantic_ai.toolsets import FunctionToolset
 # `send_image` accepts base64; `host_store` implements ObjectStore.
 features = [
     ObjectStoreCapability(),
-    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]))]),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]), object_ref_tools={"send_*": True})]),
 ]
 bindings = RunBindings.embedded(object_store=host_store)
 ```
@@ -468,7 +468,9 @@ Use `asset_ref(path)` to import an authorized regular Environment file. `asset_s
 
 ### Object Reference Transport
 
-Object Reference Transport is the Harness tool extension that replaces exact references with base64 in the final authorized arguments. Targets default to unsupported. A tool opts in with metadata `{"a13n.harness.supports_object_refs": True}`; `ObjectRefToolset` supplies a toolset default and per-tool overrides. Opt in tools whose string arguments accept base64. Custom toolsets require native Pydantic Core argument validators.
+Object Reference Transport is the Harness tool extension that replaces exact references with base64 in the final authorized arguments. Targets default to unsupported. A tool opts in with boolean metadata `{"a13n.harness.supports_object_refs": True}`. For a native toolset, use `ObjectRefToolset(toolset, object_ref_tools={"*_upload": True})`; MCP configurations in both Hosts expose the same `object_ref_tools` map. An empty map preserves native declarations. To opt in an entire toolset explicitly, use `{"*": True}`. Opt in tools whose string arguments accept base64. Custom toolsets require native Pydantic Core argument validators.
+
+Rules match original, case-sensitive tool names before prefixes. `*` matches zero or more characters anywhere: `send_*`, `*_upload` and `image_*_upload` are all supported; every other character is literal. Exact names win over patterns; patterns with more non-`*` characters win over broader ones. Equally specific patterns prefer false, independently of mapping order. A matching rule overrides native metadata; an unmatched tool retains its declaration, defaulting to false. For example, `{"*": False, "*_upload": True, "text_upload": False}` enables upload tools except `text_upload`. Selection is shared across direct calls, ToolSearch and CodeAct; it does not alter their permission rules.
 
 Nested reference values are supported in dictionaries, lists, tuples (including `NamedTuple`) and Pydantic models. Use these containers for reference-bearing arguments; dataclasses and sets are outside the transport traversal contract.
 

@@ -104,8 +104,13 @@ class OAuthSettings(BaseModel):
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
-    supports_object_refs: bool = False
-    object_ref_tools: dict[ToolName, bool] = Field(default_factory=dict, max_length=MAX_TOOLS)
+    object_ref_tools: dict[ToolName, bool] = Field(
+        default_factory=dict,
+        max_length=MAX_TOOLS,
+        description="Object Reference Transport rules by original tool name; '*' matches any characters. "
+        "Exact names win, then more literal characters, with false winning equally specific patterns. "
+        "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+    )
     on_error: StartupErrorPolicy = "raise"
 
     url: str = Field(min_length=1, max_length=2048)
@@ -257,7 +262,6 @@ def mcp_capability(
     tools: tuple[str, ...] | None,
     check: DispatchCheck,
     capture: Capture | None = None,
-    supports_object_refs: bool = False,
     object_ref_tools: dict[str, bool] | None = None,
     on_error: StartupErrorPolicy = "raise",
 ) -> MCPServer:
@@ -296,9 +300,7 @@ def mcp_capability(
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
         from a13n_harness.capabilities.object_store import ObjectRefToolset
 
-        references = ObjectRefToolset(
-            listed, supports_object_refs=supports_object_refs, tool_overrides=object_ref_tools or {}
-        )
+        references = ObjectRefToolset(listed, object_ref_tools=object_ref_tools or {})
         return AppMCP(
             id=connection_id, local=DispatchToolset(references, connection_id, None, check), defer_loading=False
         )

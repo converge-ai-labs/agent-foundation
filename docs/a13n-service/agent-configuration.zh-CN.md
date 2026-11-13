@@ -153,17 +153,16 @@ description: 保存修订版本、选择工具、配置委派并扩展 agent。
 
 截图等原生 MCP 媒体结果保留原始媒体，并获得 `a13n-object://obj_...` 引用。agent 可以把准确的引用字符串传给已启用的 base64 消费工具。运行时提供原始字节，无需模型生成 base64。对象库属于当前 thread；自动捕获的媒体不会成为工作区 Asset。分叉和独立子 thread 不继承其他 thread 的对象库。
 
-通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展，把引用替换成 base64，不重跑参数校验。设置 MCP 连接的 `config.supports_object_refs` 服务默认值，或通过 `config.object_ref_tools` 只启用指定工具：
+通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展，把引用替换成 base64，不重跑参数校验。通过 MCP 连接的 `config.object_ref_tools` 规则选择工具：
 
 ```json
 {
   "url": "https://example.com/mcp",
-  "supports_object_refs": false,
-  "object_ref_tools": {"send_image": true}
+  "object_ref_tools": {"*": false, "*_upload": true, "send_image": true, "text_upload": false}
 }
 ```
 
-只为字符串参数接受 base64 的工具启用。连接权限和审批仍然有效。审批请求和历史保留引用；真正调用目标时，在权限检查后解析。如果引用在审批等待期间过期，会报告对象不可用，不会自动重放生产工具。
+规则按服务原始工具名区分大小写匹配。`*` 可在任意位置匹配零个或多个字符，其他字符按字面匹配。精确名称优先，其次是非 `*` 字符更多的模式；具体程度相同时 false 优先，与条目顺序无关。`"*"` 设置默认值；未匹配的工具沿用自身声明，未声明时默认不支持。这与[原生工具集](../a13n-harness/capabilities.md#object-reference-transport)及 Harness UI 使用同一套选择规则。只为字符串参数接受 base64 的工具启用。连接权限和审批仍然有效。审批请求和历史保留引用；真正调用目标时，在权限检查后解析。如果引用在审批等待期间过期，会报告对象不可用，不会自动重放生产工具。
 
 `asset_ref`、`asset_store`、`asset_list`、`asset_info` 和 `asset_delete` 用于导入有权限读取的 Environment 文件，以及管理私有对象目录。`asset_store(ref=...)` 提升可用对象的保留级别而不改变 ID。已保留对象不受临时过期和 LRU 淘汰影响，直到显式删除。
 

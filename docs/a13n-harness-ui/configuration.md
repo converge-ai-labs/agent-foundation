@@ -445,18 +445,22 @@ process:
 
 Temporary objects expire after one day without an actual byte read. Reads refresh idle TTL and LRU order; list/info do not. Count and total-byte overflow evict least-recently-used temporary entries. Startup and hourly cleanup also visit inactive libraries. `asset_store` promotes an available object without changing its reference and excludes it from temporary expiry and quotas. Stored objects remain until deleted. This is explicit retention, so store only objects needed later.
 
-MCP tools opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation. Targets default to unsupported. In a schema-version-2 MCP resource, opt in the server only when its string arguments accept base64; use original server tool names for overrides:
+MCP tools opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation. Use `object_ref_tools` rules in a schema-version-2 MCP resource to select tools whose string arguments accept base64. Rules use original server tool names, including prefix or suffix patterns:
 
 ```yaml
 schema_version: "2"
 kind: mcp_server
 id: mcp-media
 name: Media tools
-supports_object_refs: false
 object_ref_tools:
+  "*": false
+  "*_upload": true
   send_image: true
+  text_upload: false
 transport:
   url: https://example.com/mcp
 ```
+
+`"*"` sets the default; omit it to retain native tool declarations, which default to unsupported. Exact names take precedence over patterns. `*` matches zero or more characters anywhere, so `image_*_upload` works too; other characters are literal and matching is case-sensitive. More literal characters make a pattern more specific; equally specific patterns prefer false, independently of entry order. The same rules apply to [native toolsets](../a13n-harness/capabilities.md#object-reference-transport) and Service MCP connections.
 
 A valid edit applies to the next Run. References are resolved after permission/approval at the actual target boundary; history keeps the reference. An expired reference fails without automatically replaying the producer. See [Object Store usage](../a13n-harness/capabilities.md#reuse-original-media-with-object-store) for capture limits and code-first opt-in.

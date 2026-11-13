@@ -102,7 +102,10 @@ async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes
             ObjectStoreCapability(),
             Capability(
                 toolsets=[
-                    ObjectRefToolset(FunctionToolset([Tool(send, args_validator=validate, strict=True)], id="target"))
+                    ObjectRefToolset(
+                        FunctionToolset([Tool(send, args_validator=validate, strict=True)], id="target"),
+                        object_ref_tools={"*": True},
+                    )
                 ]
             ),
         ),
@@ -116,6 +119,57 @@ async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes
     calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
     assert calls[0].args_as_dict() == {"data_base64": item.ref}
     assert base64.b64encode(PAYLOAD).decode() not in json.dumps([part.args for part in calls])
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "rules,native,enabled",
+    [
+        ({}, None, False),
+        ({}, True, True),
+        ({}, False, False),
+        ({"*": True}, False, True),
+        ({"*": False}, True, False),
+        ({"*_upload": True}, None, True),
+        ({"image_*": True}, None, True),
+        ({"i*e_*load": True}, None, True),
+        ({"image_upload*": True}, None, True),
+        ({"IMAGE_*": True}, None, False),
+        ({"[i]mage_*": True}, None, False),
+        ({"?mage_*": True}, None, False),
+        ({"*": False, "*_upload": True, "image_upload": False}, None, False),
+        ({"*": True, "*_upload": False, "image_upload": True}, None, True),
+        ({"*_upload": True, "image_*": False}, None, True),
+        ({"image_u*": True, "*_upload": False}, None, False),
+    ],
+)
+async def test_object_ref_rules_match_original_names_and_preserve_native_declarations(rules, native, enabled, reverse):
+    store, received = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def image_upload(data_base64: str):
+        received.append(base64.b64decode(data_base64))
+        return "sent"
+
+    metadata = {"integration": "unchanged"}
+    if native is not None:
+        metadata[SUPPORTS_OBJECT_REFS] = native
+    tool = Tool(image_upload, metadata=metadata)
+    selected = dict(reversed(tuple(rules.items()))) if reverse else rules
+    source = ObjectRefToolset(FunctionToolset([tool]), object_ref_tools=selected)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("image_upload", {"data_base64": item.ref}),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[source])],
+    )
+    result = await executable.run("upload", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert received == ([PAYLOAD] if enabled else [])
+    assert store.reads == int(enabled)
+    assert tool.metadata == metadata
+    if not enabled:
+        assert "object_refs_not_supported" in str(result.all_messages())
 
 
 @pytest.mark.parametrize(
@@ -230,7 +284,7 @@ async def test_nested_reference_target_dispatch_expands_once_and_keeps_source(di
     item = await store.put(PAYLOAD, media_type="image/png")
     args = {"payload": {"values": [item.ref, item.ref]}, "literal": "prefix " + item.ref}
     send.__annotations__["payload"] = Payload
-    source = ObjectRefToolset(FunctionToolset([send], id="nested"))
+    source = ObjectRefToolset(FunctionToolset([send], id="nested"), object_ref_tools={"*": False, "*end": True})
     capabilities = [ObjectStoreCapability()]
     if dispatch == "proxy":
         capabilities.append(
@@ -315,7 +369,9 @@ async def test_approval_persists_refs_and_resolves_only_on_resumed_target(proxy,
 
     def build():
         return _build(
-            ObjectRefToolset(FunctionToolset([Tool(send, requires_approval=True)], id="approval")),
+            ObjectRefToolset(
+                FunctionToolset([Tool(send, requires_approval=True)], id="approval"), object_ref_tools={"*": True}
+            ),
             proxy=proxy,
             calls=calls,
             extra=(ObjectStoreCapability(),),
@@ -395,7 +451,10 @@ async def test_opt_in_preserves_native_json_mode_without_refs():
         AgentSpec(),
         output_type=str,
         model=model_call("schedule", {"when": "2026-11-13T12:00:00"}),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([schedule]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([schedule]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("schedule", bindings=RunBindings.embedded(object_store=Store()))
     assert result.output_or_raise() == "done"
@@ -530,7 +589,10 @@ async def test_reference_validation_preserves_nested_models_and_json_strict_fiel
         AgentSpec(),
         output_type=str,
         model=model_call(target.__name__, arguments),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"
@@ -741,7 +803,10 @@ async def test_reference_callbacks_run_once_before_reads_and_preserve_typed_mode
         AgentSpec(),
         output_type=str,
         model=model_call(target.__name__, arguments),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done", result
@@ -799,7 +864,7 @@ async def test_reference_prefix_in_ordinary_text_is_not_a_reference(enabled):
         model=model_call("send", {"description": text}),
         capabilities=[
             *([ObjectStoreCapability()] if enabled else []),
-            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
         ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store if enabled else None))
@@ -821,7 +886,10 @@ async def test_reference_expansion_preserves_prefix_prose_beside_exact_reference
         AgentSpec(),
         output_type=str,
         model=model_call("send", {"data": item.ref, "description": text}),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"
@@ -870,7 +938,9 @@ async def test_reference_dispatch_validates_once_without_double_transform(dispat
     payload = {"data": item.ref, **({"copies": 1} if supplied else {})}
     # Single-model native tools advertise the unwrapped model as their schema.
     arguments = dict(payload)
-    source = ObjectRefToolset(FunctionToolset([Tool(target, args_validator=validate)], id="transform"))
+    source = ObjectRefToolset(
+        FunctionToolset([Tool(target, args_validator=validate)], id="transform"), object_ref_tools={"*": True}
+    )
     capabilities = [ObjectStoreCapability()]
     if dispatch == "proxy":
         capabilities.append(
@@ -944,7 +1014,13 @@ async def test_reference_dispatch_preserves_default_factory_results(single):
         model=model_call(target.__name__, {"payloads": [{"data": item.ref}, {"data": item.ref}]}),
         capabilities=[
             ObjectStoreCapability(),
-            Capability(toolsets=[ObjectRefToolset(FunctionToolset([Tool(target, args_validator=validate)]))]),
+            Capability(
+                toolsets=[
+                    ObjectRefToolset(
+                        FunctionToolset([Tool(target, args_validator=validate)]), object_ref_tools={"*": True}
+                    )
+                ]
+            ),
         ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
@@ -980,7 +1056,7 @@ async def test_reference_dispatch_preserves_before_validation_rewrite():
         model=model_call("send", {"data": item.ref, "copies": 1}),
         capabilities=[
             ObjectStoreCapability(),
-            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
             Rewrite(),
         ],
     )
@@ -1015,7 +1091,7 @@ async def test_reference_dispatch_preserves_after_validation_rewrite():
         model=model_call("send", {"data": item.ref, "copies": 1}),
         capabilities=[
             ObjectStoreCapability(),
-            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
             Rewrite(),
         ],
     )
@@ -1052,7 +1128,7 @@ async def test_reference_dispatch_reads_only_references_remaining_after_hooks():
         model=model_call("send", arguments),
         capabilities=[
             ObjectStoreCapability(),
-            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
             Rewrite(),
         ],
     )
@@ -1084,7 +1160,10 @@ async def test_reference_transport_does_not_bypass_native_field_validator_failur
         AgentSpec(),
         output_type=str,
         model=model_call("send", {"data": item.ref}),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"
@@ -1122,7 +1201,10 @@ async def test_reference_dispatch_preserves_named_tuple_types_without_revalidati
         AgentSpec(),
         output_type=str,
         model=model_call("send", {"upload": [item.ref, "2"]}),
-        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]), object_ref_tools={"*": True})]),
+        ],
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"

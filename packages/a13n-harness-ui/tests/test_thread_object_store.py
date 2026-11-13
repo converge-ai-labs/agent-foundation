@@ -155,14 +155,25 @@ async def test_app_root_execution_uses_host_store_and_preserves_it_on_restart(tm
 
 
 @pytest.mark.parametrize("lifetime", ["run", "host", "apps"])
-@pytest.mark.parametrize("server_default,override", [(True, None), (False, True), (True, False), (False, None)])
-async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default, override, lifetime):
+@pytest.mark.parametrize(
+    "rules,enabled",
+    [
+        ({}, False),
+        ({"*": True}, True),
+        ({"*": False, "image_upload": True}, True),
+        ({"*": True, "image_upload": False}, False),
+        ({"*_upload": True}, True),
+        ({"image_*": True}, True),
+        ({"i*e_*load": True}, True),
+    ],
+)
+async def test_mcp_object_ref_rules_apply_across_client_lifetimes(tmp_path, rules, enabled, lifetime):
     import base64
     import json
 
     from a13n_harness.capabilities import ObjectStoreCapability
     from a13n_harness_ui.composition.models import ResolvedMcpRecipe
-    from a13n_harness_ui.configuration.models import McpRemoteTransport
+    from a13n_harness_ui.configuration.models import McpRemoteTransport, McpServerResource
     from a13n_harness_ui.mcp_adapters import HarnessUiMCP
     from a13n_harness_ui.mcp_apps.connections import Connections as AppConnections
     from a13n_harness_ui.mcp_runtime.connections import Connections
@@ -173,7 +184,7 @@ async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default,
     server, received = FastMCP("Exact object transport"), []
 
     @server.tool
-    def send(data_base64: str) -> str:
+    def image_upload(data_base64: str) -> str:
         received.append(base64.b64decode(data_base64))
         return "sent"
 
@@ -185,22 +196,35 @@ async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default,
         nonlocal step
         step += 1
         if step == 1:
-            yield {0: DeltaToolCall(name="send", json_args=json.dumps({"data_base64": item.ref}), tool_call_id="send")}
+            yield {
+                0: DeltaToolCall(
+                    name="image_upload", json_args=json.dumps({"data_base64": item.ref}), tool_call_id="send"
+                )
+            }
         else:
             yield "done"
 
     connections = AppConnections() if lifetime == "apps" else Connections() if lifetime == "host" else None
     async with _http_mcp(server) as url:
         try:
-            recipe = ResolvedMcpRecipe(
-                server_id="mcp-media",
+            resource = McpServerResource(
+                schema_version="2",
+                kind="mcp_server",
+                id="mcp-media",
+                name="Media",
                 transport=McpRemoteTransport(url=url),
-                supports_object_refs=server_default,
-                object_ref_tools={} if override is None else {"send": override},
+                object_ref_tools=rules,
+            )
+            recipe = ResolvedMcpRecipe(
+                server_id=resource.id,
+                transport=resource.transport,
+                object_ref_tools=resource.object_ref_tools,
                 on_error="raise",
                 host_owned=lifetime == "host",
                 apps_enabled=lifetime == "apps",
             )
+            recipe = ResolvedMcpRecipe.model_validate_json(recipe.model_dump_json())
+            assert recipe.object_ref_tools == rules
             executable = HarnessBuilder().build(
                 AgentSpec(),
                 model=FunctionModel(stream_function=model),
@@ -219,7 +243,7 @@ async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default,
             if connections is not None:
                 await connections.close()
     assert result.output_or_raise() == "done"
-    assert received == ([b"\x00real MCP payload\xff"] if (server_default if override is None else override) else [])
+    assert received == ([b"\x00real MCP payload\xff"] if enabled else [])
     assert "real MCP payload" not in str(result.all_messages())
 
 

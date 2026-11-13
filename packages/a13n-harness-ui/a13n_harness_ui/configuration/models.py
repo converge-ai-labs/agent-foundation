@@ -743,8 +743,13 @@ class McpServerResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
-    supports_object_refs: bool = Field(default=False, exclude_if=lambda value: not value)
-    object_ref_tools: dict[McpToolName, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    object_ref_tools: dict[McpToolName, bool] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Object Reference Transport rules by original tool name; '*' matches any characters. "
+        "Exact names win, then more literal characters, with false winning equally specific patterns. "
+        "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+    )
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 

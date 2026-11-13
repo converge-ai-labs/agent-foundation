@@ -29,7 +29,7 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 
 ## Tool Extensions
 
-[Object Reference Transport](24-object-store.md#object-reference-transport) is the opt-in tool extension for delivering scoped binary objects as base64. Tools declare `a13n.harness.supports_object_refs`; native validation, hooks and policy operate on reference-valued arguments, and final target dispatch performs substitution once. The linked contract owns admission, payload-check ownership and history preservation.
+[Object Reference Transport](24-object-store.md#object-reference-transport) is the opt-in tool extension for delivering scoped binary objects as base64. Tools declare `a13n.harness.supports_object_refs` or are selected through shared `object_ref_tools` name-pattern rules; native validation, hooks and policy operate on reference-valued arguments, and final target dispatch performs substitution once. The linked contract owns admission, payload-check ownership and history preservation.
 
 ## External Tool Schema Compatibility
 

@@ -210,7 +210,6 @@ class AgentCompositionResolver:
                 transport=source.mcp_servers[item].transport,
                 on_error=source.mcp_servers[item].on_error,
                 tools=source.mcp_servers[item].tools,
-                supports_object_refs=source.mcp_servers[item].supports_object_refs,
                 object_ref_tools=source.mcp_servers[item].object_ref_tools,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,

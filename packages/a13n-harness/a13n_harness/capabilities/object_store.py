@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from hashlib import sha256
@@ -58,40 +59,49 @@ def check_object_ref_support(ctx: RunContext[AgentContext], tool_def: Any, args:
         raise system_failure(
             "object_refs_disabled",
             "Object references are disabled. Developer: enable ObjectStoreCapability, bind RunBindings.object_store, "
-            "and opt in the intended tool/toolset/MCP server with supports_object_refs. "
+            "and opt in the intended tool with supports_object_refs metadata or object_ref_tools rules. "
             "Do not invent base64 or change deployment configuration from the Agent.",
         )
     if (tool_def.metadata or {}).get(SUPPORTS_OBJECT_REFS) is not True:
         raise system_failure(
             "object_refs_not_supported",
             f"Tool {tool_def.name!r} does not support object references. Developer: opt in this tool, "
-            "toolset, or MCP server with supports_object_refs when its string arguments accept base64.",
+            "toolset, or MCP server through metadata or object_ref_tools rules when its string arguments accept base64.",
         )
 
 
 @dataclass
 class ObjectRefToolset(WrapperToolset[AgentContext]):
-    """Opt tools into Object Reference Transport, with per-tool metadata overrides."""
+    """Select Object Reference Transport by original tool name; only ``*`` is a wildcard.
 
-    supports_object_refs: bool = True
-    tool_overrides: dict[str, bool] = field(default_factory=dict)
+    Exact names win, then patterns with more literal characters. Equally specific
+    patterns prefer false, independently of mapping order. Unmatched tools retain
+    their native metadata declaration, defaulting to unsupported.
+    """
+
+    object_ref_tools: dict[str, bool] = field(default_factory=dict)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
-        return {
-            name: replace(
-                tool,
-                tool_def=replace(
-                    tool.tool_def,
-                    metadata={
-                        SUPPORTS_OBJECT_REFS: self.supports_object_refs,
-                        **(tool.tool_def.metadata or {}),
-                        **({SUPPORTS_OBJECT_REFS: self.tool_overrides[name]} if name in self.tool_overrides else {}),
-                    },
-                ),
+        patterns = [
+            (re.compile(re.escape(pattern).replace(r"\*", ".*"), re.DOTALL), enabled)
+            for pattern, enabled in sorted(
+                self.object_ref_tools.items(), key=lambda item: (-len(item[0].replace("*", "")), item[1])
             )
-            for name, tool in tools.items()
-        }
+            if "*" in pattern
+        ]
+        selected = {}
+        for name, tool in tools.items():
+            metadata = dict(tool.tool_def.metadata or {})
+            enabled = self.object_ref_tools.get(name)
+            if enabled is None:
+                enabled = next(
+                    (value for pattern, value in patterns if pattern.fullmatch(name)),
+                    metadata.get(SUPPORTS_OBJECT_REFS, False),
+                )
+            metadata[SUPPORTS_OBJECT_REFS] = enabled
+            selected[name] = replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
+        return selected
 
 
 def _reference_schema(value: Any) -> Any:

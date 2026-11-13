@@ -153,17 +153,16 @@ Enable the private object library in the agent revision:
 
 A screenshot or other native MCP media result keeps its original media and gains an `a13n-object://obj_...` reference. The agent can pass that exact string to an opted-in base64 consumer. Runtime supplies the original bytes without asking the model to generate base64. The object library belongs to the thread; automatically captured media does not become a workspace Asset. Forks and independent child threads do not inherit another thread's library.
 
-To opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation, set the MCP connection's `config.supports_object_refs` server default, or enable only selected tools with `config.object_ref_tools`:
+To opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation, select tools through the MCP connection's `config.object_ref_tools` rules:
 
 ```json
 {
   "url": "https://example.com/mcp",
-  "supports_object_refs": false,
-  "object_ref_tools": {"send_image": true}
+  "object_ref_tools": {"*": false, "*_upload": true, "send_image": true, "text_upload": false}
 }
 ```
 
-Use this opt-in only for string arguments accepting base64. Connection permissions and approvals still apply. Approval requests and history keep references; the actual target resolves them after permission checks. Expiry during an approval wait produces an unavailable-reference error, not automatic producer replay.
+Rules match original, case-sensitive server tool names. `*` matches zero or more characters anywhere; other characters are literal. Exact names win, then patterns with more literal characters; equally specific patterns prefer false, independently of entry order. `"*"` sets the default; unmatched tools retain native declarations, defaulting to unsupported. These are the same [selection rules used by native toolsets](../a13n-harness/capabilities.md#object-reference-transport) and Harness UI. Use this opt-in only for string arguments accepting base64. Connection permissions and approvals still apply. Approval requests and history keep references; the actual target resolves them after permission checks. Expiry during an approval wait produces an unavailable-reference error, not automatic producer replay.
 
 The tools `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete` import authorized Environment files and manage the private catalog. `asset_store(ref=...)` promotes an available object without changing its ID. Stored objects survive temporary expiry and LRU eviction until explicitly deleted.
 

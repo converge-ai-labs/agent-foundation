@@ -123,15 +123,26 @@ async def test_production_host_selects_capability_and_binds_private_store(execut
     assert completed["output"] == "listed"
 
 
-@pytest.mark.parametrize("server_default,override", [(True, None), (False, True), (True, False), (False, None)])
-async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_model, runs_kit, server_default, override):
+@pytest.mark.parametrize(
+    "rules,enabled",
+    [
+        ({}, False),
+        ({"*": True}, True),
+        ({"*": False, "image_upload": True}, True),
+        ({"*": True, "image_upload": False}, False),
+        ({"*_upload": True}, True),
+        ({"image_*": True}, True),
+        ({"i*e_*load": True}, True),
+    ],
+)
+async def test_mcp_object_ref_rules_deliver_exact_private_bytes(service, scripted_model, runs_kit, rules, enabled):
     import base64
     import json
 
     import httpx2
     from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
     from a13n_harness.capabilities import ObjectStoreCapability
-    from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
+    from a13n_service.providers.tools.mcp import McpConfig, mcp_capability, mcp_client
     from fastmcp import FastMCP
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -142,7 +153,7 @@ async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_mod
     server, received, checked = FastMCP("Exact private transport"), [], []
 
     @server.tool
-    def send(data_base64: str) -> str:
+    def image_upload(data_base64: str) -> str:
         received.append(base64.b64decode(data_base64))
         return "sent"
 
@@ -152,13 +163,19 @@ async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_mod
         nonlocal step
         step += 1
         if step == 1:
-            yield {0: DeltaToolCall(name="send", json_args=json.dumps({"data_base64": item.ref}), tool_call_id="send")}
+            yield {
+                0: DeltaToolCall(
+                    name="image_upload", json_args=json.dumps({"data_base64": item.ref}), tool_call_id="send"
+                )
+            }
         else:
             yield "done"
 
     async with serve(server.http_app(path="/mcp")) as url:
+        config = McpConfig.model_validate_json(McpConfig(url=url + "/mcp", object_ref_tools=rules).model_dump_json())
+        assert config.object_ref_tools == rules
         http = httpx2.AsyncClient()
-        async with mcp_client(url + "/mcp", "connection-media", http, timeout=5) as client:
+        async with mcp_client(config.url, "connection-media", http, timeout=5) as client:
 
             async def acquire():
                 return client
@@ -174,8 +191,7 @@ async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_mod
                 prepare,
                 tools=None,
                 check=check,
-                supports_object_refs=server_default,
-                object_ref_tools={} if override is None else {"send": override},
+                object_ref_tools=config.object_ref_tools,
             )
             executable = HarnessBuilder().build(
                 AgentSpec(),
@@ -184,7 +200,6 @@ async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_mod
                 capabilities=[ObjectStoreCapability(), capability],
             )
             result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
-    enabled = server_default if override is None else override
     assert result.output_or_raise() == "done"
     assert received == ([b"\x00real MCP payload\xff"] if enabled else [])
     assert len(checked) == (1 if enabled else 0)
