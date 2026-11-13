@@ -58,9 +58,9 @@ Neutral surfaces carry the interface. Primary buttons are near-black in light mo
 
 ## Identity Color
 
-Identity is separate from status. A child conversation uses a deterministic generated character: a body with eyes, a mouth and optional small features. A stable hash of its Thread ID selects every variable feature and palette entry; state never changes the character or its hue. Eyes stay legible at 16px and characters retain their proportions at tab/header sizes. State uses text, a badge or reduced-motion-aware animation. Tool icons remain neutral.
+Identity is separate from status. A child conversation uses a deterministic generated glyph: a rounded polygon with a pair of eyes. A stable hash of its Thread ID seeds every variable feature: palette entry, side count, rotation, vertex and corner variation, eye style, gaze and tilt. State never changes the glyph or its hue. Bodies keep similar visual weight, eyes stay legible at 16px and glyphs retain their proportions at tab/header sizes. State uses text, a badge or reduced-motion-aware animation. Tool icons remain neutral.
 
-Harness owns `--a13n-identity-1` through `--a13n-identity-6`: clean, saturated candy light/dark pairs `#ff71c3`/`#ffa0d7`, `#ad8bff`/`#c5aaff`, `#4cdbf4`/`#7ce8fa`, `#7294ff`/`#a3baff`, `#dc82ff`/`#e9aaff`, and `#ff8ce4`/`#ffafea`. `--a13n-identity-ink` (`#26203c`) keeps facial features legible; `--a13n-identity-outline` (`#5a4165`/`#cfb8e7`) separates bodies from their surfaces. Identity colors never become control fills or success/failure signals; names remain ordinary text.
+Harness owns `--a13n-identity-1` through `--a13n-identity-8`: clean, saturated candy light/dark pairs `#ff6fb1`/`#ff8cc2`, `#ff8a5c`/`#ffa37f`, `#ffc53d`/`#ffd36b`, `#8ed94f`/`#a7e472`, `#33d1a0`/`#5bdcb4`, `#3cc8f0`/`#6fd8f6`, `#6b8cff`/`#8fa8ff`, and `#a77bff`/`#bb98ff`. `--a13n-identity-ink` (`#231f33`) keeps eyes legible and `--a13n-identity-light` (`#fff`) supplies eye whites and highlights. Identity colors never become control fills or success/failure signals; names remain ordinary text.
 
 ## Controls, Overlays and Feedback
 

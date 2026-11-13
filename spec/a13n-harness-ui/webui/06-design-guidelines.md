@@ -89,7 +89,7 @@ The floating card sits 8px inside the chat area's top-right edge, about 320px wi
 
 The Background work history tab reuses those rows and section anatomy with scrolling and Show more. Item tabs reuse the resource strip's truncation and close controls. Child tabs have no composer; their Stop action sits beside state in the header, matching tool tabs. Accepted Stop shows the shared loading indicator in the same slot until terminal state arrives. Saved/live readers reuse transcript components and checkpoint cut-over; notices remain quiet execution links. Tasks and Notes remain the composer's only work shortcuts.
 
-Child identity is a small generated SVG character with a candy-colored body, legible dark eyes and optional ears, antenna or fins. Stable Thread-ID hashing selects palette, body, eyes, mouth and extras. State uses text or gentle reduced-motion-aware motion, never identity hue. The shared identity role owns the palette and contrast rules. Empty, loading, error and narrow states preserve alignment.
+Child identity is a small generated SVG glyph: a candy-colored rounded polygon with legible eyes. The Thread ID seeds its palette entry, shape, rotation, corner rounding, eye style, gaze and tilt. State uses text or gentle reduced-motion-aware motion, never identity hue. The shared identity role owns the palette and contrast rules. Empty, loading, error and narrow states preserve alignment.
 
 ## Settings, Dialogs and Popovers
 

@@ -9,6 +9,8 @@ import type { Schema, Transport } from "../transport/client";
 import {
   backgroundGroups,
   backgroundItems,
+  GLYPH_COLORS,
+  GLYPH_EYES,
   glyphIdentity,
 } from "./background-work";
 import { ChildControlsProvider } from "./child-controls";
@@ -58,7 +60,10 @@ it("groups child conversations separately from tools and puts running first", ()
 });
 it("uses stable child identity and deduplicates Shell execution observations", () => {
   expect(glyphIdentity("child-one")).toEqual(glyphIdentity("child-one"));
-  expect(glyphIdentity("child-one").color).toBeLessThan(6);
+  const glyph = glyphIdentity("child-one");
+  expect(glyph.color).toBeLessThan(GLYPH_COLORS);
+  expect(glyph.eyes).toBeLessThan(GLYPH_EYES);
+  expect(glyph.path).toMatch(/^M.*Z$/);
   const tool = {
     execution_id: "exec-shell",
     tool_name: "shell_exec",
