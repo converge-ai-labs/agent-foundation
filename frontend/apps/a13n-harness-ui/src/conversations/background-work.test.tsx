@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -597,7 +604,7 @@ it("makes the child record read-only and keeps an accepted Stop pending until te
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull(),
   );
-  expect(screen.getByText("Cancelled")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Cancelled" })).toBeTruthy();
 });
 
 it("reads the terminal child checkpoint when its head settles after a running record", async () => {
@@ -680,7 +687,9 @@ it("uses the title alone without a preview and never queries child inputs for to
     screen.getByRole("button", { name: "Background work" }),
   );
   const row = await screen.findByRole("button", { name: /Agent one/ });
-  expect(row.getAttribute("title")).toBe("Agent one");
+  expect(within(row).getByText("Agent one").title).toBe("Agent one");
+  await userEvent.hover(within(row).getByRole("img", { name: "Running" }));
+  expect(await screen.findByText("Running")).toBeTruthy();
   expect(test.GET.mock.calls.some(([path]) => path.endsWith("/inputs"))).toBe(
     false,
   );
@@ -747,7 +756,9 @@ it("shares server tool cancellation progress across the card, history and item h
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull(),
   );
-  expect(screen.getAllByText("Cancelled").length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByRole("img", { name: "Cancelled" }).length,
+  ).toBeGreaterThan(0);
 });
 
 it("requests another history page only after Show more", async () => {

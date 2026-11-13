@@ -1,3 +1,4 @@
+import { BackgroundStateIcon } from "./background-state-icon";
 import { TerminalWindow, Wrench, CirclesThree } from "@phosphor-icons/react";
 import { ChildInputLabels } from "./input-content";
 import { useLayoutEffect, useRef } from "react";
@@ -21,7 +22,6 @@ import {
   ChildStop,
   SubagentGlyph,
   ToolCancel,
-  useBackgroundStateLabel,
 } from "./background-card";
 import { ConversationTranscript } from "./transcript";
 import { sourceText, parsed, describeTool } from "./tool-presentation";
@@ -36,7 +36,6 @@ import { ShellOutput } from "./tool-call";
 export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
   const { t } = useTranslation();
   const bg = useBackground();
-  const state = useBackgroundStateLabel();
   const listed = bg.items.find(
     (item) => backgroundKey(item.target) === backgroundKey(target),
   );
@@ -104,7 +103,7 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
             }
           />
         ) : (
-          <span>{item ? state(item.state) : t("Unavailable")}</span>
+          <BackgroundStateIcon state={item?.state ?? "unavailable"} focusable />
         )}
         {item?.child && <ChildStop item={item} />}
         {item?.tool && <ToolCancel item={item} />}
@@ -127,7 +126,8 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
           <h3>{t("Command")}</h3>
           <pre>{item.process?.command || t("Command unavailable")}</pre>
           <p>
-            {t("Last observed state")}: {state(item.state)}
+            {t("Last observed state")}:{" "}
+            <BackgroundStateIcon state={item.state} focusable />
           </p>
           {item.process?.exitCode !== undefined && (
             <p>

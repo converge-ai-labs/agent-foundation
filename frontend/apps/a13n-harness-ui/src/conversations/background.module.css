@@ -131,7 +131,18 @@
   font-family: var(--a13n-mono);
   font-size: var(--harness-code-size);
 }
+.stateIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+  vertical-align: middle;
+}
 .metadata {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   line-height: calc(var(--a13n-text-body) * 20 / 14);
   grid-column: 3;
   grid-row: 1;
