@@ -32,6 +32,9 @@ async def child_app(tmp_path, monkeypatch, child_model):
             yield "Parent finished."
 
     async with await open_app(tmp_path, monkeypatch, model) as app:
+        # These tests drive the parent explicitly; an automatic result copy
+        # would wake it between submissions.
+        app._tool_executions.deliver_subagent = None
         parent = await new_thread(app)
 
         async def submit(name="spawn_subagent", **arguments):
