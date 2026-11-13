@@ -37,6 +37,8 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 
 ## Optional Capability Roles
 
+`ObjectStoreCapability` captures binary media and supplies management tools and opt-in target reference transport over `RunBindings.object_store`. Hosts own scoped storage, authorization, expiry and quotas. [Object Store](24-object-store.md) owns its protocol, lifecycle and dispatch invariants.
+
 `DetectLoops` is the upstream opt-in repeated-action detector, supported through both native code-first composition and declarative configuration. [Native loop detection](04-capability-model.md#opt-in-native-loop-detection) owns its attempt scope and failure behavior.
 
 `BrowserUseCapability` contributes Chromium browser tools over a Host-authorized `RunBindings.browser_backend` or trusted embedded backend. The core owns global/owned tab access, cleanup ownership, and fresh references; Hosts own browser processes, profiles, and viewer access. [Browser Use](23-browser-use.md) owns binding, lifecycle, concurrency, and recovery.

@@ -127,6 +127,13 @@ class HarnessUiMCP(MCP[AgentContext]):
         else:
             client = Client(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
             toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
+        from a13n_harness.capabilities.object_store import ObjectRefToolset
+
+        toolset = ObjectRefToolset(
+            toolset,
+            supports_object_refs=self._recipe.supports_object_refs,
+            tool_overrides=dict(self._recipe.object_ref_tools),
+        )
         if self._operation_guard is not None:
             toolset = _GuardedToolset(toolset, self._operation_guard)
         capability = AppMCP if self._apps is not None else MCP[AgentContext]

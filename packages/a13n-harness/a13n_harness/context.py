@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         ModelContextProjectionRequest,
     )
     from a13n_harness.models import RunModelResolver
+    from a13n_harness.objects import ObjectStore
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
     from a13n_harness.recovery import ToolRecoveryPlan
@@ -173,6 +174,7 @@ class RunBindings:
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
+    object_store: ObjectStore | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -241,6 +243,7 @@ class RunBindings:
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
+        from a13n_harness.objects import ObjectStore
         from a13n_harness.tools.client import ClientToolsetDefinition, _validate_toolsets
         from a13n_harness.toolsets.documents import DocumentConverter
         from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
@@ -248,6 +251,7 @@ class RunBindings:
         for name, value, expected in (
             ("browser_backend", self.browser_backend, BrowserBackend),
             ("web", self.web, WebBinding),
+            ("object_store", self.object_store, ObjectStore),
             ("document_converter", self.document_converter, DocumentConverter),
             ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
             ("task_state", self.task_state, TaskStateBinding),
@@ -283,6 +287,7 @@ class RunBindings:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         browser_backend: BrowserBackend | None = None,
         web: WebBinding | None = None,
+        object_store: ObjectStore | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
@@ -320,6 +325,7 @@ class RunBindings:
             capabilities=tuple(capabilities),
             browser_backend=browser_backend,
             web=web,
+            object_store=object_store,
             document_converter=document_converter,
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
@@ -473,6 +479,7 @@ class AgentContext:
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
+    object_store: ObjectStore | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None

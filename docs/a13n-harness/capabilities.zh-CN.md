@@ -444,3 +444,30 @@ capabilities = (Capability(id="math", tools=[double]),)
 Capability ID、工具 ID、绑定 ID 和其他紧凑选择器用于关联和组合，不授予权限，也不恢复 provider 权限。
 
 压缩成功时，`a13n_harness.capabilities` 通过原生 Capability 事件通道发出 `CompactionSummaryEvent`。其 `operation_id` 与压缩生命周期事件一致，`summary` 包含生成的替代文本。它是带内容的输出，不是 Agent 的回答，也不证明检查点已保存。生命周期扩展本身仍只含元数据。Host 将就绪的 `compaction_result` 与 `previous_state` 一起传给 `run` 或 `stream` 后，Harness 在恢复历史之前判断并应用结果，在投影最新上下文前发出恢复与总结事件。该恢复过程无需配置 Compaction Capability 或 operator，详见[后台压缩](context.md#background-compaction)。
+
+## 用 Object Store 复用原始媒体
+
+选择 `ObjectStoreCapability`，并通过 `RunBindings.object_store` 绑定 Host 实现的 `a13n_harness.objects.ObjectStore`。Host 负责字节存储、作用域、授权和保留策略；Harness 负责媒体捕获、管理工具和参数传输。
+
+```python
+from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+# `send_image` accepts base64; `host_store` implements ObjectStore.
+features = [
+    ObjectStoreCapability(),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]))]),
+]
+bindings = RunBindings.embedded(object_store=host_store)
+```
+
+捕获的原生用户媒体和工具/MCP 媒体会保留 Model 可见的原始内容，并附加 `a13n-object://obj_...` 等元数据。将准确的引用作为已启用目标工具的完整字符串参数。Harness 在真正调用目标时，每个不同对象只读取一次，并提供由原始字节编码的 base64。直接调用、ToolSearch 和 CodeAct 都支持嵌套参数值。程序源码、字典键、子字符串、审批请求和工具调用历史保留引用，不写入展开后的载荷。
+
+用 `asset_ref(path)` 导入有权限读取的普通 Environment 文件。`asset_store(ref=...)` 提升可用对象的保留级别而不改变 ID；`asset_store(path=...)` 导入并保留文件。`asset_list`、`asset_info` 和 `asset_delete` 管理当前 Host 作用域，且不向 Model 暴露字节。
+
+目标工具默认不支持引用。单个工具可设置元数据 `{"a13n.harness.supports_object_refs": True}`；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。只为字符串参数接受 base64 的工具启用。原生 Core schema 和自定义参数校验仍会在目标执行前检查实际参数。自定义工具集若使用非原生参数校验器，启用时会明确失败。
+
+权限拒绝和待审批不会读取 Store。引用可能在审批期间过期；恢复调用会报告对象不可用。Agent 必须使用当前列出的引用或明确重新导入，不能编造 base64 或自动重放生产工具。临时 TTL 和 LRU 上限由 Host 管理；显式保留后，对象不再受临时过期策略影响。`ObjectStoreConfiguration(capture_media=False)` 关闭自动捕获，`max_object_bytes` 限制导入和捕获大小。Host 上限可更小；捕获因大小被拒绝时，原生媒体仍保留，并报告没有生成可复用对象。
+
+内置 Host 配置见 [Harness UI](../a13n-harness-ui/configuration.md#object-store) 和 [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools)。

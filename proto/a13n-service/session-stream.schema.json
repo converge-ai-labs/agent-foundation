@@ -642,7 +642,8 @@
         "browser",
         "web",
         "memory",
-        "assets"
+        "assets",
+        "object_store"
       ],
       "type": "string"
     },

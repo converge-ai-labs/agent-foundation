@@ -362,6 +362,13 @@ class _Host:
                 operator=compaction,
             ),
         ]
+        if config.toolsets["object_store"].enabled:
+            from a13n_harness.capabilities.object_store import ObjectStoreCapability, ObjectStoreConfiguration
+
+            sources["object_store"] = ObjectStoreCapability(
+                ObjectStoreConfiguration.model_validate(config.toolsets["object_store"].config)
+            )
+            features.append(sources["object_store"])
         if (web := toolsets.web_tools(config.toolsets)) is not None:
             sources["web"] = WebCapability(toolsets.web_configuration(web))
             features.append(sources["web"])

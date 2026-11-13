@@ -162,6 +162,14 @@ class Objects(Section):
         return self.addressing_style or ("path" if self.path_style else "auto")
 
 
+class ObjectStoreSettings(Section):
+    """Retention of private Thread objects, independent of workspace Assets."""
+
+    temporary_ttl_seconds: float = Field(default=86400, gt=0)
+    max_temporary_objects: int = Field(default=32, ge=1)
+    max_temporary_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+
+
 class RedisSettings(Section):
     url: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
     timeout: float = Field(default=2, gt=0, le=30)
@@ -700,6 +708,7 @@ class Settings(Section):
     server: Server = Field(default_factory=Server)
     database: Database = Field(default_factory=Database)
     objects: Objects = Field(default_factory=Objects)
+    object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     auth: Authentication = Field(default_factory=Authentication)
     encryption: Encryption = Field(default_factory=Encryption)

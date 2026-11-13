@@ -238,6 +238,15 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         capture_tool_call(ctx, call, tool_def)
         if permission_mode(ctx, tool_def) == "deny":
             raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
+        from a13n_harness.capabilities.object_store import check_object_ref_support
+
+        values = args
+        if isinstance(args, str):
+            try:
+                values = _JSON_OBJECT_ADAPTER.validate_json(args)
+            except ValueError:
+                return args  # Native validation owns malformed JSON diagnostics.
+        check_object_ref_support(ctx, tool_def, values)
         return args
 
     async def on_tool_validate_error(

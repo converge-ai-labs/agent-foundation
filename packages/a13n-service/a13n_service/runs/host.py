@@ -62,6 +62,7 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.model_context import ModelContext
+from a13n_service.runs.object_store import ThreadObjectStore
 from a13n_service.runs.platform_files import SOURCE
 from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
@@ -229,6 +230,11 @@ class Host:
             model_context=ModelContext(self.lease.run_id, self.runtime.storage),
             web=self.webs.get(agent.definition_id),
             browser_backend=self.browsers.get(agent.definition_id),
+            object_store=(
+                ThreadObjectStore(self.runtime, self.lease, self.authority)
+                if agent.config.toolsets["object_store"].enabled
+                else None
+            ),
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )
 

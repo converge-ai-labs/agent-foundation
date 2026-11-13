@@ -57,6 +57,7 @@ if TYPE_CHECKING:
         RecordToolKey,
     )
     from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
+    from .object_store import ObjectRefToolset, ObjectStoreCapability, ObjectStoreConfiguration
     from .skills import (
         BoundSkillCatalog,
         BoundSkillCatalogItem,
@@ -166,6 +167,7 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS = {
+    "a13n_harness.capabilities.object_store": ("ObjectRefToolset", "ObjectStoreCapability", "ObjectStoreConfiguration"),
     "a13n_harness.capabilities.browser": ("BrowserUseCapability",),
     "a13n_harness.capabilities.tool_execution": ("ToolExecutionCapability", "ToolExecutionConfig"),
     "a13n_harness.capabilities.codeact": (

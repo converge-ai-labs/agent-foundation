@@ -6452,7 +6452,14 @@ export interface components {
     BuiltinSkillName: "platform-operations";
     /** @enum {string} */
     BuiltinToolsetKey:
-      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
+      | "files"
+      | "shell"
+      | "computer"
+      | "browser"
+      | "web"
+      | "memory"
+      | "assets"
+      | "object_store";
     /** BusyOccurrence */
     BusyOccurrence: {
       /** Entry Id */
@@ -9756,6 +9763,15 @@ export interface components {
        */
       headers?: string[];
       oauth?: components["schemas"]["OAuthSettings"] | null;
+      /** Object Ref Tools */
+      object_ref_tools?: {
+        [key: string]: boolean;
+      };
+      /**
+       * Supports Object Refs
+       * @default false
+       */
+      supports_object_refs?: boolean;
       /** Tools */
       tools?: string[] | null;
       /** Url */

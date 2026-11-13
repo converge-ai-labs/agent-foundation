@@ -1214,6 +1214,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         bindings = production_run_bindings(
             bindings,
             reconstructed.definition_capability_ids,
+            data_root=self._store.settings.data_root,
+            thread_id=state.thread_id,
+            object_store_policy=self._store.settings.object_store,
         )
         stream = reconstructed.executable.stream(
             input if deferred_resume is None or deferred_resume.recovery else None,

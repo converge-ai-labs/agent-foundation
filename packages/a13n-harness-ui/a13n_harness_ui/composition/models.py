@@ -85,6 +85,8 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    supports_object_refs: bool = Field(default=False, exclude_if=lambda value: not value)
+    object_ref_tools: dict[str, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
     oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)

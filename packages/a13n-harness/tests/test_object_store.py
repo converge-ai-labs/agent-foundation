@@ -1,0 +1,613 @@
+from __future__ import annotations
+
+import base64
+import json
+from dataclasses import dataclass, field
+from hashlib import sha256
+from typing import Annotated
+from uuid import uuid4
+
+import pytest
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from a13n_harness.objects import SUPPORTS_OBJECT_REFS, ObjectInfo, object_not_found
+from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+from pydantic import Field
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import BinaryContent, ModelRequest, ToolReturnPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.tools import Tool
+from pydantic_ai.toolsets import FunctionToolset
+
+pytestmark = pytest.mark.anyio
+PAYLOAD = b"\x00original bytes, not model generated\xff"
+
+
+@dataclass
+class Store:
+    entries: dict[str, tuple[ObjectInfo, bytes]] = field(default_factory=dict)
+    reads: int = 0
+
+    async def put(self, data, *, media_type, name=None):
+        info = ObjectInfo(
+            object_id=f"obj_{uuid4().hex}",
+            media_type=media_type,
+            size=len(data),
+            digest=sha256(data).hexdigest(),
+            name=name,
+        )
+        self.entries[info.object_id] = info, data
+        return info
+
+    async def info(self, object_id):
+        if object_id not in self.entries:
+            raise object_not_found()
+        return self.entries[object_id][0]
+
+    async def read(self, object_id):
+        await self.info(object_id)
+        self.reads += 1
+        return self.entries[object_id][1]
+
+    async def store(self, object_id):
+        info = (await self.info(object_id)).model_copy(update={"retention": "stored"})
+        self.entries[object_id] = info, self.entries[object_id][1]
+        return info
+
+    async def list(self, *, offset=0, limit=50):
+        return [item[0] for item in list(self.entries.values())[offset : offset + limit]]
+
+    async def delete(self, object_id):
+        await self.info(object_id)
+        del self.entries[object_id]
+
+
+def model_call(name, arguments, inspect=None):
+    async def stream(messages, info):
+        if inspect:
+            inspect(messages, info)
+        if any(
+            isinstance(part, ToolReturnPart)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ):
+            yield "done"
+        else:
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(arguments), tool_call_id="call-object")}
+
+    return FunctionModel(stream_function=stream)
+
+
+async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes():
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+    seen, validated, schemas = [], [], []
+
+    def validate(ctx, data_base64):
+        validated.append(data_base64)
+
+    def send(data_base64: Annotated[str, Field(pattern=r"^[A-Za-z0-9+/]+=*$")]) -> str:
+        seen.append(base64.b64decode(data_base64))
+        return "sent"
+
+    def inspect(messages, info):
+        schemas.extend(tool.parameters_json_schema for tool in info.function_tools if tool.name == "send")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=model_call("send", {"data_base64": item.ref}, inspect),
+        output_type=str,
+        capabilities=(
+            ObjectStoreCapability(),
+            Capability(
+                toolsets=[
+                    ObjectRefToolset(FunctionToolset([Tool(send, args_validator=validate, strict=True)], id="target"))
+                ]
+            ),
+        ),
+    )
+    result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
+    assert result.status == "completed", result
+    assert seen == [PAYLOAD]
+    assert validated == [base64.b64encode(PAYLOAD).decode()]
+    assert store.reads == 1
+    assert "a13n-object" in json.dumps(schemas)
+    calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
+    assert calls[0].args_as_dict() == {"data_base64": item.ref}
+    assert base64.b64encode(PAYLOAD).decode() not in json.dumps([part.args for part in calls])
+
+
+@pytest.mark.parametrize(
+    "enabled,opted,expected",
+    [
+        (False, True, "object_refs_disabled"),
+        (True, False, "object_refs_not_supported"),
+        (True, True, "object_ref_not_found"),
+    ],
+)
+async def test_missing_and_disabled_refs_never_reach_consumer(enabled, opted, expected):
+    store, seen = Store(), []
+
+    def send(data_base64: str):
+        seen.append(data_base64)
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=model_call("send", {"data_base64": "a13n-object://obj_missing"}),
+        output_type=str,
+        capabilities=(
+            *([ObjectStoreCapability()] if enabled else []),
+            Capability(tools=[Tool(send, metadata={SUPPORTS_OBJECT_REFS: opted})]),
+        ),
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store if enabled else None))
+    assert result.status == "completed", result
+    assert not seen
+    assert expected in str(result.all_messages())
+
+
+async def test_permission_denial_precedes_store_read():
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def send(data_base64: str):
+        pytest.fail("denied tool executed")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=model_call("send", {"data_base64": item.ref}),
+        output_type=str,
+        capabilities=(
+            ObjectStoreCapability(),
+            Capability(tools=[Tool(send, metadata={SUPPORTS_OBJECT_REFS: True})]),
+            ToolPermissionsCapability(ToolPermissions(default="deny")),
+        ),
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.status == "completed"
+    assert store.reads == 0
+
+
+async def test_native_input_capture_preserves_vision_and_ref_promotion():
+    store, observed = Store(), []
+
+    async def stream(messages, info):
+        observed.extend(
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if part.part_kind == "user-prompt"
+        )
+        yield "seen"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=stream),
+        output_type=str,
+        capabilities=(ObjectStoreCapability(),),
+    )
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buffer, format="PNG")
+    image = buffer.getvalue()
+    result = await executable.run(
+        [BinaryContent(data=image, media_type="image/png")], bindings=RunBindings.embedded(object_store=store)
+    )
+    assert result.status == "completed", result
+    assert len(store.entries) == 1
+    assert any(isinstance(value, BinaryContent) for content in observed for value in content), observed
+    assert "a13n-object://" in str(observed)
+    info = (await store.list())[0]
+    assert (await store.store(info.object_id)).object_id == info.object_id
+
+
+@pytest.mark.parametrize("dispatch", ["direct", "proxy", "codeact"])
+async def test_nested_reference_target_dispatch_expands_once_and_keeps_source(dispatch):
+    from a13n_harness.capabilities import (
+        CodeActCapability,
+        ProxyToolSearchConfig,
+        ToolSearchCapability,
+        ToolSearchGroup,
+    )
+    from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+    from pydantic import BaseModel
+
+    class Payload(BaseModel):
+        values: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9+/]+=*$")]]
+
+    seen = []
+
+    def send(payload: Payload, literal: str):
+        seen.append((payload.values, literal))
+        return "sent"
+
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+    args = {"payload": {"values": [item.ref, item.ref]}, "literal": "prefix " + item.ref}
+    send.__annotations__["payload"] = Payload
+    source = ObjectRefToolset(FunctionToolset([send], id="nested"))
+    capabilities = [ObjectStoreCapability()]
+    if dispatch == "proxy":
+        capabilities.append(
+            ToolSearchCapability(
+                groups={"media": ToolSearchGroup(source, "Media")}, config=ProxyToolSearchConfig(call_name="invoke")
+            )
+        )
+        name, arguments = "invoke", {"group": "media", "tool": "send", "arguments": args}
+    elif dispatch == "codeact":
+        capabilities.extend(
+            [Capability(toolsets=[CodeActPolicyToolset(source, CodeActToolPolicy(default=True))]), CodeActCapability()]
+        )
+        name, arguments = "run_code", {"code": f"await send(payload={args['payload']!r}, literal={args['literal']!r})"}
+    else:
+        capabilities.append(Capability(toolsets=[source]))
+        name, arguments = "send", args
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=model_call(name, arguments), capabilities=capabilities
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    encoded = base64.b64encode(PAYLOAD).decode()
+    assert seen == [([encoded, encoded], "prefix " + item.ref)], result.all_messages()
+    assert store.reads == 1
+    calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
+    assert calls[0].args_as_dict() == arguments
+    assert encoded not in str(calls)
+
+
+@pytest.mark.parametrize("custom", [False, True])
+async def test_original_validation_rejects_expanded_bytes_without_echoing_payload(custom):
+    from pydantic_ai import ModelRetry
+
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def validator(ctx, data_base64):
+        raise ModelRetry(f"bad: {data_base64}")
+
+    def send(data_base64: Annotated[str, Field(max_length=5)] if not custom else str):
+        pytest.fail("invalid effective arguments reached consumer")
+
+    # Resolve conditional annotation explicitly; postponed annotations are evaluated in module scope.
+    send.__annotations__["data_base64"] = str if custom else Annotated[str, Field(max_length=5)]
+    tool = Tool(send, metadata={SUPPORTS_OBJECT_REFS: True}, args_validator=validator if custom else None)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data_base64": item.ref}),
+        capabilities=[ObjectStoreCapability(), Capability(tools=[tool])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert "object_ref_arguments_invalid" in str(result.all_messages())
+    assert base64.b64encode(PAYLOAD).decode() not in str(result.all_messages())
+
+
+@pytest.mark.parametrize("expired", [False, True])
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_approval_persists_refs_and_resolves_only_on_resumed_target(proxy, expired):
+    from a13n_harness import DeferredToolResume
+
+    from .test_forwarded_deferred import _build
+
+    store, seen = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def send(data_base64: str):
+        seen.append(base64.b64decode(data_base64))
+        return "sent"
+
+    args = {"data_base64": item.ref}
+    calls = [("invoke", {"group": "tools", "tool": "send", "arguments": args})] if proxy else [("send", args)]
+
+    def build():
+        return _build(
+            ObjectRefToolset(FunctionToolset([Tool(send, requires_approval=True)], id="approval")),
+            proxy=proxy,
+            calls=calls,
+            extra=(ObjectStoreCapability(),),
+        )
+
+    first = await build().run("send", bindings=RunBindings.embedded(object_store=store))
+    assert first.status == "suspended"
+    assert store.reads == 0 and seen == []
+    requests = first.deferred
+    assert requests is not None
+    approval = requests.approvals[0]
+    assert approval.target_call.args_as_dict() == args
+    if expired:
+        await store.delete(item.object_id)
+    resumed = await build().run(
+        previous_state=first.state,
+        bindings=RunBindings.embedded(object_store=store),
+        deferred_resume=DeferredToolResume(
+            requests, requests.build_results(approvals={approval.target_call.tool_call_id: True})
+        ),
+    )
+    assert resumed.output_or_raise() == "done"
+    assert seen == ([] if expired else [PAYLOAD])
+    assert store.reads == (0 if expired else 1)
+    if expired:
+        assert "object_ref_not_found" in str(resumed.all_messages())
+
+
+async def test_tool_media_capture_keeps_native_content_and_exact_original_bytes():
+    from pydantic_ai import ToolReturn
+
+    store, observed = Store(), []
+    media = BinaryContent(data=PAYLOAD, media_type="audio/wav")
+
+    def producer():
+        return ToolReturn(return_value={"created": True}, content=[media])
+
+    async def stream(messages, info):
+        observed[:] = messages
+        if not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield {0: DeltaToolCall(name="producer", json_args="{}", tool_call_id="produce")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=stream),
+        output_type=str,
+        capabilities=[ObjectStoreCapability(), Capability(tools=[producer])],
+    )
+    result = await executable.run("make", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    info = (await store.list())[0]
+    assert await store.read(info.object_id) == PAYLOAD
+    assert info.media_type == "audio/wav" and info.ref in str(observed)
+    contents = [part.content for message in observed for part in message.parts if isinstance(part, ToolReturnPart)]
+    assert any(isinstance(content, list) and {"created": True} in content for content in contents)
+    assert any(
+        isinstance(value, BinaryContent) and value.data == PAYLOAD
+        for content in contents
+        if isinstance(content, list)
+        for value in content
+    )
+
+
+async def test_opt_in_preserves_native_json_mode_without_refs():
+    from datetime import datetime
+
+    seen = []
+
+    def schedule(when: Annotated[datetime, Field(strict=True)]):
+        seen.append(when)
+        return "scheduled"
+
+    schedule.__annotations__["when"] = Annotated[datetime, Field(strict=True)]
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("schedule", {"when": "2026-11-13T12:00:00"}),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([schedule]))])],
+    )
+    result = await executable.run("schedule", bindings=RunBindings.embedded(object_store=Store()))
+    assert result.output_or_raise() == "done"
+    assert seen == [datetime(2026, 11, 13, 12)]
+
+
+async def test_ref_validation_preserves_defaults_coercion_and_managed_resolver_contract():
+    from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+    from pydantic import AfterValidator
+
+    store, seen, resolved = Store(), [], []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def validate_payload(value):
+        assert not value.startswith("a13n-object://")
+        return value
+
+    async def resources(arguments, *, context):
+        assert store.reads == 0
+        resolved.append(dict(arguments))
+        return ()
+
+    def send(data_base64, destination="default-recipient", copies=1):
+        seen.append((base64.b64decode(data_base64), destination, copies))
+        return "sent"
+
+    send.__annotations__.update(
+        data_base64=Annotated[str, Field(pattern=r"^[A-Za-z0-9+/]+=*$"), AfterValidator(validate_payload)],
+        destination=str,
+        copies=int,
+    )
+    tool = HarnessTool(
+        send,
+        harness_metadata=HarnessToolMetadata(
+            tool_id="test.media-send",
+            effects=frozenset({"read"}),
+            credential_audiences=(),
+            idempotency="none",
+            output_policy=ToolOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096),
+            resource_resolver=resources,
+        ),
+        metadata={SUPPORTS_OBJECT_REFS: True},
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data_base64": item.ref, "copies": "2"}),
+        capabilities=[ObjectStoreCapability(), Capability(tools=[tool])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, "default-recipient", 2)], result.all_messages()
+    assert resolved == [{"data_base64": item.ref, "destination": "default-recipient", "copies": 2}]
+    assert store.reads == 1
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_capture_keeps_plain_media_list_flat_for_native_provider_rendering(mixed):
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buffer, format="PNG")
+    image = BinaryContent(data=buffer.getvalue(), media_type="image/png")
+    store = Store()
+
+    def producer():
+        return ["Screenshot", image] if mixed else [image]
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("producer", {}),
+        capabilities=[ObjectStoreCapability(), Capability(tools=[producer])],
+    )
+    result = await executable.run("show", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    part = next(part for message in result.all_messages() for part in message.parts if isinstance(part, ToolReturnPart))
+    assert len(part.files) == 1
+    text, native = part.model_response_str_and_user_content()
+    assert any(isinstance(value, BinaryContent) and value.data == image.data for value in native)
+    assert "Object Store" in text
+
+
+async def test_capture_reimports_current_media_after_cached_object_was_deleted():
+    from a13n_harness.capabilities.object_store import ObjectStoreCapability
+
+    store = Store()
+    capability = ObjectStoreCapability()
+    content = BinaryContent(data=PAYLOAD, media_type="image/png")
+    first = json.loads((await capability._capture(store, content))[0])
+    await store.delete(first["object_id"])
+    second = json.loads((await capability._capture(store, content))[0])
+    assert first["ref"] != second["ref"]
+    assert await store.read(second["object_id"]) == PAYLOAD
+
+
+@pytest.mark.parametrize("single", [False, True])
+async def test_reference_validation_preserves_nested_models_and_json_strict_fields(single):
+    from datetime import datetime
+
+    from pydantic import BaseModel, ConfigDict
+
+    class Payload(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        payload: dict[str, Annotated[str, Field(pattern=r"^[A-Za-z0-9+/]+=*$")]]
+        # Native single-model argument wrapping validates its model in Python
+        # mode even for JSON input; preserve that upstream behavior.
+        when: Annotated[datetime, Field(strict=not single)]
+        count: int = 3
+
+    seen = []
+
+    def send(payload, label="sent"):
+        seen.append((payload, label))
+        return "sent"
+
+    def send_single(payload):
+        seen.append((payload, "sent"))
+        return "sent"
+
+    target = send_single if single else send
+    target.__annotations__["payload"] = Payload
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="application/octet-stream")
+    payload = {"payload": {"data": item.ref}, "when": "2026-11-13T12:00:00"}
+    arguments = payload if single else {"payload": payload}
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call(target.__name__, arguments),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([target]))])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert len(seen) == 1, str(
+        [
+            part.content
+            for message in result.all_messages()
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+    )
+    value, label = seen[0]
+    assert isinstance(value, Payload)
+    assert value.payload == {"data": base64.b64encode(PAYLOAD).decode()}
+    assert value.when == datetime(2026, 11, 13, 12)
+    assert value.count == 3 and label == "sent"
+
+
+@pytest.mark.parametrize("selection", ["file", "directory", "denied"])
+async def test_file_import_uses_authorized_environment_route(tmp_path, selection):
+    from a13n_harness.environment import EnvironmentAction, EnvironmentMount, EnvironmentPermissionSet
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
+
+    from .environment_helpers import DirectLocalSource
+
+    (tmp_path / "image.png").write_bytes(PAYLOAD)
+    source = DirectLocalSource(
+        DirectLocalEnvironmentConfiguration(root={"path": str(tmp_path)}), environment_id="files"
+    )
+    permissions = EnvironmentPermissionSet(
+        operations=frozenset()
+        if selection == "denied"
+        else frozenset(
+            {
+                EnvironmentAction.FILE_STAT,
+                EnvironmentAction.FILE_READ_BYTES,
+            }
+        )
+    )
+    runtime = create_environment_runtime(
+        mounts={"media": EnvironmentMount(source=source, permission_ceiling=permissions)}, default_mount="media"
+    )
+    store = Store()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        capabilities=[ObjectStoreCapability()],
+        model=model_call("asset_ref", {"path": "." if selection == "directory" else "image.png"}),
+    )
+    result = await executable.run("import", bindings=RunBindings.embedded(environment=runtime, object_store=store))
+    assert result.output_or_raise() == "done", result
+    if selection == "file":
+        item = (await store.list())[0]
+        assert await store.read(item.object_id) == PAYLOAD
+        assert item.name == "image.png" and item.media_type == "image/png"
+    else:
+        assert not await store.list()
+        returns = [
+            part.content
+            for message in result.all_messages()
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        assert ("invalid_argument" if selection == "directory" else "environment_denied") in str(returns), returns
+
+
+async def test_host_capture_size_limit_keeps_native_media():
+    from a13n_harness.objects import ObjectStoreError
+
+    class LimitedStore(Store):
+        async def put(self, data, *, media_type, name=None):
+            raise ObjectStoreError("object_too_large", "Host byte limit exceeded.")
+
+    media = BinaryContent(data=PAYLOAD, media_type="audio/wav")
+
+    def produce():
+        return [media]
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("produce", {}),
+        capabilities=[ObjectStoreCapability(), Capability(tools=[produce])],
+    )
+    result = await executable.run("produce", bindings=RunBindings.embedded(object_store=LimitedStore()))
+    assert result.output_or_raise() == "done"
+    part = next(part for message in result.all_messages() for part in message.parts if isinstance(part, ToolReturnPart))
+    assert part.files == [media]
+    assert "object_too_large" in str(part.content)

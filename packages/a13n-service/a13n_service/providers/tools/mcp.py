@@ -103,6 +103,8 @@ class OAuthSettings(BaseModel):
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
+    supports_object_refs: bool = False
+    object_ref_tools: dict[ToolName, bool] = Field(default_factory=dict, max_length=MAX_TOOLS)
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
@@ -250,6 +252,8 @@ def mcp_capability(
     tools: tuple[str, ...] | None,
     check: DispatchCheck,
     capture: Capture | None = None,
+    supports_object_refs: bool = False,
+    object_ref_tools: dict[str, bool] | None = None,
 ) -> MCP[AgentContext]:
     """Fresh native projections borrow one entered client from the worker attempt.
 
@@ -277,7 +281,14 @@ def mcp_capability(
         if tools is not None:
             selected = frozenset(tools)
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
-        return DispatchToolset(listed, connection_id, None, check)
+        from a13n_harness.capabilities.object_store import ObjectRefToolset
+
+        return DispatchToolset(
+            ObjectRefToolset(listed, supports_object_refs=supports_object_refs, tool_overrides=object_ref_tools or {}),
+            connection_id,
+            None,
+            check,
+        )
 
     return AppMCP(
         id=connection_id,

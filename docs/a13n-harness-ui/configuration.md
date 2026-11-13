@@ -421,3 +421,42 @@ run_configuration:
 Omitted/null `allowed_hosts` allows all destinations; `[]` denies all. Rules match normalized hostnames/IPs exactly, or use `regex:` for a full-hostname Python match. This pattern allows `docs.example.com` and its subdomains, not `docs.example.com.evil.test`. Single-quoted YAML preserves backslashes. Empty/invalid expressions fail validation; URLs, paths, ports, globs, and CIDRs are not host patterns.
 
 API-key Model clients and Host Web/MCP check declared destinations and redirect hops without DNS resolution or IP pinning. Restrictive rules reject opaque subscription transports. The captured policy stays fixed for root and child Runs. Namespaced `extensions` need an opting-in consumer; they are not Capability arguments. Shell/plugin networking needs Environment or deployment isolation. See [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions).
+
+## Object Store
+
+Enable reusable media references in the Agent resource:
+
+```yaml
+capabilities:
+  - capability: object_store
+```
+
+The private library belongs to the current Thread and survives Runs and App restarts. It lives under `data_root/object-library/`, outside disposable scratch. Captured images retain native vision content; the Agent receives a compact reference for later tool arguments. The five management tools are `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete`.
+
+The root YAML owns restart-bound retention policy. Defaults keep temporary objects small; increase them for larger workflows:
+
+```yaml
+process:
+  object_store:
+    temporary_ttl_seconds: 86400
+    max_temporary_objects: 32
+    max_temporary_bytes: 67108864
+```
+
+Temporary objects expire after one day without an actual byte read. Reads refresh idle TTL and LRU order; list/info do not. Count and total-byte overflow evict least-recently-used temporary entries. Startup and hourly cleanup also visit inactive libraries. `asset_store` promotes an available object without changing its reference and excludes it from temporary expiry and quotas. Stored objects remain until deleted. This is explicit retention, so store only objects needed later.
+
+MCP targets default to unsupported. In a schema-version-2 MCP resource, opt in the server only when its string arguments accept base64; use original server tool names for overrides:
+
+```yaml
+schema_version: "2"
+kind: mcp_server
+id: mcp-media
+name: Media tools
+supports_object_refs: false
+object_ref_tools:
+  send_image: true
+transport:
+  url: https://example.com/mcp
+```
+
+A valid edit applies to the next Run. References are resolved after permission/approval at the actual target boundary; history keeps the reference. An expired reference fails without automatically replaying the producer. See [Object Store usage](../a13n-harness/capabilities.md#reuse-original-media-with-object-store) for capture limits and code-first opt-in.

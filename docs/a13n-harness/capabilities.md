@@ -444,3 +444,30 @@ A stateful Capability owns one stable namespace in `AgentContext.state` and one 
 Capability IDs, tool IDs, binding IDs, and other compact selectors are correlation and composition identities. They do not grant permissions or restore provider authority.
 
 Successful compaction emits `CompactionSummaryEvent` from `a13n_harness.capabilities` through the native Capability event channel. Its `operation_id` matches the compaction lifecycle events and `summary` contains the generated replacement text. Treat it as content-bearing output, not the Agent's answer or proof of a saved checkpoint. The lifecycle extensions themselves remain metadata-only. When a Host passes a ready `compaction_result` alongside `previous_state` to `run` or `stream`, Harness applies it before recovery and emits restoration and summary events before projecting fresh context. That restoration requires no Compaction Capability or operator; see [Background compaction](context.md#background-compaction).
+
+## Reuse original media with Object Store
+
+Select `ObjectStoreCapability` and bind a Host implementation of `a13n_harness.objects.ObjectStore` through `RunBindings.object_store`. The Host owns scoped bytes, authorization and retention. Harness owns media capture, management tools and argument transport.
+
+```python
+from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+# `send_image` accepts base64; `host_store` implements ObjectStore.
+features = [
+    ObjectStoreCapability(),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]))]),
+]
+bindings = RunBindings.embedded(object_store=host_store)
+```
+
+Captured native user media and tool/MCP media keep their original Model-visible content and gain metadata such as `a13n-object://obj_...`. Pass that exact reference as the whole string argument of an opted-in target. Harness reads each distinct object once at target dispatch and supplies base64 encoding the original bytes. Nested argument values work through direct calls, ToolSearch and CodeAct. Program source, dictionary keys, substrings, approval requests and tool-call history keep references rather than expanded payloads.
+
+Use `asset_ref(path)` to import an authorized regular Environment file. `asset_store(ref=...)` promotes an available object without changing its ID; `asset_store(path=...)` imports and promotes a file. `asset_list`, `asset_info` and `asset_delete` manage the current Host scope without exposing bytes to the Model.
+
+Targets are disabled by default. A tool can opt in with metadata `{"a13n.harness.supports_object_refs": True}`; `ObjectRefToolset` supplies a toolset default and per-tool overrides. Opt in only tools whose string arguments accept base64. Native Core schemas and custom argument validation still check effective arguments before target execution. Custom toolsets with non-native argument validators fail explicitly when opted in.
+
+Permission denial and pending approval cause no Store read. A reference can expire while approval is pending; resume then reports an unavailable object. The Agent must use a currently listed reference or explicitly import again, not invent base64 or replay the producer automatically. Temporary TTL and LRU limits are Host policy; explicit promotion excludes an object from temporary expiry. `ObjectStoreConfiguration(capture_media=False)` disables automatic capture, and `max_object_bytes` bounds imports and capture. Host limits can be smaller; a capture size rejection preserves native media and reports that no reusable object was captured.
+
+For built-in Host configuration, see [Harness UI](../a13n-harness-ui/configuration.md#object-store) and [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools).
