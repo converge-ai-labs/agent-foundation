@@ -597,7 +597,7 @@ it("makes the child record read-only and keeps an accepted Stop pending until te
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull(),
   );
-  expect(screen.getByText("Cancelled")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Cancelled" })).toBeTruthy();
 });
 
 it("reads the terminal child checkpoint when its head settles after a running record", async () => {
@@ -747,7 +747,9 @@ it("shares server tool cancellation progress across the card, history and item h
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Stopping…" })).toBeNull(),
   );
-  expect(screen.getAllByText("Cancelled").length).toBeGreaterThan(0);
+  expect(
+    screen.getAllByRole("img", { name: "Cancelled" }).length,
+  ).toBeGreaterThan(0);
 });
 
 it("requests another history page only after Show more", async () => {

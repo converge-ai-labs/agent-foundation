@@ -1,3 +1,4 @@
+import { BackgroundStateIcon } from "./background-state-icon";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Button, ScrollArea } from "a13n-ui";
 import {
@@ -111,22 +112,6 @@ export function SubagentGlyph({
       </g>
     </svg>
   );
-}
-export function useBackgroundStateLabel() {
-  const { t } = useTranslation();
-  const labels: Record<string, string> = {
-    running: t("Running"),
-    queued: t("Queued"),
-    succeeded: t("Succeeded"),
-    failed: t("Failed"),
-    cancelled: t("Cancelled"),
-    lost: t("Lost"),
-    unavailable: t("Unavailable"),
-    exited: t("Exited"),
-    signaled: t("Signaled"),
-    timed_out: t("Timed out"),
-  };
-  return (state: string) => labels[state] ?? state;
 }
 export function BackgroundToggle() {
   const { t } = useTranslation();
@@ -258,7 +243,6 @@ export function BackgroundList({ section }: { section?: BackgroundSection }) {
 }
 function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
   const bg = useBackground();
-  const state = useBackgroundStateLabel();
   const duration =
     item.started && (item.running || item.ended)
       ? executionTime(
@@ -273,7 +257,6 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
         type="button"
         className={styles.item}
         onClick={() => bg.open(item.target)}
-        title={[item.target.title, item.preview].filter(Boolean).join("\n")}
       >
         <span className={styles.icon}>
           {item.child ? (
@@ -287,17 +270,15 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
             <Wrench />
           )}
         </span>
-        <span className={`${styles.name} ${shell ? styles.command : ""}`}>
+        <span
+          className={`${styles.name} ${shell ? styles.command : ""}`}
+          title={[item.target.title, item.preview].filter(Boolean).join("\n")}
+        >
           {item.target.title}
         </span>
         <span className={styles.metadata}>
-          {state(item.state)}
-          {duration && (
-            <>
-              {" "}
-              · <time>{duration}</time>
-            </>
-          )}
+          <BackgroundStateIcon state={item.state} />
+          {duration && <time>{duration}</time>}
         </span>
       </button>
       <span className={styles.action}>
