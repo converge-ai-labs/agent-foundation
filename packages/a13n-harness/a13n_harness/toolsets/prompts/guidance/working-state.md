@@ -13,9 +13,8 @@ Notes preserve structured working facts for the current session. Tasks preserve 
 - Important facts, decisions, or intermediate results must survive later context changes.
 </when-to-use>
 <context-projection>
-- A `<note>` contains the complete current value; use it directly without calling `note_get`.
-- A `<note-ref>` identifies a value omitted from the bounded projection; call `note_get` only when that value is relevant.
-- `<notes-omitted>` means additional keys are available through `note_get()`.
+- At the start of a Run, the notes directory lists keys and the task list shows unfinished work. Later notices identify changes.
+- Use `note_get()` for all keys, `note_get(key)` for a complete note, and `task_list()` or `task_get(task_id)` to inspect current tasks.
 </context-projection>
 <note>
 - Use descriptive, stable keys; update facts in place and delete stale entries.

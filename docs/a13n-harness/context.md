@@ -101,7 +101,7 @@ When writing YAML, use single quotes to preserve backslashes, for example `'rege
 
 ## Context Composition
 
-Use the Python environment from [Getting started](getting-started.md). Save this complete offline example as `context_demo.py`. The first Run writes a note; the second restores serialized State and receives that note as current context:
+Use the Python environment from [Getting started](getting-started.md). Save this complete offline example as `context_demo.py`. The first Run writes a note; the second restores serialized State, sees the note key and reads the saved value:
 
 ```python
 import asyncio
@@ -125,12 +125,14 @@ async def respond(messages, info):
     )
     assert "runtime" in projected
     returns = [part for part in current.parts if isinstance(part, ToolReturnPart)]
-    if returns:
+    if returns and returns[-1].tool_name == "note_write":
         assert returns[-1].content["action"] == "created"
         yield "Decision recorded."
-    elif '<note key="decision">' in projected:
-        assert "Keep the public API stable." in projected
+    elif returns and returns[-1].tool_name == "note_get":
+        assert returns[-1].content["value"] == "Keep the public API stable."
         yield "Continuing with the saved decision."
+    elif '<note-key key="decision" />' in projected:
+        yield {0: DeltaToolCall(name="note_get", json_args='{"key":"decision"}')}
     else:
         assert "migration" in projected
         yield {0: DeltaToolCall(
@@ -428,7 +430,7 @@ For application-owned tasks, select provider mode and supply a fresh `TaskStateB
 | `note_get(key)`          | Returns the complete value                                 |
 | `note_get()`             | Returns sorted keys and a count                            |
 
-Notes project on user-input requests; tasks also refresh on tool-result requests. `<note>` carries a complete value. `<note-ref>` and `<notes-omitted>` direct the Agent to `note_get`. The defaults are 256 projected notes and 128 tasks sharing a 64 KiB budget, configurable through `WorkingStateConfiguration`.
+Each Run initially lists note keys and unfinished tasks. Later notices identify changed keys, task IDs and statuses. Successful tool results already communicate their own changes. After compaction, use `note_get()` for keys, `note_get(key)` for a full value and `task_list()` for current tasks. The defaults are 256 notes and 128 tasks sharing a 64 KiB budget.
 
 Use notes for facts, tasks for execution progress, and the summary for continuation narrative. Before handoff, reconcile stale notes and task statuses instead of copying their entire contents into the summary.
 

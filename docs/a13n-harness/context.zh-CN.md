@@ -101,7 +101,7 @@ YAML 中使用单引号保留反斜杠，例如 `'regex:(api|docs)\.example\.com
 
 ## 组合上下文
 
-使用[入门](getting-started.md)中准备的 Python 环境，将这个完整离线示例保存为 `context_demo.py`。第一次 Run 写入笔记，第二次恢复序列化的 State，并在当前上下文中收到这条笔记：
+使用[入门](getting-started.md)中准备的 Python 环境，将这个完整离线示例保存为 `context_demo.py`。第一次 Run 写入笔记，第二次恢复序列化的 State，通过笔记键读取保存的正文：
 
 ```python
 import asyncio
@@ -125,12 +125,14 @@ async def respond(messages, info):
     )
     assert "runtime" in projected
     returns = [part for part in current.parts if isinstance(part, ToolReturnPart)]
-    if returns:
+    if returns and returns[-1].tool_name == "note_write":
         assert returns[-1].content["action"] == "created"
         yield "Decision recorded."
-    elif '<note key="decision">' in projected:
-        assert "Keep the public API stable." in projected
+    elif returns and returns[-1].tool_name == "note_get":
+        assert returns[-1].content["value"] == "Keep the public API stable."
         yield "Continuing with the saved decision."
+    elif '<note-key key="decision" />' in projected:
+        yield {0: DeltaToolCall(name="note_get", json_args='{"key":"decision"}')}
     else:
         assert "migration" in projected
         yield {0: DeltaToolCall(
@@ -428,7 +430,7 @@ if disposition is not None:
 | `note_get(key)`          | 返回完整值                                   |
 | `note_get()`             | 返回排序后的键和数量                         |
 
-笔记在用户输入请求中投影，任务还会在工具结果请求中刷新。`<note>` 包含完整值，`<note-ref>` 和 `<notes-omitted>` 提示 Agent 通过 `note_get` 获取。默认最多投影 256 条笔记和 128 个任务，共享 64 KiB 预算，可通过 `WorkingStateConfiguration` 调整。
+每个 Run 首次列出笔记键和未完成任务。后续通知只列有变化的键、任务 ID 和状态。成功的工具返回已说明的变化不会再发一次。上下文压缩后，可用 `note_get()` 查键、`note_get(key)` 读正文，或用 `task_list()` 查当前任务。默认最多列出 256 条笔记和 128 个任务，共享 64 KiB 预算。
 
 用笔记记录事实，用任务记录执行进度，用摘要讲清续接脉络。交接前核对过时笔记和任务状态，不必将全部内容复制到摘要。
 

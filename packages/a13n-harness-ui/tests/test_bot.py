@@ -613,6 +613,45 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
         assert replied.thread.completion != completion
 
 
+async def test_tool_completion_reaches_active_bot_once_without_waking_idle_bot(tmp_path, monkeypatch):
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from anyio import Event
+    from pydantic_ai.models.function import FunctionModel
+
+    started, release = Event(), Event()
+    requests = []
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            requests.append(messages)
+            if len(requests) == 1:
+                started.set()
+                await release.wait()
+            yield "Done"
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        submit = await bot.submit(BotSubmit(input_id="working", text="Work"))
+        with fail_after(10):
+            await started.wait()
+        try:
+            assert await app._deliver_tool_completion(BOT_THREAD_ID, "Inspect completed exec-active", ("exec-active",))
+        finally:
+            release.set()
+        assert (await consumed(app, "working")).receipt_id == submit.receipt_id
+        assert len(requests) == 2
+        assert str(requests[-1]).count("Inspect completed exec-active") == 1
+
+        assert await app._deliver_tool_completion(BOT_THREAD_ID, "Inspect completed exec-idle", ("exec-idle",))
+        assert await app._root_runs.active(BOT_THREAD_ID) is None
+        assert [item.input_id for item in (await bot.snapshot()).inputs] == ["working"]
+        assert len(requests) == 2
+
+
 async def test_generic_human_steer_cannot_bypass_bot_input_policy(tmp_path: Path) -> None:
     from anyio import Event
 
