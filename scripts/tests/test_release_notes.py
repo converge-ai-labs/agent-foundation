@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -18,7 +19,7 @@ from release_notes import (  # noqa: E402
     build_release_command,
     collect_release_changes,
     component_paths,
-    load_pull_request_labels,
+    load_pull_request_metadata,
     previous_release_tag,
     read_manual_release_notes,
     release_notes_path,
@@ -291,8 +292,8 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
     assert arguments[-2:] == ["--notes-file", "-"]
     assert "--generate-notes" not in arguments
     notes = (tmp_path / "gh-notes").read_text(encoding="utf-8")
-    assert notes.startswith("Curated Logging release notes.\n")
-    assert notes.endswith("\n\nRelease initiated by @tag-pusher.\n")
+    assert notes.startswith("Release initiated by @tag-pusher.\n\nCurated Logging release notes.\n")
+    assert notes.endswith("## Contributors\n\n@tag-pusher\n")
     assert "rerun-initiator" not in notes
     assert "release%2Fa13n-logging-v0.0.0...release%2Fa13n-logging-v0.0.1" in notes
     assert "release/a13n-envd-v9.9.9" not in notes
@@ -481,7 +482,7 @@ def test_first_release_preview_mentions_tag_pusher_when_available(git_repository
     )
     expected = INITIAL_NOTES[component] + "\n"
     if actor is not None:
-        expected += f"\nRelease initiated by @{actor}.\n"
+        expected = f"Release initiated by @{actor}.\n\n{expected}\n## Contributors\n\n@{actor}\n"
     assert result.stdout == expected
 
 
@@ -552,12 +553,56 @@ def test_labels_override_title_classification():
     assert "### Features" not in notes
 
 
-def test_label_queries_are_only_for_relevant_pr_numbers_and_are_reused(monkeypatch):
+def test_metadata_queries_are_only_for_relevant_pr_numbers_and_are_reused(monkeypatch):
     calls = []
+    responses = iter(
+        [
+            {
+                "title": "fix(api): retain errors",
+                "labels": [{"name": "bug"}, {"name": "help wanted"}],
+                "author": {"login": "pr-author"},
+            },
+            [
+                {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "commits": {
+                                    "nodes": [
+                                        {
+                                            "commit": {
+                                                "id": "commit-id",
+                                                "authors": {
+                                                    "totalCount": 3,
+                                                    "nodes": [
+                                                        {"user": {"login": "coauthor"}},
+                                                        {"user": {"login": "PR-author"}},
+                                                        {"user": None},
+                                                    ],
+                                                },
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            [
+                [
+                    {"user": {"login": "reviewer"}, "state": "APPROVED"},
+                    {"user": {"login": "reviewer"}, "state": "COMMENTED"},
+                    {"user": {"login": "draft-reviewer"}, "state": "PENDING"},
+                    {"user": None, "state": "DISMISSED"},
+                ]
+            ],
+        ]
+    )
 
     def run(command, **kwargs):
         calls.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="bug\nhelp wanted\n")
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(next(responses)))
 
     monkeypatch.setattr("release_notes.subprocess.run", run)
     changes = [
@@ -565,42 +610,206 @@ def test_label_queries_are_only_for_relevant_pr_numbers_and_are_reused(monkeypat
         ReleaseChange("b" * 40, "Merge pull request #42 from owner/topic"),
         ReleaseChange("c" * 40, "fix: direct commit"),
     ]
-    enriched = load_pull_request_labels(changes, "owner/repo")
-    assert len(calls) == 1
-    assert calls[0] == ["gh", "pr", "view", "42", "--repo", "owner/repo", "--json", "labels", "--jq", ".labels[].name"]
+    enriched = load_pull_request_metadata(changes, "owner/repo")
+    assert len(calls) == 3
+    assert calls[0] == ["gh", "pr", "view", "42", "--repo", "owner/repo", "--json", "labels,title,author"]
+    assert calls[1][:5] == ["gh", "api", "graphql", "--paginate", "--slurp"]
+    assert calls[2] == ["gh", "api", "--paginate", "--slurp", "repos/owner/repo/pulls/42/reviews"]
     assert enriched[0].labels == enriched[1].labels == ("bug", "help wanted")
+    assert enriched[0].title == enriched[1].title == "fix(api): retain errors"
+    assert enriched[0].authors == enriched[1].authors == ("coauthor", "pr-author")
+    assert enriched[0].reviewers == enriched[1].reviewers == ("reviewer",)
     assert enriched[2] == changes[2]
     assert changes[0].labels == ()
 
 
-def test_failed_label_query_does_not_silently_change_categories(monkeypatch):
+def test_release_notes_preserve_pr_titles_and_deduplicate_only_listed_contributors():
+    notes = render_release_notes(
+        component="a13n-logging",
+        version="0.1.1",
+        repository="owner/repo",
+        previous_tag="release/a13n-logging-v0.1.0",
+        releaser="Publisher",
+        manual_notes="## Highlights\n\nCurated release notes.",
+        changes=[
+            ReleaseChange(
+                "a" * 40,
+                "fix: old merge subject (#42)",
+                labels=("enhancement",),
+                title="feat(api): preserve [titles] and <values>",
+                authors=("Alice", "Bob"),
+                reviewers=("alice", "Reviewer"),
+            ),
+            ReleaseChange("b" * 40, "fix: another PR (#43)", authors=("bob", "publisher"), reviewers=("reviewer",)),
+            ReleaseChange("c" * 40, "chore: omitted PR (#44)", labels=("chore",), authors=("not-in-release",)),
+        ],
+    )
+    assert notes.startswith("Release initiated by @Publisher.\n\n## Highlights")
+    assert r"- feat(api): preserve \[titles\] and \<values\> — by @Alice, @Bob; reviewed by @Reviewer" in notes
+    assert "old merge subject" not in notes
+    assert "reviewed by @alice" not in notes
+    assert "not-in-release" not in notes
+    assert notes.endswith("## Contributors\n\n@Alice @Bob @Publisher @Reviewer\n")
+    assert "[#42](https://github.com/owner/repo/pull/42)" in notes
+    assert "### Features" in notes
+
+
+def test_metadata_paginates_commits_coauthors_and_reviewers(monkeypatch):
+    calls = []
+    responses = iter(
+        [
+            {"title": "feat: add a feature", "labels": [], "author": None},
+            [
+                {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "commits": {
+                                    "nodes": [
+                                        {
+                                            "commit": {
+                                                "id": "many-authors",
+                                                "authors": {"totalCount": 2, "nodes": [{"user": {"login": "first"}}]},
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "repository": {
+                            "pullRequest": {
+                                "commits": {
+                                    "nodes": [
+                                        {
+                                            "commit": {
+                                                "id": "late-commit",
+                                                "authors": {
+                                                    "totalCount": 1,
+                                                    "nodes": [{"user": {"login": "late-author"}}],
+                                                },
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+            ],
+            [
+                {"data": {"node": {"authors": {"nodes": [{"user": {"login": "first"}}]}}}},
+                {"data": {"node": {"authors": {"nodes": [{"user": {"login": "late-coauthor"}}]}}}},
+            ],
+            [
+                [{"user": {"login": "reviewer"}, "state": "APPROVED"}],
+                [{"user": {"login": "late-reviewer"}, "state": "CHANGES_REQUESTED"}],
+            ],
+        ]
+    )
+
     def run(command, **kwargs):
-        raise subprocess.CalledProcessError(1, command)
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(next(responses)))
 
     monkeypatch.setattr("release_notes.subprocess.run", run)
-    with pytest.raises(ValueError, match="Cannot read labels for PR #42"):
-        load_pull_request_labels([ReleaseChange("a" * 40, "fix: something (#42)")], "owner/repo")
+    change = load_pull_request_metadata([ReleaseChange("a" * 40, "feat: feature (#42)")], "owner/repo")[0]
+    assert change.authors == ("first", "late-author", "late-coauthor")
+    assert change.reviewers == ("late-reviewer", "reviewer")
+    assert "--paginate" in calls[1] and "--slurp" in calls[1]
+    assert "after: $endCursor" in calls[1][6]
+    assert calls[2][-2:] == ["-F", "id=many-authors"]
+    assert "--paginate" in calls[2] and "after: $endCursor" in calls[2][6]
+    assert "--paginate" in calls[3] and "--slurp" in calls[3]
+
+
+@pytest.mark.parametrize("failed_query", [0, 1, 2])
+@pytest.mark.parametrize("malformed_json", [False, True])
+def test_metadata_failures_never_silently_drop_contributors(monkeypatch, failed_query, malformed_json):
+    responses = [
+        {"title": "fix: repair", "labels": [], "author": {"login": "author"}},
+        [{"data": {"repository": {"pullRequest": {"commits": {"nodes": []}}}}}],
+        [],
+    ]
+    calls = []
+
+    def run(command, **kwargs):
+        index = len(calls)
+        calls.append(command)
+        if index == failed_query:
+            if malformed_json:
+                return subprocess.CompletedProcess(command, 0, stdout="invalid JSON")
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(responses[index]))
+
+    monkeypatch.setattr("release_notes.subprocess.run", run)
+    with pytest.raises(ValueError, match="Cannot read metadata for PR #42"):
+        load_pull_request_metadata([ReleaseChange("a" * 40, "fix: repair (#42)")], "owner/repo")
+    assert len(calls) == failed_query + 1
+
+
+def _fake_github_cli(root: Path) -> Path:
+    fake_bin = root / "bin"
+    fake_bin.mkdir()
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text(
+        f"#!{sys.executable}\n"
+        + """
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+with Path("gh-calls").open("a") as calls:
+    calls.write(json.dumps(args) + "\\n")
+if args[:2] == ["release", "view"]:
+    error = os.environ.get("GH_LOOKUP_ERROR")
+    if error or not Path("published-notes").exists():
+        print(error or "release not found", file=sys.stderr)
+        sys.exit(1)
+elif args[:3] == ["pr", "view", "42"]:
+    print(json.dumps({"title": "feat(api): retain release behavior", "author": {"login": "pr-author"}, "labels": [{"name": "bug"}]}))
+elif args[:2] == ["api", "graphql"]:
+    print(json.dumps([{"data": {"repository": {"pullRequest": {"commits": {"nodes": [
+        {"commit": {"id": "commit-id", "authors": {"totalCount": 1, "nodes": [{"user": {"login": "coauthor"}}]}}}
+    ]}}}}}]))
+elif args[:3] == ["api", "--paginate", "--slurp"] and args[-1] == "repos/owner/repo/pulls/42/reviews":
+    error = os.environ.get("GH_REVIEW_ERROR")
+    if error:
+        print(error, file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps([[{"user": {"login": "reviewer"}, "state": "APPROVED"}]]))
+elif args[:2] == ["release", "create"]:
+    error = os.environ.get("GH_CREATE_ERROR")
+    if error or Path("published-notes").exists():
+        print(error or "release already exists", file=sys.stderr)
+        sys.exit(1)
+    Path("published-notes").write_text(sys.stdin.read())
+else:
+    raise SystemExit(f"Unexpected GitHub command: {args}")
+""",
+        encoding="utf-8",
+    )
+    fake_gh.chmod(0o755)
+    return fake_bin
+
+
+def _github_calls(root: Path) -> list[list[str]]:
+    return [json.loads(line) for line in (root / "gh-calls").read_text().splitlines()]
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(git_repository, dry_run):
+def test_release_cli_reads_metadata_before_rendering_and_dry_run_never_publishes(git_repository, dry_run):
     root = git_repository
     _git(root, "tag", "release/a13n-logging-v0.1.0")
     _commit(root, "packages/a13n-logging/api.py", "feat: repair existing behavior (#42)")
     _commit(root, "packages/a13n-harness-ui/api.py", "feat: unrelated UI change (#99)")
     _git(root, "tag", "release/a13n-logging-v0.1.1")
-    fake_bin = root / "bin"
-    fake_bin.mkdir()
-    fake_gh = fake_bin / "gh"
-    fake_gh.write_text(
-        "#!/bin/sh\n"
-        'printf "%s\\n" "$*" >> gh-calls\n'
-        'if [ "$1 $2" = "release view" ]; then echo "release not found" >&2; exit 1; fi\n'
-        'if [ "$1" = pr ]; then printf "bug\\n"; exit 0; fi\n'
-        "cat > published-notes\n",
-        encoding="utf-8",
-    )
-    fake_gh.chmod(0o755)
+    fake_bin = _fake_github_cli(root)
     environment = {
         **os.environ,
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
@@ -611,19 +820,29 @@ def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(g
     if dry_run:
         command.append("--dry-run")
     result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
-    calls = (root / "gh-calls").read_text().splitlines()
+    calls = _github_calls(root)
     if not dry_run:
-        assert calls.pop(0) == "release view release/a13n-logging-v0.1.1 --repo owner/repo --json tagName"
-    assert calls[0].startswith("pr view 42 --repo owner/repo")
-    assert len(calls) == (1 if dry_run else 2)
+        assert calls.pop(0) == [
+            "release",
+            "view",
+            "release/a13n-logging-v0.1.1",
+            "--repo",
+            "owner/repo",
+            "--json",
+            "tagName",
+        ]
+    assert calls[0][:5] == ["pr", "view", "42", "--repo", "owner/repo"]
+    assert len(calls) == (3 if dry_run else 4)
     assert (root / "published-notes").exists() is not dry_run
     notes = result.stdout if dry_run else (root / "published-notes").read_text()
     assert "### Bug fixes" in notes
     assert "### Features" not in notes
     assert "#99" not in notes
+    assert "feat(api): retain release behavior — by @coauthor, @pr-author; reviewed by @reviewer" in notes
+    assert "## Contributors\n\n@coauthor @pr-author @reviewer" in notes
     if not dry_run:
-        assert calls[1].startswith("release create release/a13n-logging-v0.1.1 ")
-        assert calls[1].endswith("--notes-file -")
+        assert calls[-1][:3] == ["release", "create", "release/a13n-logging-v0.1.1"]
+        assert calls[-1][-2:] == ["--notes-file", "-"]
 
 
 @pytest.fixture(params=["0.5.1", "0.6.0-rc.1"])
@@ -634,27 +853,7 @@ def release_cli(git_repository, request):
     _git(root, "tag", "release/a13n-harness-v0.5.0")
     _commit(root, "packages/a13n-harness/api.py", "fix: retain release behavior (#42)")
     _git(root, "tag", tag)
-    fake_bin = root / "bin"
-    fake_bin.mkdir()
-    fake_gh = fake_bin / "gh"
-    fake_gh.write_text(
-        "#!/bin/sh\n"
-        'printf "%s\\n" "$*" >> gh-calls\n'
-        'case "$1 $2" in\n'
-        '  "release view")\n'
-        '    if [ -n "$GH_LOOKUP_ERROR" ]; then echo "$GH_LOOKUP_ERROR" >&2; exit 1; fi\n'
-        "    if [ -f published-notes ]; then exit 0; fi\n"
-        '    echo "release not found" >&2; exit 1;;\n'
-        '  "pr view") echo bug;;\n'
-        '  "release create")\n'
-        '    if [ -n "$GH_CREATE_ERROR" ]; then echo "$GH_CREATE_ERROR" >&2; exit 1; fi\n'
-        "    if [ -f published-notes ]; then echo 'release already exists' >&2; exit 1; fi\n"
-        "    cat > published-notes;;\n"
-        "  *) exit 2;;\n"
-        "esac\n",
-        encoding="utf-8",
-    )
-    fake_gh.chmod(0o755)
+    fake_bin = _fake_github_cli(root)
     environment = {
         **os.environ,
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
@@ -664,6 +863,7 @@ def release_cli(git_repository, request):
         "GITHUB_TRIGGERING_ACTOR": "tag-pusher",
         "GH_LOOKUP_ERROR": "",
         "GH_CREATE_ERROR": "",
+        "GH_REVIEW_ERROR": "",
     }
     command = [sys.executable, str(CREATE_RELEASE), "a13n-harness", version, f"Harness {version}"]
     return root, environment, command
@@ -678,27 +878,35 @@ def test_release_cli_retry_preserves_existing_release_and_dry_run_still_previews
     assert "Generating release notes" in first.stdout
     notes = (root / "published-notes").read_text()
     assert "### Bug fixes" in notes
-    assert notes.endswith("\n\nRelease initiated by @tag-pusher.\n")
+    assert notes.startswith("Release initiated by @tag-pusher.\n\n")
+    assert notes.endswith("## Contributors\n\n@coauthor @pr-author @reviewer @tag-pusher\n")
 
     environment["GITHUB_TRIGGERING_ACTOR"] = "rerun-initiator"
     asset.unlink()
     retry = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
     assert "already exists; leaving its notes and assets unchanged" in retry.stdout
     assert (root / "published-notes").read_text() == notes
-    calls = (root / "gh-calls").read_text().splitlines()
+    calls = _github_calls(root)
     tag = environment["GITHUB_REF_NAME"]
-    assert calls[-1] == f"release view {tag} --repo owner/repo --json tagName"
-    assert len(calls) == 4  # Initial lookup, label query, create, retry lookup.
+    assert calls[-1] == ["release", "view", tag, "--repo", "owner/repo", "--json", "tagName"]
+    assert len(calls) == 6  # Initial lookup, three metadata queries, create, retry lookup.
 
     preview = subprocess.run(
         [*command[:-1], "--dry-run"], cwd=root, env=environment, text=True, capture_output=True, check=True
     )
     assert preview.stdout == notes
     assert (root / "published-notes").read_text() == notes
-    assert (root / "gh-calls").read_text().splitlines() == [
-        *calls,
-        "pr view 42 --repo owner/repo --json labels --jq .labels[].name",
-    ]
+    assert _github_calls(root) == [*calls, *calls[1:4]]
+
+
+def test_release_cli_metadata_failure_never_publishes_partial_notes(release_cli):
+    root, environment, command = release_cli
+    environment["GH_REVIEW_ERROR"] = "HTTP 403: Forbidden"
+    result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=False)
+    assert result.returncode != 0
+    assert "Cannot read metadata for PR #42" in result.stderr
+    assert not (root / "published-notes").exists()
+    assert _github_calls(root)[-1] == ["api", "--paginate", "--slurp", "repos/owner/repo/pulls/42/reviews"]
 
 
 @pytest.mark.parametrize("error", ["HTTP 401: Bad credentials", "HTTP 403: Forbidden", "HTTP 500: Server error"])
@@ -709,7 +917,7 @@ def test_release_cli_lookup_errors_do_not_create_or_skip_a_release(release_cli, 
     assert result.returncode != 0
     assert "Cannot read GitHub Release" in result.stderr
     assert error in result.stderr
-    assert len((root / "gh-calls").read_text().splitlines()) == 1
+    assert len(_github_calls(root)) == 1
     assert not (root / "published-notes").exists()
 
 
