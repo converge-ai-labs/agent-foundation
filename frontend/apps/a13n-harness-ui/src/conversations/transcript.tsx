@@ -789,7 +789,10 @@ export const SavedEntry = memo(function SavedEntry({
   );
 });
 
-export type PublishedMessage = Schema<"BotMessage"> & { status?: string };
+export type PublishedMessage = Schema<"BotMessage"> & {
+  status?: string;
+  local?: boolean;
+};
 
 function publicationRow(message: PublishedMessage): Row {
   return message.role === "user"
@@ -828,6 +831,7 @@ function publishedRows(
   hasLater: boolean,
 ): Row[] {
   const rows = [...native];
+  const local: Row[] = [];
   const inputIds = new Set(
     native.filter((row) => row.kind === "input").map((row) => row.id),
   );
@@ -857,6 +861,12 @@ function publishedRows(
       )
     )
       continue;
+    // Local commands have no server timestamp yet. Keep their recovery rows
+    // after observed work rather than ordering them by a skewed browser clock.
+    if (message.local) {
+      if (!hasLater) local.push(row);
+      continue;
+    }
     if (hasEarlier && (oldest === undefined || row.timestamp! < oldest))
       continue;
     if (hasLater && (newest === undefined || row.timestamp! > newest)) continue;
@@ -865,7 +875,7 @@ function publishedRows(
     );
     rows.splice(next < 0 ? rows.length : next, 0, row);
   }
-  return rows;
+  return [...rows, ...local];
 }
 
 export function ConversationTranscript({

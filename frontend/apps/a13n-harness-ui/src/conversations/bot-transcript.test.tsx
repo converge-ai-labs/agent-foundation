@@ -303,3 +303,68 @@ it.each([false, true])(
     );
   },
 );
+
+it.each(["Sending…", "Not confirmed", "Not sent"])(
+  "appends local %s after native work despite a two-second client clock skew",
+  (status) => {
+    const view = render(
+      <ConversationTranscript
+        threadId="thread_bot"
+        entries={[]}
+        blocks={[
+          {
+            id: "recent-work",
+            kind: "assistant",
+            text: "Recent server work",
+            timestamp: Date.parse(time),
+          },
+        ]}
+        localInputs={[]}
+        hasEarlier
+        publications={[
+          {
+            message_id: "user-local",
+            role: "user",
+            text: "Local steer",
+            created_at: new Date(Date.parse(time) - 2000).toISOString(),
+            status,
+            local: true,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(status)).toBeTruthy();
+    expect(
+      view.container.textContent!.indexOf("Recent server work"),
+    ).toBeLessThan(view.container.textContent!.indexOf("Local steer"));
+  },
+);
+it("keeps canonical interrupted inputs ordered by server time", () => {
+  const view = render(
+    <ConversationTranscript
+      threadId="thread_bot"
+      entries={[]}
+      blocks={[
+        {
+          id: "later-work",
+          kind: "assistant",
+          text: "Later server work",
+          timestamp: Date.parse(time),
+        },
+      ]}
+      localInputs={[]}
+      publications={[
+        {
+          message_id: "user-interrupted",
+          role: "user",
+          text: "Earlier admitted input",
+          created_at: new Date(Date.parse(time) - 2000).toISOString(),
+          status: "Didn't finish",
+        },
+      ]}
+    />,
+  );
+  expect(
+    view.container.textContent!.indexOf("Earlier admitted input"),
+  ).toBeLessThan(view.container.textContent!.indexOf("Later server work"));
+});

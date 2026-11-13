@@ -1282,13 +1282,6 @@ export function Composer({
             <ComposerEditor
               autoFocus={autoFocus}
               local={local}
-              draftDescription={
-                queuedInput
-                  ? t(
-                      "Private draft in this tab. Reloading loses unsent input and uncertain submission details. Enter to send, Shift+Enter for a new line.",
-                    )
-                  : undefined
-              }
               skillContext={skillContext}
               loadSkills={
                 transport.shareId || queuedInput

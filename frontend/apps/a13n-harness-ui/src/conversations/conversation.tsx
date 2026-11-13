@@ -705,7 +705,7 @@ function ConversationContent({
       (!detail.data && !draft.localInputs.length && !showLive));
   const pageError =
     detail.error ||
-    (!publication && !history.isFetchNextPageError ? history.error : null) ||
+    (!history.isFetchNextPageError ? history.error : null) ||
     agentSelection.error ||
     selectors.error ||
     mcpInputs.error ||
@@ -726,7 +726,7 @@ function ConversationContent({
           });
       }}
     />
-  ) : !publication &&
+  ) : !!detail.data &&
     !disconnected &&
     history.isPending &&
     !history.data &&

@@ -23,6 +23,7 @@ import { DraftContext, type SourceDraft } from "./configuration/drafts";
 import { readDocument } from "./configuration/documents";
 import { DebugProvider } from "./shell/debug";
 import { recordAudio } from "./conversations/dictation-audio";
+import conversationStyles from "./conversations/conversation.module.css";
 
 vi.mock("./conversations/dictation-audio", () => ({
   recordAudio: vi.fn(),
@@ -94,6 +95,11 @@ let sendGate: Promise<void> | undefined;
 let rejectionStatus: number | undefined;
 let uploadFailure: boolean;
 let botReadGate: Promise<void> | undefined;
+let historyGate: Promise<void> | undefined;
+let historyFailure: boolean;
+let historyPage: Schema<"TranscriptPage">;
+let earlierHistoryFailure: boolean;
+let detailMissing: boolean;
 let rootSource: string;
 let configurationWrites: string[];
 let writable: boolean;
@@ -174,6 +180,11 @@ beforeEach(() => {
   rejectionStatus = undefined;
   uploadFailure = false;
   botReadGate = undefined;
+  historyGate = undefined;
+  historyFailure = false;
+  historyPage = { entries: [], turns: [], total: 0 };
+  earlierHistoryFailure = false;
+  detailMissing = false;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.stubGlobal(
     "fetch",
@@ -238,8 +249,18 @@ beforeEach(() => {
       }
       if (path.endsWith(`/attachments/${attachment.attachment_id}/metadata`))
         return Response.json(attachment);
-      if (path.endsWith("/transcript"))
-        return Response.json({ entries: [], turns: [], total: 0 });
+      if (path.endsWith("/transcript")) {
+        await historyGate;
+        const earlier = new URL(request.url).searchParams.has("cursor");
+        if (historyFailure || (earlier && earlierHistoryFailure))
+          return Response.json(
+            { error: { message: "History unavailable" } },
+            { status: 503 },
+          );
+        return Response.json(
+          earlier ? { entries: [], turns: [], total: 0 } : historyPage,
+        );
+      }
       if (path === "/api/bot" && botReadGate) await botReadGate;
       if (path === "/api/bot/pause") {
         snapshot = {
@@ -250,7 +271,12 @@ beforeEach(() => {
       if (
         path === `/api/threads/${BOT_THREAD_ID}` ||
         path === "/api/threads/thread-ordinary"
-      )
+      ) {
+        if (detailMissing)
+          return Response.json(
+            { error: { message: "Chat not found" } },
+            { status: 404 },
+          );
         return Response.json({
           thread: {
             root_activity: { state: "inactive" },
@@ -265,6 +291,7 @@ beforeEach(() => {
           available_actions: [],
           deferred_requests: snapshot.pending_decision ? [approval] : [],
         });
+      }
       if (path === `/api/threads/${BOT_THREAD_ID}/decisions`) {
         if (request.method === "POST") {
           const body = await request.json();
@@ -1405,4 +1432,169 @@ it("does not enable an unavailable explicit Bot Agent even with a valid explicit
       .hasAttribute("disabled"),
   ).toBe(true);
   expect(configurationWrites).toHaveLength(0);
+});
+
+function unloadPrevented() {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+it("protects unacknowledged Bot edits but allows reload after synchronization", async () => {
+  mount();
+  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(editor.getAttribute("aria-description")).toContain("Shared draft.");
+  syncDraft = false;
+  typeMessage("Not synchronized yet");
+  expect(unloadPrevented()).toBe(true);
+  await act(async () => acknowledgeDraft());
+  expect(unloadPrevented()).toBe(false);
+  // Acknowledged content is retained even when the connection drops.
+  act(() => {
+    draft.status = "Disconnected";
+    draft.notify();
+  });
+  expect(unloadPrevented()).toBe(false);
+});
+
+it("protects pending and unknown delivery, then releases the reload guard on reconciliation", async () => {
+  let release!: () => void;
+  sendGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  reject = true;
+  mount();
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  typeMessage("Keep exact command");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(unloadPrevented()).toBe(true);
+  await act(async () => release());
+  await screen.findByText("Not confirmed");
+  expect(unloadPrevented()).toBe(true);
+  snapshot.messages = [
+    {
+      message_id: `user-${requests[0].input_id}`,
+      role: "user",
+      text: "Keep exact command",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+  fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(screen.queryByText("Not confirmed")).toBeNull());
+  expect(unloadPrevented()).toBe(false);
+});
+
+it("allows reload of a synchronized rejected draft without losing its editable content", async () => {
+  rejectionStatus = 409;
+  mount();
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  typeMessage("Retained after rejection");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Not sent");
+  expect(unloadPrevented()).toBe(false);
+  expect(draft.doc.getText("text").toString()).toBe("Retained after rejection");
+});
+
+function publishFallback() {
+  snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+  snapshot.messages = [
+    {
+      message_id: "proactive-fallback",
+      role: "assistant",
+      text: "Readable publication",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+}
+
+it("shows initial Bot history failure and retries without hiding publications", async () => {
+  publishFallback();
+  historyFailure = true;
+  mount();
+  await screen.findByText("History unavailable");
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  historyFailure = false;
+  historyPage = {
+    entries: [
+      {
+        position: 0,
+        message_kind: "response",
+        timestamp: "2026-11-12T00:00:00Z",
+        parts: [{ kind: "assistant", text: "Recovered native work" }],
+      },
+    ],
+    turns: [],
+    total: 1,
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Recovered native work");
+  expect(screen.queryByText("History unavailable")).toBeNull();
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+});
+
+it("shows Bot history loading alongside readable publications", async () => {
+  publishFallback();
+  let release!: () => void;
+  historyGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  await screen.findByText("Loading messages…");
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(screen.queryByText("Loading messages…")).toBeNull(),
+  );
+});
+
+it("keeps Bot next-page failure on its pagination retry surface", async () => {
+  publishFallback();
+  earlierHistoryFailure = true;
+  historyPage = {
+    entries: [
+      {
+        position: 1,
+        message_kind: "response",
+        timestamp: "2026-11-12T00:00:00Z",
+        parts: [{ kind: "assistant", text: "Loaded native work" }],
+      },
+    ],
+    turns: [],
+    total: 2,
+    next_cursor: "older",
+  };
+  mount();
+  await screen.findByText("Readable publication");
+  await waitFor(() =>
+    expect(
+      queries.getQueryState([
+        "thread",
+        BOT_THREAD_ID,
+        "history",
+        "bot-continuation",
+      ])?.status,
+    ).toBe("success"),
+  );
+  const reader = document.querySelector(`.${conversationStyles.reading}`)!;
+  // Use the real reader's scroll interaction to request the earlier page.
+  fireEvent.scroll(reader);
+  await screen.findByRole("button", { name: "Retry loading" });
+  expect(screen.queryByText("History unavailable")).toBeNull();
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  earlierHistoryFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Retry loading" })).toBeNull(),
+  );
+});
+
+it("retains readable Bot publications when native detail is temporarily missing", async () => {
+  publishFallback();
+  detailMissing = true;
+  mount();
+  await screen.findByText("Readable publication");
+  await screen.findByText("Chat not found");
+  expect(screen.queryByText("Loading messages…")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
 });

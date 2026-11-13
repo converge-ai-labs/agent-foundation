@@ -22,6 +22,7 @@ import {
   waitForSynchronization,
 } from "./conversations/composer";
 import { RunActivity } from "./conversations/run-activity";
+import type { PublishedMessage } from "./conversations/transcript";
 import { botConversationError } from "./bot-conversation";
 import { useDebug } from "./shell/debug";
 import { useResults } from "./conversations/results";
@@ -72,7 +73,7 @@ function useBotComposer() {
   const results = useResults();
   const { data } = useBot();
   const draft = useDraft(BOT_THREAD_ID);
-  const text = draft.doc.getText("text").toString();
+  const unacknowledgedEdits = draft.hasUnacknowledgedEdits;
   const preparation = useRef<AbortController | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [preparationError, setPreparationError] = useState<unknown>();
@@ -145,11 +146,16 @@ function useBotComposer() {
     }
   }, [data, submission, send.reset]);
   useEffect(() => {
-    if (!text && !submission) return;
+    if (
+      !unacknowledgedEdits &&
+      submission?.phase !== "pending" &&
+      submission?.phase !== "unknown"
+    )
+      return;
     const protect = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", protect);
     return () => window.removeEventListener("beforeunload", protect);
-  }, [text, submission]);
+  }, [unacknowledgedEdits, submission?.phase]);
   const submit = async () => {
     if (current.current || preparation.current) return;
     const controller = new AbortController();
@@ -312,18 +318,17 @@ export function BotPage({
     preparing,
     preparationError,
   } = composer;
-  const visibleMessages: ((typeof messages)[number] & { status?: string })[] =
-    messages.map((message) => ({
-      ...message,
-      status: data?.inputs?.some(
-        (input) =>
-          input.input_id &&
-          `user-${input.input_id}` === message.message_id &&
-          input.state === "interrupted",
-      )
-        ? t("Didn't finish")
-        : undefined,
-    }));
+  const visibleMessages: PublishedMessage[] = messages.map((message) => ({
+    ...message,
+    status: data?.inputs?.some(
+      (input) =>
+        input.input_id &&
+        `user-${input.input_id}` === message.message_id &&
+        input.state === "interrupted",
+    )
+      ? t("Didn't finish")
+      : undefined,
+  }));
   if (
     submission &&
     !messages.some(
@@ -332,6 +337,7 @@ export function BotPage({
   )
     visibleMessages.push({
       ...submission.message,
+      local: true,
       status:
         submission.phase === "pending"
           ? t("Sending…")
