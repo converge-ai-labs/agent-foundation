@@ -442,7 +442,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             ctx.usage_limits.check_before_tool_call(projected)
         try:
             # The sequential envelope owns no runtime slot. The target keeps its
-            # own execution policy, including barriers for sequential tools.
+            # native invocation policy; only explicit global mode adds completion barriers.
             result = await forward_tool_call(ctx, name, values)
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.
