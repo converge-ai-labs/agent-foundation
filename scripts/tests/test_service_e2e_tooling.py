@@ -145,8 +145,12 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
         for content in contents
     ]
     messages.insert(4, {"role": "assistant", "content": "First answer"})
-    for snapshot in ("[]", '[{"status":"running"}]'):
-        text = f"Tool executions requiring attention (status only; results are not consumed): {snapshot}"
+    for text in (
+        "Tool executions requiring attention (0)",
+        "Tool executions requiring attention (1)\n- exec-1 | shell_exec | running",
+        "Tool execution changes (1)\n- exec-1 | shell_exec | finished, result available",
+        "Tool executions requiring attention (status only; results are not consumed): []",
+    ):
         messages.append({"role": "user", "content": [{"type": "text", "text": text}] if structured else text})
     assert user_texts({"body": {"messages": messages}}) == [contents[0], contents[4]]
 

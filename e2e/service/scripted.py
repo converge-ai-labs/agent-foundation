@@ -9,7 +9,8 @@ from .api import eventually, expect
 # Automatic user-role parts added by Harness and Service, rather than the test's conversation inputs.
 RUNTIME_CONTEXT = (
     "Current Environment mounts (trusted dynamic context)",
-    "Tool executions requiring attention (status only; results are not consumed):",
+    "Tool executions requiring attention (",
+    "Tool execution changes (",
     "<agent-context ",
     "<runtime-context ",
     "<memory-context ",
