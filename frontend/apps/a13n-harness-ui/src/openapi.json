@@ -12862,6 +12862,30 @@
         ],
         "title": "ChildControlResult"
       },
+      "ChildExecutionModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "identity": {
+            "type": "string",
+            "title": "Identity"
+          },
+          "thinking": {
+            "type": "string",
+            "title": "Thinking"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "identity",
+          "thinking"
+        ],
+        "title": "ChildExecutionModel"
+      },
       "ChildExecutionPage": {
         "properties": {
           "executions": {
@@ -12900,6 +12924,16 @@
       },
       "ChildExecutionView": {
         "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChildExecutionModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution_id": {
             "type": "string",
             "maxLength": 80,

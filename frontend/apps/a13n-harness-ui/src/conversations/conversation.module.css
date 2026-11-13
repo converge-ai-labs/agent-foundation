@@ -902,6 +902,7 @@
   list-style: none;
   transition: color 120ms ease;
 }
+.noticeSummary::before,
 .reasoning > summary::before {
   content: none;
 }
@@ -911,17 +912,17 @@
 .reasoning > summary:is(:hover, :focus-visible) {
   color: var(--a13n-text);
 }
-.reasoningCaret {
+.logCaret {
   flex: none;
   width: 12px;
   height: 12px;
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.reasoning[open] .reasoningCaret {
+details[open] > summary > .logCaret {
   transform: rotate(90deg);
 }
-.reasoning > summary:is(:hover, :focus-visible) .reasoningCaret {
+summary:is(:hover, :focus-visible) > .logCaret {
   opacity: 1;
 }
 .reasoningBody {
@@ -1079,7 +1080,7 @@
   .messageActions,
   .composerInput,
   .activity > summary,
-  .reasoningCaret,
+  .logCaret,
   .executionCaret,
   .executionToggle {
     transition: none;
@@ -2242,7 +2243,7 @@ div:has(+ .execution) > .assistantMessage {
 }
 
 @media (hover: none), (pointer: coarse) {
-  .reasoningCaret,
+  .logCaret,
   .executionCaret {
     opacity: 1;
   }
@@ -2351,4 +2352,8 @@ div:has(+ .execution) > .assistantMessage {
 .inputAuthor {
   font-size: var(--a13n-text-body);
   color: var(--a13n-secondary);
+}
+
+.noticeSummary {
+  gap: 8px;
 }

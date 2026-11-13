@@ -25,6 +25,8 @@ import {
 import { ConversationTranscript } from "./transcript";
 import { sourceText, parsed, describeTool } from "./tool-presentation";
 import styles from "./background.module.css";
+import { ModelIdentity } from "../shell/model-identity";
+import { modelControlMessage } from "./model-control-messages";
 import { ViewLink } from "../native/view-link";
 import { useHistory, useThread, transcriptHistory } from "./queries";
 import { useChildControlState } from "./child-controls";
@@ -50,9 +52,25 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
         ) : (
           <Wrench size={18} />
         )}
-        <h2 title={target.title}>
-          {section ? t(SECTION_LABELS[section]) : target.title}
-        </h2>
+        <div className={styles.panelIdentity}>
+          <h2 title={target.title}>
+            {section ? t(SECTION_LABELS[section]) : target.title}
+          </h2>
+          {item?.child?.model && (
+            <small className={styles.childModel}>
+              <ModelIdentity
+                name={item.child.model.name}
+                modelIdentity={item.child.model.identity}
+              />
+              {modelControlMessage(
+                item.child.model.thinking === "Provider default"
+                  ? "Default"
+                  : item.child.model.thinking,
+                t,
+              )}
+            </small>
+          )}
+        </div>
         {section ? (
           <ViewLink
             getLink={() =>

@@ -95,6 +95,7 @@ async def test_saved_children_with_retired_composition_fields_remain_inspectable
         child = page.executions[0]
         assert child.subagent_name == composition.root.roster_name
         assert child.child_thread_id == composition.thread_id
+        assert child.model is not None and child.model.name == composition.root.model.model_id
         detail = await operator.query_child_executions(
             parent_thread_id="thread-parent", execution_id=child.execution_id
         )
@@ -275,8 +276,13 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
     async def root_thread_id(_thread: Any) -> str:
         return "thread-root"
 
-    async def execution_identity(_head: ChildExecutionHead) -> tuple[str, str, str]:
-        return "worker", "a13n-harness-ui:agent:worker", "declared"
+    async def execution_identity(_head: ChildExecutionHead) -> subagent_module._ChildIdentity:
+        return subagent_module._ChildIdentity(
+            name="worker",
+            definition_id="a13n-harness-ui:agent:worker",
+            source="declared",
+            model=subagent_module.ChildExecutionModel(name="Main", identity="openai:gpt-5", thinking="High"),
+        )
 
     monkeypatch.setattr(operator, "_execution_identity", execution_identity)
     monkeypatch.setattr(operator, "_read_checkpoint", unreadable_checkpoint)

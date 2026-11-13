@@ -163,7 +163,12 @@ type Row = {
     }
   | {
       kind: "notifications";
-      notices: { id: string; source: string; text: string }[];
+      notices: {
+        id: string;
+        source: string;
+        text: string;
+        executionIds?: unknown;
+      }[];
     }
   | { kind: "failure"; text: string }
   | {
@@ -251,6 +256,7 @@ function savedRows(
               {
                 id: `${id}:${index}`,
                 source: systemNotice(part.metadata)!,
+                executionIds: part.metadata?.execution_ids,
                 text,
               },
             ],
@@ -373,6 +379,7 @@ function liveRows(
             {
               id: `${block.id}:${index}`,
               source: systemNotice(block.metadata)!,
+              executionIds: block.metadata?.execution_ids,
               text,
             },
           ],
@@ -595,7 +602,7 @@ function Reasoning({
             {t("for {{duration}}", { duration })}
           </span>
         )}
-        <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
+        <CaretRight aria-hidden="true" className={styles.logCaret} />
       </summary>
       <ScrollArea
         autoHeight
@@ -734,15 +741,24 @@ function Rows({
         />
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
-          <summary>
+          <summary className={styles.noticeSummary}>
             {notificationTitle(
               row.notices[0].text,
               row.notices[0].source,
               row.notices.length,
             )}
             {row.notices.map((notice) => (
-              <ExecutionNoticeLinks key={notice.id} text={notice.text} />
+              <ExecutionNoticeLinks
+                key={notice.id}
+                text={notice.text}
+                executionIds={
+                  notice.source === "async_subagent"
+                    ? notice.executionIds
+                    : undefined
+                }
+              />
             ))}
+            <CaretRight aria-hidden="true" className={styles.logCaret} />
           </summary>
           {row.notices.map((notice) => (
             <div key={notice.id}>

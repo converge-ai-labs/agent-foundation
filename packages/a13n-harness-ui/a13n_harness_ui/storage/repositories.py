@@ -178,6 +178,16 @@ class ConfigurationRepository:
             record = await session.get(AcceptedConfigurationRecord, generation_digest)
             return None if record is None else _configuration_reference(record)
 
+    async def resource_name(self, generation_digest: str, kind: str, resource_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            return await session.scalar(
+                select(ResourceIndexRecord.name).where(
+                    ResourceIndexRecord.generation_digest == generation_digest,
+                    ResourceIndexRecord.resource_kind == kind,
+                    ResourceIndexRecord.resource_id == resource_id,
+                )
+            )
+
     async def resources(self, generation_digest: str) -> tuple[ResourceIndexEntry, ...]:
         async with short_session(self._sessions) as session:
             rows = (

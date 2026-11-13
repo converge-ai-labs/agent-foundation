@@ -320,7 +320,7 @@ it("distinguishes canonical notice kinds, preserves source-marked rows and links
   );
   expect(test.open).toHaveBeenCalled();
 });
-it("links a notice from an earlier segment of a resumed child", async () => {
+it("links a retained-file notice from an earlier segment using its execution metadata", async () => {
   const test = setup([child("one", "running", 1)]);
   const read = test.GET.getMockImplementation()!;
   test.GET.mockImplementation(async (path, init) =>
@@ -335,8 +335,12 @@ it("links a notice from an earlier segment of a resumed child", async () => {
       parts: [
         {
           kind: "user",
-          text: "Subagent result · Agent one · execution_id=exec-one-0 · succeeded\nDone",
-          metadata: { display: true, "a13n.steering-source": "async_subagent" },
+          text: "The submitted text is saved in a retained input file.",
+          metadata: {
+            display: true,
+            "a13n.steering-source": "async_subagent",
+            execution_ids: ["exec-one-0"],
+          },
         },
       ],
     },

@@ -105,7 +105,7 @@ from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking
+from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking, summarize_thinking
 from a13n_harness_ui.observation import (
     UiObservation,
     finish_operation,
@@ -143,6 +143,7 @@ from a13n_harness_ui.storage.repositories import ChildCompletionGuard
 from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
 from a13n_harness_ui.surfaces import (
     ChildActivityView,
+    ChildExecutionModel,
     ChildExecutionPage,
     ChildExecutionView,
     ChildToolCallView,
@@ -195,6 +196,14 @@ _SENSITIVE_ASSIGNMENT = re.compile(
     r"password|private[-_]?key|refresh[-_]?token|secret|token)(\s*[:=]\s*)"
     r"(?:\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildIdentity:
+    name: str
+    definition_id: str
+    source: Literal["declared", "host"]
+    model: ChildExecutionModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,9 +330,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
         self._completion_continuations: dict[str, _CompletionContinuation] = {}
-        self._execution_identities: OrderedDict[tuple[str, ObjectRef], tuple[str, str, Literal["declared", "host"]]] = (
-            OrderedDict()
-        )
+        self._execution_identities: OrderedDict[tuple[str, ObjectRef], _ChildIdentity] = OrderedDict()
         self._changed = Event()
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
@@ -720,7 +727,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         head = await self._store.child_executions.get(execution_id)
         if head is None:
             raise ToolFailed("This child execution is no longer active.")
-        name, _, _ = await self._execution_identity(head)
+        name = (await self._execution_identity(head)).name
         text = format_execution_header("Subagent message", name, execution_id, head.status)
         text += "\nReply with steer_subagent while this child is running.\n\n" + message
         if self._task_group is None:
@@ -766,7 +773,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         heads = await self._store.child_executions.attention_for_parent(parent_thread_id, limit=21)
         values = []
         for head in heads:
-            name, _, _ = await self._execution_identity(head)
+            name = (await self._execution_identity(head)).name
             values.append({"name": name, "execution_id": head.execution_id, "state": head.status})
         return values
 
@@ -1098,7 +1105,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         del tool_call
         scope = await self._require_parent(plan.parent)
         previous = await self._require_execution(scope, request.execution_id)
-        subagent_name, _previous_definition_id, _ = await self._execution_identity(previous)
+        subagent_name = (await self._execution_identity(previous)).name
         _require_edge(scope.composition.root, subagent_name)
         if subagent_name != plan.child.declaration.name or not previous.resumable:
             raise _SubagentRequestError(
@@ -1218,7 +1225,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         automatic_completion: ChildCompletionGuard | None = None,
     ) -> AsyncExecutionView:
         async with self._admission(scope):
-            subagent_name, _, _ = await self._execution_identity(previous)
+            subagent_name = (await self._execution_identity(previous)).name
             checkpoint = await self._read_checkpoint(previous)
             if not checkpoint.terminal or checkpoint.deferred_requests is not None:
                 raise _SubagentRequestError(
@@ -1692,7 +1699,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                             else CompactChildDisplay()
                         )
                         view = await self._execution_view(head, display=display)
-                        name, _, _ = await self._execution_identity(head)
+                        name = (await self._execution_identity(head)).name
                         text = format_execution_header("Subagent result", name, head.execution_id, head.status)
                         text += "\n" + ("Reply with resume_subagent.\n" if head.resumable else "")
                         text += json.dumps(view.model_dump(mode="json"), ensure_ascii=False)
@@ -2282,7 +2289,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             current = parent
         return current.thread_id
 
-    async def _execution_identity(self, head: ChildExecutionHead) -> tuple[str, str, Literal["declared", "host"]]:
+    async def _execution_identity(self, head: ChildExecutionHead) -> _ChildIdentity:
         key = (head.child_thread_id, head.run_composition)
         if (identity := self._execution_identities.get(key)) is not None:
             self._execution_identities.move_to_end(key)
@@ -2310,7 +2317,18 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child composition belongs to another Thread.",
                 code="subagent_execution_unavailable",
             )
-        identity = (initial.root.roster_name, _definition_id(current.root), _execution_source(current.root))
+        model = current.root.model
+        model_name = await self._store.configurations.resource_name(current.generation_digest, "model", model.model_id)
+        identity = _ChildIdentity(
+            initial.root.roster_name,
+            _definition_id(current.root),
+            _execution_source(current.root),
+            ChildExecutionModel(
+                name=model_name or model.model_id,
+                identity=model.base_model or model.route,
+                thinking=summarize_thinking(model.route, model.settings),
+            ),
+        )
         self._execution_identities[key] = identity
         if len(self._execution_identities) > 256:
             self._execution_identities.popitem(last=False)
@@ -2323,7 +2341,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         root_thread_id: str | None = None,
         include_activity: bool = False,
     ) -> ChildExecutionView:
-        subagent_name, child_definition_id, _ = await self._execution_identity(head)
+        identity = await self._execution_identity(head)
         activity = None
         display = None
         if include_activity:
@@ -2336,6 +2354,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             active = self._active.get(head.execution_id)
         locally_active = head.status == "running" and active is not None
         return ChildExecutionView(
+            model=identity.model,
             execution_id=head.execution_id,
             root_thread_id=root_thread_id,
             parent_thread_id=head.parent_thread_id,
@@ -2343,8 +2362,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             child_run_id=head.child_run_id,
             segment_index=head.segment_index,
             composition_id=head.run_composition.logical_digest,
-            subagent_name=subagent_name,
-            child_definition_id=child_definition_id,
+            subagent_name=identity.name,
+            child_definition_id=identity.definition_id,
             persisted_status=head.status,
             local_status="active" if locally_active else "unavailable",
             resumed_from=head.resumed_from,
@@ -2386,7 +2405,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _execution_view(
         self, head: ChildExecutionHead, *, display: CompactChildDisplay | None = None
     ) -> SubagentExecutionView:
-        subagent_name, child_definition_id, source = await self._execution_identity(head)
+        identity = await self._execution_identity(head)
         if display is None:
             display = await self._execution_display(head)
         failure: JsonValue = None if head.failure is None else head.failure.model_dump(mode="json")
@@ -2400,10 +2419,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "effects before retrying work.",
             }
         return SubagentExecutionView(
-            source=source,
+            source=identity.source,
             execution_id=head.execution_id,
-            subagent_name=subagent_name,
-            child_definition_id=child_definition_id,
+            subagent_name=identity.name,
+            child_definition_id=identity.definition_id,
             status=head.status,
             resumed_from=head.resumed_from,
             failure=failure,
