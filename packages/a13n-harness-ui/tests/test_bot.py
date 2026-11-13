@@ -364,10 +364,11 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         (directory / "MEMORY.md").write_text(text)
     steps = 0
     created_thread = ""
+    created_project = ""
 
     async def resolve(self, model_id, *, thread_id):
         async def model(messages, info):
-            nonlocal steps, created_thread
+            nonlocal steps, created_thread, created_project
             names = {tool.name for tool in info.function_tools}
             if thread_id != BOT_THREAD_ID:
                 assert not {"create_project", "read_project_memory", "publish_bot_message"} & names
@@ -393,22 +394,18 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
                 assert "Main memory sentinel" in str(messages)
             if steps == 2:
                 assert "Other memory sentinel" in str(messages)
+            if steps == 3:
+                returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+                created_project = returns[-1].content["project"]["id"]
+                assert created_project.startswith("project-")
             plan = (
                 ("read_project_memory", {"project_id": "project-main", "path": "MEMORY.md"}),
                 ("read_project_memory", {"project_id": "project-other", "path": "MEMORY.md"}),
                 (
                     "create_project",
-                    {
-                        "project": {
-                            "schema_version": "1",
-                            "kind": "project",
-                            "id": "project-created",
-                            "name": "Created",
-                            "roots": [{"path": str(tmp_path / "created-work")}],
-                        }
-                    },
+                    {"name": "Created", "roots": [str(tmp_path / "created-work")]},
                 ),
-                ("create_thread", {"project_id": "project-created", "prompt": "Do this bounded work"}),
+                ("create_thread", {"project_id": created_project, "prompt": "Do this bounded work"}),
             )
             if steps == len(plan):
                 returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
@@ -449,7 +446,9 @@ async def test_builtin_bot_policy_workspace_and_on_demand_project_tools(tmp_path
         assert item.state == "completed", operation.failure if operation else item.error
         assert created_thread
         created = (await app.get_thread(created_thread)).thread
-        assert created.configuration.project_id == "project-created"
+        assert created.configuration.project_id == created_project
+        assert created.configuration.local_roots == (str(tmp_path / "created-work"),)
+        assert (tmp_path / f"projects/{created_project}.yaml").exists()
         assert created.configuration.agent_source.kind == "agent"
         thread = await app._threads.get(BOT_THREAD_ID)
         assert thread.configuration.agent_source.kind == "bot"
