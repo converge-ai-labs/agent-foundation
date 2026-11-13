@@ -11,7 +11,6 @@ import { useTranslation } from "../i18n";
 import { useGuestAccess, useTransport } from "../transport/context";
 import {
   useMutation,
-  useQuery,
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
@@ -237,27 +236,7 @@ export function BackgroundList({ compact = false }: { compact?: boolean }) {
 }
 function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
   const bg = useBackground();
-  const { client } = useTransport();
   const state = useBackgroundStateLabel();
-  const prompt = useQuery({
-    queryKey: [
-      "thread",
-      item.target.threadId,
-      "child-review",
-      item.target.id,
-      "prompt",
-    ],
-    enabled: !!item.child && !item.preview,
-    staleTime: Infinity,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/inputs", {
-          params: { path: { thread_id: item.target.id }, query: { limit: 1 } },
-          signal,
-        }),
-      ),
-  });
-  const preview = item.preview || prompt.data?.turns[0]?.preview;
   const duration =
     item.started && (item.running || item.ended)
       ? executionTime(
@@ -272,7 +251,7 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
         type="button"
         className={styles.item}
         onClick={() => bg.open(item.target)}
-        title={[item.target.title, preview].filter(Boolean).join("\n")}
+        title={[item.target.title, item.preview].filter(Boolean).join("\n")}
       >
         <span className={styles.icon}>
           {item.child ? (

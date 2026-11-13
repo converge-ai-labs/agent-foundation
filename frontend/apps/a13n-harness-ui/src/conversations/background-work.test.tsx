@@ -548,32 +548,17 @@ it("reads the terminal child checkpoint when its head settles after a running re
   expect(screen.queryByText("Partial child report")).toBeNull();
 });
 
-it("puts the child prompt only in its row tooltip after it loads", async () => {
+it("uses the title alone without a preview and never queries child inputs for tooltips", async () => {
   const test = setup([child("one", "running")]);
-  const read = test.GET.getMockImplementation()!;
-  let settle!: (value: { data: unknown }) => void;
-  test.GET.mockImplementation((path) =>
-    path.endsWith("/inputs")
-      ? new Promise((resolve) => {
-          settle = resolve;
-        })
-      : read(path),
-  );
   render(test.view("root"));
   await userEvent.click(
     screen.getByRole("button", { name: "Background work" }),
   );
-  await waitFor(() => expect(settle).toBeDefined());
-  expect(screen.queryByText("Input unavailable")).toBeNull();
-  await act(async () => {
-    settle({ data: { turns: [{ preview: "Task preview" }] } });
-  });
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: /Agent one/ }).getAttribute("title"),
-    ).toContain("Task preview"),
+  const row = await screen.findByRole("button", { name: /Agent one/ });
+  expect(row.getAttribute("title")).toBe("Agent one");
+  expect(test.GET.mock.calls.some(([path]) => path.endsWith("/inputs"))).toBe(
+    false,
   );
-  expect(screen.queryByText("Task preview")).toBeNull();
 });
 
 it("shares server tool cancellation progress across the card, history and item header", async () => {
