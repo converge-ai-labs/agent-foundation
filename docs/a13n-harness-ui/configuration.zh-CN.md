@@ -428,3 +428,46 @@ run_configuration:
 省略/null `allowed_hosts` 允许全部目标；`[]` 拒绝全部。规则精确匹配规范化主机名/IP，或用 `regex:` 做完整主机名 Python 匹配。该模式允许 `docs.example.com` 及其子域，不允许 `docs.example.com.evil.test`。YAML 单引号保留反斜杠。空/无效表达式验证失败；URL、路径、端口、glob 和 CIDR 不是主机模式。
 
 API 密钥 Model 客户端和 Host Web/MCP 检查声明目标及重定向跳转，不解析 DNS 或固定 IP。限制性规则拒绝不可检查的订阅传输。捕获的策略在根和子级 Run 内保持固定。带命名空间的 `extensions` 需要主动接入的消费者，不是 Capability 参数。Shell/插件网络需要 Environment 或部署隔离。见[主机规则](../a13n-harness/context.md#host-rules-and-regular-expressions)。
+
+## Object Store
+
+在 Agent 资源中启用可复用的媒体引用：
+
+```yaml
+capabilities:
+  - capability: object_store
+```
+
+私有对象库属于当前 Thread，可跨 Run 和 App 重启保留。每个 UI subagent 都是独立的子 Thread，拥有自己的对象库；父子 Thread 的引用不能在彼此的 Store 中解析。它位于 `data_root/object-library/`，与临时工作文件分开。捕获的图片保留原生视觉内容；Agent 获得紧凑引用，用于后续工具参数。五个管理工具为 `asset_ref`、`asset_store`、`asset_list`、`asset_info` 和 `asset_delete`。
+
+根 YAML 配置需要重启生效的保留策略。默认限制较小；较大工作流可调高：
+
+```yaml
+process:
+  object_store:
+    temporary_ttl_seconds: 86400
+    max_temporary_objects: 32
+    max_temporary_bytes: 67108864
+```
+
+临时对象一天未实际读取字节即过期。读取刷新闲置 TTL 和 LRU 顺序；list/info 不续期。数量或总字节超限时，淘汰最久未使用的临时对象。启动时和每小时的清理也会处理不活跃对象库。`asset_store` 提升可用对象的保留级别而不改变引用，之后不再受临时过期和配额影响。已保留对象持续存在，直到删除。显式保留会占用长期空间，只保存后续确实需要的对象。
+
+MCP 工具通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展：把引用替换成 base64，不重跑参数校验。在 schema-version-2 MCP 资源中，使用 `object_ref_tools` 规则选择字符串参数接受 base64 的工具。规则匹配服务原始工具名，支持前缀和后缀通配：
+
+```yaml
+schema_version: "2"
+kind: mcp_server
+id: mcp-media
+name: Media tools
+object_ref_tools:
+  "*": false
+  "*_upload": true
+  send_image: true
+  text_upload: false
+transport:
+  url: https://example.com/mcp
+```
+
+`"*"` 设置默认值；省略时沿用工具自身的声明，未声明的工具默认不支持。精确名称优先于通配模式。`*` 可以在任意位置匹配零个或多个字符，例如 `image_*_upload`；其他字符按字面匹配，并区分大小写。非 `*` 字符越多，模式越具体；具体程度相同时 false 优先，与条目顺序无关。[原生工具集](../a13n-harness/capabilities.md#object-reference-transport) 和 Service MCP 连接使用同一套规则。
+
+有效修改对下一个 Run 生效。引用在权限或审批通过后、真正调用目标时解析；历史保留引用。过期引用会明确失败，不会自动重放生产工具。捕获大小限制和代码侧启用方式见 [Object Store 用法](../a13n-harness/capabilities.md#reuse-original-media-with-object-store)。

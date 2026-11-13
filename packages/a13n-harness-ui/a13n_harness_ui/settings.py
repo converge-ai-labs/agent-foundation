@@ -23,12 +23,23 @@ def default_harness_ui_data_root() -> Path:
     return default_harness_ui_root() / "data"
 
 
+class ObjectStoreSettings(BaseModel):
+    """Host retention policy for private Thread object libraries."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    temporary_ttl_seconds: float = Field(default=86400, gt=0)
+    max_temporary_objects: int = Field(default=32, ge=1)
+    max_temporary_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+
+
 class StorageSettings(BaseModel):
     """Settings for one Harness UI data root."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     data_root: Path = Field(default_factory=default_harness_ui_data_root)
+    object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     scratch_retention_seconds: float = Field(default=259200.0, gt=0)
     compaction_retention_seconds: float = Field(default=604800.0, gt=0)
     busy_timeout_seconds: float = Field(default=DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS, gt=0, le=60)

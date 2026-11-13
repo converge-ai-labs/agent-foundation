@@ -563,3 +563,13 @@ The terminal failure presentation identifies the report path and the repository'
 08. Compact display never becomes Harness continuation state.
 09. Automatic continuation requires a single-use safe-boundary handoff: an armed root model request or a finalized graceful root family. Python call stacks and uncertain tool effects are never automatically replayed. Retained native Shell recovery acquires local ownership and reconnects the exact Provider process; completion hints require current execution eligibility.
 10. Transactions remain short and outside file or external execution I/O.
+
+## Thread Object Library
+
+The optional Harness [Object Store](../a13n-harness/24-object-store.md) binds a private library to the current root or child Thread. Immutable bytes and an atomic metadata catalog live under `data_root/object-library/<thread-id>`, independently of disposable Thread scratch, submitted attachments and continuation objects. Fresh Runs and App restarts reopen the same library; copying history into another Thread does not copy library authority.
+
+The Host serializes catalog mutations, promotion, read refresh and LRU eviction with a per-library OS lock. It publishes catalog removal before deleting bytes; unreferenced interrupted files are reclaimable on later access or maintenance. Reads verify size and digest. A completed read returns detached bytes.
+
+`process.object_store` supplies `temporary_ttl_seconds` (default 86400), `max_temporary_objects` (32) and `max_temporary_bytes` (67108864), each positive. Actual reads refresh idle TTL and LRU order; metadata inspection does not. Explicitly stored entries survive temporary expiry and eviction until deletion. Startup and hourly storage maintenance also expire inactive Thread libraries and clear bytes whose Thread has been deleted. Thread deletion clears both retention tiers; maintenance repairs interrupted cleanup. Policy changes apply on App restart. Agent selection of `object_store` is captured for the next Run through ordinary Capability composition.
+
+MCP resources accept the shared [Object Reference Transport](../a13n-harness/24-object-store.md#object-reference-transport) `object_ref_tools` rules by original server tool name, with an empty map by default. `"*"` sets a server-wide default; exact names and patterns such as `"*_upload"` select individual tools or groups. The resolved Run recipe captures this map. Harness owns matching, capture and target hooks; the UI Host supplies only storage and trusted target selection.

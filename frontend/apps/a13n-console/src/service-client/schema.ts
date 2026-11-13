@@ -6452,7 +6452,14 @@ export interface components {
     BuiltinSkillName: "platform-operations";
     /** @enum {string} */
     BuiltinToolsetKey:
-      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
+      | "files"
+      | "shell"
+      | "computer"
+      | "browser"
+      | "web"
+      | "memory"
+      | "assets"
+      | "object_store";
     /** BusyOccurrence */
     BusyOccurrence: {
       /** Entry Id */
@@ -9756,6 +9763,13 @@ export interface components {
        */
       headers?: string[];
       oauth?: components["schemas"]["OAuthSettings"] | null;
+      /**
+       * Object Ref Tools
+       * @description Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.
+       */
+      object_ref_tools?: {
+        [key: string]: boolean;
+      };
       /** @default raise */
       on_error?: components["schemas"]["StartupErrorPolicy"];
       /** Tools */

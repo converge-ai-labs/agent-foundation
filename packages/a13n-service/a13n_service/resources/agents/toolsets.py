@@ -11,6 +11,7 @@ from hashlib import blake2s
 from typing import Annotated, Literal, TypedDict, cast
 
 from a13n_harness.capabilities import FILE_TOOL_KEYS, RECORD_TOOL_KEYS, FileToolKey, RecordToolKey
+from a13n_harness.capabilities.object_store import ObjectStoreConfiguration
 from a13n_harness.capabilities.web import (
     WebConfiguration,
     WebDownloadConfiguration,
@@ -34,7 +35,7 @@ PUBLISH_ASSET_TOOL_ID = "service.publish_asset"
 COMPUTER_NOTIFY_TOOL_ID = "service.computer_notify"
 PLATFORM_SOURCE = "service-platform"
 
-type BuiltinToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets"]
+type BuiltinToolsetKey = Literal["files", "shell", "computer", "browser", "web", "memory", "assets", "object_store"]
 type ToolsetKey = BuiltinToolsetKey | PlatformGroup
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
@@ -572,6 +573,29 @@ _TOOLSETS: tuple[_Toolset, ...] = (
             ),
         ),
         description="Read and change the memories a session mounts.",
+    ),
+    _Toolset(
+        "object_store",
+        "Object Store",
+        False,
+        tuple(
+            _Tool(
+                key,
+                key.title(),
+                source_tool_id("a13n-object-store-tools", f"asset_{key}"),
+                f"asset_{key}",
+                description=description,
+            )
+            for key, description in (
+                ("ref", "Snapshot an authorized file into temporary object storage"),
+                ("store", "Retain an object long-term without changing its reference"),
+                ("list", "List objects available in the current Thread"),
+                ("info", "Read object metadata without payload bytes"),
+                ("delete", "Remove an object from future lookup"),
+            )
+        ),
+        config=ObjectStoreConfiguration,
+        description="Reuse original file and media bytes through private Thread-scoped object references.",
     ),
     _Toolset(
         "assets",

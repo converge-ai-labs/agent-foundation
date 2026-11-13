@@ -91,7 +91,10 @@ class HarnessUiMCP(MCPServer):
         )
 
     def _project_toolset(self, toolset: MCPToolset[AgentContext]) -> MCP[AgentContext]:
-        local = _GuardedToolset(toolset, self._operation_guard) if self._operation_guard is not None else toolset
+        from a13n_harness.capabilities.object_store import ObjectRefToolset
+
+        references = ObjectRefToolset(toolset, object_ref_tools=dict(self._recipe.object_ref_tools))
+        local = _GuardedToolset(references, self._operation_guard) if self._operation_guard is not None else references
         capability = AppMCP if self._apps is not None else MCP[AgentContext]
         return capability(
             id=self._recipe.server_id,

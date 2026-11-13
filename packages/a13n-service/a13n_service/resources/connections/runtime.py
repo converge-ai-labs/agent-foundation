@@ -165,6 +165,7 @@ async def open_connections(
                         connection.id,
                         client_source(connection, selected.caller_headers),
                         tools=selected.tools,
+                        object_ref_tools=dict(connection.config.object_ref_tools),
                         on_error=connection.config.on_error,
                         check=checked,
                         capture=partial(capture, selected) if capture is not None else None,

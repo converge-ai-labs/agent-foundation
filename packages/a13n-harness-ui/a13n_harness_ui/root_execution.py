@@ -641,6 +641,9 @@ class RootRunExecutor:
             bindings = production_run_bindings(
                 bindings,
                 reconstructed.definition_capability_ids,
+                data_root=self._store.settings.data_root,
+                thread_id=thread_id,
+                object_store_policy=self._store.settings.object_store,
             )
             record_phase_result(
                 preparation_span,

@@ -3495,7 +3495,8 @@
           "browser",
           "web",
           "memory",
-          "assets"
+          "assets",
+          "object_store"
         ],
         "type": "string"
       },
@@ -12096,6 +12097,19 @@
                 "type": "null"
               }
             ]
+          },
+          "object_ref_tools": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+            "maxProperties": 128,
+            "propertyNames": {
+              "maxLength": 128,
+              "minLength": 1
+            },
+            "title": "Object Ref Tools",
+            "type": "object"
           },
           "on_error": {
             "$ref": "#/components/schemas/StartupErrorPolicy",

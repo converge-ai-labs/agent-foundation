@@ -438,7 +438,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
 
 
 @pytest.mark.parametrize("recovery", [False, True])
-async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: bool) -> None:
+async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: bool, tmp_path: Path) -> None:
     from types import SimpleNamespace
 
     from a13n_harness import (
@@ -487,7 +487,9 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
         store=cast(
             Any,
             SimpleNamespace(
-                usage=usage, threads=SimpleNamespace(external_context=AsyncMock(return_value=ExternalContext()))
+                usage=usage,
+                threads=SimpleNamespace(external_context=AsyncMock(return_value=ExternalContext())),
+                settings=StorageSettings(data_root=tmp_path),
             ),
         ),
         configurations=unavailable,
