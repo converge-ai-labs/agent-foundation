@@ -396,8 +396,13 @@ class InitializationRetryClient(Client[ClientTransport]):
                         await self.close()
                     except Exception as cleanup:
                         if cleanup is not exc and cleanup is not exc.__cause__:
-                            raise
-                        await self.transport.close()
+                            # Cleanup failure still stops retry, but the caller's
+                            # primary diagnostic remains the initialization error.
+                            raise exc from cleanup
+                        try:
+                            await self.transport.close()
+                        except Exception as transport_cleanup:
+                            raise exc from transport_cleanup
                 if attempt == 2 or not _transient_initialization(exc):
                     raise
                 get_logger(__name__).warning(
@@ -422,9 +427,9 @@ class _UnavailableMCP(NativeMCP[AgentContext]):
     def get_instructions(self) -> str:
         # Capability instructions survive ToolSearch deferral of Toolset guidance.
         return (
-            f"MCP server {self.id} is unavailable after startup failure. "
+            f"MCP server {self.id} is unavailable. "
             "Its tools are omitted for this Run. Continue with the remaining capabilities; "
-            "do not claim operations on this server succeeded. A later Run can try connecting again."
+            "do not claim operations on this server succeeded. A later Run can reassess availability."
         )
 
 
@@ -475,7 +480,7 @@ class MCPServer(NativeMCP[AgentContext]):
             if self._on_error == "raise":
                 raise
             get_logger(__name__).warning(
-                "MCP server skipped for this Run after startup failure",
+                "MCP server skipped for this Run after connection entry failure",
                 extra={"server_id": self.id, "error_type": type(exc).__name__},
             )
             replacement = _UnavailableMCP(self.id, self._selected_tools)

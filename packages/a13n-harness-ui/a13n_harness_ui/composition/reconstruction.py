@@ -27,6 +27,7 @@ from a13n_harness.capabilities import (
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.environment.models import COMPUTER_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.mcp import UnavailableMCPToolset
 from a13n_harness.model_context import (
@@ -511,6 +512,12 @@ class AgentReconstructor:
                         "list_connector_tools",
                         "list_connectors",
                     }
+                )
+            if node.source_kind == "bot":
+                # Captured targets add Computer tools only after being opened.
+                # Valid deferred selectors remain allowlisted, not mandatory at step one.
+                controls |= frozenset(
+                    action.value.removeprefix("environment.").replace(".", "_") for action in COMPUTER_ACTIONS
                 )
             capabilities.append(
                 _ToolAllowlistCapability(

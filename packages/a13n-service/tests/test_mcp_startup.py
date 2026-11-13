@@ -13,7 +13,7 @@ from mcp import MCPError
 from pydantic_ai.models.function import FunctionModel
 from starlette.responses import JSONResponse
 
-from .test_connections import create, opened, remote, run_tool
+from .test_connections import create, opened, patch, remote, row, run_tool
 
 pytestmark = pytest.mark.anyio
 
@@ -128,6 +128,23 @@ async def test_skip_is_run_local_with_healthy_tools_and_later_recovery(service, 
         assert failed.echoed == ["recovered"]
 
 
+async def test_startup_policy_update_preserves_saved_credential(service):
+    token = "startup-policy-fixture"
+    async with remote(token=token) as server:
+        config = {"url": server.url + "/mcp"}
+        connection = await create(service, {"config": config, "auth": "bearer", "credential": {"token": token}})
+        credential = (await row(service, connection["id"])).credential
+        assert credential is not None
+        for policy in ("skip", "raise"):
+            connection = await patch(service, connection, {"config": {**config, "on_error": policy}})
+            assert connection["status"] == "ready" and connection["credential_configured"]
+            assert token not in json.dumps(connection)
+            assert (await row(service, connection["id"])).credential == credential
+            async with opened(service, [ConnectionSelection(connection_id=connection["id"])], {}, []) as capabilities:
+                await run_tool(capabilities, "echo", {"text": policy})
+        assert server.echoed == ["skip", "raise"]
+
+
 async def test_default_raise_and_preparation_failure_are_not_skipped(backoff):
     assert McpConfig(url="https://mcp.example.test/mcp").on_error == "raise"
 
@@ -206,7 +223,8 @@ async def test_worker_startup_policy_preserves_attempt_recovery(service, scripte
         assert healthy.echoed == ["healthy"]
 
 
-async def test_ready_disconnection_does_not_reopen_attempt_client(service, monkeypatch):
+@pytest.mark.parametrize("on_error", ["raise", "skip"])
+async def test_ready_disconnection_does_not_reopen_attempt_client(service, monkeypatch, on_error):
     import a13n_service.resources.connections.runtime as runtime
 
     clients = []
@@ -219,14 +237,37 @@ async def test_ready_disconnection_does_not_reopen_attempt_client(service, monke
 
     monkeypatch.setattr(runtime, "mcp_client", capture)
     async with remote() as server:
-        connection = await create(service, {"config": {"url": server.url + "/mcp"}})
-        async with opened(service, [ConnectionSelection(connection_id=connection["id"])], {}, []) as capabilities:
+        connection = await create(service, {"config": {"url": server.url + "/mcp", "on_error": on_error}})
+        selections = [ConnectionSelection(connection_id=connection["id"])]
+        async with opened(service, selections, {}, []) as capabilities:
             await run_tool(capabilities, "echo", {"text": "once"})
             await clients[0].close()
-            with pytest.raises(RuntimeError, match="disconnected"):
-                await run_tool(capabilities, "echo", {"text": "not sent"})
+            if on_error == "raise":
+                with pytest.raises(RuntimeError, match="disconnected"):
+                    await run_tool(capabilities, "echo", {"text": "not sent"})
+            else:
+
+                async def model(messages, info):
+                    assert not info.function_tools
+                    notice = str(messages) + str(info.instructions)
+                    assert f"MCP server {connection['id']} is unavailable" in notice
+                    assert "omitted for this Run" in notice
+                    assert "after startup failure" not in notice
+                    yield "continued without disconnected server"
+
+                executable = HarnessBuilder().build(
+                    AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=capabilities
+                )
+                for _ in range(2):
+                    result = await executable.run("Continue", bindings=RunBindings.embedded())
+                    assert result.output_or_raise() == "continued without disconnected server"
             assert len(clients) == 1 and not clients[0].is_connected()
         assert server.echoed == ["once"]
+        # Only a fresh Attempt binding owns a fresh client after ready loss.
+        async with opened(service, selections, {}, []) as capabilities:
+            await run_tool(capabilities, "echo", {"text": "fresh attempt"})
+            assert len(clients) == 2 and clients[1].is_connected()
+        assert server.echoed == ["once", "fresh attempt"]
 
 
 @pytest.mark.parametrize("ready", [False, True])

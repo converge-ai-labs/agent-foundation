@@ -103,6 +103,7 @@ async def test_failed_mcp_run_preserves_heartbeat_and_later_recovers(tmp_path: P
             assert snapshot.state.next_heartbeat_at > clock
             assert attempts == 4 and len(prompts) == 1
             if not paused:
+                assert "saved Bot Thread execution failure" in prompts[0]
                 assert "fresh opportunity, not a replay" in prompts[0]
             # Success does not create an immediate retry loop or reset the clock.
             await deliver_tick(bot, now=clock + timedelta(seconds=1))

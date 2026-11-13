@@ -38,7 +38,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestParameters, _instruction_parts_of
 
 from a13n_harness._json import dump_json_text
-from a13n_harness.content import prompt_content
+from a13n_harness.content import ContentMetadata, prompt_content
 
 type ContextGroupName = Literal[
     "system", "tools", "skills", "memory", "environment_context", "runtime_state", "conversation", "tool_calls", "other"
@@ -47,6 +47,8 @@ type ContextGroupName = Literal[
 
 class ContextItemUsage(BaseModel):
     characters: int = Field(ge=0)
+    occurrences: int | None = Field(default=None, ge=1, exclude_if=lambda v: v is None)
+    distinct_versions: int | None = Field(default=None, ge=1, exclude_if=lambda v: v is None)
     calls: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
     argument_characters: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
     result_characters: int | None = Field(default=None, ge=0, exclude_if=lambda v: v is None)
@@ -114,6 +116,64 @@ def _instruction_group(key: InstructionId | None) -> ContextGroupName:
     return _untagged_source_group(source.id if isinstance(source, CapabilityInstructionSource) else None, "system")
 
 
+# Fixed detail names keep prompt text, paths and producer-specific identifiers out of usage records.
+_ENVIRONMENT_SOURCES = {
+    "a13n.environment-mounts": "Environment mounts",
+    "a13n.workspace-outline": "Workspace outline",
+    "a13n-harness-ui.global-guidance": "Global guidance",
+}
+_WORKING_SOURCES = {
+    "a13n.working-state.notes": "Notes",
+    "a13n.working-state.tasks": "Tasks",
+    "tool_execution.summary": "Tool execution status",
+    "a13n.runtime-context": "Time and usage",
+    "a13n.agent-context": "Agent context",
+    "a13n-harness-ui.surface": "Interface context",
+    "a13n-harness-ui.input-surface": "Interface context",
+    "a13n-harness-ui.bot-collaboration": "Bot collaboration",
+    "a13n-harness-ui.bot-note": "Bot notes",
+    "codeact.stored_keys": "CodeAct stored keys",
+    "a13n.async_subagent": "Background notifications",
+    "a13n.background_process": "Background notifications",
+    "a13n.envd_session": "Background notifications",
+}
+
+
+def _environment_detail(source: str, key: object) -> str:
+    if source == "a13n.file-context":
+        if key == "files":
+            return "File path list"
+        if key == "project-guidance":
+            return "Project guidance index"
+        return "Project files"
+    return _ENVIRONMENT_SOURCES.get(source, "Unattributed")
+
+
+def _conversation_input(metadata: ContentMetadata) -> str:
+    extra = metadata.model_extra or {}
+    if extra.get("a13n.context") in ("compaction", "handoff"):
+        return "Context summaries"
+    if metadata.source_id == "a13n.handoff" or extra.get("a13n.steering-source") in (
+        "async_subagent",
+        "background_process",
+        "envd_session",
+    ):
+        return "Runtime notices"
+    provenance = extra.get("a13n.input-provenance")
+    kind = provenance.get("kind") if isinstance(provenance, dict) else None
+    if kind == "recovery":
+        return "Context recovery"
+    ui = extra.get("harness_ui")
+    if isinstance(ui, dict) and ("attachment" in ui or ui.get("long_text_skipped")):
+        return "Input references"
+    if metadata.display and (
+        (kind in ("task", "steer") and metadata.source_id is None)
+        or (isinstance(ui, dict) and isinstance(ui.get("composer"), dict))
+    ):
+        return "User"
+    return "Unattributed"
+
+
 def measure_context(
     messages: Sequence[ModelMessage],
     params: ModelRequestParameters,
@@ -125,6 +185,7 @@ def measure_context(
 
     totals: Counter[ContextGroupName] = Counter()
     details: dict[ContextGroupName, Counter[str]] = defaultdict(Counter)
+    mount_versions: Counter[str] = Counter()
     calls: Counter[str] = Counter()
     arguments: Counter[str] = Counter()
     results: Counter[str] = Counter()
@@ -137,13 +198,26 @@ def measure_context(
         )
         unmeasured.add("audio" if is_audio else "other")
 
+    def source_detail(group: ContextGroupName, source: str, key: object, content: str) -> None:
+        if group == "environment_context":
+            details[group][_environment_detail(source, key)] += len(content)
+            if source == "a13n.environment-mounts":
+                mount_versions[content] += 1
+        elif group == "runtime_state":
+            details[group][_WORKING_SOURCES.get(source, "Unattributed")] += len(content)
+
     def instruction(key: InstructionId | None, content: str) -> None:
         catalog = catalogs.get(str(key.source)) if catalogs and key else None
         group = catalog.group if catalog else _instruction_group(key)
         totals[group] += len(content)
-        if catalog and content == catalog.text:
+        if catalog and content == catalog.text and catalog.items:
             for name, entry in catalog.items.items():
                 details[group][name] += entry.characters
+        elif group in ("environment_context", "runtime_state"):
+            source = key.source.id if key and isinstance(key.source, CapabilityInstructionSource) else ""
+            source_detail(group, source, key.name if key else None, content)
+        elif group == "conversation":
+            details[group]["Unattributed"] += len(content)
 
     # Measure authored instructions, before provider-specific framing is added.
     for block in _instruction_parts_of(messages, params) or ():
@@ -172,11 +246,18 @@ def measure_context(
                         )
                     )
                     if isinstance(item.value, (str, TextContent)):
-                        size = len(item.value if isinstance(item.value, str) else item.value.content)
+                        content = item.value if isinstance(item.value, str) else item.value.content
+                        size = len(content)
                         totals[group] += size
                         mount = extra.get("memory_mount")
                         if group == "memory" and isinstance(mount, str):
                             details[group][mount] += size
+                        elif group == "conversation":
+                            details[group][_conversation_input(item.metadata)] += size
+                        elif group in ("environment_context", "runtime_state"):
+                            marker = extra.get("model_context")
+                            key = marker.get("key") if isinstance(marker, dict) else None
+                            source_detail(group, source or "", key, content)
                     elif not isinstance(item.value, CachePoint):
                         media(item.value)
             elif isinstance(part, BaseToolCallPart):
@@ -208,7 +289,11 @@ def measure_context(
                 for file in part.files:
                     media(file)
             elif isinstance(part, (TextPart, ThinkingPart, CompactionPart)):
-                totals["conversation"] += len(part.content or "")
+                size = len(part.content or "")
+                totals["conversation"] += size
+                if size:
+                    summary = isinstance(part, CompactionPart) or (message.metadata or {}).get("keep") == "compact"
+                    details["conversation"]["Context summaries" if summary else "Agent"] += size
                 if isinstance(part, CompactionPart) and part.content is None:
                     unmeasured.add("other")
             elif isinstance(part, SystemPromptPart):
@@ -220,7 +305,9 @@ def measure_context(
             elif isinstance(part, (RetryFeedbackPart, RetryPromptPart)):
                 totals["other"] += len(part.model_response())
             elif isinstance(part, SpeechPart):
-                totals["conversation"] += len(part.transcript or "")
+                if part.transcript:
+                    totals["conversation"] += len(part.transcript)
+                    details["conversation"]["Agent"] += len(part.transcript)
                 if part.audio is not None:
                     media(part.audio)
             elif not isinstance(part, (InstructionBaselinePart, CapabilityLoadDeltaPart, ToolAvailabilityDeltaPart)):
@@ -245,8 +332,11 @@ def measure_context(
     )
     remaining = 24 * 1024
     for _, group, name, chars in by_rank:
+        mounts = group == "environment_context" and name == "Environment mounts" and bool(mount_versions)
         metric = ContextItemUsage(
             characters=chars,
+            occurrences=mount_versions.total() if mounts else None,
+            distinct_versions=len(mount_versions) if mounts else None,
             calls=calls[name] if group == "tool_calls" else None,
             argument_characters=arguments[name] if group == "tool_calls" else None,
             result_characters=results[name] if group == "tool_calls" else None,

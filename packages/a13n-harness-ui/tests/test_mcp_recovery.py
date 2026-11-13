@@ -251,7 +251,7 @@ async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
                 record
                 for record in caplog.records
                 if record.name.endswith(".mcp")
-                and record.getMessage() == "MCP server skipped for this Run after startup failure"
+                and record.getMessage() == "MCP server skipped for this Run after connection entry failure"
             ]
             assert len(warnings) == 1 and warnings[0].server_id == "mcp-recovering"
             assert "private-server-response" not in warnings[0].getMessage()
@@ -268,6 +268,112 @@ async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
         finally:
             await connections.close()
         assert not any(client.is_connected() for client in clients)
+
+
+@pytest.mark.parametrize("ownership", ["host", "apps"])
+@pytest.mark.parametrize("loss", ["disconnect", "close"])
+async def test_later_run_replaces_closed_generation_without_retargeting_old_projection(ownership, loss, monkeypatch):
+    server = FastMCP("Retained lifecycle")
+    calls = requests = initializations = 0
+    missing = False
+    projections = []
+    project = HarnessUiMCP._project_toolset
+
+    @server.tool
+    def effect() -> str:
+        nonlocal calls
+        calls += 1
+        return "effect completed"
+
+    def record_projection(self, toolset):
+        projections.append(toolset)
+        return project(self, toolset)
+
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"effect"}
+        yield "ready"
+
+    monkeypatch.setattr(HarnessUiMCP, "_project_toolset", record_projection)
+    connections = AppConnections() if ownership == "apps" else Connections()
+    async with _http_mcp(server) as url, httpx2.AsyncHTTPTransport() as upstream:
+
+        async def respond(request):
+            nonlocal requests, initializations
+            method = json.loads(request.content)["method"] if request.method == "POST" else None
+            if method == "tools/call":
+                requests += 1
+                if missing:
+                    return httpx2.Response(404, text="Session no longer exists")
+            response = await upstream.handle_async_request(request)
+            if method == "initialize":
+                initializations += 1
+                # Give the real HTTP server a legacy session identity so its loss
+                # exercises the SDK's Session terminated -> Host callback path.
+                response.headers["mcp-session-id"] = f"fixture-{initializations}"
+            return response
+
+        monkeypatch.setattr(httpx2, "AsyncHTTPTransport", lambda **kwargs: httpx2.MockTransport(respond))
+        agent = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(
+                HarnessUiMCP(
+                    ResolvedMcpRecipe(
+                        server_id="mcp-retained",
+                        transport=McpRemoteTransport(url=url),
+                        protocol="legacy",
+                        host_owned=ownership == "host",
+                        on_error="raise",
+                    ),
+                    connections=connections,
+                    apps=connections if ownership == "apps" else None,
+                ),
+            ),
+        )
+        try:
+            result = await agent.run(
+                "First Run",
+                previous_state=HarnessState.new(thread_id="thread_retained"),
+                bindings=RunBindings.embedded(),
+            )
+            assert result.output_or_raise() == "ready"
+            old = connections.get("thread_retained", "mcp-retained")
+            assert old.connected and old._borrows == 0
+            await old.client.call_tool_mcp("effect", {})
+            assert calls == requests == initializations == 1
+            if loss == "disconnect":
+                missing = True
+                with pytest.raises(MCPError, match="Session terminated"):
+                    await old.client.call_tool_mcp("effect", {})
+                missing = False
+            else:
+                await connections.close_integration("thread_retained", "mcp-retained")
+            assert not old.connected
+            assert calls == 1 and requests == (2 if loss == "disconnect" else 1)
+
+            async def reject_old_projection():
+                with pytest.raises(RuntimeError, match="explicit activation"):
+                    async with projections[0]:
+                        pytest.fail("A stale Run projection must not reconnect")
+                with pytest.raises(RuntimeError, match="explicit activation"):
+                    await old.client.call_tool_mcp("effect", {})
+
+            await reject_old_projection()
+            result = await agent.run(
+                "Next Run still selects server", previous_state=result.state, bindings=RunBindings.embedded()
+            )
+            assert result.output_or_raise() == "ready"
+            new = connections.get("thread_retained", "mcp-retained")
+            assert new.connected and new._borrows == 0
+            assert new is not old and new.client is not old.client and new.generation != old.generation
+            assert initializations == 2 and len(projections) == 2
+            await reject_old_projection()
+            assert calls == 1  # Neither activation nor stale dispatch replays an effect.
+            await new.client.call_tool_mcp("effect", {})
+            assert calls == 2 and requests == (3 if loss == "disconnect" else 2)
+        finally:
+            await connections.close()
 
 
 async def test_default_skip_does_not_hide_transport_authorization_failure():

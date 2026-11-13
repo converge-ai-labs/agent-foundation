@@ -43,6 +43,37 @@ async def test_bounded_initialization_retry_and_cleanup(failures, monkeypatch):
     assert not client.is_connected()
 
 
+@pytest.mark.parametrize("failure_source", ["client", "transport"])
+async def test_cleanup_failure_preserves_initialization_error_without_retry(monkeypatch, failure_source):
+    attempts = 0
+    original = TimeoutError("initialization timed out")
+    cleanup = ValueError("cleanup failed")
+
+    async def enter(self):
+        nonlocal attempts
+        attempts += 1
+        raise original
+
+    async def close(self):
+        raise cleanup if failure_source == "client" else original
+
+    async def close_transport():
+        raise cleanup
+
+    async def backoff(delay):
+        pytest.fail("A client whose cleanup failed must not be retried")
+
+    monkeypatch.setattr(Client, "__aenter__", enter)
+    monkeypatch.setattr(InitializationRetryClient, "close", close)
+    monkeypatch.setattr(mcp, "sleep", backoff)
+    client = InitializationRetryClient(FastMCP("fixture"))
+    monkeypatch.setattr(client.transport, "close", close_transport)
+    with pytest.raises(TimeoutError, match="initialization timed out") as failure:
+        await client.__aenter__()
+    assert failure.value is original and failure.value.__cause__ is cleanup
+    assert attempts == 1
+
+
 async def test_cancellation_during_backoff_does_not_retry(monkeypatch):
     attempts = 0
     backing_off = asyncio.Event()

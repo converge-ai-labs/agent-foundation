@@ -116,6 +116,8 @@ class HarnessUiMCP(MCPServer):
                 effective_recipe,
                 client_transport,
                 binding=self._recipe.binding_key(apps=self._apps is not None),
+                # New logical Runs can replace closed generations; existing Run
+                # projections and App Views keep their original connection.
                 activate=True,
                 protocol=self._recipe.protocol,
                 init_timeout=init_timeout,
