@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from a13n_harness.capabilities.object_store import _matches_tool_pattern
 from a13n_harness.objects import SUPPORTS_OBJECT_REFS, ObjectInfo, object_not_found
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from pydantic import Field
@@ -119,6 +120,27 @@ async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes
     calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
     assert calls[0].args_as_dict() == {"data_base64": item.ref}
     assert base64.b64encode(PAYLOAD).decode() not in json.dumps([part.args for part in calls])
+
+
+@pytest.mark.timeout(5)
+@pytest.mark.parametrize(
+    "name,pattern,expected",
+    [
+        ("", "*", True),
+        ("a", "a*a", False),
+        ("aa", "a*a", True),
+        ("aa", "a*a*a", False),
+        ("aaa", "a*a*a", True),
+        ("aba", "*a*a", True),
+        ("ababa", "a**ba*ba", True),
+        ("[?]\n", "[?]*", True),
+        ("a" * 128, "*a" * 32 + "*b", False),
+        ("a" * 127 + "b", "*a" * 32 + "*z*b", False),
+        ("a" * 127 + "b", "*a" * 32 + "*b", True),
+    ],
+)
+def test_star_patterns_match_non_overlapping_literals_without_backtracking(name, pattern, expected):
+    assert _matches_tool_pattern(name, pattern.split("*")) is expected
 
 
 @pytest.mark.parametrize("reverse", [False, True])

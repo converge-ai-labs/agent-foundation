@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from hashlib import sha256
@@ -70,6 +69,21 @@ def check_object_ref_support(ctx: RunContext[AgentContext], tool_def: Any, args:
         )
 
 
+def _matches_tool_pattern(name: str, parts: list[str]) -> bool:
+    """Match star-separated literals in order without regex backtracking."""
+    if not name.startswith(parts[0]) or not name.endswith(parts[-1]):
+        return False
+    start, end = len(parts[0]), len(name) - len(parts[-1])
+    if start > end:
+        return False
+    for part in parts[1:-1]:
+        position = name.find(part, start, end)
+        if position < 0:
+            return False
+        start = position + len(part)
+    return True
+
+
 @dataclass
 class ObjectRefToolset(WrapperToolset[AgentContext]):
     """Select Object Reference Transport by original tool name; only ``*`` is a wildcard.
@@ -84,7 +98,7 @@ class ObjectRefToolset(WrapperToolset[AgentContext]):
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
         patterns = [
-            (re.compile(re.escape(pattern).replace(r"\*", ".*"), re.DOTALL), enabled)
+            (pattern.split("*"), enabled)
             for pattern, enabled in sorted(
                 self.object_ref_tools.items(), key=lambda item: (-len(item[0].replace("*", "")), item[1])
             )
@@ -96,7 +110,7 @@ class ObjectRefToolset(WrapperToolset[AgentContext]):
             enabled = self.object_ref_tools.get(name)
             if enabled is None:
                 enabled = next(
-                    (value for pattern, value in patterns if pattern.fullmatch(name)),
+                    (value for parts, value in patterns if _matches_tool_pattern(name, parts)),
                     metadata.get(SUPPORTS_OBJECT_REFS, False),
                 )
             metadata[SUPPORTS_OBJECT_REFS] = enabled
