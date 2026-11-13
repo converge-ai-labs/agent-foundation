@@ -827,6 +827,8 @@ async def test_tool_handoff_publishes_one_return_to_each_channel(immediate):
     assert calls == 1
     receipt = observed[0].content
     assert receipt["type"] == "tool_execution_receipt"
+    assert "delivered to this conversation automatically" in receipt["message"]
+    assert "only when your next step needs the result now" in receipt["message"]
     for events in (produced, published):
         returns = [
             item.event.part

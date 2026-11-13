@@ -12,7 +12,6 @@ class SubagentCapability(AbstractCapability[AgentContext]):
         self,
         *,
         async_enabled: bool = False,
-        result_delivery: Literal["automatic", "manual"] = "automatic",
         operator: SubagentOperator | None = None,
     ) -> None: ...
 ```
@@ -24,11 +23,11 @@ Construction rejects async mode without an operator and rejects an operator in i
 
 The Capability owns standard tool names, schemas, guidance, authored child resolution, context and identity ceilings, usage-limit intersection, and bounded model-facing projections. The Host operator owns every complete asynchronous use case and every lifecycle fact behind it. This boundary is part of the [Hosting Contract](13-hosting-contract.md); cross-Run consequences follow [Async Subagent Lifecycle](20-async-components-and-lifecycle.md).
 
-`result_delivery` selects final async subagent result delivery and defaults to `automatic`. It applies to declared, built-in, and Host-defined children; it has no effect on inline execution. The Capability exposes the effective value as a read-only property and preserves it in its async Run replacement for parent guidance. The Host uses its own configured mode to implement delivery; Harness owns no delivery task.
+Final async subagent results are delivered automatically, including after the parent turn ends. Harness guidance lets the parent continue other work and end its turn when only background work remains; the Host owns delivery and wake eligibility.
 
-In `automatic` mode the Host delivers final results to the parent through its input boundary. In `manual` mode the parent collects them with `wait_subagent` or `subagent_info`. Explicit child-to-parent messages are independent of this switch and remain deliverable in either mode. The Host owns active-parent routing, idle wake eligibility, admission, and restart suppression. Enabling delivery does not authorize waking a stopped, failed, suspended, interrupted, or otherwise ineligible parent.
+The Host delivers final results and explicit child messages through the parent's input boundary. It owns active-parent routing, idle wake eligibility, admission, and restart suppression; automatic delivery does not authorize waking a stopped, failed, suspended, interrupted, or otherwise ineligible parent.
 
-Standard async guidance reflects the effective mode. Automatic guidance says results arrive automatically, discourages polling solely for results, and permits ending the turn while telling the user what still runs. Manual guidance directs the parent to collect results through the info or wait tools. Toolset-instruction enablement still governs whether this guidance is included.
+Standard async guidance reserves waiting for a result the next step needs now. When only background work remains, it lets the parent end its turn with a short response describing outstanding work, continuation on completion, and the user's ability to keep talking meanwhile. Toolset-instruction enablement still governs whether this guidance is included.
 
 ## Child Definitions and Built Collection
 
@@ -216,7 +215,7 @@ The operator owns:
 - Environment association selection, current state loading, and fresh adapter construction;
 - child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings, including replacement Identity and usage-limit derivation;
 - execution storage, checkpoint acknowledgement, and bounded activity projection;
-- wait and wake behavior, final-result delivery according to the effective `result_delivery` mode, steering, cancellation, linked resume, loss, cleanup, and retention;
+- wait and wake behavior, automatic final-result delivery, steering, cancellation, linked resume, loss, cleanup, and retention;
 - Host shutdown policy and any background task or worker lifecycle.
 
 Harness does not require a storage interface. An operator can use memory, files, SQLite, PostgreSQL, a workflow engine, or remote workers without adapting its persistence to a Harness-owned begin/append/commit protocol.

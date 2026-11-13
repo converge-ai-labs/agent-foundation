@@ -32,7 +32,6 @@ _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
 
-type SubagentResultDelivery = Literal["automatic", "manual"]
 
 type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
 type SubagentToolCallStatus = Literal["running", "success", "failed", "denied", "interrupted"]
@@ -382,12 +381,8 @@ class SubagentCapability(AbstractCapability[AgentContext]):
         self,
         *,
         async_enabled: bool = False,
-        result_delivery: SubagentResultDelivery = "automatic",
         operator: SubagentOperator | None = None,
     ) -> None:
-        if result_delivery not in {"automatic", "manual"}:
-            raise ValueError("result_delivery must be automatic or manual")
-        self._result_delivery: SubagentResultDelivery = result_delivery
         if not isinstance(async_enabled, bool):
             raise TypeError("async_enabled must be a boolean")
         if async_enabled and not isinstance(operator, SubagentOperator):
@@ -406,11 +401,6 @@ class SubagentCapability(AbstractCapability[AgentContext]):
     @property
     def async_enabled(self) -> bool:
         return self._async_enabled
-
-    @property
-    def result_delivery(self) -> SubagentResultDelivery:
-        """Effective final-result delivery policy implemented by the Host."""
-        return self._result_delivery
 
     @property
     def operator(self) -> SubagentOperator | None:
@@ -436,7 +426,6 @@ class SubagentCapability(AbstractCapability[AgentContext]):
             replacement: _SubagentActiveCapability = _AsyncSubagentCapability(
                 context=ctx.deps,
                 operator=self.operator,
-                result_delivery=self.result_delivery,
             )
         else:
             state = _inline_subagents(await ctx.deps.state.snapshot()) or InlineSubagentCollectionState()
@@ -452,10 +441,9 @@ class _SubagentActiveCapability(SubagentCapability):
         *,
         context: AgentContext,
         async_enabled: bool,
-        result_delivery: SubagentResultDelivery = "automatic",
         operator: SubagentOperator | None,
     ) -> None:
-        super().__init__(async_enabled=async_enabled, operator=operator, result_delivery=result_delivery)
+        super().__init__(async_enabled=async_enabled, operator=operator)
         self._context = context
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
@@ -481,17 +469,14 @@ class _InlineSubagentCapability(_SubagentActiveCapability):
 
 @dataclass(init=False)
 class _AsyncSubagentCapability(_SubagentActiveCapability):
-    def __init__(
-        self, *, context: AgentContext, operator: SubagentOperator, result_delivery: SubagentResultDelivery
-    ) -> None:
+    def __init__(self, *, context: AgentContext, operator: SubagentOperator) -> None:
         from a13n_harness.toolsets.subagents import AsyncSubagentToolset
 
-        super().__init__(context=context, async_enabled=True, operator=operator, result_delivery=result_delivery)
+        super().__init__(context=context, async_enabled=True, operator=operator)
         self._toolset = AsyncSubagentToolset(
             owner=self,
             context=context,
             operator=operator,
-            result_delivery=result_delivery,
         )
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
@@ -561,7 +546,6 @@ __all__ = [
     "SubagentInfoResult",
     "SubagentOperator",
     "SubagentOperatorContext",
-    "SubagentResultDelivery",
     "SubagentStatus",
     "SubagentSteerRequest",
     "SubagentSteerResult",

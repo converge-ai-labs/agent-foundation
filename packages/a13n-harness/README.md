@@ -25,9 +25,9 @@ Supply a Host-owned `EnvironmentSource` to each `run(..., environment=...)`, or 
 
 ## Async subagent results
 
-For Host-owned async execution, configure `SubagentCapability(async_enabled=True, operator=operator, result_delivery="automatic")`. The default `automatic` mode tells the parent that final results arrive automatically. Use `result_delivery="manual"` to direct the parent to collect results with `wait_subagent` or `subagent_info`.
+For Host-owned async execution, configure `SubagentCapability(async_enabled=True, operator=operator)`. Final results arrive automatically, including after the parent turn ends. The parent can continue other work and end its turn when only background work remains.
 
-Your Host implements delivery and wake eligibility. It can read `capability.result_delivery` or the detached operator context's `result_delivery`; Harness does not schedule delivery. Explicit child messages are independent of the final-result mode. Retrieved results include the child's execution identity. Hosts can use `a13n_harness.execution_identity.format_execution_header` for matching delivered results and messages. See the [delegation contract](../../spec/a13n-harness/11-delegation-and-subagents.md).
+Your Host implements delivery and wake eligibility; Harness does not schedule delivery. Retrieved results include the child's execution identity. Hosts can use `a13n_harness.execution_identity.format_execution_header` for matching delivered results and messages. See the [delegation contract](../../spec/a13n-harness/11-delegation-and-subagents.md).
 
 ## Browser tools
 

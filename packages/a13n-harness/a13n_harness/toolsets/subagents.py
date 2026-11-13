@@ -22,7 +22,6 @@ from a13n_harness.capabilities.subagents import (
     SubagentInfoResult,
     SubagentOperator,
     SubagentOperatorContext,
-    SubagentResultDelivery,
     SubagentSteerRequest,
     SubagentSteerResult,
     SubagentToolCallContext,
@@ -68,14 +67,12 @@ class AsyncSubagentToolset:
         owner: AbstractCapability[AgentContext],
         context: AgentContext,
         operator: SubagentOperator,
-        result_delivery: SubagentResultDelivery = "automatic",
     ) -> None:
         if not isinstance(operator, SubagentOperator):
             raise TypeError("operator must be a SubagentOperator")
         self._owner = owner
         self._context = context
         self._operator = operator
-        self._result_delivery: SubagentResultDelivery = result_delivery
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = [
@@ -105,15 +102,7 @@ class AsyncSubagentToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-async-subagent-tools",
-            instructions=tool_instruction("subagents").format(
-                available_subagents=available,
-                result_delivery_guidance=(
-                    "Final results arrive automatically; do not poll only to get them. You may end your turn "
-                    "while work runs; tell the user what is still running."
-                    if self._result_delivery == "automatic"
-                    else "Collect final results with `wait_subagent` or `subagent_info`."
-                ),
-            ),
+            instructions=tool_instruction("subagents").format(available_subagents=available),
         )
 
     async def delegate(

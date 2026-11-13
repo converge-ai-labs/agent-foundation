@@ -68,7 +68,12 @@ class ToolExecutionRecord(BaseModel):
             "execution_id": self.execution_id,
             "tool_name": self.tool_name,
             "status": self.status,
-            "message": "The original invocation is owned by the runtime. Use tool_execution_result or tool_execution_wait; do not reissue it.",
+            "message": (
+                "Running in the background; do not reissue it. Its result is delivered to this conversation "
+                "automatically when it finishes, even after your turn ends. You can continue with other work "
+                "meanwhile. Call tool_execution_wait or tool_execution_result only when your next step needs "
+                "the result now."
+            ),
         }
 
 
