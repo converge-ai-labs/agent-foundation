@@ -77,6 +77,7 @@ export function nativeLink(search: string): {
   diffPath: string;
   comparison: "staged" | "unstaged" | "untracked" | null;
   terminal: string;
+  background: boolean;
 } {
   const query = new URLSearchParams(search);
   const pane = query.get("native");
@@ -92,5 +93,6 @@ export function nativeLink(search: string): {
         ? comparison
         : null,
     terminal: query.get("terminal") || "",
+    background: pane === "background",
   };
 }

@@ -9,8 +9,13 @@ import {
 } from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
 import { useGuestAccess, useTransport } from "../transport/context";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { result } from "../transport/client";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
+import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useChildControl } from "./child-controls";
 import { useBackground } from "./background-context";
@@ -23,6 +28,29 @@ import {
 import { executionTime } from "./execution-time";
 import styles from "./background.module.css";
 
+const bodies = [
+  "M6 4Q12 1 18 4Q22 6 21 14L20 20Q17 23 14 20L12 22L10 20Q6 23 4 19L3 12Q2 6 6 4Z",
+  "M12 3C23 3 24 18 18 21Q15 23 12 21Q8 23 5 20C0 14 2 3 12 3Z",
+  "M7 4Q12 0 17 4L21 11Q24 17 18 20L14 22Q12 23 10 21L5 20Q0 17 3 11Z",
+  "M5 4Q12 2 19 4Q22 5 22 9L21 18Q21 22 17 22L13 20L9 22Q4 23 3 18L2 10Q1 5 5 4Z",
+];
+const eyes = [
+  "M7 10a1.4 1.8 0 1 0 2.8 0a1.4 1.8 0 1 0-2.8 0M14.2 10a1.4 1.8 0 1 0 2.8 0a1.4 1.8 0 1 0-2.8 0",
+  "M6.5 10a2 2 0 1 0 4 0a2 2 0 1 0-4 0M13.5 10a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+  "M6.5 11Q8.5 6.5 10.5 11L9.3 11Q8.5 9 7.7 11ZM13.5 11Q15.5 6.5 17.5 11L16.3 11Q15.5 9 14.7 11Z",
+];
+const mouths = [
+  "M10 15Q12 17 14 15",
+  "M10.5 15.5h3",
+  "M11 15a1.2 1.2 0 1 0 2 0",
+];
+const extras = [
+  "",
+  "M5 6L4 1L9 5M15 5L20 1L19 7",
+  "M10 4L10 1L14 1L14 4",
+  "M3 12L0 10L2 16M21 12L24 10L22 16",
+];
+
 export function SubagentGlyph({
   id,
   running = false,
@@ -32,17 +60,35 @@ export function SubagentGlyph({
 }) {
   const identity = glyphIdentity(id);
   return (
-    <span
+    <svg
       aria-hidden="true"
+      viewBox="0 0 24 24"
       className={styles.glyph}
-      data-shape={identity.shape}
       data-running={running || undefined}
       style={
         {
           "--identity": `var(--a13n-identity-${identity.color + 1})`,
         } as CSSProperties
       }
-    />
+    >
+      <g
+        fill="var(--identity)"
+        stroke="var(--a13n-identity-outline)"
+        strokeWidth="0.6"
+        strokeLinejoin="round"
+      >
+        {extras[identity.extra] && <path d={extras[identity.extra]} />}
+        <path d={bodies[identity.shape]} />
+      </g>
+      <path d={eyes[identity.eyes]} fill="var(--a13n-identity-ink)" />
+      <path
+        d={mouths[identity.mouth]}
+        fill="none"
+        stroke="var(--a13n-identity-ink)"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 export function useBackgroundStateLabel() {
@@ -84,14 +130,6 @@ export function BackgroundToggle() {
 export function BackgroundCard() {
   const { t } = useTranslation();
   const bg = useBackground();
-  const [limit, setLimit] = useState(20);
-  const groups = backgroundGroups(bg.items, limit);
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!bg.cardOpen) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [bg.cardOpen]);
   if (!bg.cardOpen) return null;
   return (
     <section
@@ -113,65 +151,113 @@ export function BackgroundCard() {
           <X />
         </Button>
       </header>
-      <ScrollArea
-        autoHeight
-        scrollFade
-        className={styles.cardBody}
-        viewportProps={{ "aria-label": t("Background items"), role: "region" }}
-      >
-        <ErrorNotice error={bg.error} retry={bg.refresh} />
-        {(bg.display?.gap || bg.display?.processes.omitted) && (
-          <p className={styles.empty}>
-            {t("Some process observations are unavailable or omitted.")}
-          </p>
-        )}
-        {bg.loading && <p role="status">{t("Loading background work…")}</p>}
-        {!bg.loading && !bg.error && !groups.running.length && (
-          <p className={styles.empty}>{t("Nothing is running.")}</p>
-        )}
-        {(
-          [
-            ["Running", groups.running],
-            ["Ended", groups.ended],
-          ] as const
-        ).map(
-          ([label, items]) =>
-            items.length > 0 && (
-              <section key={label} aria-label={t(label)}>
-                <h3>{t(label)}</h3>
-                <ul>
-                  {items.map((item) => (
+      <BackgroundList compact />
+    </section>
+  );
+}
+export function BackgroundList({ compact = false }: { compact?: boolean }) {
+  const { t } = useTranslation();
+  const bg = useBackground();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <ScrollArea
+      autoHeight={compact}
+      scrollFade
+      className={compact ? styles.cardBody : styles.historyBody}
+      viewportProps={{ "aria-label": t("Background items"), role: "region" }}
+    >
+      <ErrorNotice error={bg.error} retry={bg.refresh} />
+      {bg.display?.processes.omitted && (
+        <p className={styles.empty}>
+          {t("Some process observations are unavailable or omitted.")}
+        </p>
+      )}
+      {bg.loading && (
+        <p role="status" className={styles.empty}>
+          {t("Loading background work…")}
+        </p>
+      )}
+      {!bg.loading && !bg.error && !bg.items.length && (
+        <p className={styles.empty}>{t("Nothing is running.")}</p>
+      )}
+      {backgroundGroups(bg.items).map(
+        (group) =>
+          group.items.length > 0 && (
+            <section key={group.label} aria-label={t(group.label)}>
+              <div className={styles.groupHeader}>
+                <h3>{t(group.label)}</h3>
+                {compact && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      bg.open({
+                        kind: "history",
+                        id: bg.threadId,
+                        threadId: bg.threadId,
+                        title: t("Background work"),
+                      })
+                    }
+                  >
+                    {t("View all")}
+                  </Button>
+                )}
+              </div>
+              <ul>
+                {(compact ? group.items.slice(0, 3) : group.items).map(
+                  (item) => (
                     <BackgroundRow
                       key={backgroundKey(item.target)}
                       item={item}
                       now={now}
                     />
-                  ))}
-                </ul>
-              </section>
-            ),
-        )}
-      </ScrollArea>
-      {(groups.more || bg.more) && (
+                  ),
+                )}
+              </ul>
+            </section>
+          ),
+      )}
+      {!compact && bg.more && (
         <Button
           className={styles.showMore}
           variant="ghost"
           size="sm"
           loading={bg.loadingMore}
-          onClick={() => {
-            setLimit(limit + 20);
-            if (!groups.more) bg.loadMore();
-          }}
+          onClick={bg.loadMore}
         >
           {t("Show more")}
         </Button>
       )}
-    </section>
+    </ScrollArea>
   );
 }
 function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
   const bg = useBackground();
+  const { client } = useTransport();
   const state = useBackgroundStateLabel();
+  const prompt = useQuery({
+    queryKey: [
+      "thread",
+      item.target.threadId,
+      "child-review",
+      item.target.id,
+      "prompt",
+    ],
+    enabled: !!item.child && !item.preview,
+    staleTime: Infinity,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/inputs", {
+          params: { path: { thread_id: item.target.id }, query: { limit: 1 } },
+          signal,
+        }),
+      ),
+  });
+  const preview = item.preview || prompt.data?.turns[0]?.preview;
   const duration =
     item.started && (item.running || item.ended)
       ? executionTime(
@@ -180,14 +266,13 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
         )
       : undefined;
   const shell = item.process || item.target.icon === "terminal";
-
   return (
     <li className={styles.row}>
       <button
         type="button"
         className={styles.item}
         onClick={() => bg.open(item.target)}
-        title={item.target.title}
+        title={[item.target.title, preview].filter(Boolean).join("\n")}
       >
         <span className={styles.icon}>
           {item.child ? (
@@ -201,31 +286,17 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
             <Wrench />
           )}
         </span>
-        <span
-          className={`${styles.name} ${shell ? styles.command : ""}`}
-          title={item.target.title}
-        >
+        <span className={`${styles.name} ${shell ? styles.command : ""}`}>
           {item.target.title}
         </span>
-        {item.child ? (
-          <span className={styles.preview}>
-            <ChildPrompt item={item} />
-          </span>
-        ) : item.preview ? (
-          <span className={styles.preview} title={item.preview}>
-            {item.preview}
-          </span>
-        ) : null}
         <span className={styles.metadata}>
-          <span>
-            {state(item.state)}
-            {duration && (
-              <>
-                {" "}
-                · <time>{duration}</time>
-              </>
-            )}
-          </span>
+          {state(item.state)}
+          {duration && (
+            <>
+              {" "}
+              · <time>{duration}</time>
+            </>
+          )}
         </span>
       </button>
       <span className={styles.action}>
@@ -238,22 +309,27 @@ function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
     </li>
   );
 }
-function ChildStop({ item }: { item: BackgroundItem }) {
+export function ChildStop({ item }: { item: BackgroundItem }) {
   const { t } = useTranslation();
   const guest = useGuestAccess();
   const bg = useBackground();
   const { controlState, control } = useChildControl(item.child!, bg.refresh);
-  if (guest || !item.child?.available_actions?.includes("cancel")) return null;
+  if (
+    !item.running ||
+    guest ||
+    !item.child?.available_actions?.includes("cancel")
+  )
+    return null;
+  const stopping = controlState.pending || !!controlState.outcome?.accepted;
   return (
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={t("Stop subagent")}
-      title={t("Stop subagent")}
-      disabled={controlState.pending || controlState.unknown}
-      onClick={() => {
-        control.mutate("cancel");
-      }}
+      loading={stopping}
+      aria-label={t(stopping ? "Stopping…" : "Stop subagent")}
+      title={t(stopping ? "Stopping…" : "Stop subagent")}
+      disabled={stopping || controlState.unknown}
+      onClick={() => control.mutate()}
     >
       <StopIcon weight="fill" />
     </Button>
@@ -263,6 +339,7 @@ export function ToolCancel({ item }: { item: BackgroundItem }) {
   const { t } = useTranslation();
   const guest = useGuestAccess();
   const { client } = useTransport();
+  const queries = useQueryClient();
   const bg = useBackground();
   const cancel = useMutation({
     mutationFn: () =>
@@ -279,17 +356,34 @@ export function ToolCancel({ item }: { item: BackgroundItem }) {
           },
         ),
       ),
+    onSuccess: (execution) =>
+      queries.setQueryData<InfiniteData<Schema<"ToolExecutionView">[]>>(
+        ["thread", item.target.threadId, "tool-executions", "background"],
+        (current) =>
+          current && {
+            ...current,
+            pages: current.pages.map((page) =>
+              page.map((tool) =>
+                tool.execution_id === execution.execution_id ? execution : tool,
+              ),
+            ),
+          },
+      ),
     onSettled: bg.refresh,
   });
-  if (guest || !item.tool?.available_actions?.includes("cancel")) return null;
+  if (!item.running || guest) return null;
+  const stopping = cancel.isPending || item.tool!.cancel_requested;
+  if (!stopping && !item.tool?.available_actions?.includes("cancel"))
+    return null;
   return (
     <>
       <Button
         variant="ghost"
         size="icon-sm"
-        aria-label={t("Cancel execution")}
-        title={t("Cancel execution")}
-        disabled={cancel.isPending || cancel.isSuccess || cancel.isError}
+        loading={stopping}
+        aria-label={t(stopping ? "Stopping…" : "Cancel execution")}
+        title={t(stopping ? "Stopping…" : "Cancel execution")}
+        disabled={stopping || cancel.isError}
         onClick={() => cancel.mutate()}
       >
         <StopIcon weight="fill" />
@@ -301,31 +395,4 @@ export function ToolCancel({ item }: { item: BackgroundItem }) {
       )}
     </>
   );
-}
-
-function ChildPrompt({ item }: { item: BackgroundItem }) {
-  const { client } = useTransport();
-  const { t } = useTranslation();
-  const prompt = useQuery({
-    queryKey: [
-      "thread",
-      item.target.threadId,
-      "child-review",
-      item.target.id,
-      "prompt",
-    ],
-    enabled: !item.preview,
-    staleTime: Infinity,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/inputs", {
-          params: { path: { thread_id: item.target.id }, query: { limit: 1 } },
-          signal,
-        }),
-      ),
-  });
-  if (!item.preview && prompt.isPending) return null;
-  const text =
-    item.preview || prompt.data?.turns[0]?.preview || t("Input unavailable");
-  return <span title={text}>{text}</span>;
 }

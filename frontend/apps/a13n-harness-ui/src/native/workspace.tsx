@@ -1,7 +1,8 @@
+import { ShareButton } from "../sharing";
 import { BackgroundScope } from "../conversations/background-context";
 import {
-  BackgroundToggle,
   BackgroundCard,
+  BackgroundToggle,
   SubagentGlyph,
 } from "../conversations/background-card";
 import { BackgroundPanel } from "../conversations/background-panel";
@@ -612,6 +613,18 @@ export function NativeWorkspace({
         });
       } else void open(link.path);
     }
+    if (link.background && threadId) {
+      setBackgroundAvailable(true);
+      revealTab({
+        kind: "background",
+        target: {
+          kind: "history",
+          id: threadId,
+          threadId,
+          title: t("Background work"),
+        },
+      });
+    }
     if (link.terminal && status.data?.features?.host_terminal) {
       setTerminalId(link.terminal);
       setFocusedArea("terminal");
@@ -981,7 +994,9 @@ export function NativeWorkspace({
       key: tab.id,
       label:
         tab.kind === "background"
-          ? tab.target.title
+          ? tab.target.kind === "history"
+            ? t("Background work")
+            : tab.target.title
           : tab.kind === "new"
             ? t("New tab")
             : tab.kind === "file"
@@ -1154,7 +1169,12 @@ export function NativeWorkspace({
                   open={() => show("browser")}
                 />
               )}
-              {isWorkspace && threadId && <BackgroundToggle />}
+              {isWorkspace && threadId && (
+                <>
+                  <ShareButton />
+                  <BackgroundToggle />
+                </>
+              )}
               {profile}
               {botMode && (
                 <>

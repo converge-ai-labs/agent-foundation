@@ -58,9 +58,9 @@ Neutral surfaces carry the interface. Primary buttons are near-black in light mo
 
 ## Identity Color
 
-Identity is separate from status. A small shape may use a stable identifier-derived candy color to distinguish a child conversation; hue never changes with its execution state. State uses text, a badge or reduced-motion-aware animation. Tool icons stay neutral. Identity colors do not become control fills or success/failure signals.
+Identity is separate from status. A child conversation uses a deterministic generated character: a body with eyes, a mouth and optional small features. A stable hash of its Thread ID selects every variable feature and palette entry; state never changes the character or its hue. Eyes stay legible at 16px and characters retain their proportions at tab/header sizes. State uses text, a badge or reduced-motion-aware animation. Tool icons remain neutral.
 
-Harness owns `--a13n-identity-1` through `--a13n-identity-6` in its theme: light/dark pairs are `#c83388`/`#ff78bc`, `#7b4bdb`/`#b793ff`, `#087f9e`/`#54d4ed`, `#b94d20`/`#ffab79`, `#25824c`/`#6bdf9b`, and `#ac399c`/`#ef8ce0`. Glyphs retain readable contrast against their owning canvas and elevated surfaces; names remain ordinary text.
+Harness owns `--a13n-identity-1` through `--a13n-identity-6`: clean, saturated candy light/dark pairs `#ff71c3`/`#ffa0d7`, `#ad8bff`/`#c5aaff`, `#4cdbf4`/`#7ce8fa`, `#7294ff`/`#a3baff`, `#dc82ff`/`#e9aaff`, and `#ff8ce4`/`#ffafea`. `--a13n-identity-ink` (`#26203c`) keeps facial features legible; `--a13n-identity-outline` (`#5a4165`/`#cfb8e7`) separates bodies from their surfaces. Identity colors never become control fills or success/failure signals; names remain ordinary text.
 
 ## Controls, Overlays and Feedback
 

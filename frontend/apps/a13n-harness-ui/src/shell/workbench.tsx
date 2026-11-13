@@ -3,7 +3,6 @@ import { BotComposerProvider, BotNavigation, BotPage } from "../bot";
 import { AppearanceSettings } from "../configuration/appearance";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
-import { ShareButton } from "../sharing";
 import { ModelsPage } from "../configuration/models";
 import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
 import { useEffect, useRef, useState } from "react";
@@ -433,7 +432,6 @@ function WorkbenchContent({
             profile={
               <>
                 <VoiceIndicator />
-                <ShareButton />
                 <ParticipantAvatars
                   participants={(live.presence?.participants ?? []).filter(
                     (participant) =>

@@ -12,7 +12,7 @@
   top: 8px;
   right: 8px;
   z-index: 20;
-  width: min(360px, calc(100% - 16px));
+  width: min(320px, calc(100% - 16px));
   max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
@@ -40,19 +40,37 @@
   overflow: hidden;
   padding: 0 8px 8px;
 }
-.card h3 {
-  margin: 16px 8px 4px;
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 8px 4px;
+  min-height: 28px;
+}
+.groupHeader h3 {
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: inherit;
   font-weight: 400;
 }
-.card section:first-of-type h3 {
-  margin-top: 8px;
+.groupHeader button {
+  padding-inline: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
 }
-.card ul {
+.cardBody section:first-of-type .groupHeader {
+  margin-top: 0;
+}
+.card ul,
+.historyBody ul {
   padding: 0;
   margin: 0;
   list-style: none;
+}
+.historyBody {
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px 16px;
 }
 .empty {
   padding: 16px 8px;
@@ -102,19 +120,10 @@
   grid-row: 1;
   min-width: 0;
 }
-.name,
-.preview {
+.name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.preview {
-  grid-column: 2 / -1;
-  grid-row: 2;
-  min-height: 18px;
-  line-height: calc(var(--a13n-text-body) * 18 / 14);
-  font-size: calc(var(--a13n-text-body) * 13 / 14);
-  color: var(--a13n-secondary);
 }
 .command {
   font-family: var(--a13n-mono);
@@ -170,21 +179,10 @@
 }
 .glyph {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  background: var(--identity);
-  border-radius: 3px;
-}
-.glyph[data-shape="1"] {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-}
-.glyph[data-shape="2"] {
   width: 16px;
   height: 16px;
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  flex-shrink: 0;
+  overflow: visible;
 }
 .glyph[data-running] {
   animation: breathe 2s ease-in-out infinite;
@@ -246,15 +244,6 @@
   padding: 12px;
   border-radius: 8px;
 }
-.controls {
-  padding: 12px 16px;
-  display: flex;
-  gap: 8px;
-  align-items: end;
-}
-.controls label {
-  flex: 1;
-}
 .noticeLink {
   display: inline-flex;
   gap: 6px;
@@ -269,29 +258,6 @@
   vertical-align: middle;
   margin-inline-start: 8px;
 }
-.steerComposer {
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  min-width: 0;
-}
-.steerComposer label {
-  display: block;
-  min-width: 0;
-}
-.controls .steerComposer textarea {
-  display: block;
-  width: 100%;
-  padding: 4px 6px;
-  min-height: 28px;
-  max-height: 120px;
-  field-sizing: content;
-  resize: none;
-  font: inherit;
-  line-height: 1.5;
-}
-
 .noticeLink > span:last-child {
   min-width: 0;
   overflow: hidden;
@@ -313,4 +279,24 @@
 .panelHeader > svg {
   flex-shrink: 0;
   color: var(--a13n-secondary);
+}
+
+.action button[data-loading] {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .row {
+    min-height: 44px;
+  }
+  .item {
+    min-height: 44px;
+  }
+  .action {
+    align-self: center;
+    padding-top: 0;
+  }
+}
+
+.controlRecovery {
+  padding: 0 20px 16px;
 }

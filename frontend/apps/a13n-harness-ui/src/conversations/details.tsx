@@ -14,7 +14,7 @@ import {
 } from "a13n-ui";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
 import { ChildSavedOutputs } from "./child-output";
@@ -331,9 +331,7 @@ export function Child({
     child,
     reconcile,
   );
-  const { instruction, unknown, pending } = controlState;
-  const setInstruction = (value: string) =>
-    updateControl({ instruction: value });
+  const { unknown, pending } = controlState;
   return (
     <details
       className={styles.activity}
@@ -385,49 +383,20 @@ export function Child({
           )}
           {child.failure && <p role="alert">{child.failure.message}</p>}
           <ErrorNotice error={controlState.error} />
-          {!shareId &&
-            (child.available_actions?.includes("steer") ||
-              child.available_actions?.includes("cancel")) && (
-              <div className={styles.childControls}>
-                {child.available_actions?.includes("steer") && (
-                  <TextField
-                    label={t("Instruction for {{name}}", {
-                      name: child.subagent_name,
-                    })}
-                    value={instruction}
-                    onChange={setInstruction}
-                    disabled={pending || unknown}
-                  />
-                )}
-                <div className={styles.childControlActions}>
-                  {child.available_actions?.includes("steer") && (
-                    <Button
-                      variant="outline"
-                      disabled={!instruction.trim() || pending || unknown}
-                      onClick={() => control.mutate("steer")}
-                    >
-                      {t("Guide subagent")}
-                    </Button>
-                  )}
-                  {child.available_actions?.includes("cancel") && (
-                    <Button
-                      variant="ghost"
-                      disabled={pending || unknown}
-                      onClick={() => control.mutate("cancel")}
-                    >
-                      {t("Stop subagent")}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
+          {!shareId && child.available_actions?.includes("cancel") && (
+            <Button
+              variant="ghost"
+              disabled={pending || unknown || !!controlState.outcome?.accepted}
+              onClick={() => control.mutate()}
+            >
+              {pending || controlState.outcome?.accepted
+                ? t("Stopping…")
+                : t("Stop subagent")}
+            </Button>
+          )}
           {!shareId && unknown && (
             <div className={styles.warning}>
-              <p>
-                {t(
-                  "Couldn’t confirm delivery. The subagent may already have received your instruction. It is still saved here; nothing was resent.",
-                )}
-              </p>
+              <p>{t("Couldn’t confirm delivery. Nothing was resent.")}</p>
               <div className={styles.childControlActions}>
                 <Button
                   variant="outline"

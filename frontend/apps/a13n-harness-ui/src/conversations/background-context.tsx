@@ -22,6 +22,7 @@ import { readPreference, writePreference } from "../shell/preferences";
 import type { FocusDisplay } from "./stream";
 
 type BackgroundState = {
+  threadId: string;
   items: BackgroundItem[];
   resolve: (executionId: string) => BackgroundTarget | undefined;
   display?: FocusDisplay;
@@ -36,6 +37,7 @@ type BackgroundState = {
   refresh: () => void;
 };
 const Context = createContext<BackgroundState>({
+  threadId: "",
   items: [],
   resolve: () => undefined,
   open: () => {},
@@ -142,6 +144,7 @@ function ThreadBackgroundScope({
   return (
     <Context
       value={{
+        threadId,
         items,
         resolve: (id) => {
           const child = childPage.data?.pages

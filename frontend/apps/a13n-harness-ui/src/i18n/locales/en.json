@@ -3468,10 +3468,11 @@
   "This message was not sent. Edit it or discard it before continuing.": "This message was not sent. Edit it or discard it before continuing.",
   "Retry exactly": "Retry exactly",
   "Start subagent": "Start subagent",
+  "View all": "View all",
+  "Stopping…": "Stopping…",
   "Background work": "Background work",
   "Close background work": "Close background work",
   "Couldn’t confirm delivery. Nothing was resent.": "Couldn’t confirm delivery. Nothing was resent.",
-  "Ended": "Ended",
   "Input unavailable": "Input unavailable",
   "Last observed state": "Last observed state",
   "Live output": "Live output",
@@ -3481,7 +3482,6 @@
   "Loading output…": "Loading output…",
   "Loading subagent conversation…": "Loading subagent conversation…",
   "Main agent": "Main agent",
-  "Message to subagent": "Message to subagent",
   "Moved to background": "Moved to background",
   "Nothing is running.": "Nothing is running.",
   "Output expired or unavailable.": "Output expired or unavailable.",
@@ -3497,6 +3497,5 @@
   "Output unavailable.": "Output unavailable.",
   "Some process observations are unavailable or omitted.": "Some process observations are unavailable or omitted.",
   "Background items": "Background items",
-  "Send a message…": "Send a message…",
   "Input truncated.": "Input truncated."
 }

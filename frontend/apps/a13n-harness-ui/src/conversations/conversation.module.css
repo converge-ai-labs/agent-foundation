@@ -974,11 +974,6 @@
 .children {
   margin-top: 12px;
 }
-.childControls {
-  display: grid;
-  gap: 12px;
-  margin-top: 24px;
-}
 .childControlActions {
   display: flex;
   flex-wrap: wrap;

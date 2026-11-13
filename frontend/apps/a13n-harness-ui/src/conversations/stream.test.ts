@@ -2328,3 +2328,45 @@ it("retains displayable execution notices without exposing ordinary hidden input
   expect(text).toContain("Tool notification");
   expect(text).not.toContain("internal guidance");
 });
+
+it("a child checkpoint recovers a trimmed prefix without hiding a later unsaved gap", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  for (let i = 0; i < 130; i++)
+    display.accept(
+      childEvent(101 + i, "execution-one", {
+        messageId: `before-${i}`,
+        delta: "saved content",
+      }),
+    );
+  const child = display.children.get("execution-one")!.display;
+  expect(child.gap).toBe(true);
+  const marker = childEvent(231);
+  if (marker.kind !== "event") throw new Error("Expected child event");
+  marker.event.event_type = "CUSTOM";
+  marker.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.harness_ui.checkpoint",
+    value: { event: { continuation_id: "saved-prefix" } },
+  };
+  display.accept(marker);
+  expect(child.gap).toBe(false);
+  for (let i = 0; i < 10; i++)
+    display.accept(
+      childEvent(232 + i, "execution-one", {
+        messageId: `after-${i}`,
+        delta: "new content",
+      }),
+    );
+  expect(child.gap).toBe(false);
+  expect(child.blocksAfter("saved-prefix")).toHaveLength(10);
+  for (let i = 10; i < 130; i++)
+    display.accept(
+      childEvent(232 + i, "execution-one", {
+        messageId: `after-${i}`,
+        delta: "new content",
+      }),
+    );
+  expect(child.gap).toBe(true);
+});

@@ -250,6 +250,10 @@ function setup(
                                 thread: {
                                   title: "Current chat",
                                   configuration: {
+                                    agent_source: {
+                                      kind: "agent",
+                                      agent_id: "agent-main",
+                                    },
                                     local_roots:
                                       options?.params?.path?.thread_id ===
                                       "other"

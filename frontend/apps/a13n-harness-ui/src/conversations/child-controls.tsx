@@ -4,19 +4,18 @@ import { useTransport } from "../transport/context";
 import { useMutation } from "@tanstack/react-query";
 
 type ControlState = {
-  instruction: string;
   pending: boolean;
   unknown: boolean;
   error?: unknown;
   outcome?: Schema<"ChildControlResult">;
 };
-const empty: ControlState = { instruction: "", pending: false, unknown: false };
+const empty: ControlState = { pending: false, unknown: false };
 const ChildControls = createContext<{
   states: Record<string, ControlState>;
   update: (key: string, patch: Partial<ControlState>) => void;
 } | null>(null);
 
-/** Private, instance-local control drafts survive inspector and route changes. */
+/** Private control outcomes survive inspector and route changes. */
 export function ChildControlsProvider({ children }: { children: ReactNode }) {
   const [states, setStates] = useState<Record<string, ControlState>>({});
   return (
@@ -55,37 +54,25 @@ export function useChildControl(
     child.parent_thread_id,
     child.execution_id,
   );
-  const { instruction } = controlState;
   const path = {
     thread_id: child.parent_thread_id,
     execution_id: child.execution_id,
   };
   const control = useMutation({
-    mutationFn: (action: "cancel" | "steer") =>
-      action === "cancel"
-        ? result(
-            client.POST(
-              "/api/threads/{thread_id}/children/{execution_id}/cancel",
-              { params: { path } },
-            ),
-          )
-        : result(
-            client.POST(
-              "/api/threads/{thread_id}/children/{execution_id}/steer",
-              { params: { path }, body: { prompt: instruction } },
-            ),
-          ),
+    mutationFn: () =>
+      result(
+        client.POST("/api/threads/{thread_id}/children/{execution_id}/cancel", {
+          params: { path },
+        }),
+      ),
     onMutate: () =>
       updateControl({ pending: true, error: undefined, outcome: undefined }),
-    onSuccess: (outcome, action) => {
+    onSuccess: (outcome) => {
       if (outcome.execution_id !== child.execution_id) {
         updateControl({ unknown: true });
         return;
       }
-      updateControl({
-        outcome,
-        ...(outcome.accepted && action === "steer" ? { instruction: "" } : {}),
-      });
+      updateControl({ outcome });
     },
     onError: (error) =>
       updateControl({

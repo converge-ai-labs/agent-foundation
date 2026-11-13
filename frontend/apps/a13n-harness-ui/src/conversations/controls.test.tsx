@@ -264,7 +264,7 @@ it("sends a complete decision set keyed by question text and does not retry an u
   ).toBe(false);
   fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-  await screen.findByText(/Couldn't confirm delivery/);
+  await screen.findByText(/confirm delivery/);
   expect(POST.mock.calls[0][1].body).toEqual({
     expected_continuation_id: "C1",
     responses: [
@@ -295,7 +295,7 @@ it("invalidating a previously complete answer prevents stale submission", () => 
   fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
   expect(POST).not.toHaveBeenCalled();
 });
-it("keeps child instructions after unknown control and addresses the exact parent execution", async () => {
+it("keeps uncertain child Stop disabled and addresses the exact parent execution", async () => {
   const POST = vi
     .fn()
     .mockRejectedValue(new ApiError("Proxy unavailable", 502));
@@ -324,27 +324,14 @@ it("keeps child instructions after unknown control and addresses the exact paren
     }),
   });
   fireEvent.click(screen.getByText("Explorer - running"));
-  fireEvent.change(
-    await screen.findByRole("textbox", { name: "Instruction for Explorer" }),
-    { target: { value: "Inspect this" } },
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
-  await screen.findByText(/Couldn't confirm delivery/);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Stop subagent" }));
+  await screen.findByText(/confirm delivery/);
   expect(POST.mock.calls[0]).toEqual([
-    "/api/threads/{thread_id}/children/{execution_id}/steer",
-    {
-      params: { path: { thread_id: "parent", execution_id: "child-one" } },
-      body: { prompt: "Inspect this" },
-    },
+    "/api/threads/{thread_id}/children/{execution_id}/cancel",
+    { params: { path: { thread_id: "parent", execution_id: "child-one" } } },
   ]);
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "Instruction for Explorer",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("Inspect this");
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Stop subagent" }));
   expect(POST).toHaveBeenCalledOnce();
 });
 

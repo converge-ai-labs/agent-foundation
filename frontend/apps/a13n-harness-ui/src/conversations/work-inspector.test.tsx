@@ -385,62 +385,32 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   } as Schema<"ChildExecutionView">;
   const view = render(<Child child={child} reconcile={vi.fn()} />, { wrapper });
   fireEvent.click(screen.getByText("Worker - running"));
-  fireEvent.change(
-    await screen.findByRole("textbox", { name: "Instruction for Worker" }),
-    { target: { value: "Check once" } },
-  );
-  await act(async () => {
-    await i18n.changeLanguage("zh-CN");
-  });
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "给 Worker 的指令",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("Check once");
-  expect(POST).not.toHaveBeenCalled();
-  await act(async () => {
-    await i18n.changeLanguage("en");
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Stop subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0]).toEqual([
-    "/api/threads/{thread_id}/children/{execution_id}/steer",
-    {
-      params: { path: { thread_id: "root", execution_id: "control-one" } },
-      body: { prompt: "Check once" },
-    },
+    "/api/threads/{thread_id}/children/{execution_id}/cancel",
+    { params: { path: { thread_id: "root", execution_id: "control-one" } } },
   ]);
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker - running"));
-  const input = await screen.findByRole("textbox", {
-    name: "Instruction for Worker",
-  });
-  expect((input as HTMLInputElement).value).toBe("Check once");
   expect(
     (
-      screen.getByRole("button", {
-        name: "Guide subagent",
-      }) as HTMLButtonElement
+      (await screen.findByRole("button", {
+        name: "Stopping…",
+      })) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   reject(new TypeError("Acknowledgement lost"));
-  await screen.findByText(/Couldn't confirm delivery/);
-  view.rerender(<div>Closed again</div>);
-  view.rerender(<Child child={child} reconcile={vi.fn()} />);
-  fireEvent.click(screen.getByText("Worker - running"));
-  await screen.findByText(/Couldn't confirm delivery/);
+  await screen.findByText(/confirm delivery/);
   expect(
     (
-      screen.getByRole("textbox", {
-        name: "Instruction for Worker",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("Check once");
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
-  expect(POST).toHaveBeenCalledOnce();
+      (await screen.findByRole("button", {
+        name: "Stop subagent",
+      })) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 it("keeps completed output directly inspectable and tools collapsed without raw review events", async () => {

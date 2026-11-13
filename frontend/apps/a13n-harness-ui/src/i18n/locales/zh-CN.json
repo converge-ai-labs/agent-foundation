@@ -3436,10 +3436,11 @@
   "This message was not sent. Edit it or discard it before continuing.": "这条消息未发送。请编辑或丢弃后继续。",
   "Retry exactly": "原样重试",
   "Start subagent": "启动子智能体",
+  "View all": "查看全部",
+  "Stopping…": "正在停止…",
   "Background work": "后台工作",
   "Close background work": "关闭后台工作",
   "Couldn’t confirm delivery. Nothing was resent.": "无法确认是否送达，未重新发送任何内容。",
-  "Ended": "已结束",
   "Input unavailable": "输入不可用",
   "Last observed state": "上次观察到的状态",
   "Live output": "实时输出",
@@ -3449,7 +3450,6 @@
   "Loading output…": "正在加载输出…",
   "Loading subagent conversation…": "正在加载子智能体对话…",
   "Main agent": "主智能体",
-  "Message to subagent": "向子智能体发送消息",
   "Moved to background": "已转入后台",
   "Nothing is running.": "没有正在运行的工作。",
   "Output expired or unavailable.": "输出已过期或不可用。",
@@ -3465,6 +3465,5 @@
   "Output unavailable.": "输出不可用。",
   "Some process observations are unavailable or omitted.": "部分进程观察不可用或已省略。",
   "Background items": "后台条目",
-  "Send a message…": "发送消息…",
   "Input truncated.": "输入已截断。"
 }

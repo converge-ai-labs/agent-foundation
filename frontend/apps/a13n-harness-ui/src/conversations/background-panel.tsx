@@ -1,16 +1,10 @@
-import conversation from "./conversation.module.css";
-import {
-  ArrowUp,
-  TerminalWindow,
-  Wrench,
-  Stop as StopIcon,
-} from "@phosphor-icons/react";
+import { TerminalWindow, Wrench, CirclesThree } from "@phosphor-icons/react";
 import { ChildInputLabels } from "./input-content";
 import { useLayoutEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Textarea } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useTranslation } from "../i18n";
-import { useTransport, useGuestAccess } from "../transport/context";
+import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { useBackground } from "./background-context";
@@ -20,15 +14,18 @@ import {
   type BackgroundItem,
 } from "./background-work";
 import {
+  BackgroundList,
+  ChildStop,
   SubagentGlyph,
   ToolCancel,
   useBackgroundStateLabel,
 } from "./background-card";
-import { useChildControl } from "./child-controls";
 import { ConversationTranscript } from "./transcript";
 import { sourceText, parsed, describeTool } from "./tool-presentation";
 import styles from "./background.module.css";
+import { ViewLink } from "../native/view-link";
 import { useHistory, useThread, transcriptHistory } from "./queries";
+import { useChildControlState } from "./child-controls";
 import { ShellOutput } from "./tool-call";
 
 export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
@@ -45,17 +42,35 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
           <SubagentGlyph id={target.id} running={item?.running} />
         )}
         {target.kind !== "child" &&
-          (target.icon === "terminal" || target.kind === "process" ? (
+          (target.kind === "history" ? (
+            <CirclesThree size={18} />
+          ) : target.icon === "terminal" || target.kind === "process" ? (
             <TerminalWindow size={18} />
           ) : (
             <Wrench size={18} />
           ))}
-        <h2 title={target.title}>{target.title}</h2>
-        <span>{item ? state(item.state) : t("Unavailable")}</span>
+        <h2 title={target.title}>
+          {target.kind === "history" ? t("Background work") : target.title}
+        </h2>
+        {target.kind === "history" && (
+          <ViewLink
+            getLink={() =>
+              `${window.location.origin}/threads/${encodeURIComponent(target.threadId)}?native=background`
+            }
+          />
+        )}
+        {target.kind !== "history" && (
+          <span>{item ? state(item.state) : t("Unavailable")}</span>
+        )}
+        {item?.child && <ChildStop item={item} />}
         {item?.tool && <ToolCancel item={item} />}
       </header>
-      <ErrorNotice error={bg.error} retry={bg.refresh} />
-      {!item ? (
+      {target.kind !== "history" && (
+        <ErrorNotice error={bg.error} retry={bg.refresh} />
+      )}
+      {target.kind === "history" ? (
+        <BackgroundList />
+      ) : !item ? (
         <p className={styles.empty}>
           {bg.loading
             ? t("Loading background work…")
@@ -86,7 +101,6 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
 }
 function ChildRecord({ item }: { item: BackgroundItem }) {
   const { t } = useTranslation();
-  const guest = useGuestAccess();
   const bg = useBackground();
   const child = item.child!;
   const live = bg.display?.childOutput(child);
@@ -101,12 +115,10 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
   );
   const source = history.data?.pages[0]?.continuation_id;
   const { entries, turns } = transcriptHistory(history.data?.pages);
-  const { controlState, updateControl, control } = useChildControl(
-    child,
-    bg.refresh,
+  const { state: controlState, update: updateControl } = useChildControlState(
+    child.parent_thread_id,
+    child.execution_id,
   );
-  const hasMessage = !!controlState.instruction.trim();
-  const stopAction = !hasMessage && child.available_actions?.includes("cancel");
   const reader = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   useLayoutEffect(() => {
@@ -129,9 +141,11 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
           error={history.error}
           retry={() => void history.refetch()}
         />
-        {history.isPending && (
-          <p role="status">{t("Loading subagent conversation…")}</p>
-        )}
+        {history.isPending &&
+          !entries.length &&
+          !live?.blocksAfter(source).length && (
+            <p role="status">{t("Loading subagent conversation…")}</p>
+          )}
         {history.hasNextPage && (
           <Button
             variant="ghost"
@@ -156,14 +170,14 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
             continuation={source}
             loadDetails
             running={item.running}
-            gap={live?.gap}
+            gap={item.running && live?.gap}
           />
         </ChildInputLabels>
         {child.failure && <p role="alert">{child.failure.message}</p>}
       </div>
       <ErrorNotice error={controlState.error} />
       {controlState.unknown && (
-        <div>
+        <div className={styles.controlRecovery}>
           <p role="alert">
             {t("Couldn’t confirm delivery. Nothing was resent.")}
           </p>
@@ -173,83 +187,17 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
+            onClick={() =>
               updateControl({
                 unknown: false,
                 error: undefined,
                 outcome: undefined,
-              });
-              control.reset();
-            }}
+              })
+            }
           >
             {t("Allow new action")}
           </Button>
         </div>
-      )}
-      {controlState.outcome && (
-        <p role="status">
-          {controlState.outcome.accepted
-            ? t("Control accepted.")
-            : t("This execution did not accept the control.")}
-        </p>
-      )}
-      {!guest && (child.available_actions?.length ?? 0) > 0 && (
-        <form
-          className={styles.controls}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (hasMessage && !controlState.pending && !controlState.unknown)
-              control.mutate("steer");
-          }}
-        >
-          {child.available_actions?.includes("steer") && (
-            <div
-              className={`${conversation.composerInput} ${styles.steerComposer}`}
-            >
-              <label>
-                <span className="sr-only">{t("Message to subagent")}</span>
-                <Textarea
-                  unstyled
-                  rows={1}
-                  aria-label={t("Message to subagent")}
-                  placeholder={t("Send a message…")}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" &&
-                      !event.shiftKey &&
-                      !event.nativeEvent.isComposing
-                    ) {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  value={controlState.instruction}
-                  disabled={controlState.pending || controlState.unknown}
-                  onChange={(event) =>
-                    updateControl({ instruction: event.target.value })
-                  }
-                />
-              </label>
-              <Button
-                type={stopAction ? "button" : "submit"}
-                onClick={() => {
-                  if (stopAction) control.mutate("cancel");
-                }}
-                className={conversation.sendButton}
-                aria-label={t(stopAction ? "Stop" : "Steer")}
-                title={t(stopAction ? "Stop" : "Steer")}
-                size="icon"
-                disabled={
-                  (!hasMessage && !stopAction) ||
-                  controlState.pending ||
-                  controlState.unknown
-                }
-              >
-                {stopAction ? <StopIcon weight="fill" /> : <ArrowUp />}
-              </Button>
-            </div>
-          )}
-        </form>
       )}
     </>
   );

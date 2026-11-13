@@ -10,7 +10,7 @@ import {
 } from "./tool-presentation";
 
 export type BackgroundTarget = {
-  kind: "child" | "tool" | "process";
+  kind: "child" | "tool" | "process" | "history";
   id: string;
   threadId: string;
   title: string;
@@ -34,7 +34,13 @@ export function backgroundKey(target: BackgroundTarget) {
 export function glyphIdentity(id: string) {
   let hash = 2166136261;
   for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  return { color: (hash >>> 0) % 6, shape: ((hash >>> 8) % 3) as 0 | 1 | 2 };
+  return {
+    color: (hash >>> 0) % 6,
+    shape: (hash >>> 8) % 4,
+    eyes: (hash >>> 16) % 3,
+    mouth: (hash >>> 20) % 3,
+    extra: (hash >>> 24) % 4,
+  };
 }
 export function executionReceipt(tool: ToolView) {
   const value = parsed(tool.result);
@@ -137,11 +143,9 @@ export function backgroundItems(
       backgroundKey(a.target).localeCompare(backgroundKey(b.target)),
   );
 }
-export function backgroundGroups(items: BackgroundItem[], endedLimit = 20) {
-  const ended = items.filter((item) => !item.running);
-  return {
-    running: items.filter((item) => item.running),
-    ended: ended.slice(0, endedLimit),
-    more: ended.length > endedLimit,
-  };
+export function backgroundGroups(items: BackgroundItem[]) {
+  return [
+    { label: "Subagents", items: items.filter((item) => item.child) },
+    { label: "Tool calls", items: items.filter((item) => !item.child) },
+  ];
 }

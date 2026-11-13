@@ -347,6 +347,6 @@ Standalone import preserves representable tool names and diagnoses unsupported M
 
 ## Background work in the WebUI
 
-Use **Background work** in the chat header to inspect running subagents, released tools and observed Shell processes. The card stays closed until you open it and remembers that choice for each chat. Select an item to open its resource tab beside the conversation, or across the work area on a narrow screen.
+The icon immediately after Share opens **Background work**. Its compact card shows up to three **Subagents** and three **Tool calls**, with running work first. Hover a row for its task or arguments. **View all** opens the full-history resource tab, with **Show more** for older pages. Select an item to inspect its own tab; narrow layouts close the card when opening a tab.
 
-Subagent tabs show the saved and live conversation, including messages from the main agent and human steering. Use Steer or Stop when offered. Tool tabs show available input and output, with explicit truncation, expiry and unavailable states. Shell observations are read-only. Closing a tab does not stop its work.
+Subagent tabs show saved and live conversation with **Main agent** and **User** labels for existing inputs. You cannot type into a child conversation in the WebUI. Use the header's **Stop** when available; accepted stops show **Stopping…** until the item ends. Tool tabs show input and output, with explicit truncation, expiry and unavailable states. Observed Shell processes remain read-only. Closing a tab does not stop work.
