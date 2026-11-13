@@ -38,11 +38,13 @@ def test_defaults_and_invalid_subagent_configuration():
         {"dynamic": {"allowed_models": ["model-a", "model-a"]}},
         {"dynamic": {"default_model": "model-a"}},
         {"dynamic": {"allowed_models": ["model-a"], "default_model": "model-b"}},
+        {"dynamic": {"enabled": True}},
+        {"dynamic": {"enabled": True, "allowed_models": ["model-a"]}},
     ):
         with pytest.raises(ValidationError):
             SubagentsConfiguration.model_validate(bad)
     config = SubagentsConfiguration.model_validate(
-        {"dynamic": {"allowed_models": ["model-a", "model-b"], "default_model": "model-b"}}
+        {"dynamic": {"enabled": True, "allowed_models": ["model-a", "model-b"], "default_model": "model-b"}}
     )
     assert config.dynamic.default_model == "model-b"
 
@@ -65,7 +67,8 @@ async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, inclu
                 "subagents": {
                     "include": list(include),
                     "max_concurrent": limit,
-                    "dynamic": dynamic or {"enabled": enabled, "allowed_models": ["model-main"]},
+                    "dynamic": dynamic
+                    or {"enabled": enabled, "allowed_models": ["model-main"], "default_model": "model-main"},
                 },
             }
         )
@@ -333,7 +336,9 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
 async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, monkeypatch, surface, role):
     root = bot_configuration(tmp_path) if surface == "bot" else live_configuration(tmp_path)
     value = yaml.safe_load(root.read_text())
-    value["subagents"] = {"dynamic": {"enabled": True}}
+    value["subagents"] = {
+        "dynamic": {"enabled": True, "allowed_models": ["model-primary"], "default_model": "model-primary"}
+    }
     root.write_text(yaml.safe_dump(value))
     parent_instructions, child_instructions, child_seen = [], [], Event()
 

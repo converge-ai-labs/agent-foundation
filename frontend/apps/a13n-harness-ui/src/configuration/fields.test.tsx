@@ -553,10 +553,13 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
   );
   expect(screen.queryByRole("combobox", { name: "Default model" })).toBeNull();
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
+  expect(
+    screen.getByRole("combobox", { name: "Default model" }).textContent,
+  ).toContain("Choose a model");
   await user.click(screen.getByRole("combobox", { name: "Default model" }));
   expect(
     (await screen.findAllByRole("option")).map((option) => option.textContent),
-  ).toEqual(["Use main agent's model", "Alternate"]);
+  ).toEqual(["Alternate"]);
   await user.click(screen.getByRole("option", { name: "Alternate" }));
   const limit = screen.getByRole("spinbutton", {
     name: "Maximum running subagents",

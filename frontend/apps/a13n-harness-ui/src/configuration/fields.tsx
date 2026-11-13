@@ -459,7 +459,7 @@ export function ResourceFields({
                   <ModelSelectionField
                     label={t("Models for created subagents")}
                     description={t(
-                      "The agent can choose from these. With none selected, subagents use the main agent's model.",
+                      "The agent can choose from these. Choose at least one.",
                     )}
                     models={selectors.data?.models ?? []}
                     value={allowedModels}
@@ -487,16 +487,12 @@ export function ResourceFields({
                         "Used when the agent does not choose a model.",
                       )}
                       value={text(defaultModelPath)}
+                      placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
-                      onValueChange={(value) =>
-                        set(defaultModelPath, value || undefined)
-                      }
-                      options={[
-                        { value: "", label: t("Use main agent's model") },
-                        ...models.filter((model) =>
-                          allowedModels.includes(model.value),
-                        ),
-                      ]}
+                      onValueChange={(value) => set(defaultModelPath, value)}
+                      options={models.filter((model) =>
+                        allowedModels.includes(model.value),
+                      )}
                     />
                   )}
                 </>

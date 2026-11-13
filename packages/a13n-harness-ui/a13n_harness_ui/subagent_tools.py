@@ -60,10 +60,8 @@ class SubagentTools(AbstractModelContextCapability):
     def _spawn_description(self) -> str:
         policy = self.composition.subagents.dynamic
         description = "Start a task-specific leaf subagent. Return its execution receipt after admission."
-        if not policy.allowed_models:
-            return f"{description} Omit model; the subagent uses your Model."
-        omitted = policy.default_model or "your Model"
-        return f"{description} model accepts {', '.join(policy.allowed_models)}; when omitted, it uses {omitted}."
+        models = ", ".join(policy.allowed_models)
+        return f"{description} model accepts {models}; when omitted, it uses {policy.default_model}."
 
     async def spawn_subagent(
         self,

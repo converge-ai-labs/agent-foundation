@@ -638,16 +638,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         scope = await self._require_parent(context)
         policy = scope.composition.subagents.dynamic
-        recipe = scope.composition.root.model
-        if model is None:
-            model = policy.default_model
-        if model is not None:
-            if model not in policy.allowed_models:
-                raise _SubagentRequestError(
-                    "model must be in subagents.dynamic.allowed_models.", code="subagent_model_not_allowed"
-                )
-            source = await self._configurations.load(scope.composition.generation_digest)
-            recipe = self._compositions.resolve_model(source, model)
+        model = model or policy.default_model
+        if model not in policy.allowed_models:
+            raise _SubagentRequestError(
+                "model must be in subagents.dynamic.allowed_models.", code="subagent_model_not_allowed"
+            )
+        source = await self._configurations.load(scope.composition.generation_digest)
+        recipe = self._compositions.resolve_model(source, model)
         if thinking is not None:
             try:
                 settings = apply_thinking(recipe.route, recipe.settings, thinking)

@@ -148,7 +148,7 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 | `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
 | `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
 | `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
-| `subagents.dynamic.default_model`         | unset       | Allowed Model used when a spawn omits `model`; unset inherits the main Agent Model     |
+| `subagents.dynamic.default_model`         | unset       | Allowed Model used when a spawn omits `model`; required when dynamic creation is on    |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 

@@ -3501,9 +3501,8 @@
   "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.": "子智能体在当前对话中后台运行，不会出现在对话列表中。可在「后台工作」中查看，结果会自动返回主智能体。",
   "Let the agent create subagents": "允许智能体创建子智能体",
   "Models for created subagents": "所创建子智能体可选的模型",
-  "The agent can choose from these. With none selected, subagents use the main agent's model.": "智能体可从中选择。不选时，子智能体使用主智能体的模型。",
+  "The agent can choose from these. Choose at least one.": "智能体可从中选择。至少选择一个。",
   "Used when the agent does not choose a model.": "智能体未指定模型时使用。",
-  "Use main agent's model": "使用主智能体的模型",
   "Maximum running subagents": "最多同时运行的子智能体",
   "Shared by all subagents of one chat.": "同一对话的所有子智能体共享此上限。"
 }

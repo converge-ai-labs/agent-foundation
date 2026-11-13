@@ -148,7 +148,7 @@ subagents:
 | `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用 |
 | `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`           |
 | `subagents.dynamic.allowed_models`        | `[]`        | 显式创建时可选的已配置 Model ID，不能重复                  |
-| `subagents.dynamic.default_model`         | 未设置      | 省略 `model` 时使用；未设置时继承主 Agent 的 Model         |
+| `subagents.dynamic.default_model`         | 未设置      | 省略 `model` 时使用；启用动态创建时必填                    |
 
 常规设置包含全部三个内置子级。高级设置提供全部或不选；编辑列表可选择子集。定义由包维护，不会复制 Markdown 文件。用 `a13n-harness-ui config subagents` 检查包含情况。见[子级继承和冲突](agents-and-subagents.md#built-in-subagents)。
 
