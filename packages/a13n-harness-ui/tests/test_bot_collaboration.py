@@ -141,7 +141,7 @@ async def test_own_note_context_is_changed_only_including_empty_and_disabled(tmp
 
 
 @pytest.mark.parametrize("silent", [False, True])
-async def test_saved_bot_prose_survives_tools_and_silent_completion_without_extra_publications(
+async def test_saved_bot_prose_survives_tools_and_silent_completion_with_one_publication_per_segment(
     tmp_path: Path, monkeypatch, silent
 ):
     from a13n_harness_ui.bot_models import BotSubmit
@@ -174,11 +174,15 @@ async def test_saved_bot_prose_survives_tools_and_silent_completion_without_extr
         await bot.submit(BotSubmit(input_id="prose", text="Check ongoing work"))
         assert (await consumed(app, "prose")).state == "completed"
         snapshot = await bot.snapshot()
-        assert snapshot.prose[0].text == "I will inspect the working Threads."
-        assert len(snapshot.messages) == (1 if silent else 2)
-        if not silent:
-            assert snapshot.messages[-1].display_ids == (snapshot.prose[-1].item_id,)
-        assert len(snapshot.prose) == (1 if silent else 2)
+        assert [prose.text for prose in snapshot.prose] == [
+            "I will inspect the working Threads.",
+            *([] if silent else ["Verified final result."]),
+        ]
+        assert len(snapshot.messages) == 1 + len(snapshot.prose)  # User input plus each visible segment once.
+        publications = [message for message in snapshot.messages if message.role == "assistant"]
+        assert [(message.text, message.display_ids) for message in publications] == [
+            (prose.text, (prose.item_id,)) for prose in snapshot.prose
+        ]
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         restored = await (await ready(app)).snapshot()
         assert restored.prose == snapshot.prose

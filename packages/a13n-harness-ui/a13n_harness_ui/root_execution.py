@@ -476,16 +476,12 @@ class RootRunExecutor:
                 )
                 display.supplement((*image_events, *app_events))
 
-            preparation_span.set_attribute("a13n.phase.step", "environment")
-            live_without_files = published.value.root.source_kind == "live" and not any(
-                item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
-                for item in published.value.root.capabilities
-            )
-            environment = (
-                None
-                if admission.organization is not None or live_without_files
-                else await self._environments.prepare(published.value)
-            )
+            is_bot = published.value.root.source_kind == "bot"
+            environment = None
+            if is_bot and admission.organization is None:
+                # Only Bot needs its runtime while constructing lazy target tools.
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                environment = await self._environments.prepare(published.value)
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
@@ -503,7 +499,7 @@ class RootRunExecutor:
                                 service=self._environments, composition=published.value, runtime=environment.runtime
                             ),
                         )
-                        if published.value.root.source_kind == "bot" and environment is not None
+                        if is_bot and environment is not None
                         else ()
                     ),
                     goal_capability,
@@ -576,6 +572,17 @@ class RootRunExecutor:
 
                 input_factory = prepare_input
                 prompt = None
+            if not is_bot:
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                live_without_files = published.value.root.source_kind == "live" and not any(
+                    item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
+                    for item in published.value.root.capabilities
+                )
+                environment = (
+                    None
+                    if admission.organization is not None or live_without_files
+                    else await self._environments.prepare(published.value)
+                )
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
                 agent_instance_id=f"agent-{uuid4().hex[:20]}",
