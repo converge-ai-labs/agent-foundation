@@ -39,6 +39,8 @@ Keep always-applicable workspace guidance in `bot/AGENTS.md`. When present, its 
 
 Bot manages recurring checks in `bot/HEARTBEAT.md`. Each heartbeat tells Bot to read the current file if it exists and follow its checklist. The contents are read on demand rather than automatically injected. Bot can create and edit the file to track checks, priorities, and follow-up criteria, and remove obsolete items. You can edit it too. A missing file does not block a heartbeat. File edits change future checks without triggering a Run; heartbeat timing still comes from Settings.
 
+When a background tool finishes during an active Bot Run, the Host delivers a status notice to that Run. If Bot is idle, it can inspect the retained result on its next permitted Run.
+
 Bot can use `create_project` to create a normal Project configuration and `create_thread` to start work with normal Sidekick/global Agent defaults. Project creation, Thread creation, Run admission, and task completion are separate outcomes. Bot is instructed to inspect saved results before reporting success.
 
 When memory is enabled, Bot uses the existing memory tools for global memory and its own `bot` scope in `memory/bot/` beside the root YAML. It keeps `MEMORY.md` as a concise workspace map and stores durable Project understanding with source references and uncertainty in topic files. Heartbeats check relevant, changed or unknown Projects in bounded passes. No separate project-profile database or memory extraction pipeline is introduced.

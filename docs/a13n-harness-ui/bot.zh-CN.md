@@ -39,6 +39,8 @@ Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置�
 
 Bot 通过 `bot/HEARTBEAT.md` 管理周期检查。每次 heartbeat 都会提醒 Bot 读取当前文件（如果存在），并按清单检查；文件内容按需读取，不会自动注入。Bot 可以创建和编辑该文件，记录检查项、优先级和跟进条件，并删除过时事项。你也可以直接编辑。文件缺失不会阻止 heartbeat。修改文件会改变后续检查内容，但不会触发 Run；heartbeat 的时间间隔仍由设置控制。
 
+后台工具在 Bot 运行期间完成时，Host 会把完成通知发给当前 Run。如果 Bot 已空闲，结果会保留到下一次获准运行时查询。
+
 Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_thread` 按正常的 Sidekick/全局 Agent 默认值启动工作。Project 创建、Thread 创建、Run 接受和任务完成是独立结果。内置指令要求 Bot 检查保存的结果后再报告成功。
 
 启用 memory 时，Bot 通过现有 memory tools 使用全局记忆，以及根 YAML 同级 `memory/bot/` 下专属的 `bot` scope。`MEMORY.md` 保持为简洁的工作区地图，主题文件保存持久的 Project 理解、来源引用和不确定之处。Heartbeat 分批检查相关、有变化或尚不了解的 Project，不另建项目档案数据库或记忆提取链路。
