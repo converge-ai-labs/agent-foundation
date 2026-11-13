@@ -3534,6 +3534,8 @@
   "Let the agent create subagents": "Let the agent create subagents",
   "Models for created subagents": "Models for created subagents",
   "The agent can choose from these. With none selected, subagents use the main agent's model.": "The agent can choose from these. With none selected, subagents use the main agent's model.",
+  "Used when the agent does not choose a model.": "Used when the agent does not choose a model.",
+  "Use main agent's model": "Use main agent's model",
   "Maximum running subagents": "Maximum running subagents",
   "Shared by all subagents of one chat.": "Shared by all subagents of one chat."
 }

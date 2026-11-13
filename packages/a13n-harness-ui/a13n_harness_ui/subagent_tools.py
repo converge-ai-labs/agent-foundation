@@ -17,7 +17,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
 )
 from pydantic import Field
-from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai import FunctionToolset, RunContext, Tool
 
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
@@ -52,10 +52,18 @@ class SubagentTools(AbstractModelContextCapability):
         if self.subagent:
             tools.append(self.send_parent_message)
         elif self.composition.subagents.dynamic.enabled:
-            tools.append(self.spawn_subagent)
+            tools.append(Tool(self.spawn_subagent, description=self._spawn_description()))
         if self.has_children:
             instructions.append(guidance("parent"))
         return FunctionToolset(tools, id=self.id, instructions="\n\n".join(instructions))
+
+    def _spawn_description(self) -> str:
+        policy = self.composition.subagents.dynamic
+        description = "Start a task-specific leaf subagent. Return its execution receipt after admission."
+        if not policy.allowed_models:
+            return f"{description} Omit model; the subagent uses your Model."
+        omitted = policy.default_model or "your Model"
+        return f"{description} model accepts {', '.join(policy.allowed_models)}; when omitted, it uses {omitted}."
 
     async def spawn_subagent(
         self,
@@ -66,7 +74,6 @@ class SubagentTools(AbstractModelContextCapability):
         model: str | None = None,
         thinking: ThinkingSelection | None = None,
     ) -> Any:
-        """Start a task-specific leaf subagent. Return its execution receipt after admission."""
         context = SubagentOperatorContext(
             parent_thread_id=ctx.deps.thread_id,
             parent_run_id=ctx.deps.run_id,

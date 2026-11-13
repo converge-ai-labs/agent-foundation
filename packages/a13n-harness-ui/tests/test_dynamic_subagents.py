@@ -36,9 +36,15 @@ def test_defaults_and_invalid_subagent_configuration():
         {"max_concurrent": 0},
         {"max_concurrent": True},
         {"dynamic": {"allowed_models": ["model-a", "model-a"]}},
+        {"dynamic": {"default_model": "model-a"}},
+        {"dynamic": {"allowed_models": ["model-a"], "default_model": "model-b"}},
     ):
         with pytest.raises(ValidationError):
             SubagentsConfiguration.model_validate(bad)
+    config = SubagentsConfiguration.model_validate(
+        {"dynamic": {"allowed_models": ["model-a", "model-b"], "default_model": "model-b"}}
+    )
+    assert config.dynamic.default_model == "model-b"
 
 
 async def test_dynamic_model_references_are_validated(tmp_path):
@@ -49,7 +55,7 @@ async def test_dynamic_model_references_are_validated(tmp_path):
     assert "subagents.dynamic.allowed_models" in str(error.value)
 
 
-async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, include=("explorer",)):
+async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, include=("explorer",), dynamic=None):
     path = _source(tmp_path, include)
     (tmp_path / "AGENTS.md").write_text("GLOBAL_GUIDANCE")
     path.write_text(
@@ -59,7 +65,7 @@ async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, inclu
                 "subagents": {
                     "include": list(include),
                     "max_concurrent": limit,
-                    "dynamic": {"enabled": enabled, "allowed_models": ["model-main"]},
+                    "dynamic": dynamic or {"enabled": enabled, "allowed_models": ["model-main"]},
                 },
             }
         )
@@ -104,6 +110,53 @@ async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
         assert (
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
+
+
+async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch):
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models/alt.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "kind": "model",
+                "id": "model-alt",
+                "name": "Alt",
+                "route": "openai:gpt-5-mini",
+                "authentication": {"kind": "api_key", "env": "TEST_KEY"},
+            }
+        )
+    )
+    receipts = []
+
+    async def model(messages, info):
+        tools = {tool.name: tool for tool in info.function_tools}
+        if "send_parent_message" in tools:
+            yield "CHILD_RESULT"
+        elif not returned(messages):
+            assert "model accepts model-main, model-alt; when omitted, it uses model-alt." in (
+                tools["spawn_subagent"].description or ""
+            )
+            args = {"name": "reviewer", "instructions": "ROLE", "prompt": "TASK"}
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(args))}
+        else:
+            receipts.append(returned(messages)[0].content)
+            yield "done"
+
+    dynamic = {"enabled": True, "allowed_models": ["model-main", "model-alt"], "default_model": "model-alt"}
+    async with await open_app(tmp_path, monkeypatch, model, dynamic=dynamic) as app:
+        thread = await new_thread(app)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+        assert (
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        ).status is RootOperationStatus.completed
+        execution_id = receipts[0]["execution_id"]
+        with fail_after(10):
+            while execution_id in await app._subagent_operator.active_execution_ids():
+                await sleep(0.01)
+        page = await app.query_child_executions(parent_thread_id=thread.thread_id, execution_id=execution_id)
+        model_info = page.executions[0].model
+        assert model_info is not None
+        assert (model_info.name, model_info.identity) == ("Alt", "openai:gpt-5-mini")
 
 
 @pytest.mark.parametrize(

@@ -639,6 +639,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         scope = await self._require_parent(context)
         policy = scope.composition.subagents.dynamic
         recipe = scope.composition.root.model
+        if model is None:
+            model = policy.default_model
         if model is not None:
             if model not in policy.allowed_models:
                 raise _SubagentRequestError(

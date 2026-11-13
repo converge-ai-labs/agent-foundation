@@ -551,7 +551,13 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
+  expect(screen.queryByRole("combobox", { name: "Default model" })).toBeNull();
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
+  await user.click(screen.getByRole("combobox", { name: "Default model" }));
+  expect(
+    (await screen.findAllByRole("option")).map((option) => option.textContent),
+  ).toEqual(["Use main agent's model", "Alternate"]);
+  await user.click(screen.getByRole("option", { name: "Alternate" }));
   const limit = screen.getByRole("spinbutton", {
     name: "Maximum running subagents",
   });
@@ -563,16 +569,25 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
       sidekick: { agent: "agent-coordinator", model: "model-alternate" },
     },
     subagents: {
-      dynamic: { enabled: true, allowed_models: ["model-alternate"] },
+      dynamic: {
+        enabled: true,
+        allowed_models: ["model-alternate"],
+        default_model: "model-alternate",
+      },
       max_concurrent: 4,
     },
   });
   fireEvent.change(limit, { target: { value: "8" } });
+  await user.click(screen.getByRole("checkbox", { name: "Primary" }));
+  await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
+  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
+    dynamic: { enabled: true, allowed_models: ["model-primary"] },
+  });
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
   expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
-    dynamic: { allowed_models: ["model-alternate"] },
+    dynamic: { allowed_models: ["model-primary"] },
   });
 });
 

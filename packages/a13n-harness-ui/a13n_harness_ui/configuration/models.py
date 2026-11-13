@@ -177,6 +177,7 @@ class ToolsConfiguration(ConfigurationModel):
 class DynamicSubagentsConfiguration(ConfigurationModel):
     enabled: bool = False
     allowed_models: tuple[ResourceId, ...] = ()
+    default_model: ResourceId | None = None
 
     @field_validator("allowed_models")
     @classmethod
@@ -184,6 +185,12 @@ class DynamicSubagentsConfiguration(ConfigurationModel):
         if len(value) != len(set(value)):
             raise ValueError("subagents.dynamic.allowed_models must contain unique configured Model IDs")
         return value
+
+    @model_validator(mode="after")
+    def _default_is_allowed(self) -> Self:
+        if self.default_model is not None and self.default_model not in self.allowed_models:
+            raise ValueError("subagents.dynamic.default_model must be one of subagents.dynamic.allowed_models")
+        return self
 
 
 class SubagentsConfiguration(ConfigurationModel):
