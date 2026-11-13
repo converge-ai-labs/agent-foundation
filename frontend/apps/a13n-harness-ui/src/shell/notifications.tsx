@@ -368,6 +368,7 @@ function NotificationState({ children }: { children: ReactNode }) {
       // The transcript already shows completion. Keep receipt deduplication,
       // attention/failure notices and server Push delivery independent.
       if (
+        !message &&
         (notice.status === "completed" || notice.status === "goal_verified") &&
         current.current.viewedThread === threadId
       )

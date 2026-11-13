@@ -740,14 +740,14 @@ it("presents distinct Bot messages from one run and opens the Bot conversation",
   await act(() => i18n.changeLanguage("en"));
 });
 
-it("suppresses viewed Bot messages and does not replay them after navigation", () => {
+it("notifies viewed Bot messages once and does not replay them after navigation", async () => {
   mount("/bot");
   event = botMessage("viewed");
   fireEvent.click(screen.getByText("Emit"));
-  expect(screen.queryByText("New message from Bot")).toBeNull();
+  expect(await screen.findAllByText("New message from Bot")).toHaveLength(1);
   fireEvent.click(screen.getByText("Other thread"));
   fireEvent.click(screen.getByText("Emit"));
-  expect(screen.queryByText("New message from Bot")).toBeNull();
+  expect(screen.getAllByText("New message from Bot")).toHaveLength(1);
 });
 
 it("persists Bot-only scope, filters ordinary notices and keeps Bot attention", async () => {

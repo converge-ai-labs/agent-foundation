@@ -4320,6 +4320,7 @@ async def open_harness_ui_app(
                     prepare_input=lambda prompt: app._prepare_input(BOT_THREAD_ID, prompt, ()),
                     notify=web_push.enqueue if web_push is not None else None,
                 )
+                root_executor.set_bot_display_publisher(app._bot.publish_display)
                 from pydantic_ai.capabilities import CombinedCapability
 
                 from a13n_harness_ui.connectors.capability import connector_capability

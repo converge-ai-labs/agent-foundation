@@ -132,6 +132,20 @@ class ResolvedEnvironmentBinding(CompositionModel):
         return self
 
 
+class ResolvedEnvironmentTarget(CompositionModel):
+    """One Bot-accessible Project recipe, captured without opening its execution."""
+
+    target_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+    project_id: str | None = None
+    project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    environment_profile: ResolvedEnvironmentProfile
+    environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
+    default_environment: str | None = None
+    session_versions: dict[str, int] = Field(default_factory=dict)
+    unavailable: str | None = None
+
+
 class ResolvedAgentNode(CompositionModel):
     source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
     source_id: str = Field(min_length=1, max_length=128)
@@ -216,6 +230,9 @@ class ResolvedRunComposition(CompositionModel):
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     session_versions: dict[str, int] = Field(default_factory=dict)
+    # Bot target Session selections are separate from its native workspace.
+    environment_scope: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_targets: tuple[ResolvedEnvironmentTarget, ...] = Field(default=(), exclude_if=lambda value: not value)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 

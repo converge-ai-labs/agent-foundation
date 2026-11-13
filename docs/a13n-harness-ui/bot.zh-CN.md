@@ -27,13 +27,21 @@ webui:
     connector_interval_seconds: 60
 ```
 
-Bot 继承所选 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。文件工具保持开启，Shell、Computer 和结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`agent` 为 null 或省略时沿用 `defaults.agent`，填写已有 Agent ID 可选择其他执行基底。`model` 为 null 或省略时沿用所选 Agent 的 Model，填写已有 Model ID 可独立覆盖它。切换 Agent 会保留显式 Model 选择。没有有效 Agent 时，显式 Bot Model 使用最小内置执行设置。Agent 或 Model 引用无效时，配置更新会被拒绝，继续使用之前已接受的配置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
+Bot 继承所选 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。原生 Files、Shell 和 Computer 工具保持开启，并遵守所选执行策略和 Environment 限制。Browser 在启用时使用现有 Host Browser。结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`agent` 为 null 或省略时沿用 `defaults.agent`，填写已有 Agent ID 可选择其他执行基底。`model` 为 null 或省略时沿用所选 Agent 的 Model，填写已有 Model ID 可独立覆盖它。切换 Agent 会保留显式 Model 选择。没有有效 Agent 时，显式 Bot Model 使用最小内置执行设置。Agent 或 Model 引用无效时，配置更新会被拒绝，继续使用之前已接受的配置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
 
 heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400 秒。自定义指令最多 1,048,576 个字符。编辑文件后，使用 `a13n-harness-ui config validate` 验证。
 
 ## 协调工作与记忆
 
-Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置下，路径为 `~/.a13n-harness-ui/bot/`。显式指定 `--config` 会改变其父目录。Bot 通过原生文件工具读取和维护协调材料。内置 Environment 能力启用文件工具，保持 Shell 和 Computer 工具关闭。内置指令建议将此目录用于协调材料，把实质工作交给普通工作 Thread。
+Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置下，路径为 `~/.a13n-harness-ui/bot/`。显式指定 `--config` 会改变其父目录。该目录始终是 Bot 的默认工作目录，打开 Project Environment 后也不改变。Bot 通过原生工具直接完成短小、有明确边界的任务，将耗时的实现、研究或运维交给工作 Thread。此目录用于协调材料，不代表你的工作 Project。
+
+Bot 可以直接访问所有已配置 Project 的 Environment，无需仅为访问文件或工具而创建 Thread：
+
+1. 使用 `list_environment_targets` 发现当前 Run 捕获的目标。
+2. 将所选目标 ID 传给 `open_environment_target`。
+3. Files 使用返回的虚拟路径，Shell 或 Computer 使用明确的别名。Bot 的默认目录保持不变。
+
+每个 Project 目标使用其配置的根目录、本地 profile、Device 绑定和默认 Environment。Project 的 Agent、MCP 选择和 Run Extension 不会替换 Bot 的执行策略。连接仅在使用目标时打开；单个目标不可用不会阻止其他工作。不同目标保留独立 Session，即使指向同一个目录。配置变更应用于后续 Run。`host-desktop` 目标在开启且可用时提供 Host Computer Use。Browser 仍由 Host 管理，与 Project 目标独立。现有工具权限和 Environment 限制继续生效；能够访问不代表获得执行有后果操作的授权。
 
 将始终适用的工作区指引放在 `bot/AGENTS.md` 中。文件存在时，每个 Bot Run 都会通过有大小限制的文件上下文自动注入其内容，同时保留全局 `AGENTS.md` 指引。
 
@@ -59,9 +67,9 @@ Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。Bo
 
 配置语音输入后，可使用 **语音输入**。Bot 复用普通聊天的录音、转写设置和订阅账号选择。停止录音后，最终文本只插入当前草稿一次，不会自动发送。关闭 Debug 时，附件和语音输入仍可用，Bot 工作中也可使用。
 
-Bot 聊天页面显示你的消息、助手文本、最终回复，以及有意发布的主动消息。工作日志沿用普通聊天的折叠方式，展示可渲染的推理、工具调用、结果和实时执行进展，刷新后也可查看。注入的隐藏提示和标记为 `display: false` 的内容仍然隐藏。Bot 在耗时工作前简短回应，并提供有意义的进展。工作日志和中间文本不产生通知；最终回复只显示一次，沿用现有未读和通知机制。
+Bot 聊天页面显示你的消息、助手文本、最终回复，以及有意发布的主动消息。工作日志沿用普通聊天的折叠方式，展示可渲染的推理、工具调用、结果和实时执行进展，刷新后也可查看。注入的隐藏提示和标记为 `display: false` 的内容仍然隐藏。对于人类输入，Bot 在耗时工作前简短回应，并提供有用的进展。每段已经结束的可见助手文本都会将 Bot 标为未读并发起消息通知，包括工具调用前的中间文本。最终结算不会重复发布相同消息。即使正在查看 `/bot`，Bot 消息也可以通知，具体取决于浏览器通知设置。工作日志、推理和流式 token 不单独产生通知。
 
-内部协调保持安静，只有有意义的结果、阻塞或人类决策才需要对外说明。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发布消息；已经显示的文本仍会保留。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题。
+Heartbeat 和其他自动工作直接使用工具，不添加开场白或例行进度旁白。Bot 只简洁报告重要结果、可处理的阻塞或需要你关注的决策；内部协调细节保留在笔记和任务中。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发布消息；已经显示的文本仍会保留。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题。
 
 直接在 Bot 聊天中处理待回答的人类决策。Bot 只提供聊天视图，通知入口和旧的 Bot Thread 链接都会打开该聊天。heartbeat 和外部事件无法代答审批。服务器启用相应功能后，现有原生面板选择器提供文件和浏览器；Bot 不另做一套浏览器实现。
 

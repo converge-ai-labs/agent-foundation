@@ -732,7 +732,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     async def publish_bot_message(
         self, ctx: RunContext[AgentContext], text: str = Field(min_length=1, max_length=65536)
     ) -> dict[str, Any]:
-        """Publish an intentional message to the human. Routine heartbeat output stays internal."""
+        """Publish a separate important human-facing message. Every visible message marks unread and notifies."""
         self._require_bot(ctx)
         if self.controller.bot is None:
             raise ThreadError("Only Bot can publish Bot messages.", code="bot_access_denied")
