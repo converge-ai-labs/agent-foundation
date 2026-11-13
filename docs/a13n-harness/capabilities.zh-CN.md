@@ -470,6 +470,8 @@ bindings = RunBindings.embedded(object_store=host_store)
 
 Object Reference Transport（对象引用传输）是 Harness 的工具扩展，在最终授权参数中把完整引用替换成 base64。目标工具默认不支持引用。单个工具通过元数据 `{"a13n.harness.supports_object_refs": True}` 接入；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。为字符串参数接受 base64 的工具启用。自定义工具集需要原生 Pydantic Core 参数校验器。
 
+嵌套引用值支持字典、列表、元组（包括 `NamedTuple`）和 Pydantic 模型。带引用的参数应使用这些容器；dataclass 和集合不属于传输遍历契约。
+
 原生参数校验及校验前后钩子只运行一次。声明式字符串约束允许完整引用；字段/model validator 和自定义 `args_validator` 按原生流程处理带引用的参数，此时尚未读取 Store。回调必须接受并保留引用。派发时复制最终参数，保留类型化模型和已归一化的值，只替换仍存在的引用，不重跑校验或默认值工厂。依赖解码后字节的检查由消费函数或远程 MCP 服务负责。
 
 例如，自定义参数回调可以在 `data_base64` 仍为引用时进行授权；实现函数接收真正的 base64：

@@ -470,6 +470,8 @@ Use `asset_ref(path)` to import an authorized regular Environment file. `asset_s
 
 Object Reference Transport is the Harness tool extension that replaces exact references with base64 in the final authorized arguments. Targets default to unsupported. A tool opts in with metadata `{"a13n.harness.supports_object_refs": True}`; `ObjectRefToolset` supplies a toolset default and per-tool overrides. Opt in tools whose string arguments accept base64. Custom toolsets require native Pydantic Core argument validators.
 
+Nested reference values are supported in dictionaries, lists, tuples (including `NamedTuple`) and Pydantic models. Use these containers for reference-bearing arguments; dataclasses and sets are outside the transport traversal contract.
+
 Native argument validation and before/after-validation hooks run once. Declarative string constraints admit exact reference tokens; field/model validators and custom `args_validator` callbacks run normally on reference-valued arguments before any Store read. Callbacks must accept and preserve those tokens. Dispatch copies the final arguments, preserving typed models and normalized values, and replaces only remaining references. It does not rerun validation or default factories. Put checks that require decoded bytes in the consuming function or remote MCP server.
 
 For example, a custom argument callback can authorize `data_base64` while it still holds a reference; the implementation receives actual base64:

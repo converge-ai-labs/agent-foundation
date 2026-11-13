@@ -431,7 +431,7 @@ capabilities:
   - capability: object_store
 ```
 
-The private library belongs to the current Thread and survives Runs and App restarts. It lives under `data_root/object-library/`, outside disposable scratch. Captured images retain native vision content; the Agent receives a compact reference for later tool arguments. The five management tools are `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete`.
+The private library belongs to the current Thread and survives Runs and App restarts. Each UI subagent is a separate child Thread with its own library; parent and child references do not resolve in each other's Store. It lives under `data_root/object-library/`, outside disposable scratch. Captured images retain native vision content; the Agent receives a compact reference for later tool arguments. The five management tools are `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete`.
 
 The root YAML owns restart-bound retention policy. Defaults keep temporary objects small; increase them for larger workflows:
 

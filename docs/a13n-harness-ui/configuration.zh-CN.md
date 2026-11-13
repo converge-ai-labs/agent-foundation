@@ -431,7 +431,7 @@ capabilities:
   - capability: object_store
 ```
 
-私有对象库属于当前 Thread，可跨 Run 和 App 重启保留。它位于 `data_root/object-library/`，与临时工作文件分开。捕获的图片保留原生视觉内容；Agent 获得紧凑引用，用于后续工具参数。五个管理工具为 `asset_ref`、`asset_store`、`asset_list`、`asset_info` 和 `asset_delete`。
+私有对象库属于当前 Thread，可跨 Run 和 App 重启保留。每个 UI subagent 都是独立的子 Thread，拥有自己的对象库；父子 Thread 的引用不能在彼此的 Store 中解析。它位于 `data_root/object-library/`，与临时工作文件分开。捕获的图片保留原生视觉内容；Agent 获得紧凑引用，用于后续工具参数。五个管理工具为 `asset_ref`、`asset_store`、`asset_list`、`asset_info` 和 `asset_delete`。
 
 根 YAML 配置需要重启生效的保留策略。默认限制较小；较大工作流可调高：
 
