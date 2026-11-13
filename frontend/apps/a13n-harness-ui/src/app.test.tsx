@@ -1570,10 +1570,9 @@ it("configures Sidekick in General without changing defaults or starting chats",
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  await screen.findByText("Subagent defaults");
-  await user.click(screen.getByText("Subagent defaults"));
   expect(
-    screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+    (await screen.findByRole("combobox", { name: "Sidekick agent" }))
+      .textContent,
   ).toContain("Use current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
   await user.click(await screen.findByRole("option", { name: "Worker model" }));
