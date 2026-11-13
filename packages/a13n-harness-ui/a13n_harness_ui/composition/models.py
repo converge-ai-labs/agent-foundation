@@ -87,6 +87,7 @@ class ResolvedMcpRecipe(CompositionModel):
     transport: McpTransport
     supports_object_refs: bool = Field(default=False, exclude_if=lambda value: not value)
     object_ref_tools: dict[str, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
@@ -132,6 +133,20 @@ class ResolvedEnvironmentBinding(CompositionModel):
         if self.selection.device_id != self.device.id:
             raise ValueError("Captured binding must name its Device resource")
         return self
+
+
+class ResolvedEnvironmentTarget(CompositionModel):
+    """One Bot-accessible Project recipe, captured without opening its execution."""
+
+    target_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+    project_id: str | None = None
+    project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    environment_profile: ResolvedEnvironmentProfile
+    environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
+    default_environment: str | None = None
+    session_versions: dict[str, int] = Field(default_factory=dict)
+    unavailable: str | None = None
 
 
 class ResolvedAgentNode(CompositionModel):
@@ -218,6 +233,9 @@ class ResolvedRunComposition(CompositionModel):
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     session_versions: dict[str, int] = Field(default_factory=dict)
+    # Bot target Session selections are separate from its native workspace.
+    environment_scope: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_targets: tuple[ResolvedEnvironmentTarget, ...] = Field(default=(), exclude_if=lambda value: not value)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 

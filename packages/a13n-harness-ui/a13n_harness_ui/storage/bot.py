@@ -1,12 +1,12 @@
 """Narrow retained Bot ingress and separately published user communication."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
-from a13n_harness_ui.bot_models import BotInput, BotMessage, BotState
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotState
 from a13n_harness_ui.errors import ThreadError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import BotInputRecord, BotMessageRecord, BotStateRecord
+from .models import BotInputRecord, BotMessageRecord, BotStateRecord, ThreadRecord
 
 
 class BotRepository:
@@ -85,6 +85,15 @@ class BotRepository:
                     message_id=message.message_id, created_at=message.created_at, payload=message.model_dump_json()
                 )
             )
+            if message.role == "assistant":
+                await session.execute(
+                    update(ThreadRecord)
+                    .where(ThreadRecord.thread_id == BOT_THREAD_ID)
+                    .values(
+                        unread=True,
+                        read_state_version=ThreadRecord.read_state_version + 1,
+                    )
+                )
             return True
 
     async def has_visible_result(self, *, direct_reply: bool = False) -> bool:

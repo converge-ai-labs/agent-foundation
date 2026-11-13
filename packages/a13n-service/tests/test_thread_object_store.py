@@ -163,12 +163,15 @@ async def test_mcp_object_refs_deliver_exact_private_bytes(service, scripted_mod
             async def acquire():
                 return client
 
+            async def prepare():
+                return acquire
+
             async def check(dispatch):
                 checked.append(dispatch)
 
             capability = mcp_capability(
                 "connection-media",
-                acquire,
+                prepare,
                 tools=None,
                 check=check,
                 supports_object_refs=server_default,
@@ -314,11 +317,14 @@ async def test_mcp_screenshot_can_be_forwarded_without_model_base64(service, scr
             async def acquire():
                 return client
 
+            async def prepare():
+                return acquire
+
             async def check(dispatch):
                 pass
 
             capability = mcp_capability(
-                "connection-media", acquire, tools=None, check=check, object_ref_tools={"send_image": True}
+                "connection-media", prepare, tools=None, check=check, object_ref_tools={"send_image": True}
             )
             executable = HarnessBuilder().build(
                 AgentSpec(),

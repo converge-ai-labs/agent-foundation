@@ -67,8 +67,8 @@ async def test_bot_inherits_selected_execution_policy_but_replaces_conversationa
         assert capabilities["ToolPermissionsCapability"]["rules"] == {"create_project": "ask"}
         assert capabilities["dynamic_environment"] == {
             "files_enabled": True,
-            "shell_enabled": False,
-            "computer_enabled": False,
+            "shell_enabled": True,
+            "computer_enabled": True,
         }
         assert node.children[0].definition.instructions == ("Child policy",)
         inspection = await app.inspect_thread_configuration(BOT_THREAD_ID)
@@ -193,7 +193,7 @@ async def test_bot_context_uses_active_capture_then_selected_continuation_not_ne
         assert updated.record_id is not None and updated.record_id != current.record_id
 
 
-async def test_bot_narrows_inherited_tools_for_its_files_only_chat_policy(tmp_path: Path, monkeypatch):
+async def test_bot_retains_execution_allowlist_and_removes_only_blocking_questions(tmp_path: Path, monkeypatch):
     root = _write_configuration(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
@@ -214,7 +214,8 @@ async def test_bot_narrows_inherited_tools_for_its_files_only_chat_policy(tmp_pa
         await bot.submit(BotSubmit(input_id="allowlist", text="Coordinate"))
         assert (await consumed(app, "allowlist")).state == "completed"
         assert "list_threads" in observed
-        assert not ({"ask_user_question", "shell_exec", "shell_info", "computer_click"} & set(observed))
+        assert {"shell_exec", "shell_info"} <= set(observed)
+        assert not ({"ask_user_question", "computer_click"} & set(observed))
         agent["tool_search"] = {
             "groups": {"questions": {"description": "Questions", "capabilities": ["user_interaction"]}}
         }
@@ -224,7 +225,7 @@ async def test_bot_narrows_inherited_tools_for_its_files_only_chat_policy(tmp_pa
         node = app._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
         assert node.tool_search is not None
         assert all("user_interaction" not in group.capabilities for group in node.tool_search.groups.values())
-        assert node.tools == ("list_threads",)
+        assert node.tools == ("shell_exec", "shell_info", "computer_click", "list_threads")
 
 
 @pytest.mark.parametrize("default_agent", [False, True])

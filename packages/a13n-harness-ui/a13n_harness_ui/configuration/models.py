@@ -745,6 +745,7 @@ class McpServerResource(ConfigurationModel):
     transport: McpTransport
     supports_object_refs: bool = Field(default=False, exclude_if=lambda value: not value)
     object_ref_tools: dict[McpToolName, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")

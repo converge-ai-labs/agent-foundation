@@ -15,6 +15,7 @@ from a13n_harness.capabilities import (
     CreateTask,
     EmbeddedTaskStateCell,
     ProviderTaskCursor,
+    Task,
     TaskMutation,
     TaskStateBinding,
     TaskStateError,
@@ -24,7 +25,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.working_state import (
     WORKING_STATE_CAPABILITY_ID,
-    _render_working_state_blocks,
+    _working_notice,
 )
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.state import (
@@ -324,12 +325,13 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         if isinstance(part, UserPromptPart)
         for item in user_prompt_content(part)
     )
-    assert '<task id="task-1"' in historical_context
-    assert "Review &lt;unsafe&gt;" in historical_context
+    assert '<task id="task-1"' not in historical_context
+    assert "Review &lt;unsafe&gt;" not in historical_context
     assert '<task id="task-1"' not in current_context
     assert "Review &lt;unsafe&gt;" not in current_context
     assert '<notes source="a13n-harness">' in current_context
-    assert '<note key="review&lt;&amp;">Remember details</note>' in current_context
+    assert '<note-key key="review&lt;&amp;" />' in current_context
+    assert "Remember details" not in current_context
     assert "<note-ref" not in current_context
 
 
@@ -471,42 +473,64 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
     assert "version=" not in projected
 
 
-async def test_working_state_projects_complete_notes_refs_and_omission_counts_separately() -> None:
-    cell = EmbeddedTaskStateCell()
-    await cell.create(CreateTask(subject="Active", description="Keep tasks last"))
-    snapshot = await cell.snapshot()
-    notes = {
-        "a-large": "<" + "😀" * 1_000,
-        "b-small": "visible & complete",
-        "c-omitted": "not selected",
-    }
-
-    blocks = _render_working_state_blocks(
-        tuple(snapshot.tasks.values()),
-        snapshot.tasks,
-        notes,
-        WorkingStateConfiguration(max_context_notes=2, max_context_bytes=1024),
+async def test_notice_deltas_identify_only_changed_notes_and_shared_tasks():
+    from a13n_harness.capabilities.working_state import _WorkingStateRunCapability
+    from a13n_harness.model_context import (
+        ModelContextProjection,
+        ModelContextProjectionRequest,
+        ModelContextRequestKind,
+        _NoticeBoundary,
     )
+    from a13n_harness.toolsets.working_state import _project_task
 
-    assert len(blocks) == 2
-    assert blocks[0].source_id.endswith(".notes")
-    assert blocks[1].source_id.endswith(".tasks")
-    assert '<note-ref key="a-large" />' in blocks[0].content
-    assert "😀" not in blocks[0].content
-    assert '<note key="b-small">visible &amp; complete</note>' in blocks[0].content
-    assert '<notes-omitted count="1" />' in blocks[0].content
-    assert '<task id="task-1"' in blocks[1].content
-    assert sum(len(block.content.encode("utf-8")) for block in blocks) <= 1024
-
-    task_only = _render_working_state_blocks(
-        tuple(snapshot.tasks.values()),
-        snapshot.tasks,
-        {},
-        WorkingStateConfiguration(max_context_bytes=1024),
+    initial_notes = {f"key-{n}": f"private value {n}" for n in range(6)}
+    owner = _WorkingStateRunCapability(
+        WorkingStateConfiguration(), context=None, state=WorkingState(notes=initial_notes)
     )
-    assert len(task_only) == 2
-    assert "No working notes." in task_only[0].content
-    assert task_only[1].source_id.endswith(".tasks")
+    active = Task(id="task-1", version=1, subject="Active", description="internal description")
+    other = active.model_copy(update={"id": "task-2"})
+    tasks = {t.id: t for t in (active, other)}
+
+    def boundary(*parts, commit=True):
+        request = ModelContextProjectionRequest(
+            kind=ModelContextRequestKind.TOOL_RESULTS, _notices=_NoticeBoundary(results=parts)
+        )
+        blocks = tuple(
+            b for b in (owner._notes_notice(request, 512), owner._tasks_notice(request, tasks, 512)) if b is not None
+        )
+        if commit:
+            ModelContextProjection(blocks, tuple(request._notices.confirmations))._confirm(blocks)
+        return "\n".join(b.content for b in blocks)
+
+    first = boundary()
+    assert first.count("<note-key ") == 6 and first.count("<task id=") == 2
+    assert "private value" not in first
+    assert boundary() == ""
+    revisions = owner._toolset.note_revisions
+    revisions["key-0"] += 1
+    del revisions["key-1"]
+    tasks["task-1"] = active.model_copy(update={"version": 2, "status": "in_progress"})
+    tasks["task-2"] = other.model_copy(update={"version": 2, "status": "completed"})
+    primary = ToolReturnPart("task_update", {"ok": True, "task": _project_task(tasks["task-1"])}, "primary")
+    deleted = ToolReturnPart("note_delete", {"ok": True, "key": "key-1", "action": "deleted"}, "delete")
+    changed = boundary(primary, deleted, commit=False)
+    assert changed.count("<note key=") == 1 and 'key="key-0" action="updated"' in changed
+    assert changed.count("<task id=") == 1 and 'id="task-2" status="completed"' in changed
+    assert boundary(primary, deleted) == changed
+    assert boundary() == ""
+    revisions["key-0"] += 1
+    assert boundary(ToolReturnPart("note_write", {"ok": True, "key": "key-0", "action": "updated"}, "write")) == ""
+    del revisions["key-0"]
+    assert 'key="key-0" action="deleted"' in boundary()
+
+
+def test_note_keys_keep_whole_utf8_rows_and_omission_count():
+    rows = [f'  <note-key key="{key}" />' for key in ("first", "🎵" * 200, "third")]
+    notice = _working_notice("notes", rows, initial=True, limit=2, budget=512)
+    assert notice and len(notice.content.encode()) <= 512
+    assert rows[0] in notice.content and rows[1] not in notice.content
+    assert '<notes-omitted count="2" />' in notice.content
+    assert "note_get(key)" in notice.content
 
 
 async def test_task_list_and_task_results_hide_internal_versions() -> None:
@@ -765,18 +789,8 @@ async def test_work_observations_publish_restored_baseline_and_committed_mutatio
     assert baseline.tasks == observations[count - 1].tasks
 
 
-async def test_empty_working_state_respects_enabled_groups_and_note_cadence():
-    configuration = WorkingStateConfiguration(max_context_bytes=1024)
-    empty = _render_working_state_blocks((), {}, {}, configuration)
-    assert len(empty) == 2
-    assert "No working notes." in empty[0].content
-    assert "No unfinished tasks." in empty[1].content
-    tool_boundary = _render_working_state_blocks((), {}, {}, configuration, project_notes=False)
-    assert tool_boundary == (empty[1],)
-    assert not _render_working_state_blocks(
-        (), {}, {}, WorkingStateConfiguration(notes_enabled=False, tasks_enabled=False)
-    )
-    full_notes = {f"note-{index}": "x" * 40 for index in range(30)}
-    blocks = _render_working_state_blocks((), {}, full_notes, configuration)
-    assert len(blocks) == 2 and "No unfinished tasks." in blocks[1].content
-    assert sum(len(block.content.encode("utf-8")) for block in blocks) <= 1024
+@pytest.mark.parametrize("kind", ["notes", "tasks"])
+def test_empty_lists_only_appear_on_initial_delivery(kind):
+    block = _working_notice(kind, [], initial=True, limit=1, budget=512)
+    assert block and ("No working notes." if kind == "notes" else "No unfinished tasks.") in block.content
+    assert _working_notice(kind, [], initial=False, limit=1, budget=512) is None

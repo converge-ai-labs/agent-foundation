@@ -9767,6 +9767,8 @@ export interface components {
       object_ref_tools?: {
         [key: string]: boolean;
       };
+      /** @default raise */
+      on_error?: components["schemas"]["StartupErrorPolicy"];
       /**
        * Supports Object Refs
        * @default false
@@ -13992,6 +13994,8 @@ export interface components {
        */
       view?: "compact";
     };
+    /** @enum {string} */
+    StartupErrorPolicy: "skip" | "raise";
     /** @enum {string} */
     State:
       | "reload_requested"

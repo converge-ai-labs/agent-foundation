@@ -474,3 +474,48 @@ async def test_oauth_transport_requires_https_dcr_and_exclusive_authorization(tr
 
     with pytest.raises(ValidationError):
         McpRemoteTransport.model_validate(transport)
+
+
+@pytest.mark.parametrize("credential", ["missing", "expired"])
+async def test_skip_does_not_hide_initial_oauth_preparation_failure(repository, tmp_path, credential):
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness_ui.composition.models import ResolvedMcpRecipe
+    from a13n_harness_ui.configuration.models import McpOAuthConfiguration, McpRemoteTransport
+    from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+    from pydantic_ai.models.function import FunctionModel
+
+    requests = []
+
+    def handler(request):
+        requests.append(str(request.url))
+        return httpx2.Response(400, json={"error": "invalid_grant"})
+
+    oauth = McpOAuth(
+        repository,
+        tmp_path,
+        tmp_path,
+        client_factory=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+    )
+    recipe = await oauth.bind(
+        ResolvedMcpRecipe(
+            server_id="mcp-test",
+            on_error="skip",
+            transport=McpRemoteTransport(url="https://mcp.example/mcp", oauth=McpOAuthConfiguration()),
+        )
+    )
+    if credential == "expired":
+        await repository.save(recipe.oauth_binding, bundle(), expected_version=0)
+
+    async def model(messages, info):
+        pytest.fail("Credential preparation must fail before the model runs")
+        yield "unreachable"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(HarnessUiMCP(recipe, oauth=oauth),),
+    )
+    with pytest.raises(OAuthError):
+        await executable.run("continue", bindings=RunBindings.embedded())
+    assert requests == (["https://auth.example/token"] if credential == "expired" else [])

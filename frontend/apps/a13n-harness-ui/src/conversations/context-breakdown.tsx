@@ -46,9 +46,16 @@ function GroupDetails({
   );
   const balance =
     value.characters - items.reduce((n, [, v]) => n + v.characters, 0);
+  const sourceDetails = [
+    "environment_context",
+    "runtime_state",
+    "conversation",
+  ].includes(group);
   const renderItem = ([name, item]: (typeof items)[number]) => (
     <div className={styles.item} key={name}>
-      <span className={styles.itemName}>{name}</span>
+      <span className={sourceDetails ? undefined : styles.itemName}>
+        {sourceDetails ? t(name) : name}
+      </span>
       <span>{format(item.characters)}</span>
       <span className={styles.share}>{share(item.characters)}</span>
       <span
@@ -59,6 +66,17 @@ function GroupDetails({
           background: color,
         }}
       />
+      {item.occurrences != null && item.distinct_versions != null && (
+        <small>
+          {t(
+            "Occurrences: {{count, number}} · Distinct versions: {{versions, number}}",
+            {
+              count: item.occurrences,
+              versions: item.distinct_versions,
+            },
+          )}
+        </small>
+      )}
       {item.calls != null && (
         <small>
           {t(
@@ -99,7 +117,9 @@ function GroupDetails({
                 })
               : group === "skills"
                 ? t("Catalog instructions")
-                : t("Shared instructions")}
+                : sourceDetails
+                  ? t("Unattributed")
+                  : t("Shared instructions")}
           </span>
           <span>{format(balance)}</span>
           <span className={styles.share}>{share(balance)}</span>

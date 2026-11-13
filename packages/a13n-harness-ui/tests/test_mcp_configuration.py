@@ -519,3 +519,56 @@ async def test_historical_mcp_recipe_and_empty_policy_keep_canonical_payload(tmp
     envelope = await store.publish(object_kind=ObjectKind.run_composition, object_schema_version="1", payload=original)
     assert await store.read_model(envelope.ref, ResolvedMcpRecipe) == recipe
     assert await store.read(envelope.ref) == envelope
+
+
+@pytest.mark.parametrize("bundle", [False, True])
+@pytest.mark.parametrize("on_error", [None, "skip", "raise"])
+async def test_mcp_startup_error_policy_is_normalized_and_captured(tmp_path, bundle, on_error):
+    from .test_composition import _catalog, _selection, _write_source
+
+    root = _write_source(tmp_path)
+    path = tmp_path / "mcp" / "docs.yaml"
+    document = (
+        {"mcpServers": {"docs": {"url": "https://example.test/mcp"}}}
+        if bundle
+        else {
+            "schema_version": "1",
+            "kind": "mcp_server",
+            "id": "mcp-docs",
+            "name": "Docs",
+            "transport": {"url": "https://example.test/mcp"},
+        }
+    )
+    target = document["mcpServers"]["docs"] if bundle else document
+    if on_error is not None:
+        target["on_error"] = on_error
+    path.write_text(yaml.safe_dump(document))
+    source = await load_harness_ui_configuration(root)
+    resource = source.mcp_servers["mcp-docs"]
+    captured = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    recipe = captured.root.mcp_servers[0]
+    assert resource.on_error == recipe.on_error == (on_error or "skip")
+    assert ("on_error" in recipe.model_dump()) is (on_error == "raise")
+    assert ResolvedMcpRecipe.model_validate_json(recipe.model_dump_json()) == recipe
+    assert recipe.binding_key() == recipe.model_copy(update={"on_error": "raise"}).binding_key()
+
+
+@pytest.mark.parametrize("bundle", [False, True])
+@pytest.mark.parametrize("on_error", ["ignore", None, True])
+async def test_invalid_mcp_startup_error_policy_rejects_configuration(tmp_path, bundle, on_error):
+    entry = {"command": "python", "on_error": on_error}
+    document = (
+        {"mcpServers": {"one": entry}}
+        if bundle
+        else {
+            "schema_version": "2",
+            "kind": "mcp_server",
+            "id": "mcp-one",
+            "name": "One",
+            "on_error": on_error,
+            "transport": {"command": "python"},
+        }
+    )
+    root, _ = _source(tmp_path, document)
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(root)

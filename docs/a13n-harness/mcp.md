@@ -114,6 +114,34 @@ Replace the example URL with a reachable MCP server that provides `search`. Buil
 
 The base installation includes local URL and stdio MCP support. Use Python construction for in-process servers, transport objects, script paths, or an existing `MCPToolset`. For on-demand Capability loading, set `defer_loading=True` and use `load_capability`. For a compatible provider to execute a URL server itself, select `native=True, local=False`; the execution choices are compared below.
 
+## Isolate local startup failures
+
+Native `MCP` keeps its upstream failure behavior. To add bounded initialization retry and optional per-Run omission, construct Harness's `MCPServer` in Python. Its default is `on_error="raise"`; choose `skip` only when the agent can continue without that server.
+
+This construction fragment uses the in-process `server` from the first example:
+
+```python
+from a13n_harness.mcp import InitializationRetryClient, MCPServer
+from pydantic_ai.mcp import MCPToolset
+
+
+async def prepare(ctx):
+    # Resolve Host authority and credentials here, before startup isolation.
+    async def create_toolset():
+        return MCPToolset(InitializationRetryClient(server), id="calculator")
+
+    return create_toolset
+
+
+optional_calculator = MCPServer(
+    id="calculator", prepare=prepare, on_error="skip"
+)
+```
+
+Pass `optional_calculator` through builder `capabilities=` or `RunBindings.embedded(capabilities=(optional_calculator,))`. `prepare` runs once per logical Run and returns the async Toolset factory; preparation errors propagate even with `skip`. `InitializationRetryClient` retries transient initialization failures at most three times, with cancellable 1s/2s backoff. For remote HTTP transports, install the shared `raise_initialization_status` response hook so transient initialization status codes survive SDK conversion.
+
+With `skip`, failed startup contributes no tools and a safe model-visible notice for that Run, including deferred ToolSearch. The decision survives internal model-recovery attempts; a later Run can try again. The successful Toolset is entered until Run cleanup. An optional `project` callback can wrap it in a native `MCP` with Host filtering or Apps hooks without changing ownership. Tool discovery and business errors after successful entry are not skipped or retried by this mechanism. Provider-native MCP is unaffected.
+
 ## Host-owned clients
 
 Keep one entered FastMCP client when several Runs should reuse its server connection or protocol state. The first program already follows this pattern. For a remote server, replace `Client(server, mode="auto")` with a client configured for your server URL and authentication, while keeping the fresh projection inside the Run loop.

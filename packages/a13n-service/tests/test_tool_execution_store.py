@@ -202,8 +202,15 @@ async def test_original_invocation_survives_run_and_another_runtime_reads_result
         # Delivery admits an ordinary successor. No worker affinity is introduced.
         (successor,) = await claim(service.runtime, worker_id="worker-b", worker_build="test", limit=1)
         assert successor.thread_id == lease.thread_id
+        assert service.runtime.executions.reports_background_completions
         scripted_model.say("The result is available")
         await execute(service.runtime, successor, AttemptControl())
+        requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+        messages = requests[-1]["messages"]
+        last_reply = max(i for i, m in enumerate(messages) if m["role"] == "assistant")
+        delivered_text = str([m["content"] for m in messages[last_reply + 1 :] if m["role"] == "user"])
+        assert "A retained tool execution ended" in delivered_text
+        assert delivered_text.count(record.execution_id) == 1
         assert (await second.result(lease.thread_id, record.execution_id)).record.delivery_acknowledged
         async with transaction(service.runtime.storage) as session:
             row = await session.get_one(ToolExecutionRow, record.execution_id)

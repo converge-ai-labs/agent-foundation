@@ -12110,6 +12110,10 @@
             "title": "Object Ref Tools",
             "type": "object"
           },
+          "on_error": {
+            "$ref": "#/components/schemas/StartupErrorPolicy",
+            "default": "raise"
+          },
           "supports_object_refs": {
             "default": false,
             "title": "Supports Object Refs",
@@ -24943,6 +24947,13 @@
         ],
         "title": "SpanSummary",
         "type": "object"
+      },
+      "StartupErrorPolicy": {
+        "enum": [
+          "skip",
+          "raise"
+        ],
+        "type": "string"
       },
       "State": {
         "enum": [

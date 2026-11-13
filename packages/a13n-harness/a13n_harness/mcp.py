@@ -1,24 +1,38 @@
-"""Run-scoped headers for fresh upstream Pydantic AI MCP capabilities."""
+"""Host-prepared MCP capabilities and run-scoped upstream composition."""
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Mapping
+import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, Self, cast
 from urllib.parse import urlparse
 
 import httpx2
+from a13n_logging import get_logger
+from anyio import BrokenResourceError, CancelScope, ClosedResourceError, EndOfStream, sleep
+from fastmcp import Client
+from fastmcp.client.transports import ClientTransport
+from mcp import MCPError
 from pydantic import JsonValue
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import MCP, AbstractCapability
+from pydantic_ai.capabilities import MCP as NativeMCP
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.http import outbound_tls_verify
+
+_TRANSIENT_HTTP_STATUS = {408, 429, 502, 503, 504}
+type StartupErrorPolicy = Literal["skip", "raise"]
+type ToolsetFactory = Callable[[], Awaitable[MCPToolset[AgentContext]]]
+type PrepareToolset = Callable[[RunContext[AgentContext]], Awaitable[ToolsetFactory]]
+type ProjectToolset = Callable[[MCPToolset[AgentContext]], NativeMCP[AgentContext]]
 
 
 class MCPHeadersFactory(Protocol):
@@ -124,7 +138,7 @@ class _MCPRecipe:
     defer_loading: bool
 
 
-class ContextualMCP(MCP[AgentContext]):
+class ContextualMCP(NativeMCP[AgentContext]):
     """Build one fresh upstream MCP capability with run-resolved headers."""
 
     def __init__(
@@ -196,7 +210,7 @@ class ContextualMCP(MCP[AgentContext]):
         cache_id = f"a13n.mcp.context.{self._recipe.capability_id}"
         existing = ctx.deps._run_capability(cache_id)
         if existing is not None:
-            if not isinstance(existing, MCP):
+            if not isinstance(existing, NativeMCP):
                 raise DefinitionError(
                     "Contextual MCP has an incompatible logical-run replacement.",
                     code="capability_type_mismatch",
@@ -242,7 +256,7 @@ class ContextualMCP(MCP[AgentContext]):
             )
             ctx.deps._register_run_cleanup(cache_id, client.aclose)
 
-        replacement = MCP[AgentContext](
+        replacement = NativeMCP[AgentContext](
             self._recipe.url,
             id=self._recipe.capability_id,
             native=self._recipe.native,
@@ -333,10 +347,176 @@ def _require_no_header_conflicts(static: Mapping[str, str], dynamic: Mapping[str
             )
 
 
+async def raise_initialization_status(response: httpx2.Response) -> None:
+    """Preserve transient initialize/discovery HTTP status before SDK conversion."""
+    if response.status_code not in _TRANSIENT_HTTP_STATUS or response.request.method != "POST":
+        return
+    try:
+        payload = json.loads(response.request.content)
+    except ValueError:
+        return
+    if isinstance(payload, dict) and payload.get("method") in {"initialize", "server/discover"}:
+        response.raise_for_status()
+
+
+def _transient_initialization(error: BaseException) -> bool:
+    if isinstance(error, BaseExceptionGroup):
+        return all(_transient_initialization(item) for item in error.exceptions)
+    if isinstance(error, httpx2.HTTPStatusError):
+        return error.response.status_code in _TRANSIENT_HTTP_STATUS
+    if isinstance(error, MCPError):
+        return error.error.code == 408
+    if isinstance(
+        error,
+        (TimeoutError, ConnectionError, httpx2.TransportError, BrokenResourceError, ClosedResourceError, EndOfStream),
+    ):
+        return True
+    # FastMCP's exception-group flattening can discard the timeout cause.
+    if isinstance(error, RuntimeError) and str(error) == "Failed to initialize server session":
+        return True
+    return (
+        isinstance(error, RuntimeError) and error.__cause__ is not None and _transient_initialization(error.__cause__)
+    )
+
+
+class InitializationRetryClient(Client[ClientTransport]):
+    """At most three initialization attempts, with 1s/2s cancellable backoff.
+
+    Ready business requests retain upstream semantics and are never replayed by
+    this wrapper. Each attempt retains the native client's initialization timeout.
+    """
+
+    async def __aenter__(self) -> Self:
+        for attempt in range(3):
+            try:
+                return await super().__aenter__()
+            except Exception as exc:
+                with CancelScope(shield=True):
+                    try:
+                        await self.close()
+                    except Exception as cleanup:
+                        if cleanup is not exc and cleanup is not exc.__cause__:
+                            # Cleanup failure still stops retry, but the caller's
+                            # primary diagnostic remains the initialization error.
+                            raise exc from cleanup
+                        try:
+                            await self.transport.close()
+                        except Exception as transport_cleanup:
+                            raise exc from transport_cleanup
+                if attempt == 2 or not _transient_initialization(exc):
+                    raise
+                get_logger(__name__).warning(
+                    "MCP initialization failed (%s); retrying attempt %s/3", type(exc).__name__, attempt + 2
+                )
+                await sleep(2**attempt)
+        raise AssertionError("unreachable")
+
+
+class UnavailableMCPToolset(FunctionToolset[AgentContext]):
+    """An omitted inventory, retaining its configured tool-name ceiling."""
+
+    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
+        super().__init__(id=server_id)
+        self.selected_tools = selected_tools
+
+
+class _UnavailableMCP(NativeMCP[AgentContext]):
+    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
+        super().__init__(id=server_id, native=False, local=UnavailableMCPToolset(server_id, selected_tools))
+
+    def get_instructions(self) -> str:
+        # Capability instructions survive ToolSearch deferral of Toolset guidance.
+        return (
+            f"MCP server {self.id} is unavailable. "
+            "Its tools are omitted for this Run. Continue with the remaining capabilities; "
+            "do not claim operations on this server succeeded. A later Run can reassess availability."
+        )
+
+
+class MCPServer(NativeMCP[AgentContext]):
+    """A Host-prepared local MCP capability with a separate startup error policy.
+
+    ``prepare`` resolves authority, configuration and credentials outside isolation,
+    then returns a factory for the native Toolset. Use ``InitializationRetryClient``
+    in that factory for bounded connection retries. ``project`` can retain Host-owned
+    filtering or MCP Apps hooks; its errors are not classified as startup failure.
+    The entered projection is borrowed until logical-Run cleanup, independently
+    of an enclosing Host-owned client lifetime.
+    """
+
+    def __init__(
+        self,
+        *,
+        id: str,
+        prepare: PrepareToolset,
+        on_error: StartupErrorPolicy = "raise",
+        tools: tuple[str, ...] | None = None,
+        project: ProjectToolset | None = None,
+    ) -> None:
+        if not id or on_error not in {"skip", "raise"}:
+            raise DefinitionError("Invalid MCP startup policy.", code="mcp_definition_invalid")
+        super().__init__(id=id, native=False, local=FunctionToolset(id=id))
+        self._prepare = prepare
+        self._on_error = on_error
+        self._selected_tools = tools
+        self._project = project
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        assert self.id is not None
+        cache_id = f"a13n.mcp.startup.{self.id}"
+        existing = ctx.deps._run_capability(cache_id)
+        if existing is not None:
+            if not isinstance(existing, NativeMCP):
+                raise DefinitionError(
+                    "MCP has an incompatible logical-Run replacement.", code="capability_type_mismatch"
+                )
+            return existing
+
+        factory = await self._prepare(ctx)
+        try:
+            toolset = await factory()
+            await toolset.__aenter__()
+        except Exception as exc:
+            if self._on_error == "raise":
+                raise
+            get_logger(__name__).warning(
+                "MCP server skipped for this Run after connection entry failure",
+                extra={"server_id": self.id, "error_type": type(exc).__name__},
+            )
+            replacement = _UnavailableMCP(self.id, self._selected_tools)
+        else:
+            # Register cleanup before projecting, so a projection error cannot
+            # leak an otherwise successfully entered Toolset.
+            async def close_projection() -> None:
+                await toolset.__aexit__(None, None, None)
+
+            ctx.deps._register_run_cleanup(cache_id, close_projection)
+            replacement = (
+                self._project(toolset)
+                if self._project is not None
+                else NativeMCP[AgentContext](
+                    id=self.id,
+                    native=False,
+                    local=toolset,
+                    allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
+                )
+            )
+        ctx.deps._record_run_capability(cache_id, replacement)
+        return replacement
+
+
 __all__ = [
     "ContextualMCP",
+    "InitializationRetryClient",
     "MCPContextHeaderBinding",
     "MCPContextHeaders",
     "MCPContextHeadersConfig",
     "MCPHeadersFactory",
+    "MCPServer",
+    "PrepareToolset",
+    "ProjectToolset",
+    "StartupErrorPolicy",
+    "ToolsetFactory",
+    "UnavailableMCPToolset",
+    "raise_initialization_status",
 ]

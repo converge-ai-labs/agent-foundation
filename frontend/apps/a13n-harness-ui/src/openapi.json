@@ -13921,6 +13921,30 @@
             "minimum": 0.0,
             "title": "Characters"
           },
+          "occurrences": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurrences"
+          },
+          "distinct_versions": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distinct Versions"
+          },
           "calls": {
             "anyOf": [
               {

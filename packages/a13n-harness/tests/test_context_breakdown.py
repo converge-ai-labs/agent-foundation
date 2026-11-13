@@ -8,6 +8,8 @@ from pydantic_ai.messages import (
     InstructionId,
     ModelRequest,
     ModelResponse,
+    TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
 )
@@ -109,3 +111,68 @@ def test_large_skill_descriptions_leave_room_for_every_category():
     assert ContextItemUsage.model_validate({"characters": 5, "description": "old record"}).model_dump() == {
         "characters": 5
     }
+
+
+def test_source_details_partition_retained_inputs_without_disclosing_content():
+    def block(source, key, text, group):
+        return ModelContextBlock(
+            source, ModelContextPlacement.REQUEST_EPILOGUE, text, key=key, context_group=group
+        ).content_item()
+
+    def text(value, **metadata):
+        return ContentItem(value, ContentMetadata.model_validate(metadata))
+
+    request = input_request(
+        [
+            *(block("a13n.environment-mounts", None, value, "environment_context") for value in ("one", "two", "one")),
+            block("a13n.file-context", "file:/secret/project", "abcd", "environment_context"),
+            block("a13n.file-context", "files", "xy", "environment_context"),
+            block("a13n.file-context", "project-guidance", "abc", "environment_context"),
+            block("a13n.working-state.notes", None, "notes", "runtime_state"),
+            block("tool_execution.summary", None, "a list", "runtime_state"),
+            block("a13n.runtime-context", None, "time", "runtime_state"),
+            block("custom.private-source", None, "?", "runtime_state"),
+            text("hi", **{"a13n.input-provenance": {"kind": "task"}}),
+            text("ok!", source_id="custom-unrestricted-id", harness_ui={"composer": {"index": 0}}),
+            text("summary", **{"a13n.context": "handoff"}),
+            text("notice", **{"a13n.steering-source": "async_subagent", "a13n.input-provenance": {"kind": "steer"}}),
+            text("ref", harness_ui={"composer": {"index": 0}, "attachment": {}}),
+            text("recovery", **{"a13n.input-provenance": {"kind": "recovery"}}),
+            "<notes>ambiguous</notes>",
+        ],
+        metadata={"a13n.context": "handoff"},
+    )
+    result = measure_context(
+        [
+            request,
+            ModelResponse(parts=[TextPart("reply"), ThinkingPart("think")]),
+            ModelResponse(parts=[TextPart("compact")], metadata={"keep": "compact"}),
+        ],
+        ModelRequestParameters(),
+    )
+    env = result.groups["environment_context"]
+    assert env.items["Environment mounts"].model_dump() == {"characters": 9, "occurrences": 3, "distinct_versions": 2}
+    assert {k: v.characters for k, v in env.items.items()} == {
+        "Environment mounts": 9,
+        "Project files": 4,
+        "File path list": 2,
+        "Project guidance index": 3,
+    }
+    assert {k: v.characters for k, v in result.groups["runtime_state"].items.items()} == {
+        "Notes": 5,
+        "Tool execution status": 6,
+        "Time and usage": 4,
+        "Unattributed": 1,
+    }
+    assert {k: v.characters for k, v in result.groups["conversation"].items.items()} == {
+        "User": 5,
+        "Agent": 10,
+        "Context summaries": 14,
+        "Unattributed": len("<notes>ambiguous</notes>"),
+        "Input references": 3,
+        "Runtime notices": 6,
+        "Context recovery": 8,
+    }
+    for group in result.groups.values():
+        assert sum(item.characters for item in group.items.values()) == group.characters
+    assert "/secret" not in result.model_dump_json() and "private-source" not in result.model_dump_json()

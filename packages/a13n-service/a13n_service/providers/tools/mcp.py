@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal, Self, Unpack
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.http import forward_context_headers_default
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, StartupErrorPolicy, ToolsetFactory
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -27,7 +28,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool
+from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolDispatch, ToolInfo, unique
 from a13n_service.providers.tools.mcp_apps import AppClient, AppMCP, AppToolset, Capture
@@ -105,6 +106,7 @@ class McpConfig(BaseModel):
     forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
     supports_object_refs: bool = False
     object_ref_tools: dict[ToolName, bool] = Field(default_factory=dict, max_length=MAX_TOOLS)
+    on_error: StartupErrorPolicy = "raise"
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
@@ -201,13 +203,12 @@ def mcp_client(
 ) -> Client[ClientTransport]:
     """Use the upstream adapter; its transport enters the attempt's configured HTTP client."""
     client = _toolset(url, connection_id, http, timeout=timeout).client
-    if apps:
-        client = AppClient(
-            client.transport,
-            timeout=timeout,
-            init_timeout=timeout,
-            extensions=[advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})],
-        )
+    client = (AppClient if apps else InitializationRetryClient)(
+        client.transport,
+        timeout=timeout,
+        init_timeout=timeout,
+        extensions=[advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else (),
+    )
     client.transport = DispatchTransport(client.transport, connection_id)
     return client
 
@@ -245,53 +246,61 @@ class AttemptToolset(AppToolset):
         return await super().__aenter__()
 
 
+type AcquireClient = Callable[[], Awaitable[Client[ClientTransport]]]
+type PrepareClient = Callable[[], Awaitable[AcquireClient]]
+
+
 def mcp_capability(
     connection_id: str,
-    open_client: Callable[[], Awaitable[Client[ClientTransport]]],
+    prepare_client: PrepareClient,
     *,
     tools: tuple[str, ...] | None,
     check: DispatchCheck,
     capture: Capture | None = None,
     supports_object_refs: bool = False,
     object_ref_tools: dict[str, bool] | None = None,
-) -> MCP[AgentContext]:
+    on_error: StartupErrorPolicy = "raise",
+) -> MCPServer:
     """Fresh native projections borrow one entered client from the worker attempt.
 
     Filtering precedes the dispatch check's catalog bound. No human input handler
     is advertised without a durable Service response channel.
     """
 
-    async def local(_ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
-        client = await open_client()
-        native = AttemptToolset(
-            client,
-            id=connection_id,
-            max_retries=0,
-            tool_error_behavior="failed",
-            prefer_tasks=False,
-            # A prebuilt client cannot replace its stable Host notification handler
-            # with each projection's cache callback. Refresh the live catalog.
-            cache_tools=False,
-            cache_resources=False,
-            cache_prompts=False,
-            include_instructions=False,
-        )
-        native.capture = capture
+    async def prepare(_ctx: RunContext[AgentContext]) -> ToolsetFactory:
+        acquire = await prepare_client()
+
+        async def create_toolset() -> MCPToolset[AgentContext]:
+            native = AttemptToolset(
+                await acquire(),
+                id=connection_id,
+                max_retries=0,
+                tool_error_behavior="failed",
+                prefer_tasks=False,
+                # The attempt's stable Host handler owns notifications. Each
+                # projection refreshes discovery instead of installing a handler.
+                cache_tools=False,
+                cache_resources=False,
+                cache_prompts=False,
+                include_instructions=False,
+            )
+            native.capture = capture
+            return native
+
+        return create_toolset
+
+    def project(native: MCPToolset[AgentContext]) -> MCP[AgentContext]:
         listed: AbstractToolset[AgentContext] = native
         if tools is not None:
             selected = frozenset(tools)
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
         from a13n_harness.capabilities.object_store import ObjectRefToolset
 
-        return DispatchToolset(
-            ObjectRefToolset(listed, supports_object_refs=supports_object_refs, tool_overrides=object_ref_tools or {}),
-            connection_id,
-            None,
-            check,
+        references = ObjectRefToolset(
+            listed, supports_object_refs=supports_object_refs, tool_overrides=object_ref_tools or {}
+        )
+        return AppMCP(
+            id=connection_id, local=DispatchToolset(references, connection_id, None, check), defer_loading=False
         )
 
-    return AppMCP(
-        id=connection_id,
-        local=DynamicToolset(local, per_run_step=False),
-        defer_loading=False,
-    )
+    return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)

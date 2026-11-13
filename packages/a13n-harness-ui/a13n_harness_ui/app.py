@@ -524,6 +524,7 @@ class HarnessUiApp:
         self._root_runs = root_runs
         self._tool_executions = tool_executions
         tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.runtime.reports_background_completions = True
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -2774,11 +2775,12 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
-        if thread_id == BOT_THREAD_ID:
-            # Results stay available for inspection on the next permitted input.
-            return True
         if self._state is not AppState.ready:
             return False
+        operation = await self._root_runs.active(thread_id)
+        if thread_id == BOT_THREAD_ID and operation is None:
+            # An idle Bot lists retained work on its next permitted Run; completion never starts one.
+            return True
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
             return False
@@ -2816,7 +2818,6 @@ class HarnessUiApp:
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept
             )
-        operation = await self._root_runs.active(thread_id)
         if operation is not None:
             result = await self._root_runs.steer(
                 receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
@@ -4332,6 +4333,7 @@ async def open_harness_ui_app(
                     prepare_input=lambda prompt: app._prepare_input(BOT_THREAD_ID, prompt, ()),
                     notify=web_push.enqueue if web_push is not None else None,
                 )
+                root_executor.set_bot_display_publisher(app._bot.publish_display)
                 from pydantic_ai.capabilities import CombinedCapability
 
                 from a13n_harness_ui.connectors.capability import connector_capability

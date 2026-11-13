@@ -1052,17 +1052,17 @@ def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatc
 
 
 @pytest.mark.anyio
-async def test_default_notes_are_injected_and_survive_resume_with_full_projection(tmp_path: Path, monkeypatch) -> None:
+async def test_resumed_notes_list_the_key_and_keep_the_complete_value_on_demand(tmp_path: Path, monkeypatch) -> None:
     import a13n_harness.models.codex as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
     value = "Long detailed note. " * 30 + "FINAL NOTE DETAIL"
-    injected = False
+    read_saved_note = False
 
     async def stream(messages, info):
-        nonlocal injected
+        nonlocal read_saved_note
         assert {"note_write", "note_delete", "note_get"} <= {tool.name for tool in info.function_tools}
         results = [
             part
@@ -1078,12 +1078,16 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
                 )
             }
         else:
-            injected = any(
-                value in str(part.content)
-                for message in messages
-                if isinstance(message, ModelRequest)
-                for part in message.parts
-                if isinstance(part, UserPromptPart)
+            if any(
+                isinstance(part, UserPromptPart) and '<note-key key="design" />' in str(part.content)
+                for part in messages[-1].parts
+            ):
+                assert value not in str(messages[-1].parts)
+                yield {0: DeltaToolCall(name="note_get", tool_call_id="read-note", json_args='{"key":"design"}')}
+                return
+            read_saved_note = any(
+                isinstance(part, ToolReturnPart) and part.tool_name == "note_get" and part.content["value"] == value
+                for part in messages[-1].parts
             )
             yield "Note saved."
 
@@ -1103,7 +1107,7 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
         assert (await app.thread_notes(thread_id=thread_id)).notes == page.notes
         resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
         await resumed.execute(StreamRenderer(resumed.status), prompt="Use the saved note")
-        assert injected
+        assert read_saved_note
         from a13n_harness_ui.errors import ThreadError
 
         with pytest.raises(ThreadError, match="continuation changed"):

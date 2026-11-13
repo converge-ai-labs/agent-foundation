@@ -154,8 +154,9 @@ async def test_app_root_execution_uses_host_store_and_preserves_it_on_restart(tm
         assert await reopened.read(item.object_id) == b"persist"
 
 
+@pytest.mark.parametrize("lifetime", ["run", "host", "apps"])
 @pytest.mark.parametrize("server_default,override", [(True, None), (False, True), (True, False), (False, None)])
-async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default, override):
+async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default, override, lifetime):
     import base64
     import json
 
@@ -163,6 +164,8 @@ async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default,
     from a13n_harness_ui.composition.models import ResolvedMcpRecipe
     from a13n_harness_ui.configuration.models import McpRemoteTransport
     from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+    from a13n_harness_ui.mcp_apps.connections import Connections as AppConnections
+    from a13n_harness_ui.mcp_runtime.connections import Connections
     from fastmcp import FastMCP
 
     from .test_tool_search_integration import _http_mcp
@@ -186,20 +189,35 @@ async def test_mcp_object_ref_opt_in_and_tool_override(tmp_path, server_default,
         else:
             yield "done"
 
+    connections = AppConnections() if lifetime == "apps" else Connections() if lifetime == "host" else None
     async with _http_mcp(server) as url:
-        recipe = ResolvedMcpRecipe(
-            server_id="mcp-media",
-            transport=McpRemoteTransport(url=url),
-            supports_object_refs=server_default,
-            object_ref_tools={} if override is None else {"send": override},
-        )
-        executable = HarnessBuilder().build(
-            AgentSpec(),
-            model=FunctionModel(stream_function=model),
-            output_type=str,
-            capabilities=[ObjectStoreCapability(), HarnessUiMCP(recipe)],
-        )
-        result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
+        try:
+            recipe = ResolvedMcpRecipe(
+                server_id="mcp-media",
+                transport=McpRemoteTransport(url=url),
+                supports_object_refs=server_default,
+                object_ref_tools={} if override is None else {"send": override},
+                on_error="raise",
+                host_owned=lifetime == "host",
+                apps_enabled=lifetime == "apps",
+            )
+            executable = HarnessBuilder().build(
+                AgentSpec(),
+                model=FunctionModel(stream_function=model),
+                output_type=str,
+                capabilities=[
+                    ObjectStoreCapability(),
+                    HarnessUiMCP(
+                        recipe,
+                        apps=connections if lifetime == "apps" else None,
+                        connections=connections if lifetime == "host" else None,
+                    ),
+                ],
+            )
+            result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
+        finally:
+            if connections is not None:
+                await connections.close()
     assert result.output_or_raise() == "done"
     assert received == ([b"\x00real MCP payload\xff"] if (server_default if override is None else override) else [])
     assert "real MCP payload" not in str(result.all_messages())

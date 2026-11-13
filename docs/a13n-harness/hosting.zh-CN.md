@@ -150,7 +150,7 @@ async def run_host(model: Model) -> None:
 
 真正脱离前台等待，要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用或完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行。CodeAct 的嵌套调用等待实际值，顺序工具的执行屏障持续到工作结束。默认执行模式为 `inline`；`auto` 要求在 Run 准备时已绑定 runtime。
 
-完成绑定的 Agent 可以使用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel`，并收到仅含状态的上下文摘要。两种模式都要求同时启用 Capability 并绑定 runtime。读取限定在所属 Thread；真实结果进入规范历史后，才确认交付。默认内存 store 在 Host 进程生命周期内保留活动工作和最近完成的记录。自定义保留或持久化策略使用 `ToolExecutionStore`；通过 `on_completed` 安排投递，避免阻塞执行。只保存记录不会把正在运行的调用转移给替代 worker。
+绑定运行时并启用工具执行能力后，Agent 可用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查询和管理执行。每个 Run 首次列出需要关注的执行，之后只通知变化。完整执行 ID 可用于取回结果、核对命令输出。通过 `ToolExecutionStore` 管理结果留存，通过 `on_completed` 安排通知。如果 Host 负责交付后台完成通知，可设置 `reports_background_completions=True`。持久化记录本身不会将运行中的调用迁移到替代 worker。
 
 向活动流发送新输入时，按交接要求选择：
 
