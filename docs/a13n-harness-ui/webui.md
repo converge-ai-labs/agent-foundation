@@ -111,9 +111,9 @@ Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the
 
 Type `$` or `/` followed by a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape or the close button dismisses suggestions for the current word and leaves the typed text in place. Insertion does not send. A recognized Skill shows a puzzle icon and name; Backspace removes it as one item. The underlying `$name` text is preserved and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
 
-Use **Tasks**, **Notes**, **Subagents**, **Processes**, and **Tools** above the composer to open the corresponding activity view without replacing your draft. Counts show completed/total tasks, notes, active subagent executions, and observed running processes. In narrow chat columns, **More** contains Notes, Processes, and Tools. Closing the inspector returns focus to the entry that opened it. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
+**Tasks** and **Notes** stay above the composer. The **Background work** icon immediately after the icon-only **Share** button opens a compact card: **Subagents** and **Tool calls** each show up to three rows. Task and argument previews are in row tooltips. Each section's **View all** opens its own history tab in the supporting strip, with **Show more** for older pages. Selecting a row opens its resource tab; narrow layouts close the card first.
 
-Process counts cover observed running handles, excluding foreground calls. The panel shows up to 16 entries from 128 retained observations. Run completion or lost observation marks unfinished handles unavailable, not exited. Reload does not reconstruct them from saved messages.
+Child tabs show the saved/live conversation without a composer. The header's **Stop** action becomes **Stopping…** until the item ends. Tool tabs retain input, supported live output and completion output. Observed Shell processes stay read-only; reloading does not reconstruct observations. Closing a tab does not stop work.
 
 ### Review token usage and estimated cost
 
@@ -181,7 +181,7 @@ Use **Steer** to correct direction while the Agent is working. By default, immed
 
 Acceptance means the guidance was queued. Unsupported tools use best-effort delivery at a normal execution boundary. Startup or recovery can wait up to five seconds for native steering readiness; a timeout or completed Run rejects the request. Root and child steering share `input.steering_mode`; choose `queued` in [configuration](configuration.md#built-in-tools-and-subagents) to wait for the next safe boundary.
 
-Open **Work → Tools** to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
+Open **Background work**, then **View all** under **Tool calls**, to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
 
 Generic [automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in. Process-backed Shell yields after its configured foreground wait in either mode; immediate steering can release that wait sooner. Shell handles also have their own process view.
 

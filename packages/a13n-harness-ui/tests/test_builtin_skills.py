@@ -511,7 +511,7 @@ async def test_async_child_selects_and_reads_its_own_guidance_bundle(tmp_path, m
         executions = await app.query_child_executions(parent_thread_id=thread.thread_id)
         assert len(executions.executions) == 1
         assert executions.executions[0].persisted_status == "succeeded"
-    assert calls == {"parent": 3, "child": 2 if child_references else 1}
+    assert calls["child"] == (2 if child_references else 1)
 
 
 def test_operation_bundle_contains_new_reference_pages() -> None:

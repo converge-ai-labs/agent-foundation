@@ -222,3 +222,38 @@ def test_saved_tool_media_retains_order_and_never_reveals_supplements() -> None:
     assert [item["type"] for item in restored.content_parts] == ["text", "image", "text"]
     assert restored.content_parts[1]["source"]["value"] == "https://example.com/public.png"
     assert "private.png" not in restored.model_dump_json()
+
+
+def test_operator_instruction_bookkeeping_does_not_become_activity():
+    from a13n_harness_ui.thread_projection import _request_parts
+    from pydantic_ai.messages import InstructionBaselinePart, InstructionDeltaPart
+
+    assert _request_parts(InstructionBaselinePart(instructions=[])) == ()
+    assert _request_parts(InstructionDeltaPart(id="runtime", content="internal update")) == ()
+
+
+@pytest.mark.anyio
+async def test_background_input_reads_latest_matching_tool_call() -> None:
+    from types import SimpleNamespace
+
+    thread = SimpleNamespace(thread_id="thread-one")
+    header = SimpleNamespace(source_id="source-one")
+    call = TranscriptEntry(
+        position=6,
+        message_kind="response",
+        parts=(
+            TranscriptPart(
+                kind="tool_call", tool_call_id="reused", value={"command": "pnpm test --watch"}, value_omitted=True
+            ),
+        ),
+    )
+    store = Mock(spec=LocalStore)
+    store.inspections = Mock()
+    store.inspections.matching_entries = AsyncMock(return_value=(call.model_dump_json(),))
+    projection = object.__new__(ThreadProjectionService)
+    projection._store = store
+    projection._required_thread = AsyncMock(return_value=thread)
+    projection._inspection_header = AsyncMock(return_value=header)
+    value, truncated = await projection.tool_execution_input("thread-one", "reused")
+    assert value == '{"command": "pnpm test --watch"}' and truncated
+    store.inspections.matching_entries.assert_awaited_once_with("thread-one", "source-one", "reused")

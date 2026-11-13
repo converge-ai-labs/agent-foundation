@@ -2591,6 +2591,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool Execution Output */
+        get: operations["tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
         parameters: {
             query?: never;
@@ -3294,14 +3311,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"] | components["schemas"]["DynamicAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Id */
             id: string;
         };
@@ -4194,7 +4211,7 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Source Id */
             source_id: string;
             /** Base Agent Id */
@@ -5278,6 +5295,20 @@ export interface components {
              * Format: date-time
              */
             unsent_since: string;
+        };
+        /**
+         * DynamicAgentSource
+         * @description Host-defined child; its complete definition is retained in its Run composition.
+         */
+        DynamicAgentSource: {
+            /**
+             * Kind
+             * @default dynamic
+             * @constant
+             */
+            kind?: "dynamic";
+            /** Id */
+            id: string;
         };
         EgressDestinations: components["schemas"]["PublicDestinations"] | components["schemas"]["AllowlistDestinations"];
         /**
@@ -8728,9 +8759,37 @@ export interface components {
             notes: components["schemas"]["NoteWorkSummary"];
             children: components["schemas"]["ChildStatusCounts"];
         };
+        /** ToolExecutionOutputView */
+        ToolExecutionOutputView: {
+            execution: components["schemas"]["ToolExecutionView"];
+            /** Input */
+            input?: string | null;
+            /**
+             * Input Truncated
+             * @default false
+             */
+            input_truncated?: boolean;
+            /** Text */
+            text?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "pending" | "expired" | "unavailable";
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live?: boolean;
+        };
         /**
          * ToolExecutionView
-         * @description Detached status only; native results stay behind Harness result tools.
+         * @description Detached execution status; output is read separately without acknowledgement.
          */
         ToolExecutionView: {
             /** Execution Id */
@@ -8773,6 +8832,11 @@ export interface components {
              * @default false
              */
             delivery_acknowledged?: boolean;
+            /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested?: boolean;
             /**
              * Available Actions
              * @default []
@@ -15909,6 +15973,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {
@@ -15995,6 +16061,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolExecutionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionOutputView"];
                 };
             };
             /** @description Validation Error */
@@ -17011,6 +17109,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {

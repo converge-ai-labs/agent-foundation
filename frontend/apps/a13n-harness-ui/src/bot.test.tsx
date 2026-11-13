@@ -1270,18 +1270,18 @@ it("keeps Bot context and cost visible while Debug reveals only left inspection 
   await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Keep this draft");
   expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Inspect tools" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Inspect tasks" })).toBeNull();
   expect(
     await screen.findByRole("button", { name: "Voice input" }),
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
   fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
   expect(
-    await screen.findByRole("button", { name: "Inspect tools" }),
+    await screen.findByRole("button", { name: "Inspect tasks" }),
   ).toBeTruthy();
   fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
   expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Inspect tools" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Inspect tasks" })).toBeNull();
   expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
 });
 
@@ -1345,7 +1345,7 @@ it.each([
     expect(voiceRequests).toHaveLength(1);
     expect(voiceRequests[0]).toMatchObject({ thread_id: BOT_THREAD_ID });
     expect(screen.getByLabelText("Work inspection")).toBeTruthy();
-    expect(!!screen.queryByRole("button", { name: "Inspect tools" })).toBe(
+    expect(!!screen.queryByRole("button", { name: "Inspect tasks" })).toBe(
       debug,
     );
   },

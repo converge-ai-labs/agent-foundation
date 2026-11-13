@@ -23,6 +23,12 @@ executable = HarnessBuilder().build(
 
 Supply a Host-owned `EnvironmentSource` to each `run(..., environment=...)`, or use `environments={...}` for named mounts. Harness invokes the source’s readiness preparation on first use, then opens and closes fresh fixed-target executions; your application selects their configuration, current state, access policy, and when to destroy a backing target. See [Environments](../../docs/a13n-harness/environments.md) and [Capabilities](../../docs/a13n-harness/capabilities.md).
 
+## Async subagent results
+
+For Host-owned async execution, configure `SubagentCapability(async_enabled=True, operator=operator)`. Final results arrive automatically, including after the parent turn ends. The parent can continue other work and end its turn when only background work remains.
+
+Your Host implements delivery and wake eligibility; Harness does not schedule delivery. Retrieved results include the child's execution identity. Hosts can use `a13n_harness.execution_identity.format_execution_header` for matching delivered results and messages. See the [delegation contract](../../spec/a13n-harness/11-delegation-and-subagents.md).
+
 ## Browser tools
 
 Connect to an existing Chromium instance through a trusted CDP endpoint. The application prepares Chromium and its profile; Harness does not install or launch a browser. `cdp-use` is included in the normal Python dependencies.

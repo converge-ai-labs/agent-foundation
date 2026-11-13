@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
+from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
+from sqlalchemy.orm import aliased
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.conversation import ConversationExcerpt
@@ -1087,6 +1088,22 @@ class ChildExecutionRepository:
             record = await session.get(ChildExecutionRecord, execution_id)
             return None if record is None else _child_value(record)
 
+    async def attention_for_parent(self, parent_thread_id: str, *, limit: int = 21) -> tuple[ChildExecutionHead, ...]:
+        async with short_session(self._sessions) as session:
+            rows = (
+                await session.execute(
+                    select(ChildExecutionRecord)
+                    .where(ChildExecutionRecord.parent_thread_id == parent_thread_id)
+                    .order_by(
+                        (ChildExecutionRecord.status == "running").desc(),
+                        ChildExecutionRecord.created_at.desc(),
+                        ChildExecutionRecord.execution_id.desc(),
+                    )
+                    .limit(limit)
+                )
+            ).scalars()
+            return tuple(_child_value(row) for row in rows)
+
     async def list_for_parent(
         self,
         parent_thread_id: str,
@@ -1145,6 +1162,62 @@ class ChildExecutionRepository:
                         statement.order_by(
                             ChildExecutionRecord.created_at,
                             ChildExecutionRecord.execution_id,
+                        ).limit(limit)
+                    )
+                ).scalars()
+            )
+            total = int(
+                (
+                    await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
+                ).scalar_one()
+            )
+            return tuple(_child_value(row) for row in rows), total
+
+    async def latest_page_for_parent(
+        self,
+        parent_thread_id: str,
+        *,
+        after: tuple[bool, datetime, str] | None = None,
+        limit: int = 20,
+    ) -> tuple[tuple[ChildExecutionHead, ...], int]:
+        """Page each child conversation's latest segment: running first, then newest first."""
+        if not 1 <= limit <= 101:
+            raise ValueError("child execution page is outside supported bounds")
+        newer = aliased(ChildExecutionRecord)
+        predicate = and_(
+            ChildExecutionRecord.parent_thread_id == parent_thread_id,
+            ~exists().where(newer.resumed_from == ChildExecutionRecord.execution_id),
+        )
+        running = case((ChildExecutionRecord.status == "running", 1), else_=0)
+        statement = select(ChildExecutionRecord).where(predicate)
+        if after is not None:
+            after_running, after_created_at, after_execution_id = after
+            if not after_execution_id or after_created_at.tzinfo is None or after_created_at.utcoffset() is None:
+                raise ValueError("child execution cursor is invalid")
+            rank = int(after_running)
+            statement = statement.where(
+                or_(
+                    running < rank,
+                    and_(
+                        running == rank,
+                        or_(
+                            ChildExecutionRecord.created_at < after_created_at,
+                            and_(
+                                ChildExecutionRecord.created_at == after_created_at,
+                                ChildExecutionRecord.execution_id < after_execution_id,
+                            ),
+                        ),
+                    ),
+                )
+            )
+        async with short_session(self._sessions) as session:
+            rows = tuple(
+                (
+                    await session.execute(
+                        statement.order_by(
+                            running.desc(),
+                            ChildExecutionRecord.created_at.desc(),
+                            ChildExecutionRecord.execution_id.desc(),
                         ).limit(limit)
                     )
                 ).scalars()
@@ -1218,6 +1291,12 @@ class ChildExecutionRepository:
                 .order_by(ChildExecutionRecord.segment_index.desc())
                 .limit(1)
             )
+            return None if record is None else _child_value(record)
+
+    async def latest_checkpoint_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
+        """The newest segment with a selected checkpoint, including progress checkpoints."""
+        async with short_session(self._sessions) as session:
+            record = await session.scalar(latest_child_checkpoint_query(child_thread_id))
             return None if record is None else _child_value(record)
 
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
@@ -1350,6 +1429,18 @@ class EnvironmentStateRepository:
             return _binding_value(record)
 
 
+def latest_child_checkpoint_query(child_thread_id: str) -> Select[tuple[ChildExecutionRecord]]:
+    return (
+        select(ChildExecutionRecord)
+        .where(
+            ChildExecutionRecord.child_thread_id == child_thread_id,
+            ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
+        )
+        .order_by(ChildExecutionRecord.segment_index.desc())
+        .limit(1)
+    )
+
+
 def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadConfigurationRecord:
     return ThreadConfigurationRecord(
         thread_id=thread_id,
@@ -1384,7 +1475,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
@@ -1393,6 +1484,8 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         if record.agent_source_kind == "live"
         else BotAgentSource()
         if record.agent_source_kind == "bot"
+        else DynamicAgentSource(id=record.agent_source_id)
+        if record.agent_source_kind == "dynamic"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)

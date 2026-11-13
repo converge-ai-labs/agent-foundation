@@ -32,6 +32,7 @@ _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
 
+
 type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
 type SubagentToolCallStatus = Literal["running", "success", "failed", "denied", "interrupted"]
 

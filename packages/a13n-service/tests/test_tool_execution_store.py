@@ -718,7 +718,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
     assert (
         "expired" in returns[-1].content["message"]
         if status == "expired"
-        else "runtime" in returns[-1].content["message"]
+        else "do not reissue" in returns[-1].content["message"]
     )
     assert await restore(service.runtime, restored, thread_id=lease.thread_id, origin_run_id=lease.run_id) == restored
     if not record.terminal:

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
@@ -64,12 +65,17 @@ function Reader() {
     </>
   );
 }
-function mount(current = "one", ids = ["one", "two", "three", "four"]) {
+function mount(
+  current = "one",
+  ids = ["one", "two", "three", "four"],
+  resource?: ReactNode,
+) {
   return render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("fixture", () => {})}>
         <MemoryRouter initialEntries={[`/threads/${current}`]}>
           <LiveThreadsProvider>
+            {resource}
             {ids.map((id) => (
               <Link key={id} to={`/threads/${id}`}>
                 {id}
@@ -246,4 +252,30 @@ it("bounds retained observations and releases evicted query observers", async ()
       .find({ queryKey: ["thread", ids[0], "detail"] })!
       .getObserversCount(),
   ).toBe(0);
+});
+
+function ResourceObserver() {
+  useLiveThread("one", true);
+  return null;
+}
+function OpenResource() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      {open && <ResourceObserver />}
+      <button onClick={() => setOpen(false)}>Close resource</button>
+    </>
+  );
+}
+it("keeps an opened resource's parent on the existing stream after navigation and releases it on close", async () => {
+  active = [];
+  mount("one", ["one", "four"], <OpenResource />);
+  await waitFor(() => expect(watches.has("one")).toBe(true));
+  const original = watches.get("one")!;
+  fireEvent.click(screen.getByRole("link", { name: "four" }));
+  await waitFor(() => expect(watches.has("four")).toBe(true));
+  expect(watches.get("one")).toBe(original);
+  fireEvent.click(screen.getByRole("button", { name: "Close resource" }));
+  await waitFor(() => expect(watches.has("one")).toBe(false));
+  expect(watches.has("four")).toBe(true);
 });

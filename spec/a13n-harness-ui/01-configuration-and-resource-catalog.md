@@ -69,6 +69,10 @@ tools:
 
 subagents:
   include: [code-reviewer, executor, explorer]
+  max_concurrent: 8
+  dynamic:
+    enabled: false
+    allowed_models: []
 
 webui:
   allowed_origins: []
@@ -92,6 +96,10 @@ defaults:
 `security.shell_review` is an optional application-owned shortcut with `enable` (boolean, default `false`), `guardian_credits` (boolean, default `false`; opt-in provider credit request linking when shell review is effective), `risk_threshold` (`low`, `medium`, `high`, `extra_high`, or null/omitted), `model` (Model resource ID or null/omitted), `on_flagged` (`deny`, `approval_required`, or null/omitted), and `on_error` (`deny`, `approval_required`, `allow`, or null/omitted). Disabled or omitted means no injection, not a prohibition: explicit Agent permission/review policy remains effective. Enabled merges the shortcut into one `ToolPermissionsCapability` before Run capture, with explicitly supplied shortcut fields taking precedence. Omitted/null fields inherit the Agent review configuration; without one, the threshold is `extra_high`, the Model is the effective Agent Model, `on_flagged` is `approval_required`, and `on_error` is `allow`. Setup materializes its reviewed selections in this root mapping. [Shell review composition](02-agent-composition-and-snapshots.md#shell-review-auxiliary-model) owns exact-rule merging, failure behavior, and frozen auxiliary Models.
 
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
+
+`subagents.max_concurrent` is a positive integer, default `8`, limiting locally running children in one root conversation across configured, built-in and dynamic children, including resumed segments. Admission through delegate, spawn and resume shares one serialized limit. `subagents.dynamic.enabled` defaults to `false`; only enabled root Runs expose `spawn_subagent`. `subagents.dynamic.allowed_models` is an ordered unique list of configured Model IDs, default `[]`; unknown references reject the generation. An omitted spawn Model inherits the parent's captured Model even when it is absent from the allowlist. Explicit Model choices must occur in the allowlist. Thinking choices use the selected Model's existing validated thinking controls.
+
+Terminal subagent results are delivered automatically. The Run capture freezes subagent settings; later configuration edits affect later Runs. Results and explicit messages can start eligible parent Runs and incur Model use. [Runtime](05-runtime-subagents-and-surfaces.md#observation-and-checkpointing) owns delivery and wake eligibility.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
 

@@ -353,6 +353,14 @@ Request-boundary checkpoints include current Goal progress after context-restora
 
 The continuation read model includes the optional Goal projection. Current-process root-operation state takes precedence for live progress. Without a live operation, saved active progress is shown as `suspended` only when a deferred continuation is actually available, otherwise `unverified_stop`. This query projection does not rewrite the checkpoint, claim liveness, or authorize automatic execution. Existing terminal outcomes remain inspectable after restart.
 
+### Dynamic Child Source Compatibility
+
+Thread configuration accepts `agent_source.kind="dynamic"` for Host-created children. Its ID identifies the retained child definition; the existing immutable child Run composition retains the complete role, Model and tool recipes. It is not a configured Agent resource. Resume uses the trusted Host-defined Harness path and the retained child composition rather than looking up a fabricated roster entry.
+
+The forward migration replaces the `thread_configuration.agent_source_kind` CHECK constraint with a set that includes `dynamic`. SQLite copies that table without transforming its rows; existing identifiers, references and foreign keys remain intact. Migration runs against the ordinary exclusive startup boundary and verifies foreign keys. An interrupted transaction is rolled back and can be retried. The CHECK cannot be reverted while `dynamic` rows remain.
+
+Stop every Harness UI process sharing the data root before upgrading. Upgrade TUI and WebUI together, then reopen the data root. Mixed-version access to the migrated data root is unsupported.
+
 ## Continuation Query Data
 
 Root continuation selection commits a small, versioned read model in the same SQLite transaction as the selected head. It contains the deferred requests needed for decision display and the bounded latest retained activity. Both the continuation schema version and digest bind the projection to the selected immutable object. Failed compare-and-select leaves the old projection and head intact. Current-process activity is merged at query time, never persisted as liveness.
@@ -435,7 +443,11 @@ A saved `running` status means only that no terminal checkpoint or explicit loca
 
 ### Child Checkpoint
 
-A child checkpoint contains the exact execution correlation, Run composition reference, `HarnessState`, bounded compact display, terminal fact, and creation time. Terminal publication follows:
+A child checkpoint contains the exact execution correlation, Run composition reference, `HarnessState`, bounded compact display, terminal fact, and creation time. Before each model request, the Host saves and compare-and-selects a nonterminal checkpoint using the same request-boundary capability as root execution. This costs one full-state write per model request per running child. A successful selection advances the expected pointer and removes the superseded checkpoint from the same Run; failed compare-and-select preserves the newer writer's selection. Checkpoint reads and removal coordinate under the existing Thread checkpoint lock. Database sessions end before object I/O or model execution.
+
+Progress selection does not change execution status or resumability. Only `succeeded` executions with eligible terminal checkpoints are resumable; stopped, failed, cancelled, lost, and running children remain ineligible. An unplanned exit can leave a selected progress checkpoint and a saved `running` head that is locally unavailable. Existing explicit loss recording can mark the execution `lost`; neither case removes readable progress or creates takeover authority. Startup does not infer new loss facts.
+
+Terminal publication follows:
 
 1. finish the child Run and Environment cleanup;
 2. construct and validate the complete terminal checkpoint;

@@ -122,6 +122,28 @@ subagents:
 
 An explicit reference to the same built-in ID is deduplicated. A different child also named `explorer` is a conflict: rename your child or remove the built-in selection. The `subagent-builtin-*` IDs belong to the package. Package upgrades and configuration edits affect subsequent Runs; active Runs retain their captured definitions.
 
+## Dynamic subagents and result delivery
+
+To let the main Agent create task-specific helpers, merge this section into the root YAML. Replace `model-primary` with a configured Model ID:
+
+```yaml
+subagents:
+  max_concurrent: 8
+  dynamic:
+    enabled: true
+    allowed_models: [model-primary]
+```
+
+Dynamic creation is off when `enabled` is missing or false. The main Agent receives `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`. Omit `model` to inherit its Model; explicit choices must be in `allowed_models`. Thinking must be supported by the selected Model. Each helper inherits tools and Environment, receives global guidance and fixed child guidance followed by its role instructions, and starts without parent Agent instructions or conversation history. Dynamic helpers cannot delegate or spawn further children.
+
+The running-child limit applies to dynamic, configured and built-in helpers, including resumed segments. The Agent receives a clear error at the limit and can wait for existing work. Use `subagent_info`, `wait_subagent`, `steer_subagent`, `resume_subagent` and cancellation with the returned execution ID.
+
+Final results arrive as parent input automatically, including after the parent turn ends. Every child can call `send_parent_message` while continuing to work. A child that needs an answer to continue ends with its question; the main Agent can resume it with an answer. Messages and results identify the child name, execution ID and state. Repeated results with the same ID are possible.
+
+An active parent receives steering. An idle parent can start a new Run after normal completion, which adds Model use. Stop, failure, suspension, interruption, pending user decisions and archival prevent automatic restart. The TUI shows marked parent and completion inputs as Activity.
+
+Before upgrading an existing data root, stop all Harness UI processes using it. Upgrade TUI and WebUI together, then reopen. Mixed-version access is unsupported; schema repair is forward-only or requires restoring a pre-upgrade backup.
+
 ## Write a Markdown subagent
 
 Use Markdown for a helper that needs different instructions but the same Model and Capabilities as its parent.
@@ -321,3 +343,9 @@ For standalone conversion:
 The CLI also accepts `--product codex` or `--product cursor`. For repository definitions, use `--scope project --project-root /absolute/path/to/repository`.
 
 Standalone import preserves representable tool names and diagnoses unsupported Model, permission, hook, and MCP settings. `--apply` writes the previewed definitions into local configuration and can replace existing targets; it leaves the source product's files unchanged. Import is a one-time conversion. Guided import reports definition-save and roster-update results separately, so a partial success tells you which step remains.
+
+## Background work in the WebUI
+
+The icon immediately after Share opens **Background work**. Its compact card shows up to three **Subagents** and three **Tool calls**, with running work first. Hover a row for its task or arguments. Each section's **View all** opens its own history tab, with **Show more** for older pages. Select an item to inspect its own tab; narrow layouts close the card when opening a tab.
+
+Subagent tabs show saved and live conversation with **Main agent** and **User** labels for existing inputs. You cannot type into a child conversation in the WebUI. Use the header's **Stop** when available; accepted stops show **Stopping…** until the item ends. Tool tabs show input and output, with explicit truncation, expiry and unavailable states. Observed Shell processes remain read-only. Closing a tab does not stop work.

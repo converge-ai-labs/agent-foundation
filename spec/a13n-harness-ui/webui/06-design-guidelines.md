@@ -85,6 +85,14 @@ Content fades continuously toward the header and composer. No hard seam, ghosted
 
 The header divider appears only with the supporting right pane open. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
 
+## Background Work
+
+The floating card sits 8px below the chat header and clears the chat page padding and transcript scrollbar gutter (48px from the chat area's right edge; 36px on narrow layouts). It is about 320px wide on desktop, using the elevated surface, overlay shadow and 16px radius. Subagents and Tool calls each show at most three single-line rows and a quiet View all action. Names ellipsize with full names and previews in tooltips. A 16px character/icon, text start, compact state/duration and reserved Stop slot share axes. Commands use the shared code size; metadata uses secondary text and tabular figures. Touch rows retain 44px targets. Use one flat hover fill.
+
+The Subagents and Tool calls history tabs reuse those rows with scrolling and Show more; the tab header names the section, so rows start without a section heading. Item tabs reuse the resource strip's truncation and close controls. Child tabs have no composer; their Stop action sits beside state in the header, matching tool tabs. Accepted Stop shows the shared loading indicator in the same slot until terminal state arrives. Saved/live readers reuse transcript components and checkpoint cut-over; notices remain quiet execution links. Tasks and Notes remain the composer's only work shortcuts.
+
+Child identity is a small generated SVG glyph: a candy-colored rounded polygon with legible eyes. The Thread ID seeds its palette entry, shape, rotation, corner rounding, eye style, gaze and tilt. State uses text or gentle reduced-motion-aware motion, never identity hue. The shared identity role owns the palette and contrast rules. Empty, loading, error and narrow states preserve alignment.
+
 ## Settings, Dialogs and Popovers
 
 - Settings groups use 16px horizontal insets. Headings sit 8px above their content. Desktop rows have 8px vertical insets and a 48px minimum; controls center against the complete label/description block. Nested disclosures reuse the group's surface and inset.

@@ -974,11 +974,6 @@
 .children {
   margin-top: 12px;
 }
-.childControls {
-  display: grid;
-  gap: 12px;
-  margin-top: 24px;
-}
 .childControlActions {
   display: flex;
   flex-wrap: wrap;
@@ -2351,4 +2346,9 @@ div:has(+ .execution) > .assistantMessage {
 
 .composerActions > button[data-dictation-mic] {
   margin-inline-end: 4px;
+}
+
+.inputAuthor {
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-secondary);
 }

@@ -1,3 +1,16 @@
+import { ShareButton } from "../sharing";
+import { BackgroundScope } from "../conversations/background-context";
+import {
+  BackgroundCard,
+  BackgroundToggle,
+  SubagentGlyph,
+} from "../conversations/background-card";
+import { BackgroundPanel } from "../conversations/background-panel";
+import {
+  SECTION_LABELS,
+  sectionTarget,
+  targetSection,
+} from "../conversations/background-work";
 import { useTranslation } from "../i18n";
 import { BotActions, BOT_THREAD_ID, useBot } from "../bot";
 import { BotWorkNotes } from "../bot-notes";
@@ -43,6 +56,8 @@ import {
   ShareNetwork,
   ChatCircle,
   Notebook,
+  CirclesThree,
+  Wrench,
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
@@ -164,7 +179,9 @@ export function NativeWorkspace({
   if (isWorkspace && !projectLoading) retainedRoots.current = selectedRoots;
   const localRoots = isWorkspace ? selectedRoots : retainedRoots.current;
   const projectRoot = localRoots[0] ?? "";
+  const [backgroundAvailable, setBackgroundAvailable] = useState(false);
   const hasSupportingViews =
+    backgroundAvailable ||
     botMode ||
     !!(
       status.data?.features?.host_files ||
@@ -186,10 +203,8 @@ export function NativeWorkspace({
   };
   const narrow = useMediaQuery("(max-width: 999px)");
   const [narrowSidebar, setNarrowSidebar] = useState(false);
-  const singleView =
-    hasSupportingViews &&
-    !sidebarCollapsed &&
-    (tabLayout || (narrow && !narrowSidebar));
+  const showOneView = tabLayout || (narrow && !narrowSidebar);
+  const singleView = hasSupportingViews && !sidebarCollapsed && showOneView;
   const supportingExpanded =
     hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);
   const layoutTransition = useRef<ViewTransition | null>(null);
@@ -261,7 +276,13 @@ export function NativeWorkspace({
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
   const [pane, setPane] = useState<
-    "files" | "changes" | "browser" | "terminal" | "work-notes" | null
+    | "files"
+    | "changes"
+    | "browser"
+    | "terminal"
+    | "work-notes"
+    | "background"
+    | null
   >(null);
   const tabSequence = useRef(0);
   const nextTabId = () => `view-${++tabSequence.current}`;
@@ -407,6 +428,10 @@ export function NativeWorkspace({
       setDiffChoices([]);
       setView("page");
       setFocusedArea("explorer");
+    } else if (tab.kind === "background") {
+      setPane("background");
+      setView("page");
+      setFocusedArea("native");
     } else if (tab.kind === "terminal") {
       setPane("terminal");
       setTerminalOpened(true);
@@ -593,6 +618,13 @@ export function NativeWorkspace({
           choices: [],
         });
       } else void open(link.path);
+    }
+    if (link.background && threadId) {
+      setBackgroundAvailable(true);
+      revealTab({
+        kind: "background",
+        target: sectionTarget(link.background, threadId, t),
+      });
     }
     if (link.terminal && status.data?.features?.host_terminal) {
       setTerminalId(link.terminal);
@@ -962,53 +994,65 @@ export function NativeWorkspace({
     ...tabs.items.map((tab) => ({
       key: tab.id,
       label:
-        tab.kind === "new"
-          ? t("New tab")
-          : tab.kind === "file"
-            ? buffers.get(tab.path)?.dirty
-              ? t("{{path}} - Unsaved", {
-                  path: tabs.items.some(
-                    (other) =>
-                      other.kind === "file" &&
-                      other.path !== tab.path &&
-                      basename(other.path) === basename(tab.path),
-                  )
-                    ? tab.path
-                    : basename(tab.path),
-                })
-              : tabs.items.some(
-                    (other) =>
-                      other.kind === "file" &&
-                      other.path !== tab.path &&
-                      basename(other.path) === basename(tab.path),
-                  )
-                ? tab.path
-                : basename(tab.path)
-            : tab.kind === "changes" && tab.selection
-              ? t("{{path}} - Changes", { path: basename(tab.selection.path) })
-              : tab.kind === "files"
-                ? t("Files")
-                : tab.kind === "changes"
-                  ? t("Changes")
-                  : tab.kind === "terminal"
-                    ? t("Terminal")
-                    : tab.kind === "work-notes"
-                      ? t("Work notes")
-                      : t("Browser"),
+        tab.kind === "background"
+          ? targetSection(tab.target)
+            ? t(SECTION_LABELS[targetSection(tab.target)!])
+            : tab.target.title
+          : tab.kind === "new"
+            ? t("New tab")
+            : tab.kind === "file"
+              ? buffers.get(tab.path)?.dirty
+                ? t("{{path}} - Unsaved", {
+                    path: tabs.items.some(
+                      (other) =>
+                        other.kind === "file" &&
+                        other.path !== tab.path &&
+                        basename(other.path) === basename(tab.path),
+                    )
+                      ? tab.path
+                      : basename(tab.path),
+                  })
+                : tabs.items.some(
+                      (other) =>
+                        other.kind === "file" &&
+                        other.path !== tab.path &&
+                        basename(other.path) === basename(tab.path),
+                    )
+                  ? tab.path
+                  : basename(tab.path)
+              : tab.kind === "changes" && tab.selection
+                ? t("{{path}} - Changes", {
+                    path: basename(tab.selection.path),
+                  })
+                : tab.kind === "files"
+                  ? t("Files")
+                  : tab.kind === "changes"
+                    ? t("Changes")
+                    : tab.kind === "terminal"
+                      ? t("Terminal")
+                      : tab.kind === "work-notes"
+                        ? t("Work notes")
+                        : t("Browser"),
       icon:
-        tab.kind === "new"
-          ? Plus
-          : tab.kind === "file"
-            ? FileText
-            : tab.kind === "files"
-              ? Folder
-              : tab.kind === "changes"
-                ? GitDiff
-                : tab.kind === "terminal"
-                  ? TerminalWindow
-                  : tab.kind === "work-notes"
-                    ? Notebook
-                    : Globe,
+        tab.kind === "background"
+          ? tab.target.kind === "process" || tab.target.icon === "terminal"
+            ? TerminalWindow
+            : tab.target.kind === "tool" || tab.target.kind === "tools"
+              ? Wrench
+              : CirclesThree
+          : tab.kind === "new"
+            ? Plus
+            : tab.kind === "file"
+              ? FileText
+              : tab.kind === "files"
+                ? Folder
+                : tab.kind === "changes"
+                  ? GitDiff
+                  : tab.kind === "terminal"
+                    ? TerminalWindow
+                    : tab.kind === "work-notes"
+                      ? Notebook
+                      : Globe,
       tab,
     })),
   ];
@@ -1036,393 +1080,381 @@ export function NativeWorkspace({
     </Button>
   );
   return (
-    <ReturnToChat
-      value={() => {
-        setNativeActive(false);
-        setFocusedArea("page");
-        requestAnimationFrame(() =>
-          document
-            .querySelector<HTMLElement>("[data-composer-editor]")
-            ?.focus(),
-        );
+    <BackgroundScope
+      closeOnOpen={showOneView}
+      threadId={botMode && !bot.data?.thread ? "" : (threadId ?? "")}
+      onOpen={(target) => {
+        setBackgroundAvailable(true);
+        revealTab({ kind: "background", target });
       }}
     >
-      <div
-        className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
+      <ReturnToChat
+        value={() => {
+          setNativeActive(false);
+          setFocusedArea("page");
+          requestAnimationFrame(() =>
+            document
+              .querySelector<HTMLElement>("[data-composer-editor]")
+              ?.focus(),
+          );
+        }}
       >
         <div
-          className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
-          style={{ "--panel-width": `${width}%` } as CSSProperties}
-          data-resizing={resizing || undefined}
-          onPointerMove={(event) => {
-            const start = resizeStart.current;
-            if (start && start.pointerId === event.pointerId && start.available)
-              resizePanel(
-                start.width +
-                  ((start.x - event.clientX) / start.available) * 100,
-                start.available,
-                start.width,
-              );
-          }}
-          onPointerUp={(event) => {
-            if (resizeStart.current?.pointerId !== event.pointerId) return;
-            resizeStart.current = null;
-            setResizing(false);
-          }}
-          onPointerCancel={(event) => {
-            if (resizeStart.current?.pointerId !== event.pointerId) return;
-            resizeStart.current = null;
-            setResizing(false);
-          }}
-          onLostPointerCapture={(event) => {
-            if (resizeStart.current?.pointerId !== event.pointerId) return;
-            resizeStart.current = null;
-            setResizing(false);
-          }}
+          className={`${styles.workarea} ${singleView ? styles.tabLayout : ""}`}
         >
-          <header
-            className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
-          >
-            {navigation}
-            {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
-            <div className={styles.workspaceHeading}>
-              {resolvedProject && (
-                <span
-                  className={styles.projectBreadcrumb}
-                  title={resolvedProject.name}
-                >
-                  <span>{resolvedProject.name}</span>
-                </span>
-              )}
-              <ToolbarTitle className={styles.workspaceTitle} title={title}>
-                {title}
-              </ToolbarTitle>
-            </div>
-            {isWorkspace && threadId && status.data?.features?.browser && (
-              <BrowserActivity
-                key={threadId}
-                threadId={threadId}
-                occupied={
-                  tabLayout ||
-                  (!sidebarCollapsed && (pane !== null || view !== "page"))
-                }
-                visible={
-                  !sidebarCollapsed &&
-                  pane === "browser" &&
-                  (!singleView || nativeActive)
-                }
-                reveal={() => revealTab({ kind: "browser" })}
-                open={() => show("browser")}
-              />
-            )}
-            {profile}
-            {botMode && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("Work notes")}
-                  title={t("Work notes")}
-                  onClick={() => show("work-notes")}
-                >
-                  <Notebook />
-                </Button>
-                <BotActions />
-              </>
-            )}
-            {threadId && !botMode && !unavailableThread && (
-              <Menu>
-                <MenuTrigger
-                  render={<Button variant="ghost" size="icon-sm" />}
-                  aria-label={t("Chat actions")}
-                  title={t("Chat actions")}
-                >
-                  <DotsThree />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                  {(
-                    [
-                      ["rename", "Rename", PencilSimple],
-                      ["details", "Chat details", SlidersHorizontal],
-                      ["share", "Share", ShareNetwork],
-                    ] as const
-                  )
-                    .filter(
-                      ([action]) =>
-                        threadId !== BOT_THREAD_ID || action === "details",
-                    )
-                    .map(([action, label, Icon]) => (
-                      <MenuItem
-                        key={action}
-                        onClick={() => {
-                          const search = new URLSearchParams(location.search);
-                          search.set("dialog", action);
-                          navigate({
-                            pathname: location.pathname,
-                            search: search.toString(),
-                          });
-                        }}
-                      >
-                        <Icon />
-                        {t(label)}
-                      </MenuItem>
-                    ))}
-                </MenuPopup>
-              </Menu>
-            )}
-            {!splitLayout && panelToggle}
-          </header>
-          {isWorkspace && hasSupportingViews && (
-            <nav
-              className={styles.workspaceTabs}
-              aria-label={t("Workbench views")}
-              hidden={sidebarCollapsed}
-            >
-              <div
-                ref={viewTabsElement}
-                className={styles.panelTools}
-                role="tablist"
-                aria-label={t("Workspace views")}
-                aria-busy={projectLoading}
-                data-overflow-left={tabsOverflow.left || undefined}
-                data-overflow-right={tabsOverflow.right || undefined}
-                onKeyDown={(event) => {
-                  const tabs = Array.from(
-                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                      '[role="tab"]',
-                    ),
-                  );
-                  const index = tabs.indexOf(event.target as HTMLButtonElement);
-                  if (index < 0) return;
-                  const next =
-                    event.key === "ArrowRight"
-                      ? (index + 1) % tabs.length
-                      : event.key === "ArrowLeft"
-                        ? (index + tabs.length - 1) % tabs.length
-                        : event.key === "Home"
-                          ? 0
-                          : event.key === "End"
-                            ? tabs.length - 1
-                            : -1;
-                  if (next < 0) return;
-                  event.preventDefault();
-                  tabs[next].click();
-                  tabs[next].focus();
-                }}
-              >
-                {workspaceViews.map(({ key, label, icon: Icon, tab }) => (
-                  <span
-                    className={styles.workspaceTab}
-                    key={key}
-                    data-active={activeView === key || undefined}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      role="tab"
-                      id={`${workspaceId}-${key}-tab`}
-                      aria-controls={`${workspaceId}-${key === "conversation" ? "conversation" : "native"}`}
-                      aria-selected={activeView === key}
-                      disabled={!!tab && projectLoading}
-                      tabIndex={activeView === key ? 0 : -1}
-                      title={tab?.kind === "file" ? tab.path : label}
-                      onClick={() => {
-                        if (tab) activateTab(tab);
-                        else {
-                          cancelOpening();
-                          setNativeActive(false);
-                          setFocusedArea("page");
-                        }
-                      }}
-                    >
-                      <Icon /> <span>{label}</span>
-                    </Button>
-                    {tab && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t("Close tab: {{label}}", { label })}
-                        title={t("Close {{label}}", { label })}
-                        disabled={projectLoading}
-                        onClick={() => closeTab(tab.id)}
-                      >
-                        <X />
-                      </Button>
-                    )}
-                  </span>
-                ))}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t("New tab")}
-                title={t("New tab")}
-                disabled={projectLoading}
-                onClick={addTab}
-              >
-                <Plus />
-              </Button>
-              <div className={styles.workspaceTools}>
-                <DebugOnly>
-                  <EnvironmentMonitor />
-                </DebugOnly>
-                {splitLayout && panelToggle}
-              </div>
-            </nav>
-          )}
           <div
-            className={styles.center}
-            id={`${workspaceId}-conversation`}
-            role={isWorkspace && singleView ? "tabpanel" : undefined}
-            aria-labelledby={
-              isWorkspace && singleView
-                ? `${workspaceId}-conversation-tab`
-                : undefined
-            }
-            hidden={isWorkspace && singleView && nativeActive}
-          >
-            <div
-              ref={pageElement}
-              tabIndex={-1}
-              onFocusCapture={() => setFocusedArea("page")}
-              onPointerDown={() => {
-                cancelOpening();
-                setFocusedArea("page");
-              }}
-              className={`${styles.page} a13n-scrollbar ${isWorkspace ? styles.chatPage : location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
-            >
-              <OpenHostFile
-                value={
-                  status.data?.features?.host_files && !projectLoading
-                    ? (target) => {
-                        void open(target);
-                      }
-                    : undefined
-                }
-              >
-                {children}
-              </OpenHostFile>
-            </div>
-          </div>
-          {isWorkspace && !pane && supportingExpanded && (
-            <section
-              className={`${styles.pane} ${styles.newTabPage}`}
-              id={`${workspaceId}-native`}
-              role="tabpanel"
-              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-            >
-              <div className={styles.newTabChoices}>
-                <h2>{t("Open a new tab")}</h2>
-                <p>{t("Choose what you want to work with.")}</p>
-                {viewChoices.map(({ key, label, description, icon: Icon }) => (
-                  <Button
-                    key={key}
-                    variant="ghost"
-                    aria-label={label}
-                    disabled={projectLoading}
-                    onClick={() => show(key)}
-                  >
-                    <Icon />
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{description}</small>
-                    </span>
-                    <CaretRight />
-                  </Button>
-                ))}
-              </div>
-            </section>
-          )}
-          {splitLayout && (
-            <div
-              className={styles.resizeHandle}
-              role="separator"
-              aria-label={t("Resize supporting panel")}
-              aria-orientation="vertical"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={width}
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                  event.preventDefault();
-                  resizePanel(
-                    width + (event.key === "ArrowLeft" ? 4 : -4),
-                    event.currentTarget.parentElement!.clientWidth,
-                    width,
-                  );
-                }
-              }}
-              onPointerDown={(event) => {
-                if (event.button !== 0 || resizeStart.current) return;
-                event.preventDefault();
-                // The separator unmounts when snapping; the layout owns the
-                // capture until release so the same gesture can reverse it.
-                event.currentTarget.parentElement!.setPointerCapture(
-                  event.pointerId,
+            className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
+            style={{ "--panel-width": `${width}%` } as CSSProperties}
+            data-resizing={resizing || undefined}
+            onPointerMove={(event) => {
+              const start = resizeStart.current;
+              if (
+                start &&
+                start.pointerId === event.pointerId &&
+                start.available
+              )
+                resizePanel(
+                  start.width +
+                    ((start.x - event.clientX) / start.available) * 100,
+                  start.available,
+                  start.width,
                 );
-                resizeStart.current = {
-                  pointerId: event.pointerId,
-                  x: event.clientX,
-                  width,
-                  available: event.currentTarget.parentElement!.clientWidth,
-                  kind: "resize",
-                };
-                setResizing(true);
-              }}
-            />
-          )}
-          {isWorkspace && pane === "work-notes" && (
-            <aside
-              id={`${workspaceId}-native`}
-              role="tabpanel"
-              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={!supportingExpanded}
-              style={{ "--panel-width": `${width}%` } as CSSProperties}
-              ref={paneElement}
-              tabIndex={-1}
-              className={styles.pane}
-              aria-label={t("Work notes")}
+            }}
+            onPointerUp={(event) => {
+              if (resizeStart.current?.pointerId !== event.pointerId) return;
+              resizeStart.current = null;
+              setResizing(false);
+            }}
+            onPointerCancel={(event) => {
+              if (resizeStart.current?.pointerId !== event.pointerId) return;
+              resizeStart.current = null;
+              setResizing(false);
+            }}
+            onLostPointerCapture={(event) => {
+              if (resizeStart.current?.pointerId !== event.pointerId) return;
+              resizeStart.current = null;
+              setResizing(false);
+            }}
+          >
+            <header
+              className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
             >
-              {supportingExpanded && <BotWorkNotes />}
-            </aside>
-          )}
-          {isWorkspace && pane === "browser" && (
-            <aside
-              id={`${workspaceId}-native`}
-              role="tabpanel"
-              aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
-              hidden={!supportingExpanded}
-              style={{ "--panel-width": `${width}%` } as CSSProperties}
-              ref={paneElement}
-              tabIndex={-1}
-              className={styles.pane}
-              aria-label={t("Browser panel")}
-              data-native-find=""
-            >
-              {nativeFeedback}
-              {opening && (
-                <span role="status" className={styles.directoryLoading}>
-                  {t("Opening…")}
-                </span>
+              {navigation}
+              {thread.data?.thread.role === "coordinator" && (
+                <CoordinatorMark />
               )}
-              {supportingExpanded && (
-                <BrowserPanel
-                  key={threadId ?? "new"}
+              <div className={styles.workspaceHeading}>
+                {resolvedProject && (
+                  <span
+                    className={styles.projectBreadcrumb}
+                    title={resolvedProject.name}
+                  >
+                    <span>{resolvedProject.name}</span>
+                  </span>
+                )}
+                <ToolbarTitle className={styles.workspaceTitle} title={title}>
+                  {title}
+                </ToolbarTitle>
+              </div>
+              {isWorkspace && threadId && status.data?.features?.browser && (
+                <BrowserActivity
+                  key={threadId}
                   threadId={threadId}
-                  fullControl={
-                    thread.data?.thread.configuration
-                      ?.environment_profile_id === "environment-native"
+                  occupied={
+                    tabLayout ||
+                    (!sidebarCollapsed && (pane !== null || view !== "page"))
                   }
+                  visible={
+                    !sidebarCollapsed &&
+                    pane === "browser" &&
+                    (!singleView || nativeActive)
+                  }
+                  reveal={() => revealTab({ kind: "browser" })}
+                  open={() => show("browser")}
                 />
               )}
-            </aside>
-          )}
-          {isWorkspace &&
-            pane &&
-            pane !== "browser" &&
-            pane !== "terminal" &&
-            pane !== "work-notes" && (
+              {isWorkspace && threadId && (
+                <>
+                  <ShareButton />
+                  <BackgroundToggle />
+                </>
+              )}
+              {profile}
+              {botMode && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t("Work notes")}
+                    title={t("Work notes")}
+                    onClick={() => show("work-notes")}
+                  >
+                    <Notebook />
+                  </Button>
+                  <BotActions />
+                </>
+              )}
+              {threadId && !botMode && !unavailableThread && (
+                <Menu>
+                  <MenuTrigger
+                    render={<Button variant="ghost" size="icon-sm" />}
+                    aria-label={t("Chat actions")}
+                    title={t("Chat actions")}
+                  >
+                    <DotsThree />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {(
+                      [
+                        ["rename", "Rename", PencilSimple],
+                        ["details", "Chat details", SlidersHorizontal],
+                        ["share", "Share", ShareNetwork],
+                      ] as const
+                    )
+                      .filter(
+                        ([action]) =>
+                          threadId !== BOT_THREAD_ID || action === "details",
+                      )
+                      .map(([action, label, Icon]) => (
+                        <MenuItem
+                          key={action}
+                          onClick={() => {
+                            const search = new URLSearchParams(location.search);
+                            search.set("dialog", action);
+                            navigate({
+                              pathname: location.pathname,
+                              search: search.toString(),
+                            });
+                          }}
+                        >
+                          <Icon />
+                          {t(label)}
+                        </MenuItem>
+                      ))}
+                  </MenuPopup>
+                </Menu>
+              )}
+              {!splitLayout && panelToggle}
+            </header>
+            {isWorkspace && threadId && (
+              <div
+                className={styles.backgroundOverlay}
+                style={{ right: splitLayout ? `${width}%` : 0 }}
+              >
+                <BackgroundCard key={threadId} />
+              </div>
+            )}
+            {isWorkspace && hasSupportingViews && (
+              <nav
+                className={styles.workspaceTabs}
+                aria-label={t("Workbench views")}
+                hidden={sidebarCollapsed}
+              >
+                <div
+                  ref={viewTabsElement}
+                  className={styles.panelTools}
+                  role="tablist"
+                  aria-label={t("Workspace views")}
+                  aria-busy={projectLoading}
+                  data-overflow-left={tabsOverflow.left || undefined}
+                  data-overflow-right={tabsOverflow.right || undefined}
+                  onKeyDown={(event) => {
+                    const tabs = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        '[role="tab"]',
+                      ),
+                    );
+                    const index = tabs.indexOf(
+                      event.target as HTMLButtonElement,
+                    );
+                    if (index < 0) return;
+                    const next =
+                      event.key === "ArrowRight"
+                        ? (index + 1) % tabs.length
+                        : event.key === "ArrowLeft"
+                          ? (index + tabs.length - 1) % tabs.length
+                          : event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? tabs.length - 1
+                              : -1;
+                    if (next < 0) return;
+                    event.preventDefault();
+                    tabs[next].click();
+                    tabs[next].focus();
+                  }}
+                >
+                  {workspaceViews.map(({ key, label, icon: Icon, tab }) => (
+                    <span
+                      className={styles.workspaceTab}
+                      key={key}
+                      data-active={activeView === key || undefined}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        role="tab"
+                        id={`${workspaceId}-${key}-tab`}
+                        aria-controls={`${workspaceId}-${key === "conversation" ? "conversation" : "native"}`}
+                        aria-selected={activeView === key}
+                        disabled={!!tab && projectLoading}
+                        tabIndex={activeView === key ? 0 : -1}
+                        title={tab?.kind === "file" ? tab.path : label}
+                        onClick={() => {
+                          if (tab) activateTab(tab);
+                          else {
+                            cancelOpening();
+                            setNativeActive(false);
+                            setFocusedArea("page");
+                          }
+                        }}
+                      >
+                        {tab?.kind === "background" &&
+                        tab.target.kind === "child" ? (
+                          <SubagentGlyph id={tab.target.id} />
+                        ) : (
+                          <Icon />
+                        )}{" "}
+                        <span>{label}</span>
+                      </Button>
+                      {tab && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("Close tab: {{label}}", { label })}
+                          title={t("Close {{label}}", { label })}
+                          disabled={projectLoading}
+                          onClick={() => closeTab(tab.id)}
+                        >
+                          <X />
+                        </Button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t("New tab")}
+                  title={t("New tab")}
+                  disabled={projectLoading}
+                  onClick={addTab}
+                >
+                  <Plus />
+                </Button>
+                <div className={styles.workspaceTools}>
+                  <DebugOnly>
+                    <EnvironmentMonitor />
+                  </DebugOnly>
+                  {splitLayout && panelToggle}
+                </div>
+              </nav>
+            )}
+            <div
+              className={styles.center}
+              id={`${workspaceId}-conversation`}
+              role={isWorkspace && singleView ? "tabpanel" : undefined}
+              aria-labelledby={
+                isWorkspace && singleView
+                  ? `${workspaceId}-conversation-tab`
+                  : undefined
+              }
+              hidden={isWorkspace && singleView && nativeActive}
+            >
+              <div
+                ref={pageElement}
+                tabIndex={-1}
+                onFocusCapture={() => setFocusedArea("page")}
+                onPointerDown={() => {
+                  cancelOpening();
+                  setFocusedArea("page");
+                }}
+                className={`${styles.page} a13n-scrollbar ${isWorkspace ? styles.chatPage : location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
+              >
+                <OpenHostFile
+                  value={
+                    status.data?.features?.host_files && !projectLoading
+                      ? (target) => {
+                          void open(target);
+                        }
+                      : undefined
+                  }
+                >
+                  {children}
+                </OpenHostFile>
+              </div>
+            </div>
+            {isWorkspace && !pane && supportingExpanded && (
+              <section
+                className={`${styles.pane} ${styles.newTabPage}`}
+                id={`${workspaceId}-native`}
+                role="tabpanel"
+                aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+              >
+                <div className={styles.newTabChoices}>
+                  <h2>{t("Open a new tab")}</h2>
+                  <p>{t("Choose what you want to work with.")}</p>
+                  {viewChoices.map(
+                    ({ key, label, description, icon: Icon }) => (
+                      <Button
+                        key={key}
+                        variant="ghost"
+                        aria-label={label}
+                        disabled={projectLoading}
+                        onClick={() => show(key)}
+                      >
+                        <Icon />
+                        <span>
+                          <strong>{label}</strong>
+                          <small>{description}</small>
+                        </span>
+                        <CaretRight />
+                      </Button>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
+            {splitLayout && (
+              <div
+                className={styles.resizeHandle}
+                role="separator"
+                aria-label={t("Resize supporting panel")}
+                aria-orientation="vertical"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={width}
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                    event.preventDefault();
+                    resizePanel(
+                      width + (event.key === "ArrowLeft" ? 4 : -4),
+                      event.currentTarget.parentElement!.clientWidth,
+                      width,
+                    );
+                  }
+                }}
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || resizeStart.current) return;
+                  event.preventDefault();
+                  // The separator unmounts when snapping; the layout owns the
+                  // capture until release so the same gesture can reverse it.
+                  event.currentTarget.parentElement!.setPointerCapture(
+                    event.pointerId,
+                  );
+                  resizeStart.current = {
+                    pointerId: event.pointerId,
+                    x: event.clientX,
+                    width,
+                    available: event.currentTarget.parentElement!.clientWidth,
+                    kind: "resize",
+                  };
+                  setResizing(true);
+                }}
+              />
+            )}
+            {isWorkspace && pane === "work-notes" && (
               <aside
                 id={`${workspaceId}-native`}
                 role="tabpanel"
@@ -1431,295 +1463,374 @@ export function NativeWorkspace({
                 style={{ "--panel-width": `${width}%` } as CSSProperties}
                 ref={paneElement}
                 tabIndex={-1}
-                onFocusCapture={() =>
-                  setFocusedArea(view === "page" ? "explorer" : "native")
-                }
-                onPointerDown={() =>
-                  setFocusedArea(view === "page" ? "explorer" : "native")
-                }
-                className={`${styles.pane} a13n-scrollbar`}
-                aria-label={t("File explorer")}
+                className={styles.pane}
+                aria-label={t("Work notes")}
+              >
+                {supportingExpanded && <BotWorkNotes />}
+              </aside>
+            )}
+            {isWorkspace && pane === "browser" && (
+              <aside
+                id={`${workspaceId}-native`}
+                role="tabpanel"
+                aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+                hidden={!supportingExpanded}
+                style={{ "--panel-width": `${width}%` } as CSSProperties}
+                ref={paneElement}
+                tabIndex={-1}
+                className={styles.pane}
+                aria-label={t("Browser panel")}
                 data-native-find=""
               >
-                <header className={styles.paneHeader}>
-                  {view === "page" && folderBreadcrumbs ? (
-                    folderBreadcrumbs
-                  ) : (
-                    <div className={styles.panelTools}>
-                      {view !== "page" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title={pane === "files" ? directory : root}
-                          onClick={() => {
-                            if (pane === "files") {
-                              const position = (activeTab.kind === "file" &&
-                                activeTab.position) || { directory, path };
-                              navigateTab({
-                                kind: "files",
-                                directory: position.directory,
-                                root,
-                                position,
-                              });
-                            } else {
-                              cancelOpening();
-                              select(null);
-                              setView("page");
-                              setFocusedArea("explorer");
-                            }
-                          }}
-                        >
-                          <ArrowLeft />
-                          {pane === "files"
-                            ? t("Back to files")
-                            : t("Back to changes")}
-                        </Button>
-                      ) : (
-                        <strong>
-                          {pane === "files" ? t("Files") : t("Changes")}
-                        </strong>
-                      )}
-                    </div>
-                  )}
-                  <div
-                    className={
-                      view === "file"
-                        ? styles.fileHeaderActions
-                        : styles.actions
-                    }
-                  >
-                    {view === "file" && <div ref={setFileActionsHost} />}
-                    <ViewLink
-                      getLink={() => {
-                        const target = nativeTarget();
-                        return target
-                          ? new URL(
-                              pageLink({ target, root_thread_id: threadId })!,
-                              window.location.origin,
-                            ).href
-                          : undefined;
-                      }}
-                    />
-                    {view !== "file" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t("Refresh files and changes")}
-                        onClick={refresh}
-                      >
-                        <ArrowClockwise />
-                      </Button>
-                    )}
-                  </div>
-                </header>
                 {nativeFeedback}
                 {opening && (
                   <span role="status" className={styles.directoryLoading}>
                     {t("Opening…")}
                   </span>
                 )}
-                {!projectLoading &&
-                  directory &&
-                  ((view !== "page" && folderBreadcrumbs) ||
-                    (localRoots.length > 1 &&
-                      view === "page" &&
-                      pane === "changes")) && (
-                    <div className={styles.location}>
-                      {pane === "changes" && localRoots.length > 1 && (
-                        <nav
-                          className={styles.projectFolders}
-                          aria-label={t("Working folders")}
-                        >
-                          {localRoots.map((folder) => (
-                            <Button
-                              key={folder}
-                              size="sm"
-                              variant="ghost"
-                              title={folder}
-                              aria-pressed={root === folder}
-                              onClick={() => {
-                                navigateTab(
-                                  pane === "changes"
-                                    ? {
-                                        kind: "changes",
-                                        root: folder,
-                                        selection: null,
-                                        choices: [],
-                                      }
-                                    : {
-                                        kind: "files",
-                                        directory: folder,
-                                        root: folder,
-                                      },
-                                );
-                              }}
-                            >
-                              <Folder />
-                              {basename(folder)}
-                            </Button>
-                          ))}
-                        </nav>
-                      )}
-                      {view !== "page" && folderBreadcrumbs}
-                    </div>
-                  )}
-                {view !== "page" && (
-                  <div
-                    ref={editorElement}
-                    tabIndex={-1}
-                    className={`${styles.editorPage} a13n-scrollbar`}
-                    onFocusCapture={() => setFocusedArea("native")}
-                    onPointerDown={() => setFocusedArea("native")}
-                  >
-                    {view === "file" && path && (
-                      <OpenHostFile value={(target) => void open(target)}>
-                        <FileView
-                          toolbarHost={fileActionsHost}
-                          key={path}
-                          path={path}
-                          line={fileLine}
-                          threadId={threadId}
-                          open={(target) => void open(target)}
-                        />
-                      </OpenHostFile>
-                    )}
-                    {view === "diff" && selected && (
-                      <DiffView
-                        key={`${selected.repository_path}:${selected.path}:${selected.comparison}`}
-                        selection={selected}
-                        choices={diffChoices}
-                        navigate={select}
-                        threadId={threadId}
-                        openFile={(target, line) => void open(target, line)}
-                      />
-                    )}
-                  </div>
-                )}
-
-                {projectLoading ? (
-                  <p className={styles.empty} role="status">
-                    {t("Loading project…")}
-                  </p>
-                ) : !(pane === "files" ? directory : root) ? (
-                  <p className={styles.empty}>
-                    {project
-                      ? t("This project has no folders configured.")
-                      : t(
-                          "Open a chat in a project to see its files and changes.",
-                        )}
-                  </p>
-                ) : !status.data?.features?.host_files ? (
-                  <div className={styles.empty}>
-                    <h3>{t("Computer sharing is off")}</h3>
-                    <p>
-                      {t(
-                        "Computer sharing is off on the server. Chats still work. Turn it on in server settings to access files and terminals.",
-                      )}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      hidden={view !== "page"}
-                      data-pane={pane}
-                      className={`${styles.paneBody} a13n-scrollbar`}
-                    >
-                      {pane === "files" ? (
-                        <Files
-                          key={JSON.stringify([tabs.active, directory, view])}
-                          position={
-                            activeTab.kind === "files"
-                              ? activeTab.position
-                              : undefined
-                          }
-                          fileManager={status.data?.features?.file_manager}
-                          directory={directory}
-                          roots={localRoots}
-                          path={path}
-                          open={(target, kind, position) =>
-                            void open(
-                              target,
-                              undefined,
-                              kind === "file",
-                              position,
-                            )
-                          }
-                          refresh={refresh}
-                          openTerminal={
-                            status.data?.features?.host_terminal && projectId
-                              ? openTerminal
-                              : undefined
-                          }
-                        />
-                      ) : (
-                        <Changes
-                          path={root}
-                          selected={selected}
-                          onChoices={setDiffChoices}
-                          select={(next, choices) => {
-                            cancelOpening();
-                            select(next, choices ?? diffChoices);
-                            if (next) {
-                              setView("diff");
-                              setFocusedArea("native");
-                            }
-                          }}
-                          openFile={(target) => void open(target)}
-                        />
-                      )}
-                    </div>
-                  </>
+                {supportingExpanded && (
+                  <BrowserPanel
+                    key={threadId ?? "new"}
+                    threadId={threadId}
+                    fullControl={
+                      thread.data?.thread.configuration
+                        ?.environment_profile_id === "environment-native"
+                    }
+                  />
                 )}
               </aside>
             )}
-          {terminalOpened && status.data?.features?.host_terminal && (
-            <aside
-              className={`${styles.pane} ${styles.terminalPane}`}
-              ref={pane === "terminal" ? paneElement : undefined}
-              tabIndex={-1}
-              id={pane === "terminal" ? `${workspaceId}-native` : undefined}
-              role="tabpanel"
-              aria-labelledby={
-                pane === "terminal"
-                  ? `${workspaceId}-${tabs.active}-tab`
-                  : undefined
-              }
-              aria-label={t("Terminal")}
-              data-native-find=""
-              hidden={!terminalVisible}
-              onFocusCapture={() => setFocusedArea("terminal")}
-              onPointerDown={() => setFocusedArea("terminal")}
-            >
-              {pane === "terminal" && (
-                <>
+            {isWorkspace &&
+              pane === "background" &&
+              activeTab.kind === "background" && (
+                <aside
+                  id={`${workspaceId}-native`}
+                  role="tabpanel"
+                  aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+                  hidden={!supportingExpanded}
+                  style={{ "--panel-width": `${width}%` } as CSSProperties}
+                  className={styles.pane}
+                >
+                  {supportingExpanded && (
+                    <BackgroundScope
+                      observe
+                      threadId={activeTab.target.threadId}
+                      onOpen={(target) =>
+                        revealTab({ kind: "background", target })
+                      }
+                    >
+                      <BackgroundPanel
+                        key={activeTab.id}
+                        target={activeTab.target}
+                      />
+                    </BackgroundScope>
+                  )}
+                </aside>
+              )}
+            {isWorkspace &&
+              pane &&
+              pane !== "background" &&
+              pane !== "browser" &&
+              pane !== "terminal" &&
+              pane !== "work-notes" && (
+                <aside
+                  id={`${workspaceId}-native`}
+                  role="tabpanel"
+                  aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
+                  hidden={!supportingExpanded}
+                  style={{ "--panel-width": `${width}%` } as CSSProperties}
+                  ref={paneElement}
+                  tabIndex={-1}
+                  onFocusCapture={() =>
+                    setFocusedArea(view === "page" ? "explorer" : "native")
+                  }
+                  onPointerDown={() =>
+                    setFocusedArea(view === "page" ? "explorer" : "native")
+                  }
+                  className={`${styles.pane} a13n-scrollbar`}
+                  aria-label={t("File explorer")}
+                  data-native-find=""
+                >
+                  <header className={styles.paneHeader}>
+                    {view === "page" && folderBreadcrumbs ? (
+                      folderBreadcrumbs
+                    ) : (
+                      <div className={styles.panelTools}>
+                        {view !== "page" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title={pane === "files" ? directory : root}
+                            onClick={() => {
+                              if (pane === "files") {
+                                const position = (activeTab.kind === "file" &&
+                                  activeTab.position) || { directory, path };
+                                navigateTab({
+                                  kind: "files",
+                                  directory: position.directory,
+                                  root,
+                                  position,
+                                });
+                              } else {
+                                cancelOpening();
+                                select(null);
+                                setView("page");
+                                setFocusedArea("explorer");
+                              }
+                            }}
+                          >
+                            <ArrowLeft />
+                            {pane === "files"
+                              ? t("Back to files")
+                              : t("Back to changes")}
+                          </Button>
+                        ) : (
+                          <strong>
+                            {pane === "files" ? t("Files") : t("Changes")}
+                          </strong>
+                        )}
+                      </div>
+                    )}
+                    <div
+                      className={
+                        view === "file"
+                          ? styles.fileHeaderActions
+                          : styles.actions
+                      }
+                    >
+                      {view === "file" && <div ref={setFileActionsHost} />}
+                      <ViewLink
+                        getLink={() => {
+                          const target = nativeTarget();
+                          return target
+                            ? new URL(
+                                pageLink({ target, root_thread_id: threadId })!,
+                                window.location.origin,
+                              ).href
+                            : undefined;
+                        }}
+                      />
+                      {view !== "file" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("Refresh files and changes")}
+                          onClick={refresh}
+                        >
+                          <ArrowClockwise />
+                        </Button>
+                      )}
+                    </div>
+                  </header>
                   {nativeFeedback}
                   {opening && (
                     <span role="status" className={styles.directoryLoading}>
                       {t("Opening…")}
                     </span>
                   )}
-                </>
+                  {!projectLoading &&
+                    directory &&
+                    ((view !== "page" && folderBreadcrumbs) ||
+                      (localRoots.length > 1 &&
+                        view === "page" &&
+                        pane === "changes")) && (
+                      <div className={styles.location}>
+                        {pane === "changes" && localRoots.length > 1 && (
+                          <nav
+                            className={styles.projectFolders}
+                            aria-label={t("Working folders")}
+                          >
+                            {localRoots.map((folder) => (
+                              <Button
+                                key={folder}
+                                size="sm"
+                                variant="ghost"
+                                title={folder}
+                                aria-pressed={root === folder}
+                                onClick={() => {
+                                  navigateTab(
+                                    pane === "changes"
+                                      ? {
+                                          kind: "changes",
+                                          root: folder,
+                                          selection: null,
+                                          choices: [],
+                                        }
+                                      : {
+                                          kind: "files",
+                                          directory: folder,
+                                          root: folder,
+                                        },
+                                  );
+                                }}
+                              >
+                                <Folder />
+                                {basename(folder)}
+                              </Button>
+                            ))}
+                          </nav>
+                        )}
+                        {view !== "page" && folderBreadcrumbs}
+                      </div>
+                    )}
+                  {view !== "page" && (
+                    <div
+                      ref={editorElement}
+                      tabIndex={-1}
+                      className={`${styles.editorPage} a13n-scrollbar`}
+                      onFocusCapture={() => setFocusedArea("native")}
+                      onPointerDown={() => setFocusedArea("native")}
+                    >
+                      {view === "file" && path && (
+                        <OpenHostFile value={(target) => void open(target)}>
+                          <FileView
+                            toolbarHost={fileActionsHost}
+                            key={path}
+                            path={path}
+                            line={fileLine}
+                            threadId={threadId}
+                            open={(target) => void open(target)}
+                          />
+                        </OpenHostFile>
+                      )}
+                      {view === "diff" && selected && (
+                        <DiffView
+                          key={`${selected.repository_path}:${selected.path}:${selected.comparison}`}
+                          selection={selected}
+                          choices={diffChoices}
+                          navigate={select}
+                          threadId={threadId}
+                          openFile={(target, line) => void open(target, line)}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {projectLoading ? (
+                    <p className={styles.empty} role="status">
+                      {t("Loading project…")}
+                    </p>
+                  ) : !(pane === "files" ? directory : root) ? (
+                    <p className={styles.empty}>
+                      {project
+                        ? t("This project has no folders configured.")
+                        : t(
+                            "Open a chat in a project to see its files and changes.",
+                          )}
+                    </p>
+                  ) : !status.data?.features?.host_files ? (
+                    <div className={styles.empty}>
+                      <h3>{t("Computer sharing is off")}</h3>
+                      <p>
+                        {t(
+                          "Computer sharing is off on the server. Chats still work. Turn it on in server settings to access files and terminals.",
+                        )}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        hidden={view !== "page"}
+                        data-pane={pane}
+                        className={`${styles.paneBody} a13n-scrollbar`}
+                      >
+                        {pane === "files" ? (
+                          <Files
+                            key={JSON.stringify([tabs.active, directory, view])}
+                            position={
+                              activeTab.kind === "files"
+                                ? activeTab.position
+                                : undefined
+                            }
+                            fileManager={status.data?.features?.file_manager}
+                            directory={directory}
+                            roots={localRoots}
+                            path={path}
+                            open={(target, kind, position) =>
+                              void open(
+                                target,
+                                undefined,
+                                kind === "file",
+                                position,
+                              )
+                            }
+                            refresh={refresh}
+                            openTerminal={
+                              status.data?.features?.host_terminal && projectId
+                                ? openTerminal
+                                : undefined
+                            }
+                          />
+                        ) : (
+                          <Changes
+                            path={root}
+                            selected={selected}
+                            onChoices={setDiffChoices}
+                            select={(next, choices) => {
+                              cancelOpening();
+                              select(next, choices ?? diffChoices);
+                              if (next) {
+                                setView("diff");
+                                setFocusedArea("native");
+                              }
+                            }}
+                            openFile={(target) => void open(target)}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </aside>
               )}
-              <TerminalPanel
-                visible={terminalVisible}
-                directory={localRoots.includes(root) ? root : projectRoot}
-                projectId={project?.project_id ?? ""}
-                projectName={project?.name}
-                request={terminalRequest}
-                threadId={threadId}
-                openFile={(target, line) => void open(target, line)}
-                selected={terminalId}
-                onActive={setActiveTerminalId}
-                select={(id) => {
-                  setTerminalId(id);
-                  setFocusedArea(id ? "terminal" : "page");
-                }}
-                unauthorized={unauthorized}
-              />
-            </aside>
-          )}
+            {terminalOpened && status.data?.features?.host_terminal && (
+              <aside
+                className={`${styles.pane} ${styles.terminalPane}`}
+                ref={pane === "terminal" ? paneElement : undefined}
+                tabIndex={-1}
+                id={pane === "terminal" ? `${workspaceId}-native` : undefined}
+                role="tabpanel"
+                aria-labelledby={
+                  pane === "terminal"
+                    ? `${workspaceId}-${tabs.active}-tab`
+                    : undefined
+                }
+                aria-label={t("Terminal")}
+                data-native-find=""
+                hidden={!terminalVisible}
+                onFocusCapture={() => setFocusedArea("terminal")}
+                onPointerDown={() => setFocusedArea("terminal")}
+              >
+                {pane === "terminal" && (
+                  <>
+                    {nativeFeedback}
+                    {opening && (
+                      <span role="status" className={styles.directoryLoading}>
+                        {t("Opening…")}
+                      </span>
+                    )}
+                  </>
+                )}
+                <TerminalPanel
+                  visible={terminalVisible}
+                  directory={localRoots.includes(root) ? root : projectRoot}
+                  projectId={project?.project_id ?? ""}
+                  projectName={project?.name}
+                  request={terminalRequest}
+                  threadId={threadId}
+                  openFile={(target, line) => void open(target, line)}
+                  selected={terminalId}
+                  onActive={setActiveTerminalId}
+                  select={(id) => {
+                    setTerminalId(id);
+                    setFocusedArea(id ? "terminal" : "page");
+                  }}
+                  unauthorized={unauthorized}
+                />
+              </aside>
+            )}
+          </div>
         </div>
-      </div>
-    </ReturnToChat>
+      </ReturnToChat>
+    </BackgroundScope>
   );
 }

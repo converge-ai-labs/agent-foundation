@@ -42,7 +42,11 @@ _NOTIFICATION_SOURCE_METADATA_KEY = "a13n.steering-source"
 _NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
 _NOTIFICATION_REFERENCES_METADATA_KEY = "a13n.notification-references"
 
-type SteeringInputSource = Literal["external", "async_subagent", "background_process", "envd_session"]
+type NotificationSource = Literal[
+    "async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"
+]
+
+type SteeringInputSource = Literal["external"] | NotificationSource
 
 
 class _SteeringState(BaseModel):
@@ -205,7 +209,7 @@ class SteeringBridge:
         self,
         message: str,
         *,
-        source: Literal["async_subagent", "background_process", "envd_session"],
+        source: NotificationSource,
         references: Sequence[str],
     ) -> str | None:
         """Best-effort enqueue one Harness lifecycle notice when this Run is active."""
@@ -243,7 +247,7 @@ class SteeringBridge:
     async def discard_notifications(
         self,
         *,
-        source: Literal["async_subagent", "background_process", "envd_session"],
+        source: NotificationSource,
         references: Sequence[str],
     ) -> None:
         """Withdraw matching lifecycle hints that have not entered native history."""

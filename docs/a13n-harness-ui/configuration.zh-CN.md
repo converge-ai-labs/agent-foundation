@@ -136,15 +136,18 @@ subagents:
 
 ### 内置工具与 subagent
 
-| 根字段                                    | 默认值      | 用途                                                  |
-| ----------------------------------------- | ----------- | ----------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                      |
-| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`               |
-| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数          |
-| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接    |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                          |
-| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界           |
-| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer` |
+| 根字段                                    | 默认值      | 用途                                                       |
+| ----------------------------------------- | ----------- | ---------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                           |
+| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`                    |
+| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数               |
+| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接         |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                               |
+| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界                |
+| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer`      |
+| `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用 |
+| `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`           |
+| `subagents.dynamic.allowed_models`        | `[]`        | 显式创建时可选的已配置 Model ID，不能重复                  |
 
 常规设置包含全部三个内置子级。高级设置提供全部或不选；编辑列表可选择子集。定义由包维护，不会复制 Markdown 文件。用 `a13n-harness-ui config subagents` 检查包含情况。见[子级继承和冲突](agents-and-subagents.md#built-in-subagents)。
 
@@ -343,6 +346,10 @@ webui:
 **设置 → 常规 → Bot** 为内置个人助手选择 Agent、Model，并按需添加自定义指令。`webui.bot.agent` 默认为 `null`，沿用全局默认 Agent。Bot 继承该 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用所选 Agent 的 Model，也可显式覆盖。`webui.bot` 下独立的 `files_enabled`、`shell_enabled`、`computer_enabled` 默认为 `null`（跟随 Agent）；显式 `true` 或 `false` 可覆盖 Bot 对应的访问开关，工具白名单和 Environment 限制仍然生效。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
 
 `webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。首次开启且 Model 可用时，服务器通过正常模型请求代发一条可见的预设用户消息，介绍工作区；已有活动或引导尝试会阻止重复发送。打开页面不会启动工作。开启后还会独立安排一个间隔后的首次 Heartbeat。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
+
+### WebUI 子智能体
+
+在 **Settings → General → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
 
 ### WebUI Sidekick
 

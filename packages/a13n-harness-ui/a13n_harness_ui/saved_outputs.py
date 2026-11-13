@@ -56,11 +56,16 @@ class SavedOutputs:
         if not 1 <= limit <= 20:
             raise ThreadError("Child output page is outside supported bounds.", code="saved_output_output_page_invalid")
         head = await self._store.child_executions.get(execution_id)
-        if head is None or head.parent_thread_id != parent_thread_id or head.selected_checkpoint is None:
+        if (
+            head is None
+            or head.parent_thread_id != parent_thread_id
+            or head.selected_checkpoint is None
+            or head.status == "running"
+        ):
             raise ThreadError(
                 "Saved child output is unavailable in this parent scope.", code="saved_output_source_unavailable"
             )
-        checkpoint = await self._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
+        checkpoint = await self._store.read_child_checkpoint(head)
         if checkpoint.execution_id != execution_id or checkpoint.child_thread_id != head.child_thread_id:
             raise ThreadError("Saved child output identity is invalid.", code="saved_output_source_unavailable")
         position = 0
@@ -143,6 +148,10 @@ class SavedOutputs:
                 thread = await self._store.threads.get(thread.parent_thread_id)
             if thread is None or thread.thread_id != root_thread_id:
                 raise ThreadError("Child output belongs to another Thread family.", code="saved_output_target_invalid")
+            if head.status == "running":
+                raise ThreadError(
+                    "Saved child output requires a terminal execution.", code="saved_output_source_unavailable"
+                )
             source = head.selected_checkpoint
         if source is None or source.logical_digest != target.source_id:
             raise StoreConflictError(

@@ -212,6 +212,17 @@ class ToolExecutionRepository:
             payload = await self.objects.read_model(reference, ExecutionPayload)
             return replace(payload.result.execution(record), shell=payload.shell)
 
+    async def output_expired(self, thread_id: str, execution_id: str) -> bool:
+        """Report the existing retention boundary without consuming or extending it."""
+        async with short_session(self.sessions) as session:
+            row = await session.get(ToolExecutionHeadRecord, execution_id)
+            return bool(
+                row is not None
+                and row.thread_id == thread_id
+                and row.expires_at is not None
+                and row.expires_at <= datetime.now(UTC)
+            )
+
     async def prune(self, *, limit: int = 100) -> int:
         """Collect payloads and expired heads through the existing bounded maintenance sweep."""
         async with transaction(self.sessions) as session:

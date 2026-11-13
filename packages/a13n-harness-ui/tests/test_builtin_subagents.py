@@ -387,6 +387,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         configuration_path=path,
         host_mode="webui" if inject_apps else "local",
     ) as app:
+        # The exact usage counts cover explicit waits; an automatic result copy
+        # may also arrive after wait_subagent, depending on timing.
+        app._tool_executions.deliver_subagent = None
         selected_root = tmp_path / "run-only"
         selected_root.mkdir()
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))

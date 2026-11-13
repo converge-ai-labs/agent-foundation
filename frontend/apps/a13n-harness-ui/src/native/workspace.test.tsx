@@ -26,7 +26,12 @@ import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
 
 const live = vi.hoisted(() => ({
-  display: { browserActivityRunId: undefined as string | undefined },
+  display: {
+    browserActivityRunId: undefined as string | undefined,
+    blocks: new Map(),
+    children: new Map(),
+    processes: { background: [] },
+  },
   listeners: new Set<() => void>(),
 }));
 vi.mock("../conversations/live-threads", () => ({
@@ -194,72 +199,86 @@ function setup(
         params?: { path?: { thread_id?: string }; query?: { path?: string } };
       },
     ) =>
-      url === "/api/host/files/metadata" && metadata
-        ? metadata
-        : {
-            data:
-              url === "/api/status"
-                ? {
-                    features: {
-                      host_files: sharing,
-                      host_git: sharing,
-                      host_terminal: sharing,
-                      browser: sharing,
-                    },
-                  }
-                : url === "/api/projects"
-                  ? [
-                      {
-                        project_id: "project-unrelated",
-                        name: "Unrelated",
-                        roots: ["/unrelated"],
-                      },
-                      {
-                        project_id: "project-one",
-                        name: "Current project",
-                        roots: initial.startsWith("/threads/")
-                          ? ["/changed-project-root"]
-                          : currentRoots,
-                      },
-                      {
-                        project_id: "project-two",
-                        name: "Other project",
-                        roots: ["/other"],
-                      },
-                    ]
-                  : url === "/api/bot"
-                    ? {
-                        available: true,
-                        state: { activated: false, paused: false },
-                        messages: [],
-                        inputs: [],
-                      }
-                    : url === "/api/threads/{thread_id}"
+      url.endsWith("/children")
+        ? { data: { executions: [], total: 0 } }
+        : url.endsWith("/tool-executions")
+          ? { data: [] }
+          : url.endsWith("/transcript")
+            ? { data: { entries: [], turns: [], total: 0 } }
+            : url === "/api/host/files/metadata" && metadata
+              ? metadata
+              : {
+                  data:
+                    url === "/api/status"
                       ? {
-                          thread: {
-                            title: "Current chat",
-                            configuration: {
-                              local_roots:
-                                options?.params?.path?.thread_id === "other"
-                                  ? otherProject === "project-two"
-                                    ? ["/other"]
-                                    : currentRoots
-                                  : currentProject
-                                    ? currentRoots
-                                    : [],
-                              project_id:
-                                options?.params?.path?.thread_id === "other"
-                                  ? otherProject
-                                  : currentProject,
-                            },
+                          features: {
+                            host_files: sharing,
+                            host_git: sharing,
+                            host_terminal: sharing,
+                            browser: sharing,
                           },
                         }
-                      : {
-                          kind: options?.params?.query?.path?.endsWith(".txt")
-                            ? "file"
-                            : "directory",
-                        },
-          },
+                      : url === "/api/projects"
+                        ? [
+                            {
+                              project_id: "project-unrelated",
+                              name: "Unrelated",
+                              roots: ["/unrelated"],
+                            },
+                            {
+                              project_id: "project-one",
+                              name: "Current project",
+                              roots: initial.startsWith("/threads/")
+                                ? ["/changed-project-root"]
+                                : currentRoots,
+                            },
+                            {
+                              project_id: "project-two",
+                              name: "Other project",
+                              roots: ["/other"],
+                            },
+                          ]
+                        : url === "/api/bot"
+                          ? {
+                              available: true,
+                              state: { activated: false, paused: false },
+                              messages: [],
+                              inputs: [],
+                            }
+                          : url === "/api/threads/{thread_id}"
+                            ? {
+                                thread: {
+                                  title: "Current chat",
+                                  configuration: {
+                                    agent_source: {
+                                      kind: "agent",
+                                      agent_id: "agent-main",
+                                    },
+                                    local_roots:
+                                      options?.params?.path?.thread_id ===
+                                      "other"
+                                        ? otherProject === "project-two"
+                                          ? ["/other"]
+                                          : currentRoots
+                                        : currentProject
+                                          ? currentRoots
+                                          : [],
+                                    project_id:
+                                      options?.params?.path?.thread_id ===
+                                      "other"
+                                        ? otherProject
+                                        : currentProject,
+                                  },
+                                },
+                              }
+                            : {
+                                kind: options?.params?.query?.path?.endsWith(
+                                  ".txt",
+                                )
+                                  ? "file"
+                                  : "directory",
+                              },
+                },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
   const queries = new QueryClient({

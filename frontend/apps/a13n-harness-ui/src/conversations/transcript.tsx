@@ -1,3 +1,9 @@
+import {
+  ExecutionNoticeLinks,
+  useNoticeLabel,
+  splitExecutionNotices,
+  executionHeaders,
+} from "./background-links";
 import { ConnectorOffer } from "../connectors/offers";
 import { useTranslation } from "../i18n";
 import { BOT_THREAD_ID, botInputId } from "../bot-identity";
@@ -24,13 +30,10 @@ import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
+import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
-  QuestionInteraction,
-  ToolActivity,
   toolLabel,
   toolSummary,
-} from "./tool-call";
-import {
   activityKind,
   describeTool,
   MAX_ACTIVITY_TOOLS,
@@ -65,18 +68,11 @@ import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
   const source = metadata?.["a13n.steering-source"];
-  return source === "background_process" || source === "async_subagent"
+  return source === "background_process" ||
+    source === "async_subagent" ||
+    source === "tool_execution"
     ? source
     : undefined;
-}
-
-// Known steering sources; unknown sources keep their backend value.
-function useNotificationTitle() {
-  const { t } = useTranslation();
-  return (source: string) =>
-    source === "background_process"
-      ? t("Process update")
-      : t("Subagent update");
 }
 
 // Generated run, subagent and recovery chrome is translated here; backend
@@ -245,16 +241,20 @@ function savedRows(
           text: part.text ?? "",
         });
       } else if (systemNotice(part.metadata)) {
-        rows.push({
-          id,
-          kind: "notifications",
-          notices: [
-            {
-              id,
-              source: systemNotice(part.metadata)!,
-              text: part.text ?? JSON.stringify(part.value, null, 2),
-            },
-          ],
+        splitExecutionNotices(
+          part.text ?? JSON.stringify(part.value, null, 2),
+        ).forEach((text, index) => {
+          rows.push({
+            id: `${id}:${index}`,
+            kind: "notifications",
+            notices: [
+              {
+                id: `${id}:${index}`,
+                source: systemNotice(part.metadata)!,
+                text,
+              },
+            ],
+          });
         });
       } else if (part.kind === "user" || part.kind === "media") {
         appendInput(
@@ -365,16 +365,18 @@ function liveRows(
         diagnostics: block.contextDiagnostics,
       });
     } else if (systemNotice(block.metadata)) {
-      rows.push({
-        id: block.id,
-        kind: "notifications",
-        notices: [
-          {
-            id: block.id,
-            source: systemNotice(block.metadata)!,
-            text: block.text,
-          },
-        ],
+      splitExecutionNotices(block.text).forEach((text, index) => {
+        rows.push({
+          id: `${block.id}:${index}`,
+          kind: "notifications",
+          notices: [
+            {
+              id: `${block.id}:${index}`,
+              source: systemNotice(block.metadata)!,
+              text,
+            },
+          ],
+        });
       });
     } else if (block.kind === "user" || block.kind === "media") {
       const turn = block.id.includes(":input:")
@@ -531,10 +533,21 @@ function groupRows(rows: Row[]) {
     const last = grouped.at(-1);
     const previous =
       last?.subagentRunId === row.subagentRunId ? last : undefined;
-    if (row.kind === "notifications" && previous?.kind === "notifications") {
-      previous.notices.push(...row.notices);
+    if (
+      row.kind === "notifications" &&
+      previous?.kind === "notifications" &&
+      executionHeaders(row.notices[0].text)[0]?.kind ===
+        executionHeaders(previous.notices[0].text)[0]?.kind
+    ) {
+      grouped[grouped.length - 1] = {
+        ...previous,
+        notices: [...previous.notices, ...row.notices],
+      };
     } else if (row.kind === "thinking" && previous?.kind === "thinking") {
-      previous.segments.push(...row.segments);
+      grouped[grouped.length - 1] = {
+        ...previous,
+        segments: [...previous.segments, ...row.segments],
+      };
     } else if (
       row.kind === "tools" &&
       previous?.kind === "tools" &&
@@ -542,17 +555,11 @@ function groupRows(rows: Row[]) {
       activityKind(row.tools[0]) &&
       activityKind(row.tools[0]) === activityKind(previous.tools[0])
     ) {
-      previous.tools.push(...row.tools);
-    } else
-      grouped.push(
-        row.kind === "thinking"
-          ? { ...row, segments: [...row.segments] }
-          : row.kind === "tools"
-            ? { ...row, tools: [...row.tools] }
-            : row.kind === "notifications"
-              ? { ...row, notices: [...row.notices] }
-              : row,
-      );
+      grouped[grouped.length - 1] = {
+        ...previous,
+        tools: [...previous.tools, ...row.tools],
+      };
+    } else grouped.push(row);
   }
   return grouped;
 }
@@ -631,7 +638,7 @@ function Rows({
       ? `${turn.turn_id}@${turn.timestamp}`
       : turn?.turn_id;
   const point = key && actions?.points?.[key];
-  const notificationTitle = useNotificationTitle();
+  const notificationTitle = useNoticeLabel();
   const copyText = output
     .map((row) => row.text)
     .filter(Boolean)
@@ -728,14 +735,19 @@ function Rows({
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
           <summary>
-            {row.notices.length === 1
-              ? notificationTitle(row.notices[0].source)
-              : t("System update count", { count: row.notices.length })}
+            {notificationTitle(
+              row.notices[0].text,
+              row.notices[0].source,
+              row.notices.length,
+            )}
+            {row.notices.map((notice) => (
+              <ExecutionNoticeLinks key={notice.id} text={notice.text} />
+            ))}
           </summary>
           {row.notices.map((notice) => (
             <div key={notice.id}>
               {row.notices.length > 1 && (
-                <small>{notificationTitle(notice.source)}</small>
+                <small>{notificationTitle(notice.text, notice.source)}</small>
               )}
               <pre className={styles.code}>{notice.text}</pre>
             </div>

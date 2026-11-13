@@ -361,15 +361,16 @@ export class FocusDisplay {
     // Bound both long deltas and event cardinality; saved output is fetched
     // independently and never synthesized from this lossy display window.
     while (this.blocks.size > 128) {
-      this.blocks.delete(this.blocks.keys().next().value!);
-      this.gap = true;
+      const id = this.blocks.keys().next().value!;
+      this.blocks.delete(id);
+      if (!this.savedBlocks.has(id)) this.gap = true;
     }
     let remaining = 128 * 1024;
     for (const [key, block] of [...this.blocks].reverse()) {
       const size = JSON.stringify(block).length;
       if (remaining <= 0) {
         this.blocks.delete(key);
-        this.gap = true;
+        if (!this.savedBlocks.has(key)) this.gap = true;
       } else if (
         size > remaining &&
         (block.kind === "assistant" || block.kind === "thinking")
@@ -383,10 +384,10 @@ export class FocusDisplay {
           done: block.done,
         });
         remaining = 0;
-        this.gap = true;
+        if (!this.savedBlocks.has(key)) this.gap = true;
       } else if (size > remaining) {
         this.blocks.delete(key);
-        this.gap = true;
+        if (!this.savedBlocks.has(key)) this.gap = true;
       } else remaining -= size;
     }
   }
@@ -880,6 +881,7 @@ export class FocusDisplay {
     ) {
       const ordinal = this.checkpoints.size + 1;
       this.checkpoints.set(source.continuation_id, ordinal);
+      this.gap = false;
       for (const id of this.blocks.keys()) {
         if (!this.savedBlocks.has(id)) this.savedBlocks.set(id, ordinal);
       }

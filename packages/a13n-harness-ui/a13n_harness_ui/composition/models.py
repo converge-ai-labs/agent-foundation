@@ -15,6 +15,7 @@ from a13n_harness_ui.configuration.models import (
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
+    SubagentsConfiguration,
     SubscriptionGroupResource,
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
@@ -148,7 +149,7 @@ class ResolvedEnvironmentTarget(CompositionModel):
 
 
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
+    source_kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
     # Bot retains its built-in identity while recording its execution-policy source.
@@ -218,6 +219,7 @@ class ResolvedRunComposition(CompositionModel):
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )
     tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
+    subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None

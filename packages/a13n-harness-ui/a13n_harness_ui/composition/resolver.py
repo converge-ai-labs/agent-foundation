@@ -97,7 +97,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown", "live", "bot"]
+    agent_source_kind: Literal["agent", "markdown", "live", "bot", "dynamic"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -267,10 +267,33 @@ class AgentCompositionResolver:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
     ) -> ResolvedAgentNode:
         """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
+        if selection.agent_source_kind == "dynamic":
+            if dynamic_node is None:
+                raise CompositionError(
+                    "Dynamic children resume through their retained execution.", code="subagent_resume_required"
+                )
+            self._validate_selection(source, selection)
+            model = dynamic_node.model
+            if selection.default_model_id is not None:
+                model = self.model_recipe(source.models[selection.default_model_id], source)
+            return dynamic_node.model_copy(
+                update={
+                    "model": model,
+                    "global_guidance": source.global_guidance,
+                    "children": (),
+                    "harness_plugins": self._plugins(
+                        source,
+                        selection.harness_plugin_ids,
+                        self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values())),
+                    ),
+                    "mcp_servers": self._mcp_recipes(source, selection.mcp_server_ids),
+                }
+            )
         if selection.agent_source_kind == "live":
             return self._live_node(source)
         self._validate_selection(source, selection)
@@ -318,6 +341,7 @@ class AgentCompositionResolver:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
@@ -334,10 +358,13 @@ class AgentCompositionResolver:
                 memory_enabled=source.document.memory.enabled,
                 run_configuration=source.document.run_configuration,
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+                subagents=source.document.subagents,
                 root=self._live_node(source),
                 environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
-        root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
+        root = self.resolve_agent(
+            source, selection, parent_node=parent_node, dynamic_node=dynamic_node, model_overrides=model_overrides
+        )
         environment = self._environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
         dependencies = [
@@ -371,6 +398,7 @@ class AgentCompositionResolver:
             background_compaction=source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+            subagents=source.document.subagents,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
@@ -445,10 +473,10 @@ class AgentCompositionResolver:
     ) -> None:
         if selection.project_id is not None and selection.project_id not in source.projects:
             raise CompositionError("The Thread Project is unavailable.", code="project_missing")
-        if selection.default_model_id is not None and selection.agent_source_kind != "agent":
+        if selection.default_model_id is not None and selection.agent_source_kind not in {"agent", "dynamic"}:
             raise CompositionError("A Markdown child follows its parent Model.", code="thread_model_invalid")
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
-        if selection.agent_source_kind != "bot" and selection.agent_source_id not in sources:
+        if selection.agent_source_kind not in {"bot", "dynamic"} and selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
         if (
             built_in_environment_profile(selection.environment_profile_id) is None

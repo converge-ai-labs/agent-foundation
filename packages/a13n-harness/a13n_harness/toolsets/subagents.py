@@ -30,6 +30,7 @@ from a13n_harness.capabilities.subagents import (
 )
 from a13n_harness.context import AgentContext, BuiltSubagent
 from a13n_harness.errors import DefinitionError
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tools.metadata import (
     MAX_OUTPUT_BYTES,
     HarnessTool,
@@ -140,7 +141,7 @@ class AsyncSubagentToolset:
         )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
-        return result.model_dump(mode="json")
+        return _execution_page(result)
 
     async def wait_subagent(
         self,
@@ -163,7 +164,7 @@ class AsyncSubagentToolset:
         )
         if execution_id is not None:
             _require_exact_execution(result.executions, execution_id)
-        return result.model_dump(mode="json")
+        return _execution_page(result)
 
     async def steer_subagent(
         self,
@@ -314,6 +315,31 @@ class AsyncSubagentToolset:
                 output_policy=output_policy,
             ),
         )
+
+
+def _execution_page(result: SubagentInfoResult | SubagentWaitResult) -> JsonValue:
+    return {
+        **result.model_dump(mode="json"),
+        "executions": [
+            {
+                "header": format_execution_header(
+                    "Subagent notification" if view.status == "running" else "Subagent result",
+                    view.subagent_name,
+                    view.execution_id,
+                    view.status,
+                ),
+                **view.model_dump(mode="json"),
+                **(
+                    {"reply_tool": "steer_subagent"}
+                    if view.status == "running"
+                    else {"reply_tool": "resume_subagent"}
+                    if view.resumable
+                    else {}
+                ),
+            }
+            for view in result.executions
+        ],
+    }
 
 
 def _validate_model(model_type, value):

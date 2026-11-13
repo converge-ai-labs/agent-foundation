@@ -136,15 +136,18 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 
 ### Built-in tools and subagents
 
-| Root field                                | Default     | Purpose                                                                  |
-| ----------------------------------------- | ----------- | ------------------------------------------------------------------------ |
-| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                         |
-| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                              |
-| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch |
-| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools  |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                      |
-| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary       |
-| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`            |
+| Root field                                | Default     | Purpose                                                                                |
+| ----------------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                                       |
+| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                                            |
+| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch               |
+| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools                |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                                    |
+| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                     |
+| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
+| `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
+| `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
+| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 
@@ -343,6 +346,10 @@ This controls request-address admission, not CORS. Authentication and same-origi
 **Settings → General → Bot** selects an Agent, Model and optional custom instructions for the built-in personal assistant. `webui.bot.agent` defaults to `null`, following the global default Agent. Bot inherits that Agent's execution settings, including compaction, permissions, subagents, Plugins and MCP. `webui.bot.model` defaults to `null`, following the selected Agent's Model; an explicit Model overrides it. The independent `files_enabled`, `shell_enabled` and `computer_enabled` flags under `webui.bot` default to `null` (follow Agent); `true` or `false` overrides the corresponding access setting for Bot while retaining tool allowlists and Environment limits. Bot replaces the Agent's role instructions with its own plus custom instructions, keeps global `AGENTS.md`, and disables structured questions. See [Bot](bot.md) for inheritance and fallback details.
 
 `webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. On first usable enable, the server sends one visible preset user message to introduce the workspace through an ordinary Model request. Previous activity or an introduction attempt prevents repetition. Reading the page starts no work. Enabling also schedules the first Heartbeat one interval later, independently of this introduction. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
+
+### WebUI subagents
+
+In **Settings → General → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
 
 ### WebUI Sidekick
 

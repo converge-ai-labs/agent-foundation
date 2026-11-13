@@ -173,10 +173,24 @@ class ToolsConfiguration(ConfigurationModel):
         return value
 
 
+class DynamicSubagentsConfiguration(ConfigurationModel):
+    enabled: bool = False
+    allowed_models: tuple[ResourceId, ...] = ()
+
+    @field_validator("allowed_models")
+    @classmethod
+    def _unique_models(cls, value: tuple[ResourceId, ...]) -> tuple[ResourceId, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("subagents.dynamic.allowed_models must contain unique configured Model IDs")
+        return value
+
+
 class SubagentsConfiguration(ConfigurationModel):
     """Named release-owned children automatically included in the root roster."""
 
     include: tuple[BuiltinSubagentName, ...] = ()
+    max_concurrent: int = Field(default=8, ge=1, strict=True)
+    dynamic: DynamicSubagentsConfiguration = Field(default_factory=DynamicSubagentsConfiguration)
 
     @field_validator("include")
     @classmethod
@@ -1036,6 +1050,11 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        for model_id in self.document.subagents.dynamic.allowed_models:
+            if model_id not in self.models:
+                raise _MissingModelReferenceError(
+                    path=self.sources[0].relative_path, field="subagents.dynamic.allowed_models", model_id=model_id
+                )
         for model in self.models.values():
             auth = model.authentication
             if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):

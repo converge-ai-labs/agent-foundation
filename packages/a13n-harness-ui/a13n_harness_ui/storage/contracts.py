@@ -42,6 +42,13 @@ class MarkdownSubagentSource(StoredContract):
     id: str = Field(min_length=1, max_length=128)
 
 
+class DynamicAgentSource(StoredContract):
+    """Host-defined child; its complete definition is retained in its Run composition."""
+
+    kind: Literal["dynamic"] = "dynamic"
+    id: str = Field(min_length=1, max_length=128)
+
+
 class MemoryAgentSource(StoredContract):
     """Application-owned organizer; not a selectable Agent resource."""
 
@@ -63,7 +70,14 @@ class BotAgentSource(StoredContract):
     id: Literal["bot"] = "bot"
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource | BotAgentSource
+type AgentSource = (
+    AgentResourceSource
+    | MarkdownSubagentSource
+    | MemoryAgentSource
+    | LiveAgentSource
+    | BotAgentSource
+    | DynamicAgentSource
+)
 
 
 class ThreadConfiguration(StoredContract):
@@ -493,6 +507,7 @@ __all__ = [
     "ChildExecutionHead",
     "CompactChildActivity",
     "CompactChildDisplay",
+    "DynamicAgentSource",
     "EnvironmentBindingHead",
     "EnvironmentBindingKey",
     "ExecutionStatus",

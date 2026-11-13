@@ -83,6 +83,21 @@ function executionPhase(name: string, output: unknown): string | undefined {
   return `${status[0].toUpperCase()}${status.slice(1)} at last check`;
 }
 
+// Translate only labels produced by the presentation layer, never tool names or payloads.
+export function toolLabel(
+  info: ReturnType<typeof describeTool>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  return info.generatedLabel ? t(info.label) : info.label;
+}
+
+export function toolSummary(
+  info: ReturnType<typeof describeTool>,
+  t: (key: string) => string,
+) {
+  return info.generatedSummary ? t(info.summary) : info.summary;
+}
+
 export function describeTool(tool: ToolView) {
   const input = parsed(tool.input);
   const args = record(input) ? input : {};
@@ -357,6 +372,10 @@ export function describeTool(tool: ToolView) {
             ? "Delete note"
             : "Read notes";
       summary = text(args.key);
+      break;
+    case "spawn_subagent":
+      label = "Start subagent";
+      summary = text(args.name);
       break;
     case "delegate":
       label = "Delegate";

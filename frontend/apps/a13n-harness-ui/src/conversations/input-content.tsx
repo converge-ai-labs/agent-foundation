@@ -1,5 +1,6 @@
 import {
   useContext,
+  createContext,
   useEffect,
   useId,
   useRef,
@@ -20,6 +21,8 @@ import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { RetainedImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
+
+export const ChildInputLabels = createContext(false);
 
 export type InputPart = {
   kind: string;
@@ -295,6 +298,10 @@ export function InputContent({
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const guest = useGuestAccess();
+  const childLabels = useContext(ChildInputLabels);
+  const parentInput = parts.some(
+    (part) => part.metadata?.["a13n.steering-source"] === "parent_agent",
+  );
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
@@ -413,8 +420,13 @@ export function InputContent({
         <div
           className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
         >
-          {(source || status) && (
+          {(source || status || childLabels || parentInput) && (
             <header>
+              {(childLabels || parentInput) && (
+                <span className={styles.inputAuthor}>
+                  {parentInput ? t("Main agent") : t("User")}
+                </span>
+              )}
               {source && guest ? (
                 <span className={styles.threadSource}>
                   {t("From thread")} - {source.title || source.id}

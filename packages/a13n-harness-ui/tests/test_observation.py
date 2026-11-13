@@ -244,10 +244,11 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     prepared = SimpleNamespace(
         head=head,
         state=SimpleNamespace(thread_id="thread-test"),
-        stream=SimpleNamespace(pending_deferred_input=None),
+        stream=SimpleNamespace(pending_deferred_input=None, run_id="run-test"),
+        scope=SimpleNamespace(composition=SimpleNamespace()),
         reconstructed=SimpleNamespace(memory_cursors=MemoryCursors()),
     )
-    active = SimpleNamespace(done=Event())
+    active = SimpleNamespace(done=Event(), checkpoint=None, run_checkpoint=None)
     events = (RunErrorEvent(message="not exported", code=event_code),)
 
     async def consume(*args):
@@ -273,6 +274,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
         _tool_executions=None,
         _restart=None,
         _finish_restart=finish_restart,
+        _remove_superseded_checkpoint=publish,
         _consume_run=consume,
         _finish_result=finish,
         _publish_summary=publish,

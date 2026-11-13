@@ -19,6 +19,7 @@ import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
+from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.http import outbound_tls_verify
@@ -34,10 +35,11 @@ from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from pydantic_ai import BinaryContent, prices
+from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
+from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -344,6 +346,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionOutputView,
     ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
@@ -524,6 +527,7 @@ class HarnessUiApp:
         self._root_runs = root_runs
         self._tool_executions = tool_executions
         tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.deliver_subagent = self._deliver_subagent_input
         tool_executions.runtime.reports_background_completions = True
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
@@ -2744,6 +2748,54 @@ class HarnessUiApp:
             records = await self._tool_executions.runtime.summarize(thread_id, offset=offset, limit=limit)
             return tuple(execution_view(record) for record in records)
 
+    async def tool_execution_output(self, thread_id: str, execution_id: str) -> ToolExecutionOutputView:
+        """Read the original result/tail without consuming model delivery or changing execution."""
+        async with self._operation():
+            await self._threads.get(thread_id)
+            runtime = self._tool_executions.runtime
+            saved = await runtime.result(thread_id, execution_id)
+            if saved is None:
+                raise ThreadError(
+                    "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
+                )
+            record = saved.record
+            input_text, input_truncated = await self._projections.tool_execution_input(thread_id, record.tool_call_id)
+            value = saved.result
+            live = False
+            if not record.terminal and record.tool_name == "shell_exec":
+                value = await runtime.call_resource(
+                    thread_id, execution_id, {"operation": "wait", "timeout_seconds": 0}
+                )
+                live = value is not None
+            if value is None and not (record.terminal and record.result_available):
+                expired = await self._store.tool_executions.output_expired(thread_id, execution_id)
+                return ToolExecutionOutputView(
+                    execution=execution_view(record),
+                    input=input_text,
+                    input_truncated=input_truncated,
+                    state="expired" if expired else "unavailable" if record.terminal else "pending",
+                )
+            if isinstance(value, ToolReturn):
+                value = value.return_value
+            truncated = isinstance(value, dict) and value.get("truncated") is True
+            if (
+                isinstance(value, dict)
+                and truncated
+                and isinstance(value.get("result"), str)
+                and "output_chars" in value
+            ):
+                value = value["result"]
+            text = value if isinstance(value, str) else dump_json_bytes(value).decode()
+            return ToolExecutionOutputView(
+                execution=execution_view(record),
+                input=input_text,
+                input_truncated=input_truncated,
+                text=text[:65536],
+                truncated=truncated or len(text) > 65536,
+                state="available",
+                live=live,
+            )
+
     async def cancel_tool_execution(self, thread_id: str, execution_id: str) -> ToolExecutionView:
         async with self._operation():
             await self._threads.require_interactive(thread_id)
@@ -2763,6 +2815,19 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="tool_execution")
+
+    async def _deliver_subagent_input(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="async_subagent")
+
+    async def _deliver_background_input(
+        self,
+        thread_id: str,
+        prompt: str,
+        execution_ids: tuple[str, ...],
+        *,
+        source: Literal["async_subagent", "tool_execution"],
+    ) -> bool:
         if self._state is not AppState.ready:
             return False
         operation = await self._root_runs.active(thread_id)
@@ -2794,14 +2859,7 @@ class HarnessUiApp:
 
         # Lifecycle hints are model context, not human-authored messages. Keep
         # the annotation through active steering and idle continuation alike.
-        content = (
-            ContentItem(
-                prompt,
-                ContentMetadata.model_validate(
-                    {"display": False, "source_id": "tool_execution.completion", "execution_ids": list(execution_ids)}
-                ),
-            ),
-        )
+        content = background_input(prompt, execution_ids, source=source)
         if detail.thread.parent_thread_id is not None:
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept
@@ -2941,6 +2999,7 @@ class HarnessUiApp:
         execution_id: str | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        latest: bool = False,
     ) -> ChildExecutionPage:
         async with self._operation():
             return await self._subagent_operator.query_child_executions(
@@ -2948,6 +3007,7 @@ class HarnessUiApp:
                 execution_id=execution_id,
                 cursor=cursor,
                 limit=limit,
+                latest=latest,
             )
 
     async def wait_child_executions(

@@ -6,15 +6,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from anyio import to_thread
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import ThreadError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import ThreadInspectionRecord, ThreadRecord, TranscriptEntryRecord, TranscriptTurnRecord
+from .models import (
+    ThreadInspectionRecord,
+    ThreadRecord,
+    TranscriptEntryRecord,
+    TranscriptTurnRecord,
+)
+from .repositories import latest_child_checkpoint_query
 
-INSPECTION_VERSION = 6
+INSPECTION_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,15 @@ class InspectionData:
     turns: tuple[InspectionTurn, ...]
     entry_offset: int = 0
     turn_offset: int = 0
+
+
+async def _selected_source(session: AsyncSession, thread: ThreadRecord) -> str:
+    if thread.parent_thread_id is not None:
+        selected = await session.scalar(latest_child_checkpoint_query(thread.thread_id))
+        return (
+            selected.selected_checkpoint_digest if selected is not None else None
+        ) or f"initial:{thread.initial_state_digest}"
+    return thread.continuation_digest or f"initial:{thread.initial_state_digest}"
 
 
 def _header_key(record: ThreadInspectionRecord | None) -> tuple[str, int] | None:
@@ -97,10 +113,7 @@ class InspectionRepository:
                 # Read the header and its rows from one coherent snapshot.
                 await session.execute(text("BEGIN"))
                 thread = await session.get(ThreadRecord, thread_id)
-                if (
-                    thread is None
-                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
-                ):
+                if thread is None or await _selected_source(session, thread) != source_id:
                     return False
                 previous = _header_key(await session.get(ThreadInspectionRecord, thread_id))
                 if previous == target:
@@ -142,10 +155,7 @@ class InspectionRepository:
             changed_entries, changed_turns = await to_thread.run_sync(_changed_rows, thread_id, data, entries, turns)
             async with transaction(self._sessions) as session:
                 thread = await session.get(ThreadRecord, thread_id)
-                if (
-                    thread is None
-                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
-                ):
+                if thread is None or await _selected_source(session, thread) != source_id:
                     return False
                 current = _header_key(await session.get(ThreadInspectionRecord, thread_id))
                 if current == target:
@@ -228,6 +238,20 @@ class InspectionRepository:
         if len(values) != len(set(positions)):
             raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
         return values
+
+    async def matching_entries(self, thread_id: str, source_id: str, reference: str) -> tuple[str, ...]:
+        """Bounded retained rows containing a tool-call reference."""
+        async with short_session(self._sessions) as session:
+            query = (
+                select(TranscriptEntryRecord.value_json)
+                .join(ThreadInspectionRecord)
+                .where(
+                    ThreadInspectionRecord.thread_id == thread_id,
+                    ThreadInspectionRecord.source_id == source_id,
+                    func.instr(TranscriptEntryRecord.value_json, reference) > 0,
+                )
+            )
+            return tuple(await session.scalars(query.order_by(TranscriptEntryRecord.position.desc()).limit(20)))
 
     async def turns(
         self,

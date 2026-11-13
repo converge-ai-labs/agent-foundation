@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,6 +17,8 @@ import a13n_harness_ui.app as app_module
 import uvicorn
 import yaml
 from a13n_harness.content import project_input_content, request_input_content
+from a13n_harness.execution_identity import format_execution_header
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui import model_catalog
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
@@ -160,6 +163,8 @@ def configuration(root: Path) -> Path:
             "defaults": {"agent": "agent-review"},
             "dictation": {"backend": "codex", "model": "model-review", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
+            "subagents": {"dynamic": {"enabled": True, "allowed_models": ["model-review"]}},
+            "tools": {"execution": {"mode": "auto", "foreground_wait_seconds": 0.1}},
             "memory": {"auto_organize": {"enabled": False}},
         },
         "subscription_groups/review.yaml": {
@@ -249,13 +254,13 @@ def seed_memory(configuration_root: Path) -> None:
         target.write_text(text)
 
 
-async def model(messages, info):
+async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
     authored = [
         text
         for message in messages
         if isinstance(message, ModelRequest)
         for item in request_input_content(message)
-        if item.metadata.display
+        if item.metadata.display and not (item.metadata.model_extra or {}).get("a13n.steering-source")
         if (part := project_input_content(item)) and isinstance(text := part[0], str)
     ]
     separator = "："  # noqa: RUF001 -- Chinese review conversation.
@@ -274,6 +279,165 @@ async def model(messages, info):
         yield (
             "目前确定的方案是" + separator + "、".join(f"{label}「{value}」" for label, value in choices.items()) + "。"
         )
+        return
+    role = (info.instructions or "").partition("Fixture role: ")[2].split(".")[0]
+    if role:
+        prompt = role
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if "failed" in prompt:
+            yield "The migration check found an incompatible constraint."
+            raise UsageLimitExceeded("Scripted review failed: constraint mismatch in the migration plan.")
+        if "running" not in prompt:
+            yield "The focused check is complete. The existing idempotency key handles repeated requests safely."
+            return
+        if "message" in prompt and not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="send_parent_message",
+                    json_args=json.dumps(
+                        {
+                            "message": "The duplicate-submit guard is in place. I am checking the slow-response cases next."
+                        }
+                    ),
+                )
+            }
+            return
+        if not any(part.tool_name == "review_pause" for part in returns):
+            yield "Checking the checkout edge cases and collecting the results.\n\n"
+        yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+        return
+    if authored and authored[-1] == "Summarize the background review handoff.":
+        start = max(
+            index
+            for index, message in enumerate(messages)
+            if isinstance(message, ModelRequest)
+            and any(
+                item.metadata.display and (projected := project_input_content(item)) and projected[0] == authored[-1]
+                for item in request_input_content(message)
+            )
+        )
+        returns = [
+            part
+            for message in messages[start:]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not any(part.tool_name == "shell_exec" for part in returns):
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": "pnpm --filter atlas-storefront test checkout --reporter=dot"}),
+                )
+            }
+            return
+        if not any(part.tool_name == "review_pause" for part in returns):
+            yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+            return
+        yield "The focused checks passed. The two specialists and the watch command are still running; their records remain available in Background work."
+        return
+    if authored and "Review checkout reliability with the specialist team" in authored[0]:
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        spawns = [part for part in returns if part.tool_name == "spawn_subagent"]
+        if len(spawns) < 24:
+            index = len(spawns)
+            name = (
+                [
+                    "Checkout safety reviewer",
+                    "Release checklist",
+                    "Accessibility and keyboard navigation specialist",
+                    "Slow-response and retry investigator",
+                ][index]
+                if index < 4
+                else "Migration compatibility auditor"
+                if index == 23
+                else f"Completed check {index - 3:02d}"
+            )
+            state = (
+                "running-message"
+                if index == 2
+                else "running-steer"
+                if index == 3
+                else "failed"
+                if index == 23
+                else "succeeded"
+            )
+            yield {
+                0: DeltaToolCall(
+                    name="spawn_subagent",
+                    json_args=json.dumps(
+                        {
+                            "name": name,
+                            "instructions": f"Review only the assigned fixture task. Fixture role: {state}.",
+                            "prompt": (
+                                [
+                                    "Check that repeated clicks reuse the order identifier and create only one order.",
+                                    "Summarize the release checklist for checkout retry behavior.",
+                                    "Review keyboard-only checkout, field focus after errors, and screen-reader feedback.",
+                                    "Test delayed provider acknowledgements without losing the customer's address or cart.",
+                                ][index]
+                                if index < 4
+                                else "Audit the migration constraints that protect order idempotency."
+                                if index == 23
+                                else f"Verify checkout edge case {index - 3}: preserve the cart and prevent duplicate requests."
+                            ),
+                        }
+                    ),
+                )
+            }
+            return
+        if not any(part.tool_name == "steer_subagent" for part in returns):
+            receipt = spawns[3].content
+            if isinstance(receipt, str):
+                receipt = json.loads(receipt)
+            if not isinstance(receipt, dict):
+                raise RuntimeError("The scripted child did not return an execution receipt")
+            yield {
+                0: DeltaToolCall(
+                    name="steer_subagent",
+                    json_args=json.dumps(
+                        {
+                            "execution_id": receipt["execution_id"],
+                            "message": "Prioritize slow provider acknowledgement and preserve the original order identifier.",
+                        }
+                    ),
+                )
+            }
+            return
+        shells = [part for part in returns if part.tool_name == "shell_exec"]
+        if not shells:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps(
+                        {
+                            "command": "pnpm --filter atlas-storefront test checkout --watch --reporter=verbose --include=src/components/checkout/duplicate-submit-and-retry.spec.ts"
+                        }
+                    ),
+                )
+            }
+            return
+        reports = [part for part in returns if part.tool_name == "review_report"]
+        if len(reports) < 2:
+            yield {
+                0: DeltaToolCall(
+                    name="review_report", json_args=json.dumps({"name": "expired" if reports else "truncated"})
+                )
+            }
+            return
+        yield "The checkout review is underway. Two specialists are still checking edge cases, and the watch command is running in the background. Open Background work to inspect their records."
         return
     last_input = max(
         (
@@ -395,6 +559,7 @@ async def model(messages, info):
 
 async def serve(root: Path, port: int):
     path = configuration(root)
+    fixture_runtime = {}
     original = AgentReconstructor.reconstruct
 
     def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
@@ -406,9 +571,22 @@ async def serve(root: Path, port: int):
             await asyncio.sleep(0.25)
             return "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
 
-        @tools.tool_plain
+        @tools.tool_plain(metadata={"a13n.tool-execution": "owned"})
         async def shell_exec(command: str) -> dict[str, object]:
             """Return scripted check results; never execute a shell command."""
+            if "--watch" in command:
+
+                class ScriptedShell:
+                    async def call(self, request):
+                        assert request == {"operation": "wait", "timeout_seconds": 0}
+                        return {
+                            "stdout": "Watching checkout reliability tests…\n✓ duplicate submission blocked\n✓ form input retained\nWaiting for file changes.\n",
+                            "stderr": "",
+                            "status": {"phase": "running"},
+                        }
+
+                fixture_runtime["runtime"].attach_resource(ScriptedShell())
+                await asyncio.sleep(3600)
             await asyncio.sleep(1.2)
             if "--offline" in command:
                 return {
@@ -421,10 +599,39 @@ async def serve(root: Path, port: int):
                 "exit_code": 0,
             }
 
+        @tools.tool_plain
+        async def review_pause() -> str:
+            """Wait briefly for the next scripted review batch."""
+            await asyncio.sleep(15)
+            return "Next batch ready."
+
+        @tools.tool_plain(metadata={"a13n.tool-execution": "owned"})
+        async def review_report(name: str) -> str:
+            """Produce a scripted retained report."""
+            await asyncio.sleep(1)
+            return (
+                ("Checkout regression report: all retained cases were inspected.\n" * 1800)
+                if name == "truncated"
+                else "This report's retention window has expired."
+            )
+
         return original(
             self,
             composition,
-            root_capabilities=(*root_capabilities, Capability(id="design-review", toolsets=(tools,))),
+            root_capabilities=(
+                *root_capabilities,
+                Capability(
+                    id="design-review",
+                    toolsets=(
+                        CodeActPolicyToolset(
+                            wrapped=tools,
+                            policy=CodeActToolPolicy(
+                                tools={"view": True, "shell_exec": True, "review_pause": True, "review_report": True}
+                            ),
+                        ),
+                    ),
+                ),
+            ),
             **kwargs,
         )
 
@@ -461,9 +668,66 @@ async def serve(root: Path, port: int):
         async with open_harness_ui_app(
             settings, configuration_path=path, host_mode="webui", share_computer=True
         ) as app:
+            fixture_runtime["runtime"] = app._tool_executions.runtime
             status = await app.status()
             if status.candidate_error_message:
                 raise RuntimeError(status.candidate_error_message)
+            background = await app.create_thread(
+                title="Background work · Checkout reliability", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            receipt = await app.submit_thread(
+                thread_id=background.thread_id,
+                prompt="Review checkout reliability with the specialist team and keep the long-running checks in the background.",
+            )
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=30)
+            children = await app.query_child_executions(parent_thread_id=background.thread_id, limit=100)
+            if len(children.executions) != 24:
+                raise RuntimeError("The background fixture must retain all 24 child conversations")
+            guided = next(
+                child for child in children.executions if child.subagent_name == "Slow-response and retry investigator"
+            )
+            await app.steer_child_execution(
+                parent_thread_id=background.thread_id,
+                execution_id=guided.execution_id,
+                message="Please prioritize keyboard-only retry flows and keep the form values intact.",
+            )
+            await asyncio.sleep(2)
+            from datetime import UTC, datetime, timedelta
+
+            from a13n_harness_ui.storage.database import transaction
+            from a13n_harness_ui.storage.models import ToolExecutionHeadRecord
+            from sqlalchemy import update
+
+            records = await app.tool_executions(background.thread_id, limit=100)
+            reports = [record for record in records if record.tool_name == "review_report"]
+            if reports:
+                async with transaction(app._store.tool_executions.sessions) as session:
+                    await session.execute(
+                        update(ToolExecutionHeadRecord)
+                        .where(ToolExecutionHeadRecord.execution_id == reports[0].execution_id)
+                        .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+                    )
+            packet = await app.submit_thread(
+                thread_id=background.thread_id, prompt="Summarize the background review handoff."
+            )
+            await asyncio.sleep(0.4)
+            await app._deliver_subagent_input(
+                background.thread_id,
+                format_execution_header("Subagent message", guided.subagent_name, guided.execution_id, "running")
+                + "\nThe slow-response checks are still running; no customer input has been lost.",
+                (guided.execution_id,),
+            )
+            completed = next(
+                child for child in children.executions if child.subagent_name == "Checkout safety reviewer"
+            )
+            await app._deliver_subagent_input(
+                background.thread_id,
+                format_execution_header("Subagent result", completed.subagent_name, completed.execution_id, "succeeded")
+                + "\nThe duplicate-submit check passed; the order identifier is reused safely.",
+                (completed.execution_id,),
+            )
+            await app.wait_root_operation(packet.receipt_id, timeout_seconds=30)
+            print(f"  Background work: /threads/{background.thread_id}", flush=True)
             picker = await app.create_thread(
                 title="Skills playground", defaults=NewThreadDefaults(project_id="project-atlas")
             )

@@ -7,6 +7,7 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
+from functools import partial
 from typing import Literal
 
 from a13n_harness import DeferredToolRequests
@@ -19,6 +20,8 @@ from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
+    InstructionBaselinePart,
+    InstructionDeltaPart,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -34,6 +37,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
@@ -44,6 +48,7 @@ from a13n_harness_ui.storage import (
     Continuation,
     LocalStore,
     ObjectRef,
+    StoredChildCheckpoint,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
@@ -452,6 +457,23 @@ class ThreadProjectionService:
             next_cursor=next_cursor,
         )
 
+    async def tool_execution_input(self, thread_id: str, tool_call_id: str) -> tuple[str | None, bool]:
+        """Read the latest retained call with the execution tool-call identity."""
+        thread = await self._required_thread(thread_id)
+        header = await self._inspection_header(thread)
+        candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, tool_call_id)
+        entries = await to_thread.run_sync(
+            lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
+        )
+        for entry in entries:
+            for part in entry.parts:
+                if part.kind == "tool_call" and part.tool_call_id == tool_call_id:
+                    value = part.value
+                    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False), bool(
+                        part.value_omitted
+                    )
+        return None, False
+
     async def transcript_inputs(
         self,
         *,
@@ -658,10 +680,19 @@ class ThreadProjectionService:
         return await to_thread.run_sync(lambda: tuple(TranscriptEntry.model_validate_json(value) for value in values))
 
     async def _inspection_header(self, thread: Thread) -> InspectionHeader:
+        child = (
+            await self._store.child_executions.latest_checkpoint_for_child(thread.thread_id)
+            if thread.parent_thread_id is not None
+            else None
+        )
         source_id = (
-            thread.continuation.logical_digest
-            if thread.continuation
-            else f"initial:{thread.initial_state.logical_digest}"
+            child.selected_checkpoint.logical_digest
+            if child is not None and child.selected_checkpoint is not None
+            else (
+                thread.continuation.logical_digest
+                if thread.continuation
+                else f"initial:{thread.initial_state.logical_digest}"
+            )
         )
         if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
             return header
@@ -673,7 +704,13 @@ class ThreadProjectionService:
             async with lock:
                 if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
                     return header
-                if thread.continuation is None:
+                if child is not None:
+                    stored = await self._store.read_child_checkpoint(child)
+                    if stored.child_thread_id != thread.thread_id or stored.execution_id != child.execution_id:
+                        raise ThreadError(
+                            "Child checkpoint identity is invalid.", code="thread_continuation_incompatible"
+                        )
+                elif thread.continuation is None:
                     stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
                 else:
                     stored = await self._store.read_continuation(
@@ -684,7 +721,15 @@ class ThreadProjectionService:
 
                         display = await read_display(self._store.objects, stored.display)
                         stored = stored.model_copy(update={"display": DisplayArchive(tail=display)})
-                data = await to_thread.run_sync(build_thread_inspection, thread, stored)
+                data = await to_thread.run_sync(
+                    partial(
+                        build_thread_inspection,
+                        thread,
+                        stored,
+                        source_id=source_id if child is not None else None,
+                        child_succeeded=child is not None and child.status == "succeeded",
+                    )
+                )
                 if not await self._store.inspections.publish(thread.thread_id, source_id, data):
                     raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
                 return InspectionHeader(source_id, len(data.entries), len(data.turns), data.metadata_json)
@@ -747,7 +792,13 @@ def project_working_state(working: WorkingState, continuation_id: str | None = N
     )
 
 
-def build_thread_inspection(thread: Thread, stored: Continuation | StoredThreadInitialState) -> InspectionData:
+def build_thread_inspection(
+    thread: Thread,
+    stored: Continuation | StoredThreadInitialState | StoredChildCheckpoint,
+    *,
+    source_id: str | None = None,
+    child_succeeded: bool = False,
+) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
     if state.thread_id != thread.thread_id:
@@ -758,7 +809,25 @@ def build_thread_inspection(thread: Thread, stored: Continuation | StoredThreadI
     from a13n_harness_ui.display_projection import display_entries, display_turns
 
     display = display if display is not None else import_display_history(model_history)
-    continuation_id = thread.continuation.logical_digest if thread.continuation else None
+    if isinstance(stored, StoredChildCheckpoint) and stored.terminal and child_succeeded:
+        final = next(
+            (
+                index
+                for index in range(len(model_history) - 1, -1, -1)
+                if isinstance(model_history[index], ModelResponse)
+            ),
+            None,
+        )
+        if final is not None:
+            display = display.model_copy(update={"completed": (*display.completed, f"import:{final}")})
+
+    continuation_id = (
+        source_id
+        if isinstance(stored, StoredChildCheckpoint)
+        else thread.continuation.logical_digest
+        if thread.continuation
+        else None
+    )
     notes = NotePage(continuation_id=continuation_id)
     tasks = TaskPage(continuation_id=continuation_id)
     entry = state.agent_context_state.get(WORKING_STATE_CAPABILITY_ID)
@@ -767,7 +836,7 @@ def build_thread_inspection(thread: Thread, stored: Continuation | StoredThreadI
         tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
         context_empty=not model_history,
-        run_composition=stored.run_composition if isinstance(stored, Continuation) else None,
+        run_composition=stored.run_composition if isinstance(stored, (Continuation, StoredChildCheckpoint)) else None,
         latest_request_tokens=next(
             (
                 message.usage.total_tokens
@@ -820,7 +889,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source") in {"background_process", "async_subagent", "envd_session"}
+            or metadata.get("a13n.steering-source") in ACTIVITY_SOURCES
         ):
             continue
         visible = [
@@ -828,8 +897,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             for item in request_input_content(message)
             if (projected := project_input_content(item)) is not None
             and projected[1].display
-            and (projected[1].model_extra or {}).get("a13n.steering-source")
-            not in {"background_process", "async_subagent", "envd_session"}
+            and (projected[1].model_extra or {}).get("a13n.steering-source") not in ACTIVITY_SOURCES
         ]
         if not visible:
             continue
@@ -1046,6 +1114,8 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
 
 
 def _request_parts(part: object, content_items: list[ContentItem] | None = None) -> tuple[TranscriptPart, ...]:
+    if isinstance(part, (InstructionBaselinePart, InstructionDeltaPart)):
+        return ()
     if isinstance(part, SystemPromptPart):
         return (TranscriptPart(kind="system", text=_bounded_text(part.content)),)
     if isinstance(part, UserPromptPart):

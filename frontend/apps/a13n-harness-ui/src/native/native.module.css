@@ -90,6 +90,7 @@
   }
 }
 .layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -312,6 +313,7 @@
   );
 }
 .workspaceTab > [role="tab"] {
+  flex: 1 1 auto;
   min-width: 0;
   color: inherit;
   padding-inline: 8px 4px;
@@ -1216,4 +1218,11 @@
   .loadingTrack::after {
     animation: none;
   }
+}
+
+.backgroundOverlay {
+  position: absolute;
+  inset: 48px 0 0;
+  pointer-events: none;
+  z-index: 20;
 }

@@ -7031,6 +7031,18 @@
               "default": 20,
               "title": "Limit"
             }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "List each child conversation's latest execution, running first, then newest first.",
+              "default": false,
+              "title": "Latest"
+            },
+            "description": "List each child conversation's latest execution, running first, then newest first."
           }
         ],
         "responses": {
@@ -7164,6 +7176,54 @@
                     "$ref": "#/components/schemas/ToolExecutionView"
                   },
                   "title": "Response Tool Executions Api Threads  Thread Id  Tool Executions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/output": {
+      "get": {
+        "summary": "Tool Execution Output",
+        "operationId": "tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolExecutionOutputView"
                 }
               }
             }
@@ -9011,6 +9071,18 @@
               "default": 20,
               "title": "Limit"
             }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "List each child conversation's latest execution, running first, then newest first.",
+              "default": false,
+              "title": "Latest"
+            },
+            "description": "List each child conversation's latest execution, running first, then newest first."
           }
         ],
         "responses": {
@@ -9752,6 +9824,9 @@
           },
           {
             "$ref": "#/components/schemas/BotAgentSource"
+          },
+          {
+            "$ref": "#/components/schemas/DynamicAgentSource"
           }
         ]
       },
@@ -9764,7 +9839,8 @@
               "markdown",
               "memory",
               "live",
-              "bot"
+              "bot",
+              "dynamic"
             ],
             "title": "Kind",
             "type": "string"
@@ -11959,7 +12035,8 @@
               "markdown",
               "memory",
               "live",
-              "bot"
+              "bot",
+              "dynamic"
             ],
             "title": "Source Kind"
           },
@@ -15249,6 +15326,29 @@
           "unsent_since"
         ],
         "title": "DraftSummary"
+      },
+      "DynamicAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "dynamic",
+            "title": "Kind",
+            "default": "dynamic"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "DynamicAgentSource",
+        "description": "Host-defined child; its complete definition is retained in its Run composition."
       },
       "EgressDestinations": {
         "discriminator": {
@@ -24922,9 +25022,70 @@
         "title": "ThreadWork",
         "description": "Current work observations; sections are independently owned, not atomic."
       },
+      "ToolExecutionOutputView": {
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/ToolExecutionView"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "input_truncated": {
+            "type": "boolean",
+            "title": "Input Truncated",
+            "default": false
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending",
+              "expired",
+              "unavailable"
+            ],
+            "title": "State"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "live": {
+            "type": "boolean",
+            "title": "Live",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "execution",
+          "state"
+        ],
+        "title": "ToolExecutionOutputView"
+      },
       "ToolExecutionView": {
         "additionalProperties": false,
-        "description": "Detached status only; native results stay behind Harness result tools.",
+        "description": "Detached execution status; output is read separately without acknowledgement.",
         "properties": {
           "execution_id": {
             "title": "Execution Id",
@@ -24989,6 +25150,11 @@
           "delivery_acknowledged": {
             "default": false,
             "title": "Delivery Acknowledged",
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
             "type": "boolean"
           },
           "available_actions": {

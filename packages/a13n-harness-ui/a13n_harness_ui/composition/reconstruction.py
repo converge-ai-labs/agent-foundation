@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from a13n_harness import (
     AgentContext,
@@ -21,7 +21,6 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     CompactionCapability,
     SubagentCapability,
-    SubagentOperator,
     ToolExecutionCapability,
     ToolSearchPlan,
     ToolSearchSelection,
@@ -71,6 +70,9 @@ from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 
 from .auxiliary import capability_configuration
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
@@ -256,7 +258,8 @@ class AgentReconstructor:
         self,
         composition: ResolvedRunComposition,
         *,
-        subagent_operator: SubagentOperator | None,
+        subagent_operator: HarnessUiSubagentOperator | None,
+        subagent: bool = False,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -279,6 +282,32 @@ class AgentReconstructor:
             positions=memory_positions,
             bot=composition.root.source_kind == "bot",
         )
+        from a13n_harness_ui.subagent_tools import SubagentTools, guidance
+
+        dynamic = not subagent and composition.subagents.dynamic.enabled
+        has_children = bool(composition.root.children) or dynamic
+        subagent_capability = None
+        if has_children:
+            if subagent_operator is None:
+                raise CompositionError(
+                    "The resolved Agent roster requires the Harness UI subagent operator.",
+                    code="subagent_operator_missing",
+                )
+            subagent_capability = SubagentCapability(async_enabled=True, operator=subagent_operator)
+        node = composition.root
+        host_tools = set()
+        if subagent:
+            host_tools.add("send_parent_message")
+            node = node.model_copy(update={"instructions": (guidance("child"), *node.instructions)})
+        elif dynamic:
+            host_tools.add("spawn_subagent")
+        if node.tools is not None:
+            node = node.model_copy(update={"tools": (*node.tools, *host_tools)})
+        if subagent_operator is not None and (subagent or has_children):
+            root_capabilities = (
+                *root_capabilities,
+                SubagentTools(subagent_operator, composition, subagent=subagent, has_children=has_children),
+            )
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
@@ -305,9 +334,9 @@ class AgentReconstructor:
             )
             model_recipes = {model_recipe_id(recipe): recipe for recipe in composition.media_understanding.values()}
             definition = self._definition(
-                composition.root,
+                node,
                 plugin_catalog=plugin_catalog,
-                subagent_operator=subagent_operator,
+                subagent_capability=subagent_capability,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
                 path_layout=path_layout,
@@ -427,7 +456,7 @@ class AgentReconstructor:
         node: ResolvedAgentNode,
         *,
         plugin_catalog: HarnessPluginFactoryCatalog,
-        subagent_operator: SubagentOperator | None,
+        subagent_capability: SubagentCapability | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
         path_layout: EnvironmentPathLayout,
@@ -483,13 +512,8 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        if node.children:
-            if not isinstance(subagent_operator, SubagentOperator):
-                raise CompositionError(
-                    "The resolved Agent roster requires the Harness UI subagent operator.",
-                    code="subagent_operator_missing",
-                )
-            capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
+        if subagent_capability is not None and (root or node.children):
+            capabilities.append(subagent_capability)
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
@@ -568,7 +592,7 @@ class AgentReconstructor:
                 agent=self._definition(
                     item.definition,
                     plugin_catalog=plugin_catalog,
-                    subagent_operator=subagent_operator,
+                    subagent_capability=subagent_capability,
                     root_capabilities=(),
                     root=False,
                     path_layout=path_layout,

@@ -2258,3 +2258,115 @@ it.each(["user", "steering", "media"])(
     });
   },
 );
+
+it("keeps a child's live suffix after the exact selected request checkpoint", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(childEvent(101));
+  const marker = childEvent(102);
+  if (marker.kind !== "event") throw new Error("Expected event");
+  marker.event.event_type = "CUSTOM";
+  marker.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.harness_ui.checkpoint",
+    value: { event: { continuation_id: "child-checkpoint" } },
+  };
+  display.accept(marker);
+  display.accept(
+    childEvent(103, "execution-one", {
+      messageId: "later",
+      delta: "unsaved suffix",
+    }),
+  );
+  const child = display.children.get("execution-one")!.display;
+  expect(
+    child.blocksAfter("child-checkpoint").map((block) => block.text),
+  ).toEqual(["unsaved suffix"]);
+});
+
+it("retains displayable execution notices without exposing ordinary hidden input", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  const notice = event(101, "original");
+  if (notice.kind !== "event") throw new Error("Expected event");
+  notice.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.input.steering",
+    metadata: { display: true, "a13n.steering-source": "tool_execution" },
+    value: {
+      event: {
+        message_id: "notification",
+        content:
+          "Tool notification · shell_exec · execution_id=exec-one · succeeded",
+        source: "tool_execution",
+      },
+    },
+  };
+  notice.event.event_type = "CUSTOM";
+  display.accept(notice);
+  const hidden = structuredClone(notice);
+  hidden.event.sequence = 102;
+  hidden.resume_cursor = "C102";
+  hidden.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.input.steering",
+    metadata: { display: false },
+    value: {
+      event: {
+        message_id: "hidden",
+        content: "internal guidance",
+        source: "steering",
+      },
+    },
+  };
+  display.accept(hidden);
+  const text = [...display.blocks.values()]
+    .map((block) => block.text)
+    .join("\n");
+  expect(text).toContain("Tool notification");
+  expect(text).not.toContain("internal guidance");
+});
+
+it("a child checkpoint recovers a trimmed prefix without hiding a later unsaved gap", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  for (let i = 0; i < 130; i++)
+    display.accept(
+      childEvent(101 + i, "execution-one", {
+        messageId: `before-${i}`,
+        delta: "saved content",
+      }),
+    );
+  const child = display.children.get("execution-one")!.display;
+  expect(child.gap).toBe(true);
+  const marker = childEvent(231);
+  if (marker.kind !== "event") throw new Error("Expected child event");
+  marker.event.event_type = "CUSTOM";
+  marker.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.harness_ui.checkpoint",
+    value: { event: { continuation_id: "saved-prefix" } },
+  };
+  display.accept(marker);
+  expect(child.gap).toBe(false);
+  for (let i = 0; i < 10; i++)
+    display.accept(
+      childEvent(232 + i, "execution-one", {
+        messageId: `after-${i}`,
+        delta: "new content",
+      }),
+    );
+  expect(child.gap).toBe(false);
+  expect(child.blocksAfter("saved-prefix")).toHaveLength(10);
+  for (let i = 10; i < 130; i++)
+    display.accept(
+      childEvent(232 + i, "execution-one", {
+        messageId: `after-${i}`,
+        delta: "new content",
+      }),
+    );
+  expect(child.gap).toBe(true);
+});

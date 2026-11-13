@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { HelpTip } from "../shell/help-tip";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
@@ -8,6 +9,7 @@ import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
+import { ModelSelectionField } from "./model-selection";
 import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
@@ -132,21 +134,23 @@ export function ResourceFields({
       options={[{ value: "", label: emptyLabel }, ...options]}
     />
   );
-  const list = (
-    label: string,
-    path: string[],
-    options: { value: string; label: string }[],
-  ) => {
-    const raw = document.toJS() as Record<string, unknown>;
-    let selected: unknown = raw;
+  const strings = (path: string[]) => {
+    let selected: unknown = document.toJS();
     for (const key of path)
       selected =
         typeof selected === "object" && selected !== null
           ? (selected as Record<string, unknown>)[key]
           : undefined;
-    const values = Array.isArray(selected)
+    return Array.isArray(selected)
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
+  };
+  const list = (
+    label: string,
+    path: string[],
+    options: { value: string; label: string }[],
+  ) => {
+    const values = strings(path);
     return (
       <SelectionField
         key={path.join(".")}
@@ -394,23 +398,96 @@ export function ResourceFields({
           <>
             <SettingsSection variant="grouped" title={t("Chats")}>
               {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-              <details className={layout.groupDisclosure}>
-                <summary>{t("Subagent defaults")}</summary>
-                <div>
-                  {scalar(
-                    t("Sidekick agent"),
-                    ["webui", "sidekick", "agent"],
-                    agentOptions,
-                    t("Use current agent"),
+            </SettingsSection>
+            <SettingsSection
+              title={
+                <span className="flex items-center gap-1">
+                  {t("Sidekick")}
+                  <HelpTip label={t("About Sidekick")}>
+                    {t(
+                      "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
+                    )}
+                  </HelpTip>
+                </span>
+              }
+            >
+              {scalar(
+                t("Sidekick agent"),
+                ["webui", "sidekick", "agent"],
+                agentOptions,
+                t("Use current agent"),
+              )}
+              {scalar(
+                t("Sidekick model"),
+                ["webui", "sidekick", "model"],
+                models,
+                t("Use agent model"),
+              )}
+            </SettingsSection>
+            <SettingsSection
+              title={
+                <span className="flex items-center gap-1">
+                  {t("Subagents")}
+                  <HelpTip label={t("About subagents")}>
+                    {t(
+                      "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
+                    )}
+                  </HelpTip>
+                </span>
+              }
+            >
+              <SettingsRow
+                label={t("Let the agent create subagents")}
+                controlId="dynamic-subagents-enabled"
+              >
+                <Switch
+                  id="dynamic-subagents-enabled"
+                  checked={get(["subagents", "dynamic", "enabled"]) === true}
+                  onCheckedChange={(enabled) =>
+                    set(
+                      ["subagents", "dynamic", "enabled"],
+                      enabled || undefined,
+                    )
+                  }
+                />
+              </SettingsRow>
+              {get(["subagents", "dynamic", "enabled"]) === true && (
+                <ModelSelectionField
+                  label={t("Models for created subagents")}
+                  description={t(
+                    "The agent can choose from these. With none selected, subagents use the main agent's model.",
                   )}
-                  {scalar(
-                    t("Sidekick model"),
-                    ["webui", "sidekick", "model"],
-                    models,
-                    t("Use agent model"),
-                  )}
-                </div>
-              </details>
+                  models={selectors.data?.models ?? []}
+                  value={
+                    strings(["subagents", "dynamic", "allowed_models"]) ?? []
+                  }
+                  onChange={(value) =>
+                    set(["subagents", "dynamic", "allowed_models"], value)
+                  }
+                />
+              )}
+              <SettingsRow
+                label={t("Maximum running subagents")}
+                controlId="subagents-max-concurrent"
+                description={t("Shared by all subagents of one chat.")}
+              >
+                <Input
+                  id="subagents-max-concurrent"
+                  type="number"
+                  min={1}
+                  step={1}
+                  className={styles.settingControl}
+                  value={Number(get(["subagents", "max_concurrent"]) ?? 8)}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isInteger(value) && value > 0)
+                      set(
+                        ["subagents", "max_concurrent"],
+                        value === 8 ? undefined : value,
+                      );
+                  }}
+                />
+              </SettingsRow>
             </SettingsSection>
             <DictationFields source={source} onChange={onChange} />
             <SettingsSection variant="grouped" title={t("Memory")}>

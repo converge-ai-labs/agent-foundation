@@ -23,7 +23,7 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness import __version__ as harness_version
-from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
+from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
 from a13n_harness.context import AgentContext
@@ -162,7 +162,7 @@ class RootRunExecutor:
         compositions: RunCompositionService,
         agent_reconstructor: AgentReconstructor,
         environment_service: EnvironmentRunService,
-        subagent_operator: SubagentOperator | None = None,
+        subagent_operator: HarnessUiSubagentOperator | None = None,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: HarnessUiLiveHub | None = None,
         summary_hub: HarnessUiSummaryHub | None = None,
@@ -976,7 +976,7 @@ class RootRunExecutor:
     ) -> AsyncGenerator[None]:
         with execution_composition(composition_ref):
             operator = self._subagent_operator
-            if isinstance(operator, HarnessUiSubagentOperator):
+            if operator is not None:
                 async with operator.bind_parent_run(
                     thread_id=thread_id,
                     run_id=run_id,

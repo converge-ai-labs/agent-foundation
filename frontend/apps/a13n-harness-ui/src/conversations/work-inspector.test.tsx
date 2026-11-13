@@ -106,11 +106,7 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     }),
   );
   const setup = harness(GET);
-  const display = new FocusDisplay();
-  const view = render(
-    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
-    setup,
-  );
+  const view = render(<WorkInspector threadId="root" />, setup);
   await screen.findByText("Checking output");
   expect(screen.queryByText(/Work observation.*unavailable/)).toBeNull();
   expect(
@@ -120,8 +116,8 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
     screen.getByRole("button", { name: "Inspect notes" }).textContent,
   ).toContain("3");
   expect(
-    screen.getByRole("button", { name: "Inspect subagents" }).textContent,
-  ).toContain("1");
+    screen.queryByRole("button", { name: "Inspect subagents" }),
+  ).toBeNull();
   expect(
     GET.mock.calls
       .filter(([path]) => !path.endsWith("/tool-executions"))
@@ -164,11 +160,8 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Close activity" }));
   run = "run-two";
-  display.reset();
   refreshThread(setup.queries, "root", "lifecycle");
-  view.rerender(
-    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
-  );
+  view.rerender(<WorkInspector threadId="root" />);
   await waitFor(() =>
     expect(
       setup.queries.getQueryData<Schema<"ThreadWork">>([
@@ -214,13 +207,6 @@ it.each([false, true])(
               },
       }),
     );
-    const display = new FocusDisplay();
-    display.processes.result(
-      "run-one",
-      "shell_exec",
-      { command: "pnpm dev" },
-      { process_id: "process-one", status: { phase: "running" } },
-    );
     render(
       <GuestAccessContext
         value={
@@ -239,7 +225,7 @@ it.each([false, true])(
             : null
         }
       >
-        <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />
+        <WorkInspector threadId="root" />
       </GuestAccessContext>,
       harness(GET),
     );
@@ -251,10 +237,10 @@ it.each([false, true])(
       ).toContain("1"),
     );
     expect(
-      screen.getByRole("button", { name: "Inspect subagents" }).textContent,
-    ).toBe("");
-    expect(more.textContent.includes("1")).toBe(!guest);
-    expect(GET).toHaveBeenCalledTimes(guest ? 1 : 2);
+      screen.queryByRole("button", { name: "Inspect subagents" }),
+    ).toBeNull();
+    expect(more.textContent).toBe("");
+    expect(GET).toHaveBeenCalledTimes(1);
     more.focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menuitem", { name: /Notes/ });
@@ -399,62 +385,32 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   } as Schema<"ChildExecutionView">;
   const view = render(<Child child={child} reconcile={vi.fn()} />, { wrapper });
   fireEvent.click(screen.getByText("Worker - running"));
-  fireEvent.change(
-    await screen.findByRole("textbox", { name: "Instruction for Worker" }),
-    { target: { value: "Check once" } },
-  );
-  await act(async () => {
-    await i18n.changeLanguage("zh-CN");
-  });
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "给 Worker 的指令",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("Check once");
-  expect(POST).not.toHaveBeenCalled();
-  await act(async () => {
-    await i18n.changeLanguage("en");
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Stop subagent" }));
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0]).toEqual([
-    "/api/threads/{thread_id}/children/{execution_id}/steer",
-    {
-      params: { path: { thread_id: "root", execution_id: "control-one" } },
-      body: { prompt: "Check once" },
-    },
+    "/api/threads/{thread_id}/children/{execution_id}/cancel",
+    { params: { path: { thread_id: "root", execution_id: "control-one" } } },
   ]);
   view.rerender(<div>Closed</div>);
   view.rerender(<Child child={child} reconcile={vi.fn()} />);
   fireEvent.click(screen.getByText("Worker - running"));
-  const input = await screen.findByRole("textbox", {
-    name: "Instruction for Worker",
-  });
-  expect((input as HTMLInputElement).value).toBe("Check once");
   expect(
     (
-      screen.getByRole("button", {
-        name: "Guide subagent",
-      }) as HTMLButtonElement
+      (await screen.findByRole("button", {
+        name: "Stopping…",
+      })) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   reject(new TypeError("Acknowledgement lost"));
-  await screen.findByText(/Couldn't confirm delivery/);
-  view.rerender(<div>Closed again</div>);
-  view.rerender(<Child child={child} reconcile={vi.fn()} />);
-  fireEvent.click(screen.getByText("Worker - running"));
-  await screen.findByText(/Couldn't confirm delivery/);
+  await screen.findByText(/confirm delivery/);
   expect(
     (
-      screen.getByRole("textbox", {
-        name: "Instruction for Worker",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("Check once");
-  fireEvent.click(screen.getByRole("button", { name: "Guide subagent" }));
-  expect(POST).toHaveBeenCalledOnce();
+      (await screen.findByRole("button", {
+        name: "Stop subagent",
+      })) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 it("keeps completed output directly inspectable and tools collapsed without raw review events", async () => {
@@ -522,75 +478,6 @@ it("keeps completed output directly inspectable and tools collapsed without raw 
   ).toBe("false");
 });
 
-it("inspects observed processes in place, updates status and discloses missing observations", async () => {
-  const GET = vi.fn(async (path: string) => ({
-    data: path.endsWith("/children")
-      ? { executions: [], total: 0 }
-      : {
-          thread_id: "root",
-          source: "saved",
-          tasks: { total: 0 },
-          notes: { total: 0 },
-          children: {},
-        },
-  }));
-  const display = new FocusDisplay();
-  const view = render(
-    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
-    harness(GET),
-  );
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Inspect processes" }));
-  expect(screen.getByText("No background processes observed.")).toBeTruthy();
-  display.processes.result(
-    "run-one",
-    "shell_exec",
-    { command: "pnpm dev" },
-    { process_id: "process-one", status: { phase: "running" } },
-  );
-  view.rerender(
-    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
-  );
-  expect(screen.getByText("pnpm dev")).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Inspect processes" }).textContent,
-  ).toContain("1");
-  fireEvent.click(screen.getByText("pnpm dev"));
-  expect(screen.queryByText("process-one")).toBeNull();
-  expect(screen.queryByText("run-one")).toBeNull();
-  fireEvent.keyDown(window, {
-    code: "KeyD",
-    ctrlKey: true,
-    metaKey: true,
-    altKey: true,
-  });
-  expect(screen.getByText("process-one")).toBeTruthy();
-  expect(screen.getByText("run-one")).toBeTruthy();
-  fireEvent.keyDown(window, {
-    code: "KeyD",
-    ctrlKey: true,
-    metaKey: true,
-    altKey: true,
-  });
-  display.processes.status("run-one", "process-one", "exited", 3);
-  view.rerender(
-    <WorkInspector
-      threadId="root"
-      display={display}
-      connected={false}
-      reconcile={vi.fn()}
-    />,
-  );
-  expect(screen.getByText("Failed (exit 3)")).toBeTruthy();
-  expect(screen.getByText(/Status may be stale/)).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Inspect processes" }).textContent,
-  ).not.toContain("1");
-  expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
-  await user.click(screen.getByRole("button", { name: "Close activity" }));
-  await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
-});
-
 it("inspects retained tools without consuming results and cancels the exact child execution", async () => {
   let item = {
     execution_id: "tool-one",
@@ -645,8 +532,6 @@ it("shares one open inspector with Goal and forgets a cleared Goal selection", a
   const setup = harness(GET);
   const props = {
     threadId: "root",
-    display: new FocusDisplay(),
-    reconcile: vi.fn(),
   };
   const goal = { objective: "Confirm the result", status: "verified" } as const;
   const view = render(<WorkInspector {...props} goal={goal} />, setup);

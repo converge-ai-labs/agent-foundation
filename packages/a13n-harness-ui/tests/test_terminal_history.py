@@ -47,7 +47,9 @@ def test_restore_preserves_roles_and_omits_internal_guidance() -> None:
     renderer.transcript.close()
 
 
-@pytest.mark.parametrize("source", ["background_process", "async_subagent", "envd_session"])
+@pytest.mark.parametrize(
+    "source", ["background_process", "async_subagent", "envd_session", "parent_agent", "tool_execution"]
+)
 def test_restored_lifecycle_notifications_are_activity_not_authored_input(source: str) -> None:
     renderer = StreamRenderer(Status())
     restore_transcript(
@@ -208,3 +210,20 @@ async def test_ctrl_t_viewer_preserves_draft_and_live_output() -> None:
             shell.app.exit()
             await terminal
             shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("source", ["parent_agent", "tool_execution", "async_subagent"])
+def test_displayable_background_inputs_render_as_activity_in_history_and_live(source):
+    metadata = ContentMetadata.model_validate({"a13n.steering-source": source})
+    renderer = StreamRenderer(Status())
+    restore_transcript(renderer, _page(TranscriptPart(kind="user", text="background update", metadata=metadata)))
+    assert next(iter(renderer.transcript.blocks.values())).kind == "tool"
+    assert "Activity · background update" in _source(renderer)
+    renderer.ingest(
+        "TEXT_MESSAGE_CONTENT",
+        {"role": "user", "messageId": "notice", "delta": "live background", "metadata": metadata.model_dump()},
+        run_id="run",
+    )
+    assert "Activity · live background" in _source(renderer)
+    assert all(block.kind != "user" for block in renderer.transcript.blocks.values())
+    renderer.transcript.close()

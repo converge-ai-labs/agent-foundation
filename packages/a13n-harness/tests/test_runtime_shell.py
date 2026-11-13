@@ -289,8 +289,12 @@ async def test_steering_releases_control_wait_without_stopping_original_shell(
                     await resource.controller.write_input(resource.process_id, "finished\n", close_stdin=False)
                     await consumer
                     if not immediate:
-                        assert results[0]["status"]["phase"] == "exited"
-                        assert results[0]["stdout"]["text"] == "readyfinished"
+                        value = results[0]
+                        if wait_tool == "tool_execution_wait":
+                            value, header = value
+                            assert header == f"Tool result · shell_exec · execution_id={execution_id} · succeeded"
+                        assert value["status"]["phase"] == "exited"
+                        assert value["stdout"]["text"] == "readyfinished"
                     settled = await runtime.wait(first.thread_id, execution_id)
                     assert settled.record.status == "succeeded"
                     assert settled.result["stdout"]["text"] == "readyfinished"

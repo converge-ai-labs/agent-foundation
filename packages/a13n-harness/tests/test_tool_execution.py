@@ -16,6 +16,7 @@ from a13n_harness.tool_execution import (
     ToolExecutionConfig,
     ToolExecutionRuntime,
 )
+from a13n_harness.tools._output import tool_execution_value
 from anyio import create_task_group
 from pydantic_ai import Tool, ToolReturn
 from pydantic_ai.capabilities import Capability
@@ -505,7 +506,7 @@ async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaus
             if isinstance(part, ToolReturnPart) and part.outcome == "success"
         ]
         if returns:
-            assert returns[-1].content == "sunny"
+            assert tool_execution_value(returns[-1].content, returns[-1].metadata) == "sunny"
             yield "done"
         else:
             if retries:
@@ -752,7 +753,8 @@ async def test_retained_spill_materializes_in_later_run_after_original_cleanup(t
             content = returns[-1].content
             assert isinstance(content, list)
             path = content[0]["output_file_path"]
-            assert content[1] == f"Evidence: {path}"
+            assert content[1] == f"Tool result · lookup · execution_id={execution_id} · succeeded"
+            assert content[2] == f"Evidence: {path}"
             assert path != old_path
             files = list(tmp_path.rglob("tool-result-*.txt"))
             assert len(files) == 1
@@ -825,6 +827,8 @@ async def test_tool_handoff_publishes_one_return_to_each_channel(immediate):
     assert calls == 1
     receipt = observed[0].content
     assert receipt["type"] == "tool_execution_receipt"
+    assert "delivered to this conversation automatically" in receipt["message"]
+    assert "only when your next step needs the result now" in receipt["message"]
     for events in (produced, published):
         returns = [
             item.event.part
@@ -902,7 +906,8 @@ async def test_immediate_settlement_publishes_completed_native_result_once(monke
         published = await consumer
         assert stream.result.status == "completed"
         assert (await runtime.summarize(stream.thread_id))[0].delivery_acknowledged
-    assert len(observed) == 1 and observed[0].content == {"answer": 42}
+    assert len(observed) == 1
+    assert tool_execution_value(observed[0].content, observed[0].metadata) == {"answer": 42}
     for events in (produced, published):
         returns = [
             item.event.part
@@ -910,6 +915,7 @@ async def test_immediate_settlement_publishes_completed_native_result_once(monke
             if isinstance(item, HarnessEvent) and isinstance(item.event, FunctionToolResultEvent)
         ]
         assert len(returns) == 1
+        assert tool_execution_value(returns[0].content, returns[0].metadata) == {"answer": 42}
         assert returns[0].content == {"answer": 42}
         assert returns[0].metadata["origin"] == "retained"
     await runtime.close()
@@ -1075,6 +1081,70 @@ async def test_retained_system_failure_preserves_code_and_has_no_default_hint():
             "message": "The tool is unavailable.",
             "details": {},
         }
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("retriever", ["tool_execution_result", "tool_execution_wait"])
+async def test_tool_notification_and_retrieved_result_share_execution_identity(retriever):
+    runtime = ToolExecutionRuntime()
+    release = asyncio.Event()
+
+    async def lookup():
+        await release.wait()
+        return {"answer": 42}
+
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="auto", foreground_wait_seconds=0))
+    try:
+        first = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+        receipt = observed[0].content
+        execution_id = receipt["execution_id"]
+        assert receipt["header"] == f"Tool notification · lookup · execution_id={execution_id} · running"
+        release.set()
+        await runtime.wait(first.thread_id, execution_id)
+
+        async def model(messages, info):
+            returns = [
+                part
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == retriever
+            ]
+            if not returns:
+                yield {0: DeltaToolCall(name=retriever, json_args=json.dumps({"execution_id": execution_id}))}
+            else:
+                returned = returns[-1]
+                assert tool_execution_value(returned.content, returned.metadata) == {"answer": 42}
+                assert returned.content[1] == f"Tool result · lookup · execution_id={execution_id} · succeeded"
+                yield "done"
+
+        reader = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(ToolExecutionCapability(),),
+        )
+        result = await reader.run(
+            "collect", previous_state=first.state, bindings=RunBindings.embedded(tool_execution=runtime)
+        )
+        assert result.output_or_raise() == "done"
+    finally:
+        release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+async def test_foreground_owned_return_keeps_native_value_without_execution_header(mode):
+    async def lookup():
+        return 3
+
+    runtime = ToolExecutionRuntime()
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode=mode, foreground_wait_seconds=30))
+    try:
+        result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+        assert result.output_or_raise() == "continuing conversation"
+        assert observed[0].content == 3
+        assert not (await runtime.summarize(result.thread_id))[0].foreground_released
     finally:
         await runtime.close()
 

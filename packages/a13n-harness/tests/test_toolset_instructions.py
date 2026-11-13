@@ -229,7 +229,10 @@ def test_runner_descriptions_require_complete_sections(missing_tag: str) -> None
                 list_name="list_ops",
             ),
         ),
-        ("subagents", dict(available_subagents="researcher: bounded research")),
+        (
+            "subagents",
+            dict(available_subagents="researcher: bounded research"),
+        ),
         ("delegate", dict(available_subagents="researcher: bounded research")),
     ],
 )
@@ -327,6 +330,10 @@ def test_missing_guidance_page_raises_instead_of_disabling_hints() -> None:
             "Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page.",
         ),
         ("environment-shell", "Reads are non-consuming, so repeating the same offsets is safe."),
+        (
+            "environment-shell",
+            "A Host-held execution delivers its result automatically when it finishes, even after your turn ends.",
+        ),
         (
             "tool_search",
             "Unless a complete current definition is already known, call `{describe_name}(group=..., tool=...)` with the returned exact identity.",

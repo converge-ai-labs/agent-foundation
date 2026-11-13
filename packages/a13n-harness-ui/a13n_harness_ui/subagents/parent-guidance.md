@@ -1,0 +1,1 @@
+A subagent may send you a message while it works. Reply to a running child with `steer_subagent`, or continue a resumable child with `resume_subagent`. If only the user can decide, ask the user and pass the answer on. Avoid acknowledgement-only replies.

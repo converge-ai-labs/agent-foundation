@@ -19,6 +19,7 @@ from a13n_harness import (
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tool_execution import StoredToolExecution
 from a13n_harness.toolsets.process_manager import recover_shell
 from a13n_logging import get_logger
@@ -37,7 +38,7 @@ from a13n_harness_ui.surfaces import ToolExecutionView
 
 def execution_view(record: ToolExecutionRecord) -> ToolExecutionView:
     return ToolExecutionView(
-        **record.model_dump(exclude={"error", "cancel_requested", "sequential"}),
+        **record.model_dump(exclude={"error", "sequential"}),
         available_actions=() if record.terminal else ("cancel",),
     )
 
@@ -54,6 +55,8 @@ class ToolExecutions:
         self.runtime = ToolExecutionRuntime(store=store, on_completed=self._completed)
         self._states: dict[str, CodeActStateOwner] = {}
         self._pending: OrderedDict[str, set[str]] = OrderedDict()
+        self._subagent_inputs: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+        self.deliver_subagent: Callable[[str, str, tuple[str, ...]], Awaitable[bool]] | None = None
         self._scheduled: set[str] = set()
         self._changed: set[str] = set()
         self._offered: dict[str, set[str]] = {}
@@ -69,6 +72,7 @@ class ToolExecutions:
         """Include hints in flight, whose IDs have already left the pending queue."""
         return (
             thread_id in self._pending
+            or thread_id in self._subagent_inputs
             or thread_id in self._scheduled
             or any(record.thread_id == thread_id for record in self.runtime.active)
         )
@@ -77,6 +81,7 @@ class ToolExecutions:
         """Include completion delivery that can still resume a child lane."""
         return (
             frozenset(self._pending)
+            | frozenset(self._subagent_inputs)
             | frozenset(self._scheduled)
             | frozenset(record.thread_id for record in self.runtime.active)
         )
@@ -223,6 +228,7 @@ class ToolExecutions:
     def forget(self, thread_id: str) -> None:
         """Release local delivery bookkeeping when a Thread is deleted."""
         self._pending.pop(thread_id, None)
+        self._subagent_inputs.pop(thread_id, None)
         self._offered.pop(thread_id, None)
         if (scope := self._deliveries.get(thread_id)) is not None:
             scope.cancel()
@@ -231,6 +237,7 @@ class ToolExecutions:
     def stop(self) -> None:
         self._accepting = False
         self._pending.clear()
+        self._subagent_inputs.clear()
         for scope in self._deliveries.values():
             scope.cancel()
 
@@ -254,8 +261,19 @@ class ToolExecutions:
         self._offered.pop(thread_id, None)
         self.retry(thread_id, refresh=self.store is not None)
 
+    def offer_subagent_input(self, thread_id: str, text: str, execution_ids: tuple[str, ...]) -> None:
+        """Use the existing dispatch/retry lane for process-local child inputs."""
+        if not self._accepting:
+            return
+        self._subagent_inputs.setdefault(thread_id, []).append((text, execution_ids))
+        self.retry(thread_id)
+
     def retry(self, thread_id: str, *, refresh: bool = False) -> None:
-        if not self._accepting or self._group is None or (thread_id not in self._pending and not refresh):
+        if (
+            not self._accepting
+            or self._group is None
+            or (thread_id not in self._pending and thread_id not in self._subagent_inputs and not refresh)
+        ):
             return
         if thread_id in self._scheduled:
             self._retry.add(thread_id)
@@ -274,6 +292,17 @@ class ToolExecutions:
                     self._changed.discard(thread_id)
                     if self.changed is not None:
                         await self.changed(thread_id)
+                notices = self._subagent_inputs.pop(thread_id, [])
+                if notices and self.deliver_subagent is not None:
+                    text = "\n\n".join(item[0] for item in notices)
+                    references = tuple(dict.fromkeys(key for item in notices for key in item[1]))
+                    try:
+                        accepted = await self.deliver_subagent(thread_id, text, references)
+                    except Exception:
+                        self._subagent_inputs.setdefault(thread_id, [])[:0] = notices
+                        raise
+                    if not accepted:
+                        self._subagent_inputs.setdefault(thread_id, [])[:0] = notices
                 if self.store is not None:
                     # Keep the offer owner through Run settlement, not merely
                     # enqueue. Process death releases the OS lock for takeover.
@@ -294,7 +323,12 @@ class ToolExecutions:
                 if not completed:
                     return
                 prompt = "Tool executions completed. Inspect or retrieve their retained results:\n" + "\n".join(
-                    f"- {record.execution_id}: {record.tool_name} ({'finished' if record.status == 'succeeded' else record.status})"
+                    format_execution_header(
+                        "Tool notification",
+                        record.tool_name,
+                        record.execution_id,
+                        "finished" if record.status == "succeeded" else record.status,
+                    )
                     for record in completed
                 )
                 self._offered.setdefault(thread_id, set()).update(execution_ids)
@@ -305,7 +339,8 @@ class ToolExecutions:
                     self.retry(thread_id, refresh=True)
         except Exception:
             self._offered.get(thread_id, set()).difference_update(execution_ids)
-            self._pending.setdefault(thread_id, set()).update(execution_ids)
+            if execution_ids:
+                self._pending.setdefault(thread_id, set()).update(execution_ids)
             get_logger(__name__).warning("Could not deliver tool completion hint: %s", thread_id, exc_info=True)
         finally:
             if self.store is not None and not self._offered.get(thread_id):

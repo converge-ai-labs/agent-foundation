@@ -7,7 +7,7 @@ With Host-held tool execution, a fast command returns its result; expiry or imme
 
 Do not reissue it.
 
-Use the exposed execution controls for status, cancellation and the final result.
+A Host-held execution delivers its result automatically when it finishes, even after your turn ends. Continue with other work meanwhile; wait or read output only when your next step needs it now. When only background work remains, you can end your turn and tell the user what still runs.
 
 Recovery is best-effort; never assume missing commands succeeded or restart them automatically.
 

@@ -66,7 +66,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory", "live", "bot"]
+    kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -683,7 +683,7 @@ class ThreadWork(SurfaceModel):
 
 
 class ToolExecutionView(SurfaceModel):
-    """Detached status only; native results stay behind Harness result tools."""
+    """Detached execution status; output is read separately without acknowledgement."""
 
     execution_id: str
     thread_id: str
@@ -696,7 +696,18 @@ class ToolExecutionView(SurfaceModel):
     result_available: bool = False
     foreground_released: bool = False
     delivery_acknowledged: bool = False
+    cancel_requested: bool = False
     available_actions: tuple[Literal["cancel"], ...] = ()
+
+
+class ToolExecutionOutputView(SurfaceModel):
+    execution: ToolExecutionView
+    input: str | None = None
+    input_truncated: bool = False
+    text: str | None = None
+    state: Literal["available", "pending", "expired", "unavailable"]
+    truncated: bool = False
+    live: bool = False
 
 
 class ThreadFocusSnapshot(SurfaceModel):

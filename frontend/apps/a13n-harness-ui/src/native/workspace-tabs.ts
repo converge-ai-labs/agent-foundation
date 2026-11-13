@@ -1,3 +1,4 @@
+import type { BackgroundTarget } from "../conversations/background-work";
 import type { DiffSelection } from "./changes";
 
 export type FileListPosition = {
@@ -10,6 +11,7 @@ export type FileListPosition = {
 };
 
 export type TabContent =
+  | { kind: "background"; target: BackgroundTarget }
   | { kind: "new" }
   | {
       kind: "files";
@@ -45,6 +47,13 @@ export function emptyTabs(id: string): WorkspaceTabs {
 function sameTarget(a: WorkspaceTab, b: WorkspaceTab) {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
+    case "background":
+      return (
+        b.kind === "background" &&
+        a.target.kind === b.target.kind &&
+        a.target.id === b.target.id &&
+        a.target.threadId === b.target.threadId
+      );
     case "file":
       return b.kind === "file" && a.path === b.path;
     case "files":
@@ -85,7 +94,8 @@ export function workspaceTabs(
       const existing = state.items.find((tab) => sameTarget(tab, action.tab));
       if (
         existing &&
-        (action.tab.kind === "browser" ||
+        (action.tab.kind === "background" ||
+          action.tab.kind === "browser" ||
           action.tab.kind === "terminal" ||
           action.tab.kind === "work-notes")
       )

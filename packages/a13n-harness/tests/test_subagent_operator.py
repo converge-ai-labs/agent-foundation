@@ -326,6 +326,12 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
                 )
             }
             return
+        for returned in returns:
+            if returned.tool_name in {"subagent_info", "wait_subagent"}:
+                assert returned.content["executions"][0]["reply_tool"] == "resume_subagent"
+                assert returned.content["executions"][0]["header"] == (
+                    "Subagent result · reviewer · execution_id=execution-1 · succeeded"
+                )
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -581,3 +587,33 @@ async def test_host_resume_is_opt_in_and_declared_wire_shape_is_unchanged() -> N
             ),
             AsyncResumeRequest(execution_id="execution-1", prompt="continue"),
         )
+
+
+async def test_async_guidance_describes_automatic_results_and_turn_end():
+    operator = RecordingSubagentOperator()
+    capability = SubagentCapability(async_enabled=True, operator=operator)
+
+    async def model(messages, info):
+        instructions = info.instructions or ""
+        assert "Final results are delivered to this conversation automatically" in instructions
+        assert "When only background work remains, you can end your turn" in instructions
+        if not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield {0: DeltaToolCall(name="delegate", json_args='{"subagent_name":"reviewer","prompt":"inspect"}')}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(_definition(FunctionModel(stream_function=model), capability))
+    result = await executable.run("start", bindings=_bindings())
+    assert result.output_or_raise() == "done"
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded", "failed", "cancelled", "lost"])
+@pytest.mark.parametrize("result_type", [SubagentInfoResult, SubagentWaitResult])
+def test_execution_page_distinguishes_notifications_from_terminal_results(status, result_type):
+    from a13n_harness.toolsets.subagents import _execution_page
+
+    result = result_type(executions=(RecordingSubagentOperator._view("execution-1", status=status),), total=1)
+    kind = "Subagent notification" if status == "running" else "Subagent result"
+    assert _execution_page(result)["executions"][0]["header"] == (
+        f"{kind} · reviewer · execution_id=execution-1 · {status}"
+    )

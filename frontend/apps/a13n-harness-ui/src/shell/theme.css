@@ -17,6 +17,16 @@
   --harness-nav-font: 13px;
   --composer-font-size: 16px;
   --harness-code-size: 12px;
+  --a13n-identity-1: light-dark(#ff6fb1, #ff8cc2);
+  --a13n-identity-2: light-dark(#ff8a5c, #ffa37f);
+  --a13n-identity-3: light-dark(#ffc53d, #ffd36b);
+  --a13n-identity-4: light-dark(#8ed94f, #a7e472);
+  --a13n-identity-5: light-dark(#33d1a0, #5bdcb4);
+  --a13n-identity-6: light-dark(#3cc8f0, #6fd8f6);
+  --a13n-identity-7: light-dark(#6b8cff, #8fa8ff);
+  --a13n-identity-8: light-dark(#a77bff, #bb98ff);
+  --a13n-identity-ink: #231f33;
+  --a13n-identity-light: #fff;
   --harness-terminal-size: 13px;
   --a13n-text-body: 14px;
   /* Compact controls, softer containers, and clearly rounded overlays. */
