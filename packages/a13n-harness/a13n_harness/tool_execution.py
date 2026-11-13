@@ -46,6 +46,8 @@ class ToolExecutionRecord(BaseModel):
     run_id: str
     tool_call_id: str
     tool_name: str
+    # Original explicit Thread-wide completion ordering, not the native per-tool batch flag.
+    sequential: bool = False
     status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"] = "queued"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
@@ -363,6 +365,7 @@ class ToolExecutionRuntime:
             run_id=run_id,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
+            sequential=sequential,
         )
         live = _LiveExecution(record)
         self._live[record.execution_id] = live
@@ -642,7 +645,7 @@ class ToolExecutionRuntime:
         self._live[record.execution_id] = live
         # This operation already started before any newly queued invocation.
         # Track its completion for future calls without waiting on later barriers.
-        slot = _ExecutionSlot(asyncio.get_running_loop().create_future(), (), False)
+        slot = _ExecutionSlot(asyncio.get_running_loop().create_future(), (), record.sequential)
         self._order.setdefault(record.thread_id, []).append(slot)
         live.task = asyncio.create_task(
             self._execute(live, operation, None, slot, release_ownership), name=record.execution_id

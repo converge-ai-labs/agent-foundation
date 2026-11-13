@@ -740,9 +740,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             mode = mode(tool_args)
         if mode in {"control", "process"}:
             state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
-        sequential = tool.tool_def.sequential or (
-            ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
-        )
+        # A tool's native sequential declaration orders its model-response batch.
+        # Only explicit global mode extends completion ordering across retained calls and Runs.
+        sequential = ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
         from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
         if (

@@ -659,6 +659,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             status = "cancelled"
             error_type = type(exc).__name__
             raise
+        except InlineSessionBusyError as exc:
+            error_type = type(exc).__name__
+            return fail(
+                exc, "The inline session is busy. Wait for its active execution before another run_code or restart."
+            )
         except TimeoutError as exc:
             status = "timed_out"
             error_type = type(exc).__name__

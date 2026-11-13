@@ -1783,3 +1783,23 @@ async def test_root_completion_after_restart_uses_execution_state(tmp_path, monk
             assert (await successor.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         capture.assert_awaited_once()
         assert len(calls) == 1
+
+
+@pytest.mark.parametrize("sequential", [False, True])
+async def test_persisted_execution_ordering_is_internal_to_recovery(tmp_path, sequential):
+    from a13n_harness_ui.storage.runtime import open_local_store
+    from a13n_harness_ui.tool_executions import execution_view
+
+    record = ToolExecutionRecord(
+        execution_id="exec-ordering",
+        thread_id="thread-a",
+        run_id="run-a",
+        tool_call_id="call-a",
+        tool_name="shell_exec",
+        sequential=sequential,
+    )
+    async with open_local_store(_settings(tmp_path).storage) as store:
+        await store.tool_executions.save(StoredToolExecution(record))
+        saved = await store.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.sequential is sequential
+        assert "sequential" not in execution_view(saved.record).model_dump()
