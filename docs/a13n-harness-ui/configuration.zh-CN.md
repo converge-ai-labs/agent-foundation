@@ -347,6 +347,10 @@ webui:
 
 `webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。首次开启且 Model 可用时，服务器通过正常模型请求代发一条可见的预设用户消息，介绍工作区；已有活动或引导尝试会阻止重复发送。打开页面不会启动工作。开启后还会独立安排一个间隔后的首次 Heartbeat。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
 
+### WebUI 子智能体
+
+在 **Settings → General → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
+
 ### WebUI Sidekick
 
 **Settings → General → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：

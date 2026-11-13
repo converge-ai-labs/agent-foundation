@@ -1,6 +1,6 @@
 import { Button, Tooltip, TooltipTrigger, TooltipPopup } from "a13n-ui";
 import { Question } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export function HelpTip({
   label,
@@ -9,8 +9,9 @@ export function HelpTip({
   label: string;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger
         render={
           <Button
@@ -21,6 +22,7 @@ export function HelpTip({
           />
         }
         aria-label={label}
+        onClick={() => setOpen(true)}
       >
         <Question size={14} />
       </TooltipTrigger>

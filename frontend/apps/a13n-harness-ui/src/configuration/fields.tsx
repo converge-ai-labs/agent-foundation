@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { HelpTip } from "../shell/help-tip";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
@@ -394,23 +395,95 @@ export function ResourceFields({
           <>
             <SettingsSection variant="grouped" title={t("Chats")}>
               {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-              <details className={layout.groupDisclosure}>
-                <summary>{t("Subagent defaults")}</summary>
+            </SettingsSection>
+            <SettingsSection
+              title={
+                <span className="flex items-center gap-1">
+                  {t("Sidekick")}
+                  <HelpTip label={t("About Sidekick")}>
+                    {t(
+                      "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
+                    )}
+                  </HelpTip>
+                </span>
+              }
+            >
+              {scalar(
+                t("Sidekick agent"),
+                ["webui", "sidekick", "agent"],
+                agentOptions,
+                t("Use current agent"),
+              )}
+              {scalar(
+                t("Sidekick model"),
+                ["webui", "sidekick", "model"],
+                models,
+                t("Use agent model"),
+              )}
+            </SettingsSection>
+            <SettingsSection
+              title={
+                <span className="flex items-center gap-1">
+                  {t("Subagents")}
+                  <HelpTip label={t("About subagents")}>
+                    {t(
+                      "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
+                    )}
+                  </HelpTip>
+                </span>
+              }
+            >
+              <SettingsRow
+                label={t("Let the agent create subagents")}
+                controlId="dynamic-subagents-enabled"
+              >
+                <Switch
+                  id="dynamic-subagents-enabled"
+                  checked={get(["subagents", "dynamic", "enabled"]) === true}
+                  onCheckedChange={(enabled) =>
+                    set(
+                      ["subagents", "dynamic", "enabled"],
+                      enabled || undefined,
+                    )
+                  }
+                />
+              </SettingsRow>
+              {get(["subagents", "dynamic", "enabled"]) === true && (
                 <div>
-                  {scalar(
-                    t("Sidekick agent"),
-                    ["webui", "sidekick", "agent"],
-                    agentOptions,
-                    t("Use current agent"),
-                  )}
-                  {scalar(
-                    t("Sidekick model"),
-                    ["webui", "sidekick", "model"],
+                  {list(
+                    t("Models for created subagents"),
+                    ["subagents", "dynamic", "allowed_models"],
                     models,
-                    t("Use agent model"),
                   )}
+                  <p className={layout.groupHint}>
+                    {t(
+                      "An empty list uses the main agent's model. Explicit model choices must be in this list.",
+                    )}
+                  </p>
                 </div>
-              </details>
+              )}
+              <SettingsRow
+                label={t("Maximum running subagents")}
+                controlId="subagents-max-concurrent"
+                description={t("Shared by all subagents of one chat.")}
+              >
+                <Input
+                  id="subagents-max-concurrent"
+                  type="number"
+                  min={1}
+                  step={1}
+                  className={styles.settingControl}
+                  value={Number(get(["subagents", "max_concurrent"]) ?? 8)}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isInteger(value) && value > 0)
+                      set(
+                        ["subagents", "max_concurrent"],
+                        value === 8 ? undefined : value,
+                      );
+                  }}
+                />
+              </SettingsRow>
             </SettingsSection>
             <DictationFields source={source} onChange={onChange} />
             <SettingsSection variant="grouped" title={t("Memory")}>

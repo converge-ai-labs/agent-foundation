@@ -50,7 +50,14 @@ vi.mock("../transport/context", () => ({
   useSources: () => ({ data: { sources: [] }, isPending: false }),
   useSelectors: () => ({
     data: {
-      agents: [],
+      agents: [{ agent_id: "agent-one", name: "Helper" }],
+      models: [
+        {
+          model_id: "model-one",
+          name: "Test model",
+          route: "openai-responses:test",
+        },
+      ],
       environments: [],
       harness_plugins: [],
       mcp_servers: [],
@@ -121,8 +128,6 @@ it("configures Bot's model, custom instructions and hourly heartbeat without cho
 it("shows Sidekick defaults for legacy null without rewriting source on load", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
-  const user = userEvent.setup();
-  await user.click(await screen.findByText("Subagent defaults"));
   expect(screen.queryByRole("switch", { name: "Sidekick" })).toBeNull();
   expect(screen.getByRole("combobox", { name: "Sidekick agent" })).toBeTruthy();
   expect(screen.getByRole("combobox", { name: "Sidekick model" })).toBeTruthy();
@@ -486,4 +491,48 @@ it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () =>
   expect(
     parse(screen.getByTestId("source").textContent!).webui.bot.interval_seconds,
   ).toBe(150);
+});
+
+it("edits separate Sidekick and Subagents groups through the root document", async () => {
+  renderFields('schema_version: "1"\n');
+  const user = userEvent.setup();
+  expect(screen.getByRole("button", { name: "About Sidekick" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "About subagents" })).toBeTruthy();
+  expect(
+    screen.queryByRole("combobox", { name: "Models for created subagents" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
+  await user.click(await screen.findByRole("option", { name: "Helper" }));
+  await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
+  await user.click(await screen.findByRole("option", { name: "Test model" }));
+  await user.click(
+    screen.getByRole("switch", { name: "Let the agent create subagents" }),
+  );
+  await user.click(
+    screen.getByRole("combobox", { name: "Models for created subagents" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Custom selection" }),
+  );
+  await user.click(screen.getByRole("checkbox", { name: "Test model" }));
+  const limit = screen.getByRole("spinbutton", {
+    name: "Maximum running subagents",
+  });
+  expect((limit as HTMLInputElement).value).toBe("8");
+  fireEvent.change(limit, { target: { value: "4" } });
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    webui: { sidekick: { agent: "agent-one", model: "model-one" } },
+    subagents: {
+      dynamic: { enabled: true, allowed_models: ["model-one"] },
+      max_concurrent: 4,
+    },
+  });
+  fireEvent.change(limit, { target: { value: "8" } });
+  await user.click(
+    screen.getByRole("switch", { name: "Let the agent create subagents" }),
+  );
+  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
+    dynamic: { allowed_models: ["model-one"] },
+  });
 });

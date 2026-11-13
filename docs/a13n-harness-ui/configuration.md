@@ -347,6 +347,10 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 `webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. On first usable enable, the server sends one visible preset user message to introduce the workspace through an ordinary Model request. Previous activity or an introduction attempt prevents repetition. Reading the page starts no work. Enabling also schedules the first Heartbeat one interval later, independently of this introduction. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
 
+### WebUI subagents
+
+In **Settings → General → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
+
 ### WebUI Sidekick
 
 **Settings → General → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:

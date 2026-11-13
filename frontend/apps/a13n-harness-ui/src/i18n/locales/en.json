@@ -1590,7 +1590,6 @@
   "Connections": "Connections",
   "Settings sections": "Settings sections",
   "Let your agent delegate work to separate chats.": "Let your agent delegate work to separate chats.",
-  "Subagent defaults": "Subagent defaults",
   "Sidekick agent": "Sidekick agent",
   "Sidekick model": "Sidekick model",
   "Use current agent": "Use current agent",
@@ -3497,5 +3496,14 @@
   "Output unavailable.": "Output unavailable.",
   "Some process observations are unavailable or omitted.": "Some process observations are unavailable or omitted.",
   "Background items": "Background items",
-  "Input truncated.": "Input truncated."
+  "Input truncated.": "Input truncated.",
+  "About Sidekick": "About Sidekick",
+  "About subagents": "About subagents",
+  "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.": "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
+  "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.": "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
+  "Let the agent create subagents": "Let the agent create subagents",
+  "Models for created subagents": "Models for created subagents",
+  "An empty list uses the main agent's model. Explicit model choices must be in this list.": "An empty list uses the main agent's model. Explicit model choices must be in this list.",
+  "Maximum running subagents": "Maximum running subagents",
+  "Shared by all subagents of one chat.": "Shared by all subagents of one chat."
 }
