@@ -9,7 +9,7 @@ from release_notes import (
     TAG_PREFIXES,
     build_release_command,
     collect_release_changes,
-    load_pull_request_labels,
+    load_pull_request_metadata,
     previous_release_tag,
     read_manual_release_notes,
     release_notes_path,
@@ -65,7 +65,7 @@ def main() -> None:
     parser.add_argument("title")
     parser.add_argument("assets", nargs="*")
     parser.add_argument(
-        "--dry-run", action="store_true", help="Preview notes with read-only GitHub label queries; publish nothing."
+        "--dry-run", action="store_true", help="Preview notes with read-only GitHub metadata queries; publish nothing."
     )
     args = parser.parse_args()
 
@@ -95,7 +95,7 @@ def main() -> None:
             if previous_tag is not None
             else []
         )
-        changes = load_pull_request_labels(changes, repository)
+        changes = load_pull_request_metadata(changes, repository)
         notes = render_release_notes(
             component=args.component,
             version=args.version,
@@ -103,10 +103,8 @@ def main() -> None:
             previous_tag=previous_tag,
             changes=changes,
             manual_notes=manual_notes,
+            releaser=os.environ.get("GITHUB_ACTOR"),
         )
-        actor = os.environ.get("GITHUB_ACTOR")
-        if actor:
-            notes += f"\nRelease initiated by @{actor}.\n"
         command = build_release_command(
             component=args.component,
             version=args.version,

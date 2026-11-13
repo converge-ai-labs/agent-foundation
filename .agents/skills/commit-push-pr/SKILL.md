@@ -61,10 +61,10 @@ If no open PR exists, create one with the intended head/base. Preserve an existi
 Use the scoped Conventional Commit format for the PR title, describing the resulting change rather than editing or review activity. Write it for the component's users or integrators, not just someone familiar with the implementation:
 
 - Name the concrete capability added, failure corrected, or behavior/default changed. Prefer the observable outcome over internal mechanisms, file names, or work-log language; internal-only changes should still identify their concrete result without inventing user impact.
-- Make the summary understandable without opening the PR. Include the affected surface when the scope alone carries essential context: generated entries remove `type(scope)!:` and retain only the summary.
+- Make the summary understandable without opening the PR. Include the affected surface when the scope alone carries essential context. Generated PR entries retain the full GitHub title, including its Conventional Commit prefix.
 - Avoid vague summaries such as "refine controls", "align behavior", or "simplify handling" unless they also say what specifically changes. Keep useful technical terms, but do not let them substitute for the outcome.
 - For cross-component changes, qualify differing defaults or behavior rather than implying that all components change identically. Lead with the main outcome instead of squeezing every implementation detail into the title; keep secondary details and migration steps in the body.
-- Before creating or updating the PR, read the summary without its Conventional Commit prefix as a standalone changelog bullet. Can the target reader tell what they gain, what stops failing, or what changes? Check it against the final diff and update the title when the scope changes. The generator reads merged Git subjects, so editing a PR title after merging does not repair historical entries.
+- Before creating or updating the PR, read the summary without its Conventional Commit prefix as a standalone changelog bullet. Can the target reader tell what they gain, what stops failing, or what changes? Check it against the final diff and update the title when the scope changes. The generator identifies PRs from merged Git subjects and reads their GitHub titles at generation time; later title edits can change a subsequent preview, but never rewrite an already published Release.
 
 Examples (use only when supported by the diff):
 
