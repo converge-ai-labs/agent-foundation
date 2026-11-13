@@ -166,11 +166,10 @@ function Attachment({
     </Popover>
   );
   return (
-    <span className={styles.inlineAttachment}>
+    <span className={image ? styles.sentImage : styles.inlineAttachment}>
       {image ? (
         <button
           type="button"
-          className={styles.inlineAttachmentOpen}
           onClick={() => setPreview(true)}
           aria-label={t("Preview {{name}}", { name: attachment.name })}
           title={attachment.name}
