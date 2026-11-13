@@ -126,11 +126,17 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                 and not final.result_available
                 and not (final.foreground_released and runtime.reports_background_completions)
             ):
-                rows.append(f"- {key} | {final.tool_name} | {final.status}; inspect with tool_execution_info")
+                rows.append(
+                    f"- {key} | {final.tool_name} | {_attention_status(final)}; inspect with tool_execution_info"
+                )
         block = None
         if previous is None or rows or (overflow and not previous[1]):
             header = "Tool executions requiring attention" if previous is None else "Tool execution changes"
             lines = [f"{header} ({min(len(rows), 20)}{'+' if overflow or len(rows) > 20 else ''})", *rows[:20]]
+            if previous is None and not records:
+                lines.append(
+                    "Use tool_execution_info() to inspect prior outcomes; an empty list does not establish success."
+                )
             if overflow or len(rows) > 20:
                 lines.append("More executions may require attention; use tool_execution_info to inspect.")
             block = ModelContextBlock(

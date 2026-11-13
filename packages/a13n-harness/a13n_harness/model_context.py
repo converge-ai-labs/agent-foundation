@@ -150,8 +150,9 @@ class _NoticeBoundary:
     def from_request(cls, message: ModelRequest) -> _NoticeBoundary:
         completion_ids = set()
         for item in request_input_content(message):
-            if item.metadata.source_id == "tool_execution.completion":
-                ids = (item.metadata.model_extra or {}).get("execution_ids")
+            extra = item.metadata.model_extra or {}
+            if extra.get("notice_kind", item.metadata.source_id) == "tool_execution.completion":
+                ids = extra.get("execution_ids")
                 if isinstance(ids, list):
                     completion_ids.update(value for value in ids if isinstance(value, str))
         return cls.from_results((p for p in message.parts if isinstance(p, ToolReturnPart)), completion_ids)
@@ -303,14 +304,18 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        if ctx.deps._compacting:
-            return request_context
-        if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
-            return request_context
         from a13n_harness.capabilities.context import (
+            CompactionCapability,
             _project_compaction_media,
             _restore_compacted_state,
         )
+        from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
+
+        compaction = ctx.capabilities.get(COMPACTION_CAPABILITY_ID)
+        if ctx.deps._compacting or (isinstance(compaction, CompactionCapability) and compaction.generating_summary):
+            return request_context
+        if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
+            return request_context
 
         restored = await _restore_compacted_state(ctx, request_context)
         restoring_compaction = restored is not request_context

@@ -875,6 +875,11 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             else (InputCapability, HandoffCapability),
         )
 
+    @property
+    def generating_summary(self) -> bool:
+        """The nested summary request must not consume the ordinary Run's notifications."""
+        return self._depth > 0
+
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(COMPACTION_CAPABILITY_ID)
         if existing is not None:

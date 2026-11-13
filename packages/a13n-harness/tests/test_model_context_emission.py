@@ -362,6 +362,7 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
     text = projection.blocks[0].content
     records = [line for line in text.splitlines() if line.startswith("- ")]
     assert len(records) == min(count, 20)
+    assert ("an empty list does not establish success" in text) == (count == 0)
     assert ("More executions may require attention" in text) == (count > 20)
     assert all(line.endswith(" | lookup | finished, result available") for line in records)
     if count:
