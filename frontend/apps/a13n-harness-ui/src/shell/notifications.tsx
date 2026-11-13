@@ -365,14 +365,9 @@ function NotificationState({ children }: { children: ReactNode }) {
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
       if (current.current.scope === "bot" && !bot) return;
-      // The transcript already shows completion. Keep receipt deduplication,
-      // attention/failure notices and server Push delivery independent.
-      if (
-        !message &&
-        (notice.status === "completed" || notice.status === "goal_verified") &&
-        current.current.viewedThread === threadId
-      )
-        return;
+      // The viewed conversation owns its feedback. Consume the identity above
+      // so navigation cannot replay a suppressed notice; server Push is independent.
+      if (current.current.viewedThread === threadId) return;
       const detail = queries.getQueryData<Schema<"ThreadDetail">>([
         "thread",
         threadId,
