@@ -12097,6 +12097,10 @@
               }
             ]
           },
+          "on_error": {
+            "$ref": "#/components/schemas/StartupErrorPolicy",
+            "default": "raise"
+          },
           "tools": {
             "anyOf": [
               {
@@ -24925,6 +24929,13 @@
         ],
         "title": "SpanSummary",
         "type": "object"
+      },
+      "StartupErrorPolicy": {
+        "enum": [
+          "skip",
+          "raise"
+        ],
+        "type": "string"
       },
       "State": {
         "enum": [

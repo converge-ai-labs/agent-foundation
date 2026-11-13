@@ -558,6 +558,12 @@ class BotController:
                 "Automatic inputs (Thread messages, external content and Host ticks, never human approval). Use tools for internal coordination; do not acknowledge reports. Human messages received during this Run still deserve a timely response:\n"
                 + serialize_batch(batch)
             )
+            if state.last_error:
+                text += (
+                    "\nA previous Bot input failed. Inspect the saved Bot Thread execution failure and working Thread outcomes before "
+                    "continuing. This is a fresh opportunity, not a replay of that input or permission to repeat "
+                    "uncertain tool effects.\n" + state.last_error
+                )
             prompt = [TextContent(text, metadata={"display": False})]
             active = await self._runs.active(BOT_THREAD_ID)
             if active is not None:
@@ -694,11 +700,26 @@ class BotController:
                         )
                 for value in related:
                     await self._store.bot.save_input(value.model_copy(update={"state": "completed"}))
+                state = await self._store.bot.state()
+                if state.last_error is not None:
+                    await self._store.bot.save_state(state.model_copy(update={"last_error": None}))
             else:
+                # Ordinary startup/execution exceptions may have no outcome. Failed
+                # summary persistence or continuation selection leaves settlement unknown.
+                settled_failure = (
+                    operation.status is RootOperationStatus.failed
+                    and (
+                        operation.failure is None
+                        or operation.failure.code
+                        not in {"execution_status_save_failed", "continuation_selection_failed"}
+                    )
+                    and (operation.outcome is None or operation.outcome.continuation.status == "selected")
+                )
                 for value in related:
                     await self._save_interrupted(
                         value,
                         "Bot did not complete this input. Review the reported error and working Thread results before continuing.",
+                        pause=not settled_failure,
                     )
             if related:
                 await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)
@@ -716,10 +737,12 @@ class BotController:
                 for value in await self._receipt_inputs(item):
                     await self._save_interrupted(value, message)
 
-    async def _save_interrupted(self, item: BotInput, message: str) -> None:
+    async def _save_interrupted(self, item: BotInput, message: str, *, pause: bool = True) -> None:
         await self._store.bot.save_input(item.model_copy(update={"state": "interrupted", "error": message}))
         state = await self._store.bot.state()
-        await self._store.bot.save_state(state.model_copy(update={"paused": True, "last_error": message}))
+        await self._store.bot.save_state(
+            state.model_copy(update={"paused": state.paused or pause, "last_error": message})
+        )
 
 
 def _prose_message_id(item_id: str) -> str:

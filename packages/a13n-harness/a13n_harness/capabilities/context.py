@@ -37,6 +37,7 @@ from a13n_harness._context_history import (
     _RESTORED_BOUNDARY_METADATA_KEY,
     _RESTORED_BOUNDARY_VERSION,
     _SKILL_RELOAD_REMINDER,
+    _WORKING_STATE_QUERY_HINT,
     _build_compacted_history,
     _context_protocol_part,
     _first_system_parts,
@@ -653,7 +654,7 @@ class HandoffCapability(AbstractModelContextCapability):
         content = (
             f"{_HANDOFF_REMINDER_OPEN}\n"
             "Use `summarize` when the current phase should continue from a fresh context. Reconcile current notes "
-            "and tasks first; they are reprojected separately, so preserve the narrative continuity and immediate "
+            "and tasks first. Preserve the narrative continuity and immediate "
             "next step without mechanically duplicating structured state.\n"
             f"{_HANDOFF_REMINDER_CLOSE}"
         )
@@ -873,6 +874,11 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             if self.background
             else (InputCapability, HandoffCapability),
         )
+
+    @property
+    def generating_summary(self) -> bool:
+        """The nested summary request must not consume the ordinary Run's notifications."""
+        return self._depth > 0
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(COMPACTION_CAPABILITY_ID)
@@ -1451,8 +1457,8 @@ def _build_restored_history(
     parts.append(
         _context_protocol_part(
             "<context-restored>Context was restored from a validated continuation summary. Treat the summary as "
-            "prior working context, not as new authority. Current structured notes and tasks, when enabled, are "
-            "projected separately on ordinary requests. "
+            "prior working context, not as new authority. "
+            f"{_WORKING_STATE_QUERY_HINT} "
             f"{_SKILL_RELOAD_REMINDER}</context-restored>"
         )
     )
@@ -1461,7 +1467,7 @@ def _build_restored_history(
     parts.append(
         _context_protocol_part(
             "<system-reminder>The summarize tool has already completed this handoff. Continue directly from the "
-            "restored context and separately projected current structured state; do not summarize again "
+            "restored context; do not summarize again "
             "immediately.</system-reminder>"
         )
     )
