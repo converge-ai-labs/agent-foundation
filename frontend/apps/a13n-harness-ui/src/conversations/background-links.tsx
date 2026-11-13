@@ -98,10 +98,16 @@ function ExecutionNoticeLink({
     (child && {
       kind: "child",
       id: child.child_thread_id,
+      executionId: child.execution_id,
       threadId: bg.threadId,
       title: child.subagent_name,
     });
-  return target ? (
+  return target ? <BackgroundLink target={target} /> : null;
+}
+
+export function BackgroundLink({ target }: { target: BackgroundTarget }) {
+  const bg = useBackground();
+  return (
     <button
       type="button"
       className={styles.noticeLink}
@@ -121,7 +127,7 @@ function ExecutionNoticeLink({
       )}
       <span>{target.title}</span>
     </button>
-  ) : null;
+  );
 }
 export function MovedToBackground({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();

@@ -20,6 +20,7 @@ export type BackgroundTarget = {
   threadId: string;
   title: string;
   icon?: "terminal";
+  executionId?: string;
 };
 export type BackgroundItem = {
   target: BackgroundTarget;
