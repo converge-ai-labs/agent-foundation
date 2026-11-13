@@ -1,6 +1,6 @@
 import { ConnectorOffer } from "../connectors/offers";
 import { useTranslation } from "../i18n";
-import { BOT_THREAD_ID } from "../bot-identity";
+import { BOT_THREAD_ID, botInputId } from "../bot-identity";
 import {
   memo,
   Fragment,
@@ -184,13 +184,6 @@ type Row = {
 
 function timestampMilliseconds(value: DisplayBlock["timestamp"]) {
   return typeof value === "string" ? Date.parse(value) : value;
-}
-
-function botInputId(metadata?: Record<string, unknown> | null) {
-  const harness = metadata?.harness_ui;
-  if (!harness || typeof harness !== "object") return;
-  const id = (harness as Record<string, unknown>).bot_input_id;
-  return typeof id === "string" ? id : undefined;
 }
 
 function appendInput(
