@@ -1269,6 +1269,7 @@
   "Updates will resume automatically when the connection is ready.": "Updates will resume automatically when the connection is ready.",
   "Summary ready": "Summary ready",
   "Prepared": "Prepared",
+  "Finished": "Finished",
   "Completed": "Completed",
   "Execution cancelled": "Execution cancelled",
   "Execution suspended": "Execution suspended",

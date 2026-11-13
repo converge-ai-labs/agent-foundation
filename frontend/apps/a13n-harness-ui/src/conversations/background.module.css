@@ -333,3 +333,28 @@
 .controlRecovery {
   padding: 0 20px 16px;
 }
+
+.finishedToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-top: 4px;
+  padding: 0 8px;
+  border-radius: var(--harness-radius-control);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.finishedToggle:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
+}
+.finishedToggle:is(:hover, :focus-visible) span {
+  color: var(--a13n-secondary);
+}
+.finishedToggle[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.finishedToggle span {
+  color: var(--a13n-tertiary);
+  font-variant-numeric: tabular-nums;
+}

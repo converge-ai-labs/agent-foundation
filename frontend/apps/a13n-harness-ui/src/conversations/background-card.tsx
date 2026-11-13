@@ -2,6 +2,7 @@ import { BackgroundStateIcon } from "./background-state-icon";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Button, ScrollArea } from "a13n-ui";
 import {
+  CaretRight,
   CirclesThree,
   TerminalWindow,
   Wrench,
@@ -216,29 +217,94 @@ export function BackgroundList({ section }: { section?: BackgroundSection }) {
               </Button>
             </div>
           )}
-          <ul>
-            {(compact ? group.items.slice(0, 3) : group.items).map((item) => (
-              <BackgroundRow
-                key={backgroundKey(item.target)}
-                item={item}
-                now={now}
-              />
-            ))}
-          </ul>
+          {compact ? (
+            <BackgroundRows items={group.items.slice(0, 3)} now={now} />
+          ) : (
+            <BackgroundHistory
+              items={group.items}
+              section={group.section}
+              now={now}
+            />
+          )}
         </section>
       ))}
-      {section && bg.more[section] && (
-        <Button
-          className={styles.showMore}
-          variant="ghost"
-          size="sm"
-          loading={bg.loadingMore[section]}
-          onClick={() => bg.loadMore(section)}
-        >
-          {t("Show more")}
-        </Button>
-      )}
     </ScrollArea>
+  );
+}
+function BackgroundRows({
+  items,
+  now,
+}: {
+  items: BackgroundItem[];
+  now: number;
+}) {
+  return (
+    <ul>
+      {items.map((item) => (
+        <BackgroundRow key={backgroundKey(item.target)} item={item} now={now} />
+      ))}
+    </ul>
+  );
+}
+
+function BackgroundHistory({
+  items,
+  section,
+  now,
+}: {
+  items: BackgroundItem[];
+  section: BackgroundSection;
+  now: number;
+}) {
+  const { t } = useTranslation();
+  const bg = useBackground();
+  const [expanded, setExpanded] = useState(false);
+  const finished = items.filter(
+    (item) => !item.running && item.state !== "unavailable",
+  );
+  const active = items.filter(
+    (item) => item.running || item.state === "unavailable",
+  );
+  const more = bg.more[section];
+  return (
+    <>
+      <BackgroundRows items={active} now={now} />
+      {(finished.length > 0 || more) && (
+        <>
+          <button
+            type="button"
+            className={styles.finishedToggle}
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            <CaretRight aria-hidden="true" size={12} />
+            {t("Finished")}
+            {finished.length > 0 && (
+              <span>
+                {finished.length}
+                {more ? "+" : ""}
+              </span>
+            )}
+          </button>
+          {expanded && (
+            <>
+              <BackgroundRows items={finished} now={now} />
+              {more && (
+                <Button
+                  className={styles.showMore}
+                  variant="ghost"
+                  size="sm"
+                  loading={bg.loadingMore[section]}
+                  onClick={() => bg.loadMore(section)}
+                >
+                  {t("Show more")}
+                </Button>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </>
   );
 }
 function BackgroundRow({ item, now }: { item: BackgroundItem; now: number }) {
