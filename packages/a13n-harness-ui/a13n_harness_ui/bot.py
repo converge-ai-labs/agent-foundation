@@ -673,12 +673,22 @@ class BotController:
                 if state.last_error is not None:
                     await self._store.bot.save_state(state.model_copy(update={"last_error": None}))
             else:
-                failed = operation.status is RootOperationStatus.failed
+                # Ordinary startup/execution exceptions may have no outcome. Failed
+                # summary persistence or continuation selection leaves settlement unknown.
+                settled_failure = (
+                    operation.status is RootOperationStatus.failed
+                    and (
+                        operation.failure is None
+                        or operation.failure.code
+                        not in {"execution_status_save_failed", "continuation_selection_failed"}
+                    )
+                    and (operation.outcome is None or operation.outcome.continuation.status == "selected")
+                )
                 for value in related:
                     await self._save_interrupted(
                         value,
                         "Bot did not complete this input. Review the reported error and working Thread results before continuing.",
-                        pause=not failed,
+                        pause=not settled_failure,
                     )
             if related:
                 await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)

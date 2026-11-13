@@ -896,6 +896,22 @@ class RootRunExecutor:
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
+            if continuation.status == "failed" and not isinstance(run_error, get_cancelled_exc_class()):
+                # Keep unknown settlement distinguishable from an ordinary startup
+                # failure even when there is no terminal Harness result to project.
+                feedback = await to_thread.run_sync(
+                    partial(
+                        exception_feedback,
+                        run_error,
+                        thread_id=thread_id,
+                        run_id=None if stream is None else stream.run_id,
+                        phase="root_finalization",
+                    )
+                )
+                raise RunCoordinationError(
+                    f"Could not save the execution continuation. Inspect the saved conversation before retrying.\n{feedback}",
+                    code="continuation_selection_failed",
+                ) from run_error
             raise run_error
         if result is None:
             raise RuntimeError("Harness execution did not produce a terminal result")
