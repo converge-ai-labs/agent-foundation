@@ -1793,3 +1793,45 @@ async def test_root_completion_after_restart_uses_execution_state(tmp_path, monk
             assert (await successor.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         capture.assert_awaited_once()
         assert len(calls) == 1
+
+
+async def test_user_stop_of_released_tool_delivers_cancelled_parent_input(tmp_path, monkeypatch):
+    from a13n_harness.content import request_input_content
+    from pydantic_ai.messages import ModelRequest
+
+    entered, notified = Event(), Event()
+    inputs = []
+
+    async def model(messages, info):
+        for message in messages:
+            if isinstance(message, ModelRequest):
+                for item in request_input_content(message):
+                    if (item.metadata.model_extra or {}).get("a13n.steering-source") == "tool_execution":
+                        inputs.append(str(item.value))
+                        notified.set()
+        yield "Ready"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    async def slow():
+        entered.set()
+        await Event().wait()
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    path = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Start")
+        await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        owner = app._tool_executions
+        record = owner.runtime.admit(
+            slow, thread_id=thread.thread_id, run_id="run-tool", tool_call_id="call-tool", tool_name="slow"
+        )
+        await entered.wait()
+        await owner.runtime.release_foreground(thread.thread_id, record.execution_id)
+        stopped = await app.cancel_tool_execution(thread.thread_id, record.execution_id)
+        assert stopped.cancel_requested
+        with fail_after(10):
+            await notified.wait()
+        assert f"Tool notification · slow · execution_id={record.execution_id} · cancelled" in inputs[-1]

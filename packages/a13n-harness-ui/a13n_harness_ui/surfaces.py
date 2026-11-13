@@ -695,6 +695,7 @@ class ToolExecutionView(SurfaceModel):
     result_available: bool = False
     foreground_released: bool = False
     delivery_acknowledged: bool = False
+    cancel_requested: bool = False
     available_actions: tuple[Literal["cancel"], ...] = ()
 
 

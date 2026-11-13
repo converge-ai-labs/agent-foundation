@@ -8825,6 +8825,11 @@ export interface components {
              */
             delivery_acknowledged?: boolean;
             /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested?: boolean;
+            /**
              * Available Actions
              * @default []
              */

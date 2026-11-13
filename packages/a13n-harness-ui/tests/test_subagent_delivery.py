@@ -364,3 +364,44 @@ async def test_result_offer_preparation_failure_settles_child_and_keeps_operator
                 await sleep(0.01)
         (head,) = (await app.query_child_executions(parent_thread_id=parent.thread_id)).executions
         assert head.persisted_status == "succeeded"
+
+
+@pytest.mark.usefixtures("migrated_databases")
+async def test_user_stop_delivers_cancelled_child_result_to_parent(tmp_path, monkeypatch):
+    from pydantic_ai.models.function import DeltaToolCall
+
+    from .test_dynamic_subagents import new_thread, open_app, returned
+
+    started, notified = Event(), Event()
+    inputs = []
+
+    async def model(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            started.set()
+            await Event().wait()
+        elif "Subagent result · worker" in str(messages):
+            inputs.append(str(messages))
+            notified.set()
+            yield "Child stopped"
+        elif not returned(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="spawn_subagent", json_args='{"name":"worker","instructions":"Work","prompt":"Work"}'
+                )
+            }
+        else:
+            yield "Work is running"
+
+    async with await open_app(tmp_path, monkeypatch, model, mode="automatic") as app:
+        parent = await new_thread(app)
+        receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start child")
+        await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        with fail_after(10):
+            await started.wait()
+        (head,) = (await app.query_child_executions(parent_thread_id=parent.thread_id)).executions
+        assert (
+            await app.cancel_child_execution(parent_thread_id=parent.thread_id, execution_id=head.execution_id)
+        ).accepted
+        with fail_after(10):
+            await notified.wait()
+        assert f"Subagent result · worker · execution_id={head.execution_id} · cancelled" in inputs[-1]

@@ -25082,6 +25082,11 @@
             "title": "Delivery Acknowledged",
             "type": "boolean"
           },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
           "available_actions": {
             "default": [],
             "items": {
