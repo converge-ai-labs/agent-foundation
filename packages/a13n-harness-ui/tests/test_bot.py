@@ -496,7 +496,9 @@ async def test_bot_reads_and_updates_heartbeat_checklist_with_guidance_and_custo
             if step == 0:
                 tools = {tool.name for tool in info.function_tools}
                 assert {"view", "write", "edit"} <= tools
-                assert not {"shell_exec", "shell_input", "computer_screenshot", "computer_click"} & tools
+                assert {"shell_exec", "shell_input", "list_environment_targets", "open_environment_target"} <= tools
+                # Computer tools appear after opening a target with that ceiling.
+                assert not {"computer_observe", "computer_input"} & tools
                 assert "Manage recurring checks in HEARTBEAT.md" in projected
                 assert "Custom Bot policy sentinel" in (info.instructions or "")
                 assert "Global Bot policy sentinel" in projected

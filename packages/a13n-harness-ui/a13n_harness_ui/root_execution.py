@@ -40,6 +40,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.browser_context import BrowserContextCapability
@@ -192,6 +193,7 @@ class RootRunExecutor:
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
         self._work = work
+        self._bot_display_publisher: Callable[[DisplayPublication, bool], Awaitable[None]] | None = None
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
             None
         )
@@ -207,6 +209,9 @@ class RootRunExecutor:
         if self._root_capability_factory is not None:
             raise RuntimeError("Root Thread Capability factory is already configured")
         self._root_capability_factory = factory
+
+    def set_bot_display_publisher(self, publisher: Callable[[DisplayPublication, bool], Awaitable[None]]) -> None:
+        self._bot_display_publisher = publisher
 
     async def capture(
         self,
@@ -471,6 +476,12 @@ class RootRunExecutor:
                 )
                 display.supplement((*image_events, *app_events))
 
+            is_bot = published.value.root.source_kind == "bot"
+            environment = None
+            if is_bot and admission.organization is None:
+                # Only Bot needs its runtime while constructing lazy target tools.
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                environment = await self._environments.prepare(published.value)
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
@@ -482,6 +493,15 @@ class RootRunExecutor:
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
                     MainAccountCapability(published.value.root.model.model_id, on_main_account),
+                    *(
+                        (
+                            BotEnvironmentsCapability(
+                                service=self._environments, composition=published.value, runtime=environment.runtime
+                            ),
+                        )
+                        if is_bot and environment is not None
+                        else ()
+                    ),
                     goal_capability,
                     RootCheckpointCapability(
                         save_checkpoint,
@@ -552,16 +572,17 @@ class RootRunExecutor:
 
                 input_factory = prepare_input
                 prompt = None
-            preparation_span.set_attribute("a13n.phase.step", "environment")
-            live_without_files = published.value.root.source_kind == "live" and not any(
-                item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
-                for item in published.value.root.capabilities
-            )
-            environment = (
-                None
-                if admission.organization is not None or live_without_files
-                else await self._environments.prepare(published.value)
-            )
+            if not is_bot:
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                live_without_files = published.value.root.source_kind == "live" and not any(
+                    item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
+                    for item in published.value.root.capabilities
+                )
+                environment = (
+                    None
+                    if admission.organization is not None or live_without_files
+                    else await self._environments.prepare(published.value)
+                )
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
                 agent_instance_id=f"agent-{uuid4().hex[:20]}",
@@ -670,6 +691,8 @@ class RootRunExecutor:
                         publication = display.drain()
                         if publication is not None:
                             try:
+                                if thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
+                                    await self._bot_display_publisher(publication, False)
                                 await self._publish_live(
                                     thread_id=thread.thread_id,
                                     run_id=stream.run_id,
@@ -695,6 +718,17 @@ class RootRunExecutor:
         continuation = RootContinuationSelection(status="not_available")
         with phase("finalize") as finalization_span:
             with CancelScope(shield=True):
+                if run_error is not None and thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
+                    # Cancellation can stop consumption before TEXT_MESSAGE_END.
+                    # Retry the complete live suffix, including visible partial text.
+                    display.publication_failed()
+                    if (publication := display.drain()) is not None:
+                        try:
+                            await self._bot_display_publisher(publication, True)
+                        except Exception:
+                            get_logger(__name__).exception(
+                                "Bot terminal text publication failed: thread_id=%s", thread_id
+                            )
                 finalization_span.set_attribute("a13n.phase.step", "environment")
                 try:
                     finalization = (

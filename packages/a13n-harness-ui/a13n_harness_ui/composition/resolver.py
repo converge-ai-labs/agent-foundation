@@ -67,6 +67,7 @@ from .models import (
     ResolvedContentPlugin,
     ResolvedEnvironmentBinding,
     ResolvedEnvironmentProfile,
+    ResolvedEnvironmentTarget,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
     ResolvedPluginRecipe,
@@ -343,6 +344,9 @@ class AgentCompositionResolver:
             *self._environment_dependencies(source, environment),
             *extension_dependencies,
         ]
+        targets = self._bot_environment_targets(source, selection) if root.source_kind == "bot" else ()
+        for target in targets:
+            dependencies.extend(self._environment_dependencies(source, target.environment_profile))
         unique = {
             (
                 item.kind,
@@ -393,9 +397,45 @@ class AgentCompositionResolver:
                 for item in selection.environment_bindings
             ),
             default_environment=selection.default_environment,
+            environment_targets=targets,
             environment_run_extensions=run_extensions,
             dependencies=tuple(sorted(unique.values(), key=lambda item: (item.kind, item.key))),
         )
+
+    def _bot_environment_targets(
+        self, source: LoadedHarnessUiConfiguration, selection: ThreadCompositionSelection
+    ) -> tuple[ResolvedEnvironmentTarget, ...]:
+        targets = [
+            ResolvedEnvironmentTarget(
+                target_id=project.id,
+                name=project.name,
+                project_id=project.id,
+                project_roots=tuple(root.path for root in project.roots),
+                environment_profile=self._environment_profile(
+                    source,
+                    project.defaults.environment_profile
+                    or source.document.defaults.environment_profile
+                    or FULL_CONTROL_PROFILE_ID,
+                ),
+                environment_bindings=tuple(
+                    ResolvedEnvironmentBinding(
+                        selection=item, device=source.devices[item.device_id].model_copy(deep=True)
+                    )
+                    for item in project.defaults.environment_bindings or ()
+                ),
+                default_environment=project.defaults.default_environment,
+            )
+            for project in sorted(source.projects.values(), key=lambda item: item.id)
+        ]
+        targets.append(
+            ResolvedEnvironmentTarget(
+                target_id="host-desktop",
+                name="Host desktop",
+                project_roots=selection.local_roots,
+                environment_profile=self._environment_profile(source, "environment-desktop"),
+            )
+        )
+        return tuple(targets)
 
     def _validate_selection(
         self,
@@ -639,8 +679,8 @@ class AgentCompositionResolver:
                         configuration={
                             **environment,
                             "files_enabled": True,
-                            "shell_enabled": False,
-                            "computer_enabled": False,
+                            "shell_enabled": True,
+                            "computer_enabled": True,
                         },
                     ),
                 ),
@@ -660,9 +700,8 @@ class AgentCompositionResolver:
             model_overrides=model_overrides,
         )
         capabilities = tuple(item for item in node.capabilities if item.capability != "user_interaction")
-        # An inherited allowlist must not require tools deliberately disabled by
-        # Bot policy. Other unavailable selectors retain normal strict validation.
-        disabled = {"ask_user_question", "shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"}
+        # Bot asks for clarification in chat rather than suspending its Run.
+        disabled = {"ask_user_question"}
         return node.model_copy(
             update={
                 "source_kind": "bot",
@@ -673,11 +712,7 @@ class AgentCompositionResolver:
                 # Bot keeps clarification in ordinary chat rather than suspending
                 # its coordination Run for structured user questions.
                 "capabilities": capabilities,
-                "tools": (
-                    None
-                    if node.tools is None
-                    else tuple(name for name in node.tools if name not in disabled and not name.startswith("computer_"))
-                ),
+                "tools": (None if node.tools is None else tuple(name for name in node.tools if name not in disabled)),
                 "tool_search": (
                     node.tool_search.selected(
                         mcp_servers=tuple(item.server_id for item in node.mcp_servers),

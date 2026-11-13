@@ -47,14 +47,14 @@ from anyio import CancelScope, fail_after, to_thread
 
 from a13n_harness_ui.builtin_guidance import instruction_reference_root
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
-from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
+from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding, ResolvedEnvironmentTarget
 from a13n_harness_ui.configuration.models import DeviceResource, HttpDeviceTransport, canonical_digest
 from a13n_harness_ui.devices import DeviceConnections
 from a13n_harness_ui.envd_runtime import EnvdRuntimeManager, EnvdStatus
 from a13n_harness_ui.envd_sessions import AdmittedSession, SessionBinding
 from a13n_harness_ui.environment_monitoring import MonitoringSource
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
-from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError
+from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError, HarnessUiError
 from a13n_harness_ui.extensions import (
     LOCAL_ENVD_PROVIDER_KEY,
     NATIVE_PROVIDER_KEY,
@@ -356,6 +356,13 @@ class EnvironmentRunService:
             digests[key] = digest
         versions: dict[str, int] = {}
         previous = await self._store.envd_sessions.list(composition.thread_id)
+        prefix = _session_prefix(composition)
+        previous = (
+            {key: value for key, value in previous.items() if key.startswith(prefix)}
+            if prefix
+            else {key: value for key, value in previous.items() if not key.startswith("bot/")}
+        )
+        digests = {f"{prefix}{key}": value for key, value in digests.items()}
         async with AsyncExitStack() as scope:
             changes = {}
             for key in sorted(previous.keys() | digests.keys()):
@@ -364,13 +371,32 @@ class EnvironmentRunService:
                 if key in digests:
                     versions[key] = changes[key][1].version
             with CancelScope(shield=True), fail_after(30):
-                await self._store.envd_sessions.select_many(composition.thread_id, changes, complete=True)
-        return composition.model_copy(update={"session_versions": versions})
+                await self._store.envd_sessions.select_many(
+                    composition.thread_id, changes, complete=composition.root.source_kind != "bot"
+                )
+        composition = composition.model_copy(update={"session_versions": versions})
+        targets = []
+        for target in composition.environment_targets:
+            try:
+                admitted = await self.admit(_target_composition(composition, target))
+                target = target.model_copy(
+                    update={
+                        "project_roots": admitted.project_roots,
+                        "environment_profile": admitted.environment_profile,
+                        "session_versions": admitted.session_versions,
+                    }
+                )
+            except (HarnessUiError, EnvironmentError, OSError) as error:
+                # One unavailable Project must not prevent Bot from using other targets.
+                target = target.model_copy(update={"unavailable": str(error)})
+            targets.append(target)
+        return composition.model_copy(update={"environment_targets": tuple(targets)})
 
     async def validate_admission(self, composition: ResolvedRunComposition) -> None:
         expected = {binding.device.id for binding in composition.environment_bindings}
         if composition.environment_profile.adapter_key == LocalEnvdProjectAdapter.key:
             expected.add("local")
+        expected = {f"{_session_prefix(composition)}{key}" for key in expected}
         if expected != composition.session_versions.keys():
             raise EnvironmentLifecycleError("Session selection was not admitted.", code="envd_session_conflict")
         for key, version in composition.session_versions.items():
@@ -538,10 +564,86 @@ class EnvironmentRunService:
             ),
         )
 
+    async def mount_target(
+        self,
+        composition: ResolvedRunComposition,
+        target: ResolvedEnvironmentTarget,
+        runtime: EnvironmentRuntime,
+        *,
+        existing_aliases: set[str],
+    ) -> None:
+        """Add captured Project mounts to Bot's active native runtime on demand."""
+        if target.unavailable is not None:
+            raise EnvironmentLifecycleError(target.unavailable, code="bot_environment_unavailable")
+        selected = _target_composition(composition, target)
+        await self.validate_admission(selected)
+        aliases = target_mount_aliases(target)
+        pending = {local: alias for local, alias in aliases.items() if alias not in existing_aliases}
+        if not pending:
+            return
+        reconstructed = self._reconstructor.reconstruct(selected.environment_profile)
+        roots = await normalize_project_roots(selected.project_roots) if selected.project_roots else ()
+        local_runtime = (
+            await self._reconstructor.sandbox_runtime(profile=selected.environment_profile)
+            if roots and isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+            else None
+        )
+        prepared = []
+        for index, root in enumerate(roots, start=1):
+            local = "workspace" if index == 1 else f"workspace-{index}"
+            if local in pending:
+                mount, _ = await self._prepare_project_mount(
+                    selected,
+                    reconstructed,
+                    root=root,
+                    alias=pending[local],
+                    mount_path=f"/environment/{pending[local]}",
+                    local_runtime=local_runtime,
+                )
+                prepared.append(mount)
+        for binding in selected.environment_bindings:
+            local = binding.selection.alias
+            if local not in pending:
+                continue
+            if isinstance(binding.device.transport, HttpDeviceTransport):
+                composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
+            mount, _ = await self._prepare_device_mount(selected, binding)
+            mount.alias = pending[local]
+            mount.mount_path = f"/environment/{mount.alias}"
+            prepared.append(mount)
+        for mount in prepared:
+            # Each native mutation publishes atomically. A retry reads the live
+            # snapshot and skips mounts already published by a cancelled call.
+            await runtime.mount(
+                mount.alias,
+                EnvironmentMount(
+                    source=mount,
+                    permission_ceiling=mount.permission_ceiling,
+                    mount_path=mount.mount_path,
+                    provider_root=mount.provider_root,
+                ),
+            )
+
     async def prepare_recovery(
-        self, composition: ResolvedRunComposition, alias: str, *, original_session_id: str
+        self,
+        composition: ResolvedRunComposition,
+        alias: str,
+        *,
+        original_session_id: str,
+        _target_alias: str | None = None,
     ) -> EnvironmentRuntime:
         """Reconstruct only a retained Shell's captured mount, without admitting a Run."""
+        for target in composition.environment_targets:
+            selected_alias = next(
+                (local for local, mounted in target_mount_aliases(target).items() if mounted == alias), None
+            )
+            if selected_alias is not None:
+                return await self.prepare_recovery(
+                    _target_composition(composition, target),
+                    selected_alias,
+                    original_session_id=original_session_id,
+                    _target_alias=alias,
+                )
         binding = next((item for item in composition.environment_bindings if item.selection.alias == alias), None)
         if binding is not None:
             if isinstance(binding.device.transport, HttpDeviceTransport):
@@ -591,6 +693,9 @@ class EnvironmentRunService:
                     local_runtime=local_runtime,
                     original_session_id=original_session_id,
                 )
+        if _target_alias is not None:
+            alias = _target_alias
+            mount.mount_path = f"/environment/{alias}"
         return create_environment_runtime(
             mounts={
                 alias: EnvironmentMount(
@@ -619,7 +724,11 @@ class EnvironmentRunService:
         key = EnvironmentBindingKey(
             thread_id=composition.thread_id,
             environment_profile_id=profile.profile_id,
-            profile_digest=profile.behavior_digest,
+            profile_digest=(
+                canonical_digest({"profile": profile.behavior_digest, "scope": composition.environment_scope})
+                if composition.environment_scope is not None
+                else profile.behavior_digest
+            ),
             adapter_key=profile.adapter_key,
             normalized_root=os.fspath(root),
         )
@@ -689,6 +798,7 @@ class EnvironmentRunService:
                 {
                     "device": binding.device.model_dump(mode="json", exclude={"name", "id"}),
                     "selection": selection.model_dump(mode="json"),
+                    **({"scope": composition.environment_scope} if composition.environment_scope is not None else {}),
                 }
             ),
             adapter_key=adapter_key,
@@ -887,6 +997,7 @@ class EnvironmentRunService:
         *,
         original_session_id: str | None = None,
     ) -> EnvdSessionBorrower:
+        device_key = f"{_session_prefix(composition)}{device_key}"
         version = composition.session_versions.get(device_key)
         if version is None:
             raise EnvironmentLifecycleError("Session selection was not admitted.", code="envd_session_conflict")
@@ -935,6 +1046,36 @@ class EnvironmentRunService:
                 details={"adapter_key": key.adapter_key, "provider_key": provider_key},
             )
         return value.state
+
+
+def _session_prefix(composition: ResolvedRunComposition) -> str:
+    scope = composition.environment_scope
+    return "" if scope is None else f"bot/{hashlib.sha256(scope.encode()).hexdigest()[:20]}/"
+
+
+def _target_composition(
+    composition: ResolvedRunComposition, target: ResolvedEnvironmentTarget
+) -> ResolvedRunComposition:
+    return composition.model_copy(
+        update={
+            "project_id": target.project_id,
+            "project_roots": target.project_roots,
+            "environment_profile": target.environment_profile,
+            "environment_bindings": target.environment_bindings,
+            "default_environment": target.default_environment,
+            "environment_scope": target.target_id,
+            "environment_targets": (),
+            "session_versions": target.session_versions,
+        }
+    )
+
+
+def target_mount_aliases(target: ResolvedEnvironmentTarget) -> dict[str, str]:
+    """Map captured local aliases to stable, collision-free Bot mount routes."""
+    local = ["workspace" if index == 1 else f"workspace-{index}" for index in range(1, len(target.project_roots) + 1)]
+    local.extend(binding.selection.alias for binding in target.environment_bindings)
+    prefix = hashlib.sha256(target.target_id.encode()).hexdigest()[:20]
+    return {alias: f"bot-{prefix}-{index}" for index, alias in enumerate(local, start=1)}
 
 
 async def normalize_project_roots(roots: Sequence[Path | str]) -> tuple[Path, ...]:
