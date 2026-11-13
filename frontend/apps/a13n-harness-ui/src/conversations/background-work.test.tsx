@@ -19,7 +19,7 @@ import { BackgroundScope } from "./background-context";
 import { BackgroundCard, BackgroundToggle } from "./background-card";
 import { FocusDisplay } from "./stream";
 import { ConversationTranscript } from "./transcript";
-import { ToolCall } from "./tool-call";
+import { ToolActivity, ToolCall } from "./tool-call";
 import { executionHeaders } from "./background-links";
 import { ChildInputLabels, InputContent } from "./input-content";
 import { workspaceTabs, emptyTabs } from "../native/workspace-tabs";
@@ -320,6 +320,40 @@ it("distinguishes canonical notice kinds, preserves source-marked rows and links
     screen.getAllByRole("button", { name: "Agent one" })[0],
   );
   expect(test.open).toHaveBeenCalled();
+});
+it("opens a handed-off shell call from its single inline action before the activity list loads it", async () => {
+  const test = setup([]);
+  render(
+    test.view(
+      "root",
+      <ToolActivity
+        tools={[
+          {
+            id: "launch",
+            name: "shell_exec",
+            input: { command: "sleep 60" },
+            result: {
+              type: "tool_execution_receipt",
+              execution_id: "exec-shell",
+              tool_name: "shell_exec",
+              status: "running",
+            },
+          },
+        ]}
+      />,
+    ),
+  );
+  const action = screen.getByRole("button", { name: "Moved to background" });
+  expect(screen.getAllByText("Moved to background")).toHaveLength(1);
+  expect(action.closest('[data-slot="disclosure-heading"]')).toBeTruthy();
+  await userEvent.click(action);
+  expect(test.open).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "tool",
+      id: "exec-shell",
+      threadId: "root",
+    }),
+  );
 });
 it("opens the spawned child by mouse or keyboard without expanding the tool details", async () => {
   const test = setup([]);

@@ -578,7 +578,7 @@ it.each(["queued", "running"])(
     };
     expect(activitySummary([tool])).toMatchObject({
       title: "Shell - 1 operation",
-      status: "Execution handed off",
+      status: "Moved to background",
     });
     expect(
       activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
@@ -699,13 +699,13 @@ it.each([false, true])(
     expect(
       activitySummary([start, { ...wait, input: { process_id: "other" } }])
         .status,
-    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    ).toBe(receipt ? "Moved to background" : "Running at last check");
     expect(
       activitySummary([start, { ...wait, subagentRunId: "child" }]).status,
-    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    ).toBe(receipt ? "Moved to background" : "Running at last check");
     expect(
       activitySummary([start, { ...wait, result: { ok: true } }]).status,
-    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    ).toBe(receipt ? "Moved to background" : "Running at last check");
     const failed = {
       ...wait,
       result: { status: { phase: "exited", exit_code: 7 } },
@@ -715,7 +715,7 @@ it.each([false, true])(
       status: "",
     });
     expect(describeTool(start).phase).toBe(
-      receipt ? "Execution handed off" : "Running at last check",
+      receipt ? "Moved to background" : "Running at last check",
     );
   },
 );
