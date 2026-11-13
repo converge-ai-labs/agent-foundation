@@ -856,10 +856,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
             close_task = self._terminal_close_task
             assert close_task is not None
-            await close_task
+            try:
+                await close_task
+            finally:
+                # A settled task's failure has now been delivered to this consumer.
+                # Context exit must not deliver it again if the caller handles it.
+                if close_task.done():
+                    self._terminal_close_task = None
             result = self._pending_result
             self._pending_result = None
-            self._terminal_close_task = None
             self._delivered_result = result
             return HarnessRunResultEvent(
                 thread_id=self.thread_id,
@@ -1056,7 +1061,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await self._close_resources(outcome=outcome, failure=failure)
         except RunCleanupError as cleanup_error:
             if outcome is None:
-                raise cleanup_error from failure
+                raise
             raise RunCleanupError(
                 "Harness run failed after producing an outcome and cleanup also failed.",
                 outcome=outcome,
@@ -1872,7 +1877,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 fence_failure = exc
 
             current_task = asyncio.current_task()
-            causes: list[BaseException] = [] if fence_failure is None else [fence_failure]
+            causes: list[BaseException] = []
+
+            def capture_cleanup_failure(exc: BaseException) -> None:
+                # Stopping a task can re-raise its already observed execution error.
+                if exc is not failure and all(exc is not cause for cause in causes):
+                    causes.append(exc)
+
+            if fence_failure is not None:
+                capture_cleanup_failure(fence_failure)
 
             def capture_pending_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
                 nonlocal cancellation
@@ -1892,9 +1905,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     await awaitable
                 except asyncio.CancelledError as exc:
                     if not capture_pending_cancellation(exc):
-                        causes.append(exc)
+                        capture_cleanup_failure(exc)
                 except BaseException as exc:
-                    causes.append(exc)
+                    capture_cleanup_failure(exc)
                 finally:
                     # Cleanup code may suppress or translate the injected CancelledError.
                     capture_pending_cancellation()
@@ -1923,7 +1936,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._attachments_retained = self._context is not None and self._context._tool_executions.retained
             if not self._attachments_retained:
                 await finish_cleanup(self._close_run_attachments())
-            causes.extend(self._source_cleanup_failures)
+            for source_failure in self._source_cleanup_failures:
+                capture_cleanup_failure(source_failure)
             self._source_cleanup_failures.clear()
 
             phase.set_attribute("a13n.phase.step", "environment")
@@ -1969,11 +1983,19 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 cancellation.add_note(f"Harness cleanup also failed: {cause!r}")
             raise cancellation
         if causes:
-            raise RunCleanupError(
+            cleanup_error = RunCleanupError(
                 "Harness run cleanup failed.",
                 outcome=outcome,
                 causes=tuple(causes),
             )
+            if failure is not None and outcome is None:
+                # Keep the primary exception catchable while retaining both cleanup
+                # diagnostics and its original exception chain, including suppression.
+                cleanup_error.__cause__ = failure.__cause__
+                cleanup_error.__context__ = failure.__context__
+                cleanup_error.__suppress_context__ = failure.__suppress_context__
+                raise failure from cleanup_error
+            raise cleanup_error
 
     def _finish_observation(
         self,

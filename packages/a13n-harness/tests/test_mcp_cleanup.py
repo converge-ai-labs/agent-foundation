@@ -58,13 +58,16 @@ async def _failing_request(failure=None):
 
 
 @pytest.mark.parametrize("protocol", ["legacy", "auto"])
-async def test_handled_request_failure_is_not_raised_again_during_client_exit(protocol):
+@pytest.mark.parametrize("explicit_close", [False, True])
+async def test_handled_request_failure_is_not_raised_again_during_client_exit(protocol, explicit_close):
     async with _failing_request() as (transport, calls, failure):
         client = InitializationRetryClient(transport, mode=protocol)
         async with client:
             with pytest.raises(httpx2.ConnectError) as caught:
                 await client.call_tool_mcp("effect", {})
             assert caught.value is failure
+            if explicit_close:
+                await client.close()
         assert not client.is_connected()
         assert calls.count("tools/call") == 1
 
@@ -248,3 +251,27 @@ async def test_cancellation_while_observing_session_failure_preserves_session(mo
         assert client._session_state.nesting_counter == 1
         assert client._reported_session_error is None
     assert not client.is_connected()
+
+
+async def test_explicit_close_still_closes_transport_and_reports_new_failure(monkeypatch):
+    cleanup_failure = RuntimeError("transport cleanup failed")
+    closed = False
+
+    async with _failing_request() as (transport, _calls, failure):
+
+        async def close_transport():
+            nonlocal closed
+            closed = True
+            raise cleanup_failure
+
+        monkeypatch.setattr(transport, "close", close_transport)
+        client = InitializationRetryClient(transport)
+        async with client:
+            with pytest.raises(httpx2.ConnectError) as caught:
+                await client.call_tool_mcp("effect", {})
+            assert caught.value is failure
+            with pytest.raises(RuntimeError) as cleanup:
+                await client.close()
+            assert cleanup.value is cleanup_failure
+            assert closed
+            assert not client.is_connected()

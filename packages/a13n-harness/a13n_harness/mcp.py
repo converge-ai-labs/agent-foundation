@@ -415,10 +415,10 @@ class InitializationRetryClient(Client[ClientTransport]):
                             raise failure from exc
             raise
 
-    async def __aexit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+    async def _disconnect(self, force: bool = False) -> None:
         task = self._session_state.session_task
         try:
-            await super().__aexit__(exc_type, exc_value, traceback)
+            await super()._disconnect(force=force)
         except Exception as exc:
             reported = self._reported_session_error
             # Native disconnect re-awaits the same task. Only its already
