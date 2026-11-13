@@ -132,9 +132,10 @@ subagents:
   dynamic:
     enabled: true
     allowed_models: [model-primary]
+    default_model: model-primary
 ```
 
-Dynamic creation is off when `enabled` is missing or false. The main Agent receives `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`. Omit `model` to inherit its Model; explicit choices must be in `allowed_models`. Thinking must be supported by the selected Model. Each helper inherits tools and Environment, receives global guidance and fixed child guidance followed by its role instructions, and starts without parent Agent instructions or conversation history. Dynamic helpers cannot delegate or spawn further children.
+Dynamic creation is off when `enabled` is missing or false. The main Agent receives `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`; its description lists `allowed_models`. Explicit choices must be in `allowed_models`. An omitted `model` uses `default_model`, which must also be in `allowed_models`. Enabling dynamic creation requires both settings; helpers never inherit the main Agent's Model, and a configuration that is enabled without them fails to load. Thinking must be supported by the selected Model. Each helper inherits tools and Environment, receives global guidance and fixed child guidance followed by its role instructions, and starts without parent Agent instructions or conversation history. Dynamic helpers cannot delegate or spawn further children.
 
 The running-child limit applies to dynamic, configured and built-in helpers, including resumed segments. The Agent receives a clear error at the limit and can wait for existing work. Use `subagent_info`, `wait_subagent`, `steer_subagent`, `resume_subagent` and cancellation with the returned execution ID.
 

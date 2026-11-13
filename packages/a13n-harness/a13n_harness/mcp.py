@@ -415,10 +415,10 @@ class InitializationRetryClient(Client[ClientTransport]):
                             raise failure from exc
             raise
 
-    async def _disconnect(self, force: bool = False) -> None:
+    async def _disconnect(self, force: bool = False, held: asyncio.Task[Any] | None = None) -> None:
         task = self._session_state.session_task
         try:
-            await super()._disconnect(force=force)
+            await super()._disconnect(force=force, held=held)
         except Exception as exc:
             reported = self._reported_session_error
             # Native disconnect re-awaits the same task. Only its already

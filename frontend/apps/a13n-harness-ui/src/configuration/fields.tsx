@@ -145,6 +145,9 @@ export function ResourceFields({
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
   };
+  const allowedModels =
+    strings(["subagents", "dynamic", "allowed_models"]) ?? [];
+  const defaultModelPath = ["subagents", "dynamic", "default_model"];
   const list = (
     label: string,
     path: string[],
@@ -452,19 +455,47 @@ export function ResourceFields({
                 />
               </SettingsRow>
               {get(["subagents", "dynamic", "enabled"]) === true && (
-                <ModelSelectionField
-                  label={t("Models for created subagents")}
-                  description={t(
-                    "The agent can choose from these. With none selected, subagents use the main agent's model.",
+                <>
+                  <ModelSelectionField
+                    label={t("Models for created subagents")}
+                    description={t(
+                      "The agent can choose from these. Choose at least one.",
+                    )}
+                    models={selectors.data?.models ?? []}
+                    value={allowedModels}
+                    onChange={(value) => {
+                      let updated = updateDocument(
+                        source,
+                        ["subagents", "dynamic", "allowed_models"],
+                        value,
+                      );
+                      // The default must stay one of the allowed models.
+                      const fallback = text(defaultModelPath);
+                      if (fallback && !value?.includes(fallback))
+                        updated = updateDocument(
+                          updated,
+                          defaultModelPath,
+                          undefined,
+                        );
+                      onChange(updated);
+                    }}
+                  />
+                  {allowedModels.length > 0 && (
+                    <ResourceChoice
+                      label={t("Default model")}
+                      description={t(
+                        "Used when the agent does not choose a model.",
+                      )}
+                      value={text(defaultModelPath)}
+                      placeholder={t("Choose a model")}
+                      loading={selectors.isPending || sources.isPending}
+                      onValueChange={(value) => set(defaultModelPath, value)}
+                      options={models.filter((model) =>
+                        allowedModels.includes(model.value),
+                      )}
+                    />
                   )}
-                  models={selectors.data?.models ?? []}
-                  value={
-                    strings(["subagents", "dynamic", "allowed_models"]) ?? []
-                  }
-                  onChange={(value) =>
-                    set(["subagents", "dynamic", "allowed_models"], value)
-                  }
-                />
+                </>
               )}
               <SettingsRow
                 label={t("Maximum running subagents")}

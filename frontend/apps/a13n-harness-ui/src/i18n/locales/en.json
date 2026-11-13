@@ -3534,7 +3534,8 @@
   "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.": "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
   "Let the agent create subagents": "Let the agent create subagents",
   "Models for created subagents": "Models for created subagents",
-  "The agent can choose from these. With none selected, subagents use the main agent's model.": "The agent can choose from these. With none selected, subagents use the main agent's model.",
+  "The agent can choose from these. Choose at least one.": "The agent can choose from these. Choose at least one.",
+  "Used when the agent does not choose a model.": "Used when the agent does not choose a model.",
   "Maximum running subagents": "Maximum running subagents",
   "Shared by all subagents of one chat.": "Shared by all subagents of one chat."
 }

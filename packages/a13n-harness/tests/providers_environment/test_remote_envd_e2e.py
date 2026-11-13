@@ -1161,7 +1161,8 @@ async def test_owned_shell_handoff_recovers_same_process_without_start_replay(
             _spill_tool_result=spill,
             _tool_executions=SimpleNamespace(delivered_result=lambda call, record, value: value),
         )
-        materialized = await _result(SimpleNamespace(deps=deps, tool_call_id="retrieve"), retained)
+        delivered = await _result(SimpleNamespace(deps=deps, tool_call_id="retrieve"), retained)
+        materialized = delivered.return_value
         assert "tool-execution-artifact://" not in json.dumps(materialized)
         assert Path(materialized["disclosure"]["text_file_paths"]["/stdout/text"]).read_text() == (
             "ready\n" + payload.replace("test-sensitive-value", "[REDACTED]") + "\n"
