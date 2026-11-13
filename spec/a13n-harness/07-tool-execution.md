@@ -27,6 +27,10 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Client-side execution, authorization, and result production        | External executor or Service client                              |
 | Durable client-call waiting, delivery, and feedback correlation    | Host                                                             |
 
+## Tool Extensions
+
+[Object Reference Transport](24-object-store.md#object-reference-transport) is the opt-in tool extension for delivering scoped binary objects as base64. Tools declare `a13n.harness.supports_object_refs`; native validation, hooks and policy operate on reference-valued arguments, and final target dispatch performs substitution once. The linked contract owns admission, payload-check ownership and history preservation.
+
 ## External Tool Schema Compatibility
 
 Client Tools and locally executed MCP tools are exposed to the model with `ToolDefinition.strict=False`. Their externally supplied JSON Schemas remain intact at the Harness adaptation boundary; provider schema adaptation remains owned by Pydantic AI. This avoids inferring strict-mode compatibility for schemas that use arbitrary JSON values or other constructs outside a provider's strict subset. Model-generated arguments remain subject to the existing execution-side validation, permissions, and approval rules.

@@ -1,20 +1,17 @@
-"""Pinned Pydantic compatibility adapter for reference-preserving validation.
+"""Admit Object Reference Transport strings through native argument validation.
 
-Keep native defaults, coercion, nested types, and JSON/Python entry semantics.
-Reference-valued strings and enclosing user validators defer payload checks;
-native fields still validate, and the original validator remains authoritative
-immediately before target dispatch.
+Only declarative string constraints admit exact references. User validators,
+defaults, coercion, typed arguments and JSON/Python entry semantics stay native;
+dispatch substitutes bytes without replaying validation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, cast
 
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from pydantic.plugin._schema_validator import PluggableSchemaValidator
-from pydantic_ai._function_schema import _validate_single_arg
 from pydantic_core import SchemaValidator, core_schema
 
 from a13n_harness.errors import DefinitionError
@@ -29,8 +26,6 @@ def _string_schema(schema: dict[str, Any]) -> bool:
         return True
     if kind == "literal":
         return all(isinstance(value, str) for value in schema["expected"])
-    if kind in {"function-before", "function-after", "function-wrap", "nullable"}:
-        return _string_schema(schema["schema"])
     return False
 
 
@@ -40,38 +35,16 @@ def _preserve_ref(value: Any, handler: Any) -> Any:
     return handler(value)
 
 
-def _reference_callback(function: Any, *, wrapped: bool) -> Any:
-    # This native callback builds the kwargs envelope; it is structural, not a
-    # payload constraint. Preserve it while widening its inner model schema.
-    if isinstance(function, partial) and function.func is _validate_single_arg:
-        return function
-
-    def validate(value: Any, *args: Any) -> Any:
-        if contains_object_ref(value):
-            # Container/model validators can depend on payload bytes. Bypass
-            # only this callback, retaining native inner field validation.
-            return args[0](value) if wrapped else value
-        return function(value, *args)
-
-    return validate
-
-
 def _widen(schema: Any) -> Any:
     if isinstance(schema, list):
         return [_widen(value) for value in schema]
     if not isinstance(schema, dict):
         return schema
-    # Wrap the complete string subtree, including its field validators. Other
-    # fields and containers continue through the native validation machinery.
+    # Admit the transport token at the primitive leaf, not around user
+    # callbacks: field/model validators must run normally and accept references.
     if _string_schema(schema):
         return core_schema.no_info_wrap_validator_function(_preserve_ref, cast(core_schema.CoreSchema, schema))
-    result = {key: _widen(value) for key, value in schema.items()}
-    kind = schema.get("type")
-    if kind in {"function-before", "function-after", "function-wrap"} and isinstance(schema.get("function"), dict):
-        result["function"]["function"] = _reference_callback(
-            schema["function"]["function"], wrapped=kind == "function-wrap"
-        )
-    return result
+    return {key: _widen(value) for key, value in schema.items()}
 
 
 @dataclass
@@ -105,8 +78,3 @@ class ReferenceValidator:
         parsed = _JSON.validate_json(value)
         validator = self.references if contains_object_ref(parsed) else self.original
         return validator.validate_json(value, **kwargs)
-
-
-def reference_values(value: Any) -> Any:
-    """Expose typed model fields for recursive expansion without serialization."""
-    return dict(value) if isinstance(value, BaseModel) else value

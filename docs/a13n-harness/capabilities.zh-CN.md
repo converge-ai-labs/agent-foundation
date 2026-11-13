@@ -466,9 +466,33 @@ bindings = RunBindings.embedded(object_store=host_store)
 
 用 `asset_ref(path)` 导入有权限读取的普通 Environment 文件。`asset_store(ref=...)` 提升可用对象的保留级别而不改变 ID；`asset_store(path=...)` 导入并保留文件。`asset_list`、`asset_info` 和 `asset_delete` 管理当前 Host 作用域，且不向 Model 暴露字节。
 
-目标工具默认不支持引用。单个工具可设置元数据 `{"a13n.harness.supports_object_refs": True}`；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。只为字符串参数接受 base64 的工具启用。原生 Core schema 和自定义参数校验仍会在目标执行前检查实际参数。自定义工具集若使用非原生参数校验器，启用时会明确失败。
+### Object Reference Transport
 
-原生工具的载荷检查应放在字段 validator 或包含载荷的 model validator 中：输入含引用的回调将载荷检查推迟到展开后，内部字段仍按原生规则校验。工具的自定义 `args_validator` 先接收带引用的类型化参数，以保留业务审批、延迟和拒绝语义；展开后再次接收实际参数。启用引用的回调必须接受引用和重复校验；预检失败会正常传播，不读取 Store。
+Object Reference Transport（对象引用传输）是 Harness 的工具扩展，在最终授权参数中把完整引用替换成 base64。目标工具默认不支持引用。单个工具通过元数据 `{"a13n.harness.supports_object_refs": True}` 接入；`ObjectRefToolset` 提供工具集默认值和逐工具覆盖。为字符串参数接受 base64 的工具启用。自定义工具集需要原生 Pydantic Core 参数校验器。
+
+原生参数校验及校验前后钩子只运行一次。声明式字符串约束允许完整引用；字段/model validator 和自定义 `args_validator` 按原生流程处理带引用的参数，此时尚未读取 Store。回调必须接受并保留引用。派发时复制最终参数，保留类型化模型和已归一化的值，只替换仍存在的引用，不重跑校验或默认值工厂。依赖解码后字节的检查由消费函数或远程 MCP 服务负责。
+
+例如，自定义参数回调可以在 `data_base64` 仍为引用时进行授权；实现函数接收真正的 base64：
+
+```python
+import base64
+
+from a13n_harness.objects import SUPPORTS_OBJECT_REFS
+from pydantic_ai.tools import Tool
+
+
+def authorize_send(ctx, data_base64: str):
+    # Apply business authorization here; accept reference transport values.
+    assert ctx.deps.object_store is not None
+
+
+def send_image(data_base64: str):
+    image = base64.b64decode(data_base64, validate=True)
+    return upload_image(image)  # Your consumer validates and uploads the bytes.
+
+
+send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_OBJECT_REFS: True})
+```
 
 权限拒绝和待审批不会读取 Store。引用可能在审批期间过期；恢复调用会报告对象不可用。Agent 必须使用当前列出的引用或明确重新导入，不能编造 base64 或自动重放生产工具。临时 TTL 和 LRU 上限由 Host 管理；显式保留后，对象不再受临时过期策略影响。`ObjectStoreConfiguration(capture_media=False)` 关闭自动捕获，`max_object_bytes` 限制导入和捕获大小。Host 上限可更小；捕获因大小被拒绝时，原生媒体仍保留，并报告没有生成可复用对象。
 

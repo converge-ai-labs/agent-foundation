@@ -466,9 +466,33 @@ Captured native user media and tool/MCP media keep their original Model-visible 
 
 Use `asset_ref(path)` to import an authorized regular Environment file. `asset_store(ref=...)` promotes an available object without changing its ID; `asset_store(path=...)` imports and promotes a file. `asset_list`, `asset_info` and `asset_delete` manage the current Host scope without exposing bytes to the Model.
 
-Targets are disabled by default. A tool can opt in with metadata `{"a13n.harness.supports_object_refs": True}`; `ObjectRefToolset` supplies a toolset default and per-tool overrides. Opt in only tools whose string arguments accept base64. Native Core schemas and custom argument validation still check effective arguments before target execution. Custom toolsets with non-native argument validators fail explicitly when opted in.
+### Object Reference Transport
 
-For native tools, place payload checks in field validators or an enclosing model validator: callbacks whose input contains references defer their payload checks until expansion, while native fields still validate. A custom tool `args_validator` runs first on reference-valued typed arguments to preserve business approval, deferral and denial, then again on effective arguments. Opted-in callbacks must accept references and repeated validation; preflight failures propagate without reading the Store.
+Object Reference Transport is the Harness tool extension that replaces exact references with base64 in the final authorized arguments. Targets default to unsupported. A tool opts in with metadata `{"a13n.harness.supports_object_refs": True}`; `ObjectRefToolset` supplies a toolset default and per-tool overrides. Opt in tools whose string arguments accept base64. Custom toolsets require native Pydantic Core argument validators.
+
+Native argument validation and before/after-validation hooks run once. Declarative string constraints admit exact reference tokens; field/model validators and custom `args_validator` callbacks run normally on reference-valued arguments before any Store read. Callbacks must accept and preserve those tokens. Dispatch copies the final arguments, preserving typed models and normalized values, and replaces only remaining references. It does not rerun validation or default factories. Put checks that require decoded bytes in the consuming function or remote MCP server.
+
+For example, a custom argument callback can authorize `data_base64` while it still holds a reference; the implementation receives actual base64:
+
+```python
+import base64
+
+from a13n_harness.objects import SUPPORTS_OBJECT_REFS
+from pydantic_ai.tools import Tool
+
+
+def authorize_send(ctx, data_base64: str):
+    # Apply business authorization here; accept reference transport values.
+    assert ctx.deps.object_store is not None
+
+
+def send_image(data_base64: str):
+    image = base64.b64decode(data_base64, validate=True)
+    return upload_image(image)  # Your consumer validates and uploads the bytes.
+
+
+send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_OBJECT_REFS: True})
+```
 
 Permission denial and pending approval cause no Store read. A reference can expire while approval is pending; resume then reports an unavailable object. The Agent must use a currently listed reference or explicitly import again, not invent base64 or replay the producer automatically. Temporary TTL and LRU limits are Host policy; explicit promotion excludes an object from temporary expiry. `ObjectStoreConfiguration(capture_media=False)` disables automatic capture, and `max_object_bytes` bounds imports and capture. Host limits can be smaller; a capture size rejection preserves native media and reports that no reusable object was captured.
 

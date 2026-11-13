@@ -153,7 +153,7 @@ Enable the private object library in the agent revision:
 
 A screenshot or other native MCP media result keeps its original media and gains an `a13n-object://obj_...` reference. The agent can pass that exact string to an opted-in base64 consumer. Runtime supplies the original bytes without asking the model to generate base64. The object library belongs to the thread; automatically captured media does not become a workspace Asset. Forks and independent child threads do not inherit another thread's library.
 
-Set the MCP connection's `config.supports_object_refs` server default, or enable only selected tools with `config.object_ref_tools`:
+To opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation, set the MCP connection's `config.supports_object_refs` server default, or enable only selected tools with `config.object_ref_tools`:
 
 ```json
 {

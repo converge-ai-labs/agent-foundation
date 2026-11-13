@@ -3,23 +3,21 @@
 from __future__ import annotations
 
 import base64
-import inspect
 import json
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from hashlib import sha256
-from typing import Any
+from typing import Any, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
-from pydantic_ai import ModelRetry, RunContext, ToolFailed, ToolReturn
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import BinaryContent, ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, ToolsetTool, WrapperToolset
-from pydantic_ai.toolsets.function import FunctionToolsetTool
 
-from a13n_harness.capabilities._object_ref_validation import ReferenceValidator, reference_values
+from a13n_harness.capabilities._object_ref_validation import ReferenceValidator
 from a13n_harness.context import AgentContext
 from a13n_harness.objects import (
     OBJECT_REF_MANAGEMENT,
@@ -35,7 +33,6 @@ from a13n_harness.objects import (
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY
 from a13n_harness.tools.diagnostics import system_failure
 
-_JSON = TypeAdapter(dict[str, JsonValue])
 _REF_SCHEMA = {"type": "string", "pattern": r"^a13n-object://obj_[a-zA-Z0-9_-]+$"}
 
 
@@ -74,7 +71,7 @@ def check_object_ref_support(ctx: RunContext[AgentContext], tool_def: Any, args:
 
 @dataclass
 class ObjectRefToolset(WrapperToolset[AgentContext]):
-    """Trusted target opt-in. Individual native tool metadata overrides the default."""
+    """Opt tools into Object Reference Transport, with per-tool metadata overrides."""
 
     supports_object_refs: bool = True
     tool_overrides: dict[str, bool] = field(default_factory=dict)
@@ -131,27 +128,17 @@ class _ReferenceValidator:
 
 
 def _prepare_reference_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
-    async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
-        # Custom validators can request business approval or deny a call. They
-        # must accept the opted-in reference transport before any Store read;
-        # native payload constraints run on effective arguments at dispatch.
-        if tool.args_validator_func is not None:
-            result = tool.args_validator_func(ctx, **args)
-            if inspect.isawaitable(result):
-                await result
-
     definition = replace(
         tool.tool_def,
         parameters_json_schema=_reference_schema(tool.tool_def.parameters_json_schema),
         description=(tool.tool_def.description or "")
-        + "\nAccepts a13n-object://obj_ references as whole string argument values in place of base64. "
+        + "\nObject Reference Transport: accepts a13n-object://obj_ references as whole string values in place of base64. "
         "Runtime supplies original bytes. Use only refs returned by the Object Store; never generate base64.",
     )
     return replace(
         tool,
         tool_def=definition,
         args_validator=_ReferenceValidator(tool, ReferenceValidator.create(tool.args_validator)),
-        args_validator_func=validate,
     )
 
 
@@ -176,16 +163,25 @@ class _ObjectStoreToolset(WrapperToolset[AgentContext]):
             snapshot: dict[str, str] = {}
 
             async def expand(value: Any) -> Any:
-                value = reference_values(value)
+                if not contains_object_ref(value):
+                    return value
                 if isinstance(value, str) and is_object_ref(value):
                     if value not in snapshot:
                         snapshot[value] = base64.b64encode(await store.read(object_id(value))).decode("ascii")
                     return snapshot[value]
+                if isinstance(value, BaseModel):
+                    return value.model_copy(update={key: await expand(item) for key, item in dict(value).items()})
                 if isinstance(value, dict):
                     return {key: await expand(item) for key, item in value.items()}
                 if isinstance(value, list):
                     return [await expand(item) for item in value]
                 if isinstance(value, tuple):
+                    # NamedTuple has no distinct base class; preserve its field protocol.
+                    if hasattr(value, "_fields"):
+                        named = cast(Any, value)
+                        return named._replace(
+                            **{key: await expand(item) for key, item in zip(named._fields, value, strict=True)}
+                        )
                     return tuple([await expand(item) for item in value])
                 return value
 
@@ -195,28 +191,9 @@ class _ObjectStoreToolset(WrapperToolset[AgentContext]):
                 raise system_failure(exc.code, str(exc)) from exc
             validator = tool.args_validator
             assert isinstance(validator, _ReferenceValidator)
-            original = validator.original
-            try:
-                if isinstance(original, FunctionToolsetTool) and isinstance(original.toolset, FunctionToolset):
-                    native = original.toolset.tools[original.original_name or original.tool_def.name]
-                    effective = native.function_schema.revalidate(effective, context=ctx.validation_context)
-                else:
-                    effective = original.args_validator.validate_python(effective, context=ctx.validation_context)
-            except ValidationError:
-                # Native errors include input values, which here contain payloads.
-                raise system_failure(
-                    "object_ref_arguments_invalid", "Expanded object bytes do not satisfy the target's original schema."
-                ) from None
-            if original.args_validator_func is not None:
-                try:
-                    result = original.args_validator_func(ctx, **effective)
-                    if inspect.isawaitable(result):
-                        await result
-                except (ValidationError, ModelRetry, ToolFailed):
-                    raise system_failure(
-                        "object_ref_arguments_invalid", "Expanded object bytes were rejected by the target's validator."
-                    ) from None
-            return await self.wrapped.call_tool(name, effective, ctx, original)
+            # Validation, hooks and policy have already decided these arguments.
+            # Object Reference Transport only replaces tokens in the final copy.
+            return await self.wrapped.call_tool(name, effective, ctx, validator.original)
         return await self.wrapped.call_tool(name, tool_args, ctx, tool)
 
 

@@ -153,7 +153,7 @@ description: 保存修订版本、选择工具、配置委派并扩展 agent。
 
 截图等原生 MCP 媒体结果保留原始媒体，并获得 `a13n-object://obj_...` 引用。agent 可以把准确的引用字符串传给已启用的 base64 消费工具。运行时提供原始字节，无需模型生成 base64。对象库属于当前 thread；自动捕获的媒体不会成为工作区 Asset。分叉和独立子 thread 不继承其他 thread 的对象库。
 
-设置 MCP 连接的 `config.supports_object_refs` 服务默认值，或通过 `config.object_ref_tools` 只启用指定工具：
+通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展，把引用替换成 base64，不重跑参数校验。设置 MCP 连接的 `config.supports_object_refs` 服务默认值，或通过 `config.object_ref_tools` 只启用指定工具：
 
 ```json
 {

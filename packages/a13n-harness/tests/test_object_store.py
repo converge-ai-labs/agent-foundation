@@ -110,7 +110,7 @@ async def test_opted_in_strict_schema_and_original_validator_receive_exact_bytes
     result = await executable.run("send it", bindings=RunBindings.embedded(object_store=store))
     assert result.status == "completed", result
     assert seen == [PAYLOAD]
-    assert validated == [item.ref, base64.b64encode(PAYLOAD).decode()]
+    assert validated == [item.ref]
     assert store.reads == 1
     assert "a13n-object" in json.dumps(schemas)
     calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
@@ -260,23 +260,27 @@ async def test_nested_reference_target_dispatch_expands_once_and_keeps_source(di
     assert encoded not in str(calls)
 
 
-@pytest.mark.parametrize("custom", [False, True])
-async def test_original_validation_rejects_expanded_bytes_without_echoing_payload(custom):
-    from pydantic_ai import ModelRetry
+@pytest.mark.parametrize("reject", [False, True])
+async def test_consumer_owns_expanded_payload_validation(reject):
+    from pydantic_ai import ToolFailed
 
     store = Store()
     item = await store.put(PAYLOAD, media_type="image/png")
 
+    validated, seen = [], []
+
     def validator(ctx, data_base64):
-        if not data_base64.startswith("a13n-object://"):
-            raise ModelRetry(f"bad: {data_base64}")
+        assert store.reads == 0
+        validated.append(data_base64)
 
-    def send(data_base64: Annotated[str, Field(max_length=5)] if not custom else str):
-        pytest.fail("invalid effective arguments reached consumer")
+    def send(data_base64: Annotated[str, Field(max_length=5)]):
+        assert base64.b64decode(data_base64) == PAYLOAD
+        if reject:
+            raise ToolFailed("Consumer rejected payload")
+        seen.append(data_base64)
+        return "sent"
 
-    # Resolve conditional annotation explicitly; postponed annotations are evaluated in module scope.
-    send.__annotations__["data_base64"] = str if custom else Annotated[str, Field(max_length=5)]
-    tool = Tool(send, metadata={SUPPORTS_OBJECT_REFS: True}, args_validator=validator if custom else None)
+    tool = Tool(send, metadata={SUPPORTS_OBJECT_REFS: True}, args_validator=validator)
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
@@ -285,7 +289,10 @@ async def test_original_validation_rejects_expanded_bytes_without_echoing_payloa
     )
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"
-    assert "object_ref_arguments_invalid" in str(result.all_messages())
+    assert validated == [item.ref]
+    assert seen == ([] if reject else [base64.b64encode(PAYLOAD).decode()])
+    assert store.reads == 1
+    assert ("Consumer rejected payload" in str(result.all_messages())) == reject
     assert base64.b64encode(PAYLOAD).decode() not in str(result.all_messages())
 
 
@@ -399,11 +406,12 @@ async def test_ref_validation_preserves_defaults_coercion_and_managed_resolver_c
     from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
     from pydantic import AfterValidator
 
-    store, seen, resolved = Store(), [], []
+    store, seen, resolved, validated = Store(), [], [], []
     item = await store.put(PAYLOAD, media_type="image/png")
 
     def validate_payload(value):
-        assert not value.startswith("a13n-object://")
+        assert store.reads == 0
+        validated.append(value)
         return value
 
     async def resources(arguments, *, context):
@@ -442,6 +450,7 @@ async def test_ref_validation_preserves_defaults_coercion_and_managed_resolver_c
     assert result.output_or_raise() == "done"
     assert seen == [(PAYLOAD, "default-recipient", 2)], result.all_messages()
     assert resolved == [{"data_base64": item.ref, "destination": "default-recipient", "copies": 2}]
+    assert validated == [item.ref]
     assert store.reads == 1
 
 
@@ -665,22 +674,23 @@ async def test_custom_validator_approval_precedes_object_reads(outcome):
     assert seen == ([PAYLOAD] if outcome == "approved" else [])
     assert store.reads == (1 if outcome == "approved" else 0)
     if outcome == "approved":
-        assert validated[-1] == (True, base64.b64encode(PAYLOAD).decode())
+        assert validated == [(False, item.ref), (True, item.ref)]
     elif outcome == "expired":
         assert "object_ref_not_found" in str(resumed.all_messages())
 
 
 @pytest.mark.parametrize("single", [False, True])
 @pytest.mark.parametrize("invalid", [None, "count", "payload"])
-async def test_reference_model_and_container_validators_defer_only_reference_subtrees(single, invalid):
+async def test_reference_callbacks_run_once_before_reads_and_preserve_typed_models(single, invalid):
     from pydantic import AfterValidator, BaseModel, BeforeValidator, WrapValidator, model_validator
+    from pydantic_ai import ToolFailed
 
     validated, seen = [], []
     expected = b"wrong payload" if invalid == "payload" else PAYLOAD
 
     def check_container(values, info):
-        for value in values:
-            assert base64.b64decode(value, validate=True) == expected
+        assert store.reads == 0
+        assert values == [item.ref]
         validated.append("container")
         return values
 
@@ -713,6 +723,8 @@ async def test_reference_model_and_container_validators_defer_only_reference_sub
 
     def send(payload, label=1):
         assert isinstance(payload, Payload)
+        if any(base64.b64decode(value, validate=True) != expected for value in payload.data):
+            raise ToolFailed("Consumer rejected payload")
         seen.append((payload.data, payload.count, label))
         return "sent"
 
@@ -737,10 +749,10 @@ async def test_reference_model_and_container_validators_defer_only_reference_sub
         assert not seen
         assert store.reads == (0 if invalid == "count" else 1)
         if invalid == "payload":
-            assert "object_ref_arguments_invalid" in str(result.all_messages())
+            assert "Consumer rejected payload" in str(result.all_messages())
     else:
         assert seen == [([base64.b64encode(PAYLOAD).decode()], 3, 1)]
-        assert len(validated) >= 6
+        assert len(validated) == 6
         assert store.reads == 1
 
 
@@ -814,4 +826,306 @@ async def test_reference_expansion_preserves_prefix_prose_beside_exact_reference
     result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
     assert result.output_or_raise() == "done"
     assert seen == [(PAYLOAD, text)]
+    assert store.reads == 1
+
+
+@pytest.mark.parametrize("dispatch", ["direct", "proxy", "codeact"])
+@pytest.mark.parametrize("single", [False, True])
+@pytest.mark.parametrize("supplied", [False, True])
+async def test_reference_dispatch_validates_once_without_double_transform(dispatch, single, supplied):
+    from a13n_harness.capabilities import (
+        CodeActCapability,
+        ProxyToolSearchConfig,
+        ToolSearchCapability,
+        ToolSearchGroup,
+    )
+    from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+    from pydantic import AfterValidator, BaseModel
+
+    def double(value):
+        return value * 2
+
+    class Payload(BaseModel):
+        data: str
+        copies: Annotated[int, AfterValidator(double)] = Field(default=1, validate_default=True)
+
+    store, seen, validated = Store(), [], []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def send(data: str, copies=1):
+        seen.append((base64.b64decode(data), copies))
+        return "sent"
+
+    send.__annotations__["copies"] = Annotated[int, AfterValidator(double), Field(validate_default=True)]
+
+    def send_single(payload):
+        return send(payload.data, payload.copies)
+
+    send_single.__annotations__["payload"] = Payload
+    target = send_single if single else send
+
+    def validate(ctx, **args):
+        validated.append(args["payload"].copies if single else args["copies"])
+
+    payload = {"data": item.ref, **({"copies": 1} if supplied else {})}
+    # Single-model native tools advertise the unwrapped model as their schema.
+    arguments = dict(payload)
+    source = ObjectRefToolset(FunctionToolset([Tool(target, args_validator=validate)], id="transform"))
+    capabilities = [ObjectStoreCapability()]
+    if dispatch == "proxy":
+        capabilities.append(
+            ToolSearchCapability(
+                groups={"media": ToolSearchGroup(source, "Media")}, config=ProxyToolSearchConfig(call_name="invoke")
+            )
+        )
+        name, arguments = "invoke", {"group": "media", "tool": target.__name__, "arguments": arguments}
+    elif dispatch == "codeact":
+        capabilities.extend(
+            [Capability(toolsets=[CodeActPolicyToolset(source, CodeActToolPolicy(default=True))]), CodeActCapability()]
+        )
+        keyword_args = (
+            f"payload={payload!r}" if single else ", ".join(f"{key}={value!r}" for key, value in payload.items())
+        )
+        name, arguments = "run_code", {"code": f"await {target.__name__}({keyword_args})"}
+    else:
+        capabilities.append(Capability(toolsets=[source]))
+        name = target.__name__
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=model_call(name, arguments), capabilities=capabilities
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, 2)], result.all_messages()
+    assert validated == [2]
+    assert store.reads == 1
+
+
+@pytest.mark.parametrize("single", [False, True])
+async def test_reference_dispatch_preserves_default_factory_results(single):
+    from pydantic import AfterValidator, BaseModel
+
+    generated, checked, seen = [], [], []
+
+    def next_token(data):
+        generated.append(len(generated) + 1)
+        assert "data" in data
+        return generated[-1]
+
+    class Payload(BaseModel):
+        data: str
+        token: Annotated[int, AfterValidator(lambda value: value * 2)] = Field(
+            default_factory=next_token, validate_default=True
+        )
+
+    def send(payloads, label: str = "upload"):
+        seen.extend((payload.data, payload.token) for payload in payloads)
+        return "sent"
+
+    send.__annotations__["payloads"] = list[Payload]
+
+    class Batch(BaseModel):
+        payloads: list[Payload]
+
+    def send_single(batch):
+        return send(batch.payloads)
+
+    send_single.__annotations__["batch"] = Batch
+    target = send_single if single else send
+
+    def validate(ctx, **args):
+        payloads = args["batch"].payloads if single else args["payloads"]
+        checked.append([payload.token for payload in payloads])
+
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call(target.__name__, {"payloads": [{"data": item.ref}, {"data": item.ref}]}),
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([Tool(target, args_validator=validate)]))]),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert generated == [1, 2]
+    assert checked == [[2, 4]]
+    assert seen == [(base64.b64encode(PAYLOAD).decode(), 2), (base64.b64encode(PAYLOAD).decode(), 4)]
+    assert store.reads == 1
+
+
+async def test_reference_dispatch_preserves_before_validation_rewrite():
+    from pydantic import AfterValidator
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class Rewrite(AbstractCapability):
+        async def before_tool_validate(self, ctx, *, call, tool_def, args):
+            if tool_def.name == "send":
+                return {**json.loads(args), "copies": 3}
+            return args
+
+    store, seen = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def send(data: str, copies):
+        seen.append((base64.b64decode(data), copies))
+        return "sent"
+
+    send.__annotations__["copies"] = Annotated[int, AfterValidator(lambda value: value * 2)]
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data": item.ref, "copies": 1}),
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Rewrite(),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, 6)]
+    assert store.reads == 1
+
+
+async def test_reference_dispatch_preserves_after_validation_rewrite():
+    from pydantic import AfterValidator
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class Rewrite(AbstractCapability):
+        async def after_tool_validate(self, ctx, *, call, tool_def, args):
+            if tool_def.name == "send":
+                return {**args, "copies": 3}
+            return args
+
+    store, seen = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def send(data: str, copies):
+        seen.append((base64.b64decode(data), copies))
+        return "sent"
+
+    send.__annotations__["copies"] = Annotated[int, AfterValidator(lambda value: value * 2)]
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data": item.ref, "copies": 1}),
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Rewrite(),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, 3)]
+    assert store.reads == 1
+
+
+async def test_reference_dispatch_reads_only_references_remaining_after_hooks():
+    from pydantic_ai.capabilities import AbstractCapability
+
+    store, seen, rewritten = Store(), [], []
+    removed = await store.put(b"removed", media_type="image/png")
+    retained = await store.put(PAYLOAD, media_type="image/png")
+    await store.delete(removed.object_id)
+
+    class Rewrite(AbstractCapability):
+        async def after_tool_validate(self, ctx, *, call, tool_def, args):
+            if tool_def.name == "send":
+                assert store.reads == 0
+                rewritten.append(args)
+                return {**args, "first": "removed by hook"}
+            return args
+
+    def send(first: str, second: str):
+        seen.append((first, base64.b64decode(second)))
+        return "sent"
+
+    arguments = {"first": removed.ref, "second": retained.ref}
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", arguments),
+        capabilities=[
+            ObjectStoreCapability(),
+            Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))]),
+            Rewrite(),
+        ],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [("removed by hook", PAYLOAD)]
+    assert rewritten == [arguments]
+    assert store.reads == 1
+    calls = [part for message in result.all_messages() for part in message.parts if part.part_kind == "tool-call"]
+    assert calls[0].args_as_dict() == arguments
+
+
+async def test_reference_transport_does_not_bypass_native_field_validator_failure():
+    from pydantic import AfterValidator
+
+    store, validated = Store(), []
+    item = await store.put(PAYLOAD, media_type="image/png")
+
+    def reject(value):
+        assert store.reads == 0
+        validated.append(value)
+        raise ValueError("Native validator rejected reference")
+
+    def send(data):
+        pytest.fail("rejected reference reached consumer")
+
+    send.__annotations__["data"] = Annotated[str, AfterValidator(reject)]
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"data": item.ref}),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert validated == [item.ref]
+    assert store.reads == 0
+    assert "Native validator rejected reference" in str(result.all_messages())
+
+
+async def test_reference_dispatch_preserves_named_tuple_types_without_revalidation():
+    from typing import NamedTuple
+
+    from pydantic import AfterValidator
+
+    transformed, seen = [], []
+
+    def double(value):
+        transformed.append(value)
+        return value * 2
+
+    class Upload(NamedTuple):
+        data: str
+        copies: int
+
+    Upload.__annotations__["copies"] = Annotated[int, AfterValidator(double)]
+
+    def send(upload, label: str = "sent"):
+        assert isinstance(upload, Upload)
+        seen.append((base64.b64decode(upload.data), upload.copies, label))
+        return "sent"
+
+    send.__annotations__["upload"] = Upload
+    store = Store()
+    item = await store.put(PAYLOAD, media_type="image/png")
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model_call("send", {"upload": [item.ref, "2"]}),
+        capabilities=[ObjectStoreCapability(), Capability(toolsets=[ObjectRefToolset(FunctionToolset([send]))])],
+    )
+    result = await executable.run("send", bindings=RunBindings.embedded(object_store=store))
+    assert result.output_or_raise() == "done"
+    assert seen == [(PAYLOAD, 4, "sent")]
+    assert transformed == [2]
     assert store.reads == 1

@@ -445,7 +445,7 @@ process:
 
 临时对象一天未实际读取字节即过期。读取刷新闲置 TTL 和 LRU 顺序；list/info 不续期。数量或总字节超限时，淘汰最久未使用的临时对象。启动时和每小时的清理也会处理不活跃对象库。`asset_store` 提升可用对象的保留级别而不改变引用，之后不再受临时过期和配额影响。已保留对象持续存在，直到删除。显式保留会占用长期空间，只保存后续确实需要的对象。
 
-MCP 目标默认不支持引用。在 schema-version-2 MCP 资源中，只为字符串参数接受 base64 的服务启用；逐工具覆盖使用服务原始工具名：
+MCP 工具通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展：把引用替换成 base64，不重跑参数校验。目标默认不支持引用。在 schema-version-2 MCP 资源中，只为字符串参数接受 base64 的服务启用；逐工具覆盖使用服务原始工具名：
 
 ```yaml
 schema_version: "2"

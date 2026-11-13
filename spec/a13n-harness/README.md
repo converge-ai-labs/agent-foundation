@@ -39,7 +39,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [21a-record-memory.md](21a-record-memory.md)                                             | Record memory store contract, Memory Providers and mem0 over REST, mounts, tools, and recall                                     |
 | [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all five domains, credential declaration, catalogs, and the installed Environment manifest           |
 
-[Object Store](24-object-store.md) owns scoped immutable binary objects, capture, management, opt-in reference transport and the Host Store boundary.
+[Object Store](24-object-store.md) owns scoped immutable binary objects, capture, management, the Object Reference Transport tool extension and the Host Store boundary.
 
 [Browser Use](23-browser-use.md) owns Chromium CDP tools, global/owned tab access and cleanup ownership, human-control admission, and the Host lifecycle boundary.
 

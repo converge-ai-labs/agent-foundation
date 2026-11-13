@@ -445,7 +445,7 @@ process:
 
 Temporary objects expire after one day without an actual byte read. Reads refresh idle TTL and LRU order; list/info do not. Count and total-byte overflow evict least-recently-used temporary entries. Startup and hourly cleanup also visit inactive libraries. `asset_store` promotes an available object without changing its reference and excludes it from temporary expiry and quotas. Stored objects remain until deleted. This is explicit retention, so store only objects needed later.
 
-MCP targets default to unsupported. In a schema-version-2 MCP resource, opt in the server only when its string arguments accept base64; use original server tool names for overrides:
+MCP tools opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation. Targets default to unsupported. In a schema-version-2 MCP resource, opt in the server only when its string arguments accept base64; use original server tool names for overrides:
 
 ```yaml
 schema_version: "2"

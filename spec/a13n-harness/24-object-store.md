@@ -44,21 +44,23 @@ The Capability contributes five tools:
 
 File import resolves one authorized Environment route, opens that selection, checks regular-file metadata, and bounds the byte stream. It does not reinterpret a path as a Host path or bypass mount permissions. Management tools consume references directly and never expand their own arguments.
 
-## Opt-in Target Transport
+## Object Reference Transport
+
+Object Reference Transport is the Harness tool-extension contract for substituting scoped object references with base64 at target dispatch. Object Store owns byte availability; this extension owns how an opted-in tool receives those bytes.
 
 Targets default to unsupported. A trusted tool can set metadata `a13n.harness.supports_object_refs: true`. `ObjectRefToolset` supplies a toolset default with individual native metadata and explicit `tool_overrides` taking precedence. Host MCP configuration supplies an equivalent server default and per-tool overrides. Opt-in is appropriate only for targets whose string arguments accept base64.
 
-The schema advertises exact reference values alongside constrained strings. Native Pydantic Core validators preserve non-reference validation, defaults, coercion and typed arguments. Reference-valued string constraints and enclosing field/model callbacks whose input contains references defer payload checks until effective arguments are available; native inner fields still validate. Payload-dependent cross-field checks belong to the enclosing model validator, not an unrelated field's callback. Opted-in custom toolsets require a native Core argument validator; an unsupported validator fails explicitly during composition. The pinned native compatibility adapter preserves structural argument normalization and is covered by dependency-compatibility tests.
+The schema advertises exact reference values alongside constrained strings. Native Pydantic Core validation admits exact references at declarative string constraints and preserves defaults, coercion, typed arguments and unrelated constraints. Field, container and model callbacks run normally on reference-valued inputs; integrations must accept and preserve reference tokens where they accept this transport. Opted-in custom toolsets require a native Core argument validator; an unsupported validator fails explicitly during composition. The pinned native compatibility adapter preserves structural argument normalization and is covered by dependency-compatibility tests.
 
-A custom tool `args_validator` also runs on the reference-valued typed arguments before any Store read, preserving its business approval, deferral and denial semantics. Its errors propagate normally. A successful reference call runs it again on effective arguments after expansion. Opted-in callbacks must accept reference-valued preflight arguments and repeated validation; payload checks can use the native field/model validators above. The transport never suppresses a callback failure to reach the bytes.
+Native argument validation, custom tool `args_validator` callbacks and before/after-validation hooks run once through the ordinary invocation pipeline, before any Store read. Business approval, deferral, denial and callback failures retain their native semantics. The tool implementation or remote MCP server owns payload-dependent checks on the bytes it receives.
 
-The actual target dispatch boundary recursively expands whole reference-valued strings in dictionaries, lists and tuples. Dictionary keys, substrings, CodeAct program source and forwarded proxy envelopes are unchanged. Each distinct reference is read once per call, base64-encoded from those bytes, and substituted into a call-local argument copy. The target's original schema and custom argument validator run on the effective arguments before execution. The transport never substitutes a raw-dictionary validation fallback.
+The actual target dispatch boundary recursively replaces whole reference-valued strings in dictionaries, lists, tuples and typed models in the final authorized arguments. Dictionary keys, substrings, CodeAct program source and forwarded proxy envelopes are unchanged. Each distinct remaining reference is read once per call, base64-encoded from those bytes, and substituted into a call-local argument copy that preserves native model types. References removed by validation hooks are not read. Dispatch performs substitution only: it does not rerun schemas, callbacks, default factories or hooks. Normalized values and hook rewrites reach the consumer unchanged apart from reference substitution.
 
 [Tool permissions](07-tool-execution.md#tool-permissions-and-review), resource resolution and approvals observe reference-valued arguments before Store reads. Denial causes no read. Approval resume resolves at the actual target, under current Host authority. Direct calls, grouped ToolSearch dispatch and CodeAct nested calls use the same target boundary. Expanded arguments do not replace tool-call history, approval requests or CodeAct source.
 
 ## Failure Semantics
 
-Disabled Capability or missing Store and unsupported targets produce distinct developer-action diagnostics before target execution. Invalid, missing, expired, deleted and evicted references fail without guessing IDs, inventing base64 or replaying a producer. Effective-schema and custom-validator errors are sanitized so they do not echo expanded payloads. Host authority and storage failures retain their owning execution semantics.
+Disabled Capability or missing Store and unsupported targets produce distinct developer-action diagnostics before target execution. Invalid, missing, expired, deleted and evicted references fail without guessing IDs, inventing base64 or replaying a producer. Pre-dispatch validation sees references rather than expanded payloads; consumers own their payload-validation errors. Host authority and storage failures retain their owning execution semantics.
 
 A successful import establishes availability in the Host catalog; model-history persistence and long-term promotion are independent completions. Cancellation or unknown backend writes remain the Host's cleanup responsibility. A copied reference does not transfer scope into another Thread or Host.
 
@@ -68,6 +70,7 @@ A successful import establishes availability in the Host catalog; model-history 
 - Native media remains usable by the Model after capture.
 - Reference permission denial and pending approval perform no Store read.
 - Each reference is read at most once per actual target call.
+- Argument validation and hooks are not replayed after substitution; non-reference values retain their final validated or hook-rewritten meaning.
 - Promotion preserves object identity and excludes it from temporary retention.
 - Reference-valued history survives approval/resume without storing expanded call arguments.
 - Store scope and current execution authority remain Host-owned on every operation.
