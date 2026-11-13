@@ -73,6 +73,42 @@ async def test_local_discovery_observes_links_errors_and_bounds(tmp_path):
     assert failure.value.details == {"reason": "entries_exceeded"}
 
 
+@pytest.mark.parametrize("linked_parent", [False, True])
+async def test_local_discovery_preserves_selected_root_through_directory_links(tmp_path, linked_parent):
+    _skill(tmp_path, "actual/skills", "root")
+    _skill(tmp_path, "actual/skills/a", "child")
+    _skill(tmp_path, "actual/skills/.hidden", "hidden")
+    _skill(tmp_path, "actual/skills/a/nested", "nested")
+    (tmp_path / "actual/skills/link").symlink_to("a", target_is_directory=True)
+    if linked_parent:
+        (tmp_path / "selected").symlink_to("actual", target_is_directory=True)
+        root = "/selected/skills"
+    else:
+        (tmp_path / "selected").symlink_to("actual/skills", target_is_directory=True)
+        root = "/selected"
+    files = _files(tmp_path)
+    documents = [item async for item in files.discover_documents(FileDocumentRequest(root=root, basename="SKILL.md"))]
+
+    assert [item.info.path for item in documents] == [f"{root}/SKILL.md", f"{root}/a/SKILL.md"]
+    assert [item.prefix.path for item in documents] == [f"{root}/SKILL.md", f"{root}/a/SKILL.md"]
+    assert [item.info.kind for item in documents] == ["file", "file"]
+    assert "name: child" in documents[1].prefix.text
+    catalog = await SkillManager((FileSkillSource("selected", (root,)),)).scan(files=files)
+    assert [(item.name, item.path) for item in catalog] == [("child", f"{root}/a"), ("root", root)]
+
+
+async def test_local_discovery_rejects_selected_root_link_outside_file_authority(tmp_path):
+    _skill(tmp_path, "outside/skills/a", "outside")
+    confined = tmp_path / "confined"
+    confined.mkdir()
+    (confined / "skills").symlink_to(tmp_path / "outside/skills", target_is_directory=True)
+    files = _files(confined)
+
+    with pytest.raises(EnvironmentError) as failure:
+        await anext(files.discover_documents(FileDocumentRequest(root="/skills", basename="SKILL.md")))
+    assert failure.value.code == "environment_denied"
+
+
 async def test_file_catalog_reuses_discovered_metadata_but_custom_sources_are_checked(tmp_path, monkeypatch):
     _skill(tmp_path, "skills/a", "one")
     files = _files(tmp_path)
