@@ -272,6 +272,9 @@ it("limits each card section to three rows and opens its own history tab", async
       />,
     ),
   );
+  const finished = await screen.findByRole("button", { name: /Finished/ });
+  expect(screen.getAllByRole("button", { name: /Agent / })).toHaveLength(1);
+  await userEvent.click(finished);
   await waitFor(() =>
     expect(screen.getAllByRole("button", { name: /Agent / })).toHaveLength(25),
   );
@@ -789,7 +792,11 @@ it("requests another history page only after Show more", async () => {
       />,
     ),
   );
-  await screen.findByRole("button", { name: "Show more" });
+  const toggle = await screen.findByRole("button", { name: /Finished/ });
+  expect(screen.queryByRole("button", { name: /Agent first/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  await userEvent.click(toggle);
+  await screen.findByRole("button", { name: /Agent first/ });
   expect(pages).toBe(1);
   const query = test.GET.mock.calls.find(([path]) =>
     path.endsWith("/children"),

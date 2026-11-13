@@ -1261,6 +1261,7 @@
   "Updates will resume automatically when the connection is ready.": "连接就绪后将自动恢复更新。",
   "Summary ready": "摘要已就绪",
   "Prepared": "已准备",
+  "Finished": "已结束",
   "Completed": "已完成",
   "Execution cancelled": "执行已取消",
   "Execution suspended": "执行已暂停",
