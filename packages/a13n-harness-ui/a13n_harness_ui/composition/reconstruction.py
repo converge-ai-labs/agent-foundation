@@ -28,6 +28,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
+from a13n_harness.mcp_startup import UnavailableMCPToolset
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -57,7 +58,7 @@ from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.guardian_credits import GuardianParentCapability, GuardianReviewCapability
-from a13n_harness_ui.mcp_adapters import HarnessUiMCP, UnavailableMcpToolset
+from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.mcp_apps.connections import Connections
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
@@ -163,7 +164,7 @@ class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
 
         def omit_unavailable(toolset: AbstractToolset[AgentContext]) -> None:
             nonlocal missing
-            if isinstance(toolset, UnavailableMcpToolset):
+            if isinstance(toolset, UnavailableMCPToolset):
                 # An unrestricted missing inventory cannot establish whether a
                 # name is unknown. Defer that check until a healthy Run; the
                 # returned callable surface still intersects the exact allowlist.

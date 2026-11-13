@@ -9728,6 +9728,8 @@ export interface components {
       /** Text */
       text: string;
     };
+    /** @enum {string} */
+    MCPOnError: "skip" | "raise";
     /**
      * ManagedEnvironmentCreate
      * @description A workspace-managed sandbox reserved from a template, for threads to mount; maintenance creates it.
@@ -9756,6 +9758,8 @@ export interface components {
        */
       headers?: string[];
       oauth?: components["schemas"]["OAuthSettings"] | null;
+      /** @default raise */
+      on_error?: components["schemas"]["MCPOnError"];
       /** Tools */
       tools?: string[] | null;
       /** Url */

@@ -128,7 +128,11 @@ description: 为 agent 选择工具、连接外部服务，并验证一次工具
 
 `config.tools` 限制连接暴露的工具。省略时暴露服务器列出的全部工具；超过 128 个会使运行以 `connection_tools_exceeded` 失败。将凭据放在认证字段中，不要放入 URL。使用静态请求头时，在 `config.headers` 列出名称，在 `credential.headers` 提供值；传输和协议请求头为保留字段。
 
-修改 endpoint、认证方式或 OAuth 设置会清除已保存凭据。只修改名称、启用状态或工具选择会保留凭据。Endpoint 必须符合[出站策略](configuration.md#outbound-requests)。
+修改 endpoint、认证方式或 OAuth 设置会清除已保存凭据。只修改名称、启用状态、工具选择或启动策略会保留凭据。Endpoint 必须符合[出站策略](configuration.md#outbound-requests)。
+
+`config.on_error` 默认为 `raise`：初始化失败传播到现有 Attempt 恢复路径。如果 Agent 不依赖该服务器也能继续，可通过 API 设置为 `skip`。启动失败后，该服务器的工具在当前逻辑 Run 内被省略，模型会收到提示，延迟 ToolSearch 也能看到。后续逻辑 Run 可以重试。策略在 Attempt 打开绑定时从当前 Connection 读取。
+
+暂时性初始化失败最多尝试三次，间隔为可取消的 1 秒和 2 秒；每次沿用 `providers.tool_call_seconds` 超时。Host 鉴权、凭据解密和首次 OAuth 续期失败仍会传播。就绪后的错误不会触发启动重试或跳过，业务调用不会被此机制重放。显式发现、连接测试和 MCP Apps 控制请求会报告失败，不会跳过。
 
 Service 在一次执行尝试内保留 MCP 客户端，每次调用前检查连接当前可用性和运行权限。需要持久等待人工回应时，使用客户端工具或 agent 问题；Service 的 MCP 连接没有 elicitation 回应通道。
 

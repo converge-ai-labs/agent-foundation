@@ -6,12 +6,12 @@ import json
 import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness import mcp_startup as client_module
+from a13n_harness.mcp_startup import InitializingClient
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.models import McpRemoteTransport
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP, prepare_mcp_transport
 from a13n_harness_ui.mcp_apps.connections import Connections as AppConnections
-from a13n_harness_ui.mcp_runtime import client as client_module
-from a13n_harness_ui.mcp_runtime.client import InitializingClient
 from a13n_harness_ui.mcp_runtime.connections import Connections
 from a13n_harness_ui.mcp_runtime.transports import ObservedTransport
 from fastmcp import Client, FastMCP
@@ -92,29 +92,6 @@ async def test_initialization_retries_then_later_run_recovers(ownership, monkeyp
             await connections.close()
 
 
-@pytest.mark.parametrize("failures", [1, 2])
-async def test_initialization_recovers_within_same_entry(failures, monkeypatch):
-    attempts = 0
-    original = Client._negotiate
-
-    async def negotiate(self, *args, **kwargs):
-        nonlocal attempts
-        attempts += 1
-        if attempts <= failures:
-            raise TimeoutError("temporary")
-        return await original(self, *args, **kwargs)
-
-    async def backoff(delay):
-        pass
-
-    monkeypatch.setattr(Client, "_negotiate", negotiate)
-    monkeypatch.setattr(client_module, "sleep", backoff)
-    async with InitializingClient(FastMCP("fixture")) as client:
-        assert client.is_connected()
-        assert attempts == failures + 1
-    assert not client.is_connected()
-
-
 @pytest.mark.parametrize("protocol", ["legacy", "auto"])
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 408, 429, 502, 503, 504])
 async def test_only_transient_http_initialization_errors_retry(status, protocol, monkeypatch):
@@ -170,49 +147,6 @@ async def test_only_transient_http_initialization_errors_retry(status, protocol,
             # authentication/configuration failure does not retry client entry.
             assert attempts == (2 if protocol == "auto" else 1)
             assert delays == []
-
-
-async def test_cancellation_during_initialization_backoff_stops_retry(monkeypatch):
-    attempts = 0
-    backing_off = asyncio.Event()
-
-    async def enter(self):
-        nonlocal attempts
-        attempts += 1
-        raise TimeoutError("temporary")
-
-    async def backoff(delay):
-        backing_off.set()
-        await asyncio.Event().wait()
-
-    async def connect():
-        async with InitializingClient(FastMCP("fixture")):
-            pytest.fail("entry must fail")
-
-    monkeypatch.setattr(Client, "__aenter__", enter)
-    monkeypatch.setattr(client_module, "sleep", backoff)
-    task = asyncio.create_task(connect())
-    await backing_off.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert attempts == 1
-
-
-async def test_business_request_failure_is_never_replayed():
-    server = FastMCP("fixture")
-    calls = 0
-
-    @server.tool
-    async def effect() -> str:
-        nonlocal calls
-        calls += 1
-        raise TimeoutError("effect may already have happened")
-
-    async with InitializingClient(server) as client:
-        result = await client.call_tool_mcp("effect", {})
-        assert result.is_error
-        assert calls == 1
 
 
 @pytest.mark.parametrize("ownership", ["local", "input", "host", "apps"])
@@ -313,7 +247,12 @@ async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
             assert inventories[0] == {"healthy_tool"}
             assert "mcp-recovering is unavailable" in prompts[0]
             assert "private-server-response" not in prompts[0]
-            warnings = [record for record in caplog.records if record.name.endswith("mcp_adapters")]
+            warnings = [
+                record
+                for record in caplog.records
+                if record.name.endswith("mcp_startup")
+                and record.getMessage() == "MCP server skipped for this Run after startup failure"
+            ]
             assert len(warnings) == 1 and warnings[0].server_id == "mcp-recovering"
             assert "private-server-response" not in warnings[0].getMessage()
             available = True

@@ -84,7 +84,10 @@ async def test_nested_calls_keep_outer_identity_and_capture_failure_does_not_ret
             async def acquire():
                 return client
 
-            capability = mcp_capability("con_apps", acquire, tools=None, check=check, capture=capture)
+            async def prepare():
+                return acquire
+
+            capability = mcp_capability("con_apps", prepare, tools=None, check=check, capture=capture)
             features = [ToolSearchCapability(groups={"apps": ToolSearchGroup(Eligible(capability), "Apps")})]
             if codeact:
                 features.append(CodeActCapability())

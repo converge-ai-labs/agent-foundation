@@ -13,15 +13,15 @@ from typing import Any
 import httpx2
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.errors import RunError
 from a13n_harness.http import outbound_tls_verify
-from a13n_logging import get_logger
+from a13n_harness.mcp_startup import InitializingClient, MCPStartup, MCPToolsetOpener, raise_initialization_status
 from anyio import to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import MCP, AbstractCapability
+from pydantic_ai.capabilities import MCP
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import FunctionToolset, ToolsetTool, WrapperToolset
+from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.loader import read_mcp_file_values
@@ -37,13 +37,12 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
-from a13n_harness_ui.mcp_runtime.client import InitializingClient, raise_initialization_status
 from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
-class HarnessUiMCP(MCP[AgentContext]):
+class HarnessUiMCP(MCPStartup):
     """Inert definition capability that creates one MCP client per logical Run."""
 
     def __init__(
@@ -66,28 +65,15 @@ class HarnessUiMCP(MCP[AgentContext]):
         self._operation_guard = operation_guard
         self._apps = apps
         self._connections = apps or connections
-        transport = recipe.transport
-        self.url = transport.url if isinstance(transport, McpRemoteTransport) else None
-        self.id = recipe.server_id
-        self.native = False
-        self.local = None
-        self.authorization_token = None
-        self.headers = None
-        self.allowed_tools = None
-        self.description = None
-        self.defer_loading = False
+        super().__init__(
+            id=recipe.server_id,
+            prepare=self._prepare_toolset,
+            project=self._project_toolset,
+            on_error=recipe.on_error,
+            tools=recipe.tools,
+        )
 
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        cache_id = f"a13n.ui.mcp.{self._recipe.server_id}"
-        existing = ctx.deps._run_capability(cache_id)
-        if existing is not None:
-            if not isinstance(existing, MCP):
-                raise DefinitionError(
-                    "Harness UI MCP has an incompatible logical-Run replacement.",
-                    code="capability_type_mismatch",
-                )
-            return existing
-
+    async def _prepare_toolset(self, ctx: RunContext[AgentContext]) -> MCPToolsetOpener:
         client_transport, effective_recipe, init_timeout = await prepare_mcp_transport(
             self._recipe,
             self._configuration_root,
@@ -95,36 +81,24 @@ class HarnessUiMCP(MCP[AgentContext]):
             private_values=self._private_values,
             oauth=self._oauth,
         )
-        try:
-            toolset = await self._start_toolset(ctx, cache_id, client_transport, effective_recipe, init_timeout)
-            # Enter the SDK projection before returning the capability so all
-            # ownership modes share the same startup policy. Its reentrant outer
-            # entry spans internal Agent attempts until logical-Run cleanup.
-            await toolset.__aenter__()
-        except Exception as exc:
-            if self._recipe.on_error == "raise":
-                raise
-            get_logger(__name__).warning(
-                "MCP server skipped for this Run after startup failure",
-                extra={"server_id": self._recipe.server_id, "error_type": type(exc).__name__},
-            )
-            replacement = _UnavailableMCP(self._recipe.server_id, self._recipe.tools)
-        else:
+        return partial(
+            self._start_toolset,
+            ctx,
+            f"a13n.ui.mcp.{self._recipe.server_id}",
+            client_transport,
+            effective_recipe,
+            init_timeout,
+        )
 
-            async def close_projection() -> None:
-                await toolset.__aexit__(None, None, None)
-
-            ctx.deps._register_run_cleanup(f"{cache_id}.projection", close_projection)
-            local = _GuardedToolset(toolset, self._operation_guard) if self._operation_guard is not None else toolset
-            capability = AppMCP if self._apps is not None else MCP[AgentContext]
-            replacement = capability(
-                id=self._recipe.server_id,
-                native=False,
-                local=local,
-                allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
-            )
-        ctx.deps._record_run_capability(cache_id, replacement)
-        return replacement
+    def _project_toolset(self, toolset: MCPToolset[AgentContext]) -> MCP[AgentContext]:
+        local = _GuardedToolset(toolset, self._operation_guard) if self._operation_guard is not None else toolset
+        capability = AppMCP if self._apps is not None else MCP[AgentContext]
+        return capability(
+            id=self._recipe.server_id,
+            native=False,
+            local=local,
+            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
+        )
 
     async def _start_toolset(
         self,
@@ -169,28 +143,6 @@ class HarnessUiMCP(MCP[AgentContext]):
         return MCPToolset[AgentContext](client, id=self._recipe.server_id)
 
 
-class UnavailableMcpToolset(FunctionToolset[AgentContext]):
-    """An omitted MCP inventory, retaining its configured tool-name ceiling."""
-
-    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
-        super().__init__(id=server_id)
-        self.selected_tools = selected_tools
-
-
-class _UnavailableMCP(MCP[AgentContext]):
-    def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
-        super().__init__(id=server_id, native=False, local=UnavailableMcpToolset(server_id, selected_tools))
-
-    def get_instructions(self) -> str:
-        # Capability instructions remain visible when ToolSearch defers source
-        # toolset guidance until discovery; an absent inventory cannot be found.
-        return (
-            f"MCP server {self.id} is unavailable after startup failure. "
-            "Its tools are omitted for this Run. Continue with the remaining capabilities; "
-            "do not claim operations on this server succeeded. A later Run can try connecting again."
-        )
-
-
 @dataclass
 class _GuardedToolset(WrapperToolset[AgentContext]):
     guard: Callable[[], Awaitable[None]]
@@ -226,6 +178,9 @@ async def prepare_mcp_transport(
                 raise OAuthError(
                     "The captured MCP OAuth account is unavailable; start a new Run.", code="mcp_oauth_login_required"
                 )
+            # Resolve the initial account/token before entering startup isolation.
+            # Later requests keep the ordinary live refresh and origin checks.
+            await oauth.access_token(recipe.oauth_binding)
             auth = oauth.auth(recipe.oauth_binding, transport.url)
         client_transport = StreamableHttpTransport(
             transport.url,

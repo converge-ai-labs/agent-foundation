@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
+from a13n_harness.mcp_startup import InitializingClient
 from a13n_logging import get_logger
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.progress import ProgressHandler
@@ -26,7 +27,6 @@ from mcp.types import (
     ReadResourceResult,
 )
 
-from .client import InitializingClient
 from .transports import ObservedTransport
 
 

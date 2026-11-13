@@ -75,12 +75,14 @@ dependencies = [
     { name = "anyio" },
     { name = "botocore" },
     { name = "cdp-use" },
+    { name = "fastmcp-slim", extra = ["client"] },
     { name = "filelock" },
     { name = "genai-prices" },
     { name = "google-auth" },
     { name = "google-genai" },
     { name = "httpx2" },
     { name = "jsonschema" },
+    { name = "mcp" },
     { name = "openai" },
     { name = "opentelemetry-api" },
     { name = "packaging" },
@@ -125,6 +127,7 @@ requires-dist = [
     { name = "cdp-use", specifier = ">=1.4.5,<2" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
+    { name = "fastmcp-slim", extras = ["client"], specifier = ">=4.0,<5" },
     { name = "filelock", specifier = ">=3.18,<4" },
     { name = "genai-prices", specifier = "==0.2.*" },
     { name = "google-auth", specifier = ">=2.40,<3" },
@@ -132,6 +135,7 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "kubernetes-asyncio", marker = "extra == 'kubernetes'", specifier = ">=34.3,<35" },
+    { name = "mcp", specifier = ">=2,<3" },
     { name = "modal", marker = "extra == 'modal'", specifier = ">=1.5.5,<2" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
@@ -155,6 +159,7 @@ provides-extras = ["docker", "e2b", "modal", "kubernetes"]
 
 [package.metadata.requires-dev]
 test = [
+    { name = "fastmcp", specifier = ">=4.0,<5" },
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "pytest", specifier = ">=9,<10" },
 ]
