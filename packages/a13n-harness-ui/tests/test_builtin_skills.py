@@ -189,6 +189,69 @@ async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
             assert not (plan.finalization).cleanup_errors
 
 
+@pytest.mark.parametrize("linked_component", ["skills", "agents"])
+async def test_linked_project_skills_preserve_paths_in_preview_and_root_run(tmp_path, monkeypatch, linked_component):
+    import json
+
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    path = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(
+        agent.read_text()
+        + "capabilities:\n  - capability: skills\n"
+        + "  - capability: dynamic_environment\n    configuration: {files_enabled: true}\n"
+    )
+    workspace = tmp_path / "workspace"
+    target = workspace / "shared"
+    skill_root = target / "skills" if linked_component == "agents" else target
+    document = skill_root / "review/SKILL.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("---\nname: review\ndescription: Review linked code.\n---\n\nLinked review instructions.\n")
+    if linked_component == "agents":
+        (workspace / ".agents").symlink_to(target, target_is_directory=True)
+    else:
+        (workspace / ".agents").mkdir()
+        (workspace / ".agents/skills").symlink_to(target, target_is_directory=True)
+    expected = str(workspace / ".agents/skills/review")
+    observed = []
+
+    async def model(messages, info):
+        returns = [
+            part
+            for message in messages
+            if message.kind == "request"
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if returns:
+            assert "Linked review instructions." in str(returns[-1].content)
+            observed.append(returns[-1])
+            yield "Read the linked skill."
+        else:
+            assert expected in info.instructions
+            yield {0: DeltaToolCall(name="view", json_args=json.dumps({"file_path": f"{expected}/SKILL.md"}))}
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        preview = await app.skill_catalog()
+        item = next(item for item in preview.items if item.name == "review")
+        assert item.logical_path == expected
+        assert item.source_id == "a13n-harness-ui:project:workspace"
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read the review skill.")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert operation.outcome.execution.output == "Read the linked skill."
+    assert len(observed) == 1
+
+
 @pytest.mark.parametrize("skill_name", [SKILL_NAME, "harness-ui-operations"])
 async def test_root_run_reads_builtin_skill_navigation_and_documentation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, skill_name: str
