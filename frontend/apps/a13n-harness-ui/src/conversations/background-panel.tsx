@@ -10,6 +10,7 @@ import { ErrorNotice } from "../shell/ui";
 import { useBackground } from "./background-context";
 import {
   backgroundKey,
+  backgroundItems,
   SECTION_LABELS,
   targetSection,
   type BackgroundTarget,
@@ -36,9 +37,34 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
   const { t } = useTranslation();
   const bg = useBackground();
   const state = useBackgroundStateLabel();
-  const item = bg.items.find(
+  const listed = bg.items.find(
     (item) => backgroundKey(item.target) === backgroundKey(target),
   );
+  const { client } = useTransport();
+  const captured = useQuery({
+    queryKey: ["thread", target.threadId, "child-review", target.executionId],
+    enabled:
+      !listed && !bg.loading && target.kind === "child" && !!target.executionId,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/children", {
+          params: {
+            path: { thread_id: target.threadId },
+            query: { execution_id: target.executionId },
+          },
+          signal,
+        }),
+      ),
+  });
+  const item =
+    listed ??
+    backgroundItems(
+      target.threadId,
+      captured.data?.executions ?? [],
+      [],
+      [],
+      t,
+    ).find((item) => backgroundKey(item.target) === backgroundKey(target));
   const section = targetSection(target);
   return (
     <section className={styles.panel} aria-label={target.title}>
@@ -88,7 +114,7 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
         <BackgroundList section={section} />
       ) : !item ? (
         <p className={styles.empty}>
-          {bg.loading
+          {bg.loading || captured.isFetching
             ? t("Loading background work…")
             : t("This background item is unavailable.")}
         </p>

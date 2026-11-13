@@ -19,6 +19,7 @@ import { BackgroundScope } from "./background-context";
 import { BackgroundCard, BackgroundToggle } from "./background-card";
 import { FocusDisplay } from "./stream";
 import { ConversationTranscript } from "./transcript";
+import { ToolCall } from "./tool-call";
 import { executionHeaders } from "./background-links";
 import { ChildInputLabels, InputContent } from "./input-content";
 import { workspaceTabs, emptyTabs } from "../native/workspace-tabs";
@@ -319,6 +320,41 @@ it("distinguishes canonical notice kinds, preserves source-marked rows and links
     screen.getAllByRole("button", { name: "Agent one" })[0],
   );
   expect(test.open).toHaveBeenCalled();
+});
+it("opens the spawned child by mouse or keyboard without expanding the tool details", async () => {
+  const test = setup([]);
+  render(
+    test.view(
+      "root",
+      <ToolCall
+        tool={{
+          id: "spawn",
+          name: "spawn_subagent",
+          input: { name: "Reviewer" },
+          result: {
+            thread_id: "child-one",
+            execution_id: "exec-one",
+            subagent_name: "Reviewer",
+          },
+        }}
+      />,
+    ),
+  );
+  const child = screen.getByRole("button", { name: "Reviewer" });
+  const trigger = screen.getByRole("button", { name: /Start subagent/ });
+  await userEvent.click(child);
+  await userEvent.keyboard("{Enter}");
+  expect(test.open).toHaveBeenCalledTimes(2);
+  expect(test.open).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "child",
+      id: "child-one",
+      threadId: "root",
+    }),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  await userEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
 });
 it("links a retained-file notice from an earlier segment using its execution metadata", async () => {
   const test = setup([child("one", "running", 1)]);

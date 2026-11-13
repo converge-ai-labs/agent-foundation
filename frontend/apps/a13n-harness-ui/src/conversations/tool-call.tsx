@@ -1,5 +1,5 @@
-import { SubagentGlyph } from "./background-card";
-import { MovedToBackground } from "./background-links";
+import { useBackground } from "./background-context";
+import { BackgroundLink, MovedToBackground } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
@@ -775,6 +775,18 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
+  const bg = useBackground();
+  const child = tool.name === "spawn_subagent" &&
+    bg.threadId &&
+    typeof info.result.thread_id === "string" &&
+    typeof info.result.execution_id === "string" &&
+    typeof info.result.subagent_name === "string" && {
+      kind: "child" as const,
+      id: info.result.thread_id,
+      threadId: bg.threadId,
+      executionId: info.result.execution_id,
+      title: info.result.subagent_name,
+    };
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -789,15 +801,12 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             <strong data-running-label={info.running || undefined}>
               {toolLabel(info, t)}
             </strong>{" "}
-            {tool.name === "spawn_subagent" &&
-              typeof info.result.thread_id === "string" && (
-                <SubagentGlyph id={info.result.thread_id} />
-              )}
-            {info.summary && (
+            {!child && info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}
           </span>
         }
+        actions={child ? <BackgroundLink target={child} /> : undefined}
         summary={
           info.showPhase ? (
             <span className={styles.phase}>{toolPhase(info.phase, t)}</span>
