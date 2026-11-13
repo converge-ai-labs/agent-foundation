@@ -198,7 +198,9 @@ mcp:
 
 Keep the ordinary Agent/Thread selection from the earlier steps. `host_owned_servers` defaults to `[]`; `protocol_overrides` defaults to `{}`. All listed IDs must refer to configured servers.
 
-Each Thread, including a child Thread, gets its own retained client. Run completion and browser disconnection leave that client open. Host shutdown, explicit close, Thread disposal, or a changed binding closes it. Connections remain process-local; continuations do not serialize client state or pending server input. Calls are not automatically replayed after disconnection. Enabled [MCP Apps](mcp-apps.md) retain their clients automatically, and App activation can establish a replacement connection.
+Each Thread, including a child Thread, gets its own retained client. Run completion and browser disconnection leave that client open. Host shutdown, explicit close, Thread disposal, or a changed binding closes it. Connections remain process-local; continuations do not serialize client state or pending server input. A later Run selecting the server can establish a replacement connection. Calls are not automatically replayed after disconnection. Enabled [MCP Apps](mcp-apps.md) retain their clients automatically, and App activation can establish a replacement connection.
+
+Connection initialization retries transient timeouts, transport interruptions and temporary HTTP failures up to three attempts, waiting one second and then two seconds. Each attempt uses the configured initialization timeout. Cancellation stops retries; authentication, configuration and protocol errors need correction. Exhausted attempts fail the current Run without replaying tool calls. Bot keeps its Heartbeat schedule so a later opportunity can recover.
 
 Each protocol override accepts `auto`, `legacy`, or `2026-07-28`; omission uses `auto`. Use `auto` unless the server requires a specific mode. This setting controls Core protocol negotiation, separately from connection lifetime and the MCP Apps UI protocol.
 

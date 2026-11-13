@@ -16,7 +16,6 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.http import outbound_tls_verify
 from anyio import to_thread
-from fastmcp import Client
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
@@ -37,6 +36,7 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
+from a13n_harness_ui.mcp_runtime.client import InitializingClient, raise_initialization_status
 from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
@@ -102,6 +102,7 @@ class HarnessUiMCP(MCP[AgentContext]):
                 effective_recipe,
                 client_transport,
                 binding=self._recipe.binding_key(apps=self._apps is not None),
+                activate=True,
                 protocol=self._recipe.protocol,
                 init_timeout=init_timeout,
                 client_factory=None if self._apps is not None else HostClient,
@@ -125,7 +126,7 @@ class HarnessUiMCP(MCP[AgentContext]):
             await connection.start()
             toolset = HostToolset(connection)
         else:
-            client = Client(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+            client = InitializingClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
             toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
         if self._operation_guard is not None:
             toolset = _GuardedToolset(toolset, self._operation_guard)
@@ -278,7 +279,7 @@ def _no_redirect_client(
         timeout=timeout,
         auth=auth,
         follow_redirects=False,
-        event_hooks={"request": [authorize]},
+        event_hooks={"request": [authorize], "response": [raise_initialization_status]},
         # Configuration allows plaintext only to literal loopback. Keep that
         # request local even when the process has an HTTP/ALL proxy configured.
         mounts={"http://": httpx2.AsyncHTTPTransport(trust_env=False)},

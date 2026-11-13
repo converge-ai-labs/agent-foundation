@@ -12,7 +12,6 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from a13n_logging import get_logger
-from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.transports import ClientTransport
@@ -27,6 +26,7 @@ from mcp.types import (
     ReadResourceResult,
 )
 
+from .client import InitializingClient
 from .transports import ObservedTransport
 
 
@@ -46,7 +46,7 @@ class InputHandler(Protocol):
     ) -> ElicitResult[Any]: ...
 
 
-class HostClient(Client[ClientTransport]):
+class HostClient(InitializingClient):
     """One dispatch lane and stable Host callbacks for all consumers of a client."""
 
     connection: Connection
@@ -228,6 +228,10 @@ class Connection:
                 self._ready.exception()
 
     def _disconnected(self) -> None:
+        # Failed initialization attempts close their transport before retrying.
+        # Only a connection that reached readiness can lose an admitted generation.
+        if not self._ready.done():
+            return
         self._closed = True
         self._stop.set()
 
