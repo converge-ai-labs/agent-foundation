@@ -517,7 +517,9 @@ function ConversationContent({
   const visibleContent = `${publication?.revision ?? ""}:${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
     showLive
       ? liveBlocks
-          .filter((block) => !block.diagnostic)
+          .filter(
+            (block) => !block.diagnostic && block.metadata?.display !== false,
+          )
           .map(
             (block) =>
               `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,

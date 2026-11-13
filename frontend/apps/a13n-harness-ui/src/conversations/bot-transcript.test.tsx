@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ConversationTranscript } from "./transcript";
 import type { Schema } from "../transport/client";
-import type { DisplayBlock } from "./stream";
+import { FocusDisplay, focusFrame, type DisplayBlock } from "./stream";
 
 const time = "2026-11-12T01:00:00Z";
 const publications: Schema<"BotMessage">[] = [
@@ -186,6 +186,136 @@ it.each([false, true])(
     expect(view.container.textContent).not.toContain("finish_silently");
   },
 );
+it.each(
+  ["live", "compact", "replay", "fragment"].flatMap((mode) =>
+    ["user", "steering"].map((source) => ({ mode, source })),
+  ),
+)(
+  "joins Bot publications to $mode $source input without exposing its hidden correlation marker",
+  ({ mode, source }) => {
+    const display = new FocusDisplay();
+    display.accept(
+      focusFrame({
+        kind: "snapshot",
+        resume_cursor: "ready",
+        snapshot: {
+          epoch: "epoch",
+          cutover_sequence: 0,
+          thread: {
+            thread: { thread_id: "thread_bot" },
+            continuation_id: null,
+          },
+          children: { executions: [], total: 0 },
+          root_stream: {
+            thread_id: "thread_bot",
+            run_id: "run",
+            base_continuation_id: null,
+            event_count: 0,
+          },
+        },
+      }),
+    );
+    const inputs = live.slice(0, 2);
+    const items = inputs.map((block, index) => ({
+      id: block.id,
+      ordinal: index + 1,
+      kind: "text_message",
+      state: "completed",
+      first_stream_id: `1-${index + 1}`,
+      last_stream_id: `1-${index + 1}`,
+      started_at: time,
+      ended_at: time,
+      content: {
+        role: "user",
+        text: block.text,
+        input_source: source,
+        input_group: block.inputGroup,
+        metadata: block.metadata,
+      },
+    }));
+    const emit = (sequence: number, payload: Record<string, unknown>) =>
+      display.accept(
+        focusFrame({
+          kind: "event",
+          resume_cursor: `cursor-${sequence}`,
+          event: {
+            sequence,
+            epoch: "epoch",
+            run_kind: "root",
+            thread_id: "thread_bot",
+            root_thread_id: "thread_bot",
+            run_id: "run",
+            event_type: "CUSTOM",
+            payload,
+            payload_omitted: false,
+            ...(mode === "live"
+              ? {
+                  display_position: { attempt: 1, sequence },
+                  item: {
+                    id: items[sequence - 1].id,
+                    kind: "text_message",
+                    state: "completed",
+                  },
+                }
+              : {}),
+          },
+        }),
+      );
+    if (mode === "compact") {
+      emit(1, {
+        type: "CUSTOM",
+        name: "a13n.display.snapshot",
+        value: {
+          items,
+          continuation: {
+            full_content: true,
+            position: { attempt: 1, sequence: 2 },
+          },
+        },
+      });
+    } else {
+      inputs.forEach((block, index) => {
+        const payload = {
+          type: "CUSTOM",
+          name: `a13n.input.${source}`,
+          metadata: block.metadata,
+          value: {
+            event: {
+              input_id: block.inputGroup,
+              message_id: block.id,
+              source,
+              content: block.text,
+            },
+          },
+        };
+        if (mode === "fragment") {
+          const data = JSON.stringify(payload);
+          const split = Math.floor(data.length / 2);
+          [data.slice(0, split), data.slice(split)].forEach((part, fragment) =>
+            emit(index * 2 + fragment + 1, {
+              type: "CUSTOM",
+              name: "a13n.stream.fragment",
+              value: { id: block.id, data: part, index: fragment, count: 2 },
+            }),
+          );
+        } else emit(index + 1, payload);
+      });
+    }
+    expect(display.gap).toBe(false);
+    const view = render(
+      <ConversationTranscript
+        threadId="thread_bot"
+        entries={[]}
+        blocks={[...display.blocks.values()]}
+        localInputs={[]}
+        publications={[publications[0]]}
+      />,
+    );
+    expect(screen.getAllByText("Check the result")).toHaveLength(1);
+    expect(view.container.textContent).not.toContain("Hidden return address");
+  },
+);
+
 it("folds automatic work without a visible human input and retains prose after silent completion", () => {
   const view = render(
     <ConversationTranscript
