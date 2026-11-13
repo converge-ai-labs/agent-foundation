@@ -56,7 +56,7 @@ async def test_execution_surface_and_summary_require_capability_and_runtime(capa
         prompts = "\n".join(
             str(part.content) for message in messages for part in message.parts if isinstance(part, UserPromptPart)
         )
-        assert ("Tool executions requiring attention (status only" in prompts) is visible
+        assert ("Tool executions requiring attention (" in prompts) is visible
         assert (records[0].execution_id in prompts) is visible
         assert records[1].execution_id not in prompts
         assert "PRIVATE RESULT BODY" not in prompts

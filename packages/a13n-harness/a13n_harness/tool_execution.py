@@ -302,12 +302,14 @@ class ToolExecutionRuntime:
         store: ToolExecutionStore | None = None,
         max_active: int = 64,
         on_completed: Callable[[ToolExecutionRecord], None] | None = None,
+        reports_background_completions: bool = False,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be positive")
         self.store = store if store is not None else MemoryToolExecutionStore()
         self._max_active = max_active
         self._on_completed = on_completed
+        self.reports_background_completions = reports_background_completions
         self._live: dict[str, _LiveExecution] = {}
         self._rejected = MemoryToolExecutionStore()
         self._closing = False

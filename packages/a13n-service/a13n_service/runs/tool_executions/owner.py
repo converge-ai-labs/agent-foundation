@@ -62,6 +62,7 @@ class Executions(ToolExecutionRuntime):
         super().__init__(
             store=Store(runtime), max_active=runtime.settings.tool_executions.max_active, on_completed=self._completed
         )
+        self.reports_background_completions = True
         self.runtime = runtime
         self._origins: dict[str, Lease] = {}
         self.lease_deadlines: dict[str, float] = {}

@@ -390,3 +390,67 @@ async def test_local_capability_group_uses_selected_source_without_activation(tm
         ]
         assert len(returns) == 1
         assert "error" not in str(returns[0].content).lower()
+
+
+@pytest.mark.parametrize("selected_tools", [None, ["work"]])
+async def test_yaml_grouped_mcp_skip_preserves_canonical_allowlist(tmp_path, monkeypatch, selected_tools):
+    from a13n_harness.tools.tool_search import grouped_tool_name
+    from fastmcp import Client
+
+    catalog = HarnessUiExtensionCatalog(host_plugin_factories=(_MemoryFactory(),))
+    path = _write_source(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    document = yaml.safe_load(agent_path.read_text())
+    group = "knowledge_base"
+    canonical = grouped_tool_name(group, "work")
+    document.update(subagents=[], capabilities=[], tools=[canonical, "status"])
+    document["tool_search"] = {"groups": {group: {"description": "Optional documents", "mcp_servers": ["mcp-docs"]}}}
+    agent_path.write_text(yaml.safe_dump(document))
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
+    calls = []
+
+    def status() -> str:
+        calls.append("status")
+        return "ready"
+
+    def hidden() -> str:
+        pytest.fail("Skip must not widen the callable allowlist")
+
+    async def negotiate(self, *args, **kwargs):
+        raise ValueError("server unavailable")
+
+    monkeypatch.setattr(Client, "_negotiate", negotiate)
+    async with _http_mcp(FastMCP("unavailable")) as url:
+        mcp_path = tmp_path / "mcp/docs.yaml"
+        mcp = yaml.safe_load(mcp_path.read_text())
+        mcp.update(schema_version="2", tools=selected_tools, transport={"url": url})
+        mcp_path.write_text(yaml.safe_dump(mcp))
+        source = await load_harness_ui_configuration(path)
+        composition = AgentCompositionResolver(catalog).resolve_run(source, _selection())
+        reconstructed = AgentReconstructor(catalog, configuration_root=tmp_path).reconstruct(
+            composition,
+            subagent_operator=None,
+            root_capabilities=(Capability(toolsets=[FunctionToolset([status, hidden])]),),
+        )
+        step = 0
+
+        async def model(messages, info):
+            nonlocal step
+            names = {tool.name for tool in info.function_tools}
+            assert "status" in names and "hidden" not in names and canonical not in names
+            assert "mcp-docs is unavailable" in str(messages) + str(info.instructions)
+            step += 1
+            if step == 1:
+                yield {0: DeltaToolCall(name="status", json_args="{}", tool_call_id="healthy-call")}
+            else:
+                yield "continued"
+
+        async def resolve(ctx, model_id):
+            return FunctionModel(stream_function=model)
+
+        result = await reconstructed.executable.run("Continue", bindings=RunBindings.embedded(model_resolver=resolve))
+        assert result.output_or_raise() == "continued"
+        assert calls == ["status"]

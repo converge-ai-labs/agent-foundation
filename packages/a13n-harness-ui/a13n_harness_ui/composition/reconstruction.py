@@ -26,7 +26,9 @@ from a13n_harness.capabilities import (
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.environment.models import COMPUTER_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
+from a13n_harness.mcp import UnavailableMCPToolset
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -41,6 +43,7 @@ from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.tools.tool_search import grouped_tool_name
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic_ai import RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -134,25 +137,52 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
 class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
     id: str | None = "a13n.ui.tool-allowlist"
 
-    def __init__(self, names: frozenset[str], *, optional_controls: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        names: frozenset[str],
+        *,
+        optional_controls: frozenset[str] = frozenset(),
+        mcp_groups: Mapping[str, str] | None = None,
+    ) -> None:
         self.names = names
         self.optional_controls = optional_controls
+        self.mcp_groups = dict(mcp_groups or {})
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost")
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
-        return _ToolAllowlistToolset(toolset, self.names, self.optional_controls)
+        return _ToolAllowlistToolset(toolset, self.names, self.optional_controls, self.mcp_groups)
 
 
 @dataclass
 class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
     names: frozenset[str]
     optional_controls: frozenset[str] = frozenset()
+    mcp_groups: Mapping[str, str] = field(default_factory=dict)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
         missing = self.names - tools.keys() - self.optional_controls
+
+        def omit_unavailable(toolset: AbstractToolset[AgentContext]) -> None:
+            nonlocal missing
+            if isinstance(toolset, UnavailableMCPToolset):
+                # An unrestricted missing inventory cannot establish whether a
+                # name is unknown. Defer that check until a healthy Run; the
+                # returned callable surface still intersects the exact allowlist.
+                group = self.mcp_groups.get(toolset.id) if toolset.id is not None else None
+                if toolset.selected_tools is not None:
+                    missing -= {
+                        grouped_tool_name(group, name) if group is not None else name for name in toolset.selected_tools
+                    }
+                elif group is not None:
+                    missing = {name for name in missing if not name.startswith(grouped_tool_name(group, ""))}
+                else:
+                    missing = set()
+
+        if missing:
+            self.wrapped.apply(omit_unavailable)
         if missing:
             raise CompositionError(
                 "The selected tool allowlist contains an unavailable tool.",
@@ -507,7 +537,26 @@ class AgentReconstructor:
                         "list_connectors",
                     }
                 )
-            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
+            if node.source_kind == "bot":
+                # Captured targets add Computer tools only after being opened.
+                # Valid deferred selectors remain allowlisted, not mandatory at step one.
+                controls |= frozenset(
+                    action.value.removeprefix("environment.").replace(".", "_") for action in COMPUTER_ACTIONS
+                )
+            capabilities.append(
+                _ToolAllowlistCapability(
+                    names=frozenset(node.tools),
+                    optional_controls=controls,
+                    mcp_groups={
+                        source.id: name
+                        for name, group in tool_search.groups.items()
+                        for source in group.capabilities
+                        if isinstance(source, HarnessUiMCP) and source.id is not None
+                    }
+                    if tool_search is not None
+                    else None,
+                )
+            )
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
         if root:

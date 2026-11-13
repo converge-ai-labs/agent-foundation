@@ -61,7 +61,9 @@ async def test_completion_hints_coalesce_and_skip_fast_or_delivered_calls():
         await complete(owner, "second")
         await delivered.wait()
         assert len(hints) == 1
-        assert "first" in hints[0][1] and "second" in hints[0][1]
+        assert all(
+            f"Tool notification · lookup · execution_id={key} · finished" in hints[0][1] for key in ("first", "second")
+        )
         assert "fast" not in hints[0][1] and "consumed" not in hints[0][1]
         await owner.close(timeout_seconds=0)
 
@@ -181,8 +183,11 @@ async def test_completion_racing_failed_delivery_is_retried_without_loss(failure
         await owner.close(timeout_seconds=0)
 
 
-@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled", "lost"])
-async def test_terminal_notifications_are_status_only_and_refresh_after_rejected_delivery(status):
+@pytest.mark.parametrize(
+    ("status", "notice_status"),
+    [("succeeded", "finished"), ("failed", "failed"), ("cancelled", "cancelled"), ("lost", "lost")],
+)
+async def test_terminal_notifications_are_status_only_and_refresh_after_rejected_delivery(status, notice_status):
     owner = ToolExecutions()
     changed, delivered = Event(), Event()
     hints = []
@@ -214,7 +219,9 @@ async def test_terminal_notifications_are_status_only_and_refresh_after_rejected
         owner._completed(record)
         with fail_after(10):
             await delivered.wait()
-        assert len(hints) == 1 and f"Tool notification · lookup · execution_id=exec-terminal · {status}" in hints[0]
+        assert (
+            len(hints) == 1 and f"Tool notification · lookup · execution_id=exec-terminal · {notice_status}" in hints[0]
+        )
         assert "PRIVATE" not in hints[0]
         assert not (await owner.runtime.info("thread-a", record.execution_id)).delivery_acknowledged
         owner.deliver = None

@@ -12,6 +12,7 @@ from typing import Literal, cast
 from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
 from sqlalchemy.orm import aliased
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
@@ -924,7 +925,9 @@ class ThreadRepository:
                     raise ValueError("Only root Threads have completion markers")
                 if record.completion_run_id != completed_run_id:
                     record.completion_version += 1
-                    if record.memory_scope is None:
+                    # Bot publications own its unread revision independently of
+                    # execution completion, including messages sent before failure.
+                    if record.memory_scope is None and record.thread_id != BOT_THREAD_ID:
                         record.unread = True
                         record.read_state_version += 1
                     record.completion_run_id = completed_run_id

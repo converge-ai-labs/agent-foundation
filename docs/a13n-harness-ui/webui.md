@@ -453,7 +453,7 @@ The server must stay running and reach the browser's push service. No separate p
 
 System notices cover completion, failure, and requests for input across all root conversations, including unvisited ones; archived roots are excluded. Actual answer/question/error previews can appear on the lock screen. Opted-in devices are eligible for six hours after activity; any visible WebUI page renews this about every minute without requiring focus or typing.
 
-Open pages also show in-app notices without that six-hour or visit-history limit. Web Push is the sole system-notification path; unsupported or unreachable push leaves in-app notices. Push delivery is best effort and missed banners are not replayed. Reopen the conversation for authoritative results.
+Open pages also show in-app notices without that six-hour or visit-history limit. A conversation you are currently viewing stays quiet, including Bot: its completion, message, failure and input-needed notices do not create in-app popups. Other conversations still notify. This does not change unread markers or system Push delivery, and suppressed notices do not replay after navigation. Web Push is the sole system-notification path; unsupported or unreachable push leaves in-app notices. Push delivery is best effort and missed banners are not replayed. Reopen the conversation for authoritative results.
 
 For Android Chrome, check both site and system permissions, battery/Do Not Disturb restrictions, and push-service connectivity. On iPhone/iPad, use a supported Home Screen web app and enable notifications inside it; an ordinary browser tab is insufficient. Remote plain HTTP is unsupported; local loopback works for development. Browser installation/menu details depend on the device.
 

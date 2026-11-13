@@ -323,7 +323,12 @@ class ToolExecutions:
                 if not completed:
                     return
                 prompt = "Tool executions completed. Inspect or retrieve their retained results:\n" + "\n".join(
-                    format_execution_header("Tool notification", record.tool_name, record.execution_id, record.status)
+                    format_execution_header(
+                        "Tool notification",
+                        record.tool_name,
+                        record.execution_id,
+                        "finished" if record.status == "succeeded" else record.status,
+                    )
                     for record in completed
                 )
                 self._offered.setdefault(thread_id, set()).update(execution_ids)

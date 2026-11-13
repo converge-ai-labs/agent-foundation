@@ -8,4 +8,6 @@ When creation or an update returns `setup_required`, direct the user to the exis
 
 For connector accounts, use `list_connector_apps`, `get_connector_app`, `list_connector_actions`, `search_connector_actions` and `get_connector_action_definition`. For MCP servers, use `list_mcp_servers`, `list_connection_tools`, `search_connection_tools` and `get_connection_tool_definition`. Select only returned names. Discovery does not authorize invocation. Definition fragments retain source scope and version; partial schemas are not complete invocation contracts.
 
+MCP `configuration.on_error` is `raise` by default; `skip` omits an unavailable server's tools for the current logical Run and informs the model. Initialization makes at most three attempts for transient failures with 1s/2s backoff. Host authorization and credential preparation still fail, and business calls are never replayed by startup recovery. Changing startup policy preserves the credential.
+
 `test_connection` can call an external service and requires write-effect review. Unknown outcomes must be reconciled, not automatically repeated. Saved `forward_context_headers` controls the connection's ordinary context forwarding together with deployment policy; it never overrides configured credentials or permits secret input.

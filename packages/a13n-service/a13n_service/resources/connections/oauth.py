@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import anyio
 import httpx2
+from a13n_harness.mcp import raise_initialization_status
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from mcp.shared.auth import OAuthToken
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +91,7 @@ class McpAuthentication:
         self, connection: McpConnection, *, storage: Storage, keys: KeyRing, policy: EndpointPolicy, settings: Providers
     ):
         self._connection_id = connection.id
+        self._url = connection.config.url
         self._storage, self._keys, self._policy, self._settings = storage, keys, policy, settings
         self._lock = anyio.Lock()
         self._headers: dict[str, str] = {}
@@ -102,6 +104,25 @@ class McpAuthentication:
             ).headers
         elif connection.auth != "none":
             raise conflict("connection", connection.id, "not_authorized")
+
+    async def prepare(self) -> None:
+        await self._policy.validate(self._url)
+        async with self._lock:
+            if self._grant is not None and _due(self._grant, datetime.now(UTC)):
+                self._grant = await refresh_oauth(
+                    self._storage, self._connection_id, keys=self._keys, policy=self._policy, settings=self._settings
+                )
+
+    @asynccontextmanager
+    async def open_client(self) -> AsyncGenerator[httpx2.AsyncClient]:
+        async with open_http(
+            self._policy,
+            timeout=self._settings.tool_call_seconds,
+            max_bytes=self._settings.response_bytes,
+            before_request=self.present,
+            after_response=raise_initialization_status,
+        ) as client:
+            yield client
 
     async def present(self, request: httpx2.Request) -> None:
         if self._grant is None:
@@ -121,12 +142,9 @@ async def open_mcp_client(
 ) -> AsyncGenerator[httpx2.AsyncClient]:
     """An HTTP client for the connection's server that presents its credential on every request."""
     authentication = McpAuthentication(connection, storage=storage, keys=keys, policy=policy, settings=settings)
-    async with open_http(
-        policy,
-        timeout=settings.tool_call_seconds,
-        max_bytes=settings.response_bytes,
-        before_request=authentication.present,
-    ) as client:
+    # Initial credential renewal is Host preparation, not an unavailable server.
+    await authentication.prepare()
+    async with authentication.open_client() as client:
         yield client
 
 

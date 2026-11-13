@@ -936,3 +936,40 @@ async def test_live_pending_changes_cannot_pin_later_projection_or_replayed_even
     assert bridge.history.contains(a.blocks[0])
     assert bridge.history.contains(b.blocks[0])
     assert bridge.history.matches_latest(b.blocks[0])
+
+
+async def test_live_reconnect_preserves_run_notices_but_retries_unconfirmed_changes():
+    from a13n_harness.live import _LiveCapability
+    from a13n_harness.model_context import ModelContextProjectionRequest, _RunNoticeState
+
+    bridge = _LiveCapability(None)
+    state = _RunNoticeState[str]()
+
+    def prepare(text):
+        request = ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT)
+        block = ModelContextBlock("a13n.working-state.notes", ModelContextPlacement.REQUEST_EPILOGUE, text)
+        if state.previous == text:
+            return ModelContextProjection()
+        state.observe(request, text, block)
+        return ModelContextProjection((block,), tuple(request._notices.confirmations))
+
+    bridge.initial = prepare("initial")
+    assert state.previous is None
+    bridge.connected()
+    bridge.record_pending("interrupted", prepare("change"))
+    bridge.reconnected()
+    assert not prepare("initial").blocks
+    pending = prepare("change")
+    assert pending.blocks
+    bridge.record_pending("retry", pending)
+    bridge.settled(
+        FunctionToolResultEvent(
+            part=ToolReturnPart("lookup", "found", "retry"),
+            content=[
+                TextContent(b.content, metadata=b.content_item().metadata.model_dump(mode="json"))
+                for b in pending.blocks
+            ],
+        )
+    )
+    bridge.reconnected()
+    assert not prepare("change").blocks

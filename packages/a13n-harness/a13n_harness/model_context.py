@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from copy import copy
+from collections.abc import Awaitable, Callable, Iterable
+from copy import copy, deepcopy
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from hashlib import sha256
@@ -137,6 +137,65 @@ class ModelContextHistory:
         return latest_hash == block.content_hash
 
 
+@dataclass
+class _NoticeBoundary:
+    """Transient evidence for the current append. Never stored in messages or portable state."""
+
+    results: tuple[ToolReturnPart, ...] = ()
+    completion_ids: frozenset[str] = frozenset()
+    result_call_ids: tuple[str, ...] = ()
+    confirmations: list[tuple[ModelContextBlock | None, Callable[[], None]]] = field(default_factory=list)
+
+    @classmethod
+    def from_request(cls, message: ModelRequest) -> _NoticeBoundary:
+        completion_ids = set()
+        for item in request_input_content(message):
+            extra = item.metadata.model_extra or {}
+            if extra.get("notice_kind", item.metadata.source_id) == "tool_execution.completion":
+                ids = extra.get("execution_ids")
+                if isinstance(ids, list):
+                    completion_ids.update(value for value in ids if isinstance(value, str))
+        return cls.from_results((p for p in message.parts if isinstance(p, ToolReturnPart)), completion_ids)
+
+    @classmethod
+    def from_results(cls, parts: Iterable[ToolReturnPart], completion_ids: Iterable[str] = ()) -> _NoticeBoundary:
+        # Keep middleware detached from canonical messages. Other tool results can
+        # contain large media or arbitrary Python values; only their call IDs matter.
+        results = []
+        calls = []
+        for part in parts:
+            if part.outcome != "success":
+                continue
+            calls.append(part.tool_call_id)
+            value = part.content
+            if isinstance(value, dict) and (
+                part.tool_name in ("note_write", "note_delete", "task_create", "task_update")
+                or value.get("type") == "tool_execution_receipt"
+            ):
+                results.append(ToolReturnPart(part.tool_name, deepcopy(value), part.tool_call_id))
+        return cls(tuple(results), frozenset(completion_ids), tuple(calls))
+
+
+class _RunNoticeState[T]:
+    """One source's last confirmed observation in this logical Run, across native attempts."""
+
+    def __init__(self) -> None:
+        self.previous: T | None = None
+        self._prepared = self._confirmed = 0
+
+    def observe(self, request: ModelContextProjectionRequest, current: T, block: ModelContextBlock | None) -> None:
+        self._prepared += 1
+        revision = self._prepared
+
+        def confirm() -> None:
+            # Concurrent Live tool sends can settle in a different order.
+            if revision > self._confirmed:
+                self._confirmed = revision
+                self.previous = current
+
+        request._notices.confirmations.append((block, confirm))
+
+
 @dataclass(frozen=True, slots=True)
 class ModelContextProjectionRequest:
     """Detached description of the current eligible model request."""
@@ -145,6 +204,7 @@ class ModelContextProjectionRequest:
     input_origin: ModelContextInputOrigin | None = None
     tool_call_ids: tuple[str, ...] = ()
     history: ModelContextHistory = field(default_factory=ModelContextHistory)
+    _notices: _NoticeBoundary = field(default_factory=_NoticeBoundary, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_call_ids", tuple(self.tool_call_ids))
@@ -191,6 +251,15 @@ class ModelContextProjection:
 
     blocks: tuple[ModelContextBlock, ...] = ()
 
+    _confirmations: tuple[tuple[ModelContextBlock | None, Callable[[], None]], ...] = field(
+        default=(), repr=False, compare=False
+    )
+
+    def _confirm(self, delivered: tuple[ModelContextBlock, ...]) -> None:
+        for block, confirm in self._confirmations:
+            if block is None or block in delivered:
+                confirm()
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "blocks", tuple(self.blocks))
 
@@ -235,14 +304,18 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        if ctx.deps._compacting:
-            return request_context
-        if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
-            return request_context
         from a13n_harness.capabilities.context import (
+            CompactionCapability,
             _project_compaction_media,
             _restore_compacted_state,
         )
+        from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
+
+        compaction = ctx.capabilities.get(COMPACTION_CAPABILITY_ID)
+        if ctx.deps._compacting or (isinstance(compaction, CompactionCapability) and compaction.generating_summary):
+            return request_context
+        if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
+            return request_context
 
         restored = await _restore_compacted_state(ctx, request_context)
         restoring_compaction = restored is not request_context
@@ -250,12 +323,17 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         request = _classify_request(ctx, request_context.messages)
         prepared = request_context
         if request is not None:
-            request = replace(request, history=ModelContextHistory.from_messages(request_context.messages))
-            projection = await _project_model_context(ctx, request)
             original_request = request_context.messages[-1]
             assert isinstance(original_request, ModelRequest)
+            request = replace(
+                request,
+                history=ModelContextHistory.from_messages(request_context.messages),
+                _notices=_NoticeBoundary.from_request(original_request),
+            )
+            projection = await _project_model_context(ctx, request)
             committed = _commit_projection(request_context.messages, request, projection)
             _persist_projection(ctx.messages, original_request, committed, request, projection)
+            projection._confirm(projection.blocks)
             # Observe only freshly produced overlays, never history replay.
             for event in input_events(
                 [block.content_item() for block in projection.blocks],
@@ -305,7 +383,7 @@ async def _project_model_context(
 
     projection = await projection_handler(request)
     _validate_projection(projection, request)
-    return projection
+    return replace(projection, _confirmations=tuple(request._notices.confirmations))
 
 
 def _classify_request(

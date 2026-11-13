@@ -8,7 +8,7 @@ A Thread is one continuation-backed root or child conversation. It owns mutable 
 
 The user-facing working-context hierarchy is Project → Environment → working directories. Multiple local roots belong to one local Environment group; directory mounts and their execution scopes remain internal. [Environment selection](04a-devices-and-environment-bindings.md#webui-behavior) owns grouping, readable defaults and the lossless projection onto retained configuration.
 
-The reserved [Bot Thread](12-bot-and-connector-ingress.md#identity-composition-and-workspace) remains projectless with a Host-owned source and an exclusive workspace under the selected configuration directory. Ordinary Thread mutation cannot repurpose it. Bot can create normal file-defined Projects and ordinary working Threads through application commands.
+The reserved [Bot Thread](12-bot-and-connector-ingress.md#identity-composition-and-workspace) remains projectless with a Host-owned source and an exclusive workspace under the selected configuration directory. Ordinary Thread mutation cannot repurpose it. Bot can create normal file-defined Projects and ordinary working Threads through application commands. It can also open captured Project Environments directly in its own Run while retaining its exclusive workspace as the default; [Bot's direct Environment contract](12-bot-and-connector-ingress.md#direct-environment-access) owns target discovery and policy.
 
 ## Projects
 
