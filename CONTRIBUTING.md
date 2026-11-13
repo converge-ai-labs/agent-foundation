@@ -230,6 +230,8 @@ Create a stable release with canonical version `X.Y.Z` or a release candidate wi
 
 Release workflows reuse the existing GitHub Environments and their secrets; environment names are infrastructure identifiers, not package names. Keep these environment names when renaming components, and update their deployment tag policies to match the owning workflow's canonical release tag pattern instead of creating replacement environments. Preserve other environment protection settings.
 
+GitHub Releases remain authored by GitHub Actions. The shared creation script appends `Release initiated by @<account>.` to the notes using `GITHUB_ACTOR`, the account that pushed the release tag. Workflow reruns retain that original attribution rather than using the rerun initiator. Local notes previews omit the attribution when `GITHUB_ACTOR` is unset.
+
 GitHub Release creation is retry-safe: when the canonical tag already has a Release, the shared creation script succeeds without changing its notes or assets or comparing them with a rebuild. Lookup failures other than a missing Release remain errors. Read-only notes previews still render even when a Release exists.
 
 When bootstrapping an empty registry namespace, publish dependency owners before their consumers:

@@ -104,6 +104,9 @@ def main() -> None:
             changes=changes,
             manual_notes=manual_notes,
         )
+        actor = os.environ.get("GITHUB_ACTOR")
+        if actor:
+            notes += f"\nRelease initiated by @{actor}.\n"
         command = build_release_command(
             component=args.component,
             version=args.version,

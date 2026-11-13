@@ -260,6 +260,8 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
         {
             "GH_ARGUMENTS_FILE": str(arguments_file),
             "GH_NOTES_FILE": str(tmp_path / "gh-notes"),
+            "GITHUB_ACTOR": "tag-pusher",
+            "GITHUB_TRIGGERING_ACTOR": "rerun-initiator",
             "GITHUB_REF_NAME": "release/a13n-logging-v0.0.1",
             "GITHUB_REPOSITORY": "converge-ai-labs/agent-foundation",
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
@@ -290,6 +292,8 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
     assert "--generate-notes" not in arguments
     notes = (tmp_path / "gh-notes").read_text(encoding="utf-8")
     assert notes.startswith("Curated Logging release notes.\n")
+    assert notes.endswith("\n\nRelease initiated by @tag-pusher.\n")
+    assert "rerun-initiator" not in notes
     assert "release%2Fa13n-logging-v0.0.0...release%2Fa13n-logging-v0.0.1" in notes
     assert "release/a13n-envd-v9.9.9" not in notes
 
@@ -456,6 +460,29 @@ def test_rename_out_of_component_is_included(git_repository):
 def test_missing_history_does_not_silently_generate_empty_notes(git_repository):
     with pytest.raises(ValueError, match="Cannot collect component changes"):
         collect_release_changes(git_repository, "a13n-logging", "missing-tag", "HEAD")
+
+
+@pytest.mark.parametrize("component", COMPONENT_PATHS)
+@pytest.mark.parametrize("actor", [None, "tag-pusher"])
+def test_first_release_preview_mentions_tag_pusher_when_available(git_repository, component, actor):
+    root = git_repository
+    _git(root, "tag", release_tag(component, "0.1.0"))
+    environment = {**os.environ, "GITHUB_REPOSITORY": "owner/repo", "GITHUB_TRIGGERING_ACTOR": "rerun-initiator"}
+    environment.pop("GITHUB_ACTOR", None)
+    if actor is not None:
+        environment["GITHUB_ACTOR"] = actor
+    result = subprocess.run(
+        [sys.executable, str(CREATE_RELEASE), component, "0.1.0", "Initial release", "--dry-run"],
+        cwd=root,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    expected = INITIAL_NOTES[component] + "\n"
+    if actor is not None:
+        expected += f"\nRelease initiated by @{actor}.\n"
+    assert result.stdout == expected
 
 
 def test_dry_run_ignores_tags_outside_target_ancestry(git_repository):
@@ -633,6 +660,8 @@ def release_cli(git_repository, request):
         "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "owner/repo",
         "GITHUB_REF_NAME": tag,
+        "GITHUB_ACTOR": "tag-pusher",
+        "GITHUB_TRIGGERING_ACTOR": "tag-pusher",
         "GH_LOOKUP_ERROR": "",
         "GH_CREATE_ERROR": "",
     }
@@ -649,7 +678,9 @@ def test_release_cli_retry_preserves_existing_release_and_dry_run_still_previews
     assert "Generating release notes" in first.stdout
     notes = (root / "published-notes").read_text()
     assert "### Bug fixes" in notes
+    assert notes.endswith("\n\nRelease initiated by @tag-pusher.\n")
 
+    environment["GITHUB_TRIGGERING_ACTOR"] = "rerun-initiator"
     asset.unlink()
     retry = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
     assert "already exists; leaving its notes and assets unchanged" in retry.stdout
