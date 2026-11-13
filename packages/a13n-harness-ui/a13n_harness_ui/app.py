@@ -524,6 +524,7 @@ class HarnessUiApp:
         self._root_runs = root_runs
         self._tool_executions = tool_executions
         tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.runtime.reports_background_completions = True
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub

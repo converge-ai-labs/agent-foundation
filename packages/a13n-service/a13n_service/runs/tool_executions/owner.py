@@ -180,7 +180,6 @@ class Executions(ToolExecutionRuntime):
         run_id: str,
         tool_call_id: str,
         tool_name: str,
-        label: str | None = None,
         release: Callable[[], Awaitable[None]] | None = None,
         sequential: bool = False,
     ) -> ToolExecutionRecord:
@@ -207,7 +206,6 @@ class Executions(ToolExecutionRuntime):
             run_id=run_id,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
-            label=label,
             release=cleanup,
             sequential=sequential,
         )

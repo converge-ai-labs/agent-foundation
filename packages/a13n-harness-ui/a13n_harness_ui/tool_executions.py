@@ -37,7 +37,7 @@ from a13n_harness_ui.surfaces import ToolExecutionView
 
 def execution_view(record: ToolExecutionRecord) -> ToolExecutionView:
     return ToolExecutionView(
-        **record.model_dump(exclude={"error", "cancel_requested", "sequential", "label"}),
+        **record.model_dump(exclude={"error", "cancel_requested", "sequential"}),
         available_actions=() if record.terminal else ("cancel",),
     )
 
@@ -294,7 +294,8 @@ class ToolExecutions:
                 if not completed:
                     return
                 prompt = "Tool executions completed. Inspect or retrieve their retained results:\n" + "\n".join(
-                    f"- {record.execution_id}: {record.tool_name} ({record.status})" for record in completed
+                    f"- {record.execution_id}: {record.tool_name} ({'finished' if record.status == 'succeeded' else record.status})"
+                    for record in completed
                 )
                 self._offered.setdefault(thread_id, set()).update(execution_ids)
                 if not await self.deliver(thread_id, prompt, tuple(record.execution_id for record in completed)):

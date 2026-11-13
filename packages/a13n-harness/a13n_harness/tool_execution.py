@@ -46,7 +46,6 @@ class ToolExecutionRecord(BaseModel):
     run_id: str
     tool_call_id: str
     tool_name: str
-    label: str | None = Field(default=None, max_length=80, exclude_if=lambda value: value is None)
     # Original explicit Thread-wide completion ordering, not the native per-tool batch flag.
     sequential: bool = False
     status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"] = "queued"
@@ -296,12 +295,14 @@ class ToolExecutionRuntime:
         store: ToolExecutionStore | None = None,
         max_active: int = 64,
         on_completed: Callable[[ToolExecutionRecord], None] | None = None,
+        reports_background_completions: bool = False,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be positive")
         self.store = store if store is not None else MemoryToolExecutionStore()
         self._max_active = max_active
         self._on_completed = on_completed
+        self.reports_background_completions = reports_background_completions
         self._live: dict[str, _LiveExecution] = {}
         self._rejected = MemoryToolExecutionStore()
         self._closing = False
@@ -349,7 +350,6 @@ class ToolExecutionRuntime:
         run_id: str,
         tool_call_id: str,
         tool_name: str,
-        label: str | None = None,
         release: Callable[[], Awaitable[None]] | None = None,
         sequential: bool = False,
     ) -> ToolExecutionRecord:
@@ -367,7 +367,6 @@ class ToolExecutionRuntime:
             run_id=run_id,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
-            label=label,
             sequential=sequential,
         )
         live = _LiveExecution(record)

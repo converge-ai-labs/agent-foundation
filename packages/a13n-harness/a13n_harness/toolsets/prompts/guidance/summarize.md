@@ -1,5 +1,5 @@
 <overview>
-Use `summarize` for an explicit semantic handoff when continuity would improve by moving to a fresh context. Notes and tasks remain separately projected as current structured state.
+Use `summarize` for an explicit semantic handoff when continuity would improve by moving to a fresh context. Read current notes and tasks on demand after the handoff.
 </overview>
 
 <essential-rules>

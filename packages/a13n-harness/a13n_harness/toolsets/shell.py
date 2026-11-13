@@ -46,13 +46,6 @@ from .shell_results import (
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
 _DEFAULT_INLINE_BYTES = 64 * 1024
 
-_ExecutionLabel = Annotated[
-    str | None,
-    Field(
-        max_length=80,
-        description="Short public task label for the execution list, e.g. 'Documentation tests'. Omit command arguments and secrets.",
-    ),
-]
 _NonNegativeOffset = Annotated[int, Field(ge=0)]
 _PositiveTimeout = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 _NonNegativeTimeout = Annotated[float, Field(ge=0, allow_inf_nan=False)]
@@ -190,7 +183,6 @@ class ShellToolset:
         ctx: RunContext[AgentContext],
         command: str,
         *,
-        label: _ExecutionLabel = None,
         cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
         execution_timeout_seconds: _PositiveTimeout | None = None,
@@ -263,7 +255,6 @@ class ShellToolset:
         ctx: RunContext[AgentContext],
         command: str,
         *,
-        label: _ExecutionLabel = None,
         cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
         execution_timeout_seconds: _PositiveTimeout | None = None,

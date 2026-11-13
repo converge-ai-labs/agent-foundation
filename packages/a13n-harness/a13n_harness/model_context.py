@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from copy import copy
+from collections.abc import Awaitable, Callable, Iterable
+from copy import copy, deepcopy
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from hashlib import sha256
@@ -83,7 +83,7 @@ class ModelContextHistory:
     Querying does not reserve a block or establish a delivery watermark.
     """
 
-    _entries: tuple[tuple[str, str | None, str, str], ...] = field(default=(), repr=False)
+    _entries: tuple[tuple[str, str | None, str], ...] = ()
     _unordered: frozenset[tuple[str, str | None]] = frozenset()
 
     def __post_init__(self) -> None:
@@ -92,7 +92,7 @@ class ModelContextHistory:
 
     @classmethod
     def from_messages(cls, messages: list[ModelMessage]) -> ModelContextHistory:
-        entries: list[tuple[str, str | None, str, str]] = []
+        entries: list[tuple[str, str | None, str]] = []
         for message in messages:
             if not isinstance(message, ModelRequest):
                 continue
@@ -108,7 +108,7 @@ class ModelContextHistory:
                 if isinstance(value, str):
                     digest = sha256(value.encode("utf-8")).hexdigest()
                     if marker.get("sha256") == digest:
-                        entries.append((source, key, digest, value))
+                        entries.append((source, key, digest))
         return cls(tuple(entries))
 
     @classmethod
@@ -119,19 +119,11 @@ class ModelContextHistory:
         unordered: frozenset[tuple[str, str | None]] = frozenset(),
     ) -> ModelContextHistory:
         """Observe confirmed content; unsettled delivery can leave latest order unknown."""
-        return cls(
-            tuple((block.source_id, block.key, block.content_hash, block.content) for block in blocks), unordered
-        )
-
-    def retained_texts(self, source_id: str, key: str | None = None) -> tuple[str, ...]:
-        """Verified immutable text for one identity, in delivery order. Unknown order has no usable baseline."""
-        if (source_id, key) in self._unordered:
-            return ()
-        return tuple(text for source, entry_key, _, text in self._entries if source == source_id and entry_key == key)
+        return cls(tuple((block.source_id, block.key, block.content_hash) for block in blocks), unordered)
 
     def contains(self, block: ModelContextBlock) -> bool:
         """Whether this source/key/content hash occurs anywhere in retained context."""
-        return (block.source_id, block.key, block.content_hash, block.content) in self._entries
+        return (block.source_id, block.key, block.content_hash) in self._entries
 
     def matches_latest(self, block: ModelContextBlock) -> bool:
         """Compare with the most recent same-identity hash; absent or unknown is false."""
@@ -139,10 +131,68 @@ class ModelContextHistory:
         if identity in self._unordered:
             return False
         latest_hash = next(
-            (digest for source, key, digest, _ in reversed(self._entries) if (source, key) == identity),
+            (digest for source, key, digest in reversed(self._entries) if (source, key) == identity),
             None,
         )
         return latest_hash == block.content_hash
+
+
+@dataclass
+class _NoticeBoundary:
+    """Transient evidence for the current append. Never stored in messages or portable state."""
+
+    results: tuple[ToolReturnPart, ...] = ()
+    completion_ids: frozenset[str] = frozenset()
+    result_call_ids: tuple[str, ...] = ()
+    confirmations: list[tuple[ModelContextBlock | None, Callable[[], None]]] = field(default_factory=list)
+
+    @classmethod
+    def from_request(cls, message: ModelRequest) -> _NoticeBoundary:
+        completion_ids = set()
+        for item in request_input_content(message):
+            if item.metadata.source_id == "tool_execution.completion":
+                ids = (item.metadata.model_extra or {}).get("execution_ids")
+                if isinstance(ids, list):
+                    completion_ids.update(value for value in ids if isinstance(value, str))
+        return cls.from_results((p for p in message.parts if isinstance(p, ToolReturnPart)), completion_ids)
+
+    @classmethod
+    def from_results(cls, parts: Iterable[ToolReturnPart], completion_ids: Iterable[str] = ()) -> _NoticeBoundary:
+        # Keep middleware detached from canonical messages. Other tool results can
+        # contain large media or arbitrary Python values; only their call IDs matter.
+        results = []
+        calls = []
+        for part in parts:
+            if part.outcome != "success":
+                continue
+            calls.append(part.tool_call_id)
+            value = part.content
+            if isinstance(value, dict) and (
+                part.tool_name in ("note_write", "note_delete", "task_create", "task_update")
+                or value.get("type") == "tool_execution_receipt"
+            ):
+                results.append(ToolReturnPart(part.tool_name, deepcopy(value), part.tool_call_id))
+        return cls(tuple(results), frozenset(completion_ids), tuple(calls))
+
+
+class _RunNoticeState[T]:
+    """One source's last confirmed observation in this logical Run, across native attempts."""
+
+    def __init__(self) -> None:
+        self.previous: T | None = None
+        self._prepared = self._confirmed = 0
+
+    def observe(self, request: ModelContextProjectionRequest, current: T, block: ModelContextBlock | None) -> None:
+        self._prepared += 1
+        revision = self._prepared
+
+        def confirm() -> None:
+            # Concurrent Live tool sends can settle in a different order.
+            if revision > self._confirmed:
+                self._confirmed = revision
+                self.previous = current
+
+        request._notices.confirmations.append((block, confirm))
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +203,7 @@ class ModelContextProjectionRequest:
     input_origin: ModelContextInputOrigin | None = None
     tool_call_ids: tuple[str, ...] = ()
     history: ModelContextHistory = field(default_factory=ModelContextHistory)
+    _notices: _NoticeBoundary = field(default_factory=_NoticeBoundary, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_call_ids", tuple(self.tool_call_ids))
@@ -198,6 +249,15 @@ class ModelContextProjection:
     """An immutable ordered set of projected blocks."""
 
     blocks: tuple[ModelContextBlock, ...] = ()
+
+    _confirmations: tuple[tuple[ModelContextBlock | None, Callable[[], None]], ...] = field(
+        default=(), repr=False, compare=False
+    )
+
+    def _confirm(self, delivered: tuple[ModelContextBlock, ...]) -> None:
+        for block, confirm in self._confirmations:
+            if block is None or block in delivered:
+                confirm()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "blocks", tuple(self.blocks))
@@ -258,12 +318,17 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
         request = _classify_request(ctx, request_context.messages)
         prepared = request_context
         if request is not None:
-            request = replace(request, history=ModelContextHistory.from_messages(request_context.messages))
-            projection = await _project_model_context(ctx, request)
             original_request = request_context.messages[-1]
             assert isinstance(original_request, ModelRequest)
+            request = replace(
+                request,
+                history=ModelContextHistory.from_messages(request_context.messages),
+                _notices=_NoticeBoundary.from_request(original_request),
+            )
+            projection = await _project_model_context(ctx, request)
             committed = _commit_projection(request_context.messages, request, projection)
             _persist_projection(ctx.messages, original_request, committed, request, projection)
+            projection._confirm(projection.blocks)
             # Observe only freshly produced overlays, never history replay.
             for event in input_events(
                 [block.content_item() for block in projection.blocks],
@@ -313,7 +378,7 @@ async def _project_model_context(
 
     projection = await projection_handler(request)
     _validate_projection(projection, request)
-    return projection
+    return replace(projection, _confirmations=tuple(request._notices.confirmations))
 
 
 def _classify_request(

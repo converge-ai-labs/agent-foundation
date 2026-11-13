@@ -81,7 +81,7 @@ class HandoffToolset:
                 min_length=1,
                 description=(
                     "Narrative continuation summary preserving intent, outcomes, decisions, relevant past "
-                    "interactions, and next step without duplicating separately projected notes and tasks."
+                    "interactions, and next step without copying task lists or note bodies."
                 ),
             ),
         ],

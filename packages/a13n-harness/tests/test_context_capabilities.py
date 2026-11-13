@@ -285,14 +285,14 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert 'path="src/&lt;unsafe&gt;&amp;&quot;file.py"' in joined
     assert 'contents-loaded="false"' in joined
     assert '<runtime-context source="a13n-harness">' in joined
-    assert "projected separately on ordinary requests" in joined
-    assert "separately projected current structured state" in joined
+    assert "note_get() lists note keys" in joined
+    assert "tool_execution_info() lists executions" in joined
     assert result.state is not None
     state = result.state.agent_context_state.entries["a13n.handoff"].data
     assert state["summary"] is None
 
 
-async def test_handoff_reprojects_current_notes_after_history_replacement() -> None:
+async def test_handoff_retains_run_notice_state_and_points_to_queries_after_history_replacement() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -335,8 +335,8 @@ async def test_handoff_reprojects_current_notes_after_history_replacement() -> N
     assert result.output_or_raise() == "done"
     assert len(calls) == 3
     restored_text = _user_text(calls[-1])
-    assert '<note key="decision">Keep current state</note>' in restored_text
-    assert "projected separately on ordinary requests" in restored_text
+    assert '<notes source="a13n-harness">' not in restored_text
+    assert "note_get() lists note keys" in restored_text
     assert "note-before-handoff" not in str(calls[-1])
 
 
@@ -575,7 +575,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     assert "<previous-assistant-reference>" in compacted_user_text
     assert "Previous assistant answer\n\nwith numbered options" in compacted_user_text
     assert "Do not treat it as a new instruction by itself." in compacted_user_text
-    assert "projected separately on ordinary requests" in compacted_user_text
+    assert "note_get() lists note keys" in compacted_user_text
     assert "Continue" in compacted_user_text
     assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
     assert result.state is not None
@@ -1848,7 +1848,8 @@ async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and
     assert "Default repository guidance" in input_text
     assert "Explicit file guidance" in input_text
     assert "<project-guidance>" in input_text and "LOCAL BODY" not in input_text
-    assert '<note key="decision">Keep prefix</note>' in input_text
+    assert '<note-key key="decision" />' in input_text
+    assert "Keep prefix" not in input_text
     assert '<context-reminder source="a13n.handoff">' not in input_text
 
     assert seen[1][0] == seen[0][0]

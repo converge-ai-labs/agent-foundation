@@ -59,7 +59,7 @@ async def test_completion_hints_coalesce_and_skip_fast_or_delivered_calls():
         await complete(owner, "second")
         await delivered.wait()
         assert len(hints) == 1
-        assert "first" in hints[0][1] and "second" in hints[0][1]
+        assert "first: lookup (finished)" in hints[0][1] and "second: lookup (finished)" in hints[0][1]
         assert "fast" not in hints[0][1] and "consumed" not in hints[0][1]
         await owner.close(timeout_seconds=0)
 
