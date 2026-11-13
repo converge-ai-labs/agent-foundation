@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from html import escape
-from typing import Any, Literal, Protocol, cast
+from pathlib import Path, PurePosixPath
+from typing import Annotated, Any, Literal, Protocol, cast
+from uuid import uuid4
 
+from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.input import RunInputValue
@@ -21,7 +24,7 @@ from a13n_harness.model_context import (
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets.output import disclose_mapping_field
 from a13n_logging import get_logger
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import FunctionToolset
@@ -30,8 +33,9 @@ from a13n_harness_ui.bot import BotController
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
 from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
-from a13n_harness_ui.configuration.models import ProjectResource
+from a13n_harness_ui.configuration.models import ProjectDefaults, ProjectResource, ProjectRoot, ResourceId
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -52,6 +56,15 @@ class ThreadCreator(Protocol):
         title: str | None = None,
         coordinator_thread_id: str | None = None,
     ) -> ThreadSummary: ...
+
+
+class RemoteProjectRoot(BaseModel):
+    """A remote working directory, without Session policy or connection configuration."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    device_id: ResourceId
+    working_directory: AbsoluteEIPPath
 
 
 class ProjectCreator(Protocol):
@@ -698,19 +711,57 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         if self.source_thread_id != BOT_THREAD_ID:
             raise ThreadError("Only Bot can use this tool.", code="bot_access_denied")
 
-    async def create_project(self, ctx: RunContext[AgentContext], project: ProjectResource) -> dict[str, Any]:
-        """Create a Project configuration with a new project- ID and absolute roots.
+    async def create_project(
+        self,
+        ctx: RunContext[AgentContext],
+        roots: Annotated[list[str], Field(max_length=64)] | None = None,
+        name: Annotated[str, Field(min_length=1, max_length=256)] | None = None,
+        remote_roots: Annotated[list[RemoteProjectRoot], Field(max_length=64)] | None = None,
+        default_environment: str | None = None,
+        environment_profile_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a Project from absolute local roots and/or remote Device directories.
 
-        Discover existing Projects first. Creation does not create a Thread or start work.
-        A conflict leaves the existing Project unchanged; inspect before retrying uncertain creation.
+        Name defaults to the first directory's name. Remote aliases are remote-1, remote-2, etc.
+        Default is workspace with local roots, otherwise remote-1; default_environment overrides it.
+        Optional environment_profile_id selects the local execution mode; other defaults inherit.
+        Discover Projects first; inspect before retrying uncertain creation. Creates no Thread or Run.
         """
         self._require_bot(ctx)
         if self.controller.create_project is None:
             raise ThreadError("Project creation is unavailable.", code="configuration_unavailable")
         try:
+            local = tuple(ProjectRoot(path=path) for path in roots or ())
+            remote = tuple(
+                EnvironmentBindingSelection(
+                    device_id=root.device_id,
+                    working_directory=root.working_directory,
+                    alias=f"remote-{index}",
+                )
+                for index, root in enumerate(remote_roots or (), start=1)
+            )
+            if not local and not remote:
+                raise ThreadError("A Project requires at least one working directory.", code="project_roots_required")
+            first = Path(local[0].path) if local else PurePosixPath(remote[0].working_directory)
+            selected_default = default_environment
+            if selected_default is None and remote:
+                selected_default = "workspace" if local else "remote-1"
+            defaults = ProjectDefaults(
+                environment_profile=environment_profile_id,
+                environment_bindings=remote or None,
+                default_environment=selected_default,
+            )
+            project = ProjectResource(
+                schema_version="1",
+                kind="project",
+                id=f"project-{uuid4()}",
+                name=name if name is not None else first.name or str(first),
+                roots=local,
+                defaults=defaults,
+            )
             value = await self.controller.create_project(project=project)
             return {"status": "created", "project": value.model_dump(mode="json")}
-        except HarnessUiError as exc:
+        except (HarnessUiError, ValidationError) as exc:
             return _failure(exc, "project_creation_failed")
 
     async def read_project_memory(
