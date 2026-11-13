@@ -290,6 +290,10 @@ class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
 
 
+class BotSubmitRequest(BotSubmit):
+    draft: DraftCapture | None = None
+
+
 class SubmitRequest(PromptRequest, ModelControlSelection):
     draft: DraftCapture | None = None
     app_context: tuple[AppContextReference, ...] = Field(default=(), max_length=8)
@@ -627,9 +631,12 @@ def create_webui(
     async def bot_note(thread_id: str) -> BotNote:
         return await app().bot().notes.read(caller=BOT_THREAD_ID, thread_id=thread_id)
 
-    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmit))
+    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmitRequest))
     async def bot_submit(request: Request) -> BotInput:
-        return await app().bot().submit(await _document(request, BotSubmit))
+        document = await _document(request, BotSubmitRequest)
+        return await app().submit_bot_input(
+            BotSubmit(input_id=document.input_id, text=document.text, parts=document.parts), draft=document.draft
+        )
 
     @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
     async def bot_pause(request: Request) -> BotSnapshot:
@@ -2722,6 +2729,7 @@ def create_webui(
         recognized = path in {
             "",
             "new",
+            "bot",
             "live",
             "setup",
             "settings",

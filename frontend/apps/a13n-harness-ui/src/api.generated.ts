@@ -8929,6 +8929,11 @@ export interface components {
         /** TranscriptPart */
         TranscriptPart: {
             /**
+             * Display Id
+             * @description Native display item identity, when available.
+             */
+            display_id?: string | null;
+            /**
              * Duration Ms
              * @description Recorded elapsed time for this display item.
              */
@@ -10095,6 +10100,18 @@ export interface components {
             };
         };
         /**
+         * DraftCapture
+         * @description Exact synchronized input to consume only after submission is accepted.
+         */
+        DraftCapture: {
+            /** Draft Id */
+            draft_id: string;
+            /** Update Base64 */
+            update_base64: string;
+            /** Options Update Base64 */
+            options_update_base64?: string | null;
+        };
+        /**
          * InputAttachmentReference
          * @description An ordered input reference to a file staged in the same Thread.
          */
@@ -10102,8 +10119,8 @@ export interface components {
             /** Attachment Id */
             attachment_id: string;
         };
-        /** BotSubmit */
-        BotSubmit: {
+        /** BotSubmitRequest */
+        BotSubmitRequest: {
             /** Input Id */
             input_id: string;
             /**
@@ -10116,6 +10133,7 @@ export interface components {
              * @default []
              */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[];
+            draft?: components["schemas"]["DraftCapture"] | null;
         };
         /** BotPause */
         BotPause: {
@@ -10757,18 +10775,6 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
-        /**
-         * DraftCapture
-         * @description Exact synchronized input to consume only after submission is accepted.
-         */
-        DraftCapture: {
-            /** Draft Id */
-            draft_id: string;
-            /** Update Base64 */
-            update_base64: string;
-            /** Options Update Base64 */
-            options_update_base64?: string | null;
-        };
         FastSelection: boolean | "ultrafast";
         /** @enum {string} */
         ReasoningMode: "standard" | "pro";
@@ -11289,7 +11295,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BotSubmit"];
+                "application/json": components["schemas"]["BotSubmitRequest"];
             };
         };
         responses: {

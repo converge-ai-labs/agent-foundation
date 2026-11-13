@@ -264,6 +264,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    display_id: str | None = Field(default=None, description="Native display item identity, when available.")
     duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)

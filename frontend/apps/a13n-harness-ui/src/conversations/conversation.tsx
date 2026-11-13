@@ -68,7 +68,7 @@ import {
   isUnavailableChat,
 } from "./conversation-unavailable";
 import { LiveConnectionStatus } from "./live-connection";
-import { ConversationTranscript } from "./transcript";
+import { ConversationTranscript, type PublishedMessage } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { inputSource, conversationTitle } from "./local-input";
 import { InputNavigation } from "./input-navigation";
@@ -123,7 +123,8 @@ function ConversationContent({
     ready: boolean;
     revision: string;
     completionVersion: number;
-    messages: ReactNode;
+    messages: PublishedMessage[];
+    activity?: ReactNode;
     composer:
       ReactNode | ((dictation: DictationTarget | undefined) => ReactNode);
     status: ReactNode;
@@ -205,7 +206,7 @@ function ConversationContent({
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
-    !!detail.data && !publication,
+    !!detail.data,
     selectedTurn,
   );
   const { display, connection, reconnections, revision } =
@@ -342,11 +343,9 @@ function ConversationContent({
     );
   }, [history.data]);
   const latestPage = history.data?.pages[0];
-  const hasLater =
-    !publication &&
-    !!(latestPage?.later_turns_cursor === undefined
-      ? latestPage?.newer_cursor
-      : latestPage.later_turns_cursor);
+  const hasLater = !!(latestPage?.later_turns_cursor === undefined
+    ? latestPage?.newer_cursor
+    : latestPage.later_turns_cursor);
   const findTurn = useCallback(
     (id: string) =>
       [
@@ -507,7 +506,6 @@ function ConversationContent({
   // is not evidence that continuation was saved.
   const presentation = display.presentationFor(continuation);
   const showLive =
-    !publication &&
     !hasLater &&
     showFocusedOutput(
       presentation,
@@ -516,19 +514,17 @@ function ConversationContent({
       history.isPreviousHistory,
     );
   const liveBlocks = presentation.blocksAfter(continuation);
-  const visibleContent =
-    publication?.revision ??
-    `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
-      showLive
-        ? liveBlocks
-            .filter((block) => !block.diagnostic)
-            .map(
-              (block) =>
-                `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
-            )
-            .join("|")
-        : ""
-    }`;
+  const visibleContent = `${publication?.revision ?? ""}:${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
+    showLive
+      ? liveBlocks
+          .filter((block) => !block.diagnostic)
+          .map(
+            (block) =>
+              `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
+          )
+          .join("|")
+      : ""
+  }`;
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
@@ -923,155 +919,151 @@ function ConversationContent({
                   {t("Retry loading")}
                 </Button>
               )}
-              {publication ? (
-                <>
-                  {publication.messages}
-                  {decisions.slot}
-                  {decisions.portal}
-                </>
-              ) : (
-                <>
-                  <PauseConversationFollowing value={interruptScroll}>
-                    <MessageBranchProvider
-                      receipt={thread?.root_activity.receipt_id}
-                      thread={threadId}
-                      draft={draft}
+              <>
+                <PauseConversationFollowing value={interruptScroll}>
+                  <MessageBranchProvider
+                    receipt={thread?.root_activity.receipt_id}
+                    thread={threadId}
+                    draft={draft}
+                    continuation={continuation}
+                    enabled={
+                      !!thread &&
+                      !isBot &&
+                      !guest &&
+                      thread.role === "ordinary" &&
+                      !thread.parent_thread_id &&
+                      !thread.memory_scope &&
+                      thread.configuration.agent_source.kind === "agent" &&
+                      !thread.archived
+                    }
+                    active={
+                      thread?.root_activity.state !== "inactive" ||
+                      draft.submission.kind === "pending"
+                    }
+                  >
+                    <ConversationTranscript
+                      publications={publication?.messages}
+                      hasEarlier={history.hasNextPage}
+                      hasLater={hasLater}
+                      connectorOffers={
+                        !guest ? connectorOffers.data : undefined
+                      }
+                      terminalTurn={terminalTurn}
+                      currentFailureRunId={
+                        thread?.last_execution?.status === "failed"
+                          ? thread.last_execution.run_id
+                          : undefined
+                      }
+                      entries={entries}
+                      running={
+                        operation?.state === "running" &&
+                        presentation === display &&
+                        operation.run_id === presentation.runId
+                      }
+                      blocks={showLive ? liveBlocks : []}
+                      localInputs={hasLater ? [] : draft.localInputs}
+                      turns={turns}
+                      loadDetails
+                      onSavedEntries={reconcileSavedInputs}
                       continuation={continuation}
-                      enabled={
-                        !!thread &&
-                        !isBot &&
-                        !guest &&
-                        thread.role === "ordinary" &&
-                        !thread.parent_thread_id &&
-                        !thread.memory_scope &&
-                        thread.configuration.agent_source.kind === "agent" &&
-                        !thread.archived
+                      gap={showLive && display.gap}
+                      threadId={threadId}
+                      activity={
+                        publication?.activity ??
+                        (!readOnly &&
+                        !showGoal &&
+                        !hasLater &&
+                        !thread?.archived &&
+                        !detail.data?.deferred_requests?.length ? (
+                          <RunActivity
+                            recovery={display.recovery}
+                            activity={operation}
+                            submission={draft.submission}
+                            operation={observedOperation.data}
+                          />
+                        ) : undefined)
                       }
-                      active={
-                        thread?.root_activity.state !== "inactive" ||
-                        draft.submission.kind === "pending"
+                      pending={
+                        !hasLater && detail.data?.deferred_requests?.length
+                          ? {
+                              requestIds: detail.data.deferred_requests
+                                .filter(
+                                  (request) =>
+                                    request.tool_name === "ask_user_question",
+                                )
+                                .map((request) => request.request_id),
+                              content: decisions.slot,
+                            }
+                          : undefined
                       }
-                    >
-                      <ConversationTranscript
-                        connectorOffers={
-                          !guest ? connectorOffers.data : undefined
-                        }
-                        terminalTurn={terminalTurn}
-                        currentFailureRunId={
-                          thread?.last_execution?.status === "failed"
-                            ? thread.last_execution.run_id
-                            : undefined
-                        }
-                        entries={entries}
-                        running={
-                          operation?.state === "running" &&
-                          presentation === display &&
-                          operation.run_id === presentation.runId
-                        }
-                        blocks={showLive ? liveBlocks : []}
-                        localInputs={hasLater ? [] : draft.localInputs}
-                        turns={turns}
-                        loadDetails
-                        onSavedEntries={reconcileSavedInputs}
-                        continuation={continuation}
-                        gap={showLive && display.gap}
+                    />
+                    {decisions.portal}
+                    {!guest && (
+                      <McpInputs
                         threadId={threadId}
-                        activity={
-                          !readOnly &&
-                          !showGoal &&
-                          !hasLater &&
-                          !thread?.archived &&
-                          !detail.data?.deferred_requests?.length ? (
-                            <RunActivity
-                              recovery={display.recovery}
-                              activity={operation}
-                              submission={draft.submission}
-                              operation={observedOperation.data}
-                            />
-                          ) : undefined
-                        }
-                        pending={
-                          !hasLater && detail.data?.deferred_requests?.length
-                            ? {
-                                requestIds: detail.data.deferred_requests
-                                  .filter(
-                                    (request) =>
-                                      request.tool_name === "ask_user_question",
-                                  )
-                                  .map((request) => request.request_id),
-                                content: decisions.slot,
-                              }
-                            : undefined
-                        }
+                        requests={mcpInputs.data}
+                        reconcile={() => void mcpInputs.refetch()}
                       />
-                      {decisions.portal}
-                      {!guest && (
-                        <McpInputs
-                          threadId={threadId}
-                          requests={mcpInputs.data}
-                          reconcile={() => void mcpInputs.refetch()}
-                        />
-                      )}
-                    </MessageBranchProvider>
-                  </PauseConversationFollowing>
-                  {hasLater && (
-                    <div className={styles.historyActions}>
-                      <Button
-                        variant="ghost"
-                        loading={history.isFetchingPreviousPage}
-                        onClick={() => void history.fetchPreviousPage()}
-                      >
-                        {t("Load newer")}
-                      </Button>
-                      <Button variant="ghost" onClick={backToLatest}>
-                        {t("Back to latest")}
-                      </Button>
+                    )}
+                  </MessageBranchProvider>
+                </PauseConversationFollowing>
+                {hasLater && (
+                  <div className={styles.historyActions}>
+                    <Button
+                      variant="ghost"
+                      loading={history.isFetchingPreviousPage}
+                      onClick={() => void history.fetchPreviousPage()}
+                    >
+                      {t("Load newer")}
+                    </Button>
+                    <Button variant="ghost" onClick={backToLatest}>
+                      {t("Back to latest")}
+                    </Button>
+                  </div>
+                )}
+                {!terminalTurn && failureNotice}
+
+                {((guest && !canCompose) || readOnly || isCoordinator) &&
+                  !entries.length &&
+                  !draft.localInputs.length &&
+                  thread?.root_activity.state === "inactive" &&
+                  !showLive &&
+                  !history.isPending &&
+                  !history.error && (
+                    <div
+                      className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
+                    >
+                      {guest && !canCompose ? (
+                        <>
+                          <h2>{t("No messages yet")}</h2>
+                          <p>
+                            {t(
+                              "Messages will appear here when this chat gets started.",
+                            )}
+                          </p>
+                        </>
+                      ) : readOnly ? (
+                        <>
+                          <h2>{t("No organization history yet")}</h2>
+                          <p>
+                            {t(
+                              "Automatic memory updates appear here. Viewing this page won't start a run.",
+                            )}
+                          </p>
+                        </>
+                      ) : isCoordinator ? (
+                        <>
+                          <h2>{t("What are we working on?")}</h2>
+                          <p>
+                            {t(
+                              "Share a goal. I’ll help plan the work and bring results back here.",
+                            )}
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                   )}
-                  {!terminalTurn && failureNotice}
-
-                  {((guest && !canCompose) || readOnly || isCoordinator) &&
-                    !entries.length &&
-                    !draft.localInputs.length &&
-                    thread?.root_activity.state === "inactive" &&
-                    !showLive &&
-                    !history.isPending &&
-                    !history.error && (
-                      <div
-                        className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
-                      >
-                        {guest && !canCompose ? (
-                          <>
-                            <h2>{t("No messages yet")}</h2>
-                            <p>
-                              {t(
-                                "Messages will appear here when this chat gets started.",
-                              )}
-                            </p>
-                          </>
-                        ) : readOnly ? (
-                          <>
-                            <h2>{t("No organization history yet")}</h2>
-                            <p>
-                              {t(
-                                "Automatic memory updates appear here. Viewing this page won't start a run.",
-                              )}
-                            </p>
-                          </>
-                        ) : isCoordinator ? (
-                          <>
-                            <h2>{t("What are we working on?")}</h2>
-                            <p>
-                              {t(
-                                "Share a goal. I’ll help plan the work and bring results back here.",
-                              )}
-                            </p>
-                          </>
-                        ) : null}
-                      </div>
-                    )}
-                </>
-              )}
+              </>
             </div>
           </div>
         </div>
@@ -1088,8 +1080,9 @@ function ConversationContent({
               : t("New output")}
           </Button>
         )}
-        {!readOnly && detail.data && (!isBot || debug.enabled) && (
+        {!readOnly && detail.data && (
           <WorkInspector
+            showDetails={!isBot || debug.enabled}
             threadId={threadId}
             connectionStatus={publication?.status ?? connectionStatus}
             status={
@@ -1131,7 +1124,7 @@ function ConversationContent({
             }
           />
         )}
-        {(readOnly || (isBot && !debug.enabled)) && connectionStatus && (
+        {readOnly && connectionStatus && (
           <div className={styles.conversationFeedback}>{connectionStatus}</div>
         )}
         {(!canCompose || thread?.archived) && feedback && (
