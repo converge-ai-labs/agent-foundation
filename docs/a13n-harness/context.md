@@ -428,7 +428,7 @@ For application-owned tasks, select provider mode and supply a fresh `TaskStateB
 | `note_get(key)`          | Returns the complete value                                 |
 | `note_get()`             | Returns sorted keys and a count                            |
 
-Notes project on user-input requests; tasks also refresh on tool-result requests. `<note>` carries a complete value. `<note-ref>` and `<notes-omitted>` direct the Agent to `note_get`. The defaults are 256 projected notes and 128 tasks sharing a 64 KiB budget, configurable through `WorkingStateConfiguration`.
+Notes project on user-input requests; tasks also refresh on tool-result requests. Each Notes update lists current keys. New or changed notes carry their full text when space permits. Unchanged notes appear by key, and deleted notes are named. Use `note_get(key)` to read an omitted body and `note_get()` for the full directory. When the earlier bodies leave context, Harness supplies a fresh baseline. The defaults are 256 projected notes and 128 tasks sharing a 64 KiB budget, configurable through `WorkingStateConfiguration`.
 
 Use notes for facts, tasks for execution progress, and the summary for continuation narrative. Before handoff, reconcile stale notes and task statuses instead of copying their entire contents into the summary.
 

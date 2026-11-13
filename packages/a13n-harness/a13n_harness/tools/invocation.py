@@ -635,7 +635,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise ApprovalRequired(metadata=metadata)
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
         return await self._execute_owned(
-            lambda: self._call_managed(name, prepared, ctx, tool, managed, policy), ctx, tool, tool_args
+            lambda: self._call_managed(name, prepared, ctx, tool, managed, policy),
+            ctx,
+            tool,
+            tool_args,
+            label=tool_args.get("label") if managed.tool_id == "environment.shell_exec" else None,
         )
 
     async def _call_managed(
@@ -732,6 +736,8 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         ctx: RunContext[AgentContext],
         tool: ToolsetTool[AgentContext],
         tool_args: dict[str, Any],
+        *,
+        label: str | None = None,
     ) -> Any:
         runtime = ctx.deps.tool_execution
         state = ctx.deps._tool_executions
@@ -778,6 +784,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 run_id=ctx.deps.run_id,
                 tool_call_id=ctx.tool_call_id,
                 tool_name=tool.tool_def.name,
+                label=label,
                 release=release,
                 sequential=sequential,
             )

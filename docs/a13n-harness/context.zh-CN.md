@@ -428,7 +428,7 @@ if disposition is not None:
 | `note_get(key)`          | 返回完整值                                   |
 | `note_get()`             | 返回排序后的键和数量                         |
 
-笔记在用户输入请求中投影，任务还会在工具结果请求中刷新。`<note>` 包含完整值，`<note-ref>` 和 `<notes-omitted>` 提示 Agent 通过 `note_get` 获取。默认最多投影 256 条笔记和 128 个任务，共享 64 KiB 预算，可通过 `WorkingStateConfiguration` 调整。
+笔记在用户输入请求中投影，任务还会在工具结果请求中刷新。每次更新会列出当前笔记的键，在预算内附上新增或修改笔记的全文，并标出已删除的键。未变的笔记只列键名。用 `note_get(key)` 读取正文，或用 `note_get()` 查看完整目录。旧正文离开上下文后，Harness 会按预算重新提供。默认最多投影 256 条笔记和 128 个任务，共享 64 KiB 预算，可通过 `WorkingStateConfiguration` 调整。
 
 用笔记记录事实，用任务记录执行进度，用摘要讲清续接脉络。交接前核对过时笔记和任务状态，不必将全部内容复制到摘要。
 

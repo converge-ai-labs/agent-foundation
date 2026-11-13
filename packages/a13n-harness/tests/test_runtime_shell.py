@@ -132,7 +132,12 @@ async def test_shell_survives_run_close_and_next_run_controls_original_process(t
     try:
         async with asyncio.timeout(15):
             first = await executable(
-                [("shell_exec", {"command": "printf ready; read line; printf 'done:%s' \"$line\""})],
+                [
+                    (
+                        "shell_exec",
+                        {"label": "Wait for input", "command": "printf ready; read line; printf 'done:%s' \"$line\""},
+                    )
+                ],
                 first_results,
                 mode=mode,
             ).run("start", environment=source(tmp_path), bindings=bindings(runtime))
@@ -146,6 +151,7 @@ async def test_shell_survives_run_close_and_next_run_controls_original_process(t
                 assert not record.terminal, record
                 await asyncio.sleep(0.01)
             assert (await runtime.info(thread_id, execution_id)).status == "running"
+            assert (await runtime.info(thread_id, execution_id)).label == "Wait for input"
             assert runtime.resource("other-thread", execution_id) is None
             second = await executable(
                 [

@@ -14,6 +14,7 @@ Notes preserve structured working facts for the current session. Tasks preserve 
 </when-to-use>
 <context-projection>
 - A `<note>` contains the complete current value; use it directly without calling `note_get`.
+- A `<note-key>` lists an unchanged note. A `<note-deleted>` removes a previously listed note.
 - A `<note-ref>` identifies a value omitted from the bounded projection; call `note_get` only when that value is relevant.
 - `<notes-omitted>` means additional keys are available through `note_get()`.
 </context-projection>

@@ -83,7 +83,7 @@ class ModelContextHistory:
     Querying does not reserve a block or establish a delivery watermark.
     """
 
-    _entries: tuple[tuple[str, str | None, str], ...] = ()
+    _entries: tuple[tuple[str, str | None, str, str], ...] = field(default=(), repr=False)
     _unordered: frozenset[tuple[str, str | None]] = frozenset()
 
     def __post_init__(self) -> None:
@@ -92,7 +92,7 @@ class ModelContextHistory:
 
     @classmethod
     def from_messages(cls, messages: list[ModelMessage]) -> ModelContextHistory:
-        entries: list[tuple[str, str | None, str]] = []
+        entries: list[tuple[str, str | None, str, str]] = []
         for message in messages:
             if not isinstance(message, ModelRequest):
                 continue
@@ -108,7 +108,7 @@ class ModelContextHistory:
                 if isinstance(value, str):
                     digest = sha256(value.encode("utf-8")).hexdigest()
                     if marker.get("sha256") == digest:
-                        entries.append((source, key, digest))
+                        entries.append((source, key, digest, value))
         return cls(tuple(entries))
 
     @classmethod
@@ -119,11 +119,19 @@ class ModelContextHistory:
         unordered: frozenset[tuple[str, str | None]] = frozenset(),
     ) -> ModelContextHistory:
         """Observe confirmed content; unsettled delivery can leave latest order unknown."""
-        return cls(tuple((block.source_id, block.key, block.content_hash) for block in blocks), unordered)
+        return cls(
+            tuple((block.source_id, block.key, block.content_hash, block.content) for block in blocks), unordered
+        )
+
+    def retained_texts(self, source_id: str, key: str | None = None) -> tuple[str, ...]:
+        """Verified immutable text for one identity, in delivery order. Unknown order has no usable baseline."""
+        if (source_id, key) in self._unordered:
+            return ()
+        return tuple(text for source, entry_key, _, text in self._entries if source == source_id and entry_key == key)
 
     def contains(self, block: ModelContextBlock) -> bool:
         """Whether this source/key/content hash occurs anywhere in retained context."""
-        return (block.source_id, block.key, block.content_hash) in self._entries
+        return (block.source_id, block.key, block.content_hash, block.content) in self._entries
 
     def matches_latest(self, block: ModelContextBlock) -> bool:
         """Compare with the most recent same-identity hash; absent or unknown is false."""
@@ -131,7 +139,7 @@ class ModelContextHistory:
         if identity in self._unordered:
             return False
         latest_hash = next(
-            (digest for source, key, digest in reversed(self._entries) if (source, key) == identity),
+            (digest for source, key, digest, _ in reversed(self._entries) if (source, key) == identity),
             None,
         )
         return latest_hash == block.content_hash

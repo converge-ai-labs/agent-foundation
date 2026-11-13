@@ -46,6 +46,7 @@ class ToolExecutionRecord(BaseModel):
     run_id: str
     tool_call_id: str
     tool_name: str
+    label: str | None = Field(default=None, max_length=80, exclude_if=lambda value: value is None)
     # Original explicit Thread-wide completion ordering, not the native per-tool batch flag.
     sequential: bool = False
     status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"] = "queued"
@@ -348,6 +349,7 @@ class ToolExecutionRuntime:
         run_id: str,
         tool_call_id: str,
         tool_name: str,
+        label: str | None = None,
         release: Callable[[], Awaitable[None]] | None = None,
         sequential: bool = False,
     ) -> ToolExecutionRecord:
@@ -365,6 +367,7 @@ class ToolExecutionRuntime:
             run_id=run_id,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
+            label=label,
             sequential=sequential,
         )
         live = _LiveExecution(record)

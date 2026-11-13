@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, replace
 from typing import Annotated, Any
 
@@ -12,6 +11,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import DynamicToolset
 
+from a13n_harness._json import redact_bearer
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
@@ -23,7 +23,7 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
 )
-from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRuntime
+from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord, ToolExecutionRuntime
 from a13n_harness.tool_execution import ToolExecutionConfig as ToolExecutionConfig
 
 TOOL_EXECUTION_CAPABILITY_ID = "a13n.tool-execution"
@@ -76,19 +76,20 @@ class ToolExecutionCapability(AbstractModelContextCapability):
             for record in await runtime.summarize(ctx.deps.thread_id, limit=21)
             if not record.terminal or (record.result_available and not record.delivery_acknowledged)
         ]
-        summary = json.dumps([record.model_dump(mode="json") for record in records[:20]], ensure_ascii=True)
+        lines = [f"Tool executions requiring attention ({min(len(records), 20)}{'+' if len(records) > 20 else ''})"]
+        lines.extend(_attention_line(record) for record in records[:20])
         if len(records) > 20:
-            summary += "\nMore executions require attention; use tool_execution_info to inspect the remaining records."
+            lines.append("More executions require attention; use tool_execution_info to inspect the remaining records.")
         elif not records:
-            summary += (
-                "\nFinished executions without retained results are no longer listed. "
+            lines.append(
+                "Finished executions without retained results are no longer listed. "
                 "Use tool_execution_info to inspect their final status; absence does not establish success."
             )
         block = ModelContextBlock(
             source_id="tool_execution.summary",
             context_group="runtime_state",
             placement=ModelContextPlacement.REQUEST_EPILOGUE,
-            content=f"Tool executions requiring attention (status only; results are not consumed): {summary}",
+            content="\n".join(lines),
         )
         if request.history.matches_latest(block):
             return projection
@@ -98,6 +99,17 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                 block,
             ),
         )
+
+
+def _attention_line(record: ToolExecutionRecord) -> str:
+    label = " ".join(redact_bearer(record.label or "").split())
+    label = "".join(char for char in label if char.isprintable() and char != "|").strip() or record.tool_name
+    status = "finished" if record.status == "succeeded" else record.status
+    if record.terminal and record.result_available:
+        status += ", result available"
+    elif record.cancel_requested:
+        status += ", cancellation requested"
+    return f"- {record.execution_id} | {label} | {status}"
 
 
 def _runtime(ctx: RunContext[AgentContext]) -> ToolExecutionRuntime:

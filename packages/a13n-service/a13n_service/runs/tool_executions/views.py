@@ -29,6 +29,7 @@ class ExecutionView(ToolExecutionRecord):
 
     # Ordering intent is persisted for supervision, not exposed by the inspection API.
     sequential: bool = Field(default=False, exclude=True)
+    label: str | None = Field(default=None, exclude=True)
     attempt_id: str
     worker_id: str
     cancel_requested_at: datetime | None

@@ -37,7 +37,7 @@ from a13n_harness_ui.surfaces import ToolExecutionView
 
 def execution_view(record: ToolExecutionRecord) -> ToolExecutionView:
     return ToolExecutionView(
-        **record.model_dump(exclude={"error", "cancel_requested", "sequential"}),
+        **record.model_dump(exclude={"error", "cancel_requested", "sequential", "label"}),
         available_actions=() if record.terminal else ("cancel",),
     )
 

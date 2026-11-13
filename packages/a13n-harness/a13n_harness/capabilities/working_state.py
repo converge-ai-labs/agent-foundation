@@ -7,7 +7,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
-from html import escape
+from html import escape, unescape
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import (
@@ -672,6 +672,9 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             notes,
             self.configuration,
             project_notes=request.kind is ModelContextRequestKind.INPUT,
+            retained_notes=request.history.retained_texts(_NOTES_CONTEXT_SOURCE_ID)
+            if request.kind is ModelContextRequestKind.INPUT
+            else (),
         )
         return ModelContextProjection(
             blocks=(
@@ -688,6 +691,7 @@ def _render_working_state_blocks(
     configuration: WorkingStateConfiguration,
     *,
     project_notes: bool = True,
+    retained_notes: tuple[str, ...] = (),
 ) -> tuple[ModelContextBlock, ...]:
     """Render separate Notes and Tasks overlays within one aggregate UTF-8 budget."""
     blocks: list[ModelContextBlock] = []
@@ -695,7 +699,7 @@ def _render_working_state_blocks(
         configuration.max_context_bytes // 2 if configuration.tasks_enabled else configuration.max_context_bytes
     )
     rendered_notes = (
-        _render_notes(notes, configuration.max_context_notes, notes_budget)
+        _render_notes(notes, configuration.max_context_notes, notes_budget, retained_notes)
         if configuration.notes_enabled and project_notes
         else None
     )
@@ -732,40 +736,96 @@ def _render_working_state_blocks(
     return tuple(blocks)
 
 
-def _render_notes(notes: Mapping[str, str], limit: int, budget: int) -> str | None:
+_NOTE_LINE = re.compile(
+    r'  <note key="(?P<full>[^"]*)">(?P<body>[^<]*)</note>|'
+    r'  <note-(?P<kind>key|ref) key="(?P<key>[^"]*)" />'
+)
+_NOTE_HINT = "Read a full note with note_get(key); list all keys with note_get()."
+
+
+def _retained_notes(texts: tuple[str, ...]) -> tuple[dict[str, str | None], int]:
+    """Replay the bounded directories. A known entry needs an actually retained body."""
+    previous: dict[str, str | None] = {}
+    omitted = 0
+    for text in texts:
+        current: dict[str, str | None] = {}
+        if text.startswith(_NOTES_OPEN + "\n") and text.endswith("\n" + _NOTES_CLOSE):
+            for match in _NOTE_LINE.finditer(text):
+                if match["full"] is not None:
+                    current[unescape(match["full"])] = unescape(match["body"])
+                else:
+                    key = unescape(match["key"])
+                    current[key] = previous.get(key) if match["kind"] == "key" else None
+        previous = current
+        marker = re.search(r'<notes-omitted count="([0-9]{1,5})" />', text)
+        omitted = int(marker[1]) if marker else 0
+    return previous, omitted
+
+
+def _render_notes(notes: Mapping[str, str], limit: int, budget: int, retained: tuple[str, ...]) -> str | None:
+    previous, previous_omitted = _retained_notes(retained)
+    # Reserve space for the directory before admitting any body. Previously
+    # seen bodies must not crowd new keys or newly edited notes out of the list.
+    rows: dict[str, str] = {}
+    lines = [_NOTES_OPEN, _NOTE_HINT]
     if not notes:
-        return f"{_NOTES_OPEN}\n  No working notes.\n{_NOTES_CLOSE}"
-    lines = [_NOTES_OPEN]
-    ordered_notes = sorted(notes.items())
-    shown = 0
+        lines.append("  No working notes.")
+    remaining = budget - len(("\n".join([*lines, _NOTES_CLOSE])).encode())
+    deleted = sorted(previous.keys() - notes.keys())
+    # Include every deleted name that fits alongside the current directory. A
+    # count accounts for any remaining names when either limit is reached.
+    deleted_marker = f'  <deletions-omitted count="{len(deleted)}" />'
+    if deleted:
+        remaining -= len(deleted_marker) + 1
 
-    def append(line: str, *, omitted: int) -> bool:
-        suffix = [f'  <notes-omitted count="{omitted}" />'] if omitted else []
-        candidate = "\n".join((*lines, line, *suffix, _NOTES_CLOSE)).encode("utf-8")
-        if len(candidate) > budget:
-            return False
-        lines.append(line)
-        return True
-
-    for key, value in ordered_notes[:limit]:
-        remaining = len(ordered_notes) - shown - 1
-        full = f'  <note key="{escape(key, quote=True)}">{escape(value)}</note>'
-        if append(full, omitted=remaining):
-            shown += 1
-            continue
-        reference = f'  <note-ref key="{escape(key, quote=True)}" />'
-        if not append(reference, omitted=remaining):
+    for key in sorted(notes)[:limit]:
+        row = f'  <note-ref key="{escape(key)}" />'
+        omitted = len(notes) - len(rows) - 1
+        reserve = len(f'\n  <notes-omitted count="{omitted}" />') if omitted else 0
+        cost = len(row.encode()) + 1
+        if cost + reserve > remaining:
             break
-        shown += 1
+        rows[key] = row
+        remaining -= cost
 
-    omitted = len(ordered_notes) - shown
+    omitted = len(notes) - len(rows)
     if omitted:
-        lines.append(f'  <notes-omitted count="{omitted}" />')
-    lines.append(_NOTES_CLOSE)
-    rendered = "\n".join(lines)
-    if len(rendered.encode("utf-8")) > budget:
-        raise AssertionError("notes context budget invariant violated")
-    return rendered
+        marker = f'  <notes-omitted count="{omitted}" />'
+        lines.append(marker)
+        remaining -= len(marker) + 1
+
+    if deleted:
+        deleted_count = 0
+        for key in deleted[:limit]:
+            row = f'  <note-deleted key="{escape(key)}" />'
+            cost = len(row.encode()) + 1
+            if cost > remaining:
+                break
+            lines.append(row)
+            remaining -= cost
+            deleted_count += 1
+        remaining += len(deleted_marker) + 1
+        if deleted_count < len(deleted):
+            marker = f'  <deletions-omitted count="{len(deleted) - deleted_count}" />'
+            lines.append(marker)
+            remaining -= len(marker) + 1
+
+    changed = not retained or rows.keys() != previous.keys() or omitted != previous_omitted
+    for key, reference in rows.items():
+        value = notes[key]
+        known = previous.get(key) == value
+        row = f'  <note-key key="{escape(key)}" />' if known else f'  <note key="{escape(key)}">{escape(value)}</note>'
+        cost = len(row.encode()) - len(reference.encode())
+        if cost <= remaining:
+            rows[key] = row
+            remaining -= cost
+            changed |= not known
+        else:
+            changed |= previous.get(key) is not None
+
+    if not changed:
+        return None
+    return "\n".join([*lines, *rows.values(), _NOTES_CLOSE])
 
 
 def _render_tasks(

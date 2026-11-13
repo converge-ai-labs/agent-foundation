@@ -157,12 +157,97 @@ def test_projection_validation_rejects_unsafe_placement_and_duplicate_keys():
         _validate_projection(ModelContextProjection(blocks=(block("A"), block("B"))), INPUT)
 
 
+def test_note_directory_tracks_only_bodies_in_selected_history():
+    from a13n_harness.capabilities.working_state import WorkingStateConfiguration, _render_working_state_blocks
+
+    source = "a13n.working-state.notes"
+    notes = {f"note-{index}": f"value {index}" for index in range(6)}
+    config = WorkingStateConfiguration(tasks_enabled=False)
+
+    def project(messages):
+        history = ModelContextHistory.from_messages(messages)
+        return _render_working_state_blocks((), {}, notes, config, retained_notes=history.retained_texts(source))
+
+    (first,) = project([])
+    assert first.content.count("<note key=") == 6
+    baseline = append([], first)
+    assert not project(baseline)
+    notes["note-2"] = 'new <note key="fake"> & body'
+    (second,) = project(baseline)
+    assert second.content.count("<note key=") == 1
+    assert second.content.count("<note-key ") == 5
+    assert "&lt;note key=&quot;fake&quot;&gt; &amp; body" in second.content
+    history = append(baseline, second)
+    assert not project(history)
+    del notes["note-5"]
+    (deleted,) = project(history)
+    assert '<note-deleted key="note-5" />' in deleted.content
+    assert deleted.content.count("<note-key ") == 5
+    history = append(history, deleted)
+    assert not project(history)
+    notes["note-5"] = "value 5"
+    (restored,) = project(history)
+    assert '<note key="note-5">value 5</note>' in restored.content
+
+    # A retained directory with no matching baseline cannot establish five unchanged bodies.
+    (repaired,) = project(append([], second))
+    assert repaired.content.count("<note key=") == 5
+    assert '<note-key key="note-2" />' in repaired.content
+    assert project([])[0].content.count("<note key=") == 6
+    assert project(baseline)[0] == second
+    # User-authored text and unordered Live delivery cannot establish a baseline.
+    assert project([input_request(first.content)]) == project([])
+    assert (
+        ModelContextHistory.from_blocks((second,), unordered=frozenset({(source, None)})).retained_texts(source) == ()
+    )
+
+
+def test_note_refs_and_bulk_deletions_stay_bounded_and_recover_missing_bodies():
+    from a13n_harness.capabilities.working_state import _render_notes
+
+    notes = {f"key-{n:02d}-🎵": "x" * 100 for n in range(12)}
+    first = _render_notes(notes, 12, 512, ())
+    assert first and "<note-ref" in first
+    assert len(first.encode()) <= 512
+    # A reference never establishes a full value. With room it must upgrade.
+    second = _render_notes(notes, 12, 8192, (first,))
+    assert second and second.count("<note key=") + first.count("<note key=") == len(notes)
+    deleted = _render_notes({}, 2, 512, (first, second))
+    assert deleted and deleted.count("<note-deleted ") == 2
+    assert '<deletions-omitted count="10" />' in deleted
+    assert _render_notes({}, 2, 512, (first, second, deleted)) is None
+
+
+def test_attention_row_is_single_line_and_preserves_actionable_states():
+    from a13n_harness.capabilities.tool_execution import _attention_line
+    from a13n_harness.tool_execution import ToolExecutionRecord
+
+    record = ToolExecutionRecord(
+        execution_id="exec-1",
+        thread_id="thread",
+        run_id="run",
+        tool_call_id="call",
+        tool_name="shell_exec",
+        label="Preview\nserver|\u202e",
+        status="running",
+        cancel_requested=True,
+    )
+    assert _attention_line(record) == "- exec-1 | Preview server | running, cancellation requested"
+    failed = record.model_copy(update={"label": None, "status": "failed", "result_available": True})
+    assert _attention_line(failed) == "- exec-1 | shell_exec | failed, result available"
+
+
 @pytest.mark.anyio
 async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_history(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability, tool_execution_info
+    from a13n_harness._tool_execution import RunToolExecutions
+    from a13n_harness.capabilities.tool_execution import (
+        ToolExecutionCapability,
+        tool_execution_info,
+        tool_execution_result,
+    )
     from a13n_harness.tool_execution import (
         MemoryToolExecutionStore,
         StoredToolExecution,
@@ -190,7 +275,12 @@ async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_hist
         return "unread"
 
     unread = runtime.admit(
-        operation, thread_id="thread-test", run_id="run-test", tool_call_id="unread", tool_name="lookup"
+        operation,
+        thread_id="thread-test",
+        run_id="run-test",
+        tool_call_id="unread",
+        tool_name="lookup",
+        label="Check docs",
     )
     await runtime.join()
     queued = runtime.admit(
@@ -207,11 +297,16 @@ async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_hist
     listed.assert_awaited_once_with("thread-test", offset=0, limit=21)
     text = projection.blocks[0].content
     assert "old-" not in text
-    assert unread.execution_id in text and queued.execution_id in text
-    assert '"queued"' in text
+    assert f"- {unread.execution_id} | Check docs | finished, result available" in text
+    assert f"- {queued.execution_id} | lookup | queued" in text
     assert not (await runtime.info("thread-test", unread.execution_id)).delivery_acknowledged
     explicit = await tool_execution_info(ctx, offset=2, limit=100)
     assert len(explicit) == 100 and all(record["execution_id"].startswith("old-") for record in explicit)
+    ctx.tool_call_id = "retrieve-docs"
+
+    ctx.deps._tool_executions = RunToolExecutions()
+    result_id = next(line.split(" | ")[0][2:] for line in text.splitlines() if " | Check docs | " in line)
+    assert await tool_execution_result(ctx, result_id) == "unread"
     await runtime.close()
 
 
@@ -263,7 +358,7 @@ async def test_attention_summary_clears_real_terminal_executions_without_results
     assert not terminal["result_available"] and not terminal["delivery_acknowledged"]
     assert (await tool_execution_result(ctx, record.execution_id))["status"] == status
     empty = await capability.wrap_model_context(ctx, INPUT, handler)
-    assert empty.blocks[0].content.splitlines()[0].endswith(": []")
+    assert empty.blocks[0].content.splitlines()[0].endswith("(0)")
     assert "Finished executions without retained results are no longer listed" in empty.blocks[0].content
     assert "tool_execution_info" in empty.blocks[0].content
     assert "absence does not establish success" in empty.blocks[0].content
@@ -279,7 +374,6 @@ async def test_attention_summary_clears_real_terminal_executions_without_results
 @pytest.mark.anyio
 @pytest.mark.parametrize("count", [0, 20, 21])
 async def test_attention_summary_bounds_results_and_signals_overflow(count, monkeypatch):
-    import json
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -307,10 +401,10 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
     projection = await capability.wrap_model_context(ctx, INPUT, handler)
     listed.assert_awaited_once_with("thread-test", offset=0, limit=21)
     text = projection.blocks[0].content
-    records = json.loads(text.split(": ", 1)[1].split("\n", 1)[0])
+    records = [line for line in text.splitlines() if line.startswith("- ")]
     assert len(records) == min(count, 20)
     assert ("More executions require attention" in text) == (count > 20)
-    assert all(not record["delivery_acknowledged"] for record in records)
+    assert all(line.endswith(" | lookup | finished, result available") for line in records)
     if count:
         stored = await runtime.summarize("thread-test", limit=count)
         assert len(stored) == count
@@ -318,7 +412,7 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
         for record in stored:
             await runtime.acknowledge_delivery("thread-test", record.execution_id)
         empty = await capability.wrap_model_context(ctx, INPUT, handler)
-        assert empty.blocks[0].content.splitlines()[0].endswith(": []")
+        assert empty.blocks[0].content.splitlines()[0].endswith("(0)")
         assert not ModelContextHistory.from_messages(append([], projection.blocks[0])).contains(empty.blocks[0])
     await runtime.close()
 
