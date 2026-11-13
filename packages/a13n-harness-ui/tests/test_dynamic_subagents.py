@@ -6,6 +6,7 @@ import pytest
 import yaml
 from a13n_harness.content import request_input_content
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.bot_models import BotSubmit
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.models import SubagentsConfiguration
 from a13n_harness_ui.errors import ConfigurationError
@@ -15,10 +16,14 @@ from a13n_harness_ui.subagent_tools import guidance
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
 from anyio import Event, fail_after, sleep
 from pydantic import ValidationError
-from pydantic_ai.messages import ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelRequest, SystemPromptPart, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
+from .test_app import _settings
+from .test_bot import _write_configuration as bot_configuration
+from .test_bot import consumed, ready
 from .test_builtin_subagents import _source
+from .test_live_mode import live_configuration
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -259,6 +264,56 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             assert marked and all(
                 (item.metadata.model_extra or {}).get("a13n.steering-source") == "parent_agent" for item in marked
             )
+
+
+@pytest.mark.parametrize(
+    "surface,role",
+    [
+        ("bot", "You are Bot, the instance's persistent personal assistant."),
+        ("live", "You are the user's Live task coordinator."),
+    ],
+)
+async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, monkeypatch, surface, role):
+    root = bot_configuration(tmp_path) if surface == "bot" else live_configuration(tmp_path)
+    value = yaml.safe_load(root.read_text())
+    value["subagents"] = {"dynamic": {"enabled": True}}
+    root.write_text(yaml.safe_dump(value))
+    parent_instructions, child_instructions, child_seen = [], [], Event()
+
+    def prompt(messages, info):
+        parts = [part.content for request in messages for part in request.parts if isinstance(part, SystemPromptPart)]
+        return "\n".join([*parts, info.instructions or ""])
+
+    async def stream(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            child_instructions.append(prompt(messages, info))
+            child_seen.set()
+            yield "child done"
+        elif returned(messages):
+            yield "done"
+        else:
+            parent_instructions.append(prompt(messages, info))
+            arguments = {"name": "reviewer", "instructions": "CHILD_ROLE", "prompt": "CHILD_TASK"}
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(arguments))}
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        if surface == "bot":
+            await (await ready(app)).submit(BotSubmit(input_id="input-spawn", text="start"))
+            assert (await consumed(app, "input-spawn")).state == "completed"
+        else:
+            thread = await app._threads.live_thread(configuration_root=tmp_path)
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        with fail_after(10):
+            await child_seen.wait()
+    assert role in parent_instructions[0]
+    assert role not in child_instructions[0]
+    assert "You are the Harness UI CLI Agent" in child_instructions[0]
+    assert "CHILD_ROLE" in child_instructions[0]
 
 
 @pytest.mark.parametrize("first,second", [("delegate", "spawn_subagent"), ("spawn_subagent", "delegate")])

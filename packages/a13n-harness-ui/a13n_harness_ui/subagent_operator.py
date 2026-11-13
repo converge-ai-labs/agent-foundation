@@ -85,6 +85,8 @@ from pydantic_ai.usage import UsageLimits
 from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
+    PACKAGE_PROMPT_REVISION,
+    PACKAGE_SYSTEM_PROMPT,
     AgentReconstructor,
     CompositionAcceptanceService,
     PublishedRunComposition,
@@ -647,6 +649,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "source_kind": "dynamic",
                 "source_id": _public_id("dynamic"),
                 "roster_name": name,
+                # Bot and Live carry their coordinator role in the system prompt.
+                # A dynamic child gets only the role-neutral package prompt.
+                "system_prompt": (PACKAGE_SYSTEM_PROMPT,),
                 "instructions": (instructions,),
                 "model": recipe,
                 "children": (),
@@ -657,6 +662,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         composition = scope.composition.model_copy(
             update={
+                "package_prompt_revision": PACKAGE_PROMPT_REVISION,
                 "thread_id": state.thread_id,
                 "thread_configuration_version": 1,
                 "root": root,
