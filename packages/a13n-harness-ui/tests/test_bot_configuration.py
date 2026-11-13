@@ -183,11 +183,14 @@ async def test_bot_context_uses_active_capture_then_selected_continuation_not_ne
             await started.wait()
         current = await app.context_usage(BOT_THREAD_ID)
         assert current.context_window == 90000
-        assert current.latest_request_tokens is None
-        assert current.record_id is None
+        assert current.latest_request_tokens == idle.latest_request_tokens
+        assert current.record_id == idle.record_id
+        assert current.context_breakdown == idle.context_breakdown
         release.set()
         assert (await consumed(app, "meter-second")).state == "completed"
-        assert (await app.context_usage(BOT_THREAD_ID)).context_window == 90000
+        updated = await app.context_usage(BOT_THREAD_ID)
+        assert updated.context_window == 90000
+        assert updated.record_id is not None and updated.record_id != current.record_id
 
 
 async def test_bot_narrows_inherited_tools_for_its_files_only_chat_policy(tmp_path: Path, monkeypatch):

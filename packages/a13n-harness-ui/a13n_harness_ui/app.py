@@ -1169,7 +1169,7 @@ class HarnessUiApp:
                 return await self._projections.context_usage(thread_id)
             reference = await self._root_runs.composition_reference(active.receipt.receipt_id)
             if reference is None:
-                return ContextUsageView(thread_id=thread_id)
+                return await self._projections.context_usage(thread_id)
             composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
             return await self._projections.context_usage(
                 thread_id, active_composition=composition, active_run_id=active.run_id
