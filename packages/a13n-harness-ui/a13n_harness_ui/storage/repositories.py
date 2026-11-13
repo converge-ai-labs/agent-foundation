@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, Select, and_, case, delete, func, or_, select, true, update
+from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
+from sqlalchemy.orm import aliased
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
@@ -1158,6 +1159,62 @@ class ChildExecutionRepository:
                         statement.order_by(
                             ChildExecutionRecord.created_at,
                             ChildExecutionRecord.execution_id,
+                        ).limit(limit)
+                    )
+                ).scalars()
+            )
+            total = int(
+                (
+                    await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
+                ).scalar_one()
+            )
+            return tuple(_child_value(row) for row in rows), total
+
+    async def latest_page_for_parent(
+        self,
+        parent_thread_id: str,
+        *,
+        after: tuple[bool, datetime, str] | None = None,
+        limit: int = 20,
+    ) -> tuple[tuple[ChildExecutionHead, ...], int]:
+        """Page each child conversation's latest segment: running first, then newest first."""
+        if not 1 <= limit <= 101:
+            raise ValueError("child execution page is outside supported bounds")
+        newer = aliased(ChildExecutionRecord)
+        predicate = and_(
+            ChildExecutionRecord.parent_thread_id == parent_thread_id,
+            ~exists().where(newer.resumed_from == ChildExecutionRecord.execution_id),
+        )
+        running = case((ChildExecutionRecord.status == "running", 1), else_=0)
+        statement = select(ChildExecutionRecord).where(predicate)
+        if after is not None:
+            after_running, after_created_at, after_execution_id = after
+            if not after_execution_id or after_created_at.tzinfo is None or after_created_at.utcoffset() is None:
+                raise ValueError("child execution cursor is invalid")
+            rank = int(after_running)
+            statement = statement.where(
+                or_(
+                    running < rank,
+                    and_(
+                        running == rank,
+                        or_(
+                            ChildExecutionRecord.created_at < after_created_at,
+                            and_(
+                                ChildExecutionRecord.created_at == after_created_at,
+                                ChildExecutionRecord.execution_id < after_execution_id,
+                            ),
+                        ),
+                    ),
+                )
+            )
+        async with short_session(self._sessions) as session:
+            rows = tuple(
+                (
+                    await session.execute(
+                        statement.order_by(
+                            running.desc(),
+                            ChildExecutionRecord.created_at.desc(),
+                            ChildExecutionRecord.execution_id.desc(),
                         ).limit(limit)
                     )
                 ).scalars()

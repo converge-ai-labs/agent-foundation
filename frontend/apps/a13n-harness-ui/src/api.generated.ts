@@ -15973,6 +15973,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {
@@ -17107,6 +17109,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {

@@ -2998,6 +2998,7 @@ class HarnessUiApp:
         execution_id: str | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        latest: bool = False,
     ) -> ChildExecutionPage:
         async with self._operation():
             return await self._subagent_operator.query_child_executions(
@@ -3005,6 +3006,7 @@ class HarnessUiApp:
                 execution_id=execution_id,
                 cursor=cursor,
                 limit=limit,
+                latest=latest,
             )
 
     async def wait_child_executions(

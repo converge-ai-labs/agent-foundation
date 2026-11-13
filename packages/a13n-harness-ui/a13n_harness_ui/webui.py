@@ -2146,9 +2146,13 @@ def create_webui(
         execution_id: Annotated[str | None, Query(max_length=80)] = None,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        latest: Annotated[
+            bool,
+            Query(description="List each child conversation's latest execution, running first, then newest first."),
+        ] = False,
     ) -> ChildExecutionPage:
         return await app().query_child_executions(
-            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
+            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit, latest=latest
         )
 
     @server.post(

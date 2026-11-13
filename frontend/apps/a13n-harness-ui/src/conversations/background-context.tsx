@@ -82,8 +82,12 @@ function ThreadBackgroundScope({
     detail.data?.continuation_id,
     !!threadId && !!detail.data,
   );
-  // Read a bounded status page; Show more is the only way to request older work.
-  const childPage = useChildExecutions(threadId, !!threadId);
+  // One latest execution per child conversation, running first, then newest
+  // first; Show more requests older conversations.
+  const childPage = useChildExecutions(threadId, {
+    enabled: !!threadId,
+    latest: true,
+  });
   const toolPage = useInfiniteQuery({
     queryKey: ["thread", threadId, "tool-executions", "background"],
     enabled: !!threadId && !guest,

@@ -7031,6 +7031,18 @@
               "default": 20,
               "title": "Limit"
             }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "List each child conversation's latest execution, running first, then newest first.",
+              "default": false,
+              "title": "Latest"
+            },
+            "description": "List each child conversation's latest execution, running first, then newest first."
           }
         ],
         "responses": {
@@ -9059,6 +9071,18 @@
               "default": 20,
               "title": "Limit"
             }
+          },
+          {
+            "name": "latest",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "List each child conversation's latest execution, running first, then newest first.",
+              "default": false,
+              "title": "Latest"
+            },
+            "description": "List each child conversation's latest execution, running first, then newest first."
           }
         ],
         "responses": {

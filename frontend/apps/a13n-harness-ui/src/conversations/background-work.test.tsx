@@ -104,50 +104,57 @@ function setup(
   closeOnOpen = false,
 ) {
   live.display = new FocusDisplay();
-  const GET = vi.fn(async (path: string): Promise<{ data: unknown }> => {
-    if (path.endsWith("/children"))
-      return { data: { executions: [...children], total: children.length } };
-    if (path.endsWith("/tool-executions")) return { data: [...tools] };
-    if (path.endsWith("/output"))
-      return { data: { state: "available", text: "result", truncated: false } };
-    if (path.endsWith("/transcript"))
+  const GET = vi.fn(
+    async (
+      path: string,
+      _init?: { params?: { query?: Record<string, unknown> } },
+    ): Promise<{ data: unknown }> => {
+      if (path.endsWith("/children"))
+        return { data: { executions: [...children], total: children.length } };
+      if (path.endsWith("/tool-executions")) return { data: [...tools] };
+      if (path.endsWith("/output"))
+        return {
+          data: { state: "available", text: "result", truncated: false },
+        };
+      if (path.endsWith("/transcript"))
+        return {
+          data: {
+            entries: tools.map((tool, position) => ({
+              position,
+              message_kind: "request",
+              parts: [
+                {
+                  kind: "tool_call",
+                  tool_call_id: tool.tool_call_id,
+                  tool_name: tool.tool_name,
+                  value: { command: "pnpm test" },
+                },
+                {
+                  kind: "tool_result",
+                  tool_call_id: tool.tool_call_id,
+                  tool_name: tool.tool_name,
+                  value: {
+                    type: "tool_execution_receipt",
+                    execution_id: tool.execution_id,
+                  },
+                },
+              ],
+            })),
+            turns: [],
+            total: tools.length,
+          },
+        };
+      if (path.endsWith("/inputs")) return { data: { turns: [] } };
       return {
         data: {
-          entries: tools.map((tool, position) => ({
-            position,
-            message_kind: "request",
-            parts: [
-              {
-                kind: "tool_call",
-                tool_call_id: tool.tool_call_id,
-                tool_name: tool.tool_name,
-                value: { command: "pnpm test" },
-              },
-              {
-                kind: "tool_result",
-                tool_call_id: tool.tool_call_id,
-                tool_name: tool.tool_name,
-                value: {
-                  type: "tool_execution_receipt",
-                  execution_id: tool.execution_id,
-                },
-              },
-            ],
-          })),
-          turns: [],
-          total: tools.length,
+          thread: {
+            thread_id: "root",
+            configuration: { agent_source: { kind: "live" } },
+          },
         },
       };
-    if (path.endsWith("/inputs")) return { data: { turns: [] } };
-    return {
-      data: {
-        thread: {
-          thread_id: "root",
-          configuration: { agent_source: { kind: "live" } },
-        },
-      },
-    };
-  });
+    },
+  );
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -312,6 +319,45 @@ it("distinguishes canonical notice kinds, preserves source-marked rows and links
     screen.getAllByRole("button", { name: "Agent one" })[0],
   );
   expect(test.open).toHaveBeenCalled();
+});
+it("links a notice from an earlier segment of a resumed child", async () => {
+  const test = setup([child("one", "running", 1)]);
+  const read = test.GET.getMockImplementation()!;
+  test.GET.mockImplementation(async (path, init) =>
+    init?.params?.query?.execution_id === "exec-one-0"
+      ? { data: { executions: [child("one", "succeeded", 0)], total: 1 } }
+      : read(path, init),
+  );
+  const entries = [
+    {
+      position: 0,
+      message_kind: "request",
+      parts: [
+        {
+          kind: "user",
+          text: "Subagent result · Agent one · execution_id=exec-one-0 · succeeded\nDone",
+          metadata: { display: true, "a13n.steering-source": "async_subagent" },
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  render(
+    test.view(
+      "root",
+      <ConversationTranscript
+        threadId="root"
+        entries={entries}
+        blocks={[]}
+        localInputs={[]}
+      />,
+    ),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Agent one" }),
+  );
+  expect(test.open).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: "child", id: "one" }),
+  );
 });
 it("labels parent inputs Main agent and unmarked child inputs User", () => {
   const test = setup([]);
@@ -660,6 +706,11 @@ it("requests another history page only after Show more", async () => {
   );
   await screen.findByRole("button", { name: "Show more" });
   expect(pages).toBe(1);
+  const query = test.GET.mock.calls.find(([path]) =>
+    path.endsWith("/children"),
+  )?.[1]?.params?.query;
+  // The server orders one latest execution per child: running, then newest.
+  expect(query).toMatchObject({ latest: true, limit: 100 });
   await userEvent.click(screen.getByRole("button", { name: "Show more" }));
   await screen.findByRole("button", { name: /Agent older/ });
   expect(pages).toBe(2);

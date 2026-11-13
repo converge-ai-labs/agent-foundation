@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -103,6 +103,100 @@ async def test_saved_children_with_retired_composition_fields_remain_inspectable
         assert restored.environment_profile.provider_key == composition.environment_profile.provider_key
         assert restored.model_dump(mode="json") == composition.model_dump(mode="json")
         assert await store.objects.read(envelope.ref) == envelope
+
+
+async def test_latest_child_pages_keep_current_segments_ahead_of_older_history(tmp_path: Path) -> None:
+    from a13n_harness import HarnessState
+    from a13n_harness_ui.composition import AgentCompositionResolver
+    from a13n_harness_ui.configuration import load_harness_ui_configuration
+    from a13n_harness_ui.storage.contracts import StoredChildCheckpoint
+
+    from .test_composition import _catalog, _selection, _write_source
+    from .test_thread_repository import _configuration, _initial
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        await store.threads.create(thread_id="thread_parent", configuration=_configuration(), initial_state=_initial())
+        references = {}
+        # The oldest child is still running; the second is resumed after 100 newer children finish.
+        for index in range(102):
+            child_thread_id = f"thread_child{index:03}"
+            await store.threads.create(
+                thread_id=child_thread_id,
+                parent_thread_id="thread_parent",
+                configuration=_configuration(),
+                initial_state=_initial(),
+            )
+            reference = references[child_thread_id] = (
+                await store.objects.publish_model(
+                    object_kind=ObjectKind.run_composition,
+                    value=composition.model_copy(update={"thread_id": child_thread_id}),
+                )
+            ).ref
+            head = await store.child_executions.create(
+                execution_id=f"execution-{index:03}",
+                parent_thread_id="thread_parent",
+                child_thread_id=child_thread_id,
+                child_run_id=f"run-{index:03}",
+                run_composition=reference,
+                created_at=start + timedelta(seconds=index),
+            )
+            if index == 0:
+                continue
+            checkpoint = StoredChildCheckpoint(
+                harness_release="test",
+                execution_id=head.execution_id,
+                child_thread_id=head.child_thread_id,
+                child_run_id=head.child_run_id,
+                segment_index=0,
+                run_composition=reference,
+                harness_state=HarnessState.new(thread_id=head.child_thread_id),
+                display=CompactChildDisplay(),
+                terminal=True,
+                created_at=start,
+            )
+            await store.child_executions.finish(
+                execution_id=head.execution_id,
+                status="succeeded",
+                expected_checkpoint=None,
+                checkpoint=(
+                    await store.objects.publish_model(object_kind=ObjectKind.child_checkpoint, value=checkpoint)
+                ).ref,
+            )
+        await store.child_executions.resume(
+            previous_execution_id="execution-001",
+            execution_id="execution-resumed",
+            child_run_id="run-resumed",
+            run_composition=references["thread_child001"],
+            created_at=start + timedelta(seconds=200),
+        )
+        unavailable = cast(Any, object())
+        operator = HarnessUiSubagentOperator(
+            store=store,
+            configurations=unavailable,
+            compositions=unavailable,
+            agent_reconstructor=unavailable,
+            environment_service=unavailable,
+        )
+        history = await operator.query_child_executions(parent_thread_id="thread_parent", limit=100)
+        assert "execution-resumed" not in {item.execution_id for item in history.executions}
+
+        first = await operator.query_child_executions(parent_thread_id="thread_parent", limit=100, latest=True)
+        second = await operator.query_child_executions(
+            parent_thread_id="thread_parent", cursor=first.next_cursor, limit=100, latest=True
+        )
+        first_ids = [item.execution_id for item in first.executions]
+        assert first.total == 102
+        assert first_ids[:3] == ["execution-resumed", "execution-000", "execution-101"]
+        assert "execution-001" not in first_ids
+        assert [item.execution_id for item in second.executions] == ["execution-003", "execution-002"]
+        assert second.next_cursor is None
+        for cursor, latest in ((first.next_cursor, False), (history.next_cursor, True)):
+            with pytest.raises(RunCoordinationError) as mismatch:
+                await operator.query_child_executions(parent_thread_id="thread_parent", cursor=cursor, latest=latest)
+            assert mismatch.value.code == "child_cursor_mismatch"
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "../i18n";
+import { useTransport } from "../transport/context";
+import { result } from "../transport/client";
 import { useBackground } from "./background-context";
-import { executionReceipt } from "./background-work";
+import { executionReceipt, type BackgroundTarget } from "./background-work";
 import type { ToolView } from "./tool-presentation";
 import { SubagentGlyph } from "./background-card";
 import { Terminal, Wrench } from "@phosphor-icons/react";
@@ -41,32 +44,64 @@ export function useNoticeLabel() {
   };
 }
 export function ExecutionNoticeLinks({ text }: { text: string }) {
+  return executionHeaders(text).map((header) => (
+    <ExecutionNoticeLink key={header.id} header={header} />
+  ));
+}
+function ExecutionNoticeLink({
+  header,
+}: {
+  header: ReturnType<typeof executionHeaders>[number];
+}) {
   const bg = useBackground();
-  return executionHeaders(text).map((header) => {
-    const target = bg.resolve(header.id);
-    return target ? (
-      <button
-        key={header.id}
-        type="button"
-        className={styles.noticeLink}
-        title={target.title}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          bg.open(target);
-        }}
-      >
-        {target.kind === "child" ? (
-          <SubagentGlyph id={target.id} />
-        ) : target.icon === "terminal" ? (
-          <Terminal size={14} />
-        ) : (
-          <Wrench size={14} />
-        )}
-        <span>{target.title}</span>
-      </button>
-    ) : null;
+  const { client } = useTransport();
+  const local = bg.resolve(header.id);
+  // Earlier segments of a resumed child are absent from the latest-per-child
+  // list, so look them up by execution ID.
+  const lookup = useQuery({
+    queryKey: ["thread", bg.threadId, "child-review", header.id],
+    enabled: !local && !bg.loading && header.kind.startsWith("Subagent"),
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/children", {
+          params: {
+            path: { thread_id: bg.threadId },
+            query: { execution_id: header.id },
+          },
+          signal,
+        }),
+      ),
   });
+  const child = lookup.data?.executions[0];
+  const target: BackgroundTarget | undefined =
+    local ??
+    (child && {
+      kind: "child",
+      id: child.child_thread_id,
+      threadId: bg.threadId,
+      title: child.subagent_name,
+    });
+  return target ? (
+    <button
+      type="button"
+      className={styles.noticeLink}
+      title={target.title}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        bg.open(target);
+      }}
+    >
+      {target.kind === "child" ? (
+        <SubagentGlyph id={target.id} />
+      ) : target.icon === "terminal" ? (
+        <Terminal size={14} />
+      ) : (
+        <Wrench size={14} />
+      )}
+      <span>{target.title}</span>
+    </button>
+  ) : null;
 }
 export function MovedToBackground({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();

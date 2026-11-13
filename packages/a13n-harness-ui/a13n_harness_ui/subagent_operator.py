@@ -219,6 +219,8 @@ class _ChildCursor(SurfaceModel):
     parent_thread_id: str
     created_at: datetime
     execution_id: str
+    # Only latest-segment pages, which order running segments first, set this.
+    running: bool | None = None
 
 
 @dataclass(slots=True)
@@ -818,8 +820,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         execution_id: str | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        latest: bool = False,
     ) -> ChildExecutionPage:
-        """Query saved child executions without requiring a live parent Run."""
+        """Query saved child executions without requiring a live parent Run.
+
+        History pages list every segment oldest first. ``latest`` pages list each
+        child conversation's latest segment, running first, then newest first.
+        """
 
         if not 1 <= limit <= 100:
             raise RunCoordinationError("Child execution page is invalid.", code="child_page_invalid")
@@ -834,20 +841,28 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 executions=(await self._execution_projection(head, include_activity=True),),
                 total=1,
             )
-        after: tuple[datetime, str] | None = None
-        if cursor is not None:
-            decoded = _decode_child_cursor(cursor)
-            if decoded.parent_thread_id != parent_thread_id:
-                raise RunCoordinationError(
-                    "Child cursor belongs to another parent Thread.",
-                    code="child_cursor_mismatch",
-                )
-            after = (decoded.created_at, decoded.execution_id)
-        heads, total = await self._store.child_executions.page_for_parent(
-            parent_thread_id,
-            after=after,
-            limit=limit + 1,
-        )
+        decoded = None if cursor is None else _decode_child_cursor(cursor)
+        if decoded is not None and (
+            decoded.parent_thread_id != parent_thread_id or (decoded.running is not None) != latest
+        ):
+            raise RunCoordinationError(
+                "Child cursor belongs to another parent Thread or page order.",
+                code="child_cursor_mismatch",
+            )
+        if latest:
+            heads, total = await self._store.child_executions.latest_page_for_parent(
+                parent_thread_id,
+                after=None
+                if decoded is None or decoded.running is None
+                else (decoded.running, decoded.created_at, decoded.execution_id),
+                limit=limit + 1,
+            )
+        else:
+            heads, total = await self._store.child_executions.page_for_parent(
+                parent_thread_id,
+                after=None if decoded is None else (decoded.created_at, decoded.execution_id),
+                limit=limit + 1,
+            )
         visible = heads[:limit]
         parent = await self._store.threads.get(parent_thread_id)
         if parent is None:
@@ -862,6 +877,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     parent_thread_id=parent_thread_id,
                     created_at=last.created_at,
                     execution_id=last.execution_id,
+                    running=last.status == "running" if latest else None,
                 )
             )
         return ChildExecutionPage(
