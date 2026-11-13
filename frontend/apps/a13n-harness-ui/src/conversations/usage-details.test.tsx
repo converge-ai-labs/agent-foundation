@@ -184,6 +184,7 @@ it("estimates input groups by character weight and measures shares against the f
   expect(screen.getByText("250")).toBeTruthy();
   expect(screen.getByText("6.3%")).toBeTruthy();
   expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("1200");
+  expect(screen.queryByRole("button", { name: /Conversation/ })).toBeNull();
   const skills = screen.getByRole("button", { name: /Skills/ });
   expect(skills.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(skills);
@@ -226,4 +227,44 @@ it("estimates input groups by character weight and measures shares against the f
   );
   expect(screen.getByText("225")).toBeTruthy();
   expect(screen.getByText("5.6%")).toBeTruthy();
+});
+
+it("expands each measured source with request-local estimates and mount repetition counts", () => {
+  const request: Schema<"ContextUsageView"> = {
+    thread_id: "one",
+    input_tokens: 1000,
+    context_window: 4000,
+    context_breakdown: {
+      counted_input_characters: 100,
+      groups: {
+        environment_context: {
+          characters: 30,
+          items: {
+            "Environment mounts": {
+              characters: 30,
+              occurrences: 3,
+              distinct_versions: 2,
+            },
+          },
+        },
+        runtime_state: { characters: 40, items: { Notes: { characters: 40 } } },
+        conversation: {
+          characters: 30,
+          items: { User: { characters: 5 }, Agent: { characters: 25 } },
+        },
+      },
+    },
+  };
+  render(
+    <ContextDetails compact used={1000} capacity={4000} request={request} />,
+  );
+  for (const name of [/Environment context/, /Working state/, /Conversation/]) {
+    fireEvent.click(screen.getByRole("button", { name }));
+  }
+  expect(
+    screen.getByText("Occurrences: 3 · Distinct versions: 2"),
+  ).toBeTruthy();
+  expect(screen.getByText("Notes")).toBeTruthy();
+  expect(screen.getByText("User").parentElement?.textContent).toContain("50");
+  expect(screen.getByText("Agent").parentElement?.textContent).toContain("250");
 });
