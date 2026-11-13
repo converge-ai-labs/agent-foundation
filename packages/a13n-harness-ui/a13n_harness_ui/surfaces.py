@@ -569,7 +569,14 @@ class ChildActivityView(SurfaceModel):
     dropped_tool_calls: int = Field(default=0, ge=0)
 
 
+class ChildExecutionModel(SurfaceModel):
+    name: str
+    identity: str
+    thinking: str
+
+
 class ChildExecutionView(SurfaceModel):
+    model: ChildExecutionModel | None = None
     execution_id: str = Field(min_length=1, max_length=80)
     root_thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str = Field(min_length=1, max_length=80)

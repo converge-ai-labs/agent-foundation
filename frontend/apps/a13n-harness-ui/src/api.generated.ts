@@ -4466,6 +4466,15 @@ export interface components {
             /** Persisted Status */
             persisted_status?: ("running" | "succeeded" | "failed" | "cancelled" | "lost") | null;
         };
+        /** ChildExecutionModel */
+        ChildExecutionModel: {
+            /** Name */
+            name: string;
+            /** Identity */
+            identity: string;
+            /** Thinking */
+            thinking: string;
+        };
         /** ChildExecutionPage */
         ChildExecutionPage: {
             /** Executions */
@@ -4477,6 +4486,7 @@ export interface components {
         };
         /** ChildExecutionView */
         ChildExecutionView: {
+            model?: components["schemas"]["ChildExecutionModel"] | null;
             /** Execution Id */
             execution_id: string;
             /** Root Thread Id */

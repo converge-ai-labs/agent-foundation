@@ -380,6 +380,7 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
                     json_args=json.dumps(
                         {
                             "name": name,
+                            "thinking": "high",
                             "instructions": f"Review only the assigned fixture task. Fixture role: {state}.",
                             "prompt": (
                                 [
@@ -723,7 +724,8 @@ async def serve(root: Path, port: int):
             await app._deliver_subagent_input(
                 background.thread_id,
                 format_execution_header("Subagent result", completed.subagent_name, completed.execution_id, "succeeded")
-                + "\nThe duplicate-submit check passed; the order identifier is reused safely.",
+                + "\n"
+                + "The duplicate-submit check passed; the order identifier is reused safely.\n" * 180,
                 (completed.execution_id,),
             )
             await app.wait_root_operation(packet.receipt_id, timeout_seconds=30)

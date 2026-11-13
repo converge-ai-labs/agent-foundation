@@ -1,3 +1,4 @@
+import { SubagentGlyph } from "./background-card";
 import { MovedToBackground } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
@@ -788,6 +789,10 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             <strong data-running-label={info.running || undefined}>
               {toolLabel(info, t)}
             </strong>{" "}
+            {tool.name === "spawn_subagent" &&
+              typeof info.result.thread_id === "string" && (
+                <SubagentGlyph id={info.result.thread_id} />
+              )}
             {info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}

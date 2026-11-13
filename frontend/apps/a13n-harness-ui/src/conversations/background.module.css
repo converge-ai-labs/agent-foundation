@@ -218,6 +218,22 @@
   padding: 16px 20px;
   flex-wrap: wrap;
 }
+.panelIdentity,
+.childModel {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+.panelIdentity {
+  flex: 1;
+  flex-wrap: wrap;
+}
+.childModel {
+  max-width: 100%;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
 .panelHeader h2 {
   font-size: inherit;
   font-weight: 500;
@@ -225,7 +241,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
   margin: 0;
 }
 .panelHeader > span {

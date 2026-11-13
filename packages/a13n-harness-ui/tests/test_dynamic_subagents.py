@@ -194,6 +194,10 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
         ).status is RootOperationStatus.completed
         assert receipts[0]["source"] == "host"
         execution_id = receipts[0]["execution_id"]
+        page = await app.query_child_executions(parent_thread_id=thread.thread_id, execution_id=execution_id)
+        model_info = page.executions[0].model
+        assert model_info is not None
+        assert (model_info.name, model_info.identity, model_info.thinking) == ("Main", "openai:gpt-5", "High")
         finish.set()
         with fail_after(10):
             await child_done.wait()

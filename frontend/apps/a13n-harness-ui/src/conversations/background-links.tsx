@@ -43,30 +43,50 @@ export function useNoticeLabel() {
     );
   };
 }
-export function ExecutionNoticeLinks({ text }: { text: string }) {
-  return executionHeaders(text).map((header) => (
-    <ExecutionNoticeLink key={header.id} header={header} />
+export function ExecutionNoticeLinks({
+  text,
+  executionIds,
+}: {
+  text: string;
+  executionIds?: unknown;
+}) {
+  const headers = executionHeaders(text);
+  const refs = headers.length
+    ? headers
+    : Array.isArray(executionIds)
+      ? executionIds
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => ({ id, kind: "Subagent update" }))
+      : [];
+  return refs.map(({ id, kind }) => (
+    <ExecutionNoticeLink
+      key={id}
+      id={id}
+      childNotice={kind.startsWith("Subagent")}
+    />
   ));
 }
 function ExecutionNoticeLink({
-  header,
+  id,
+  childNotice,
 }: {
-  header: ReturnType<typeof executionHeaders>[number];
+  id: string;
+  childNotice: boolean;
 }) {
   const bg = useBackground();
   const { client } = useTransport();
-  const local = bg.resolve(header.id);
+  const local = bg.resolve(id);
   // Earlier segments of a resumed child are absent from the latest-per-child
   // list, so look them up by execution ID.
   const lookup = useQuery({
-    queryKey: ["thread", bg.threadId, "child-review", header.id],
-    enabled: !local && !bg.loading && header.kind.startsWith("Subagent"),
+    queryKey: ["thread", bg.threadId, "child-review", id],
+    enabled: !local && !bg.loading && childNotice,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/children", {
           params: {
             path: { thread_id: bg.threadId },
-            query: { execution_id: header.id },
+            query: { execution_id: id },
           },
           signal,
         }),
