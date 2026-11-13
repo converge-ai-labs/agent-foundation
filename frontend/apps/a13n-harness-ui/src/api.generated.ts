@@ -4869,10 +4869,6 @@ export interface components {
         ContextItemUsage: {
             /** Characters */
             characters: number;
-            /** Occurrences */
-            occurrences?: number | null;
-            /** Distinct Versions */
-            distinct_versions?: number | null;
             /** Calls */
             calls?: number | null;
             /** Argument Characters */
