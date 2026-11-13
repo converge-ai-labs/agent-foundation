@@ -513,7 +513,7 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
   expect(screen.getByRole("button", { name: "About Sidekick" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "About subagents" })).toBeTruthy();
   expect(
-    screen.queryByRole("combobox", { name: "Models for created subagents" }),
+    screen.queryByRole("group", { name: "Models for created subagents" }),
   ).toBeNull();
   await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
   await user.click(await screen.findByRole("option", { name: "Coordinator" }));
@@ -521,12 +521,6 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
   await user.click(await screen.findByRole("option", { name: "Alternate" }));
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
-  );
-  await user.click(
-    screen.getByRole("combobox", { name: "Models for created subagents" }),
-  );
-  await user.click(
-    await screen.findByRole("option", { name: "Custom selection" }),
   );
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
   const limit = screen.getByRole("spinbutton", {

@@ -1060,6 +1060,13 @@
 .selectionOption > span {
   min-width: 0;
 }
+.modelSelection {
+  padding-bottom: 8px;
+}
+/* Options keep their hover padding while checkboxes align with row text. */
+.modelSelectionList {
+  margin-inline: -8px;
+}
 /* Unknown route: a centered state, like other empty states. */
 .notFound {
   display: flex;

@@ -9,6 +9,7 @@ import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
+import { ModelSelectionField } from "./model-selection";
 import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
@@ -133,21 +134,23 @@ export function ResourceFields({
       options={[{ value: "", label: emptyLabel }, ...options]}
     />
   );
-  const list = (
-    label: string,
-    path: string[],
-    options: { value: string; label: string }[],
-  ) => {
-    const raw = document.toJS() as Record<string, unknown>;
-    let selected: unknown = raw;
+  const strings = (path: string[]) => {
+    let selected: unknown = document.toJS();
     for (const key of path)
       selected =
         typeof selected === "object" && selected !== null
           ? (selected as Record<string, unknown>)[key]
           : undefined;
-    const values = Array.isArray(selected)
+    return Array.isArray(selected)
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
+  };
+  const list = (
+    label: string,
+    path: string[],
+    options: { value: string; label: string }[],
+  ) => {
+    const values = strings(path);
     return (
       <SelectionField
         key={path.join(".")}
@@ -449,18 +452,19 @@ export function ResourceFields({
                 />
               </SettingsRow>
               {get(["subagents", "dynamic", "enabled"]) === true && (
-                <div>
-                  {list(
-                    t("Models for created subagents"),
-                    ["subagents", "dynamic", "allowed_models"],
-                    models,
+                <ModelSelectionField
+                  label={t("Models for created subagents")}
+                  description={t(
+                    "The agent can choose from these. With none selected, subagents use the main agent's model.",
                   )}
-                  <p className={layout.groupHint}>
-                    {t(
-                      "An empty list uses the main agent's model. Explicit model choices must be in this list.",
-                    )}
-                  </p>
-                </div>
+                  models={selectors.data?.models ?? []}
+                  value={
+                    strings(["subagents", "dynamic", "allowed_models"]) ?? []
+                  }
+                  onChange={(value) =>
+                    set(["subagents", "dynamic", "allowed_models"], value)
+                  }
+                />
               )}
               <SettingsRow
                 label={t("Maximum running subagents")}
