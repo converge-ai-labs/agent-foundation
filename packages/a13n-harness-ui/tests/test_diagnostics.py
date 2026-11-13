@@ -207,3 +207,52 @@ async def test_event_loop_report_accepts_future_task_and_bounds_context(tmp_path
     assert len(details["task_name"]) == 256
     assert len(details["creation_frames"]) == 32
     assert details["task_done"] is True
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("chain", ["explicit", "implicit", "suppressed"])
+async def test_report_retains_primary_and_secondary_harness_failures(tmp_path: Path, monkeypatch, chain: str) -> None:
+    from a13n_harness import AbstractHarnessPlugin, AgentSpec, HarnessBuilder
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    primary = ValueError("primary execution failure")
+    root = LookupError("private root detail")
+    secondary = OSError("private cleanup detail")
+
+    class FailingPlugin(AbstractHarnessPlugin):
+        plugin_id = "failure"
+
+        async def for_run(self, context):
+            async def close():
+                raise secondary
+
+            context._register_run_cleanup("test.cleanup", close)
+            return self
+
+        async def wrap_run(self, exchange, call_next):
+            try:
+                raise root
+            except LookupError:
+                if chain == "explicit":
+                    raise primary from root
+                if chain == "suppressed":
+                    raise primary from None
+                raise primary  # noqa: B904 - Exercise implicit exception chaining.
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, plugins=(FailingPlugin(),))
+    with pytest.raises(ValueError) as caught:
+        await executable.run("start")
+    assert caught.value is primary
+    feedback = exception_feedback(caught.value, thread_id=None, phase="test")
+    report = json.loads(next(tmp_path.glob("a13n-harness-ui-error-*.json")).read_text())
+    errors = [item["error"] for item in report["exceptions"]]
+    assert errors.count("ValueError: primary execution failure") == 1
+    assert errors.count("OSError: private cleanup detail") == 1
+    assert errors.count("LookupError: private root detail") == (0 if chain == "suppressed" else 1)
+    assert all(
+        item["frames"]
+        for item in report["exceptions"]
+        if item["error"] in {"ValueError: primary execution failure", "OSError: private cleanup detail"}
+    )
+    assert "private root detail" not in feedback
+    assert "private cleanup detail" not in feedback

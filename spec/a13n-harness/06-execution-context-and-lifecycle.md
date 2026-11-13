@@ -269,6 +269,8 @@ On normal completion, plugin wrappers unwind before the logical terminal fence. 
 
 Each wrapper owns its ordinary async `finally` cleanup. Resource cleanup continues after an individual close failure and collects secondary causes. A plugin or cleanup failure after a valid candidate raises `RunCleanupError` with that candidate and no terminal event. External cancellation takes precedence and receives cleanup failures as notes.
 
+A supervised task failure already delivered during execution or iteration is not a new cleanup failure. Context exit does not re-deliver a settled terminal cleanup failure that iteration already delivered; new errors and cancellation retain their own precedence.
+
 ## Invariants
 
 01. One public Harness `run_id`, context, entered Environment aggregate and facade, plugin graph, and usage accumulator span the complete logical Run.

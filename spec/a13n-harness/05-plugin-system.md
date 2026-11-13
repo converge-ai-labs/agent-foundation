@@ -401,7 +401,7 @@ The inner path returns one result candidate. Each returned result boundary valid
 
 On normal completion, async wrappers unwind inner-to-outer, including their `finally` blocks. The Harness then drains accepted events through the terminal Environment fence and closes remaining run resources before publishing `HarnessRunResultEvent`. Plugin and native cleanup occurs in the task that entered the async scopes. External cancellation remains pending across cleanup even if cleanup code suppresses an injected `CancelledError`.
 
-If middleware or cleanup fails after a valid candidate exists, `RunCleanupError.outcome` retains that nearest immutable candidate and no terminal event is published. If no candidate exists, the original error propagates after cleanup.
+If middleware or cleanup fails after a valid candidate exists, `RunCleanupError.outcome` retains that nearest immutable candidate and no terminal event is published. If no candidate exists, the original error propagates after cleanup. Independent cleanup failures remain available through a `RunCleanupError` in its exception chain, which also retains the original cause or unsuppressed context.
 
 ## State and Continuation
 

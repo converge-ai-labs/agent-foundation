@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, Self, cast
@@ -16,6 +17,7 @@ from anyio import BrokenResourceError, CancelScope, ClosedResourceError, EndOfSt
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
 from mcp import MCPError
+from mcp.types import CONNECTION_CLOSED
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP as NativeMCP
@@ -384,7 +386,48 @@ class InitializationRetryClient(Client[ClientTransport]):
 
     Ready business requests retain upstream semantics and are never replayed by
     this wrapper. Each attempt retains the native client's initialization timeout.
+    A delivered session failure is not delivered again during teardown.
     """
+
+    _reported_session_error: tuple[asyncio.Task[None], BaseException] | None = None
+
+    async def _await_with_session_monitoring[T](self, coro: Coroutine[Any, Any, T]) -> T:
+        task = self._session_state.session_task
+        try:
+            return await super()._await_with_session_monitoring(coro)
+        except Exception as exc:
+            closed = (
+                isinstance(exc, MCPError)
+                and exc.error.code == CONNECTION_CLOSED
+                and exc.error.message == "Connection closed"
+            )
+            if task is not None:
+                if closed and not task.done():
+                    # The SDK can wake requests before the failed session finishes
+                    # unwinding. Observe its cause without cancelling it, closing
+                    # borrowed contexts, or waiting beyond native cleanup policy.
+                    await asyncio.wait({task}, timeout=self._disconnect_timeout)
+                if task.done() and not task.cancelled():
+                    failure = task.exception()
+                    if failure is not None and (closed or failure is exc):
+                        self._reported_session_error = (task, failure)
+                        if failure is not exc:
+                            raise failure from exc
+            raise
+
+    async def _disconnect(self, force: bool = False) -> None:
+        task = self._session_state.session_task
+        try:
+            await super()._disconnect(force=force)
+        except Exception as exc:
+            reported = self._reported_session_error
+            # Native disconnect re-awaits the same task. Only its already
+            # delivered failure is redundant; new/unobserved close errors remain.
+            if reported is None or reported[0] is not task or reported[1] is not exc:
+                raise
+        finally:
+            if self._session_state.session_task is None:
+                self._reported_session_error = None
 
     async def __aenter__(self) -> Self:
         for attempt in range(3):
