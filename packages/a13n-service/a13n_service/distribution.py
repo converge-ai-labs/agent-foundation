@@ -135,6 +135,7 @@ from a13n_service.runs.memories.organization_tables import OrganizationRow as Me
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.space_routes import router as space_execution_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
+from a13n_service.runs.object_store import ThreadObjectCleaner
 from a13n_service.runs.provider_routes import router as provider_deletion_router
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
@@ -152,6 +153,7 @@ from a13n_service.runs.tables import (
     RunRow,
     SessionRow,
     ThreadCodeActRow,
+    ThreadObjectRow,
     ThreadRow,
     ToolExecutionRow,
     UsageRecordRow,
@@ -310,6 +312,10 @@ def _recover_connection_operations(runtime: Runtime) -> Sweep:
     )
 
 
+def _clean_thread_objects(runtime: Runtime) -> Sweep:
+    return Sweep(name="clean_thread_objects", every=60, run=ThreadObjectCleaner(runtime), timeout=60)
+
+
 def _reconcile_compactions(runtime: Runtime) -> Sweep:
     return Sweep(
         name="reconcile_compactions",
@@ -439,6 +445,7 @@ OSS = Distribution(
         OrganizationProgressRow,
         MemoryOrganizationRow,
         ThreadRow,
+        ThreadObjectRow,
         ThreadCodeActRow,
         ToolExecutionRow,
         EnvironmentRow,
@@ -508,6 +515,7 @@ OSS = Distribution(
         organization_sweep,
         _expire_leases,
         _reconcile_compactions,
+        _clean_thread_objects,
         _reconcile_tool_executions,
         _prune_tool_results,
         desktop_control_sweep,

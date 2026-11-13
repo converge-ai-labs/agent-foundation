@@ -1939,6 +1939,8 @@ class HarnessUiApp:
 
     async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
         """Permanently remove an idle conversation and its subagent history."""
+        from a13n_harness_ui.object_store import ThreadObjectStore
+
         deleted: tuple[str, ...] | None = None
         async with self._operation():
             async with self._root_runs.require_inactive(thread_id):
@@ -1958,6 +1960,7 @@ class HarnessUiApp:
                         if self._browsers is not None:
                             self._browsers.handback.suppress(removed)
                         await self._thread_files.remove(removed)
+                        await ThreadObjectStore(self._store.layout.root, removed).clear()
                     await self._retire_mcp_owners()
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
                 assert deleted is not None
@@ -2440,6 +2443,7 @@ class HarnessUiApp:
         for kind, prune in (
             ("draft", self._prune_drafts),
             ("scratch", self._prune_scratch),
+            ("object_library", self._prune_object_library),
             ("compaction", self._prune_compactions),
             ("checkpoint", self._store.checkpoints.prune),
             ("tool_execution", self._store.tool_executions.prune),
@@ -2450,6 +2454,14 @@ class HarnessUiApp:
                 get_logger(__name__).warning(
                     "Storage pruning failed", extra={"kind": kind, "error_type": type(exc).__name__}
                 )
+
+    async def _prune_object_library(self) -> None:
+        from a13n_harness_ui.object_store import prune
+
+        async def exists(thread_id: str) -> bool:
+            return await self._store.threads.get(thread_id) is not None
+
+        await prune(self._store.layout.root, self._settings.storage.object_store, exists=exists)
 
     async def _prune_compactions(self) -> None:
         if self._compaction is not None:

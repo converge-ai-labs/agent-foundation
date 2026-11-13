@@ -41,7 +41,7 @@ from a13n_harness_ui.environment_bindings import (
 )
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.mcp_apps.origins import origin
-from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
+from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit, ObjectStoreSettings
 from a13n_harness_ui.subagents import BuiltinSubagentName
 
 MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
@@ -109,6 +109,7 @@ class BackgroundCompactionConfiguration(BackgroundCompactionPolicy, Configuratio
 
 
 class ProcessConfiguration(ConfigurationModel):
+    object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
     terminal_update_check: bool = True
@@ -759,6 +760,13 @@ class McpServerResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    object_ref_tools: dict[McpToolName, bool] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Object Reference Transport rules by original tool name; '*' matches any characters. "
+        "Exact names win, then more literal characters, with false winning equally specific patterns. "
+        "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+    )
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 

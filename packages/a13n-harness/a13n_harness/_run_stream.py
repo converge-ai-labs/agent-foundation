@@ -653,6 +653,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             ),
             browser_backend=bindings.browser_backend,
             web=bindings.web,
+            object_store=bindings.object_store,
             document_converter=bindings.document_converter,
             file_media_understanding=bindings.file_media_understanding,
             skill_selection=bindings.skill_selection,

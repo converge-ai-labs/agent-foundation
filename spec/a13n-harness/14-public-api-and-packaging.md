@@ -177,6 +177,7 @@ class RunBindings:
     web: WebBinding | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
+    object_store: ObjectStore | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     tool_execution: ToolExecutionRuntime | None = None
@@ -206,6 +207,7 @@ class RunBindings:
         web: WebBinding | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
+        object_store: ObjectStore | None = None,
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
         tool_execution: ToolExecutionRuntime | None = None,
@@ -221,6 +223,8 @@ class RunBindings:
 `AgentIdentityRef` accepts fixed `issuer` and `subject` values plus arbitrary non-blank string claims supplied as keyword arguments. Its immutable `claims` view, `get_claim()`, and `require_claim()` are the public generic access surface; `user_id` and `agent_id` are conventional claim keys rather than fixed fields. Claim order does not affect identity equality. Claims contain no credential and are not restored from `HarnessState`.
 
 `RunBindings` values are fresh trusted inputs for one logical Harness Run. `deferred_tools_supported` selects Host support rather than deriving it from lineage. Built-in inline execution explicitly disables deferred tools under the [child execution contract](11-delegation-and-subagents.md#host-owned-deferred-support). Collection and metadata values are copied into immutable views. Thread identity remains State-owned: a trusted Host selects it through `HarnessState.new(thread_id=...)` or derives a distinct branch through `HarnessState.fork(thread_id=...)`, never through fresh bindings. Ordinary callers supply `EnvironmentSource` or `EnvironmentMount` objects through explicit `run()`/`stream()` arguments; a fixed-target connector can be wrapped as a source. Advanced Hosts can instead supply a fresh runtime through `RunBindings.environment`; Environment Run Extensions enter through that runtime's `extensions` argument, as defined by [Environment Integration](08-environment-integration.md#explicit-host-runtime-construction). Async subagent mode and its stable `SubagentOperator` remain definition-selected by `SubagentCapability`; the operator receives only an immutable authorized plan and detached parent correlation. Run-local shell observations requires no operator and accepts no process collaborator through bindings. `observation` is the optional bounded `HarnessObservationContext` projected only onto the logical-run span under the [Observation contract](19-observation-model.md#attribute-model); it is distinct from arbitrary model-facing or integration metadata. `RunBindings.embedded()` creates an embedded identity and optional advanced integrations; when a Run supplies neither Environment source inputs nor an explicit runtime, normalization creates an empty bound facade and exposes no Environment tools. `toolset_instructions` is the optional runtime override for the Harness `AgentSpec.toolset_instructions` default; it controls only Toolset-owned instructions as defined by [Context and Working State](09-context-and-memory.md#toolset-instruction-enablement). `model_resolver` is the explicit run-scoped model-selection seam. It accepts an async callable conforming structurally to `RunModelResolver`; no subclass or registration is required. The callable resolves a logical string to a native Model or raises, and when absent the thin resolver calls Harness `infer_model()` with the builder's optional gateway Provider factory. `model_context` is the optional fresh Host wrapper around this run's model-context projection chain defined by [Context and Working State](09-context-and-memory.md#model-context-projection-contract).
+
+The specialized `a13n_harness.objects` module exposes the `ObjectStore` protocol, `ObjectInfo` and `ObjectStoreError`. `RunBindings.object_store` is the current-run scoped Host dependency consumed by `ObjectStoreCapability`; [Object Store](24-object-store.md) owns retention and reference transport.
 
 The specialized `a13n_harness.model_calls` module exposes:
 

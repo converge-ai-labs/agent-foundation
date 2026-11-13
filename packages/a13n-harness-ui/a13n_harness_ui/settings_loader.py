@@ -96,7 +96,9 @@ async def load_harness_ui_settings(
         empty_harness_ui_configuration().document.process if configuration is None else configuration.document.process
     )
     settings = HarnessUiSettings(
-        storage=StorageSettings(data_root=resolved_data_root, max_object_bytes=process.max_object_bytes),
+        storage=StorageSettings(
+            data_root=resolved_data_root, max_object_bytes=process.max_object_bytes, object_store=process.object_store
+        ),
         log_level=process.log_level,
         log_format=process.log_format,
         pricing_auto_update=process.pricing_auto_update,
