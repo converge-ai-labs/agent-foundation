@@ -28,7 +28,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
-from a13n_harness.mcp_startup import UnavailableMCPToolset
+from a13n_harness.mcp import UnavailableMCPToolset
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,

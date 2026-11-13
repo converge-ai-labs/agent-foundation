@@ -152,7 +152,7 @@ async def test_agent_yaml_shell_allowlist_reaches_a_real_run(tmp_path: Path, mon
 @pytest.mark.parametrize("selection", [None, (), ("work",)])
 @pytest.mark.parametrize("missing", ["work", "unknown"])
 async def test_skipped_mcp_inventory_preserves_callable_allowlist(selection, missing):
-    from a13n_harness.mcp_startup import UnavailableMCPToolset
+    from a13n_harness.mcp import UnavailableMCPToolset
 
     model = TestModel()
     agent = Agent(

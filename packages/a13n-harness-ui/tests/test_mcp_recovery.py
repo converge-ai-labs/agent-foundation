@@ -6,8 +6,8 @@ import json
 import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
-from a13n_harness import mcp_startup as client_module
-from a13n_harness.mcp_startup import InitializingClient
+from a13n_harness import mcp as client_module
+from a13n_harness.mcp import InitializationRetryClient
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.models import McpRemoteTransport
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP, prepare_mcp_transport
@@ -129,7 +129,7 @@ async def test_only_transient_http_initialization_errors_retry(status, protocol,
     )
     async with app.router.lifespan_context(app):
         if transient or (protocol == "auto" and status == 404):
-            async with InitializingClient(transport, mode=protocol, init_timeout=timeout) as client:
+            async with InitializationRetryClient(transport, mode=protocol, init_timeout=timeout) as client:
                 assert client.is_connected() and attempts == 2
                 # An identical status after readiness remains an ordinary tool
                 # failure. It neither retries the effect nor loses the client.
@@ -141,7 +141,7 @@ async def test_only_transient_http_initialization_errors_retry(status, protocol,
                 assert delays == ([1] if transient else [])
         else:
             with pytest.raises(MCPError):
-                async with InitializingClient(transport, mode=protocol, init_timeout=timeout):
+                async with InitializationRetryClient(transport, mode=protocol, init_timeout=timeout):
                     pytest.fail("entry must fail")
             # Auto negotiation can probe discovery then legacy initialize, but
             # authentication/configuration failure does not retry client entry.
@@ -250,7 +250,7 @@ async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
             warnings = [
                 record
                 for record in caplog.records
-                if record.name.endswith("mcp_startup")
+                if record.name.endswith(".mcp")
                 and record.getMessage() == "MCP server skipped for this Run after startup failure"
             ]
             assert len(warnings) == 1 and warnings[0].server_id == "mcp-recovering"

@@ -12004,13 +12004,6 @@
         "title": "Logs",
         "type": "object"
       },
-      "MCPOnError": {
-        "enum": [
-          "skip",
-          "raise"
-        ],
-        "type": "string"
-      },
       "ManagedEnvironmentCreate": {
         "additionalProperties": false,
         "description": "A workspace-managed sandbox reserved from a template, for threads to mount; maintenance creates it.",
@@ -12105,7 +12098,7 @@
             ]
           },
           "on_error": {
-            "$ref": "#/components/schemas/MCPOnError",
+            "$ref": "#/components/schemas/StartupErrorPolicy",
             "default": "raise"
           },
           "tools": {
@@ -24936,6 +24929,13 @@
         ],
         "title": "SpanSummary",
         "type": "object"
+      },
+      "StartupErrorPolicy": {
+        "enum": [
+          "skip",
+          "raise"
+        ],
+        "type": "string"
       },
       "State": {
         "enum": [

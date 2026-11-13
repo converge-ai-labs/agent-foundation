@@ -30,7 +30,7 @@ from a13n_service.infra.errors import conflict
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.tools import DispatchCheck, ToolDispatch
 from a13n_service.providers.tools.connectors import connector_toolset, list_connector_tools
-from a13n_service.providers.tools.mcp import ClientSource, PrepareClient, mcp_capability, mcp_client
+from a13n_service.providers.tools.mcp import AcquireClient, PrepareClient, mcp_capability, mcp_client
 from a13n_service.resources.connections.access import McpConnection, ResolvedConnection, resolve_connection
 from a13n_service.resources.connections.account import open_account
 from a13n_service.resources.connections.discovery import cache_tools, cached_tools
@@ -110,7 +110,7 @@ async def open_connections(
             prepared: Client[ClientTransport] | None = None
             authentication: McpAuthentication | None = None
 
-            async def prepare() -> ClientSource:
+            async def prepare() -> AcquireClient:
                 nonlocal prepared, authentication
                 async with lock:
                     if authentication is None:

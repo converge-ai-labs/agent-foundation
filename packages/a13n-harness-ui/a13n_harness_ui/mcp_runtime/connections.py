@@ -11,7 +11,7 @@ from datetime import timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
-from a13n_harness.mcp_startup import InitializingClient
+from a13n_harness.mcp import InitializationRetryClient
 from a13n_logging import get_logger
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.progress import ProgressHandler
@@ -46,7 +46,7 @@ class InputHandler(Protocol):
     ) -> ElicitResult[Any]: ...
 
 
-class HostClient(InitializingClient):
+class HostClient(InitializationRetryClient):
     """One dispatch lane and stable Host callbacks for all consumers of a client."""
 
     connection: Connection

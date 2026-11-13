@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal, Self, Unpack
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.http import forward_context_headers_default
-from a13n_harness.mcp_startup import InitializingClient, MCPOnError, MCPStartup, MCPToolsetOpener
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, StartupErrorPolicy, ToolsetFactory
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -104,7 +104,7 @@ class OAuthSettings(BaseModel):
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
-    on_error: MCPOnError = "raise"
+    on_error: StartupErrorPolicy = "raise"
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
@@ -201,7 +201,7 @@ def mcp_client(
 ) -> Client[ClientTransport]:
     """Use the upstream adapter; its transport enters the attempt's configured HTTP client."""
     client = _toolset(url, connection_id, http, timeout=timeout).client
-    client = (AppClient if apps else InitializingClient)(
+    client = (AppClient if apps else InitializationRetryClient)(
         client.transport,
         timeout=timeout,
         init_timeout=timeout,
@@ -244,8 +244,8 @@ class AttemptToolset(AppToolset):
         return await super().__aenter__()
 
 
-type ClientSource = Callable[[], Awaitable[Client[ClientTransport]]]
-type PrepareClient = Callable[[], Awaitable[ClientSource]]
+type AcquireClient = Callable[[], Awaitable[Client[ClientTransport]]]
+type PrepareClient = Callable[[], Awaitable[AcquireClient]]
 
 
 def mcp_capability(
@@ -255,18 +255,18 @@ def mcp_capability(
     tools: tuple[str, ...] | None,
     check: DispatchCheck,
     capture: Capture | None = None,
-    on_error: MCPOnError = "raise",
-) -> MCPStartup:
+    on_error: StartupErrorPolicy = "raise",
+) -> MCPServer:
     """Fresh native projections borrow one entered client from the worker attempt.
 
     Filtering precedes the dispatch check's catalog bound. No human input handler
     is advertised without a durable Service response channel.
     """
 
-    async def prepare(_ctx: RunContext[AgentContext]) -> MCPToolsetOpener:
+    async def prepare(_ctx: RunContext[AgentContext]) -> ToolsetFactory:
         acquire = await prepare_client()
 
-        async def open_toolset() -> MCPToolset[AgentContext]:
+        async def create_toolset() -> MCPToolset[AgentContext]:
             native = AttemptToolset(
                 await acquire(),
                 id=connection_id,
@@ -283,7 +283,7 @@ def mcp_capability(
             native.capture = capture
             return native
 
-        return open_toolset
+        return create_toolset
 
     def project(native: MCPToolset[AgentContext]) -> MCP[AgentContext]:
         listed: AbstractToolset[AgentContext] = native
@@ -292,4 +292,4 @@ def mcp_capability(
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
         return AppMCP(id=connection_id, local=DispatchToolset(listed, connection_id, None, check), defer_loading=False)
 
-    return MCPStartup(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)
+    return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)

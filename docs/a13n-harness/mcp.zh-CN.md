@@ -116,29 +116,29 @@ agent_spec = AgentSpec.from_dict(
 
 ## 隔离本地 MCP 启动失败
 
-原生 `MCP` 保留上游的失败行为。需要有界初始化重试和按 Run 跳过服务器时，用 Python 构造 `MCPStartup`。默认是 `on_error="raise"`；只有 Agent 不依赖该服务器也能继续执行时，才选择 `skip`。
+原生 `MCP` 保留上游的失败行为。需要有界初始化重试和按 Run 跳过服务器时，用 Python 构造 Harness 的 `MCPServer`。默认是 `on_error="raise"`；只有 Agent 不依赖该服务器也能继续执行时，才选择 `skip`。
 
 以下构造片段使用第一个示例中的进程内 `server`：
 
 ```python
-from a13n_harness.mcp_startup import InitializingClient, MCPStartup
+from a13n_harness.mcp import InitializationRetryClient, MCPServer
 from pydantic_ai.mcp import MCPToolset
 
 
 async def prepare(ctx):
     # Resolve Host authority and credentials here, before startup isolation.
-    async def open_toolset():
-        return MCPToolset(InitializingClient(server), id="calculator")
+    async def create_toolset():
+        return MCPToolset(InitializationRetryClient(server), id="calculator")
 
-    return open_toolset
+    return create_toolset
 
 
-optional_calculator = MCPStartup(
+optional_calculator = MCPServer(
     id="calculator", prepare=prepare, on_error="skip"
 )
 ```
 
-通过 builder 的 `capabilities=` 或 `RunBindings.embedded(capabilities=(optional_calculator,))` 传入该能力。`prepare` 每个逻辑 Run 执行一次，返回异步 opener；即使使用 `skip`，准备阶段错误也会传播。`InitializingClient` 对暂时性初始化失败最多尝试三次，间隔为可取消的 1 秒和 2 秒。远程 HTTP transport 应安装共享的 `raise_initialization_status` 响应 hook，使暂时性初始化状态码在 SDK 错误转换后仍可识别。
+通过 builder 的 `capabilities=` 或 `RunBindings.embedded(capabilities=(optional_calculator,))` 传入该能力。`prepare` 每个逻辑 Run 执行一次，返回异步 Toolset 工厂；即使使用 `skip`，准备阶段错误也会传播。`InitializationRetryClient` 对暂时性初始化失败最多尝试三次，间隔为可取消的 1 秒和 2 秒。远程 HTTP transport 应安装共享的 `raise_initialization_status` 响应 hook，使暂时性初始化状态码在 SDK 错误转换后仍可识别。
 
 使用 `skip` 时，启动失败的服务器在该 Run 中不提供工具，并向模型提供安全的不可用提示，延迟 ToolSearch 也能看到。该决定在内部模型恢复尝试间保持不变；后续 Run 可以重试。成功进入的 Toolset 保持到 Run 清理；可选的 `project` 回调可以将其包装为带 Host 过滤或 Apps hook 的原生 `MCP`，不改变所有权。成功进入后的工具发现和业务错误不会被此机制跳过或重试。Provider 原生 MCP 不受影响。
 

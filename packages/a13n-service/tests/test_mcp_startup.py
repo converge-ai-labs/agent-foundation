@@ -6,7 +6,7 @@ import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
-from a13n_harness.mcp_startup import InitializingClient
+from a13n_harness.mcp import InitializationRetryClient
 from a13n_service.providers.tools.mcp import McpConfig, mcp_capability, mcp_client
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from mcp import MCPError
@@ -25,7 +25,7 @@ def backoff(monkeypatch):
     async def sleep(seconds):
         delays.append(seconds)
 
-    monkeypatch.setattr("a13n_harness.mcp_startup.sleep", sleep)
+    monkeypatch.setattr("a13n_harness.mcp.sleep", sleep)
     return delays
 
 
@@ -57,7 +57,7 @@ async def test_service_client_retries_only_initialization(apps, backoff):
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(peer)) as http:
         client = mcp_client("https://mcp.example.test/mcp", "con_one", http, timeout=5, apps=apps)
-        assert isinstance(client, InitializingClient)
+        assert isinstance(client, InitializationRetryClient)
         async with client:
             # Direct SDK calls still need the Service's dispatch identity.
             from a13n_service.providers.tools import ToolDispatch

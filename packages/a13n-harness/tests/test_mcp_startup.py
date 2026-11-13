@@ -3,8 +3,8 @@
 import asyncio
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, mcp_startup
-from a13n_harness.mcp_startup import InitializingClient, MCPStartup
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, mcp
+from a13n_harness.mcp import InitializationRetryClient, MCPServer
 from fastmcp import Client, FastMCP
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models.function import FunctionModel
@@ -29,8 +29,8 @@ async def test_bounded_initialization_retry_and_cleanup(failures, monkeypatch):
         delays.append(delay)
 
     monkeypatch.setattr(Client, "_negotiate", negotiate)
-    monkeypatch.setattr(mcp_startup, "sleep", backoff)
-    client = InitializingClient(FastMCP("fixture"))
+    monkeypatch.setattr(mcp, "sleep", backoff)
+    client = InitializationRetryClient(FastMCP("fixture"))
     if failures == 3:
         with pytest.raises(RuntimeError, match="Failed to initialize"):
             async with client:
@@ -57,8 +57,8 @@ async def test_cancellation_during_backoff_does_not_retry(monkeypatch):
         await asyncio.Event().wait()
 
     monkeypatch.setattr(Client, "__aenter__", enter)
-    monkeypatch.setattr(mcp_startup, "sleep", backoff)
-    task = asyncio.create_task(InitializingClient(FastMCP("fixture")).__aenter__())
+    monkeypatch.setattr(mcp, "sleep", backoff)
+    task = asyncio.create_task(InitializationRetryClient(FastMCP("fixture")).__aenter__())
     await backing_off.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -78,18 +78,18 @@ async def test_startup_policy_is_cached_per_run_and_later_run_retries(on_error, 
         return "ready"
 
     async def prepare(ctx):
-        async def open_toolset():
+        async def create_toolset():
             nonlocal openings
             openings += 1
             if not available:
                 raise ValueError("private-server-response")
-            client = InitializingClient(server)
+            client = InitializationRetryClient(server)
             clients.append(client)
             return MCPToolset(client, id="recovering")
 
-        return open_toolset
+        return create_toolset
 
-    class CheckedStartup(MCPStartup):
+    class CheckedStartup(MCPServer):
         async def for_run(self, ctx):
             first = await super().for_run(ctx)
             assert await super().for_run(ctx) is first
@@ -102,10 +102,10 @@ async def test_startup_policy_is_cached_per_run_and_later_run_retries(on_error, 
         return "healthy"
 
     async def prepare_healthy(ctx):
-        async def open_toolset():
-            return MCPToolset(InitializingClient(healthy), id="healthy")
+        async def create_toolset():
+            return MCPToolset(InitializationRetryClient(healthy), id="healthy")
 
-        return open_toolset
+        return create_toolset
 
     async def stream(messages, info):
         inventories.append({tool.name for tool in info.function_tools})
@@ -119,7 +119,7 @@ async def test_startup_policy_is_cached_per_run_and_later_run_retries(on_error, 
         model=FunctionModel(stream_function=stream),
         capabilities=(
             CheckedStartup(id="recovering", prepare=prepare, **selected),
-            MCPStartup(id="healthy", prepare=prepare_healthy),
+            MCPServer(id="healthy", prepare=prepare_healthy),
         ),
     )
     if on_error != "skip":
@@ -130,7 +130,7 @@ async def test_startup_policy_is_cached_per_run_and_later_run_retries(on_error, 
         assert (await agent.run("hello", bindings=RunBindings.embedded())).output_or_raise() == "continued"
         assert inventories == [{"healthy_tool"}]
         assert "recovering is unavailable" in prompts[0]
-        warnings = [record for record in caplog.records if record.name.endswith("mcp_startup")]
+        warnings = [record for record in caplog.records if record.name.endswith(".mcp")]
         assert len(warnings) == 1 and warnings[0].server_id == "recovering"
         assert "private-server-response" not in str(prompts) + warnings[0].getMessage()
     assert openings == 1
@@ -149,7 +149,7 @@ async def test_preparation_errors_are_never_skipped():
         AgentSpec(),
         output_type=str,
         model=FunctionModel(lambda messages, info: "unused"),
-        capabilities=(MCPStartup(id="denied", prepare=prepare, on_error="skip"),),
+        capabilities=(MCPServer(id="denied", prepare=prepare, on_error="skip"),),
     )
     with pytest.raises(PermissionError, match="authority refused"):
         await agent.run("hello", bindings=RunBindings.embedded())
@@ -165,17 +165,17 @@ async def test_ready_business_error_does_not_replay():
         calls += 1
         raise TimeoutError("effect may already have happened")
 
-    async with InitializingClient(server) as client:
+    async with InitializationRetryClient(server) as client:
         result = await client.call_tool_mcp("effect", {})
     assert result.is_error and calls == 1
 
 
 async def test_startup_is_an_explicit_run_binding():
     async def prepare(ctx):
-        async def open_toolset():
+        async def create_toolset():
             raise ValueError("server unavailable")
 
-        return open_toolset
+        return create_toolset
 
     async def stream(messages, info):
         yield "continued"
@@ -183,7 +183,7 @@ async def test_startup_is_an_explicit_run_binding():
     agent = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
     result = await agent.run(
         "hello",
-        bindings=RunBindings.embedded(capabilities=(MCPStartup(id="optional", prepare=prepare, on_error="skip"),)),
+        bindings=RunBindings.embedded(capabilities=(MCPServer(id="optional", prepare=prepare, on_error="skip"),)),
     )
     assert result.output_or_raise() == "continued"
 
@@ -201,10 +201,10 @@ async def test_default_projection_enforces_selected_tool_ceiling(tools):
         return "unselected"
 
     async def prepare(ctx):
-        async def open_toolset():
-            return MCPToolset(InitializingClient(server), id="selection")
+        async def create_toolset():
+            return MCPToolset(InitializationRetryClient(server), id="selection")
 
-        return open_toolset
+        return create_toolset
 
     async def model(messages, info):
         expected = {"selected", "unselected"} if tools is None else set(tools)
@@ -215,19 +215,19 @@ async def test_default_projection_enforces_selected_tool_ceiling(tools):
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(MCPStartup(id="selection", prepare=prepare, tools=tools),),
+        capabilities=(MCPServer(id="selection", prepare=prepare, tools=tools),),
     )
     assert (await executable.run("go", bindings=RunBindings.embedded())).output_or_raise() == "done"
 
 
 async def test_project_failure_propagates_and_cleans_up_entered_toolset():
-    client = InitializingClient(FastMCP("projection"))
+    client = InitializationRetryClient(FastMCP("projection"))
 
     async def prepare(ctx):
-        async def open_toolset():
+        async def create_toolset():
             return MCPToolset(client, id="projection")
 
-        return open_toolset
+        return create_toolset
 
     def project(toolset):
         assert client.is_connected()
@@ -237,7 +237,7 @@ async def test_project_failure_propagates_and_cleans_up_entered_toolset():
         AgentSpec(),
         output_type=str,
         model=FunctionModel(lambda messages, info: "unused"),
-        capabilities=(MCPStartup(id="projection", prepare=prepare, project=project, on_error="skip"),),
+        capabilities=(MCPServer(id="projection", prepare=prepare, project=project, on_error="skip"),),
     )
     with pytest.raises(ValueError, match="Host projection failed"):
         await executable.run("go", bindings=RunBindings.embedded())

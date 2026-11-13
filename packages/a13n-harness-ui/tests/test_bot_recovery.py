@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from a13n_harness import mcp_startup as client_module
+from a13n_harness import mcp as client_module
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BotSubmit
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver

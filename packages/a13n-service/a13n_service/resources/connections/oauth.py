@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import anyio
 import httpx2
-from a13n_harness.mcp_startup import raise_initialization_status
+from a13n_harness.mcp import raise_initialization_status
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from mcp.shared.auth import OAuthToken
 from sqlalchemy.ext.asyncio import AsyncSession

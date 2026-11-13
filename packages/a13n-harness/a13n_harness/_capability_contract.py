@@ -67,7 +67,7 @@ from a13n_harness.environment.dynamic import (
 )
 from a13n_harness.errors import DefinitionError
 from a13n_harness.filters.integrity import MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID, MessageIntegrityFilterCapability
-from a13n_harness.mcp_startup import MCPStartup
+from a13n_harness.mcp import MCPServer
 from a13n_harness.model_context import MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID, ModelContextCoordinatorCapability
 from a13n_harness.models.request_headers import MODEL_REQUEST_HEADERS_CAPABILITY_ID, ModelRequestHeadersCapability
 from a13n_harness.models.structured_output import (
@@ -124,7 +124,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
 }
 _POLYMORPHIC_BUILT_TYPES = (ToolExecutionBoundaryCapability, ToolSurfaceCapability, AbstractModelCostCapability)
 _RESERVED_IDS = frozenset((*_BUILT_OWNERS, *_DEFINITION_OWNERS, INVOCATION_POLICY_CAPABILITY_ID))
-_RUN_TYPES = (MCP, MCPStartup, InvocationPolicyCapability)
+_RUN_TYPES = (MCP, MCPServer, InvocationPolicyCapability)
 
 # Source admission has a narrower type guard than built ownership. Lifecycle is
 # builder-owned and checked at build time; the other excluded types retain ID guards.

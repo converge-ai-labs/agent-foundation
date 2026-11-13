@@ -15,7 +15,7 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import RunError
 from a13n_harness.http import outbound_tls_verify
-from a13n_harness.mcp_startup import InitializingClient, MCPStartup, MCPToolsetOpener, raise_initialization_status
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, ToolsetFactory, raise_initialization_status
 from anyio import to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
@@ -42,7 +42,7 @@ from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnectio
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
-class HarnessUiMCP(MCPStartup):
+class HarnessUiMCP(MCPServer):
     """Inert definition capability that creates one MCP client per logical Run."""
 
     def __init__(
@@ -73,7 +73,7 @@ class HarnessUiMCP(MCPStartup):
             tools=recipe.tools,
         )
 
-    async def _prepare_toolset(self, ctx: RunContext[AgentContext]) -> MCPToolsetOpener:
+    async def _prepare_toolset(self, ctx: RunContext[AgentContext]) -> ToolsetFactory:
         client_transport, effective_recipe, init_timeout = await prepare_mcp_transport(
             self._recipe,
             self._configuration_root,
@@ -139,7 +139,7 @@ class HarnessUiMCP(MCPStartup):
             ctx.deps._register_run_cleanup(cache_id, connection.close)
             await connection.start()
             return HostToolset(connection)
-        client = InitializingClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+        client = InitializationRetryClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
         return MCPToolset[AgentContext](client, id=self._recipe.server_id)
 
 
