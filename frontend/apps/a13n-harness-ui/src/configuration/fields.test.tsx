@@ -50,7 +50,26 @@ vi.mock("../transport/context", () => ({
   useSources: () => ({ data: { sources: [] }, isPending: false }),
   useSelectors: () => ({
     data: {
-      agents: [],
+      agents: [
+        {
+          agent_id: "agent-default",
+          name: "Default assistant",
+          model_id: "model-primary",
+        },
+        {
+          agent_id: "agent-coordinator",
+          name: "Coordinator",
+          model_id: "model-alternate",
+        },
+      ],
+      models: [
+        { model_id: "model-primary", name: "Primary", route: "openai:primary" },
+        {
+          model_id: "model-alternate",
+          name: "Alternate",
+          route: "openai:alternate",
+        },
+      ],
       environments: [],
       harness_plugins: [],
       mcp_servers: [],
@@ -86,14 +105,16 @@ function renderFields(initial: string) {
   );
 }
 
-it("configures Bot's model, custom instructions and hourly heartbeat without choosing an agent", async () => {
+it("configures Bot's Agent and Model defaults, custom instructions and hourly heartbeat", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);
   expect(screen.queryByRole("combobox", { name: "Bot model" })).toBeNull();
   expect(screen.getByTestId("source").textContent).toBe(initial);
   fireEvent.click(screen.getByRole("switch", { name: "Bot" }));
   expect(screen.getByRole("combobox", { name: "Bot model" })).toBeTruthy();
-  expect(screen.queryByRole("combobox", { name: "Bot agent" })).toBeNull();
+  expect(
+    screen.getByRole("combobox", { name: "Bot agent" }).textContent,
+  ).toContain("Default (built-in settings)");
   expect(
     screen.getByRole("combobox", { name: "Check in every" }).textContent,
   ).toContain("1 hour");
@@ -486,4 +507,51 @@ it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () =>
   expect(
     parse(screen.getByTestId("source").textContent!).webui.bot.interval_seconds,
   ).toBe(150);
+});
+
+it("persists independent Bot selections and updates the inherited Model without clearing an override", async () => {
+  const initial =
+    'schema_version: "1"\ndefaults:\n  agent: agent-default\nwebui:\n  bot:\n    enabled: true\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  const agent = screen.getByRole("combobox", { name: "Bot agent" });
+  const model = screen.getByRole("combobox", { name: "Bot model" });
+  expect(agent.textContent).toContain("Default (Default assistant)");
+  expect(model.textContent).toContain("Default (Primary)");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  await user.click(agent);
+  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
+  expect(model.textContent).toContain("Default (Alternate)");
+  let document = parse(screen.getByTestId("source").textContent!);
+  expect(document.webui.bot.agent).toBe("agent-coordinator");
+  expect(document.webui.bot.model).toBeUndefined();
+  await user.click(model);
+  await user.click(await screen.findByRole("option", { name: "Primary" }));
+  await user.click(agent);
+  await user.click(
+    await screen.findByRole("option", { name: "Default (Default assistant)" }),
+  );
+  document = parse(screen.getByTestId("source").textContent!);
+  expect(document.webui.bot.agent).toBeNull();
+  expect(document.webui.bot.model).toBe("model-primary");
+  await user.click(model);
+  await user.click(
+    await screen.findByRole("option", { name: "Default (Primary)" }),
+  );
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui.bot.model,
+  ).toBeNull();
+});
+
+it("keeps unavailable Bot references visible without changing the source", () => {
+  const initial =
+    'schema_version: "1"\nwebui:\n  bot:\n    enabled: true\n    agent: agent-missing\n    model: model-missing\n';
+  renderFields(initial);
+  expect(
+    screen.getByRole("combobox", { name: "Bot agent" }).textContent,
+  ).toContain("agent-missing (unavailable)");
+  expect(
+    screen.getByRole("combobox", { name: "Bot model" }).textContent,
+  ).toContain("model-missing (unavailable)");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
 });

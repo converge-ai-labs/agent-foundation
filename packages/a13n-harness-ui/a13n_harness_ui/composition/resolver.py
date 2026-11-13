@@ -617,12 +617,12 @@ class AgentCompositionResolver:
         model_id = source.bot_model_id
         if model_id is None:
             raise CompositionError("Select a Model in Bot settings.", code="bot_model_required")
-        # Reuse the default Agent's execution policy, not its conversational role.
-        # A standalone Bot Model remains usable without a configured default Agent.
-        default = source.document.defaults.agent
+        # Reuse the selected Agent's execution policy, not its conversational role.
+        # A standalone Bot Model remains usable without a configured Agent.
+        agent_id = source.bot_agent_id
         agent = (
-            source.agents[default]
-            if default is not None
+            source.agents[agent_id]
+            if agent_id is not None
             else AgentResource(schema_version="1", kind="agent", id="agent-bot", name="Bot")
         )
         environment = next(
@@ -668,6 +668,7 @@ class AgentCompositionResolver:
                 "source_kind": "bot",
                 "source_id": "bot",
                 "roster_name": "bot",
+                "base_agent_id": agent_id,
                 "system_prompt": (PACKAGE_SYSTEM_PROMPT, BOT_INSTRUCTIONS),
                 # Bot keeps clarification in ordinary chat rather than suspending
                 # its coordination Run for structured user questions.

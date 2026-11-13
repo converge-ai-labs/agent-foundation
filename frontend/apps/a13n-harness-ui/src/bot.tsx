@@ -16,12 +16,14 @@ import { useTransport } from "./transport/context";
 import { ErrorNotice } from "./shell/ui";
 import type { Profile } from "./shell/presence";
 import { Conversation } from "./conversations/conversation";
-import { Composer, useDraft } from "./conversations/composer";
-import { PublishedTranscript } from "./conversations/transcript";
+import {
+  Composer,
+  useDraft,
+  waitForSynchronization,
+} from "./conversations/composer";
 import { RunActivity } from "./conversations/run-activity";
-import { orderedInput } from "./conversations/inline-attachments";
-import { useLiveThread } from "./conversations/live-threads";
-import { botConversation, botConversationError } from "./bot-conversation";
+import type { PublishedMessage } from "./conversations/transcript";
+import { botConversationError } from "./bot-conversation";
 import { useDebug } from "./shell/debug";
 import { useResults } from "./conversations/results";
 import row from "./shell/navigation-row.module.css";
@@ -60,9 +62,8 @@ export function BotNavigation() {
 }
 
 type BotSubmission = {
-  command: Schema<"BotSubmit">;
+  command: Schema<"BotSubmitRequest">;
   message: Schema<"BotMessage">;
-  original: string;
   phase: "pending" | "unknown" | "rejected";
 };
 
@@ -72,7 +73,11 @@ function useBotComposer() {
   const results = useResults();
   const { data } = useBot();
   const draft = useDraft(BOT_THREAD_ID);
-  const text = draft.doc.getText("text").toString();
+  const unacknowledgedEdits = draft.hasUnacknowledgedEdits;
+  const preparation = useRef<AbortController | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [preparationError, setPreparationError] = useState<unknown>();
+  useEffect(() => () => preparation.current?.abort(), []);
   // The ref is also a synchronous duplicate-click latch. Recovery retains the
   // original command across navigation; observation never replays it.
   const current = useRef<BotSubmission | null>(null);
@@ -141,45 +146,64 @@ function useBotComposer() {
     }
   }, [data, submission, send.reset]);
   useEffect(() => {
-    if (!text && !submission) return;
+    if (
+      !unacknowledgedEdits &&
+      submission?.phase !== "pending" &&
+      submission?.phase !== "unknown"
+    )
+      return;
     const protect = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", protect);
     return () => window.removeEventListener("beforeunload", protect);
-  }, [text, submission]);
-  const submit = () => {
-    if (current.current) return;
-    const parts = orderedInput(draft.doc);
-    const command: Schema<"BotSubmit"> = {
-      input_id: crypto.randomUUID(),
-      text: parts.filter((part) => typeof part === "string").join(""),
-      parts,
-    };
-    const value: BotSubmission = {
-      command,
-      original: text,
-      phase: "pending",
-      message: {
-        message_id: `user-${command.input_id}`,
-        role: "user",
-        text: command.text ?? "",
-        created_at: new Date().toISOString(),
-        parts: parts.map((part) =>
-          typeof part === "string"
-            ? part
-            : queries.getQueryData<Schema<"ThreadAttachment">>([
-                "thread",
-                BOT_THREAD_ID,
-                "attachment",
-                part.attachment_id,
-              ])!,
-        ),
-      },
-    };
-    update(value);
-    const input = draft.doc.getText("text");
-    input.delete(0, input.length);
-    draft.notify();
-    send.mutate(value);
+  }, [unacknowledgedEdits, submission?.phase]);
+  const submit = async () => {
+    if (current.current || preparation.current) return;
+    const controller = new AbortController();
+    preparation.current = controller;
+    setPreparing(true);
+    setPreparationError(undefined);
+    try {
+      await waitForSynchronization(draft, controller.signal);
+      const captured = draft.capture();
+      const { parts, snapshot } = captured;
+      captured.doc.destroy();
+      captured.optionsDoc.destroy();
+      const command: Schema<"BotSubmitRequest"> = {
+        input_id: crypto.randomUUID(),
+        text: parts.filter((part) => typeof part === "string").join(""),
+        parts,
+        draft: snapshot,
+      };
+      const value: BotSubmission = {
+        command,
+        phase: "pending",
+        message: {
+          message_id: `user-${command.input_id}`,
+          role: "user",
+          text: command.text ?? "",
+          created_at: new Date().toISOString(),
+          parts: parts.map((part) =>
+            typeof part === "string"
+              ? part
+              : queries.getQueryData<Schema<"ThreadAttachment">>([
+                  "thread",
+                  BOT_THREAD_ID,
+                  "attachment",
+                  part.attachment_id,
+                ])!,
+          ),
+        },
+      };
+      update(value);
+      // Admission consumes captured CRDT identities on the server. Peer edits
+      // and rejected input remain in the ordinary shared draft.
+      send.mutate(value);
+    } catch (error) {
+      setPreparationError(error);
+    } finally {
+      preparation.current = null;
+      setPreparing(false);
+    }
   };
   const retry = () => {
     if (current.current?.phase !== "unknown") return;
@@ -192,13 +216,16 @@ function useBotComposer() {
     update(null);
     send.reset();
   };
-  const edit = () => {
-    if (current.current?.phase !== "rejected" || text) return;
-    draft.doc.getText("text").insert(0, current.current.original);
-    draft.notify();
-    discard();
+  return {
+    send,
+    submission,
+    submit,
+    retry,
+    discard,
+    edit: discard,
+    preparing,
+    preparationError,
   };
-  return { send, submission, submit, retry, discard, edit, canEdit: !text };
 }
 
 const BotComposerContext = createContext<ReturnType<
@@ -277,27 +304,31 @@ export function BotPage({
   const { t } = useTranslation();
   const bot = useBot();
   const data = bot.data;
-  const { display } = useLiveThread(BOT_THREAD_ID);
   const debug = useDebug();
-  const messages = botConversation(data?.messages ?? [], data?.prose ?? [], [
-    ...(display.retainedPresentation?.blocks.values() ?? []),
-    ...display.blocks.values(),
-  ]);
+  const messages = data?.messages ?? [];
   const composer = useContext(BotComposerContext);
   if (!composer) throw new Error("Bot composer is missing.");
-  const { send, submission, submit, retry, discard, edit, canEdit } = composer;
-  const visibleMessages: ((typeof messages)[number] & { status?: string })[] =
-    messages.map((message) => ({
-      ...message,
-      status: data?.inputs?.some(
-        (input) =>
-          input.input_id &&
-          `user-${input.input_id}` === message.message_id &&
-          input.state === "interrupted",
-      )
-        ? t("Didn't finish")
-        : undefined,
-    }));
+  const {
+    send,
+    submission,
+    submit,
+    retry,
+    discard,
+    edit,
+    preparing,
+    preparationError,
+  } = composer;
+  const visibleMessages: PublishedMessage[] = messages.map((message) => ({
+    ...message,
+    status: data?.inputs?.some(
+      (input) =>
+        input.input_id &&
+        `user-${input.input_id}` === message.message_id &&
+        input.state === "interrupted",
+    )
+      ? t("Didn't finish")
+      : undefined,
+  }));
   if (
     submission &&
     !messages.some(
@@ -306,6 +337,7 @@ export function BotPage({
   )
     visibleMessages.push({
       ...submission.message,
+      local: true,
       status:
         submission.phase === "pending"
           ? t("Sending…")
@@ -354,35 +386,30 @@ export function BotPage({
         ready: !!data || bot.isError,
         revision: JSON.stringify([visibleMessages, busy, send.isPending]),
         completionVersion: data?.thread?.completion?.version ?? 0,
-        messages: (
-          <>
-            <PublishedTranscript
-              messages={visibleMessages}
-              threadId={BOT_THREAD_ID}
-            />
-            <RunActivity
-              submission={
-                send.isPending
-                  ? {
-                      kind: "pending",
-                      action: activity.state === "running" ? "steer" : "send",
-                    }
-                  : { kind: "idle" }
-              }
-              activity={
-                busy && !data?.pending_decision
-                  ? operation
-                    ? activity
-                    : { state: "preparing" }
-                  : undefined
-              }
-              operation={
-                data?.pending_decision
-                  ? undefined
-                  : (data?.operation ?? undefined)
-              }
-            />
-          </>
+        messages: visibleMessages,
+        activity: (
+          <RunActivity
+            submission={
+              send.isPending
+                ? {
+                    kind: "pending",
+                    action: activity.state === "running" ? "steer" : "send",
+                  }
+                : { kind: "idle" }
+            }
+            activity={
+              busy && !data?.pending_decision
+                ? operation
+                  ? activity
+                  : { state: "preparing" }
+                : undefined
+            }
+            operation={
+              data?.pending_decision
+                ? undefined
+                : (data?.operation ?? undefined)
+            }
+          />
         ),
         composer: (dictation) =>
           data && !data.enabled ? (
@@ -401,7 +428,6 @@ export function BotPage({
             </div>
           ) : (
             <Composer
-              local
               dictation={dictation}
               threadId={BOT_THREAD_ID}
               activity={activity}
@@ -409,7 +435,7 @@ export function BotPage({
                 !!data?.enabled && !!data.available && !data.pending_decision
               }
               queuedInput={{
-                pending: send.isPending,
+                pending: send.isPending || preparing,
                 locked: !!submission,
                 submit,
               }}
@@ -423,6 +449,7 @@ export function BotPage({
                     error={bot.error}
                     retry={() => void bot.refetch()}
                   />
+                  <ErrorNotice error={preparationError} />
                   {status && <p role="status">{status}</p>}
                   {submission && submission.phase !== "pending" && (
                     <div role="alert" className={styles.recovery}>
@@ -452,12 +479,7 @@ export function BotPage({
                           </>
                         ) : (
                           <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!canEdit}
-                              onClick={edit}
-                            >
+                            <Button variant="outline" size="sm" onClick={edit}>
                               {t("Edit message")}
                             </Button>
                             <Button variant="ghost" size="sm" onClick={discard}>

@@ -126,7 +126,9 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
-  timestamp?: DisplayBlock["timestamp"];
+  publication?: boolean;
+  displayId?: string;
+  timestamp?: number;
   id: string;
   subagentRunId?: string;
   anchor?: string;
@@ -180,8 +182,24 @@ type Row = {
     }
 );
 
-function appendInput(rows: Row[], part: InputPart, fallback: string) {
-  const id = `input:${inputSource(part) ?? fallback}`;
+function timestampMilliseconds(value: DisplayBlock["timestamp"]) {
+  return typeof value === "string" ? Date.parse(value) : value;
+}
+
+function botInputId(metadata?: Record<string, unknown> | null) {
+  const harness = metadata?.harness_ui;
+  if (!harness || typeof harness !== "object") return;
+  const id = (harness as Record<string, unknown>).bot_input_id;
+  return typeof id === "string" ? id : undefined;
+}
+
+function appendInput(
+  rows: Row[],
+  part: InputPart,
+  fallback: string,
+  identity?: string,
+) {
+  const id = `input:${identity ?? inputSource(part) ?? fallback}`;
   const previous = rows.at(-1);
   if (previous?.kind === "input" && previous.id === id)
     previous.parts.push(part);
@@ -210,6 +228,10 @@ function savedRows(
   const rows: Row[] = [];
   for (const entry of entries) {
     const identity = savedEntryIdentity(entry);
+    const botInput =
+      threadId === BOT_THREAD_ID
+        ? entry.parts.map((part) => botInputId(part.metadata)).find(Boolean)
+        : undefined;
     const start = rows.length;
     entry.parts.forEach((part, index) => {
       if (
@@ -242,7 +264,12 @@ function savedRows(
           ],
         });
       } else if (part.kind === "user" || part.kind === "media") {
-        appendInput(rows, part, identity);
+        appendInput(
+          rows,
+          part,
+          identity,
+          botInput ? `bot:${botInput}` : undefined,
+        );
       } else if (groups.has(part)) {
         const tools = groups.get(part);
         if (tools)
@@ -251,6 +278,7 @@ function savedRows(
         rows.push({
           id,
           kind: "assistant",
+          displayId: part.display_id ?? undefined,
           text: part.text ?? "",
           truncated: part.text_truncated,
         });
@@ -288,7 +316,9 @@ function savedRows(
       });
     }
     for (let index = start; index < rows.length; index++) {
-      rows[index].timestamp = entry.timestamp ?? undefined;
+      rows[index].timestamp = timestampMilliseconds(
+        entry.timestamp ?? undefined,
+      );
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
     }
@@ -305,6 +335,13 @@ function liveRows(
 ): Row[] {
   const rows: Row[] = [];
   let previousChild: string | undefined;
+  const botInputs = new Map(
+    blocks.flatMap((block) => {
+      const id =
+        threadId === BOT_THREAD_ID ? botInputId(block.metadata) : undefined;
+      return id && block.inputGroup ? [[block.inputGroup, id] as const] : [];
+    }),
+  );
   for (const block of blocks) {
     if (
       block.diagnostic ||
@@ -354,6 +391,9 @@ function liveRows(
         rows,
         block,
         block.inputGroup ?? (block.inputSource === "user" ? block.id : turn),
+        botInputs.has(block.inputGroup ?? "")
+          ? `bot:${botInputs.get(block.inputGroup!)}`
+          : undefined,
       );
       if (block.inputSource === "user" && !block.subagentRunId)
         rows.at(-1)!.turnId = block.inputGroup ?? block.id;
@@ -388,6 +428,7 @@ function liveRows(
       rows.push({
         id: block.id,
         kind: "assistant",
+        displayId: block.id,
         text: block.text,
         live: true,
       });
@@ -407,7 +448,7 @@ function liveRows(
     }
     for (let index = firstRow; index < rows.length; index++) {
       rows[index].subagentRunId = block.subagentRunId;
-      rows[index].timestamp = block.timestamp;
+      rows[index].timestamp = timestampMilliseconds(block.timestamp);
     }
   }
   return rows;
@@ -748,58 +789,100 @@ export const SavedEntry = memo(function SavedEntry({
   );
 });
 
-// Intentional publications use the same message rendering as native history.
-// Host heartbeat and working output stay in execution history rather than chat.
-export function PublishedTranscript({
-  messages,
-  threadId,
-}: {
-  threadId?: string;
-  messages: {
-    message_id: string;
-    role: "user" | "assistant";
-    text: string;
-    parts?: Schema<"BotMessage">["parts"];
-    status?: string;
-    connector_setups?: Schema<"SetupOffer">[];
-  }[];
-}) {
-  return messages.map((message) => {
-    const row: Row =
+export type PublishedMessage = Schema<"BotMessage"> & {
+  status?: string;
+  local?: boolean;
+};
+
+function publicationRow(message: PublishedMessage): Row {
+  return message.role === "user"
+    ? {
+        id: `input:bot:${message.input_id ?? message.message_id.replace(/^user-/, "")}`,
+        kind: "input",
+        publication: true,
+        status: message.status,
+        timestamp: Date.parse(message.created_at),
+        parts: message.parts?.length
+          ? message.parts.map((part) =>
+              typeof part === "string"
+                ? { kind: "text", text: part }
+                : {
+                    kind: "attachment",
+                    metadata: { harness_ui: { attachment: part } },
+                  },
+            )
+          : [{ kind: "text", text: message.text }],
+      }
+    : {
+        id: message.message_id,
+        kind: "assistant",
+        publication: true,
+        text: message.text,
+        timestamp: Date.parse(message.created_at),
+      };
+}
+
+// Publications fill gaps before native observation and carry proactive messages.
+// Correlated native output owns its ordinary timeline position and folds.
+function publishedRows(
+  native: Row[],
+  messages: PublishedMessage[],
+  hasEarlier: boolean,
+  hasLater: boolean,
+): Row[] {
+  const rows = [...native];
+  const local: Row[] = [];
+  const inputIds = new Set(
+    native.filter((row) => row.kind === "input").map((row) => row.id),
+  );
+  const displayIds = new Set(
+    native.map((row) => row.displayId).filter(Boolean),
+  );
+  const oldest = native.find((row) => row.timestamp !== undefined)?.timestamp;
+  const newest = native.findLast(
+    (row) => row.timestamp !== undefined,
+  )?.timestamp;
+  for (const message of messages) {
+    const row = publicationRow(message);
+    if (
       message.role === "user"
-        ? {
-            id: message.message_id,
-            kind: "input",
-            status: message.status,
-            parts: message.parts?.length
-              ? message.parts.map((part) =>
-                  typeof part === "string"
-                    ? { kind: "text", text: part }
-                    : {
-                        kind: "attachment",
-                        metadata: { harness_ui: { attachment: part } },
-                      },
-                )
-              : [{ kind: "text", text: message.text }],
-          }
-        : { id: message.message_id, kind: "assistant", text: message.text };
-    return (
-      <div key={row.id}>
-        <Rows
-          rows={[row]}
-          threadId={threadId}
-          output={row.kind === "assistant" ? [row] : []}
-        />
-        {message.connector_setups?.map((offer) => (
-          <ConnectorOffer key={offer.offer_id} offer={offer} />
-        ))}
-      </div>
+        ? inputIds.has(row.id)
+        : message.display_ids?.some((id) => displayIds.has(id))
+    )
+      continue;
+    // Publications written before display correlation existed have only their
+    // completed reply text. Limit this compatibility join to legacy final replies.
+    if (
+      message.role === "assistant" &&
+      !message.display_ids?.length &&
+      message.message_id.startsWith("reply-") &&
+      native.some(
+        (item) => item.kind === "assistant" && item.text === message.text,
+      )
+    )
+      continue;
+    // Local commands have no server timestamp yet. Keep their recovery rows
+    // after observed work rather than ordering them by a skewed browser clock.
+    if (message.local) {
+      if (!hasLater) local.push(row);
+      continue;
+    }
+    if (hasEarlier && (oldest === undefined || row.timestamp! < oldest))
+      continue;
+    if (hasLater && (newest === undefined || row.timestamp! > newest)) continue;
+    const next = rows.findIndex(
+      (item) => item.timestamp !== undefined && item.timestamp > row.timestamp!,
     );
-  });
+    rows.splice(next < 0 ? rows.length : next, 0, row);
+  }
+  return [...rows, ...local];
 }
 
 export function ConversationTranscript({
   connectorOffers = [],
+  publications = [],
+  hasEarlier = false,
+  hasLater = false,
   entries,
   blocks,
   localInputs,
@@ -816,6 +899,9 @@ export function ConversationTranscript({
   running = false,
 }: {
   connectorOffers?: Schema<"SetupOffer">[];
+  publications?: PublishedMessage[];
+  hasEarlier?: boolean;
+  hasLater?: boolean;
   terminalTurn?: { id: string; time: string; notice?: ReactNode };
   running?: boolean;
   currentFailureRunId?: string | null;
@@ -879,7 +965,11 @@ export function ConversationTranscript({
       <CurrentFailureRun value={currentFailureRunId}>
         <TurnRows
           connectorOffers={connectorOffers}
-          rows={rows}
+          rows={
+            publications.length
+              ? publishedRows(rows, publications, hasEarlier, hasLater)
+              : rows
+          }
           entries={entries}
           turns={turns}
           localInputs={localInputs}
@@ -1010,7 +1100,9 @@ function TurnRows({
     <>
       {groups.map((group, index) => (
         <Fragment key={group.presentationKey}>
-          {group.id === "ungrouped" && !pending ? (
+          {group.id === "ungrouped" &&
+          !pending &&
+          threadId !== BOT_THREAD_ID ? (
             <Rows
               key={group.presentationKey}
               rows={questionRows(group.rows)}
@@ -1259,7 +1351,7 @@ function TurnSegments({
   const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&
-    rows.every((row) => row.position !== undefined);
+    rows.every((row) => row.position !== undefined || row.publication);
   const stopped = useContext(TerminalTurn);
   const stoppedAt =
     stopped && stopped.id === turn?.turn_id ? stopped.time : undefined;
@@ -1317,7 +1409,7 @@ function TurnSegments({
       !row.subagentRunId &&
       (row.kind === "input" ||
         (row.kind === "assistant" &&
-          (!complete || row.position === outputPosition)) ||
+          (!complete || row.publication || row.position === outputPosition)) ||
         row.kind === "failure" ||
         row.kind === "app" ||
         row.kind === "question")

@@ -40,6 +40,7 @@ async def webui(
     api_key: str | None = "test-only-key",
     host: str = "127.0.0.1",
     share_computer: bool = False,
+    static_root: Path | None = None,
 ):
     path = configuration(tmp_path, origins)
     opened = None
@@ -54,10 +55,30 @@ async def webui(
             opened = app
             yield app
 
-    server = create_webui(factory, api_key=api_key, host=host)
+    server = create_webui(factory, api_key=api_key, host=host, **({"static_root": static_root} if static_root else {}))
     async with server.router.lifespan_context(server):
         assert opened is not None
         yield server, opened
+
+
+async def test_bot_deep_link_serves_the_same_shell_without_swallowing_api_errors(tmp_path: Path) -> None:
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "index.html").write_text('<!doctype html><div id="root"></div>')
+    async with webui(tmp_path, [PUBLIC], static_root=assets) as (server, _):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url=PUBLIC) as client:
+            for path in ("/", "/bot", "/bot?refresh=1", "/threads/thread-example", "/share/share-example"):
+                response = await client.get(path)
+                assert response.status_code == 200, response.text
+                assert response.headers["content-type"].startswith("text/html")
+                assert response.headers["cache-control"] == "no-cache"
+                assert response.text == (assets / "index.html").read_text()
+            assert (await client.get("/api/bot")).status_code == 401
+            assert (await client.get("/api/bot", headers=AUTH)).status_code == 200
+            for path in ("/api/unknown", "/bot/unknown", "/assets/missing.js"):
+                response = await client.get(path, headers=AUTH)
+                assert response.status_code == 404
+                assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_exact_public_origin_authentication_and_same_origin(tmp_path: Path) -> None:

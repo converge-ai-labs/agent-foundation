@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotActions, BotComposerProvider, BotPage, BOT_THREAD_ID } from "./bot";
@@ -17,10 +18,12 @@ import { createTransport, type Schema } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
 import { ThreadDraft } from "./conversations/draft";
+import * as Y from "yjs";
 import { DraftContext, type SourceDraft } from "./configuration/drafts";
 import { readDocument } from "./configuration/documents";
 import { DebugProvider } from "./shell/debug";
 import { recordAudio } from "./conversations/dictation-audio";
+import conversationStyles from "./conversations/conversation.module.css";
 
 vi.mock("./conversations/dictation-audio", () => ({
   recordAudio: vi.fn(),
@@ -66,7 +69,19 @@ vi.mock("./conversations/results", () => ({
 }));
 
 let snapshot: Schema<"BotSnapshot">;
-let requests: Schema<"BotSubmit">[];
+let requests: Schema<"BotSubmitRequest">[];
+let syncDraft: boolean;
+function acknowledgeDraft() {
+  draft.receive({
+    kind: "draft",
+    draft_id: "draft-bot",
+    participant_id: "tester",
+    participants: {},
+    update_base64: btoa(
+      String.fromCharCode(...Y.encodeStateAsUpdate(draft.doc)),
+    ),
+  });
+}
 let decisionResponses: DecisionResponse[];
 const approval: Schema<"ApprovalRequestView"> = {
   kind: "approval",
@@ -80,6 +95,11 @@ let sendGate: Promise<void> | undefined;
 let rejectionStatus: number | undefined;
 let uploadFailure: boolean;
 let botReadGate: Promise<void> | undefined;
+let historyGate: Promise<void> | undefined;
+let historyFailure: boolean;
+let historyPage: Schema<"TranscriptPage">;
+let earlierHistoryFailure: boolean;
+let detailMissing: boolean;
 let rootSource: string;
 let configurationWrites: string[];
 let writable: boolean;
@@ -109,6 +129,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.removeItem("a13n-harness-ui.debug");
   draft = new ThreadDraft();
+  syncDraft = true;
+  vi.spyOn(draft, "connect").mockImplementation(() => {
+    acknowledgeDraft();
+    const acknowledge = () => {
+      if (syncDraft) queueMicrotask(acknowledgeDraft);
+    };
+    draft.doc.on("update", acknowledge);
+    return {
+      presence: vi.fn(),
+      close: () => draft.doc.off("update", acknowledge),
+    };
+  });
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
@@ -148,6 +180,11 @@ beforeEach(() => {
   rejectionStatus = undefined;
   uploadFailure = false;
   botReadGate = undefined;
+  historyGate = undefined;
+  historyFailure = false;
+  historyPage = { entries: [], turns: [], total: 0 };
+  earlierHistoryFailure = false;
+  detailMissing = false;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   vi.stubGlobal(
     "fetch",
@@ -167,6 +204,19 @@ beforeEach(() => {
             { status: rejectionStatus },
           );
         const command = requests.at(-1)!;
+        if (command.draft) {
+          const captured = new Y.Doc({ gc: false });
+          Y.applyUpdate(
+            captured,
+            Uint8Array.from(atob(command.draft.update_base64), (c) =>
+              c.charCodeAt(0),
+            ),
+          );
+          captured.getText("text").delete(0, captured.getText("text").length);
+          Y.applyUpdate(draft.doc, Y.encodeStateAsUpdate(captured));
+          captured.destroy();
+          acknowledgeDraft();
+        }
         snapshot.messages = [
           ...(snapshot.messages ?? []).filter(
             (message) => message.message_id !== `user-${command.input_id}`,
@@ -199,6 +249,18 @@ beforeEach(() => {
       }
       if (path.endsWith(`/attachments/${attachment.attachment_id}/metadata`))
         return Response.json(attachment);
+      if (path.endsWith("/transcript")) {
+        await historyGate;
+        const earlier = new URL(request.url).searchParams.has("cursor");
+        if (historyFailure || (earlier && earlierHistoryFailure))
+          return Response.json(
+            { error: { message: "History unavailable" } },
+            { status: 503 },
+          );
+        return Response.json(
+          earlier ? { entries: [], turns: [], total: 0 } : historyPage,
+        );
+      }
       if (path === "/api/bot" && botReadGate) await botReadGate;
       if (path === "/api/bot/pause") {
         snapshot = {
@@ -209,7 +271,12 @@ beforeEach(() => {
       if (
         path === `/api/threads/${BOT_THREAD_ID}` ||
         path === "/api/threads/thread-ordinary"
-      )
+      ) {
+        if (detailMissing)
+          return Response.json(
+            { error: { message: "Chat not found" } },
+            { status: 404 },
+          );
         return Response.json({
           thread: {
             root_activity: { state: "inactive" },
@@ -224,6 +291,7 @@ beforeEach(() => {
           available_actions: [],
           deferred_requests: snapshot.pending_decision ? [approval] : [],
         });
+      }
       if (path === `/api/threads/${BOT_THREAD_ID}/decisions`) {
         if (request.method === "POST") {
           const body = await request.json();
@@ -246,12 +314,23 @@ beforeEach(() => {
               model_id: "model-primary",
               name: "Assistant",
             },
+            {
+              agent_id: "agent-coordinator",
+              name: "Coordinator",
+              model_id: "model-alternate",
+            },
+            { agent_id: "agent-no-model", name: "No model", model_id: null },
           ],
           models: [
             {
               model_id: "model-primary",
               name: "Primary",
               route: "openai:gpt-5",
+            },
+            {
+              model_id: "model-alternate",
+              name: "Alternate",
+              route: "openai:alternate",
             },
           ],
         });
@@ -359,9 +438,48 @@ function mount(initial = "/bot", withActions = false) {
     </DebugProvider>,
   );
 }
-it("submits to the lazy root without browser registration and clears accepted input", async () => {
+it("waits for shared acknowledgement and clears only captured edits after admission", async () => {
+  syncDraft = false;
+  let release!: () => void;
+  sendGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  typeMessage("Captured input");
+  expect(draft.synchronized).toBe(false);
+  const send = screen.getByRole("button", { name: "Send" });
+  fireEvent.click(send);
+  fireEvent.click(send);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(requests).toHaveLength(0);
+  act(acknowledgeDraft);
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].draft?.draft_id).toBe("draft-bot");
+  expect(requests[0].text).toBe("Captured input");
+  act(() =>
+    draft.doc
+      .getText("text")
+      .insert(draft.doc.getText("text").length, " Peer next input"),
+  );
+  await act(async () => {
+    release();
+  });
+  await waitFor(() =>
+    expect(draft.doc.getText("text").toString()).toBe(" Peer next input"),
+  );
+  expect(draft.connect).toHaveBeenCalledWith(
+    transport,
+    BOT_THREAD_ID,
+    expect.any(Function),
+  );
+});
+
+it("submits to the lazy root through the ordinary shared draft and clears accepted input", async () => {
+  mount();
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Track this");
   await waitFor(() =>
     expect(
@@ -401,7 +519,7 @@ it("submits human input while busy or paused through Bot admission only", async 
 it("retains drafts and uncertain exact commands across navigation without automatic retry", async () => {
   reject = true;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Do once");
   await waitFor(() =>
     expect(
@@ -410,16 +528,16 @@ it("retains drafts and uncertain exact commands across navigation without automa
   );
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
-  expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
-    "Do once",
-  );
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Do once");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByRole("button", { name: "Retry exactly" });
   expect(requests).toHaveLength(1);
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
   expect(
-    screen.getByRole("textbox", { name: "Message" }).closest("[inert]"),
+    screen.getByRole("textbox", { name: "Shared prompt" }).closest("[inert]"),
   ).not.toBeNull();
   reject = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry exactly" }));
@@ -588,7 +706,7 @@ it("keeps used off Bot history read-only with settings recovery and no Notes man
   ];
   mount();
   await screen.findByText("Verified saved result");
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
   expect(
     screen.getByRole("link", { name: "Bot settings" }).getAttribute("href"),
   ).toBe("/settings#bot");
@@ -812,7 +930,7 @@ it("offers Settings recovery and keeps busy chat available without queue warning
   ).toBe(false);
 });
 
-it("redirects the reserved Thread URL to Bot chat without exposing execution history or sharing", async () => {
+it("redirects the reserved Thread URL to Bot chat with native history and without sharing", async () => {
   snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
   snapshot.messages = [
     {
@@ -857,7 +975,7 @@ it("redirects the reserved Thread URL to Bot chat without exposing execution his
       .mock.calls.some(([request]) =>
         new URL((request as Request).url).pathname.endsWith("/transcript"),
       ),
-  ).toBe(false);
+  ).toBe(true);
 });
 
 it("answers Bot decisions inside chat and refreshes the composer without a Thread run", async () => {
@@ -1016,14 +1134,14 @@ it("echoes the input before admission and reconciles it without clearing a newer
     release = resolve;
   });
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Immediate echo");
   const send = screen.getByRole("button", { name: "Send" });
   fireEvent.click(send);
   fireEvent.click(send);
   await waitFor(() => expect(requests).toHaveLength(1));
-  expect(draft.doc.getText("text").toString()).toBe("");
-  expect(screen.getByText("Immediate echo")).toBeTruthy();
+  expect(draft.doc.getText("text").toString()).toBe("Immediate echo");
+  expect(screen.getAllByText("Immediate echo")).toHaveLength(2);
   expect(screen.getAllByText("Sending…").length).toBeGreaterThan(0);
   typeMessage("Next draft");
   await act(async () => {
@@ -1037,7 +1155,7 @@ it("echoes the input before admission and reconciles it without clearing a newer
 it("resolves an unknown submission from a snapshot without replaying it", async () => {
   reject = true;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Observe only");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Not confirmed");
@@ -1052,21 +1170,22 @@ it("resolves an unknown submission from a snapshot without replaying it", async 
   fireEvent.click(screen.getByRole("button", { name: "Check status" }));
   await waitFor(() => expect(screen.queryByText("Not confirmed")).toBeNull());
   expect(screen.queryByRole("button", { name: "Retry exactly" })).toBeNull();
-  expect(screen.getAllByText("Observe only")).toHaveLength(1);
+  expect(screen.getAllByText("Observe only")).toHaveLength(2);
+  expect(draft.doc.getText("text").toString()).toBe("Observe only");
   expect(requests).toHaveLength(1);
   expect(
-    screen.getByRole("textbox", { name: "Message" }).closest("[inert]"),
+    screen.getByRole("textbox", { name: "Shared prompt" }).closest("[inert]"),
   ).toBeNull();
 });
 
 it("keeps a rejected row until explicit edit or discard, then uses a new identity", async () => {
   rejectionStatus = 409;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Correct this");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Not sent");
-  expect(draft.doc.getText("text").toString()).toBe("");
+  expect(draft.doc.getText("text").toString()).toBe("Correct this");
   fireEvent.click(screen.getByRole("button", { name: "Edit message" }));
   expect(draft.doc.getText("text").toString()).toBe("Correct this");
   rejectionStatus = undefined;
@@ -1116,7 +1235,7 @@ it("blocks preparation without sending or losing the draft and offers Stop for a
 it("retains unknown input and exact recovery when interruption precedes user publication", async () => {
   reject = true;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Keep this interrupted input");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Not confirmed");
@@ -1135,7 +1254,7 @@ it("retains unknown input and exact recovery when interruption precedes user pub
   await act(async () => {
     await queries.invalidateQueries({ queryKey: ["bot"] });
   });
-  expect(screen.getByText("Keep this interrupted input")).toBeTruthy();
+  expect(screen.getAllByText("Keep this interrupted input")).toHaveLength(2);
   expect(screen.getByText("Not confirmed")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Retry exactly" })).toBeTruthy();
   expect(requests).toHaveLength(1);
@@ -1145,20 +1264,24 @@ it("retains unknown input and exact recovery when interruption precedes user pub
   expect(requests[1]).toEqual(requests[0]);
 });
 
-it("gates the entire Bot inspection footer with existing Debug without remounting its draft", async () => {
+it("keeps Bot context and cost visible while Debug reveals only left inspection controls", async () => {
   snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   typeMessage("Keep this draft");
-  expect(screen.queryByLabelText("Work inspection")).toBeNull();
+  expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Inspect tools" })).toBeNull();
   expect(
     await screen.findByRole("button", { name: "Voice input" }),
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
   fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
-  expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Inspect tools" }),
+  ).toBeTruthy();
   fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
-  expect(screen.queryByLabelText("Work inspection")).toBeNull();
+  expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Inspect tools" })).toBeNull();
   expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
 });
 
@@ -1221,7 +1344,10 @@ it.each([
     expect(recordAudio).toHaveBeenCalledTimes(1);
     expect(voiceRequests).toHaveLength(1);
     expect(voiceRequests[0]).toMatchObject({ thread_id: BOT_THREAD_ID });
-    expect(!!screen.queryByLabelText("Work inspection")).toBe(debug);
+    expect(screen.getByLabelText("Work inspection")).toBeTruthy();
+    expect(!!screen.queryByRole("button", { name: "Inspect tools" })).toBe(
+      debug,
+    );
   },
 );
 
@@ -1230,7 +1356,7 @@ it("hides only the known Host interruption placeholder outside Debug", async () 
     "Bot processing was interrupted. Review the reported error and working Thread results before continuing.";
   snapshot.state.last_error = placeholder;
   mount();
-  await screen.findByRole("textbox", { name: "Message" });
+  await screen.findByRole("textbox", { name: "Shared prompt" });
   expect(screen.queryByText(placeholder)).toBeNull();
   fireEvent.keyDown(window, { ctrlKey: true, altKey: true, code: "KeyD" });
   expect(await screen.findByText(placeholder)).toBeTruthy();
@@ -1241,4 +1367,234 @@ it("preserves actionable Bot failures outside Debug", async () => {
     "Provider rejected the request: account unavailable";
   mount();
   expect(await screen.findByText(snapshot.state.last_error)).toBeTruthy();
+});
+
+it("enables Bot with an independent Agent and default Model through one source publication", async () => {
+  snapshot.enabled = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Bot agent" }));
+  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
+  expect(
+    screen.getByRole("combobox", { name: "Bot model" }).textContent,
+  ).toContain("Default (Alternate)");
+  await user.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  const document = readDocument(configurationWrites[0])!.toJS();
+  expect(document.webui.bot.agent).toBe("agent-coordinator");
+  expect(document.webui.bot.model).toBeUndefined();
+  expect(configurationWrites).toHaveLength(1);
+  expect(requests).toHaveLength(0);
+});
+
+it("requires a usable selected Agent Model or explicit override and preserves that override on Agent changes", async () => {
+  snapshot.enabled = false;
+  mount();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  await waitFor(() => expect(enable.hasAttribute("disabled")).toBe(false));
+  const user = userEvent.setup();
+  const agent = screen.getByRole("combobox", { name: "Bot agent" });
+  const model = screen.getByRole("combobox", { name: "Bot model" });
+  await user.click(agent);
+  await user.click(await screen.findByRole("option", { name: "No model" }));
+  expect(enable.hasAttribute("disabled")).toBe(true);
+  expect(model.textContent).toContain("Default (no model)");
+  await user.click(model);
+  await user.click(await screen.findByRole("option", { name: "Primary" }));
+  expect(enable.hasAttribute("disabled")).toBe(false);
+  await user.click(agent);
+  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
+  expect(model.textContent).toContain("Primary");
+  await user.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  const document = readDocument(configurationWrites[0])!.toJS();
+  expect(document.webui.bot).toMatchObject({
+    agent: "agent-coordinator",
+    model: "model-primary",
+  });
+});
+
+it("does not enable an unavailable explicit Bot Agent even with a valid explicit Model", async () => {
+  snapshot.enabled = false;
+  rootSource = rootSource.replace(
+    "bot: {enabled: false}",
+    "bot: {enabled: false, agent: agent-missing, model: model-primary}",
+  );
+  mount();
+  expect(
+    (await screen.findByRole("combobox", { name: "Bot agent" })).textContent,
+  ).toContain("agent-missing (unavailable)");
+  expect(
+    screen
+      .getByRole("button", { name: "Turn on Bot" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(configurationWrites).toHaveLength(0);
+});
+
+function unloadPrevented() {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+it("protects unacknowledged Bot edits but allows reload after synchronization", async () => {
+  mount();
+  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(editor.getAttribute("aria-description")).toContain("Shared draft.");
+  syncDraft = false;
+  typeMessage("Not synchronized yet");
+  expect(unloadPrevented()).toBe(true);
+  await act(async () => acknowledgeDraft());
+  expect(unloadPrevented()).toBe(false);
+  // Acknowledged content is retained even when the connection drops.
+  act(() => {
+    draft.status = "Disconnected";
+    draft.notify();
+  });
+  expect(unloadPrevented()).toBe(false);
+});
+
+it("protects pending and unknown delivery, then releases the reload guard on reconciliation", async () => {
+  let release!: () => void;
+  sendGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  reject = true;
+  mount();
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  typeMessage("Keep exact command");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(unloadPrevented()).toBe(true);
+  await act(async () => release());
+  await screen.findByText("Not confirmed");
+  expect(unloadPrevented()).toBe(true);
+  snapshot.messages = [
+    {
+      message_id: `user-${requests[0].input_id}`,
+      role: "user",
+      text: "Keep exact command",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+  fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+  await waitFor(() => expect(screen.queryByText("Not confirmed")).toBeNull());
+  expect(unloadPrevented()).toBe(false);
+});
+
+it("allows reload of a synchronized rejected draft without losing its editable content", async () => {
+  rejectionStatus = 409;
+  mount();
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  typeMessage("Retained after rejection");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Not sent");
+  expect(unloadPrevented()).toBe(false);
+  expect(draft.doc.getText("text").toString()).toBe("Retained after rejection");
+});
+
+function publishFallback() {
+  snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+  snapshot.messages = [
+    {
+      message_id: "proactive-fallback",
+      role: "assistant",
+      text: "Readable publication",
+      created_at: "2026-11-12T00:00:00Z",
+    },
+  ];
+}
+
+it("shows initial Bot history failure and retries without hiding publications", async () => {
+  publishFallback();
+  historyFailure = true;
+  mount();
+  await screen.findByText("History unavailable");
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  historyFailure = false;
+  historyPage = {
+    entries: [
+      {
+        position: 0,
+        message_kind: "response",
+        timestamp: "2026-11-12T00:00:00Z",
+        parts: [{ kind: "assistant", text: "Recovered native work" }],
+      },
+    ],
+    turns: [],
+    total: 1,
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Recovered native work");
+  expect(screen.queryByText("History unavailable")).toBeNull();
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+});
+
+it("shows Bot history loading alongside readable publications", async () => {
+  publishFallback();
+  let release!: () => void;
+  historyGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount();
+  await screen.findByText("Loading messages…");
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(screen.queryByText("Loading messages…")).toBeNull(),
+  );
+});
+
+it("keeps Bot next-page failure on its pagination retry surface", async () => {
+  publishFallback();
+  earlierHistoryFailure = true;
+  historyPage = {
+    entries: [
+      {
+        position: 1,
+        message_kind: "response",
+        timestamp: "2026-11-12T00:00:00Z",
+        parts: [{ kind: "assistant", text: "Loaded native work" }],
+      },
+    ],
+    turns: [],
+    total: 2,
+    next_cursor: "older",
+  };
+  mount();
+  await screen.findByText("Readable publication");
+  await waitFor(() =>
+    expect(
+      queries.getQueryState([
+        "thread",
+        BOT_THREAD_ID,
+        "history",
+        "bot-continuation",
+      ])?.status,
+    ).toBe("success"),
+  );
+  const reader = document.querySelector(`.${conversationStyles.reading}`)!;
+  // Use the real reader's scroll interaction to request the earlier page.
+  fireEvent.scroll(reader);
+  await screen.findByRole("button", { name: "Retry loading" });
+  expect(screen.queryByText("History unavailable")).toBeNull();
+  expect(screen.getByText("Readable publication")).toBeTruthy();
+  earlierHistoryFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Retry loading" })).toBeNull(),
+  );
+});
+
+it("retains readable Bot publications when native detail is temporarily missing", async () => {
+  publishFallback();
+  detailMissing = true;
+  mount();
+  await screen.findByText("Readable publication");
+  await screen.findByText("Chat not found");
+  expect(screen.queryByText("Loading messages…")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
 });

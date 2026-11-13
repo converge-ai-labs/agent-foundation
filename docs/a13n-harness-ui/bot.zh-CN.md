@@ -7,7 +7,7 @@ Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，�
 
 ## 启动和配置 Bot
 
-1. 在侧边栏打开 **Bot**。Bot 默认关闭；在页面内选择已有 Model。Bot 使用内置指令，不需要选择 Agent。
+1. 在侧边栏打开 **Bot**。Bot 默认关闭；页面内提供独立的 Agent 和 Model 选择，初始均为 **默认**。Agent 沿用全局默认 Agent，Model 沿用所选 Agent 的 Model。
 2. 按需添加自定义指令，例如偏好的工作协调方式。自定义指令追加到内置指令之外，两者共存，不会替换内置内容。捕获的全局 `AGENTS.md` 指引也会生效。
 3. 点击 **开启 Bot**。首次开启且 Model 可用时，服务器会代发一条可见的预设用户消息，让 Bot 了解并介绍工作区。这会正常调用模型，可能产生费用；你可以立即继续聊天。首次 heartbeat 安排在一个间隔后，无需先发消息。之后可在 **设置 → 常规 → Bot** 中修改。
 
@@ -19,14 +19,15 @@ Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，�
 webui:
   bot:
     enabled: true
-    model: model-coordinator
+    agent: null # 沿用 defaults.agent；填写已有 Agent ID 可选择其他执行设置
+    model: null # 沿用所选 Agent 的 Model；填写已有 Model ID 可独立覆盖
     instructions: "Prefer coordinating work in project Threads."
     heartbeat_enabled: true
     interval_seconds: 3600
     connector_interval_seconds: 60
 ```
 
-Bot 继承全局默认 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。文件工具保持开启，Shell、Computer 和结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`model` 为 null 或省略时沿用默认 Agent 的 Model；填写已有 Model ID 可覆盖它。未配置默认 Agent 时，显式 Bot Model 使用最小内置执行设置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
+Bot 继承所选 Agent 的执行设置：Capability（包括 compaction、handoff）、工具和权限、子 Agent、Plugin 与 MCP 选择。角色指令替换为内置 Bot 策略和可选的 Bot 自定义指令。文件工具保持开启，Shell、Computer 和结构化 `ask_user_question` 保持关闭；澄清通过普通聊天完成。`agent` 为 null 或省略时沿用 `defaults.agent`，填写已有 Agent ID 可选择其他执行基底。`model` 为 null 或省略时沿用所选 Agent 的 Model，填写已有 Model ID 可独立覆盖它。切换 Agent 会保留显式 Model 选择。没有有效 Agent 时，显式 Bot Model 使用最小内置执行设置。Agent 或 Model 引用无效时，配置更新会被拒绝，继续使用之前已接受的配置。没有有效 Model 时无法执行。变更应用于后续 Run，已捕获的 Run 保留原配置。
 
 heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400 秒。自定义指令最多 1,048,576 个字符。编辑文件后，使用 `a13n-harness-ui config validate` 验证。
 
@@ -54,17 +55,17 @@ Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。Bo
 
 ## 消息与决策
 
-上下文、费用、任务等底部信息栏仅在现有 **Debug** 模式显示，普通聊天的信息栏不变。上下文采用已捕获 Run 的 Model 容量和最近一次根请求的 token 数，不是累计用量或下次选择的 Model；容量缺失时显示未知。连接反馈、实际错误和审批仍在普通模式显示；通用 Host 中断提示保留在 Debug 诊断中。
+底部信息栏右侧的上下文和费用始终显示，左侧的任务与执行检查入口在现有 **Debug** 模式显示。普通聊天的信息栏不变。上下文采用已捕获 Run 的 Model 容量和最近一次根请求的 token 数，不是累计用量或下次选择的 Model；容量缺失时显示未知。连接反馈、实际错误和审批仍在普通模式显示；通用 Host 中断提示保留在 Debug 诊断中。
 
 配置语音输入后，可使用 **语音输入**。Bot 复用普通聊天的录音、转写设置和订阅账号选择。停止录音后，最终文本只插入当前草稿一次，不会自动发送。关闭 Debug 时，附件和语音输入仍可用，Bot 工作中也可使用。
 
-Bot 聊天页面显示你的消息、实时流式及刷新后保留的普通助手文本、最终回复，以及有意发布的主动消息。Bot 在耗时工作前简短回应，并提供有意义的进展。聊天隐藏工具调用、推理、子执行和隐藏上下文。中间文本不产生通知；最终回复只显示一次，沿用现有未读和通知机制。
+Bot 聊天页面显示你的消息、助手文本、最终回复，以及有意发布的主动消息。工作日志沿用普通聊天的折叠方式，展示可渲染的推理、工具调用、结果和实时执行进展，刷新后也可查看。注入的隐藏提示和标记为 `display: false` 的内容仍然隐藏。Bot 在耗时工作前简短回应，并提供有意义的进展。工作日志和中间文本不产生通知；最终回复只显示一次，沿用现有未读和通知机制。
 
 内部协调保持安静，只有有意义的结果、阻塞或人类决策才需要对外说明。无需回复时，Bot 调用原生 `finish_silently` 输出工具，成功结束本轮而不发布消息；已经显示的文本仍会保留。实时和已保存的聊天视图隐藏该工具的调用与结果，底层执行历史仍保留供检查。Bot 可以显式发布经过确认的结果、阻塞或问题。
 
 直接在 Bot 聊天中处理待回答的人类决策。Bot 只提供聊天视图，通知入口和旧的 Bot Thread 链接都会打开该聊天。heartbeat 和外部事件无法代答审批。服务器启用相应功能后，现有原生面板选择器提供文件和浏览器；Bot 不另做一套浏览器实现。
 
-文本草稿保留在当前标签页中，刷新可能丢失尚未发送的草稿。提交结果不确定时，保留原命令并使用显式重试。重试沿用相同的输入 ID 和文本，不会再创建一份输入。Bot 空闲时，新消息会立即启动原生 Run；正在运行时，消息会通过原生 immediate steer 送入该确切的 Run，包括由 Heartbeat 或 Connector 启动的 Run。最终文本回复会显示在聊天中。Run 处于准备、取消或过期状态时可能拒绝输入；草稿会保留，可再次发送。拒绝不会将消息排队，也不会启动替代 Run。接受输入不代表完成。
+Bot 使用普通共享输入框：受信任的参与者共同编辑同一份文本和附件选择，沿用在线状态、同步和服务端草稿保存。打开或刷新 `/bot` 会恢复共享草稿，不启动 Run。Send 和 Steer 等待同步后捕获输入，只在接受后清除已捕获的编辑；并发编辑和被拒绝的输入仍保留。提交结果不确定时，保留原命令并使用显式重试。重试沿用相同的输入 ID、有序内容和草稿捕获，不会再创建一份输入。Bot 仍不向限定范围的访客分享开放。Bot 空闲时，新消息会立即启动原生 Run；正在运行时，消息会通过原生 immediate steer 送入该确切的 Run，包括由 Heartbeat 或 Connector 启动的 Run。最终文本回复会显示在聊天中。Run 处于准备、取消或过期状态时可能拒绝输入；草稿会保留，可再次发送。拒绝不会将消息排队，也不会启动替代 Run。接受输入不代表完成。
 
 ## 暂停与恢复
 

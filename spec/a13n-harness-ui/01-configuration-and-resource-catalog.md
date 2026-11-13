@@ -43,7 +43,7 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server selection is automatically unioned with each root and child Agent's generic MCP selection in WebUI, without rewriting Agent resources or sticky Thread selections or overriding tool permissions.
 
-[Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Model, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
+[Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Agent and Model selections, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
 
 [Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
 

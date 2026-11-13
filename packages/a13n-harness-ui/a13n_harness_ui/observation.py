@@ -256,7 +256,11 @@ def _configuration_summary(
         "generation_digest": composition.generation_digest,
         "thread_configuration_version": composition.thread_configuration_version,
         "package_prompt_revision": _configuration_label(composition.package_prompt_revision),
-        "agent": {"id": _configuration_label(node.source_id), "kind": node.source_kind},
+        "agent": {
+            "id": _configuration_label(node.source_id),
+            "kind": node.source_kind,
+            **({"base_agent_id": _configuration_label(node.base_agent_id)} if node.base_agent_id is not None else {}),
+        },
         "model": {
             "id": _configuration_label(node.model.model_id),
             "route": _configuration_label(node.model.route),

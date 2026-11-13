@@ -247,9 +247,10 @@ class McpAppsConfiguration(ConfigurationModel):
 
 
 class BotConfiguration(ConfigurationModel):
-    """Built-in Bot Model, optional instructions and Host scheduling policy."""
+    """Built-in Bot Agent/Model selections, instructions and Host scheduling policy."""
 
     enabled: bool = False
+    agent: ResourceId | None = None
     model: ResourceId | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     heartbeat_enabled: bool = True
@@ -1045,6 +1046,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
+        _require_reference(self.document.webui.bot.agent, self.agents, "webui.bot.agent")
         _require_reference(self.document.webui.bot.model, self.models, "webui.bot.model")
         live = self.document.live
         if live is not None and live.model is not None:
@@ -1167,11 +1169,16 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         return self.subagents[resource_id]
 
     @property
+    def bot_agent_id(self) -> ResourceId | None:
+        """Resolve Bot's execution-policy base within this accepted generation."""
+        return self.document.webui.bot.agent or self.document.defaults.agent
+
+    @property
     def bot_model_id(self) -> ResourceId | None:
-        """Use Bot's Model selection, otherwise the global default Agent's Model only."""
+        """Use Bot's Model override, otherwise the selected Agent's Model."""
         if self.document.webui.bot.model is not None:
             return self.document.webui.bot.model
-        agent_id = self.document.defaults.agent
+        agent_id = self.bot_agent_id
         return None if agent_id is None else self.agents[agent_id].model
 
     @property

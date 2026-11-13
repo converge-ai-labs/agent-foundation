@@ -20,6 +20,7 @@ class CapturedAgentSelection(SurfaceModel):
     name: str
     source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
     source_id: str
+    base_agent_id: str | None = None
     model_id: str
     thinking_summary: str | None = None
     fast: FastState = "default"
@@ -86,6 +87,7 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
             name=root.roster_name,
             source_kind=root.source_kind,
             source_id=root.source_id,
+            base_agent_id=root.base_agent_id,
             model_id=root.model.model_id,
             thinking_summary=summarize_thinking(root.model.route, root.model.settings),
             fast=fast_state(root.model.route, root.model.settings),
