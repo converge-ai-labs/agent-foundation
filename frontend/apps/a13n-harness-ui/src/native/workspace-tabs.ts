@@ -93,6 +93,19 @@ export function workspaceTabs(
     case "open": {
       const existing = state.items.find((tab) => sameTarget(tab, action.tab));
       if (
+        existing?.kind === "background" &&
+        action.tab.kind === "background" &&
+        (action.tab.target.kind === "tasks" ||
+          action.tab.target.kind === "notes")
+      ) {
+        return {
+          items: state.items.map((tab) =>
+            tab.id === existing.id ? { ...action.tab, id: existing.id } : tab,
+          ),
+          active: existing.id,
+        };
+      }
+      if (
         existing &&
         (action.tab.kind === "background" ||
           action.tab.kind === "browser" ||

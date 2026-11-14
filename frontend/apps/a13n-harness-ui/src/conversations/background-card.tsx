@@ -1,3 +1,4 @@
+import { WorkPreview } from "./work-activity";
 import { BackgroundStateIcon } from "./background-state-icon";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Button, ScrollArea } from "a13n-ui";
@@ -122,8 +123,8 @@ export function BackgroundToggle() {
     <Button
       variant="ghost"
       size="sm"
-      aria-label={t("Background work")}
-      title={t("Background work")}
+      aria-label={t("Activity")}
+      tooltip
       aria-expanded={bg.cardOpen}
       aria-controls="background-work-card"
       className={styles.toggle}
@@ -134,7 +135,7 @@ export function BackgroundToggle() {
     </Button>
   );
 }
-export function BackgroundCard() {
+export function BackgroundCard({ showWork = true }: { showWork?: boolean }) {
   const { t } = useTranslation();
   const bg = useBackground();
   if (!bg.cardOpen) return null;
@@ -142,27 +143,33 @@ export function BackgroundCard() {
     <section
       id="background-work-card"
       className={styles.card}
-      aria-label={t("Background work")}
+      aria-label={t("Activity")}
       onKeyDown={(event) => {
         if (event.key === "Escape") bg.setCardOpen(false);
       }}
     >
       <header>
-        <h2>{t("Background work")}</h2>
+        <h2>{t("Activity")}</h2>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={t("Close background work")}
+          aria-label={t("Close activity")}
           onClick={() => bg.setCardOpen(false)}
         >
           <X />
         </Button>
       </header>
-      <BackgroundList />
+      <BackgroundList showWork={showWork} />
     </section>
   );
 }
-export function BackgroundList({ section }: { section?: BackgroundSection }) {
+export function BackgroundList({
+  section,
+  showWork = true,
+}: {
+  section?: BackgroundSection;
+  showWork?: boolean;
+}) {
   const { t } = useTranslation();
   const bg = useBackground();
   const [now, setNow] = useState(Date.now());
@@ -193,7 +200,7 @@ export function BackgroundList({ section }: { section?: BackgroundSection }) {
           {t("Loading background work…")}
         </p>
       )}
-      {!bg.loading && !bg.error && !groups.length && (
+      {!bg.loading && !bg.error && !compact && !groups.length && (
         <p className={styles.empty}>
           {t(compact ? "Nothing is running." : "Nothing has run yet.")}
         </p>
@@ -228,6 +235,7 @@ export function BackgroundList({ section }: { section?: BackgroundSection }) {
           )}
         </section>
       ))}
+      {compact && showWork && <WorkPreview />}
     </ScrollArea>
   );
 }

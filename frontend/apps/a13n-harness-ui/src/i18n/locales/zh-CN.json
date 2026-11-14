@@ -3499,7 +3499,7 @@
   "About Sidekick": "关于 Sidekick",
   "About subagents": "关于子智能体",
   "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.": "Sidekick 会在对话列表中开启独立对话，适合需要单独交流、由你决策或后续跟进的工作。",
-  "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.": "子智能体在当前对话中后台运行，不会出现在对话列表中。可在「后台工作」中查看，结果会自动返回主智能体。",
+  "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.": "子智能体在当前对话中后台运行，不会出现在对话列表中。可在「活动」中查看，结果会自动返回主智能体。",
   "Let the agent create subagents": "允许智能体创建子智能体",
   "Models for created subagents": "所创建子智能体可选的模型",
   "The agent can choose from these. Choose at least one.": "智能体可从中选择。至少选择一个。",

@@ -118,7 +118,13 @@ export function BotWorkNotes() {
   );
 }
 
-export function ThreadBotNote({ threadId }: { threadId: string }) {
+export function ThreadBotNote({
+  threadId,
+  hideEmpty = false,
+}: {
+  threadId: string;
+  hideEmpty?: boolean;
+}) {
   const { t } = useTranslation();
   const thread = useThread(threadId);
   const eligible =
@@ -128,7 +134,8 @@ export function ThreadBotNote({ threadId }: { threadId: string }) {
     thread.data.thread.configuration.agent_source.kind === "agent";
   const note = useBotNote(threadId, eligible);
   const bot = useBot(eligible);
-  if (!eligible) return null;
+  if (!eligible || (hideEmpty && !note.data?.content && !note.error))
+    return null;
   return (
     <section className={styles.own}>
       <div className={styles.ownHeading}>

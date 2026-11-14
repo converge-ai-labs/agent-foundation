@@ -433,7 +433,7 @@ export function ResourceFields({
                   {t("Subagents")}
                   <HelpTip label={t("About subagents")}>
                     {t(
-                      "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
+                      "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.",
                     )}
                   </HelpTip>
                 </span>

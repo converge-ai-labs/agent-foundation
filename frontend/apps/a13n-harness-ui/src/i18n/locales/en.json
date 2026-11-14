@@ -3531,7 +3531,7 @@
   "About Sidekick": "About Sidekick",
   "About subagents": "About subagents",
   "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.": "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
-  "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.": "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Background work. Their results return to the main agent automatically.",
+  "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.": "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.",
   "Let the agent create subagents": "Let the agent create subagents",
   "Models for created subagents": "Models for created subagents",
   "The agent can choose from these. Choose at least one.": "The agent can choose from these. Choose at least one.",

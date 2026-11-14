@@ -107,7 +107,7 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   );
   const setup = harness(GET);
   const view = render(<WorkInspector threadId="root" />, setup);
-  await screen.findByText("Checking output");
+  await screen.findByText("1/2");
   expect(screen.queryByText(/Work observation.*unavailable/)).toBeNull();
   expect(
     screen.getByRole("button", { name: "Inspect tasks" }).textContent,
@@ -172,7 +172,7 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
       ])?.run_id,
     ).toBe("run-two"),
   );
-  expect(screen.getByText("Checking output")).toBeTruthy();
+  expect(screen.queryByText("Checking output")).toBeNull();
 });
 it.each([false, true])(
   "opens overflow views by keyboard and restores focus (guest: %s)",

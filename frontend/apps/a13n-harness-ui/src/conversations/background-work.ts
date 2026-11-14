@@ -10,12 +10,17 @@ import {
 } from "./tool-presentation";
 
 export type BackgroundSection = "subagents" | "tools";
-export const SECTION_LABELS: Record<BackgroundSection, string> = {
+export type WorkSection = "tasks" | "notes";
+export type ActivitySection = BackgroundSection | WorkSection;
+export const SECTION_LABELS: Record<ActivitySection, string> = {
+  tasks: "Tasks",
+  notes: "Notes",
   subagents: "Subagents",
   tools: "Tool calls",
 };
 export type BackgroundTarget = {
-  kind: "child" | "tool" | "process" | BackgroundSection;
+  kind: "child" | "tool" | "process" | ActivitySection;
+  selection?: string;
   id: string;
   threadId: string;
   title: string;
@@ -38,12 +43,15 @@ export function backgroundKey(target: BackgroundTarget) {
   return `${target.kind}:${target.threadId}:${target.id}`;
 }
 export function targetSection(target: BackgroundTarget) {
-  return target.kind === "subagents" || target.kind === "tools"
+  return target.kind === "subagents" ||
+    target.kind === "tools" ||
+    target.kind === "tasks" ||
+    target.kind === "notes"
     ? target.kind
     : undefined;
 }
 export function sectionTarget(
-  section: BackgroundSection,
+  section: ActivitySection,
   threadId: string,
   t: (key: string) => string,
 ): BackgroundTarget {

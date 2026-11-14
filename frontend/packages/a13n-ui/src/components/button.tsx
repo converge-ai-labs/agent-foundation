@@ -64,7 +64,7 @@ export function Button({
   render,
   children,
   loading = false,
-  tooltip = true,
+  tooltip,
   disabled: disabledProp,
   ...props
 }: ButtonProps): React.ReactElement {
@@ -99,20 +99,20 @@ export function Button({
     type: typeValue,
   };
 
+  const label = props["aria-label"];
+  const showTooltip =
+    label &&
+    (tooltip ??
+      (size?.startsWith("icon") && props["aria-haspopup"] !== "menu"));
   const element = useRender({
     defaultTagName: "button",
-    props: mergeProps<"button">(defaultProps, props),
+    props: mergeProps<"button">(
+      defaultProps,
+      showTooltip ? { ...props, title: undefined } : props,
+    ),
     render,
   });
-  // Menu triggers already communicate their action through familiar menu affordances.
-  const label = props["aria-label"];
-  if (
-    !tooltip ||
-    props["aria-haspopup"] === "menu" ||
-    !size?.startsWith("icon") ||
-    !label
-  )
-    return element;
+  if (!showTooltip) return element;
   return (
     <Tooltip
       onOpenChange={(_open, details) => {
@@ -120,8 +120,8 @@ export function Button({
         if (details.reason === "escape-key") details.allowPropagation();
       }}
     >
-      <TooltipTrigger render={element} />
-      <TooltipPopup>{label}</TooltipPopup>
+      <TooltipTrigger delay={120} render={element} />
+      <TooltipPopup>{props.title || label}</TooltipPopup>
     </Tooltip>
   );
 }
