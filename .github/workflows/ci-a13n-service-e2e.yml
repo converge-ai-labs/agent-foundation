@@ -199,8 +199,22 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+      - name: Set up Rust for the native reverse-link journey
+        if: matrix.name == 'other'
+        uses: dtolnay/rust-toolchain@1.96.0
+      - name: Cache native reverse-link build
+        if: matrix.name == 'other'
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: service-e2e-envd
+      - name: Build the checkout daemon for the slow reverse-link journey
+        if: matrix.name == 'other'
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo build --locked --package a13n-envd --no-default-features
       - name: Run every journey but the opt-in hosted ones; an unavailable dependency fails it
         env:
+          A13N_ENVD_TEST_BINARY: ${{ github.workspace }}/target/debug/a13n-envd
           SELECTION: ${{ matrix.selection }}
         run: make service-e2e SERVICE_E2E_ARGS="--require-all -k '$SELECTION' --junitxml=test-results/service-e2e.xml"
       - name: Report collected, executed and skipped journeys

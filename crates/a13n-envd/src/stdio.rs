@@ -177,9 +177,14 @@ where
         }
         Ok(())
     };
+    let mut writer_result = None;
     let outcome = tokio::select! {
         signal = &mut shutdown => signal,
         result = outcome => result,
+        result = &mut writer_task => {
+            writer_result = Some(result);
+            Ok(())
+        }
     };
     carrier.close();
     drop(inbound_data);
@@ -191,12 +196,16 @@ where
     drop(control_tx);
     drop(data_tx);
     drop(carrier);
-    let written = match timeout(drain_timeout, &mut writer_task).await {
-        Ok(result) => result.map_err(io::Error::other)?,
-        Err(_) => {
-            writer_task.abort();
-            Err(response_drain_timeout())
-        }
+    let written = match writer_result {
+        Some(result) => result.map_err(io::Error::other)?,
+        None => match timeout(drain_timeout, &mut writer_task).await {
+            Ok(result) => result.map_err(io::Error::other)?,
+            Err(_) => {
+                writer_task.abort();
+                let _ = writer_task.await;
+                Err(response_drain_timeout())
+            }
+        },
     };
     outcome?;
     if !clean {
@@ -712,6 +721,56 @@ mod tests {
         assert_ne!(opened["result"]["descriptor"]["session_id"], sessions[0]);
         client.shutdown().await.unwrap();
         serving.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn broken_stdout_ends_carrier_with_stdin_still_open() {
+        let config = Config::for_test("env-test");
+        let daemon = Arc::new(Daemon::new(&config).unwrap());
+        let (mut input, server_input) = duplex(64 * 1024);
+        let (server_output, mut output) = duplex(64 * 1024);
+        let mut serving = tokio::spawn(async move {
+            serve_io(
+                server_input,
+                server_output,
+                daemon,
+                &config,
+                Duration::from_millis(100),
+                std::future::pending(),
+            )
+            .await
+        });
+        write_json_frame(
+            &mut input,
+            serde_json::json!({"jsonrpc":"2.0","id":1,
+            "method":"initialize","params":{"client":{"name":"test","version":"1"},
+            "expected_device_id":"env-test"}}),
+        )
+        .await;
+        read_frame(&mut output, 64 * 1024, 64 * 1024)
+            .await
+            .unwrap()
+            .unwrap();
+        drop(output);
+        write_json_frame(
+            &mut input,
+            serde_json::json!({"jsonrpc":"2.0","id":2,
+            "method":"device.describe","params":{}}),
+        )
+        .await;
+        let result = tokio::time::timeout(Duration::from_secs(1), &mut serving).await;
+        if result.is_err() {
+            serving.abort();
+        }
+        assert_eq!(
+            result
+                .expect("writer failure must end carrier without stdin EOF")
+                .unwrap()
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        drop(input);
     }
 
     /// How the peer ends the carrier while it leaves stdout unread.

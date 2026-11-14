@@ -948,7 +948,64 @@ async def test_session_context_shares_live_borrowers_and_restores_after_final_re
         assert len(checkpoints) == 3  # Open, epoch reservation, attached descriptor.
 
 
-@pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach"])
+@pytest.mark.parametrize("outcome", ["complete", "error", "cancel"])
+async def test_final_recovery_release_detaches_without_redundant_keepalive(
+    binary, tmp_path, http_runtime, monkeypatch, outcome
+):
+    from a13n_envd_client import EIPSession
+    from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+    from anyio import CancelScope, sleep
+
+    endpoint = f"http://127.0.0.1:{free_port()}"
+    context = EnvdSessionRecovery()
+    events = []
+    detach = EIPSession.detach
+
+    async def tracked_detach(self):
+        events.append("detach")
+        await detach(self)
+
+    monkeypatch.setattr(EIPSession, "detach", tracked_detach)
+    async with daemon(binary, tmp_path, "http", endpoint.removeprefix("http://")):
+        runtime = http_runtime(endpoint)
+
+        def borrow():
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=context
+            )
+
+        with CancelScope() as cancellation:
+            try:
+                async with borrow() as bound:
+                    session = bound.session
+                    descriptor = session.descriptor
+                    keepalive = session._client.session_keepalive
+
+                    async def tracked_keepalive(params):
+                        events.append("keepalive")
+                        return await keepalive(params)
+
+                    monkeypatch.setattr(session._client, "session_keepalive", tracked_keepalive)
+                    if outcome == "error":
+                        raise ValueError("borrower failed")
+                    if outcome == "cancel":
+                        cancellation.cancel()
+                        await sleep(0)
+                        pytest.fail("the borrower must observe cancellation")
+            except ValueError as error:
+                assert outcome == "error" and str(error) == "borrower failed"
+        assert cancellation.cancelled_caught is (outcome == "cancel")
+        # Detach itself refreshes native idle expiry. A final touch before detach
+        # wastes a second carrier round trip inside the Host's cleanup deadline.
+        assert events == ["detach"]
+        assert session.is_closed and session._users == 0
+        assert context._users == 0 and context._session is None and context._scope is None
+        async with borrow() as restored:
+            assert restored.session.session_id == descriptor.session_id
+            assert restored.session.descriptor.owner_epoch > descriptor.owner_epoch
+
+
+@pytest.mark.parametrize("failure", ["open", "checkpoint", "cancel_checkpoint", "attach", "use"])
 async def test_session_recovery_unwinds_failed_acquisition(binary, tmp_path, http_runtime, monkeypatch, failure):
     from a13n_envd_client import EIPSession, EIPTransportError
     from a13n_harness.environment.session_recovery import EnvdSessionRecovery
@@ -997,7 +1054,14 @@ async def test_session_recovery_unwinds_failed_acquisition(binary, tmp_path, htt
         async def fail(*args, **kwargs):
             raise EIPTransportError("acquisition failed")
 
+        acquire_use = EIPSession._acquire
+
+        def fail_use(self):
+            raise EIPTransportError("use acquisition failed")
+
         failing = True
+        if failure == "use":
+            monkeypatch.setattr(EIPSession, "_acquire", fail_use)
         if failure in {"open", "attach"}:
             monkeypatch.setattr(device, method, fail)
         if failure == "cancel_checkpoint":
@@ -1009,11 +1073,12 @@ async def test_session_recovery_unwinds_failed_acquisition(binary, tmp_path, htt
         else:
             with pytest.raises((EIPTransportError, OSError)):
                 await acquire()
-        expected = ["detach"] if failure in {"checkpoint", "cancel_checkpoint"} else []
+        expected = ["detach"] if failure in {"checkpoint", "cancel_checkpoint", "use"} else []
         assert events == expected
         assert context._scope is None and context._session is None and context._users == 0
         failing = False
         monkeypatch.setattr(device, method, original)
+        monkeypatch.setattr(EIPSession, "_acquire", acquire_use)
         await acquire()
         assert events[len(expected) :] == ["detach"]
 
