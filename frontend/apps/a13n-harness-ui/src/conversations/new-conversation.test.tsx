@@ -2000,7 +2000,9 @@ it.each(["desktop", "mobile"])(
         removeEventListener: vi.fn(),
       }));
     const requests: string[] = [];
-    const steeringParts = previewInput("steer-one", ["Please use plan B"]);
+    // WebUI submissions carry canonical `input_` + 32 hex source IDs.
+    const steeringId = `input_${"5".repeat(32)}`;
+    const steeringParts = previewInput(steeringId, ["Please use plan B"]);
     let failSteps = true;
     const original = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (request) => {
@@ -2137,7 +2139,7 @@ it.each(["desktop", "mobile"])(
       const draft = drafts.get(id)!;
       draft.localInputs = [
         {
-          id: "steer-one",
+          id: steeringId,
           action: "steer",
           state: "accepted",
           parts: steeringParts,
