@@ -5,7 +5,7 @@ import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
 import { ModelsPage } from "../configuration/models";
 import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -19,9 +19,6 @@ import {
   Logo,
   Input,
   ModalFrame,
-  Sheet,
-  SheetPopup,
-  SheetTitle,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -85,7 +82,8 @@ import { UnsentProvider } from "../conversations/unsent";
 import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
-import { WorkbenchSidebar } from "./sidebar";
+import { WorkbenchSidebar, MobileNavigation } from "./sidebar";
+import { fitVisualViewport } from "./visual-viewport";
 import { NotificationSettings } from "./notifications";
 import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 
@@ -146,6 +144,42 @@ function WorkbenchContent({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
   );
+  const shellRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceLeft = useRef<number | null>(null);
+  const workspaceMotion = useRef<Animation | null>(null);
+  const changeSidebar = (collapsed: boolean) => {
+    workspaceLeft.current =
+      workspaceRef.current?.getBoundingClientRect().left ?? null;
+    setSidebarCollapsed(collapsed);
+  };
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    const previous = workspaceLeft.current;
+    workspaceLeft.current = null;
+    workspaceMotion.current?.cancel();
+    if (
+      !workspace ||
+      previous === null ||
+      !workspace.animate ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const distance = previous - workspace.getBoundingClientRect().left;
+    const tokens = getComputedStyle(workspace);
+    workspaceMotion.current = workspace.animate(
+      [
+        { transform: `translateX(${distance}px)` },
+        { transform: "translateX(0)" },
+      ],
+      {
+        duration:
+          parseFloat(tokens.getPropertyValue("--a13n-duration-slow")) || 320,
+        easing:
+          tokens.getPropertyValue("--a13n-ease-sheet").trim() || "ease-out",
+      },
+    );
+  }, [sidebarCollapsed]);
   const collapseButton = useRef<HTMLButtonElement>(null);
   const expandButton = useRef<HTMLButtonElement>(null);
   const [profile, setProfile] = useState<Profile>(() => ({
@@ -178,6 +212,10 @@ function WorkbenchContent({
   );
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
+  const voicePage = location.pathname === "/live";
+  useEffect(() => {
+    if (shellRef.current) return fitVisualViewport(shellRef.current);
+  }, [voicePage]);
   const settingsMode = /^\/(settings|setup)(\/|$)/.test(location.pathname);
   const lastChat = useRef("/");
   const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
@@ -304,7 +342,7 @@ function WorkbenchContent({
               </span>
             </MenuCheckboxItem>
             <MenuSeparator />
-            <MenuItem onClick={forget}>
+            <MenuItem variant="destructive" onClick={forget}>
               <SignOut />
               {t("Log out")}
             </MenuItem>
@@ -318,7 +356,7 @@ function WorkbenchContent({
   );
   if (location.pathname === "/live") return <VoicePage />;
   const content = (
-    <div className={styles.shell}>
+    <div ref={shellRef} className={styles.shell}>
       <SharedPointers
         socket={live.socket}
         presence={live.presence}
@@ -345,7 +383,7 @@ function WorkbenchContent({
               aria-label={t("Collapse navigation")}
               title={t("Collapse navigation")}
               onClick={() => {
-                setSidebarCollapsed(true);
+                changeSidebar(true);
                 requestAnimationFrame(() => expandButton.current?.focus());
               }}
             >
@@ -355,31 +393,24 @@ function WorkbenchContent({
         </header>
         {navigation}
       </WorkbenchSidebar>
-      <Sheet open={menu} onOpenChange={setMenu}>
-        <SheetPopup
-          id="workbench-navigation"
-          finalFocus={() => {
-            if (
-              location.key !== menuLocation.current &&
-              new URLSearchParams(location.search).get("compose") === "1"
-            )
-              return (
-                document.querySelector<HTMLElement>("[data-composer-editor]") ??
-                mobileMenuButton.current
-              );
-            return mobileMenuButton.current;
-          }}
-          side="left"
-          className={styles.mobileNavigation}
-          closeProps={{ "aria-label": t("Close navigation") }}
-        >
-          <header className={styles.mobileNavigationHeader}>
-            <SheetTitle>Harness UI</SheetTitle>
-          </header>
-          {navigation}
-        </SheetPopup>
-      </Sheet>
-      <div className={styles.workspace}>
+      <MobileNavigation
+        open={menu}
+        onOpenChange={setMenu}
+        finalFocus={() => {
+          if (
+            location.key !== menuLocation.current &&
+            new URLSearchParams(location.search).get("compose") === "1"
+          )
+            return (
+              document.querySelector<HTMLElement>("[data-composer-editor]") ??
+              mobileMenuButton.current
+            );
+          return mobileMenuButton.current;
+        }}
+      >
+        {navigation}
+      </MobileNavigation>
+      <div ref={workspaceRef} className={styles.workspace}>
         <main id="main-content" tabIndex={-1} className={styles.main}>
           <div className={styles.workbenchFeedback}>
             {disconnected && <ConnectionNotice retry={live.retrySummary} />}
@@ -429,6 +460,12 @@ function WorkbenchContent({
             />
           </div>
           <NativeWorkspace
+            profileMenu={
+              <MenuItem onClick={openPeople}>
+                <Users />
+                {t("People & profile")}
+              </MenuItem>
+            }
             profile={
               <>
                 <VoiceIndicator />
@@ -443,7 +480,7 @@ function WorkbenchContent({
                       ),
                   )}
                   ownId={live.presence?.participant_id}
-                  threadTitle={t("this page")}
+                  threadTitle={settingsMode ? "" : t("this page")}
                 />
                 {debug.enabled && (
                   <button
@@ -469,7 +506,7 @@ function WorkbenchContent({
                     aria-label={t("Expand navigation")}
                     title={t("Expand navigation")}
                     onClick={() => {
-                      setSidebarCollapsed(false);
+                      changeSidebar(false);
                       requestAnimationFrame(() =>
                         collapseButton.current?.focus(),
                       );
@@ -638,10 +675,16 @@ function WorkbenchContent({
         </main>
       </div>
       <ModalFrame
+        bottomStickOnMobile
         open={peopleOpen}
         onOpenChange={setPeopleOpen}
         title={t("People in this workspace")}
         closeLabel={t("Close")}
+        footer={
+          <Button variant="outline" onClick={() => setPeopleOpen(false)}>
+            {t("Close")}
+          </Button>
+        }
       >
         <div className={styles.stack}>
           <SettingsSection title={t("Your profile")}>
@@ -663,6 +706,8 @@ function WorkbenchContent({
                   <Input
                     aria-label={t("Your display name")}
                     id="workspace-display-name"
+                    autoFocus
+                    onFocus={(event) => event.currentTarget.select()}
                     value={displayName}
                     onChange={(event) => setDisplayName(event.target.value)}
                   />

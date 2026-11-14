@@ -85,6 +85,7 @@ const untranslatedExceptions: Record<string, string[]> = {
   "conversations/markdown-block.tsx": ["mermaid", "text"],
   "mcp-apps/app-card.tsx": ["- MCP App"],
   "setup/subscriptions.tsx": ["Codex", "Grok"],
+  "shell/sidebar.tsx": ["Harness"],
   "shell/startup.tsx": ["Harness"],
   "shell/workbench.tsx": ["Harness UI -", "Harness", "Harness UI"],
   "usage/page.tsx": ["USD -"],

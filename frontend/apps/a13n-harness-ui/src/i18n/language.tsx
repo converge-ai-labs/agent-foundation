@@ -7,6 +7,7 @@ import {
 } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { ChoiceField } from "a13n-ui";
+import { SettingsChoice } from "../shell/settings";
 import styles from "./language.module.css";
 import { i18n } from "./index";
 import {
@@ -55,15 +56,29 @@ function DocumentLanguage() {
   return null;
 }
 
-export function LanguageChoice() {
+export function LanguageChoice({
+  presentation = "field",
+}: {
+  presentation?: "field" | "row" | "compact";
+}) {
   const { t } = useTranslation();
   const context = useContext(PreferenceContext);
   if (!context) throw new Error("LanguageChoice requires LanguageProvider");
   const { preference, select } = context;
+  const Choice = presentation === "row" ? SettingsChoice : ChoiceField;
   return (
-    <div className={styles.choice}>
-      <ChoiceField
+    <div
+      className={
+        presentation === "row"
+          ? styles.row
+          : presentation === "compact"
+            ? styles.compact
+            : styles.choice
+      }
+    >
+      <Choice
         label={t("Display language")}
+        hideLabel={presentation === "compact"}
         value={preference}
         onValueChange={(value) => {
           if (value !== "system" && value !== "en" && value !== "zh-CN") return;

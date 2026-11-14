@@ -447,6 +447,7 @@ function GuestShell({
         </section>
       </div>
       <ModalFrame
+        bottomStickOnMobile
         open={profileOpen}
         onOpenChange={setProfileOpen}
         title={t("Your display name")}

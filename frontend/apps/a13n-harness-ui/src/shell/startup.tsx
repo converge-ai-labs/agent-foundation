@@ -22,10 +22,7 @@ export function Startup({
   const { t } = useTranslation();
   return (
     <main className={shell.shell} aria-busy={connecting}>
-      <aside
-        className={`${shell.sidebar} ${styles.sidebar}`}
-        aria-hidden="true"
-      >
+      <aside className={styles.sidebar} aria-hidden="true">
         <div className={shell.sidebarHeader}>
           <span className={shell.brand}>
             <Logo alt="" width={20} height={20} />

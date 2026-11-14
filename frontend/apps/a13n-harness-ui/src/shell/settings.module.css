@@ -16,7 +16,7 @@
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
   border-radius: var(--harness-radius-panel);
-  padding: 4px var(--harness-group-inset);
+  padding: 0 16px;
 }
 .section
   > [data-slot="settings-section-content"]:not([data-variant="plain"])
@@ -99,7 +99,7 @@
 }
 @media (pointer: coarse) {
   .row {
-    min-height: 44px;
+    min-height: 48px;
   }
 }
 @media (max-width: 600px) {
@@ -108,20 +108,22 @@
     padding-inline: var(--harness-group-inset);
   }
   .row {
-    min-height: 44px;
+    min-height: 48px;
     gap: 4px 12px;
     padding-block: 8px;
   }
-  .row:has([data-slot="input-control"]) {
+  .row:has([data-slot="input-control"]):not(:has(input[type="number"])) {
     display: grid;
     grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
     gap: 8px 16px;
   }
-  .row:has([data-slot="input-control"]) > :first-child {
+  .row:has([data-slot="input-control"]):not(:has(input[type="number"]))
+    > :first-child {
     grid-column: 1;
     grid-row: 1;
   }
-  .row:has([data-slot="input-control"]) > :last-child {
+  .row:has([data-slot="input-control"]):not(:has(input[type="number"]))
+    > :last-child {
     grid-column: 2;
     grid-row: 1;
     max-width: 100%;
@@ -288,5 +290,32 @@
     > span:first-child,
   :global([data-a13n-modal]) .row button[role="combobox"] > span:first-child {
     justify-content: flex-start;
+  }
+}
+
+/* Every row group uses the same quiet inset separators, including fields
+   wrapped by credential/account compositions. */
+.section > [data-slot="settings-section-content"] > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.row:has(input[type="number"]) [data-slot="input-control"] {
+  width: 88px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.row:has(input[type="number"]) input {
+  text-align: right;
+}
+@media (pointer: coarse) {
+  .row [data-slot="input-control"],
+  .row [data-slot="select-trigger"],
+  .row button[role="combobox"] {
+    min-height: 44px;
+  }
+  .row input,
+  .row textarea,
+  .row [data-slot="select-trigger"],
+  .row button[role="combobox"] {
+    font-size: max(16px, var(--a13n-text-body));
   }
 }

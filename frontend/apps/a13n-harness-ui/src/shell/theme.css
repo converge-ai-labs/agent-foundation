@@ -393,13 +393,14 @@
 
 @media (max-width: 600px) {
   [data-a13n-modal] > :is([data-slot="dialog-close"], button[aria-label]) {
-    top: 12px;
+    /* Center the target on the first title line (20px + 24px / 2). */
+    top: calc(32px - var(--harness-control-height) / 2);
     right: 8px;
     width: var(--harness-control-height);
     height: var(--harness-control-height);
   }
   [data-a13n-modal] [data-slot="dialog-header"] {
-    padding: 16px 56px 16px 16px;
+    padding: 20px 56px 16px 16px;
   }
   [data-a13n-modal] [data-slot="dialog-panel"] {
     padding-inline: 16px;
@@ -409,5 +410,102 @@
   }
   [data-a13n-modal] [data-a13n-form-actions] {
     padding-bottom: 16px;
+  }
+}
+
+html,
+body,
+#app {
+  overscroll-behavior: none;
+}
+
+:root {
+  --a13n-dialog-start-scale: 0.96;
+  --a13n-dialog-duration: var(--a13n-duration-base);
+}
+
+/* Select and Combobox each have one painted surface, not nested shadows. */
+[data-slot="select-popup"] > div {
+  border-radius: inherit;
+  box-shadow: none;
+}
+[data-slot="combobox-surface"] {
+  border-radius: var(--harness-radius-panel);
+  box-shadow: var(--elevation-overlay);
+}
+[data-slot="combobox-popup"] {
+  box-shadow: none;
+}
+:is(
+  [data-slot="menu-item"],
+  [data-slot="menu-link-item"],
+  [data-slot="menu-checkbox-item"],
+  [data-slot="menu-radio-item"],
+  [data-slot="menu-sub-trigger"],
+  [data-slot="select-item"],
+  [data-slot="combobox-item"]
+) {
+  border-radius: calc(var(--harness-radius-panel) - 4px);
+}
+@media (pointer: coarse) {
+  :is(
+    [data-slot="menu-item"],
+    [data-slot="menu-link-item"],
+    [data-slot="menu-checkbox-item"],
+    [data-slot="menu-radio-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="select-item"],
+    [data-slot="combobox-item"]
+  ):active {
+    background: var(--a13n-hover);
+  }
+}
+
+/* Harness form dialogs and confirmations share a native bottom-sheet anatomy.
+   This is product-owned: Console keeps its centered, opacity-only dialogs. */
+@media (max-width: 639px) {
+  [data-slot="dialog-viewport"]:has(> [data-a13n-modal]) {
+    inset: var(--visible-top, 0px) 0 auto;
+    height: var(--visible-height, 100dvh);
+    align-items: end;
+    padding: max(16px, env(safe-area-inset-top)) 0 0;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal] {
+    --a13n-dialog-start-scale: 1;
+    width: 100%;
+    max-width: none;
+    max-height: calc(
+      var(--visible-height, 100dvh) - max(16px, env(safe-area-inset-top))
+    );
+    border-radius: 16px 16px 0 0;
+    transform-origin: bottom;
+    transition-property: transform, opacity;
+    transition-duration: var(--a13n-duration-slow);
+    transition-timing-function: var(--a13n-ease-sheet);
+    padding-bottom: var(--keyboard-bottom-inset, env(safe-area-inset-bottom));
+  }
+  [data-slot="dialog-popup"][data-a13n-modal]:is(
+      [data-starting-style],
+      [data-ending-style]
+    ) {
+    transform: translateY(100%);
+    scale: 1;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal][data-ending-style] {
+    transition-duration: var(--a13n-duration-fast);
+    transition-timing-function: var(--a13n-ease-in);
+  }
+  [data-a13n-modal] :is([data-slot="dialog-footer"], [data-a13n-form-actions]) {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  [data-a13n-modal]
+    :is([data-slot="dialog-footer"], [data-a13n-form-actions])
+    > :is(button, a, [data-slot="button"]) {
+    width: 100%;
+    margin-inline: 0;
+    justify-content: center;
   }
 }

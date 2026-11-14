@@ -1,5 +1,12 @@
-.sidebar {
+.sidebarSlot {
   position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  z-index: 30;
+}
+.sidebar {
+  position: absolute;
+  inset: 0 auto 0 0;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
@@ -7,10 +14,11 @@
   flex-direction: column;
   padding: 8px 8px 12px;
   background: var(--sidebar);
+  transition: transform var(--a13n-duration-slow) var(--a13n-ease-sheet);
 }
-
-.sidebar[hidden] {
-  display: none;
+.sidebar[data-collapsed="true"] {
+  transform: translateX(-100%);
+  pointer-events: none;
 }
 
 .resizeHandle {
@@ -54,13 +62,80 @@
 }
 
 @media (max-width: 760px) {
-  .sidebar {
+  .sidebarSlot {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .resizeHandle::before {
+  .resizeHandle::before,
+  .sidebar,
+  .mobileNavigation,
+  .mobileBackdrop {
+    transition: none;
+  }
+}
+
+.mobileNavigation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(300px, calc(100vw - 48px));
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: max(8px, env(safe-area-inset-top)) 8px
+    max(12px, env(safe-area-inset-bottom));
+  background: var(--sidebar);
+  color: var(--a13n-text);
+  box-shadow: 12px 0 40px rgb(0 0 0 / 0.16);
+  transform: translateX(0);
+  transition: transform var(--a13n-duration-slow) var(--a13n-ease-sheet);
+}
+.mobileNavigation[data-starting-style],
+.mobileNavigation[data-ending-style] {
+  transform: translateX(-100%);
+}
+.mobileNavigation[data-ending-style] {
+  transition-duration: var(--a13n-duration-base);
+  transition-timing-function: var(--a13n-ease-in);
+}
+.mobileNavigation[data-nested-dialog-open] {
+  opacity: 0;
+  pointer-events: none;
+}
+.mobileBackdrop {
+  background: rgb(0 0 0 / 0.36);
+  transition: opacity var(--a13n-duration-slow) var(--a13n-ease-sheet);
+}
+.mobileBackdrop[data-ending-style] {
+  transition-duration: var(--a13n-duration-base);
+}
+.mobileNavigation[data-dragging],
+.mobileBackdrop[data-dragging] {
+  transition: none;
+}
+.mobileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding-inline-start: 8px;
+  margin-bottom: 8px;
+  flex: 0 0 auto;
+}
+.mobileBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--a13n-text-body);
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobileNavigation,
+  .mobileBackdrop {
     transition: none;
   }
 }

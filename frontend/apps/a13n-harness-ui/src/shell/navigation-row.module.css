@@ -17,6 +17,8 @@
   text-align: start;
   text-decoration: none;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background-color 120ms ease-out,
     color 120ms ease-out;
@@ -34,6 +36,9 @@
   .row {
     transition: none;
   }
+}
+.row:active {
+  background: var(--a13n-selected);
 }
 .row:focus-visible {
   outline: 2px solid var(--ring);

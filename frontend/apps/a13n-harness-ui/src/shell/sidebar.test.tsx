@@ -8,7 +8,8 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { WorkbenchSidebar } from "./sidebar";
+import { useState } from "react";
+import { WorkbenchSidebar, MobileNavigation } from "./sidebar";
 
 const preference = "a13n-harness-ui.sidebar-width";
 
@@ -51,6 +52,7 @@ beforeEach(() => {
 afterEach(async () => {
   cleanup();
   await i18n.changeLanguage("en");
+  vi.unstubAllGlobals();
 });
 
 it("resizes within bounds, captures the pointer and remembers the released width", () => {
@@ -137,3 +139,73 @@ it.each(["invalid", "Infinity", "", "-200"])(
     expect(fixture().handle.getAttribute("aria-valuenow")).toBe("220");
   },
 );
+
+function touch(target: HTMLElement, type: string, x: number, y = 100) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "touches", {
+    value: type === "touchend" ? [] : [{ clientX: x, clientY: y }],
+  });
+  fireEvent(target, event);
+}
+
+it("opens from the edge, follows the finger and closes with a directional swipe", () => {
+  viewport(390);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  function Drawer() {
+    const [open, setOpen] = useState(false);
+    return (
+      <MobileNavigation
+        open={open}
+        onOpenChange={setOpen}
+        finalFocus={() => null}
+      >
+        Navigation
+      </MobileNavigation>
+    );
+  }
+  render(<Drawer />);
+  touch(document.body, "touchstart", 2);
+  touch(document.body, "touchmove", 202);
+  const dialog = screen.getByRole("dialog", { name: "Harness" });
+  expect(dialog.style.transform).toBe("translateX(-100px)");
+  touch(document.body, "touchend", 202);
+  expect(dialog.style.transform).toBe("");
+  touch(dialog, "touchstart", 250);
+  touch(dialog, "touchmove", 20);
+  touch(dialog, "touchend", 20);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("leaves vertical gestures and nested horizontal readers to native scrolling", () => {
+  viewport(390);
+  const change = vi.fn();
+  render(
+    <MobileNavigation
+      open={false}
+      onOpenChange={change}
+      finalFocus={() => null}
+    >
+      Navigation
+    </MobileNavigation>,
+  );
+  touch(document.body, "touchstart", 2);
+  touch(document.body, "touchmove", 4, 140);
+  touch(document.body, "touchend", 4);
+  expect(change).not.toHaveBeenCalled();
+  const reader = document.createElement("div");
+  reader.style.overflowX = "auto";
+  Object.defineProperties(reader, {
+    scrollWidth: { value: 800 },
+    clientWidth: { value: 300 },
+  });
+  document.body.append(reader);
+  touch(reader, "touchstart", 2);
+  touch(reader, "touchmove", 202);
+  touch(reader, "touchend", 202);
+  expect(change).not.toHaveBeenCalled();
+  reader.remove();
+});

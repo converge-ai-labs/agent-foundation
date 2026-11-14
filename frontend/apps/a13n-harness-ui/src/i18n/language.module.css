@@ -1,3 +1,24 @@
 .choice {
   width: min(100%, 240px);
 }
+.row {
+  min-width: 0;
+}
+.compact {
+  width: fit-content;
+  max-width: 100%;
+  color: var(--a13n-secondary);
+}
+.compact [data-slot="select-trigger"] {
+  width: auto;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+.compact [data-slot="select-trigger"]:hover {
+  background: var(--a13n-hover);
+}
+.compact [data-slot="select-trigger"]:focus-visible {
+  border-color: var(--ring);
+}

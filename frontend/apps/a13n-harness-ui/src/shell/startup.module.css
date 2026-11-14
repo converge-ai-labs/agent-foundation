@@ -1,5 +1,12 @@
-/* Geometry comes from the Workbench sidebar; this file only adds the
-   skeleton rows and the centered connection state. */
+/* Match the default Workbench rail without mounting authenticated consumers. */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 220px;
+  min-height: 0;
+  padding: 8px;
+  background: var(--sidebar);
+}
 .rows {
   display: grid;
   gap: 4px;

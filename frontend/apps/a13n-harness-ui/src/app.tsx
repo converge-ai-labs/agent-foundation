@@ -1,4 +1,5 @@
 import { AppearanceProvider } from "./appearance/react";
+import loginStyles from "./setup/login.module.css";
 import { LanguageProvider, LanguageChoice } from "./i18n/language";
 import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -270,13 +271,12 @@ function OwnerApp() {
                       }}
                     />
                   ) : (
-                    <main className={styles.access}>
-                      <div className={styles.accessCard}>
-                        <div className={styles.accessBrand}>
+                    <main className={loginStyles.page}>
+                      <div className={loginStyles.card}>
+                        <div className={loginStyles.brand}>
                           <Logo alt="" width={24} height={24} />
                           <span>Harness</span>
                         </div>
-                        <LanguageChoice />
                         <h1>{t("Log in to Harness UI")}</h1>
                         <p>
                           {t(
@@ -285,7 +285,7 @@ function OwnerApp() {
                         </p>
                         {pushWarning && <p role="alert">{t(pushWarning)}</p>}
                         <form
-                          className={styles.stack}
+                          className={loginStyles.form}
                           onSubmit={(event) => {
                             event.preventDefault();
                             if (!input.trim() || connecting) return;
@@ -314,6 +314,9 @@ function OwnerApp() {
                             {t("Log in")}
                           </Button>
                         </form>
+                        <div className={loginStyles.language}>
+                          <LanguageChoice presentation="compact" />
+                        </div>
                         {drafts.current.size > 0 && (
                           <p>
                             {t(

@@ -23,7 +23,7 @@
   border-bottom: 1.5px solid currentColor;
   opacity: 0.6;
   transform: rotate(-45deg);
-  transition: transform 150ms ease-out;
+  transition: transform var(--a13n-duration-base) var(--a13n-ease-out);
 }
 :where(details[open]) > :where(summary)::before {
   transform: rotate(45deg);
