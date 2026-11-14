@@ -5,15 +5,14 @@
   gap: 4px;
   flex-shrink: 0;
   /* Same column as the composer (see conversation.module.css). */
-  width: min(var(--harness-reading-width), 100% - 84px);
+  width: min(
+    var(--harness-reading-width),
+    calc(100% - 2 * var(--conversation-gutter, 42px))
+  );
   margin: 0 auto;
-  padding-inline: 8px;
+  padding-inline: 6px;
   color: var(--a13n-secondary);
   min-width: 0;
-}
-.strip button {
-  font-size: var(--a13n-text-body);
-  color: var(--a13n-secondary);
 }
 .shortcuts,
 .summary {
@@ -27,6 +26,8 @@
 }
 .shortcuts > button {
   flex-shrink: 0;
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-secondary);
 }
 .shortcuts .shortcut {
   min-width: 28px;
@@ -44,7 +45,9 @@
 }
 @media (pointer: coarse) {
   .shortcuts > button {
+    min-width: 44px;
     min-height: 44px;
+    touch-action: manipulation;
   }
 }
 .count {
@@ -349,8 +352,8 @@
     min-width: 44px;
   }
 }
-@container activity-strip (max-width: 460px) {
-  .shortcuts > button:not(.more) {
+@container activity-strip (max-width: 340px) {
+  .shortcuts > .shortcut {
     display: none;
   }
   .shortcuts .more {

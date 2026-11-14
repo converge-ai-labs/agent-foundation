@@ -132,7 +132,7 @@ export function ExecutionDetails({
             </DialogClose>
             <div>
               <DialogTitle className={styles.title}>
-                {t("Work log")}
+                {preview || t("Recorded steps")}
               </DialogTitle>
               <div className={styles.metrics}>
                 {complete ? t("Recorded steps") : t("Steps so far")}

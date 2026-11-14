@@ -109,6 +109,11 @@ export function TaskOptions({
         render={trigger}
         aria-label={t("Chat options")}
         title={t("Chat options")}
+        onClick={() => {
+          // Options need the visible viewport, not the keyboard's remaining strip.
+          if (document.activeElement instanceof HTMLElement)
+            document.activeElement.blur();
+        }}
       >
         <SlidersHorizontal />
       </PopoverTrigger>

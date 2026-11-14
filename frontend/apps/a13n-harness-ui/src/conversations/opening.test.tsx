@@ -29,12 +29,17 @@ function Page({ observed }: { observed: boolean }) {
   );
 }
 
-it("mounts preparation behind one loading surface, then keeps content and focus through refreshes", () => {
+it("delays initial feedback, then keeps content and focus through refreshes", () => {
+  vi.useFakeTimers();
   const view = render(<Page observed={false} />);
   const input = view.container.querySelector("input")!;
   expect(input.value).toBe("Retained input");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(input.closest("[inert]")).not.toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+  act(() => vi.advanceTimersByTime(349));
+  expect(screen.queryByRole("status")).toBeNull();
+  act(() => vi.advanceTimersByTime(1));
   expect(screen.getByRole("status").textContent).toBe("Opening chat…");
   view.rerender(<Page observed />);
   expect(screen.getByRole("textbox")).toBe(input);

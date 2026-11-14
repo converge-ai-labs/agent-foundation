@@ -266,9 +266,7 @@ it("shows a compact mobile preview and opens only one execution reader on demand
   const trigger = screen.getByRole("button", { name: /Work log/ });
   const user = userEvent.setup();
   await user.click(trigger);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Work log",
-  });
+  const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText("A long internal plan")).toBeTruthy();
   expect(within(dialog).queryByText("Investigate scrolling")).toBeNull();
   expect(document.querySelectorAll("[data-execution-reader]")).toHaveLength(1);
@@ -296,7 +294,9 @@ it("retains Thought disclosure, scroll and reader identity across visits and sup
     name: "Work log",
   });
   const thought = within(reader).getByText("Thought");
-  expect(thought.closest("details")?.open).toBe(false);
+  expect(thought.closest("button")?.getAttribute("aria-expanded")).toBe(
+    "false",
+  );
   await user.click(thought);
   const reasoning = within(reader).getByRole("region", {
     name: "Thought content",
@@ -444,8 +444,8 @@ it("folds completed progress, thoughts and tools together while keeping the fina
   ).toBeTruthy();
   expect(within(reader).getByText("The handler needs a guard.")).toBeTruthy();
   expect(within(reader).getByText("for 2s")).toBeTruthy();
-  const thought = within(reader).getByText("Thought").closest("details")!;
-  expect(thought.open).toBe(false);
+  const thought = within(reader).getByRole("button", { name: /Thought/ });
+  expect(thought.getAttribute("aria-expanded")).toBe("false");
   expect(within(reader).queryByText("1s")).toBeNull();
   expect(within(reader).queryByText("The final answer")).toBeNull();
   expect(reader.scrollTop).toBe(0);

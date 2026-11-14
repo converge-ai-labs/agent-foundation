@@ -48,11 +48,13 @@ export function WorkInspector({
   onUseGoal,
   status,
   connectionStatus,
+  navigation,
   showDetails = true,
 }: {
   showDetails?: boolean;
   status?: ReactNode;
   connectionStatus?: ReactNode;
+  navigation?: ReactNode;
   threadId: string;
   connected?: boolean;
   goal?: Schema<"GoalView"> | null;
@@ -113,6 +115,7 @@ export function WorkInspector({
         }}
       >
         <div className={styles.shortcuts}>
+          {navigation}
           {showDetails &&
             !hasActivityCard &&
             tabs.map((item) => {

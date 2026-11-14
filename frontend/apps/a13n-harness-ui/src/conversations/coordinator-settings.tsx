@@ -66,6 +66,7 @@ export function CoordinatorPromotion({
   const { t } = useTranslation();
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={(value) => {
         if (!value) close();

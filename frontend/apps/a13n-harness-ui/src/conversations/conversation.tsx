@@ -245,6 +245,10 @@ function ConversationContent({
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
   const reader = useRef<HTMLDivElement>(null);
+  const [inputNavigationHost, setInputNavigationHost] =
+    useState<HTMLSpanElement | null>(null);
+  const readingInitialized = useRef(false);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
   const readingAnchor = useRef<ReadingAnchor | undefined>(undefined);
@@ -266,6 +270,13 @@ function ConversationContent({
         return;
       }
       if (scrollFrame.current !== null) return;
+      if (
+        Math.abs(
+          Math.max(0, element.scrollHeight - element.clientHeight) -
+            element.scrollTop,
+        ) < 1
+      )
+        return;
       let previous = performance.now();
       const step = (now: number) => {
         if (!follow.current) {
@@ -302,7 +313,11 @@ function ConversationContent({
     if (reader.current)
       readingAnchor.current = captureReadingAnchor(reader.current);
   };
-  const olderAnchor = useRef<{ height: number; top: number } | null>(null);
+  const olderAnchor = useRef<{
+    height: number;
+    top: number;
+    anchor?: ReadingAnchor;
+  } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const backToLatest = () => {
     pendingJump.current = undefined;
@@ -311,6 +326,7 @@ function ConversationContent({
     setSelectedTurn(undefined);
     follow.current = true;
     setNewOutput(false);
+    setAwayFromLatest(false);
     scrollToLatest();
   };
   const reconcile = useCallback(() => {
@@ -348,19 +364,47 @@ function ConversationContent({
       ].find((element) => element.dataset.turnId === id),
     [],
   );
+  const scrollToTurn = useCallback(
+    (target: HTMLElement) => {
+      const element = reader.current;
+      if (!element) return;
+      stopScrolling();
+      const start = element.scrollTop;
+      const destination = Math.max(
+        0,
+        Math.min(
+          element.scrollHeight - element.clientHeight,
+          start +
+            target.getBoundingClientRect().top -
+            element.getBoundingClientRect().top -
+            56,
+        ),
+      );
+      target.focus({ preventScroll: true });
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        element.scrollTop = destination;
+        readingAnchor.current = captureReadingAnchor(element);
+        return;
+      }
+      const started = performance.now();
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - started) / 240);
+        element.scrollTop =
+          start + (destination - start) * (1 - (1 - progress) ** 3);
+        readingAnchor.current = captureReadingAnchor(element);
+        scrollFrame.current = progress < 1 ? requestAnimationFrame(step) : null;
+      };
+      scrollFrame.current = requestAnimationFrame(step);
+    },
+    [stopScrolling],
+  );
   const jumpToInput = (id: string) => {
     interruptScroll();
     const target = findTurn(id);
     pendingJump.current = id;
     if (!target) setSelectedTurn(id);
     else {
-      const element = reader.current!;
-      element.scrollTop +=
-        target.getBoundingClientRect().top -
-        element.getBoundingClientRect().top -
-        16;
-      target.focus({ preventScroll: true });
-      readingAnchor.current = captureReadingAnchor(element);
+      scrollToTurn(target);
       pendingJump.current = undefined;
     }
   };
@@ -369,14 +413,9 @@ function ConversationContent({
     const target = findTurn(pendingJump.current);
     const element = reader.current;
     if (!target || !element) return;
-    element.scrollTop +=
-      target.getBoundingClientRect().top -
-      element.getBoundingClientRect().top -
-      16;
-    target.focus({ preventScroll: true });
-    readingAnchor.current = captureReadingAnchor(element);
+    scrollToTurn(target);
     pendingJump.current = undefined;
-  }, [entries, history.isPreviousHistory, findTurn]);
+  }, [entries, history.isPreviousHistory, findTurn, scrollToTurn]);
   const reconcileSavedInputs = useCallback(
     (savedEntries: Schema<"TranscriptEntry">[]) => {
       const saved = new Set(
@@ -542,19 +581,23 @@ function ConversationContent({
       !follow.current &&
       !olderAnchor.current &&
       !restored &&
-      !pendingJump.current
+      !pendingJump.current &&
+      scrollFrame.current === null
     )
       restoreReadingAnchor(element, readingAnchor.current);
-    if (olderAnchor.current && !history.isFetchingNextPage) {
-      element.scrollTop =
-        olderAnchor.current.top +
-        element.scrollHeight -
-        olderAnchor.current.height;
-      olderAnchor.current = null;
+    if (olderAnchor.current) {
+      if (olderAnchor.current.anchor)
+        restoreReadingAnchor(element, olderAnchor.current.anchor);
+      else if (!history.isFetchingNextPage)
+        element.scrollTop =
+          olderAnchor.current.top +
+          element.scrollHeight -
+          olderAnchor.current.height;
+      if (!history.isFetchingNextPage) olderAnchor.current = null;
     } else if (follow.current) {
-      // Streaming commits and late layout use one bottom-follow policy. Only
-      // an explicit New output action animates; resize must not fight that RAF.
-      if (scrollFrame.current === null) scrollToLatest(true);
+      // Entry lands immediately; subsequent streaming growth shares one
+      // interruptible animation instead of snapping on every text commit.
+      scrollToLatest(!readingInitialized.current);
     } else if (
       !restored &&
       !olderAnchor.current &&
@@ -565,6 +608,12 @@ function ConversationContent({
       ? undefined
       : captureReadingAnchor(element);
     lastContent.current = visibleContent;
+    readingInitialized.current = true;
+    setAwayFromLatest(
+      !follow.current &&
+        (hasLater ||
+          element.scrollHeight - element.scrollTop - element.clientHeight > 80),
+    );
   }, [
     pageReady,
     revision,
@@ -591,7 +640,12 @@ function ConversationContent({
         scrollFrame.current === null
       )
         scrollToLatest(true);
-      else if (!follow.current && !olderAnchor.current && !pendingJump.current)
+      else if (
+        !follow.current &&
+        !olderAnchor.current &&
+        !pendingJump.current &&
+        scrollFrame.current === null
+      )
         restoreReadingAnchor(element, readingAnchor.current);
       readingAnchor.current = follow.current
         ? undefined
@@ -619,6 +673,7 @@ function ConversationContent({
       olderAnchor.current = {
         height: element.scrollHeight,
         top: element.scrollTop,
+        anchor: captureReadingAnchor(element),
       };
       void history.fetchNextPage();
     }
@@ -848,10 +903,12 @@ function ConversationContent({
               reader={reader}
               revision={visibleContent}
               onSelect={jumpToInput}
+              mobileContainer={inputNavigationHost}
             />
           )}
           <div
             ref={reader}
+            data-conversation-reader
             className={`${styles.reading} a13n-scrollbar`}
             onWheel={(event) => {
               if (event.deltaY < 0) interruptScroll();
@@ -875,11 +932,22 @@ function ConversationContent({
                     element.clientHeight <=
                     1;
               if (follow.current) setNewOutput(false);
+              setAwayFromLatest(
+                !follow.current &&
+                  (hasLater ||
+                    element.scrollHeight -
+                      element.scrollTop -
+                      element.clientHeight >
+                      80),
+              );
+              if (olderAnchor.current)
+                olderAnchor.current.anchor = captureReadingAnchor(element);
               readingAnchor.current = follow.current
                 ? undefined
                 : captureReadingAnchor(element);
               if (
                 element.scrollTop < 160 &&
+                scrollFrame.current === null &&
                 history.hasNextPage &&
                 !history.isFetching &&
                 !history.isFetchNextPageError &&
@@ -888,6 +956,7 @@ function ConversationContent({
                 olderAnchor.current = {
                   height: element.scrollHeight,
                   top: element.scrollTop,
+                  anchor: captureReadingAnchor(element),
                 };
                 void history.fetchNextPage();
               }
@@ -908,6 +977,7 @@ function ConversationContent({
                       olderAnchor.current = {
                         height: element.scrollHeight,
                         top: element.scrollTop,
+                        anchor: captureReadingAnchor(element),
                       };
                     void history.fetchNextPage();
                   }}
@@ -1062,23 +1132,33 @@ function ConversationContent({
               </>
             </div>
           </div>
-        </div>
-        {(newOutput ||
-          (hasLater && !!detail.data?.deferred_requests?.length)) && (
           <Button
             className={styles.newOutput}
+            data-visible={awayFromLatest || newOutput || hasLater || undefined}
+            aria-hidden={!(awayFromLatest || newOutput || hasLater)}
+            tabIndex={awayFromLatest || newOutput || hasLater ? 0 : -1}
             variant="outline"
             onClick={backToLatest}
           >
-            <ArrowDown />
+            <ArrowDown aria-hidden="true" />
             {detail.data?.deferred_requests?.length
               ? t("Response needed")
-              : t("New output")}
+              : newOutput
+                ? t("New output")
+                : t("Back to latest")}
           </Button>
-        )}
+        </div>
         {!readOnly && detail.data && (
           <WorkInspector
             showDetails={!isBot || debug.enabled}
+            navigation={
+              !publication ? (
+                <span
+                  ref={setInputNavigationHost}
+                  style={{ display: "contents" }}
+                />
+              ) : undefined
+            }
             threadId={threadId}
             connectionStatus={publication?.status ?? connectionStatus}
             status={
@@ -1244,8 +1324,11 @@ function ConversationContent({
           />
         )}
         <ModalFrame
+          bottomStickOnMobile
           open={rename}
-          onOpenChange={setRename}
+          onOpenChange={(open) => {
+            if (!metadata.isPending) setRename(open);
+          }}
           title={t("Rename chat")}
           closeLabel={t("Close")}
         >
@@ -1253,13 +1336,21 @@ function ConversationContent({
             className={styles.form}
             onSubmit={(event) => {
               event.preventDefault();
-              metadata.mutate({ title: title || null });
+              if (
+                thread &&
+                !metadata.isPending &&
+                title.trim() !== (thread.title ?? "").trim()
+              )
+                metadata.mutate({ title: title.trim() || null });
             }}
           >
             <TextField
               label={t("Title")}
               value={title}
               onChange={(value) => setTitle(value.slice(0, 512))}
+              autoFocus
+              onFocus={(event) => event.currentTarget.select()}
+              disabled={metadata.isPending}
             />
             <ErrorNotice error={metadata.error} />
             <div className={layout.dialogActions} data-a13n-form-actions>
@@ -1274,7 +1365,9 @@ function ConversationContent({
               <Button
                 type="submit"
                 loading={metadata.isPending}
-                disabled={!thread}
+                disabled={
+                  !thread || title.trim() === (thread.title ?? "").trim()
+                }
               >
                 {t("Save title")}
               </Button>
@@ -1282,6 +1375,7 @@ function ConversationContent({
           </form>
         </ModalFrame>
         <ModalFrame
+          bottomStickOnMobile
           open={inspection}
           onOpenChange={setInspection}
           title={t("Chat details")}

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
-import { Button, LogoAnimation } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import styles from "./opening.module.css";
 
@@ -25,11 +25,16 @@ export function ConversationOpening({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const [pending, setPending] = useState(false);
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     if (ready) return;
-    const timer = setTimeout(() => setSlow(true), 6000);
-    return () => clearTimeout(timer);
+    const indicator = setTimeout(() => setPending(true), 350);
+    const recovery = setTimeout(() => setSlow(true), 6000);
+    return () => {
+      clearTimeout(indicator);
+      clearTimeout(recovery);
+    };
   }, [ready]);
   return (
     <div className={styles.surface}>
@@ -41,10 +46,9 @@ export function ConversationOpening({
       >
         {children}
       </div>
-      {!ready && (
+      {!ready && pending && (
         <div className={styles.loading}>
           <div role="status" className={styles.status}>
-            <LogoAnimation size={20} />
             <span>{label}</span>
           </div>
           {slow && (

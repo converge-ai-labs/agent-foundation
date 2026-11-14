@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useState, type RefObject } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
@@ -30,6 +31,7 @@ export function InputNavigation({
   reader,
   revision,
   onSelect,
+  mobileContainer,
 }: {
   threadId: string;
   continuation?: string | null;
@@ -37,6 +39,7 @@ export function InputNavigation({
   reader: RefObject<HTMLDivElement | null>;
   revision: unknown;
   onSelect: (id: string) => void;
+  mobileContainer?: HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -137,6 +140,57 @@ export function InputNavigation({
     : query.isError
       ? ArrowClockwise
       : DotsThree;
+  const mobile = (
+    <div className={styles.mobile}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.mobileTrigger}
+            />
+          }
+          aria-label={t("Input history")}
+        >
+          <ListBullets aria-hidden="true" />
+        </PopoverTrigger>
+        <PopoverPopup side="top" align="start" className={styles.menu}>
+          <PopoverTitle>{t("Input history")}</PopoverTitle>
+          <nav className="a13n-scrollbar" aria-label={t("Input history")}>
+            {items.map((item, index) => (
+              <button
+                type="button"
+                key={item.turn_id}
+                aria-current={active === item.turn_id ? "location" : undefined}
+                onClick={() => select(item.turn_id)}
+              >
+                <small>{index + 1}</small>
+                <span className={styles.menuPreview}>
+                  <span>{item.preview}</span>
+                  <span className={styles.menuOutput}>
+                    {t("Output: {{output}}", {
+                      output: item.output_preview || t("No saved output"),
+                    })}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </nav>
+          {canLoad && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={query.isFetching}
+              onClick={loadMore}
+            >
+              {moreLabel}
+            </Button>
+          )}
+        </PopoverPopup>
+      </Popover>
+    </div>
+  );
   return (
     <>
       <nav
@@ -199,57 +253,11 @@ export function InputNavigation({
           </Button>
         )}
       </nav>
-      <div className={styles.mobile}>
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={styles.mobileTrigger}
-              />
-            }
-            aria-label={t("Input history")}
-          >
-            <ListBullets aria-hidden="true" />
-          </PopoverTrigger>
-          <PopoverPopup side="bottom" align="start" className={styles.menu}>
-            <PopoverTitle>{t("Input history")}</PopoverTitle>
-            <nav aria-label={t("Input history")}>
-              {items.map((item, index) => (
-                <button
-                  type="button"
-                  key={item.turn_id}
-                  aria-current={
-                    active === item.turn_id ? "location" : undefined
-                  }
-                  onClick={() => select(item.turn_id)}
-                >
-                  <small>{index + 1}</small>
-                  <span className={styles.menuPreview}>
-                    <span>{item.preview}</span>
-                    <span className={styles.menuOutput}>
-                      {t("Output: {{output}}", {
-                        output: item.output_preview || t("No saved output"),
-                      })}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </nav>
-            {canLoad && (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={query.isFetching}
-                onClick={loadMore}
-              >
-                {moreLabel}
-              </Button>
-            )}
-          </PopoverPopup>
-        </Popover>
-      </div>
+      {mobileContainer
+        ? createPortal(mobile, mobileContainer)
+        : mobileContainer === undefined
+          ? mobile
+          : null}
     </>
   );
 }

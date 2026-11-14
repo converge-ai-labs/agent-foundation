@@ -2,7 +2,8 @@
   min-width: 0;
   margin-block: 12px 24px;
   overflow: hidden;
-  border-radius: 12px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 16px;
   background: var(--a13n-surface);
 }
 .header {
@@ -40,7 +41,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: 8px 12px;
+  min-height: 32px;
   padding: 0 16px 12px;
 }
 .status p {
@@ -54,13 +56,14 @@
   cursor: pointer;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
-  padding-block: 0 12px;
+  padding-block: 8px 12px;
+  border-radius: 4px;
 }
 .request {
   padding: 12px;
   margin-bottom: 12px;
   background: var(--a13n-elevated);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .requestHeading {
   display: flex;
@@ -90,4 +93,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.requests summary:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .requests summary {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
 }

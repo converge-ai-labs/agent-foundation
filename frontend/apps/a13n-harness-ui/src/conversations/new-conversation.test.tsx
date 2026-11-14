@@ -1371,8 +1371,8 @@ it("keeps saved history at the real bottom after viewport resize without reclaim
   height = 560;
   act(() => resized());
   expect(top).toBe(1440);
-  // Streaming commits must not start an animation for ResizeObserver to cancel.
-  // Simulate a line arriving and then a Markdown reflow reducing its height.
+  // Streaming commits share one smooth follower. Resize observations must not
+  // cancel it, including when Markdown reflow reduces the target height.
   const frames = vi.spyOn(window, "requestAnimationFrame");
   for (const next of [2026, 2052, 2026]) {
     contentHeight = next;
@@ -1398,11 +1398,10 @@ it("keeps saved history at the real bottom after viewport resize without reclaim
       );
     });
     await screen.findByText(`Updated ${next}`);
-    expect(top).toBe(contentHeight - height);
     act(() => resized());
-    expect(top).toBe(contentHeight - height);
+    await waitFor(() => expect(top).toBe(contentHeight - height));
   }
-  expect(frames).not.toHaveBeenCalled();
+  expect(frames).toHaveBeenCalled();
   frames.mockRestore();
   contentHeight = 2000;
   act(() => resized());
@@ -1436,7 +1435,8 @@ it("waits for project, catalog and the selected defaults before exposing the new
     return original(request);
   });
   mount();
-  expect(screen.getByText("Preparing your chat…")).toBeTruthy();
+  expect(screen.queryByText("Preparing your chat…")).toBeNull();
+  expect(await screen.findByText("Preparing your chat…")).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("heading")).toBeNull();
   await act(async () => release.get("/api/projects")!());
@@ -1791,6 +1791,9 @@ it.each([
     expect(details.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Folded intermediate work")).toBeNull();
     fireEvent.click(details);
+    const thought = screen.getByRole("button", { name: "Thought" });
+    expect(thought.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(thought);
     const work = screen.getByText("Folded intermediate work");
     expect(work.closest("[hidden]")).toBeNull();
     fireEvent.click(details);
@@ -2453,6 +2456,17 @@ it("publishes a saved title before a follow-up read and leaves history untouched
   const user = userEvent.setup();
   mount(`/threads/${id}?dialog=rename`);
   const title = await screen.findByRole("textbox", { name: "Title" });
+  await waitFor(() => expect(document.activeElement).toBe(title));
+  expect((title as HTMLInputElement).selectionStart).toBe(0);
+  expect((title as HTMLInputElement).selectionEnd).toBe(
+    (title as HTMLInputElement).value.length,
+  );
+  expect(
+    (screen.getByRole("button", { name: "Save title" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.submit(title.closest("form")!);
+  expect(writes).toHaveLength(0);
   await user.type(title, "Renamed immediately");
   const before = reads.filter((path) => path.endsWith("/transcript")).length;
   await user.click(screen.getByRole("button", { name: "Save title" }));

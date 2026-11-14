@@ -1447,6 +1447,7 @@ export function Composer({
             ref={sendButton}
             size="icon"
             className={styles.sendButton}
+            data-action={stopAction ? "stop" : "send"}
             aria-label={
               stopAction
                 ? stopLabel
@@ -1473,7 +1474,10 @@ export function Composer({
               stopAction ? void stop() : void submit(busy ? "steer" : "send")
             }
           >
-            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
+            <span className={styles.sendGlyph} aria-hidden="true">
+              <ArrowUp />
+              <Stop weight="fill" />
+            </span>
           </Button>
         </div>
       </div>
@@ -1485,6 +1489,7 @@ export function Composer({
         />
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={!!preview && !preview.image}
         onOpenChange={(open) => {
           if (!open) {

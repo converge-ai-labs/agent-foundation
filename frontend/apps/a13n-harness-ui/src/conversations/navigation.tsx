@@ -409,6 +409,13 @@ function ProjectGroup({
       .map(({ thread }) => thread.coordinator_thread_id)
       .filter(Boolean),
   );
+  const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
+  const selectedPlacement = useRef<{
+    id: string | undefined;
+    bucket?: "active" | "unread" | "recent";
+  }>({ id: selectedRootId });
+  if (selectedPlacement.current.id !== selectedRootId)
+    selectedPlacement.current = { id: selectedRootId };
   const activeRows: NavigationRow[] = [];
   const unreadRows: NavigationRow[] = [];
   const recentRows: NavigationRow[] = [];
@@ -419,14 +426,23 @@ function ProjectGroup({
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
     if (row.thread.role === "worker") continue;
-    (row.thread.root_activity.state !== "inactive" ||
-    (row.thread.role === "coordinator" &&
-      activeWorkerCounts.has(row.thread.thread_id))
-      ? activeRows
-      : unread || unreadOwners.has(row.thread.thread_id)
-        ? unreadRows
-        : recentRows
-    ).push(row);
+    let bucket: "active" | "unread" | "recent" =
+      row.thread.root_activity.state !== "inactive" ||
+      (row.thread.role === "coordinator" &&
+        activeWorkerCounts.has(row.thread.thread_id))
+        ? "active"
+        : unread || unreadOwners.has(row.thread.thread_id)
+          ? "unread"
+          : "recent";
+    // Reading a result must not move the open row out from under the reader.
+    // The shared state changes immediately; only this view's placement waits.
+    if (row.thread.thread_id === selectedRootId) {
+      selectedPlacement.current.bucket ??= bucket;
+      bucket = selectedPlacement.current.bucket;
+    }
+    ({ active: activeRows, unread: unreadRows, recent: recentRows })[
+      bucket
+    ].push(row);
   }
   const byTouch = (a: NavigationRow, b: NavigationRow) => {
     const left = a.thread.touched_at ?? a.thread.created_at;
@@ -461,7 +477,11 @@ function ProjectGroup({
     ...arranged(recentRows.filter((row) => row.thread.starred)),
     ...arranged(recentRows.filter((row) => !row.thread.starred)),
   ];
-  const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
+  const unreadResultCount = unreadRows.filter(
+    (row) =>
+      results.tracker?.isUnread(row.thread.thread_id) ||
+      unreadOwners.has(row.thread.thread_id),
+  ).length;
   const recentStart = activeRows.length + unreadRows.length;
   const isVisible = (row: NavigationRow, index: number) =>
     index < recentStart ||
@@ -495,9 +515,8 @@ function ProjectGroup({
       className={`${styles.projectGroup} ${order.moving === group.id ? styles.movingProject : ""}`}
     >
       <div ref={headingRef} className={styles.groupHeading} data-nav-heading>
-        <Tooltip disabled={!!drag.source}>
+        <Tooltip disabled={!!drag.source || !group.projectId}>
           <TooltipTrigger
-            disabled={!group.projectId}
             aria-describedby={group.projectId ? summaryId : undefined}
             className={styles.groupToggle}
             aria-expanded={expanded}
@@ -528,7 +547,7 @@ function ProjectGroup({
               />
             </span>
             <span>{group.name}</span>
-            {unreadCount > 0 && (
+            {unreadCount > 0 && !expanded && (
               <small
                 className={styles.resultCount}
                 aria-label={t("Chats with new results count", {
@@ -704,121 +723,140 @@ function ProjectGroup({
           projectId={group.projectId}
         />
       )}
-      <div hidden={!expanded} className={styles.groupThreads}>
-        <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
-        <div>
-          {rows.map((row, index) => (
-            <Fragment key={row.thread.thread_id}>
-              {((index === 0 && activeRows.length > 0) ||
-                (index === recentStart && recentStart > 0)) && (
-                <div className={styles.sectionHeading}>
-                  <span role="heading" aria-level={3}>
-                    {index === 0 ? t("Active") : t("History")}
-                  </span>
-                </div>
-              )}
-              {unreadRows.length > 0 && index === activeRows.length && (
-                <div className={styles.sectionHeading}>
-                  <span
-                    role="heading"
-                    aria-level={3}
-                    aria-label={t("New results - {{count, number}}", {
-                      count: unreadRows.length,
-                    })}
-                  >
-                    {t("New results")}{" "}
-                    <small>
-                      {t("{{count, number}}", { count: unreadRows.length })}
-                    </small>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    loading={markingRead}
-                    aria-label={t("Mark all results read in {{name}}", {
-                      name: group.name,
-                    })}
-                    title={t("Mark all current results in this group as read")}
-                    onClick={() => void markAllRead()}
-                  >
-                    <Check />
-                  </Button>
-                </div>
-              )}
-              <div
-                hidden={!isVisible(row, index)}
-                data-nav-bucket={
-                  activeRows.includes(row)
-                    ? "active"
-                    : unreadRows.includes(row)
-                      ? "unread"
-                      : row.thread.starred
-                        ? "starred"
-                        : "recent"
-                }
-              >
-                {row.thread.role === "coordinator" ? (
-                  <CoordinatorEntry
-                    row={row}
-                    activeWorkerCount={
-                      activeWorkerCounts.get(row.thread.thread_id) ?? 0
-                    }
-                    enabled={enabled && expanded && isVisible(row, index)}
-                    selected={selected}
-                    selectedUpdatedAt={selectedUpdatedAt}
-                  />
-                ) : (
-                  <ThreadRow row={row} />
+      <div
+        className={styles.groupDisclosure}
+        data-expanded={expanded}
+        inert={!expanded}
+        aria-hidden={!expanded || undefined}
+      >
+        <div className={styles.groupThreads}>
+          <ErrorNotice
+            error={owners.error}
+            retry={() => void owners.refetch()}
+          />
+          <div>
+            {rows.map((row, index) => (
+              <Fragment key={row.thread.thread_id}>
+                {((index === 0 && activeRows.length > 0) ||
+                  (index === recentStart && recentStart > 0)) && (
+                  <div className={styles.sectionHeading}>
+                    <span role="heading" aria-level={3}>
+                      {index === 0 ? t("Active") : t("History")}
+                    </span>
+                  </div>
                 )}
+                {unreadRows.length > 0 && index === activeRows.length && (
+                  <div className={styles.sectionHeading}>
+                    <span
+                      role="heading"
+                      aria-level={3}
+                      aria-label={
+                        unreadResultCount
+                          ? t("New results - {{count, number}}", {
+                              count: unreadResultCount,
+                            })
+                          : t("New results")
+                      }
+                    >
+                      {t("New results")}{" "}
+                      {unreadResultCount > 0 && (
+                        <small>
+                          {t("{{count, number}}", { count: unreadResultCount })}
+                        </small>
+                      )}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      loading={markingRead}
+                      disabled={unreadResultCount === 0}
+                      aria-label={t("Mark all results read in {{name}}", {
+                        name: group.name,
+                      })}
+                      title={t(
+                        "Mark all current results in this group as read",
+                      )}
+                      onClick={() => void markAllRead()}
+                    >
+                      <Check />
+                    </Button>
+                  </div>
+                )}
+                <div
+                  hidden={!isVisible(row, index)}
+                  data-nav-bucket={
+                    activeRows.includes(row)
+                      ? "active"
+                      : unreadRows.includes(row)
+                        ? "unread"
+                        : row.thread.starred
+                          ? "starred"
+                          : "recent"
+                  }
+                >
+                  {row.thread.role === "coordinator" ? (
+                    <CoordinatorEntry
+                      row={row}
+                      activeWorkerCount={
+                        activeWorkerCounts.get(row.thread.thread_id) ?? 0
+                      }
+                      enabled={enabled && expanded && isVisible(row, index)}
+                      selected={selected}
+                      selectedUpdatedAt={selectedUpdatedAt}
+                    />
+                  ) : (
+                    <ThreadRow row={row} />
+                  )}
+                </div>
+              </Fragment>
+            ))}
+            {expanded && !rows.length && !list.data && list.isPending && (
+              <div
+                role="status"
+                aria-label={t("Loading chats")}
+                aria-busy="true"
+                className={styles.initialLoading}
+              >
+                <span>{t("Loading chats…")}</span>
               </div>
-            </Fragment>
-          ))}
-          {expanded && !rows.length && !list.data && list.isPending && (
-            <div
-              role="status"
-              aria-label={t("Loading chats")}
-              aria-busy="true"
-              className={styles.initialLoading}
-            >
-              <span>{t("Loading chats…")}</span>
-            </div>
-          )}
-          {list.isSuccess && !list.isPreviousData && !rows.length && (
-            <small className={styles.emptyGroup}>{t("No chats yet")}</small>
-          )}
-          <ErrorNotice error={list.error} retry={() => void list.refetch()} />
-          {(hasHiddenRows || list.hasNextPage) && (
-            <Button
-              variant="ghost"
-              size="xs"
-              className={styles.showMore}
-              loading={list.isFetchingNextPage}
-              ref={showMoreRef}
-              onClick={showMore}
-              aria-label={t("Show more chats in {{name}}", {
-                name: group.name,
-              })}
-              title={t("Show more chats in {{name}}", { name: group.name })}
-            >
-              {t("Show more")}
-            </Button>
-          )}
-          {showAll && recentRows.length > 5 && (
-            <Button
-              variant="ghost"
-              size="xs"
-              className={styles.showMore}
-              onClick={() => {
-                setShowAll(false);
-                requestAnimationFrame(() => showMoreRef.current?.focus());
-              }}
-              aria-label={t("Show fewer chats in {{name}}", {
-                name: group.name,
-              })}
-            >
-              {t("Show less")}
-            </Button>
-          )}
+            )}
+            {list.isSuccess && !list.isPreviousData && !rows.length && (
+              <small className={styles.emptyGroup}>{t("No chats yet")}</small>
+            )}
+            <ErrorNotice error={list.error} retry={() => void list.refetch()} />
+            {(hasHiddenRows || list.hasNextPage) && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className={styles.showMore}
+                loading={list.isFetchingNextPage}
+                ref={showMoreRef}
+                onClick={showMore}
+                aria-label={t("Show more chats in {{name}}", {
+                  name: group.name,
+                })}
+                title={t("Show more chats in {{name}}", { name: group.name })}
+              >
+                {t("Show more")}
+              </Button>
+            )}
+            {showAll && recentRows.length > 5 && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className={styles.showMore}
+                onClick={() => {
+                  setShowAll(false);
+                  requestAnimationFrame(() => showMoreRef.current?.focus());
+                }}
+                aria-label={t("Show fewer chats in {{name}}", {
+                  name: group.name,
+                })}
+              >
+                {t("Show less")}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </section>

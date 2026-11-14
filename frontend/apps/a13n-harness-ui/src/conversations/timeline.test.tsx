@@ -187,11 +187,9 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  const disclosure = screen.getByText("Thought").closest("details")!;
-  act(() => {
-    disclosure.open = false;
-    fireEvent(disclosure, new Event("toggle"));
-  });
+  const disclosure = screen.getByRole("button", { name: "Thought" });
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   view.rerender(
     <ConversationTranscript
       entries={[{ ...entry }]}
@@ -201,7 +199,8 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  expect(screen.getByText("Thought").closest("details")).toBe(disclosure);
+  expect(screen.getByRole("button", { name: "Thought" })).toBe(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   view.rerender(
     <ConversationTranscript
       entries={[saved([{ kind: "thinking", text: "Replaced history" }])]}
@@ -211,7 +210,12 @@ it("preserves unchanged saved nodes across continuations but replaces changed hi
       threadId="one"
     />,
   );
-  expect(screen.getByText("Thought").closest("details")).not.toBe(disclosure);
+  expect(screen.getByRole("button", { name: "Thought" })).not.toBe(disclosure);
+  expect(
+    screen
+      .getByRole("button", { name: "Thought" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
 });
 
 it("groups adjacent reasoning across saved entries and the live boundary, but not across prose", () => {
@@ -232,12 +236,23 @@ it("groups adjacent reasoning across saved entries and the live boundary, but no
       threadId="one"
     />,
   );
-  const group = screen.getByText("Thought").closest("details");
-  expect(screen.getByText("First plan").closest("details")).toBe(group);
-  expect(screen.getByText("Third plan").closest("details")).toBe(group);
-  expect(screen.getByText("Fourth plan").closest("details")).toBe(
-    screen.getByText("Thinking").closest("details"),
-  );
+  const group = screen
+    .getByRole("button", { name: "Thought" })
+    .closest('[data-slot="collapsible"]');
+  expect(group).toBeTruthy();
+  expect(
+    screen.getByText("First plan").closest('[data-slot="collapsible"]'),
+  ).toBe(group);
+  expect(
+    screen.getByText("Third plan").closest('[data-slot="collapsible"]'),
+  ).toBe(group);
+  const laterGroup = screen
+    .getByRole("button", { name: "Thinking" })
+    .closest('[data-slot="collapsible"]');
+  expect(
+    screen.getByText("Fourth plan").closest('[data-slot="collapsible"]'),
+  ).toBe(laterGroup);
+  expect(laterGroup).not.toBe(group);
 });
 
 it("keeps separate reasoning Markdown documents and stops grouping at tool activity", () => {
@@ -465,6 +480,9 @@ it("keeps inputs and final text visible while folding completed progress into ex
   expect(
     screen.getByText("Progress update").closest("[data-execution-reader]"),
   ).toBeTruthy();
+  const thought = screen.getByRole("button", { name: "Thought" });
+  expect(thought.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(thought);
   expect(screen.getByText("Internal plan").closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Final reasoning")).toBeNull();
   view.rerender(transcript("new-head"));
@@ -474,6 +492,10 @@ it("keeps inputs and final text visible while folding completed progress into ex
       .map((toggle) => toggle.getAttribute("aria-expanded")),
   ).toEqual(["true", "false"]);
   fireEvent.click(toggles[1]);
+  const finalThought = screen
+    .getAllByRole("button", { name: "Thought" })
+    .at(-1)!;
+  fireEvent.click(finalThought);
   expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeNull();
   expect(view.container.textContent).toMatch(
     /Original input.*Internal plan.*Progress update.*Change direction.*Final reasoning.*Final part one.*Final part two/s,
@@ -587,6 +609,7 @@ it("keeps legacy output and a resumed live suffix in chronological order", () =>
     /Progress.*Saved closing answer.*New progress/s,
   );
   fireEvent.click(screen.getByRole("button", { name: /Work log/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Thought" }));
   expect(screen.getByText("Plan").closest("[hidden]")).toBeNull();
 });
 

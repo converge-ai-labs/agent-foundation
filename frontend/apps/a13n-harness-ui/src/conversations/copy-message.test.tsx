@@ -43,6 +43,9 @@ it("copies exact source, announces success, and resets the same button", async (
   const button = screen.getByRole("button", { name: "Copy message" });
   await act(async () => fireEvent.click(button));
   expect(write).toHaveBeenCalledWith(text);
+  expect(
+    screen.getAllByRole("button", { name: /Copy message|Copied/ }),
+  ).toEqual([button]);
   expect(screen.getByRole("button", { name: "Copied" })).toBe(button);
   expect(
     screen.getByText("Copied to clipboard").getAttribute("aria-live"),
@@ -175,8 +178,84 @@ function entry(
   return { position, message_kind: "response", parts };
 }
 
-it("copies all final Markdown parts once, excluding execution details and resumed live output", async () => {
-  const write = clipboard();
+it.each(["desktop", "narrow"])(
+  "copies all final Markdown parts once, excluding completed execution details on %s",
+  async (layout) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: layout === "narrow" && query === "(max-width: 700px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const write = clipboard();
+    const view = render(
+      <ConversationTranscript
+        threadId="one"
+        localInputs={[]}
+        turns={[
+          {
+            turn_id: "turn",
+            input_position: 0,
+            end_position: 3,
+            output_position: 2,
+            final_position: 2,
+            preview: "Prompt",
+          },
+        ]}
+        entries={[
+          entry(0, [{ kind: "user", text: "Prompt" }]),
+          entry(1, [
+            { kind: "assistant", text: "Progress update" },
+            { kind: "thinking", text: "Thinking" },
+          ]),
+          entry(2, [
+            { kind: "assistant", text: "# Final\n\n**Exact** source" },
+            { kind: "assistant", text: "Second [part](https://example.com)" },
+          ]),
+        ]}
+        blocks={[]}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Copy message" });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+    await screen.findByRole("button", { name: "Copied" });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(
+      "# Final\n\n**Exact** source\n\nSecond [part](https://example.com)",
+    );
+    // Completed progress is not readable until the execution disclosure opens.
+    expect(screen.queryByText("Progress update")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Worked/ }));
+    const reader = await screen.findByRole("region", { name: "Work log" });
+    expect(within(reader).getByText("Progress update")).toBeTruthy();
+    expect(
+      within(reader).queryByRole("region", { name: "Thought content" }),
+    ).toBeNull();
+    fireEvent.click(within(reader).getByRole("button", { name: "Thought" }));
+    expect(
+      within(reader).getByRole("region", { name: "Thought content" })
+        .textContent,
+    ).toContain("Thinking");
+    expect(
+      within(reader).queryByRole("button", {
+        name: /Copy message|Copied/,
+        hidden: true,
+      }),
+    ).toBeNull();
+    if (layout === "narrow") {
+      fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    }
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /Copy message|Copied/ }),
+      ).toHaveLength(2),
+    );
+    view.unmount();
+  },
+);
+
+it("keeps resumed progress readable without offering to copy unsaved output", () => {
   const view = render(
     <ConversationTranscript
       threadId="one"
@@ -192,40 +271,32 @@ it("copies all final Markdown parts once, excluding execution details and resume
       ]}
       entries={[
         entry(0, [{ kind: "user", text: "Prompt" }]),
-        entry(1, [
-          { kind: "assistant", text: "Progress update" },
-          { kind: "thinking", text: "Thinking" },
-        ]),
-        entry(2, [
-          { kind: "assistant", text: "# Final\n\n**Exact** source" },
-          { kind: "assistant", text: "Second [part](https://example.com)" },
-        ]),
+        entry(1, [{ kind: "assistant", text: "Progress update" }]),
+        entry(2, [{ kind: "assistant", text: "Legacy closing output" }]),
       ]}
       blocks={[
         { id: "live", kind: "assistant", text: "Resumed progress", done: true },
       ]}
     />,
   );
-  const buttons = screen.getAllByRole("button", { name: "Copy message" });
-  expect(buttons).toHaveLength(2);
-  fireEvent.click(buttons[1]);
-  await screen.findByRole("button", { name: "Copied" });
-  expect(write).toHaveBeenCalledWith(
-    "# Final\n\n**Exact** source\n\nSecond [part](https://example.com)",
+  // An output position is not successful completion, and done live blocks are
+  // not saved history. Neither should cause resumed progress to disappear.
+  expect(
+    screen.getByText("Progress update").closest("[data-execution-reader]"),
+  ).toBeNull();
+  const resumed = screen
+    .getByText("Resumed progress")
+    .closest<HTMLElement>("[data-reading-anchor]");
+  expect(resumed).toBeTruthy();
+  expect(
+    within(resumed!).queryByRole("button", {
+      name: /Copy message|Copied/,
+      hidden: true,
+    }),
+  ).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Copy message" })).toHaveLength(
+    2,
   );
-  expect(screen.queryByText("Thinking")).toBeNull();
-  for (const toggle of screen.getAllByRole("button", {
-    name: /Work log/,
-  }))
-    fireEvent.click(toggle);
-  for (const text of ["Progress update", "Thinking", "Resumed progress"]) {
-    const section = screen.getByText(text).closest("section, details")!;
-    expect(
-      within(section as HTMLElement).queryByRole("button", {
-        name: /Copy message|Copied/,
-      }),
-    ).toBeNull();
-  }
   view.rerender(
     <LiveOutput
       blocks={[
@@ -234,7 +305,16 @@ it("copies all final Markdown parts once, excluding execution details and resume
       gap={false}
     />,
   );
-  expect(screen.queryByRole("button", { name: /Copy message/ })).toBeNull();
+  const unsaved = screen.getByRole("region", {
+    name: "Current unsaved output",
+  });
+  expect(within(unsaved).getByText("Not saved")).toBeTruthy();
+  expect(
+    within(unsaved).queryByRole("button", {
+      name: /Copy message|Copied/,
+      hidden: true,
+    }),
+  ).toBeNull();
 });
 
 it("only adds final output copying after saved-history cutover and labels truncated previews", async () => {

@@ -55,6 +55,18 @@
     transform: rotate(360deg);
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+@media (pointer: coarse) {
+  .bar button {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}
 .error {
   font-size: var(--a13n-text-xs);
   color: var(--destructive);

@@ -138,7 +138,10 @@
   position: relative;
   flex: 1;
   overflow: auto;
-  min-height: 80px;
+  min-height: 0;
+  padding-bottom: 20px;
+  overscroll-behavior-y: contain;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
   scrollbar-width: none;
 }
 .threadGroups::-webkit-scrollbar {
@@ -164,8 +167,22 @@
 .projectGroup {
   margin-bottom: 2px;
 }
-.projectGroup:has(.groupThreads:not([hidden])) {
-  margin-bottom: 12px;
+.groupDisclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--a13n-duration-base) var(--a13n-ease-out);
+}
+.groupDisclosure[data-expanded="true"] {
+  grid-template-rows: 1fr;
+}
+.groupDisclosure > .groupThreads {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .groupDisclosure {
+    transition: none;
+  }
 }
 .projectPreview {
   background: var(--popover);
@@ -282,7 +299,7 @@
   width: 12px;
   height: 12px;
   opacity: 0;
-  transition: transform 120ms ease;
+  transition: transform var(--a13n-duration-base) var(--a13n-ease-out);
 }
 .groupHeading:hover .projectIcon {
   opacity: 0;
@@ -378,7 +395,7 @@
 .threadDisclosure svg {
   width: 12px;
   height: 12px;
-  transition: transform 120ms ease;
+  transition: transform var(--a13n-duration-base) var(--a13n-ease-out);
 }
 .threadRow:hover,
 .threadRow:has([data-popup-open]) {
@@ -550,11 +567,9 @@
 }
 .resultCount {
   flex-shrink: 0;
-  min-width: 18px;
-  padding: 1px 4px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
-  color: var(--info-foreground);
+  min-width: 16px;
+  padding: 0;
+  color: var(--a13n-tertiary);
   font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -598,6 +613,7 @@
 }
 .page {
   --harness-reading-width: 800px;
+  --conversation-gutter: 42px;
   container: conversation-page / inline-size;
   position: relative;
   display: flex;
@@ -634,11 +650,11 @@
   flex: 1;
   min-height: 100px;
   overflow: auto;
-  padding: 24px 16px 32px;
+  padding: 24px var(--conversation-gutter, 16px) 32px;
   overflow-anchor: none;
 }
 .transcript {
-  width: min(var(--harness-reading-width), 100cqw - 84px);
+  width: min(var(--harness-reading-width), 100%);
   margin: 0 auto;
 }
 .entry {
@@ -692,8 +708,8 @@
   margin-inline-start: auto;
   color: var(--a13n-text);
   padding: 12px;
-  background: color-mix(in srgb, var(--a13n-surface) 98%, var(--a13n-text));
-  border-radius: 10px;
+  background: var(--a13n-surface);
+  border-radius: 16px;
   font-size: var(--harness-prose-size);
   line-height: var(--harness-prose-leading);
   overflow-wrap: anywhere;
@@ -706,13 +722,13 @@
 .messageActions {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
   min-height: 32px;
   margin-top: 4px;
   margin-inline-start: -6px;
   color: var(--a13n-secondary);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--a13n-duration-fast) var(--a13n-ease-out);
 }
 .userInput > .messageActions {
   justify-content: flex-end;
@@ -733,7 +749,7 @@
 .messageActions:has([data-popup-open], [role="alert"]) {
   opacity: 1;
 }
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .messageActions {
     opacity: 1;
   }
@@ -750,6 +766,19 @@
 .copyMessage {
   color: inherit;
 }
+.copyMessage svg[data-copied] {
+  animation: copyConfirm var(--a13n-duration-base) var(--a13n-ease-out);
+}
+@keyframes copyConfirm {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
 .copyMessage:hover {
   color: var(--a13n-text);
 }
@@ -763,6 +792,23 @@
   opacity: 1;
 }
 @media (pointer: coarse) {
+  .navigation {
+    --thread-label-inset: 44px;
+    gap: 4px;
+  }
+  .groupHeading:has(.groupActions) .groupToggle {
+    padding-inline-end: 96px;
+  }
+  .groupActions button,
+  .threadActions,
+  .threadDisclosure {
+    width: 44px;
+    touch-action: manipulation;
+  }
+  .threadDisclosure {
+    flex-basis: 44px;
+    margin-inline-start: 0;
+  }
   .groupToggle,
   .threadLink {
     min-height: 44px;
@@ -889,7 +935,7 @@
   font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
-.reasoning > summary {
+.reasoning > [data-slot="collapsible-trigger"] {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -900,16 +946,23 @@
   line-height: 20px;
   cursor: pointer;
   list-style: none;
-  transition: color 120ms ease;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  touch-action: manipulation;
+  transition: color var(--a13n-duration-fast);
 }
 .noticeSummary::before,
-.reasoning > summary::before {
+.reasoning > [data-slot="collapsible-trigger"]::before {
   content: none;
 }
-.reasoning > summary::-webkit-details-marker {
+.reasoning > [data-slot="collapsible-trigger"]::-webkit-details-marker {
   display: none;
 }
-.reasoning > summary:is(:hover, :focus-visible) {
+.reasoning > [data-slot="collapsible-trigger"]:is(:hover, :focus-visible) {
   color: var(--a13n-text);
 }
 .logCaret {
@@ -917,12 +970,18 @@
   width: 12px;
   height: 12px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition:
+    opacity var(--a13n-duration-fast),
+    transform var(--a13n-duration-base) var(--a13n-ease-out);
 }
-details[open] > summary > .logCaret {
+details[open] > summary > .logCaret,
+.reasoning > [data-slot="collapsible-trigger"][data-panel-open] > .logCaret {
   transform: rotate(90deg);
 }
-summary:is(:hover, :focus-visible) > .logCaret {
+summary:is(:hover, :focus-visible) > .logCaret,
+.reasoning
+  > [data-slot="collapsible-trigger"]:is(:hover, :focus-visible)
+  > .logCaret {
   opacity: 1;
 }
 .reasoningBody {
@@ -932,7 +991,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
 .reasoningBody [data-slot="scroll-area-content"] > div + div {
   margin-top: 12px;
 }
-.reasoning > summary:focus-visible {
+.reasoning > [data-slot="collapsible-trigger"]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
@@ -1038,8 +1097,20 @@ summary:is(:hover, :focus-visible) > .logCaret {
   --composer-content-height: 32px;
   flex-shrink: 0;
   /* Reserve room for the input timeline rail beside the reading column. */
-  width: min(var(--harness-reading-width), 100% - 84px);
+  width: min(
+    var(--harness-reading-width),
+    calc(100% - 2 * var(--conversation-gutter, 42px))
+  );
   margin: 0 auto;
+  padding-bottom: max(
+    16px,
+    var(--keyboard-bottom-inset, env(safe-area-inset-bottom, 0px))
+  );
+}
+@media (max-width: 700px) {
+  .page {
+    --conversation-gutter: 16px;
+  }
 }
 .page > .composer {
   margin-top: 4px;
@@ -1070,7 +1141,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
 }
 @media (max-width: 640px) {
   .reading {
-    padding: 16px 12px;
+    padding: 16px var(--conversation-gutter, 16px);
   }
   .composerInput {
     padding: var(--composer-inset, 6px);
@@ -1091,11 +1162,41 @@ summary:is(:hover, :focus-visible) > .logCaret {
   font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
-.sendButton {
+.composerInput > .sendButton {
   grid-area: send;
   flex-shrink: 0;
   border-radius: 50%;
   box-shadow: none;
+}
+.sendButton::before {
+  border-radius: 50%;
+  box-shadow: none;
+}
+.sendGlyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.sendGlyph > svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--a13n-duration-fast) var(--a13n-ease-out),
+    transform var(--a13n-duration-base) var(--a13n-ease-out);
+}
+.sendGlyph > svg:last-child {
+  opacity: 0;
+  transform: scale(0.65);
+}
+.sendButton[data-action="stop"] .sendGlyph > svg:first-child {
+  opacity: 0;
+  transform: translateY(-3px) scale(0.8);
+}
+.sendButton[data-action="stop"] .sendGlyph > svg:last-child {
+  opacity: 1;
+  transform: scale(1);
+}
+.sendButton[data-loading] .sendGlyph {
+  visibility: hidden;
 }
 .composerContext {
   font-size: var(--a13n-text-body);
@@ -1203,6 +1304,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
 }
 .composerActions {
   grid-area: actions;
+  min-width: 0;
   justify-content: flex-end;
   display: flex;
   align-items: center;
@@ -1248,17 +1350,31 @@ summary:is(:hover, :focus-visible) > .logCaret {
     gap: 2px;
   }
 }
-@media (max-width: 600px), (pointer: coarse) {
+@media (max-width: 600px) {
   .composerInput {
     column-gap: 0;
   }
   .composerActions {
     gap: 0;
   }
+}
+@media (pointer: coarse) {
+  .composerInput {
+    --harness-control-height: 44px;
+  }
   .composerInput > button,
-  .composerActions > button {
+  .composerActions > button,
+  .composerHeader button {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  /* Shared Button supplies the 44px pseudo-element hit area. Reserve its
+     space in the row while keeping the primary face at the desktop size. */
+  .composerInput > .sendButton {
     min-width: 32px;
     min-height: 32px;
+    margin: 6px;
   }
 }
 .composerStatus {
@@ -1309,10 +1425,28 @@ summary:is(:hover, :focus-visible) > .logCaret {
 }
 .newOutput {
   composes: action from "./floating-action.module.css";
-  align-self: center;
-  margin-top: -40px;
-  margin-bottom: 8px;
-  position: relative;
+  position: absolute;
+  bottom: 64px;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 3;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition:
+    opacity var(--a13n-duration-fast) var(--a13n-ease-in),
+    transform var(--a13n-duration-fast) var(--a13n-ease-in),
+    visibility var(--a13n-duration-fast);
+}
+.newOutput[data-visible] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: var(--a13n-duration-base);
+  transition-timing-function: var(--a13n-ease-out);
 }
 .detailActions {
   display: flex;
@@ -1415,7 +1549,7 @@ dl.detailGrid > .detailLongRow dd {
     width: 100%;
   }
   .reading {
-    padding-inline: 12px;
+    padding-inline: var(--conversation-gutter, 16px);
   }
   .detailGrid {
     grid-template-columns: 1fr;
@@ -1426,7 +1560,7 @@ dl.detailGrid > .detailLongRow dd {
   margin: 16px 0;
   padding: 16px;
   border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
+  border-radius: 16px;
 }
 .decision h2 {
   font-size: calc(var(--a13n-text-body) * 16 / 14);
@@ -1483,6 +1617,13 @@ dl.detailGrid > .detailLongRow dd {
   margin-top: 4px;
   flex-shrink: 0;
   accent-color: var(--a13n-text);
+}
+.answerOption:is(:hover, :active) {
+  background: var(--a13n-hover);
+}
+.answerOption {
+  min-height: 44px;
+  touch-action: manipulation;
 }
 .answerOption:has(input:checked) {
   background: var(--a13n-selected);
@@ -1555,8 +1696,8 @@ dl.detailGrid > .detailLongRow dd {
   gap: 8px;
   min-height: 26px;
   margin-block: 8px 0;
-  padding-inline: 8px 4px;
-  color: var(--harness-log-text);
+  padding-inline: var(--thread-label-inset, 32px) 4px;
+  color: var(--a13n-tertiary);
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
@@ -1572,6 +1713,29 @@ dl.detailGrid > .detailLongRow dd {
   margin-inline-start: auto;
   width: 24px;
   height: 24px;
+  color: var(--a13n-tertiary);
+}
+@media (pointer: coarse) {
+  .sectionHeading > button {
+    width: 44px;
+    height: 44px;
+  }
+  .threadActions {
+    color: var(--a13n-tertiary);
+  }
+  .threadActions > svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+.threadRow[data-menu-open="true"] {
+  background: var(--a13n-hover);
+}
+.threadLink[aria-current="page"] .resultDot::before {
+  width: 5px;
+  height: 5px;
+  background: transparent;
+  border: 1px solid var(--info-foreground);
 }
 .showMore {
   margin-block-start: 4px;
@@ -1830,6 +1994,28 @@ dl.detailGrid > .detailLongRow dd {
 .failureNotice > div {
   min-width: 0;
 }
+.failureNotice > div > button {
+  margin-top: 12px;
+}
+.failureNotice summary {
+  padding-block: 4px;
+  cursor: pointer;
+}
+.failureNotice pre:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .failureNotice summary {
+    min-height: 44px;
+    align-content: center;
+  }
+}
+@container conversation-reader (max-width: 480px) {
+  .decisionActions > button {
+    flex: 1 1 auto;
+  }
+}
 .failureNotice strong {
   font-weight: 500;
 }
@@ -1919,8 +2105,8 @@ dl.detailGrid > .detailLongRow dd {
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  /* The transcript reserves rail space using the same width as the composer. */
-  padding-inline: 0;
+  /* The scroll owner keeps edge gestures available; content shares the composer axis. */
+  padding-inline: var(--conversation-gutter, 16px);
   scrollbar-gutter: stable both-edges;
   /* Match the fade depth so the first message stays fully legible
      at scroll origin, then dissolves as it approaches the titlebar. */
@@ -1947,7 +2133,6 @@ dl.detailGrid > .detailLongRow dd {
     ),
     var(--reader-surface, var(--a13n-canvas)) 75%
   );
-  backdrop-filter: blur(2px);
   mask-image: linear-gradient(
     var(--fade-direction),
     transparent 0%,
@@ -2010,10 +2195,45 @@ dl.detailGrid > .detailLongRow dd {
 .readerFrame:has(~ .composer) .reading {
   padding-bottom: 96px;
 }
+@container conversation-page (max-width: 600px) {
+  .readerFrame:has(~ .composer) {
+    --reader-fade-bottom: 48px;
+  }
+  .readerFrame:has(~ .composer) .reading {
+    padding-bottom: 48px;
+  }
+  .transcript > .turn:last-child {
+    margin-bottom: 0;
+  }
+}
 .turn {
   margin-bottom: 32px;
   outline: none;
-  scroll-margin-top: 16px;
+  scroll-margin-top: 56px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .turn[data-entering] {
+    animation: turnEnter var(--a13n-duration-base) var(--a13n-ease-out);
+  }
+  @keyframes turnEnter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .newOutput,
+  .logCaret {
+    transition: none;
+  }
+  .copyMessage svg[data-copied] {
+    animation: none;
+  }
 }
 .turn:has(+ .failureNotice) {
   margin-bottom: 0;
@@ -2144,29 +2364,13 @@ div:has(+ .execution) > .assistantMessage {
     --execution-row-height: 22px;
     --execution-row-padding: 1px;
   }
-  .executionContent .reasoning > summary,
+  .executionContent .reasoning > [data-slot="collapsible-trigger"],
   .executionContent .activity > summary {
     min-height: var(--execution-row-height);
     padding-block: var(--execution-row-padding);
   }
   .executionContent .activity {
     margin-block: 1px;
-  }
-}
-@supports (interpolate-size: allow-keywords) and
-  selector(details::details-content) {
-  @media (prefers-reduced-motion: no-preference) {
-    .executionContent details::details-content {
-      interpolate-size: allow-keywords;
-      block-size: 0;
-      overflow: clip;
-      transition:
-        block-size 150ms ease-out,
-        content-visibility 150ms allow-discrete;
-    }
-    .executionContent details[open]::details-content {
-      block-size: auto;
-    }
   }
 }
 .executionContent .assistantMessage {
@@ -2193,8 +2397,10 @@ div:has(+ .execution) > .assistantMessage {
 }
 
 @container conversation-page (max-width: 600px) {
-  .transcript,
-  .composer {
+  .page > * {
+    --conversation-gutter: 16px;
+  }
+  .transcript {
     width: 100%;
   }
 }
@@ -2326,11 +2532,15 @@ div:has(+ .execution) > .assistantMessage {
   display: none;
 }
 
-.composerInput[data-dictating] {
-  grid-template-areas: "actions";
-  grid-template-columns: minmax(0, 1fr);
+/* Keep the editor's measured height while recording; replacing controls must
+   not pull the transcript or the user's draft up and down. */
+.composerInput[data-dictating] > :not(.composerActions) {
+  visibility: hidden;
+  pointer-events: none;
 }
-.composerInput[data-dictating] > :not(.composerActions),
+.composerInput[data-dictating] .composerActions {
+  grid-column: 1 / -1;
+}
 .composerInput[data-dictating]
   .composerActions
   > :not([data-dictation-active]) {

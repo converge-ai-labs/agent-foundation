@@ -92,7 +92,7 @@ export function CopyMessage({
             }}
           >
             {state === "copied" ? (
-              <Check aria-hidden="true" />
+              <Check aria-hidden="true" data-copied />
             ) : (
               <Copy aria-hidden="true" />
             )}

@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { ExtraProps } from "react-markdown";
 import { Button } from "a13n-ui";
-import { ArrowsOut, Copy, Code } from "@phosphor-icons/react";
+import { ArrowsOut, Check, Copy, Code } from "@phosphor-icons/react";
 import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "./mermaid-render";
 import { SyntaxCode } from "./syntax-code";
@@ -129,7 +129,12 @@ function Diagram({
         </p>
       )}
       {(original || !current?.src) && (
-        <pre tabIndex={0} role="region" aria-label={t("Diagram source")}>
+        <pre
+          className="a13n-scrollbar"
+          tabIndex={0}
+          role="region"
+          aria-label={t("Diagram source")}
+        >
           {children}
         </pre>
       )}
@@ -201,8 +206,14 @@ export function MarkdownPre({
               }
             }}
           >
-            <Copy />
-            {copied ? t("Copied") : t("Copy")}
+            {copied ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <Copy aria-hidden="true" />
+            )}
+            <span className={styles.copyLabel}>
+              {copied ? t("Copied") : t("Copy")}
+            </span>
           </Button>
         </div>
       </div>
@@ -228,6 +239,7 @@ export function MarkdownPre({
             </p>
           )}
           <pre
+            className="a13n-scrollbar"
             tabIndex={0}
             role="region"
             aria-label={
@@ -250,7 +262,7 @@ export function MarkdownTable({
   const { t } = useTranslation();
   return (
     <div
-      className={styles.tableScroll}
+      className={`${styles.tableScroll} a13n-scrollbar`}
       role="region"
       aria-label={t("Table")}
       tabIndex={0}

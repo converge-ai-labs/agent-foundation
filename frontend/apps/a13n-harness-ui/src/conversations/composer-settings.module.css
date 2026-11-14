@@ -28,7 +28,7 @@
 .body {
   min-width: 0;
   min-height: 0;
-  max-height: min(65dvh, 540px);
+  max-height: min(65dvh, 540px, var(--available-height, 100dvh));
   overflow: auto;
   overscroll-behavior: contain;
   padding: 4px;
@@ -238,7 +238,7 @@
   clip-path: inset(50%);
 }
 .identity > button {
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 .summary {
   display: flex;
@@ -280,9 +280,28 @@
   }
 }
 @media (pointer: coarse) {
-  .identity > button {
-    min-width: var(--harness-control-height);
-    min-height: var(--harness-control-height);
+  .identity > button,
+  .header > button {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .row,
+  .choice,
+  .optionRow,
+  .optionAction {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}
+@container composer (max-width: 480px) {
+  .modelTrigger {
+    max-width: min(180px, 100%);
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .modelSummary small {
+    display: none;
   }
 }
 
@@ -346,7 +365,8 @@
 .modelSummary {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  min-width: 0;
+  gap: 4px;
   max-width: 100%;
   vertical-align: middle;
 }

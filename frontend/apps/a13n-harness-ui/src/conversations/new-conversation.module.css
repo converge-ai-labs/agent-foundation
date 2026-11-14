@@ -1,4 +1,5 @@
 .page {
+  --conversation-gutter: 42px;
   container-type: size;
   container-name: new-conversation conversation-page;
   display: flex;
@@ -10,7 +11,7 @@
   padding-bottom: 8vh;
 }
 .inputArea > .welcome {
-  margin: 0 0 8px;
+  margin: 0 0 16px;
   text-align: center;
   font-size: calc(var(--a13n-text-body) * 20 / 14);
   font-weight: 500;
@@ -18,9 +19,9 @@
   letter-spacing: -0.025em;
 }
 .inputArea {
-  --composer-inset: 4px;
+  --composer-inset: 6px;
   flex-shrink: 0;
-  width: min(100%, 800px);
+  width: min(800px, calc(100% - 2 * var(--conversation-gutter)));
   margin: 0 auto;
 }
 .inputArea > section {
@@ -30,7 +31,7 @@
   display: flex;
   justify-content: center;
   border: 0;
-  margin: 0 0 12px;
+  margin: 0 0 24px;
   padding: 0;
   min-width: 0;
 }
@@ -95,7 +96,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
-  width: min(var(--harness-reading-width), 100% - 84px);
+  width: 100%;
   margin: 0 auto 12px;
   padding: 12px 12px;
   border-radius: 12px;
@@ -118,7 +119,7 @@
   text-decoration: underline;
 }
 .recoveryStatus {
-  width: min(var(--harness-reading-width), 100% - 84px);
+  width: 100%;
   margin: 0 auto 12px;
   padding-inline: 12px;
   color: var(--a13n-secondary);
@@ -136,19 +137,53 @@
   overflow: hidden;
   clip-path: inset(50%);
 }
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .page {
+    --conversation-gutter: 16px;
     justify-content: flex-start;
-    padding: 12vh 0 0;
+    padding: 0;
+  }
+  .inputArea {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 100%;
+    padding-top: clamp(24px, 16svh, 128px);
   }
   .inputArea > .welcome {
     font-size: calc(var(--a13n-text-body) * 20 / 14);
+  }
+  .inputArea > section {
+    width: 100%;
+    margin-top: auto;
   }
   .context {
     gap: 8px;
   }
   .location {
     max-width: 100%;
+  }
+  .projectNotice,
+  .recoveryStatus {
+    max-width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .location > button,
+  .mode > button {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}
+@container new-conversation (max-height: 480px) {
+  .inputArea {
+    padding-top: 16px;
+  }
+  .inputArea > .welcome {
+    display: none;
+  }
+  .context {
+    margin-bottom: 16px;
   }
 }
 
@@ -161,6 +196,9 @@
 }
 
 @container new-conversation (max-width: 600px) {
+  .inputArea {
+    --conversation-gutter: 16px;
+  }
   .context,
   .projectNotice,
   .recoveryStatus {

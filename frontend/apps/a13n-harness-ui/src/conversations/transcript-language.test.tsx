@@ -123,11 +123,8 @@ function contextEvent(payload: Record<string, unknown>) {
 
 it("translates saved transcript chrome while preserving model content, backend part kinds and the open disclosure", async () => {
   render(<SavedEntry entry={saved} threadId="one" />);
-  const reasoning = screen.getByText("Thought").closest("details")!;
-  await act(async () => {
-    reasoning.open = true;
-    reasoning.dispatchEvent(new Event("toggle"));
-  });
+  const reasoning = screen.getByRole("button", { name: /Thought/ });
+  fireEvent.click(reasoning);
   const reply = screen.getByText("Visible reply");
   const thought = screen.getByText("Private plan");
   expect(screen.getByText("for 3s")).toBeTruthy();
@@ -139,8 +136,8 @@ it("translates saved transcript chrome while preserving model content, backend p
 
   await act(() => i18n.changeLanguage("zh-CN"));
 
-  expect(screen.getByText("思考").closest("details")).toBe(reasoning);
-  expect(reasoning.open).toBe(true);
+  expect(screen.getByRole("button", { name: /思考/ })).toBe(reasoning);
+  expect(reasoning.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("Private plan")).toBe(thought);
   expect(screen.getByText("Visible reply")).toBe(reply);
   expect(screen.getByText("用时 3s")).toBeTruthy();

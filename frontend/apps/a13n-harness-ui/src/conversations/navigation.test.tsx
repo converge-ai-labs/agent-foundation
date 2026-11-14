@@ -457,7 +457,9 @@ it("switches search language without losing scope, focus, loaded history or the 
   await user.click(screen.getByRole("button", { name: "Search chats" }));
   const search = screen.getByRole("searchbox", { name: "Find chats" });
   await user.click(screen.getByRole("combobox", { name: "Project scope" }));
-  const projectSearch = screen.getByRole("combobox", { name: "Find project" });
+  const projectSearch = await screen.findByRole("combobox", {
+    name: "Find project",
+  });
   await user.type(projectSearch, "Tw");
   const beforeFilterSwitch = vi.mocked(fetch).mock.calls.length;
   await act(() => i18n.changeLanguage("zh-CN"));
@@ -2682,5 +2684,41 @@ it("keeps the archived owner of an off-page unread worker reachable in Recent", 
     name: /unread-worker/,
   });
   expect(within(row).getByRole("img", { name: "New result" })).toBeTruthy();
+  vi.restoreAllMocks();
+});
+
+it("keeps the selected result in place after acknowledgement until selection changes", async () => {
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const selected = {
+    ...thread("selected-old"),
+    unread: true,
+    read_state_version: 1,
+  } as Schema<"ThreadSummary">;
+  results.observe(selected);
+  mount("/threads/selected-old", false, results);
+  const link = await screen.findByRole("link", { name: /selected-old/ });
+  await waitFor(() =>
+    expect(
+      link.closest("[data-nav-bucket]")?.getAttribute("data-nav-bucket"),
+    ).toBe("unread"),
+  );
+  act(() =>
+    results.observe({ ...selected, unread: false, read_state_version: 2 }),
+  );
+  expect(screen.getByRole("link", { name: "selected-old" })).toBe(link);
+  expect(
+    link.closest("[data-nav-bucket]")?.getAttribute("data-nav-bucket"),
+  ).toBe("unread");
+  expect(within(link).queryByRole("img", { name: "New result" })).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "Recent 1" }));
+  await waitFor(() => {
+    const previous = screen.queryByRole("link", { name: "selected-old" });
+    // An off-page root can leave navigation once it is neither unread nor selected.
+    expect(
+      previous?.closest("[data-nav-bucket]")?.getAttribute("data-nav-bucket") ??
+        "recent",
+    ).toBe("recent");
+  });
   vi.restoreAllMocks();
 });

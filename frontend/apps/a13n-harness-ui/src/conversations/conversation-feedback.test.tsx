@@ -78,6 +78,21 @@ it("retains an accepted input when the following detail read fails, without rese
       screen.queryByRole("region", { name: "Chat unavailable" }),
     ).toBeNull();
     expect(draft.localInputs[0].state).toBe("accepted");
+    // Reading older content offers a return path even without incoming output.
+    const reader = view.container.querySelector<HTMLElement>(
+      "[data-conversation-reader]",
+    )!;
+    Object.defineProperties(reader, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    reader.scrollTop = 400;
+    fireEvent.pointerDown(reader);
+    fireEvent.scroll(reader);
+    expect(screen.getByRole("button", { name: "Back to latest" })).toBeTruthy();
+    reader.scrollTop = 1400;
+    fireEvent.scroll(reader);
+    expect(screen.queryByRole("button", { name: "Back to latest" })).toBeNull();
     expect(POST).not.toHaveBeenCalled();
   } finally {
     view.unmount();

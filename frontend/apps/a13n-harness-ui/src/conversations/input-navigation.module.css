@@ -1,76 +1,81 @@
 .rail {
   position: absolute;
-  inset-inline-start: 0;
+  /* Stay beside the reading column, not against the workbench's left edge. */
+  inset-inline-start: max(4px, calc((100% - 800px) / 2 - 36px));
   top: 50%;
   transform: translateY(-50%);
   max-height: 65%;
-  width: 34px;
+  width: 32px;
   overflow-y: auto;
   scrollbar-width: none;
   z-index: 2;
   display: flex;
   flex-direction: column;
+  align-items: center;
   padding-block: 8px;
   overscroll-behavior: contain;
 }
 .tick {
-  flex: 0 0 16px;
-  padding: 0 4px;
+  flex: 0 0 24px;
+  padding: 0;
   width: 32px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   border: 0;
-  border-radius: 4px;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .tick span {
-  width: max(var(--tick-width, 8px), var(--current-width, 8px));
+  width: 20px;
   height: 2px;
   flex-shrink: 0;
   border-radius: 2px;
   background: var(--a13n-secondary);
-  opacity: var(--tick-opacity, 0.4);
+  opacity: var(--tick-opacity, 0.35);
+  transform: scaleX(var(--tick-scale, 0.4));
   transition:
-    width 100ms ease-out,
-    opacity 100ms ease-out;
-}
-.tick[data-proximity="3"] {
-  --tick-width: 10px;
-  --tick-opacity: 0.5;
+    transform var(--a13n-duration-fast) var(--a13n-ease-out),
+    opacity var(--a13n-duration-fast) var(--a13n-ease-out),
+    background-color var(--a13n-duration-fast);
 }
 .tick[data-proximity="2"] {
-  --tick-width: 14px;
-  --tick-opacity: 0.6;
+  --tick-scale: 0.5;
+  --tick-opacity: 0.5;
 }
 .tick[data-proximity="1"] {
-  --tick-width: 20px;
-  --tick-opacity: 0.75;
+  --tick-scale: 0.7;
+  --tick-opacity: 0.65;
 }
 .tick[data-proximity="0"] {
-  --tick-width: 26px;
-  --tick-opacity: 0.9;
+  --tick-scale: 1;
+  --tick-opacity: 1;
 }
 .tick[aria-current] span {
-  --current-width: 18px;
+  transform: scaleX(0.9);
   opacity: 1;
   background: var(--a13n-text);
+  height: 3px;
 }
 .tick:focus-visible {
-  outline: 2px solid var(--a13n-text);
+  outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+.tick:active {
+  background: var(--a13n-hover);
+}
 .preview {
-  width: min(360px, calc(100vw - 64px));
-  padding: 8px;
+  width: min(320px, calc(100vw - 64px));
+  padding: 12px;
   line-height: 1.5;
   text-align: start;
   text-wrap: pretty;
-  transition-duration: 80ms;
 }
 .preview small {
-  color: var(--a13n-secondary);
+  color: inherit;
+  opacity: 0.65;
 }
 .preview p {
   margin: 4px 0 0;
@@ -83,45 +88,60 @@
 .output {
   margin-top: 12px;
   padding-top: 8px;
-  border-top: 1px solid var(--a13n-border);
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
 }
 .output p {
   -webkit-line-clamp: 4;
 }
 .emptyOutput {
-  color: var(--a13n-secondary);
+  opacity: 0.65;
 }
 .mobile {
   display: none;
 }
 .mobileTrigger {
-  composes: action from "./floating-action.module.css";
+  gap: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  font-weight: 400;
+  touch-action: manipulation;
 }
 .menu {
-  width: min(340px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 32px));
 }
 .menu nav {
-  max-height: 50dvh;
+  max-height: min(480px, 55dvh);
   overflow-y: auto;
+  overscroll-behavior: contain;
   margin-top: 12px;
 }
 .menu nav button {
   display: flex;
   gap: 12px;
   width: 100%;
+  min-height: 44px;
   padding: 12px 8px;
   background: transparent;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   text-align: start;
   cursor: pointer;
+  touch-action: manipulation;
 }
-.menu nav button:hover,
-.menu nav button[aria-current] {
+.menu nav button:is(:hover, :active) {
   background: var(--a13n-hover);
 }
+.menu nav button[aria-current] {
+  background: var(--a13n-selected);
+}
+.menu nav button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 .menu nav small {
+  min-width: 20px;
   color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
 }
 .menuPreview {
   display: flex;
@@ -142,11 +162,26 @@
   .rail {
     display: none;
   }
+}
+@container conversation-page (max-width: 600px) {
   .mobile {
-    display: block;
-    position: absolute;
-    inset: 0 auto auto 0;
-    z-index: 2;
+    display: flex;
+    align-items: center;
+    flex: none;
+  }
+  .mobileTrigger {
+    width: 32px;
+    height: 32px;
+  }
+}
+@media (pointer: coarse) {
+  .mobileTrigger {
+    width: 44px;
+    height: 44px;
+  }
+  .tick {
+    min-height: 44px;
+    flex-basis: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

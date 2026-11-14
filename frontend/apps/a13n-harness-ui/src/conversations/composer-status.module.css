@@ -379,6 +379,11 @@ button.metric {
 }
 
 @media (pointer: coarse) {
+  .metric {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
   .breakdown > summary,
   .modelHeader,
   .attribution summary,

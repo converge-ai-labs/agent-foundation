@@ -7,6 +7,7 @@
 .content {
   height: 100%;
   min-height: 0;
+  min-width: 0;
 }
 .content[data-ready="false"] {
   visibility: hidden;
@@ -17,12 +18,12 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 16px;
-  padding: 24px;
+  padding: 24px max(16px, calc((100% - 800px) / 2));
   color: var(--a13n-secondary);
-  text-align: center;
+  text-align: start;
   font-size: var(--a13n-text-body);
 }
 .status {

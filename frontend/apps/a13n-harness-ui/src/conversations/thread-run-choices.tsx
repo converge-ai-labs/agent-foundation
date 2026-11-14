@@ -128,6 +128,7 @@ export function RunEnvironments({
         <CaretRight aria-hidden="true" size={14} />
       </Button>
       <ModalFrame
+        bottomStickOnMobile
         open={editing !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);

@@ -74,7 +74,11 @@ function MarkdownSpan({
   return (
     <span
       {...props}
-      className={className}
+      className={
+        className === "katex-display"
+          ? `${className} a13n-scrollbar`
+          : className
+      }
       {...(className === "katex-display"
         ? { role: "region", "aria-label": t("Math formula"), tabIndex: 0 }
         : {})}

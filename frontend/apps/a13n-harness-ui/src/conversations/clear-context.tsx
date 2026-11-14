@@ -72,6 +72,7 @@ export function ClearContext({
         <CaretRight aria-hidden size={14} />
       </Button>
       <ModalFrame
+        bottomStickOnMobile
         open={!!target}
         onOpenChange={(open) => {
           if (!open && !clear.isPending) setTarget(null);

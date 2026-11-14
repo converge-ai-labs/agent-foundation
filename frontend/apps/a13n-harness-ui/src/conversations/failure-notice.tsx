@@ -29,7 +29,14 @@ export function FailureNotice({
         {message.trim() !== short && (
           <details>
             <summary>{t("Error details")}</summary>
-            <pre>{message}</pre>
+            <pre
+              className="a13n-scrollbar"
+              tabIndex={0}
+              role="region"
+              aria-label={t("Error details")}
+            >
+              {message}
+            </pre>
           </details>
         )}
         {action}

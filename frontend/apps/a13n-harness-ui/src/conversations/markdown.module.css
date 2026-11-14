@@ -75,7 +75,7 @@
 .markdown h6 {
   font-weight: 500;
   line-height: 1.4;
-  margin: 16px 0 8px;
+  margin: 24px 0 8px;
   color: var(--a13n-text);
 }
 .markdown h1 {
@@ -97,7 +97,7 @@
   font-size: 0.86em;
 }
 .markdown :not(pre) > code {
-  padding: 4px 4px;
+  padding: 2px 4px;
   border-radius: 4px;
   background: var(--a13n-surface);
 }
@@ -106,7 +106,8 @@
   overflow-x: auto;
   overflow-y: hidden;
   /* KaTeX's positioned glyph boxes extend beyond its line box. */
-  padding-block: 0.5em;
+  padding: 0.5em 4px;
+  overscroll-behavior-x: contain;
   overflow-wrap: normal;
 }
 .markdown :global(.katex-display):focus-visible {
@@ -132,6 +133,7 @@
   font-size: var(--harness-code-size);
   line-height: 1.6;
   tab-size: 2;
+  overscroll-behavior: contain;
 }
 .markdown pre:focus-visible {
   outline: 2px solid var(--a13n-focus);
@@ -145,8 +147,8 @@
   min-width: 0;
   overflow: hidden;
   background: var(--a13n-surface);
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
 }
 .codeHeader {
   display: flex;
@@ -155,7 +157,7 @@
   gap: 12px;
   min-height: 32px;
   padding: 4px 8px 4px 16px;
-  border-bottom: 1px solid var(--a13n-border);
+  border-bottom: 1px solid var(--a13n-border-soft);
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
 }
@@ -175,7 +177,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--a13n-mono);
+  font-family: inherit;
+}
+.copyLabel {
+  min-inline-size: 3.5em;
+  text-align: start;
 }
 .codeHeader button[aria-pressed="true"] {
   color: var(--a13n-text);
@@ -213,6 +219,7 @@
 .tableScroll {
   max-width: 100%;
   overflow: auto;
+  overscroll-behavior-x: contain;
   margin: 16px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
@@ -273,6 +280,25 @@
 .markdown input[type="checkbox"] {
   margin-right: 8px;
   accent-color: var(--a13n-secondary);
+}
+@media (pointer: coarse) {
+  .codeHeader button {
+    min-width: 44px;
+    height: 44px;
+  }
+  /* Keep native swipe scrolling without an always-visible custom rail. */
+  .markdown pre,
+  .markdown :global(.katex-display),
+  .tableScroll,
+  .diagramCanvas {
+    scrollbar-width: none;
+  }
+  .markdown pre::-webkit-scrollbar,
+  .markdown :global(.katex-display)::-webkit-scrollbar,
+  .tableScroll::-webkit-scrollbar,
+  .diagramCanvas::-webkit-scrollbar {
+    display: none;
+  }
 }
 @media (max-width: 600px) {
   .markdown th,

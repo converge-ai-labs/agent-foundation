@@ -19,7 +19,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ScrollArea } from "a13n-ui";
+import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+  ScrollArea,
+} from "a13n-ui";
 import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
@@ -28,7 +33,10 @@ import {
 } from "./reading-anchor";
 import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
-import { ExecutionDetails } from "./execution-details";
+import {
+  ExecutionDetails,
+  PauseConversationFollowing,
+} from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
 import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
@@ -589,13 +597,17 @@ function Reasoning({
       : undefined,
   );
   const [open, setOpen] = useState(false);
+  const pauseFollowing = useContext(PauseConversationFollowing);
   return (
-    <details
+    <Collapsible
       className={styles.reasoning}
       open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onOpenChange={(next) => {
+        if (next) pauseFollowing?.();
+        setOpen(next);
+      }}
     >
-      <summary data-running-label={running || undefined}>
+      <CollapsibleTrigger data-running-label={running || undefined}>
         {running ? t("Thinking", { context: "active" }) : t("Thought")}
         {duration && (
           <span className={styles.executionDuration}>
@@ -603,23 +615,25 @@ function Reasoning({
           </span>
         )}
         <CaretRight aria-hidden="true" className={styles.logCaret} />
-      </summary>
-      <ScrollArea
-        autoHeight
-        scrollbarGutter
-        overscrollContain
-        className={`${styles.reasoningBody} ${styles.innerReader}`}
-        viewportProps={{
-          role: "region",
-          "aria-label": t("Thought content"),
-          tabIndex: 0,
-        }}
-      >
-        {segments.map((segment) => (
-          <MessageText key={segment.id} text={segment.text} />
-        ))}
-      </ScrollArea>
-    </details>
+      </CollapsibleTrigger>
+      <CollapsiblePanel keepMounted inert={!open}>
+        <ScrollArea
+          autoHeight
+          scrollbarGutter
+          overscrollContain
+          className={`${styles.reasoningBody} ${styles.innerReader}`}
+          viewportProps={{
+            role: "region",
+            "aria-label": t("Thought content"),
+            tabIndex: 0,
+          }}
+        >
+          {segments.map((segment) => (
+            <MessageText key={segment.id} text={segment.text} />
+          ))}
+        </ScrollArea>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 
@@ -1110,6 +1124,22 @@ function TurnRows({
       presentationKey: "turn:ungrouped",
       rows: [],
     });
+  const seenTurns = useRef<Set<string> | null>(null);
+  const enteringTurns = new Set(
+    groups
+      .filter(
+        (group) =>
+          seenTurns.current &&
+          !seenTurns.current.has(group.presentationKey) &&
+          group.rows.some(
+            (row) => row.kind === "input" && row.position === undefined,
+          ),
+      )
+      .map((group) => group.presentationKey),
+  );
+  useLayoutEffect(() => {
+    seenTurns.current = new Set(groups.map((group) => group.presentationKey));
+  });
   const anchors = new Map<string, string>();
   for (const group of groups)
     for (const row of group.rows) {
@@ -1133,6 +1163,7 @@ function TurnRows({
             <Turn
               key={group.presentationKey}
               {...group}
+              entering={enteringTurns.has(group.presentationKey)}
               pending={index === groups.length - 1 ? pending : undefined}
               entries={
                 group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries
@@ -1172,6 +1203,7 @@ function TurnRows({
 
 function Turn(props: {
   pending?: PendingInteraction;
+  entering?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1198,6 +1230,7 @@ function TurnHistory({
   ...props
 }: {
   pending?: PendingInteraction;
+  entering?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
@@ -1342,8 +1375,10 @@ function TurnSegments({
   loading = false,
   failed = false,
   pending,
+  entering: shouldEnter = false,
 }: {
   pending?: PendingInteraction;
+  entering?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1355,6 +1390,7 @@ function TurnSegments({
   failed?: boolean;
 }) {
   const { t } = useTranslation();
+  const [entering] = useState(shouldEnter);
   const rows = usePresentedRows(
     questionRows(
       sourceRows.map((row) =>
@@ -1486,7 +1522,12 @@ function TurnSegments({
     );
   });
   return (
-    <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
+    <section
+      data-turn-id={id}
+      data-entering={entering || undefined}
+      className={styles.turn}
+      tabIndex={-1}
+    >
       {visibleSegments.map((segment) => {
         if (segment.kind === "gap")
           return (
