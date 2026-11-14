@@ -288,10 +288,15 @@ class RootRunExecutor:
             else "ordinary",
             coordinator_thread_id=owner,
         )
+        previous = (
+            None
+            if previous_composition is None
+            else await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+        )
         captured_environment = None
         if response is not None:
-            assert previous_composition is not None
-            captured_environment = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+            assert previous is not None
+            captured_environment = previous
         selection = selection.with_environment(
             environment,
             captured=captured_environment,
@@ -299,6 +304,9 @@ class RootRunExecutor:
         )
         if restart is None:
             source = await self._required_configuration()
+            if model_overrides is None and previous is not None:
+                # Nobody selected a Model for this admission; keep the previous Run's selection.
+                model_overrides = previous.model_overrides
             published = await self._compositions.publish(source, selection, model_overrides=model_overrides)
         else:
             captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)

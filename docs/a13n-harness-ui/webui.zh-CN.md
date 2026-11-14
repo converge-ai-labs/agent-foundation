@@ -138,7 +138,7 @@ flowchart TB
 
 需要修改 Thread 默认 Model（包括终端 UI 使用的默认值）时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
 
-新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
+新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。不是由你发消息启动的 Run（例如后台结果、审批或其他聊天发来的消息）沿用上一个 Run 的模型和设置。
 
 **Chat options → Clear context** 让下一条消息不带先前模型消息、笔记、任务或保存的 Agent 工作状态开始，同时丢弃待处理问题和审批。聊天历史、文件、设置和未发送输入保留。
 
@@ -356,7 +356,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 限制应用于模型工具，不限制人类 WebUI 访问。Worker 不能创建根、控制 owner 或访问兄弟 worker。
 
-普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 只覆盖首个 Run，`run_thread` 可覆盖后续 Run。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
+普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择首个 Run 的模型，`run_thread` 可以为后续 Run 另选模型。没有选择模型就启动的 Run（例如消息或后台结果触发的 Run）沿用上一个 Run 的模型。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
 
 在 **设置 → 常规 → 子 Agent 默认值** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 

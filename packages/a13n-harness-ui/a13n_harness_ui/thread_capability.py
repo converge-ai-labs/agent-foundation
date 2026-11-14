@@ -496,7 +496,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 "create_thread(prompt=...). The Host applies the captured Sidekick defaults "
                 f"(Agent {agent_id!r}{model_selection}) when arguments are omitted. "
                 "Its configured Model becomes the new Thread's default for later turns. "
-                "Explicit agent_id selects another Agent; explicit model_id overrides only the first Run. "
+                "Explicit agent_id selects another Agent; explicit model_id selects the first Run's Model. "
                 "Give a bounded task and necessary context; inspect "
                 "results before integrating them. Other configured Agents and Models remain selectable. "
                 "The created task identifies your Thread and Project and tells the worker how to ask you questions "
@@ -884,7 +884,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         prompt: str,
         model_id: str | None = None,
     ) -> dict[str, Any]:
-        """Start another idle Thread; optionally override its Model for this Run without changing its Agent."""
+        """Start another idle Thread, optionally selecting its Model until another selection; its Agent stays."""
         self._require_context(ctx)
         if thread_id == self.source_thread_id:
             return _failure_code(
@@ -913,7 +913,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         project_id='current' keeps this Project; null selects no Project; an ID selects another Project.
         Enabled Sidekick defaults are applied by the Host: omitted agent_id uses its Agent (or inherits
         the caller); its configured Model initializes the new Thread's persistent default_model_id.
-        Explicit agent_id wins. model_id overrides the first Run only, never the saved default.
+        Explicit agent_id wins. model_id selects the first Run's Model, never the saved default.
         Without Sidekick, unchanged Project/Agent inherits this Thread's selections; explicit selections
         use normal Project/Agent defaults. Discover IDs using list_projects, list_agents and list_models.
 
