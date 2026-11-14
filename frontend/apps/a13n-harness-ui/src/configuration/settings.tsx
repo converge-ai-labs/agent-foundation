@@ -1,3 +1,5 @@
+import { AppearanceSettings } from "./appearance";
+import type { RootSettingsGroup } from "./fields";
 import { ConnectorsSection } from "../connectors/connections";
 import { LanguageChoice } from "../i18n/language";
 import { useTranslation } from "../i18n";
@@ -69,9 +71,64 @@ function DebugModeSetting() {
   );
 }
 
-export function GeneralSettings() {
+export function PreferencesPage() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PageHeader title={t("Preferences")} />
+      <SettingsSection title={t("Language")}>
+        <LanguageChoice settingsRow />
+      </SettingsSection>
+      <section id="appearance">
+        <AppearanceSettings />
+      </section>
+      <section id="notifications">
+        <NotificationSettings embedded />
+      </section>
+    </>
+  );
+}
+function WorkspaceOptions({ group }: { group: RootSettingsGroup }) {
   const { t } = useTranslation();
   const sources = useSources();
+  const root = sources.data?.sources.find(
+    (item) => item.resource_kind === "root",
+  );
+  return (
+    <>
+      <ErrorNotice error={sources.error} />
+      {sources.isPending ? (
+        <Skeleton className="h-80 w-full" />
+      ) : root ? (
+        <div className={layout.formWidth}>
+          <SourceDocument
+            key={root.relative_path}
+            path={root.relative_path}
+            group={group}
+            title={null}
+            embedded
+          />
+        </div>
+      ) : (
+        <Panel title={t("Set up your workspace")}>
+          <p>{t("Add an agent to get started.")}</p>
+          <Link to="/setup">{t("Start setup")}</Link>
+        </Panel>
+      )}
+    </>
+  );
+}
+export function WorkspaceSettingsPage({ group }: { group: "chats" | "bot" }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PageHeader title={group === "chats" ? t("Chats") : t("Bot")} />
+      <WorkspaceOptions group={group} />
+    </>
+  );
+}
+export function MemorySettings() {
+  const { t } = useTranslation();
   const status = useStatus(5000);
   const memory = status.data?.app.memory_organization;
   const memoryAvailability = {
@@ -82,56 +139,44 @@ export function GeneralSettings() {
     webui_only: "Available in WebUI only",
     configuration_unavailable: "Configuration unavailable",
   };
-  const root = sources.data?.sources.find(
-    (item) => item.resource_kind === "root",
-  );
   return (
     <>
-      <LanguageChoice />
-      <ErrorNotice error={sources.error} />
-      {sources.isPending ? (
-        <Skeleton className="h-80 w-full" />
-      ) : root ? (
-        <div className={layout.formWidth}>
-          <SourceDocument
-            key={root.relative_path}
-            path={root.relative_path}
-            title={t("General")}
-            embedded
-          />
-        </div>
-      ) : (
-        <Panel title={t("Set up your workspace")}>
-          <p>{t("Add an agent to get started.")}</p>
-          <Link to="/setup">{t("Start setup")}</Link>
-        </Panel>
+      <PageHeader
+        title={t("Memory")}
+        actions={
+          memory?.memory_enabled && <Link to="/memory">{t("Open memory")}</Link>
+        }
+      />
+      <WorkspaceOptions group="memory" />
+      {memory && (
+        <SettingsSection
+          variant="plain"
+          title={t("Memory organization status")}
+        >
+          <p role="status" className={styles.fieldGroup}>
+            {(memory.active_scopes?.length ?? 0) > 0
+              ? t("Organizing: {{scopes}}", {
+                  scopes: memory.active_scopes?.join(", "),
+                })
+              : t(memoryAvailability[memory.availability])}
+            {memory.last_outcome &&
+              ` - ${t("Last outcome: {{outcome}}", { outcome: memory.last_outcome.replaceAll("_", " ") })}`}
+            {` - ${t("{{attempts}} attempts - {{requests}} model requests", { attempts: memory.attempts ?? 0, requests: memory.requests ?? 0 })}`}
+            {` - ${t("{{input}} input / {{output}} output tokens", { input: memory.input_tokens ?? 0, output: memory.output_tokens ?? 0 })}`}
+          </p>
+        </SettingsSection>
       )}
-      <section id="notifications">
-        <NotificationSettings embedded />
-      </section>
-      <div className={layout.formWidth}>
-        <DebugModeSetting />
-      </div>
-      <details className={layout.disclosure}>
-        <summary>{t("Setup and diagnostics")}</summary>
-        {memory && (
-          <SettingsSection
-            variant="plain"
-            title={t("Memory organization status")}
-          >
-            <p role="status" className={styles.fieldGroup}>
-              {(memory.active_scopes?.length ?? 0) > 0
-                ? t("Organizing: {{scopes}}", {
-                    scopes: memory.active_scopes?.join(", "),
-                  })
-                : t(memoryAvailability[memory.availability])}
-              {memory.last_outcome &&
-                ` - ${t("Last outcome: {{outcome}}", { outcome: memory.last_outcome.replaceAll("_", " ") })}`}
-              {` - ${t("{{attempts}} attempts - {{requests}} model requests", { attempts: memory.attempts ?? 0, requests: memory.requests ?? 0 })}`}
-              {` - ${t("{{input}} input / {{output}} output tokens", { input: memory.input_tokens ?? 0, output: memory.output_tokens ?? 0 })}`}
-            </p>
-          </SettingsSection>
-        )}
+    </>
+  );
+}
+export function DiagnosticsPage({ instance }: { instance: React.ReactNode }) {
+  const { t } = useTranslation();
+  const status = useStatus();
+  return (
+    <>
+      <PageHeader title={t("Diagnostics")} />
+      <DebugModeSetting />
+      <SettingsSection title={t("Setup and diagnostics")}>
         <Link to="/setup">{t("Guided setup and environment checks")}</Link>
         {[
           ...(status.data?.app.capability_warnings ?? []),
@@ -139,9 +184,11 @@ export function GeneralSettings() {
         ].map((message) => (
           <p key={message}>{message}</p>
         ))}
-        <p>{t("Version {{version}}", { version: status.data?.version })}</p>
+      </SettingsSection>
+      <SettingsSection title={t("About")}>
+        {instance}
         <InstallSettings />
-      </details>
+      </SettingsSection>
     </>
   );
 }
@@ -161,6 +208,7 @@ export function AgentsPage() {
         <summary>{t("Installed capabilities")}</summary>
         <InstalledCatalog kind="capability" />
       </details>
+      <WorkspaceOptions group="agents" />
     </>
   );
 }

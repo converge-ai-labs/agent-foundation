@@ -3,12 +3,15 @@ import { useTranslation } from "../i18n";
 import { Link, useLocation } from "react-router";
 import {
   ArrowLeft,
-  PaintBrush,
+  Users,
+  ChatCircle,
+  Brain,
+  Robot,
+  Bug,
   SlidersHorizontal,
   HeadCircuit,
   Cube,
   Monitor,
-  Key,
   Plug,
   FileCode,
 } from "@phosphor-icons/react";
@@ -20,18 +23,40 @@ import layout from "./settings.module.css";
 
 export function SettingsNavigation({ backTo }: { backTo: string }) {
   const { t } = useTranslation();
-  const sections = [
-    { path: "/settings", label: t("General"), icon: SlidersHorizontal },
-    { path: "/settings/appearance", label: t("Appearance"), icon: PaintBrush },
-    { path: "/settings/agents", label: t("Agents"), icon: HeadCircuit },
-    { path: "/settings/models", label: t("Models"), icon: Cube },
-    { path: "/settings/environments", label: t("Environments"), icon: Monitor },
-    { path: "/settings/accounts", label: t("Accounts & API keys"), icon: Key },
-    { path: "/settings/connections", label: t("Connections"), icon: Plug },
+  const groups = [
     {
-      path: "/settings/resources",
-      label: t("Configuration files"),
-      icon: FileCode,
+      label: t("Preferences"),
+      items: [
+        { path: "/settings", label: t("Preferences"), icon: SlidersHorizontal },
+        { path: "/settings/people", label: t("People & profile"), icon: Users },
+      ],
+    },
+    {
+      label: t("Workspace"),
+      items: [
+        { path: "/settings/chats", label: t("Chats"), icon: ChatCircle },
+        { path: "/settings/agents", label: t("Agents"), icon: HeadCircuit },
+        { path: "/settings/bot", label: t("Bot"), icon: Robot },
+        { path: "/settings/models", label: t("Models"), icon: Cube },
+        { path: "/settings/memory", label: t("Memory"), icon: Brain },
+        {
+          path: "/settings/environments",
+          label: t("Environments"),
+          icon: Monitor,
+        },
+        { path: "/settings/connections", label: t("Connections"), icon: Plug },
+      ],
+    },
+    {
+      label: t("Advanced"),
+      items: [
+        {
+          path: "/settings/resources",
+          label: t("Configuration files"),
+          icon: FileCode,
+        },
+        { path: "/settings/diagnostics", label: t("Diagnostics"), icon: Bug },
+      ],
     },
   ];
   const location = useLocation();
@@ -46,7 +71,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
     readDocument(drafts.get(path)?.content ?? "")?.get("kind");
   const sourceSection =
     sourceKind === "root"
-      ? "/settings"
+      ? "/settings/resources"
       : sourceKind === "project"
         ? "/projects"
         : sourceKind === "model"
@@ -68,34 +93,38 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
         <ArrowLeft size={16} />
         {t("Back to chats")}
       </Link>
-      <h2 className={styles.settingsNavigationTitle}>{t("Settings")}</h2>
       <nav
         className={`${styles.settingsNav} a13n-scrollbar`}
         aria-label={t("Settings sections")}
       >
-        {sections.map(({ path, label, icon: Icon }) => {
-          const active =
-            location.pathname === "/settings/source"
-              ? sourceSection === path
-              : location.pathname === path ||
-                (path !== "/settings" &&
-                  location.pathname.startsWith(`${path}/`));
-          return (
-            <Link
-              key={path}
-              to={path}
-              aria-current={active ? "page" : undefined}
-              className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? layout.utilityLink : ""}`}
-            >
-              <Icon
-                aria-hidden="true"
-                size={18}
-                weight={active ? "duotone" : "regular"}
-              />
-              {label}
-            </Link>
-          );
-        })}
+        {groups.map((group) => (
+          <div key={group.label} className={layout.navGroup}>
+            <p>{group.label}</p>
+            {group.items.map(({ path, label, icon: Icon }) => {
+              const active =
+                location.pathname === "/settings/source"
+                  ? sourceSection === path
+                  : location.pathname === path ||
+                    (path !== "/settings" &&
+                      location.pathname.startsWith(`${path}/`));
+              return (
+                <Link
+                  key={path}
+                  to={path}
+                  aria-current={active ? "page" : undefined}
+                  className={active ? styles.activeNav : styles.navLink}
+                >
+                  <Icon
+                    aria-hidden="true"
+                    size={18}
+                    weight={active ? "duotone" : "regular"}
+                  />
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
     </div>
   );

@@ -19,10 +19,12 @@ export function BotFields({
   source,
   onChange,
   setup = false,
+  showHeading = true,
 }: {
   source: string;
   onChange: (source: string, key: string, value: unknown) => void;
   setup?: boolean;
+  showHeading?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -48,7 +50,7 @@ export function BotFields({
     (model) => model.model_id === selectedAgent?.model_id,
   );
   return (
-    <SettingsSection title={setup ? undefined : t("Bot")}>
+    <SettingsSection title={!setup && showHeading ? t("Bot") : undefined}>
       {!setup && (
         <SettingsRow
           label={t("Bot")}

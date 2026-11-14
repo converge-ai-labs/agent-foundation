@@ -3509,5 +3509,13 @@
   "Generate title": "生成标题",
   "Chat titles": "聊天标题",
   "Title generation model": "标题生成模型",
-  "Current chat model": "当前聊天模型"
+  "Current chat model": "当前聊天模型",
+  "About": "关于",
+  "Diagnostics": "诊断",
+  "Open Live": "打开实时语音",
+  "Open memory": "打开记忆",
+  "Preferences": "偏好设置",
+  "View archived chats": "查看已归档聊天",
+  "New chats": "新聊天",
+  "Language": "语言"
 }

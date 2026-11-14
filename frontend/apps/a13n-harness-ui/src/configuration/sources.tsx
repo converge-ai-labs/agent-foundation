@@ -26,7 +26,7 @@ import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
 import { McpTools } from "./mcp-tools";
-import { ResourceFields } from "./fields";
+import { ResourceFields, type RootSettingsGroup } from "./fields";
 import { BrowserConfigurationFields } from "./browser-runtime";
 import {
   readDocument,
@@ -453,6 +453,7 @@ export function SourceDocument({
   title,
   mediaOnly = false,
   embedded = false,
+  group,
   section,
 }: {
   path: string;
@@ -461,6 +462,7 @@ export function SourceDocument({
   title?: string | null;
   mediaOnly?: boolean;
   embedded?: boolean;
+  group?: RootSettingsGroup;
   section?: "envd" | "execution" | "connections" | "browser";
 }) {
   const { t } = useTranslation();
@@ -746,6 +748,14 @@ export function SourceDocument({
             />
           ) : (
             <ResourceFields
+              group={group}
+              liveAvailable={
+                group === "chats" &&
+                readDocument(source.data?.content ?? "")?.getIn([
+                  "live",
+                  "enabled",
+                ]) === true
+              }
               onReady={setModelReady}
               connectionsOnly={section === "connections"}
               source={draft!.content}

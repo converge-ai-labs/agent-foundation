@@ -138,7 +138,7 @@ export function VoicePage() {
         <span>
           <Waveform size={18} /> {t("Live")}
         </span>
-        <Link to="/settings#live">{t("Settings")}</Link>
+        <Link to="/settings/chats#live">{t("Settings")}</Link>
       </header>
       <section
         className={styles.center}
@@ -201,7 +201,7 @@ export function VoicePage() {
         {!settings.isPending && !settings.data?.enabled && !settings.error && (
           <p className={styles.hint}>
             {t("Choose a Codex model and enable voice in Settings.")}{" "}
-            <Link to="/settings#live">{t("Settings")}</Link>
+            <Link to="/settings/chats#live">{t("Settings")}</Link>
           </p>
         )}
         {captions.length > 0 && (

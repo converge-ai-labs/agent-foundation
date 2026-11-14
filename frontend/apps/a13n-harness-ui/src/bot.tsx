@@ -261,7 +261,7 @@ export function BotActions() {
         size="icon-sm"
         aria-label={t("Bot settings")}
         title={t("Bot settings")}
-        render={<Link to="/settings#bot" />}
+        render={<Link to="/settings/bot" />}
       >
         <Gear />
       </Button>
@@ -422,7 +422,7 @@ export function BotPage({
                   )}
                 </p>
               </div>
-              <Button variant="outline" render={<Link to="/settings#bot" />}>
+              <Button variant="outline" render={<Link to="/settings/bot" />}>
                 {t("Bot settings")}
               </Button>
             </div>
@@ -501,7 +501,7 @@ export function BotPage({
                       {t(
                         "Check Bot's model in Settings. Another app may also own Bot processing.",
                       )}{" "}
-                      <Link to="/settings#bot">{t("Bot settings")}</Link>
+                      <Link to="/settings/bot">{t("Bot settings")}</Link>
                     </p>
                   )}
                 </>

@@ -231,7 +231,7 @@ A reconstruction warning remains visible after success. Investigate every recons
 
 Memory is enabled by default. Beside the selected YAML, `memory/global/` stores cross-Project facts and `memory/projects/<project-id>/` stores Project facts. Projectless conversations use global memory only. Keep `MEMORY.md` as a short index and detailed topics in separate files. Memory is historical context, separate from conversation history and Full Control permissions.
 
-In **Settings → General → Memory**, choose the organizer Model and instructions, or merge:
+In **Settings → Memory**, choose the organizer Model and instructions, or merge:
 
 ```yaml title="a13n-harness-ui.yaml — memory organization"
 memory:
@@ -244,7 +244,7 @@ memory:
 
 Use an existing Model ID. Omitted/null `model` follows `defaults.agent`; a configured Model is required. The organizer receives scoped memory tools, not the Agent's other tools or instructions. It preserves uncertainty and user corrections and reports changes.
 
-WebUI input can trigger organization of changed memory. Each scope has a read-only Memory Thread; organization reads neither old conversations nor other Projects. General settings shows outcomes and usage, which can incur Model charges.
+WebUI input can trigger organization of changed memory. Each scope has a read-only Memory Thread; organization reads neither old conversations nor other Projects. Memory settings shows outcomes and usage, which can incur Model charges.
 
 | State                                   | Next attempt                                                            |
 | --------------------------------------- | ----------------------------------------------------------------------- |
@@ -259,7 +259,7 @@ Back up `memory/` separately from application data. `.a13n-memory/` holds locks 
 
 ### Dictation
 
-Set **Settings → General → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and text insertion.
+Set **Settings → Chats → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and text insertion.
 
 ```yaml
 dictation:
@@ -344,17 +344,17 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI Bot
 
-**Settings → General → Bot** selects an Agent, Model and optional custom instructions for the built-in personal assistant. `webui.bot.agent` defaults to `null`, following the global default Agent. Bot inherits that Agent's execution settings, including compaction, permissions, subagents, Plugins and MCP. `webui.bot.model` defaults to `null`, following the selected Agent's Model; an explicit Model overrides it. The independent `files_enabled`, `shell_enabled` and `computer_enabled` flags under `webui.bot` default to `null` (follow Agent); `true` or `false` overrides the corresponding access setting for Bot while retaining tool allowlists and Environment limits. Bot replaces the Agent's role instructions with its own plus custom instructions, keeps global `AGENTS.md`, and disables structured questions. See [Bot](bot.md) for inheritance and fallback details.
+**Settings → Bot** selects an Agent, Model and optional custom instructions for the built-in personal assistant. `webui.bot.agent` defaults to `null`, following the global default Agent. Bot inherits that Agent's execution settings, including compaction, permissions, subagents, Plugins and MCP. `webui.bot.model` defaults to `null`, following the selected Agent's Model; an explicit Model overrides it. The independent `files_enabled`, `shell_enabled` and `computer_enabled` flags under `webui.bot` default to `null` (follow Agent); `true` or `false` overrides the corresponding access setting for Bot while retaining tool allowlists and Environment limits. Bot replaces the Agent's role instructions with its own plus custom instructions, keeps global `AGENTS.md`, and disables structured questions. See [Bot](bot.md) for inheritance and fallback details.
 
 `webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. On first usable enable, the server sends one visible preset user message to introduce the workspace through an ordinary Model request. Previous activity or an introduction attempt prevents repetition. Reading the page starts no work. Enabling also schedules the first Heartbeat one interval later, independently of this introduction. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
 
 ### WebUI subagents
 
-In **Settings → General → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
+In **Settings → Agents → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
 
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
+**Settings → Agents → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:
