@@ -690,8 +690,7 @@ class AgentContext:
         await self._steering.checkpoint(message_history)
         await self._tool_executions.reconcile(self.tool_execution, self.thread_id, message_history)
         await self.usage_attribution.save()
-        state = await asyncio.to_thread(
-            HarnessState,
+        state = HarnessState(
             schema_version="1",
             thread_id=self.thread_id,
             message_history=tuple(message_history),

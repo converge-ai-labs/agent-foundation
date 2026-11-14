@@ -122,14 +122,12 @@ async def test_running_child_checkpoint_transcript_marker_and_replacement(tmp_pa
             )
             assert info.executions[0].status == waited.executions[0].status == "running"
             assert not info.executions[0].resumable and not waited.executions[0].resumable
-            # A running child publishes its index even before a browser opens it.
             digest = current.selected_checkpoint.logical_digest
-            with fail_after(10):
-                while await app._store.inspections.header(current.child_thread_id, digest) is None:
-                    await sleep(0.01)
             assert (await app._projections.detail(current.child_thread_id)).continuation_id == digest
+            assert await app._store.inspections.header(current.child_thread_id, digest) is None
             async with transcript_client(app) as client:
                 page = await child_transcript(client, current.child_thread_id)
+                assert await app._store.inspections.header(current.child_thread_id, digest) is not None
                 assert page["continuation_id"] == current.selected_checkpoint.logical_digest
                 assert "PROGRESS_TEXT" in json.dumps(page) and "FINAL_RESULT" not in json.dumps(page)
                 with fail_after(10):
@@ -143,6 +141,10 @@ async def test_running_child_checkpoint_transcript_marker_and_replacement(tmp_pa
                 )
                 ended = await app._store.child_executions.get(head.execution_id)
                 assert ended.status == "succeeded" and ended.resumable
+                assert (
+                    await app._store.inspections.header(ended.child_thread_id, ended.selected_checkpoint.logical_digest)
+                    is None
+                )
                 page = await child_transcript(client, ended.child_thread_id)
                 assert "PROGRESS_TEXT" in json.dumps(page) and "FINAL_RESULT" in json.dumps(page)
                 assert page["turns"][-1]["final_position"] is not None

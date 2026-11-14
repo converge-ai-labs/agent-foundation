@@ -10,7 +10,7 @@ from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import open_local_store
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
 from a13n_harness_ui.storage.contracts import Continuation
-from a13n_harness_ui.storage.display import DisplayArchive, read_display, seal_display
+from a13n_harness_ui.storage.display import DisplayArchive, read_display, read_display_windows, seal_display
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
@@ -38,6 +38,8 @@ async def test_archive_reopens_without_reading_prefix_and_rebuilds_exact_coordin
         archive = await seal_display(store.objects, DisplayArchive(tail=original))
         assert archive.entry_offset == 2 * (count - 1)
         assert archive.turn_offset == count - 1
+        *sealed_windows, _ = await read_display_windows(store.objects, archive)
+        assert sum(len(display_entries(window)) for window in sealed_windows) == archive.entry_offset
         assert len(archive.tail.items) == 2
         restored = await read_display(store.objects, archive)
         assert restored.items == original.items
@@ -213,7 +215,6 @@ async def test_rebuild_reuses_sealed_windows_when_another_checkpoint_wins(tmp_pa
 async def test_separate_seals_preserve_reused_response_groups_and_output_positions(tmp_path):
     from a13n_harness_ui.display_history import DisplayHistory
     from a13n_harness_ui.display_projection import original_window_text
-    from a13n_harness_ui.storage.display import read_display_windows
 
     def turn(index):
         prompt, answer = history(1).items
@@ -242,6 +243,7 @@ async def test_separate_seals_preserve_reused_response_groups_and_output_positio
         windows = await read_display_windows(store.objects, second)
         assert second.entry_offset == 4
         assert [len(display_entries(window)) for window in windows] == [2, 2, 2]
+        assert sum(len(display_entries(window)) for window in windows[:-1]) == second.entry_offset
         assert [original_window_text(windows, position, 0) for position in (1, 3, 5)] == [
             "answer 0",
             "answer 1",

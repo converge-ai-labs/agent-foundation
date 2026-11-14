@@ -174,9 +174,7 @@ class RootRunExecutor:
         browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
         compaction: BackgroundCompaction | None = None,
-        schedule_inspection: Callable[[str], None] | None = None,
     ) -> None:
-        self._schedule_inspection = schedule_inspection
         self._browsers = browsers
         self._compaction = compaction
         self._tool_executions = tool_executions
@@ -1119,7 +1117,7 @@ class RootRunExecutor:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
-        # execution checkpoint. Queue a repair when the selected index cannot accept this tail.
+        # execution checkpoint. A later checkpoint or history read can catch up.
         try:
             inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
             indexed = await self._store.inspections.publish(
@@ -1130,14 +1128,9 @@ class RootRunExecutor:
                 if thread.continuation is not None
                 else f"initial:{thread.initial_state.logical_digest}",
             )
-            if not indexed and self._schedule_inspection is not None:
-                get_logger(__name__).warning(
-                    "Scheduling transcript index repair", extra={"thread_id": thread.thread_id}
-                )
-                self._schedule_inspection(thread.thread_id)
+            if not indexed:
+                get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread.thread_id})
         except Exception as exc:
-            if self._schedule_inspection is not None:
-                self._schedule_inspection(thread.thread_id)
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",
                 extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},

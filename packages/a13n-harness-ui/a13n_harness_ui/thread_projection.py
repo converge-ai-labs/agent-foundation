@@ -23,7 +23,6 @@ from a13n_logging import get_logger
 from a13n_stream_protocol import tool_result_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
-from anyio.abc import TaskGroup
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     InstructionBaselinePart,
@@ -158,38 +157,6 @@ class ThreadProjectionService:
         self._root_activity = root_activity
         self._root_activities = root_activities
         self._inspection_loads: WeakValueDictionary[str, Lock] = WeakValueDictionary()
-        self._repairs: dict[str, bool] = {}
-        self._background: TaskGroup | None = None
-
-    def start_inspection_repairs(self, background: TaskGroup) -> None:
-        self._background = background
-
-    def schedule_inspection(self, thread_id: str) -> None:
-        if self._background is None:
-            return
-        if thread_id not in self._repairs:
-            self._background.start_soon(self._repair_inspection, thread_id)
-        self._repairs[thread_id] = True
-
-    async def _repair_inspection(self, thread_id: str) -> None:
-        try:
-            while self._repairs[thread_id]:
-                self._repairs[thread_id] = False
-                try:
-                    await self._inspection_header(await self._required_thread(thread_id))
-                except ThreadError as exc:
-                    if exc.code != "thread_history_continuation_changed" or not self._repairs[thread_id]:
-                        raise
-        except Exception as exc:
-            get_logger(__name__).warning(
-                "Could not refresh transcript index",
-                extra={
-                    "thread_id": thread_id,
-                    "error_type": type(exc).__name__,
-                },
-            )
-        finally:
-            del self._repairs[thread_id]
 
     def set_root_activity_lookup(
         self,
