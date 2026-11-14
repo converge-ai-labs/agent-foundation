@@ -201,24 +201,27 @@ class EnvdSessionRecovery:
             self._users += 1
         # Resolved values are startup inputs, not state retained for the borrower's lifetime.
         del configuration
-        try:
-            if replacement is not None and (notify := _SESSION_REPLACEMENT_NOTIFIER.get()) is not None:
-                try:
-                    await notify(replacement)
-                except Exception:
-                    # A lifecycle hint must not undo an already checkpointed acquisition.
-                    pass
-            async with session.use():
+        async with AsyncExitStack() as use_scope:
+            try:
+                if replacement is not None and (notify := _SESSION_REPLACEMENT_NOTIFIER.get()) is not None:
+                    try:
+                        await notify(replacement)
+                    except Exception:
+                        # A lifecycle hint must not undo an already checkpointed acquisition.
+                        pass
+                await use_scope.enter_async_context(session.use())
                 yield session
-        finally:
-            with CancelScope(shield=True):
-                async with self._lock:
-                    # A dead carrier may have been replaced while this borrower
-                    # was still running. Its release cannot detach the new owner.
-                    if self._session is session:
-                        self._users -= 1
-                        if self._users == 0:
-                            await self._release()
+            finally:
+                with CancelScope(shield=True):
+                    async with self._lock:
+                        # A dead carrier may have been replaced while this borrower
+                        # was still running. Its release cannot detach the new owner.
+                        if self._session is session:
+                            self._users -= 1
+                            if self._users == 0:
+                                # Detach refreshes native idle expiry itself. Release before
+                                # use exits so it skips a redundant final keepalive round trip.
+                                await self._release()
 
     async def _release(self) -> None:
         self._session = None

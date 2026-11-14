@@ -200,12 +200,20 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert selected_kubernetes == kubernetes
     assert deployment["jobs"]["kind"]["needs"] == ["chart", "helm", "journeys"]
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
-    shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
+    scenarios = workflow["jobs"]["scenarios"]
+    shards = scenarios["strategy"]["matrix"]["include"]
+    [native_build] = [step for step in scenarios["steps"] if "cargo build" in step.get("run", "")]
+    assert native_build["if"] == "matrix.name == 'other'"
+    assert "--locked --package a13n-envd" in native_build["run"]
+    [journey] = [step for step in scenarios["steps"] if step.get("run", "").startswith("make service-e2e ")]
+    assert journey["env"]["A13N_ENVD_TEST_BINARY"] == "${{ github.workspace }}/target/debug/a13n-envd"
     selected: set[str] = set()
     for shard in shards:
         nodes = collect_scenarios("--require-all", "-k", shard["selection"])
         assert nodes and not selected.intersection(nodes)
         assert f"{lifecycle}[docker]" not in nodes
+        slow_link = {node for node in nodes if "test_client_transfer_backpressure.py::" in node}
+        assert len(slow_link) == (2 if shard["name"] == "other" else 0)
         selected.update(nodes)
     docker = collect_scenarios("--require-all", "-k", "docker")
     assert docker and not selected.intersection(docker)
