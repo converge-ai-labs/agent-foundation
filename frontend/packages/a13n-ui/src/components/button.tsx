@@ -101,7 +101,6 @@ export function Button({
 
   const label = props["aria-label"];
   const showTooltip =
-    !isDisabled &&
     label &&
     (tooltip ??
       (size?.startsWith("icon") && props["aria-haspopup"] !== "menu"));
@@ -109,13 +108,14 @@ export function Button({
     defaultTagName: "button",
     props: mergeProps<"button">(
       defaultProps,
-      showTooltip ? { ...props, title: undefined } : props,
+      showTooltip && !isDisabled ? { ...props, title: undefined } : props,
     ),
     render,
   });
   if (!showTooltip) return element;
   return (
     <Tooltip
+      disabled={isDisabled}
       onOpenChange={(_open, details) => {
         // A label must not consume the Escape intended for its dialog or menu.
         if (details.reason === "escape-key") details.allowPropagation();
