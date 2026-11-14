@@ -263,16 +263,29 @@ async def test_displayable_host_notices_are_excluded_from_composer_recall(source
 
 
 @pytest.mark.usefixtures("migrated_databases")
-async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeypatch):
-    from pydantic_ai.models.function import DeltaToolCall
+@pytest.mark.parametrize("status", ["succeeded", "failed"])
+async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeypatch, status):
+    from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall
 
     from .test_dynamic_subagents import new_thread, open_app, returned
 
     offering, release = Event(), Event()
+    offered = []
 
     async def model(messages, info):
         if "send_parent_message" in {tool.name for tool in info.function_tools}:
-            yield "Child result"
+            if not returned(messages):
+                yield "Intermediate child text"
+                yield {1: DeltaThinkingPart(content="Intermediate child thinking")}
+                yield {
+                    0: DeltaToolCall(
+                        name="note_write", json_args='{"key":"private-note","value":"Intermediate tool arguments"}'
+                    )
+                }
+            elif status == "failed":
+                raise RuntimeError("Child failed")
+            else:
+                yield "Child result"
         elif not returned(messages):
             yield {
                 0: DeltaToolCall(
@@ -287,6 +300,7 @@ async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeyp
         original = app._subagent_operator._deliver_parent
 
         async def offer(thread_id, prompt, execution_ids):
+            offered.append(prompt)
             offering.set()
             await release.wait()
             await original(thread_id, prompt, execution_ids)
@@ -299,14 +313,28 @@ async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeyp
             with fail_after(10):
                 await offering.wait()
             (head,) = (await app.query_child_executions(parent_thread_id=parent.thread_id)).executions
-            assert head.persisted_status == "succeeded"
+            assert head.persisted_status == status
             assert head.execution_id in await app._subagent_operator.active_execution_ids()
             active = app._subagent_operator._active[head.execution_id]
             assert not active.done.is_set()
             stored = await app._store.child_executions.get(head.execution_id)
             assert stored is not None
             checkpoint = await app._store.read_child_checkpoint(stored)
-            assert checkpoint.display.final_answer == "Child result"
+            assert any(activity.kind == "tool" for activity in checkpoint.display.activities)
+            header = f"Subagent result · worker · execution_id={head.execution_id} · {status}"
+            if status == "succeeded":
+                assert checkpoint.display.final_answer == "Child result"
+                assert offered == [header + "\nReply with resume_subagent.\n\nChild result"]
+            else:
+                assert stored.failure is not None
+                assert stored.failure.code == "agent_run_failed"
+                assert stored.failure.message.startswith("Agent execution failed.")
+                assert offered == [header + f"\n\n{stored.failure.code}: {stored.failure.message}"]
+            assert "Intermediate child text" not in offered[0]
+            assert "Intermediate child thinking" not in offered[0]
+            assert "private-note" not in offered[0]
+            assert "Intermediate tool arguments" not in offered[0]
+            assert "note_write" not in offered[0]
             assert active.display.final_answer is None
             release.set()
             with fail_after(10):
@@ -404,3 +432,44 @@ async def test_user_stop_delivers_cancelled_child_result_to_parent(tmp_path, mon
         with fail_after(10):
             await notified.wait()
         assert f"Subagent result · worker · execution_id={head.execution_id} · cancelled" in inputs[-1]
+
+
+@pytest.mark.usefixtures("migrated_databases")
+async def test_long_child_result_stays_inline_when_it_wakes_idle_parent(tmp_path, monkeypatch):
+    from a13n_harness.content import request_input_content
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart
+
+    from .test_long_text_input import _app, _function_model
+
+    notified = Event()
+    text = (
+        "Subagent result · worker · execution_id=execution-child · succeeded"
+        "\nReply with resume_subagent.\n\nChild result\n" + "Full answer detail. " * 2000
+    )
+    notices = []
+
+    def model(messages, info):
+        notices.extend(
+            item
+            for request in messages
+            if isinstance(request, ModelRequest)
+            for item in request_input_content(request)
+            if (item.metadata.model_extra or {}).get("a13n.steering-source") == "async_subagent"
+        )
+        if notices:
+            notified.set()
+        return ModelResponse(parts=[TextPart("Received")])
+
+    async with _app(tmp_path, monkeypatch, _function_model(model)) as (app, _, _):
+        retain = AsyncMock(wraps=app._thread_files.retain)
+        monkeypatch.setattr(app._thread_files, "retain", retain)
+        parent = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Start")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        assert await app._deliver_subagent_input(parent.thread_id, text, ("execution-child",))
+        with fail_after(10):
+            await notified.wait()
+        assert len(notices) == 1
+        assert notices[0].value == text
+        retain.assert_not_awaited()

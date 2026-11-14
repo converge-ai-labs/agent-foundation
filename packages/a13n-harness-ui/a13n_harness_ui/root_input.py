@@ -128,8 +128,10 @@ class RootInputFiles:
 def _authored_text(part: UserContent | ContentItem) -> str | None:
     if isinstance(part, ContentItem):
         namespace = (part.metadata.model_extra or {}).get("harness_ui")
-        if not part.metadata.display or (
-            isinstance(namespace, dict) and ("attachment" in namespace or namespace.get("long_text_skipped"))
+        if (
+            not part.metadata.display
+            or "a13n.steering-source" in (part.metadata.model_extra or {})
+            or (isinstance(namespace, dict) and ("attachment" in namespace or namespace.get("long_text_skipped")))
         ):
             return None
         return _authored_text(part.value)
