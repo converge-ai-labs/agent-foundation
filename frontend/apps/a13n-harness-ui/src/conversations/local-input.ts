@@ -10,10 +10,17 @@ export type LocalInput = {
   state: "preparing" | "pending" | "accepted" | "rejected" | "unknown";
 };
 
+// Only WebUI submissions carry a per-input source ID. Other producers use
+// `source_id` as a shared provenance label (for example
+// `a13n.async_subagent`), which must never become row or turn identity.
+const SUBMISSION_SOURCE = /^input[-_][0-9a-f]{32}$/;
+
 export function inputSource(part: InputPart): string | undefined {
+  const source = part.metadata?.source_id;
   return part.metadata?.display !== false &&
-    typeof part.metadata?.source_id === "string"
-    ? part.metadata.source_id
+    typeof source === "string" &&
+    SUBMISSION_SOURCE.test(source)
+    ? source
     : undefined;
 }
 
