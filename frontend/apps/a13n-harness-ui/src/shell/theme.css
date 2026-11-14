@@ -39,11 +39,7 @@
   --harness-group-inset: 16px;
   --harness-prose-size: 15px;
   --harness-prose-leading: 1.7;
-  --harness-placeholder: color-mix(
-    in srgb,
-    var(--muted-foreground) 52%,
-    transparent
-  );
+  --harness-placeholder: var(--a13n-quaternary);
   --harness-log-text: light-dark(#767676, #969696);
   --harness-code-keyword: light-dark(#8250df, #d2a8ff);
   --harness-code-string: light-dark(#116329, #a5d6ff);
@@ -56,7 +52,9 @@
   --card: #ffffff;
   --card-foreground: #333333;
   --muted: #f9f9f9;
-  --muted-foreground: #666666;
+  --text-secondary: #555555;
+  --muted-foreground: #6b6b6b;
+  --text-quaternary: #898989;
   --popover: #ffffff;
   --popover-foreground: #333333;
   --border: rgb(0 0 0 / 7%);
@@ -67,7 +65,6 @@
   --primary-foreground: #ffffff;
   --sidebar: #fafafa;
   --a13n-selected: rgb(0 0 0 / 4%);
-  --a13n-tertiary: var(--muted-foreground);
   --harness-menu-row: 32px;
   --harness-control-height: 32px;
   --elevation-overlay:
@@ -85,7 +82,9 @@
   --card: #242424;
   --card-foreground: #ededed;
   --muted: #242424;
-  --muted-foreground: #a3a3a3;
+  --text-secondary: #bdbdbd;
+  --muted-foreground: #a0a0a0;
+  --text-quaternary: #7e7e7e;
   --popover: #292929;
   --popover-foreground: #ededed;
   --border: rgb(255 255 255 / 8%);
@@ -97,9 +96,11 @@
   --sidebar: #242424;
   --a13n-selected: rgb(255 255 255 / 8%);
   --elevation-overlay:
-    0 0 0 1px rgb(255 255 255 / 9%), 0 6px 20px -6px rgb(0 0 0 / 45%);
+    inset 0 0 0 1px rgb(255 255 255 / 9%), 0 2px 6px rgb(0 0 0 / 32%),
+    0 16px 40px -8px rgb(0 0 0 / 64%);
   --elevation-floating:
-    0 0 0 1px rgb(255 255 255 / 9%), 0 12px 40px -12px rgb(0 0 0 / 55%);
+    inset 0 0 0 1px rgb(255 255 255 / 10%), 0 6px 16px -4px rgb(0 0 0 / 40%),
+    0 28px 64px -12px rgb(0 0 0 / 72%);
 }
 
 :is(input, textarea)::placeholder {
@@ -252,69 +253,11 @@
   background: currentColor;
 }
 
-[data-a13n-modal] {
-  border-radius: var(--harness-radius-panel);
-}
-
 [data-slot="settings-section-content"]:is(
   [data-variant="grouped"],
   [data-variant="outlined"]
 ) {
   border-radius: var(--harness-radius-panel);
-}
-
-[data-a13n-modal][data-size="md"] {
-  max-width: 480px;
-}
-[data-a13n-modal][data-size="lg"] {
-  max-width: 640px;
-}
-:where([data-a13n-modal] [data-slot="dialog-header"]) {
-  padding: 24px 56px 16px 24px;
-  gap: 8px;
-}
-:where([data-a13n-modal] [data-slot="dialog-title"]) {
-  font-size: calc(var(--a13n-text-body) * 20 / 14);
-  font-weight: 500;
-  line-height: 24px;
-}
-:where([data-a13n-modal] [data-slot="dialog-description"]) {
-  font-size: var(--a13n-text-body);
-  line-height: 1.45;
-}
-:where([data-a13n-modal] [data-slot="dialog-panel"]) {
-  display: grid;
-  gap: 16px;
-  padding: 0 24px 24px;
-}
-:where(
-  [data-a13n-modal] [data-slot="dialog-panel"]:has([data-a13n-form-actions])
-) {
-  padding-bottom: 0;
-}
-/* The footer owns the final inset; don't add panel padding above it. */
-[data-a13n-modal]:has(> [data-slot="dialog-footer"])
-  [data-slot="dialog-panel"] {
-  padding-bottom: 0;
-}
-[data-a13n-modal] [data-slot="dialog-panel"]:empty {
-  display: none;
-}
-[data-a13n-modal] [data-slot="dialog-title"],
-[data-a13n-modal] [data-slot="dialog-description"] {
-  overflow-wrap: anywhere;
-}
-[data-a13n-modal] [data-a13n-form-actions] {
-  padding-block: 0 24px;
-}
-:where([data-a13n-modal] [data-slot="dialog-footer"]) {
-  padding: 16px 24px 24px;
-}
-[data-a13n-modal] > :is([data-slot="dialog-close"], button[aria-label]) {
-  top: 20px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
 }
 
 :is([data-slot="button"], [data-a13n-button]),
@@ -399,18 +342,6 @@
     width: var(--harness-control-height);
     height: var(--harness-control-height);
   }
-  [data-a13n-modal] [data-slot="dialog-header"] {
-    padding: 20px 56px 16px 16px;
-  }
-  [data-a13n-modal] [data-slot="dialog-panel"] {
-    padding-inline: 16px;
-  }
-  [data-a13n-modal] [data-slot="dialog-footer"] {
-    padding: 16px;
-  }
-  [data-a13n-modal] [data-a13n-form-actions] {
-    padding-bottom: 16px;
-  }
 }
 
 html,
@@ -458,54 +389,5 @@ body,
     [data-slot="combobox-item"]
   ):active {
     background: var(--a13n-hover);
-  }
-}
-
-/* Harness form dialogs and confirmations share a native bottom-sheet anatomy.
-   This is product-owned: Console keeps its centered, opacity-only dialogs. */
-@media (max-width: 639px) {
-  [data-slot="dialog-viewport"]:has(> [data-a13n-modal]) {
-    inset: var(--visible-top, 0px) 0 auto;
-    height: var(--visible-height, 100dvh);
-    align-items: end;
-    padding: max(16px, env(safe-area-inset-top)) 0 0;
-  }
-  [data-slot="dialog-popup"][data-a13n-modal] {
-    --a13n-dialog-start-scale: 1;
-    width: 100%;
-    max-width: none;
-    max-height: calc(
-      var(--visible-height, 100dvh) - max(16px, env(safe-area-inset-top))
-    );
-    border-radius: 16px 16px 0 0;
-    transform-origin: bottom;
-    transition-property: transform, opacity;
-    transition-duration: var(--a13n-duration-slow);
-    transition-timing-function: var(--a13n-ease-sheet);
-    padding-bottom: var(--keyboard-bottom-inset, env(safe-area-inset-bottom));
-  }
-  [data-slot="dialog-popup"][data-a13n-modal]:is(
-      [data-starting-style],
-      [data-ending-style]
-    ) {
-    transform: translateY(100%);
-    scale: 1;
-  }
-  [data-slot="dialog-popup"][data-a13n-modal][data-ending-style] {
-    transition-duration: var(--a13n-duration-fast);
-    transition-timing-function: var(--a13n-ease-in);
-  }
-  [data-a13n-modal] :is([data-slot="dialog-footer"], [data-a13n-form-actions]) {
-    display: flex;
-    flex-direction: column-reverse;
-    align-items: stretch;
-    gap: 8px;
-  }
-  [data-a13n-modal]
-    :is([data-slot="dialog-footer"], [data-a13n-form-actions])
-    > :is(button, a, [data-slot="button"]) {
-    width: 100%;
-    margin-inline: 0;
-    justify-content: center;
   }
 }

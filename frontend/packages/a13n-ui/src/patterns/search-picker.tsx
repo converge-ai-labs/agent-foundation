@@ -205,7 +205,7 @@ export function SearchPicker({
             startAddon={<MagnifyingGlassIcon />}
           />
         </div>
-        <div aria-hidden className="mx-3 border-b border-border/60" />
+        <div aria-hidden className="mx-3 border-b border-(--a13n-separator)" />
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
         <ComboboxList>
           {(group: { value: string; items: GroupedOption[] }) => (
@@ -254,7 +254,10 @@ function OptionContent({ item }: { item: SearchOption }) {
           )}
         </span>
         {item.description && (
-          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          <span
+            data-slot="search-option-description"
+            className="mt-1 block line-clamp-2"
+          >
             {item.description}
           </span>
         )}

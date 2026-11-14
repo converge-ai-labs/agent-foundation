@@ -37,9 +37,11 @@ export function DisclosureSection({
         aria-hidden="true"
         className="size-3.5 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none group-aria-expanded/disclosure-trigger:rotate-90"
       />
-      <span className="min-w-0 flex-1">{title}</span>{" "}
+      <span data-slot="disclosure-title" className="min-w-0 flex-1">
+        {title}
+      </span>{" "}
       {summary && (
-        <span className="min-w-0 text-right text-xs font-normal text-muted-foreground">
+        <span data-slot="disclosure-summary" className="min-w-0 text-right">
           {summary}
         </span>
       )}

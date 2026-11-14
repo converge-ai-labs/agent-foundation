@@ -6,6 +6,10 @@
   --a13n-duration-fast: 120ms;
   --a13n-duration-base: 200ms;
   --a13n-duration-slow: 320ms;
+  --a13n-ease-spring: var(--a13n-ease-out);
+  --a13n-ease-spring-snappy: var(--a13n-ease-out);
+  --a13n-duration-spring: 500ms;
+  --a13n-duration-spring-snappy: 300ms;
   --a13n-overlay-duration: var(--a13n-duration-base);
   --a13n-font-brand: "Space Grotesk", var(--a13n-font);
   --a13n-font:
@@ -23,6 +27,19 @@
   --a13n-text-lg: 15px;
   --a13n-text-xl: 17px;
   --a13n-text-2xl: 24px;
+  --a13n-font-large-title: 600 var(--a13n-text-2xl)/1.2 var(--a13n-font);
+  --a13n-font-title: 600 var(--a13n-text-xl)/1.4 var(--a13n-font);
+  --a13n-font-headline: 500 var(--a13n-text-md)/1.45 var(--a13n-font);
+  --a13n-font-body: 400 var(--a13n-text-md)/1.6 var(--a13n-font);
+  --a13n-font-callout: 400 var(--a13n-text-sm)/1.5 var(--a13n-font);
+  --a13n-font-label: 500 var(--a13n-text-xs)/1.4 var(--a13n-font);
+  --a13n-font-caption: 400 var(--a13n-text-xs)/1.4 var(--a13n-font);
+  --a13n-row-height: 32px;
+  --a13n-row-height-lg: 44px;
+  --a13n-row-height-touch: 44px;
+  --a13n-row-gap: 2px;
+  --a13n-group-gap: 16px;
+  --a13n-inset: 8px;
   --a13n-tracking-title: -0.022em;
   --a13n-tracking-heading: -0.011em;
 
@@ -40,18 +57,16 @@
   --a13n-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
   --a13n-accent-soft: var(--accent);
   --a13n-text: var(--foreground);
-  --a13n-text-supporting: color-mix(
-    in srgb,
-    var(--foreground) 82%,
-    var(--background)
-  );
-  --a13n-secondary: var(--muted-foreground);
-  --a13n-muted: var(--muted-foreground);
-  --a13n-tertiary: color-mix(
-    in srgb,
-    var(--muted-foreground) 72%,
-    var(--background)
-  );
+  --a13n-secondary: var(--text-secondary);
+  --a13n-tertiary: var(--muted-foreground);
+  --a13n-quaternary: var(--text-quaternary);
+  --a13n-text-supporting: var(--a13n-secondary);
+  --a13n-muted: var(--a13n-tertiary);
+  /* Opaque by default; translucency is an enhancement, never a requirement. */
+  --a13n-material-bar: var(--a13n-canvas);
+  --a13n-material-overlay: var(--popover);
+  --a13n-material-filter: none;
+  --a13n-separator: color-mix(in srgb, var(--border) 65%, transparent);
   --a13n-border: var(--border);
   --a13n-border-soft: var(--border);
   --a13n-input-border: var(--input);
@@ -80,10 +95,60 @@
   --a13n-ease: var(--a13n-ease-out);
 }
 
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --a13n-ease-spring: linear(
+      0,
+      0.16 8%,
+      0.5 20%,
+      0.82 34%,
+      1.015 52%,
+      1.035 64%,
+      1.012 82%,
+      1
+    );
+    --a13n-ease-spring-snappy: linear(
+      0,
+      0.23 10%,
+      0.57 24%,
+      0.82 40%,
+      0.95 60%,
+      0.99 80%,
+      1
+    );
+  }
+}
+@supports (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  :root {
+    --a13n-material-bar: color-mix(
+      in srgb,
+      var(--a13n-canvas) 86%,
+      transparent
+    );
+    --a13n-material-overlay: color-mix(
+      in srgb,
+      var(--popover) 94%,
+      transparent
+    );
+    --a13n-material-filter: saturate(180%) blur(20px);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --a13n-material-bar: var(--a13n-canvas);
+    --a13n-material-overlay: var(--popover);
+    --a13n-material-filter: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --a13n-duration-fast: 1ms;
     --a13n-duration-base: 1ms;
     --a13n-duration-slow: 1ms;
+    --a13n-duration-spring: 1ms;
+    --a13n-duration-spring-snappy: 1ms;
   }
 }

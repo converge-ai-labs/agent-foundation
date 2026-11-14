@@ -2,6 +2,7 @@ import "a13n-ui/styles.css";
 import "./shell/disclosure.css";
 import "./shell/compact-controls.css";
 import "./shell/theme.css";
+import "./shell/sheet.css";
 import { a13nLogoUrl } from "a13n-ui";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";

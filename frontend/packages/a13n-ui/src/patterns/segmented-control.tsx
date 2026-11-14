@@ -48,11 +48,13 @@ export function SegmentedControl({
     >
       {options.map((option) => (
         <ToggleGroupItem
+          data-slot="segmented-control-item"
+          data-size={size}
           key={option.value}
           value={option.value}
           disabled={option.disabled}
           className={cn(
-            "min-w-0 rounded-md border-transparent bg-transparent font-medium text-muted-foreground shadow-none transition-[color,background-color,box-shadow] duration-150 hover:bg-transparent hover:text-foreground data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm/5 dark:data-pressed:bg-input",
+            "min-w-0 rounded-md border-transparent bg-transparent font-medium text-(--a13n-secondary) shadow-none transition-colors duration-(--a13n-duration-fast) hover:bg-transparent hover:text-foreground data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm/5 dark:data-pressed:bg-input",
             // The toggle's responsive sizes must be overridden at every breakpoint.
             size === "sm"
               ? "h-6 min-w-0 px-2.5 text-xs sm:h-6 sm:min-w-0 sm:text-xs"

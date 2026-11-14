@@ -22,17 +22,14 @@ export function SettingsSection({
       aria-labelledby={title ? id : undefined}
     >
       {title && (
-        <div className="mb-2.5">
-          <h3
-            id={id}
-            className="font-semibold text-[15px] text-foreground tracking-[-0.011em]"
-          >
+        <div className="mb-2">
+          <h3 id={id} data-slot="settings-section-title">
             {title}
           </h3>
           {description && (
             <p
               className={cn(
-                "mt-1 text-muted-foreground",
+                "mt-1 text-(--a13n-secondary)",
                 variant === "outlined" ? "text-xs leading-relaxed" : "text-sm",
               )}
             >
@@ -45,9 +42,9 @@ export function SettingsSection({
         className={cn(
           "[&>form]:py-5",
           variant === "grouped"
-            ? "rounded-[12px] bg-muted px-4 py-0.5 [&>*+*]:border-border/75 [&>*+*]:border-t"
+            ? "rounded-[12px] bg-muted px-4 py-0.5 [&>*+*]:border-(--a13n-separator) [&>*+*]:border-t"
             : variant === "outlined"
-              ? "rounded-[12px] border border-border bg-background px-4 [&>*+*]:border-border/75 [&>*+*]:border-t"
+              ? "rounded-[12px] border border-border bg-background px-4 [&>*+*]:border-(--a13n-separator) [&>*+*]:border-t"
               : "",
         )}
         data-slot="settings-section-content"
@@ -94,7 +91,8 @@ export function SettingsRow({
         {description && (
           <p
             id={controlId ? `${controlId}-description` : undefined}
-            className="mt-1 text-xs text-muted-foreground"
+            data-slot="settings-row-description"
+            className="mt-1"
           >
             {description}
           </p>

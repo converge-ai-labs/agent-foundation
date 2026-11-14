@@ -18,6 +18,7 @@ import {
 } from "../components/dialog";
 import { useMenuActions } from "../components/menu";
 import { cn } from "../lib/utils";
+import { useSheetDrag } from "../hooks/use-sheet-drag";
 
 /** Resource forms share a title, a bounded scroll region, and action placement. */
 export function ModalFrame({
@@ -84,6 +85,7 @@ export function ModalFrame({
       )}
       <ModalSurface
         open={open}
+        dragDismissible={!props.disablePointerDismissal}
         title={title}
         description={description}
         closeLabel={closeLabel}
@@ -108,6 +110,7 @@ const ModalSurface = memo(
     title,
     description,
     closeLabel,
+    dragDismissible,
     initialFocus,
     finalFocus,
     keepVisibleWhenNested,
@@ -118,6 +121,7 @@ const ModalSurface = memo(
     bottomStickOnMobile,
   }: {
     open: boolean;
+    dragDismissible: boolean;
     title: ReactNode;
     description?: ReactNode;
     closeLabel: string;
@@ -130,8 +134,10 @@ const ModalSurface = memo(
     children?: ReactNode;
     footer?: ReactNode;
   }) {
+    const sheetRef = useSheetDrag({ dismissible: dragDismissible });
     return (
       <DialogPopup
+        ref={sheetRef}
         data-a13n-modal
         // Keep typing out of the hidden menu, but let Escape reach dialog dismissal.
         onKeyDown={(event) => {
@@ -147,9 +153,17 @@ const ModalSurface = memo(
         finalFocus={finalFocus}
         placement={placement}
         bottomStickOnMobile={bottomStickOnMobile}
-        closeProps={{ "aria-label": closeLabel }}
+        closeProps={{
+          "aria-label": closeLabel,
+          ...{ "data-a13n-modal-close": "" },
+        }}
       >
         <DialogHeader>
+          <span
+            aria-hidden="true"
+            data-a13n-sheet-grabber
+            style={{ display: "var(--a13n-sheet-grabber-display, none)" }}
+          />
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>

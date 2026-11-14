@@ -16,7 +16,9 @@
   --info-foreground: var(--color-blue-700);
   --input: rgb(22 24 32 / 11%);
   --muted: rgb(22 24 32 / 3.5%);
+  --text-secondary: #4f525b;
   --muted-foreground: #696c74;
+  --text-quaternary: #858891;
   --popover: #ffffff;
   --popover-foreground: #16171a;
   --primary: #16171a;
@@ -74,7 +76,9 @@
   --info-foreground: var(--color-blue-400);
   --input: rgb(255 255 255 / 10%);
   --muted: rgb(255 255 255 / 4%);
+  --text-secondary: #b9bcc4;
   --muted-foreground: #979aa2;
+  --text-quaternary: #747780;
   --popover: #1b1c1f;
   --popover-foreground: #ececee;
   --primary: #ececee;

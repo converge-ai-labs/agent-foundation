@@ -1,0 +1,182 @@
+[data-a13n-modal] {
+  border-radius: var(--harness-radius-panel);
+}
+
+[data-a13n-modal][data-size="md"] {
+  max-width: 480px;
+}
+[data-a13n-modal][data-size="lg"] {
+  max-width: 640px;
+}
+:where([data-a13n-modal] [data-slot="dialog-header"]) {
+  padding: 24px 56px 16px 24px;
+  gap: 8px;
+}
+:where([data-a13n-modal] [data-slot="dialog-title"]) {
+  font-size: calc(var(--a13n-text-body) * 20 / 14);
+  font-weight: 500;
+  line-height: 24px;
+}
+:where([data-a13n-modal] [data-slot="dialog-description"]) {
+  font-size: var(--a13n-text-body);
+  line-height: 1.45;
+}
+:where([data-a13n-modal] [data-slot="dialog-panel"]) {
+  display: grid;
+  gap: 16px;
+  padding: 0 24px 24px;
+}
+:where(
+  [data-a13n-modal] [data-slot="dialog-panel"]:has([data-a13n-form-actions])
+) {
+  padding-bottom: 0;
+}
+/* The footer owns the final inset; don't add panel padding above it. */
+[data-a13n-modal]:has(> [data-slot="dialog-footer"])
+  [data-slot="dialog-panel"] {
+  padding-bottom: 0;
+}
+[data-a13n-modal] [data-slot="dialog-panel"]:empty {
+  display: none;
+}
+[data-a13n-modal] [data-slot="dialog-title"],
+[data-a13n-modal] [data-slot="dialog-description"] {
+  overflow-wrap: anywhere;
+}
+[data-a13n-modal] [data-a13n-form-actions] {
+  padding-block: 0 24px;
+}
+:where([data-a13n-modal] [data-slot="dialog-footer"]) {
+  padding: 16px 24px 24px;
+}
+[data-a13n-modal] > :is([data-slot="dialog-close"], button[aria-label]) {
+  top: 20px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+}
+
+@media (pointer: coarse) {
+  [data-a13n-modal] [data-slot="dialog-header"] {
+    padding: 20px 56px 16px 16px;
+  }
+  [data-a13n-modal] [data-slot="dialog-panel"] {
+    padding-inline: 16px;
+  }
+  [data-a13n-modal] [data-slot="dialog-footer"] {
+    padding: 16px;
+  }
+  [data-a13n-modal] [data-a13n-form-actions] {
+    padding-bottom: 16px;
+  }
+}
+
+/* Harness form dialogs and confirmations share a native bottom-sheet anatomy.
+   This is product-owned: Console keeps its centered, opacity-only dialogs. */
+@media (max-width: 639px) {
+  [data-slot="dialog-viewport"]:has(> [data-a13n-modal]) {
+    inset: var(--visible-top, 0px) 0 auto;
+    height: var(--visible-height, 100dvh);
+    align-items: end;
+    padding: max(16px, env(safe-area-inset-top)) 0 0;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal] {
+    --a13n-dialog-start-scale: 1;
+    --a13n-sheet: 1;
+    --a13n-sheet-grabber-display: block;
+    translate: 0 var(--a13n-sheet-offset, 0px);
+    width: 100%;
+    max-width: none;
+    max-height: calc(
+      var(--visible-height, 100dvh) - max(16px, env(safe-area-inset-top))
+    );
+    border-radius: 16px 16px 0 0;
+    transform-origin: bottom;
+    transition-property: transform, opacity, translate;
+    transition-duration:
+      var(--a13n-duration-slow), var(--a13n-duration-slow),
+      var(--a13n-duration-spring);
+    transition-timing-function:
+      var(--a13n-ease-sheet), var(--a13n-ease-sheet), var(--a13n-ease-spring);
+    padding-bottom: var(--keyboard-bottom-inset, env(safe-area-inset-bottom));
+  }
+  [data-slot="dialog-popup"][data-a13n-modal]:is(
+      [data-starting-style],
+      [data-ending-style]
+    ) {
+    transform: translateY(100%);
+    scale: 1;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal][data-ending-style] {
+    transition-duration: var(--a13n-duration-fast);
+    transition-timing-function: var(--a13n-ease-in);
+  }
+  [data-a13n-modal] :is([data-slot="dialog-footer"], [data-a13n-form-actions]) {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  [data-a13n-modal]
+    :is([data-slot="dialog-footer"], [data-a13n-form-actions])
+    > :is(button, a, [data-slot="button"]) {
+    width: 100%;
+    margin-inline: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 639px) {
+  [data-a13n-modal] [data-slot="dialog-header"] {
+    position: relative;
+    padding-top: 32px;
+    touch-action: none;
+  }
+  [data-a13n-modal] > [data-a13n-modal-close] {
+    width: 44px;
+    height: 44px;
+    top: 22px;
+    right: 8px;
+  }
+  [data-a13n-sheet-grabber] {
+    position: absolute;
+    inset: 10px 0 auto;
+    margin-inline: auto;
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--a13n-quaternary);
+  }
+  [data-slot="dialog-backdrop"]:has(
+    + [data-slot="dialog-viewport"] > [data-a13n-modal]
+  ) {
+    opacity: var(--a13n-sheet-backdrop-opacity, 1);
+    transition-duration: var(--a13n-duration-spring);
+    transition-timing-function: var(--a13n-ease-spring);
+  }
+  [data-slot="dialog-backdrop"]:has(
+      + [data-slot="dialog-viewport"] > [data-a13n-modal]
+    ):is([data-starting-style], [data-ending-style]) {
+    opacity: 0;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal][data-sheet-dragging],
+  [data-slot="dialog-backdrop"][data-sheet-dragging]:has(
+      + [data-slot="dialog-viewport"] > [data-a13n-modal]
+    ) {
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-popup"][data-a13n-modal],
+  [data-slot="dialog-backdrop"]:has(
+    + [data-slot="dialog-viewport"] > [data-a13n-modal]
+  ) {
+    transition: none;
+  }
+  [data-slot="dialog-popup"][data-a13n-modal]:is(
+      [data-starting-style],
+      [data-ending-style]
+    ) {
+    transform: none;
+  }
+}

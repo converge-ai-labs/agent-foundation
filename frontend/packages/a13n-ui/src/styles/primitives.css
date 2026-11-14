@@ -82,7 +82,7 @@
    Loading retains its geometry and indicator. */
 [data-a13n-button]:is(:disabled, [data-disabled]):not([data-loading]) {
   opacity: 1;
-  color: color-mix(in srgb, var(--a13n-secondary) 65%, var(--a13n-canvas));
+  color: var(--a13n-quaternary);
   background: var(--a13n-surface);
   border-color: var(--a13n-border-soft);
   box-shadow: none;
@@ -122,7 +122,7 @@
     [data-slot="combobox-item"],
     [data-a13n-button]
   ) {
-    min-height: 44px;
+    min-height: var(--a13n-row-height-touch);
   }
   [data-a13n-button][data-size^="icon"] {
     min-width: 44px;
@@ -152,7 +152,7 @@
 [data-slot="combobox-surface"] {
   transform-origin: var(--transform-origin, top center);
   transition:
-    scale var(--a13n-duration-base) var(--a13n-ease-out),
+    scale var(--a13n-duration-spring-snappy) var(--a13n-ease-spring-snappy),
     opacity var(--a13n-duration-base) var(--a13n-ease-out);
 }
 [data-slot="combobox-surface"]:has(
@@ -167,4 +167,102 @@
 }
 [data-slot="combobox-popup"]:is([data-starting-style], [data-ending-style]) {
   scale: 1;
+}
+
+/* Shared hierarchy is semantic; product layouts still own control geometry. */
+:is(
+  [data-slot="settings-section-title"],
+  [data-slot="menu-label"],
+  [data-slot="select-group-label"],
+  [data-slot="combobox-group-label"]
+) {
+  font: var(--a13n-font-label);
+  color: var(--a13n-tertiary);
+}
+:is(
+  [data-slot="field-label"],
+  [data-slot="label"],
+  [data-slot="select-label"],
+  [data-slot="fieldset-legend"],
+  [data-slot="disclosure-title"]
+) {
+  font: var(--a13n-font-label);
+  color: var(--a13n-secondary);
+}
+:is([data-slot="field-description"], [data-slot="popover-description"]) {
+  font: var(--a13n-font-callout);
+  color: var(--a13n-secondary);
+}
+:is(
+  [data-slot="settings-row-description"],
+  [data-slot="search-option-description"],
+  [data-slot="disclosure-summary"],
+  [data-slot="menu-shortcut"]
+) {
+  font: var(--a13n-font-caption);
+  color: var(--a13n-tertiary);
+}
+[data-slot="popover-title"] {
+  font: var(--a13n-font-headline);
+}
+[data-slot="tooltip-popup"] {
+  font: var(--a13n-font-caption);
+}
+[data-slot="segmented-control-item"] {
+  font: var(--a13n-font-label);
+}
+[data-slot="segmented-control-item"][data-size="default"] {
+  font-size: var(--a13n-text-sm);
+}
+:is(
+  [data-slot="separator"],
+  [data-slot="menu-separator"],
+  [data-slot="select-separator"],
+  [data-slot="combobox-separator"]
+) {
+  background-color: var(--a13n-separator);
+}
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-surface"],
+  [data-slot="sheet-popup"]
+) {
+  background: var(--a13n-material-overlay);
+  -webkit-backdrop-filter: var(--a13n-material-filter);
+  backdrop-filter: var(--a13n-material-filter);
+}
+/* The combobox surface owns material and motion, not its inner list. */
+[data-slot="combobox-popup"] {
+  background: transparent;
+}
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"]
+) {
+  transition-duration:
+    var(--a13n-duration-spring-snappy), var(--a13n-duration-base);
+  transition-property: scale, opacity;
+  transition-timing-function:
+    var(--a13n-ease-spring-snappy), var(--a13n-ease-out);
+}
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"]
+)[data-ending-style] {
+  transition-duration: var(--a13n-duration-fast);
+  transition-timing-function: var(--a13n-ease-in);
+}
+:is(input, textarea)::placeholder {
+  color: var(--a13n-quaternary);
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  [data-slot="segmented-control-item"] {
+    min-height: var(--a13n-row-height-touch);
+    min-width: var(--a13n-row-height-touch);
+  }
 }
