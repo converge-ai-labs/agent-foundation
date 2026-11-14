@@ -318,6 +318,63 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
         assert result["error"]["code"] == "forbidden"
 
 
+async def test_platform_catalog_is_cached_across_steps_and_handoff_but_not_runs(
+    service, scripted_model, runs_kit, monkeypatch
+):
+    import httpx2
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.capabilities import HandoffCapability
+    from a13n_harness.tools.identity import ToolIdentity, source_tool_id
+    from a13n_service.runs.platform_tools import platform_capability
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    lease, _, _ = await lease_for(service, scripted_model, runs_kit)
+    lists = 0
+    steps = 0
+    original = httpx2.AsyncClient.send
+
+    async def count_lists(self, request, *args, **kwargs):
+        nonlocal lists
+        if request.url.path == "/api/v1/platform-tools/" and request.method == "POST":
+            if json.loads(request.content).get("method") == "tools/list":
+                lists += 1
+        return await original(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(httpx2.AsyncClient, "send", count_lists)
+
+    async def model(messages, info):
+        nonlocal steps
+        steps += 1
+        step = (steps - 1) % 5
+        if step == 4:
+            yield "done"
+        elif step == 2:
+            # Explicit handoff restarts the internal Agent attempt within this Harness Run.
+            yield {0: DeltaToolCall(name="summarize", json_args='{"content":"Continue listing agents"}')}
+        else:
+            if step == 3:
+                assert "# Context Summary" in str(messages)
+                assert f"read-{steps - 2}" not in str(messages)
+                assert f"read-{steps - 3}" not in str(messages)
+            assert "list_agents" in {tool.name for tool in info.function_tools}
+            yield {0: DeltaToolCall(name="list_agents", json_args="{}", tool_call_id=f"read-{steps}")}
+
+    tools = {"list_agents": ToolIdentity(source_tool_id("service-platform", "list_agents", kind="mcp"), "allow")}
+    async with runs_kit.platform_runtime(service) as runtime:
+        async with platform_capability(runtime, lease, tools) as capability:
+            executable = HarnessBuilder().build(
+                AgentSpec(),
+                output_type=str,
+                model=FunctionModel(stream_function=model),
+                capabilities=(capability, HandoffCapability()),
+            )
+            for run in (1, 2):
+                result = await executable.run("List agents", bindings=RunBindings.embedded())
+                assert result.output_or_raise() == "done"
+                assert steps == run * 5
+                assert lists == run
+
+
 async def test_native_platform_read_and_write_review_survive_resume(skill_service, scripted_model, runs_kit, listen):
     service = skill_service
     await runs_kit.pause_sweeps(service)
