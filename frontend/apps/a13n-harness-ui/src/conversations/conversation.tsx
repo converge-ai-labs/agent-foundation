@@ -711,7 +711,8 @@ function ConversationContent({
       inline
       error={pageError}
       retry={() => {
-        reconcile();
+        if (history.error) void history.retryRead();
+        else reconcile();
         if (selectors.error) void selectors.refetch();
         if (agentSelection.error || (!rename && metadata.error))
           void detail.refetch().then((updated) => {

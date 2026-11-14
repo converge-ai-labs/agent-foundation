@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from anyio import to_thread
 from pydantic_ai.messages import ModelResponse, TextPart
 
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
@@ -163,19 +164,15 @@ class SavedOutputs:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.read_continuation(target.producing_thread_id, source, include_display=True)
-            from a13n_harness_ui.display_projection import original_text
+            from a13n_harness_ui.display_projection import original_window_text
 
             if continuation.harness_state.thread_id != target.producing_thread_id:
                 raise ThreadError("Root output belongs to another Thread.", code="saved_output_target_invalid")
-            from a13n_harness_ui.storage.display import read_display
+            from a13n_harness_ui.storage.display import read_display_windows
 
-            display = (
-                await read_display(self._store.objects, continuation.display)
-                if continuation.display is not None
-                else continuation.display_history
-            )
-            if display is not None:
-                text = original_text(display, location.message, location.part)
+            if continuation.display is not None:
+                windows = await read_display_windows(self._store.objects, continuation.display)
+                text = await to_thread.run_sync(original_window_text, windows, location.message, location.part)
                 if text is not None:
                     return text
                 raise ThreadError("Target is not saved visible assistant text.", code="saved_output_target_invalid")

@@ -3500,12 +3500,12 @@ class HarnessUiApp:
     ) -> ThreadWatch:
         async with self._operation():
             thread = await self._projections.detail(root_thread_id)
+            if thread.thread.parent_thread_id is not None:
+                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             if thread.continuation_id != base_continuation_id:
                 raise LivePresentationError(
                     "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
                 )
-            if thread.thread.parent_thread_id is not None:
-                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             root_operation = await self._root_runs.active(root_thread_id)
             selected = await self._threads.get(root_thread_id)
             selected_id = selected.continuation.logical_digest if selected.continuation is not None else None

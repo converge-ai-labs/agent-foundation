@@ -369,7 +369,9 @@ beforeEach(() => {
       );
     }),
   );
-  queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queries = new QueryClient({
+    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
+  });
   transport = createTransport("test", () => {});
 });
 afterEach(() => {

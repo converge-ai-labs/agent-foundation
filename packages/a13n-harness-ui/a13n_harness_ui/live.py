@@ -6,7 +6,7 @@ import json
 from collections import OrderedDict, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from anyio import (
     Lock,
     WouldBlock,
     create_memory_object_stream,
+    to_thread,
 )
 from anyio.lowlevel import checkpoint
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -590,11 +591,18 @@ class HarnessUiLiveHub:
             subscription = LiveSubscription(
                 subscriber,
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
-                root_stream.capture() if root_stream is not None and after is None else None,
+                None,
             )
-            # The subscription owns the current Run state.
+            # Items and parser continuations are replaced on publication. Freeze
+            # their membership at the same cut as the queue, then encode off-loop.
+            baseline = (
+                replace(root_stream, items=root_stream.items.copy(), apps={}) if root_stream and after is None else None
+            )
             del root_stream
         try:
+            if baseline is not None:
+                subscription.root_stream = await to_thread.run_sync(baseline.capture)
+                del baseline
             yield subscription
         finally:
             # Delivery consumers can be cancelled while the producer continues.

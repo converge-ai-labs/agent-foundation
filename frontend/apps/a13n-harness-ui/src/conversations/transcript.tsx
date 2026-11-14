@@ -1212,6 +1212,7 @@ function TurnHistory({
     continuation,
     turn,
     props.missing,
+    entries,
   );
   useEffect(() => {
     if (history.data) onSavedEntries?.(history.data);
@@ -1250,7 +1251,7 @@ function TurnHistory({
     ),
   ];
   const retry = () => {
-    if (!history.isFetching) void history.refetch();
+    if (!history.isFetching) void history.retryRead();
   };
   return (
     <TurnSegments

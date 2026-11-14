@@ -6,15 +6,20 @@ import base64
 import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import replace
 from datetime import datetime
 from functools import partial
+from time import monotonic
 from typing import Literal
+from weakref import WeakValueDictionary
 
 from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
+from a13n_harness.state import encode_messages
 from a13n_harness.tools._output import tool_execution_value
+from a13n_logging import get_logger
 from a13n_stream_protocol import tool_result_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
@@ -41,7 +46,8 @@ from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
-from a13n_harness_ui.errors import ThreadError
+from a13n_harness_ui.display_history import DisplayHistory
+from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
 from a13n_harness_ui.storage import (
@@ -53,7 +59,8 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfiguration,
 )
-from a13n_harness_ui.storage.contracts import Coordinator
+from a13n_harness_ui.storage.contracts import ChildExecutionHead, Coordinator
+from a13n_harness_ui.storage.display import read_display_windows
 from a13n_harness_ui.storage.inspection import InspectionData, InspectionHeader, InspectionTurn
 from a13n_harness_ui.surfaces import (
     AgentSourceView,
@@ -149,7 +156,7 @@ class ThreadProjectionService:
         self._configurations = configurations
         self._root_activity = root_activity
         self._root_activities = root_activities
-        self._inspection_loads: dict[str, tuple[Lock, int]] = {}
+        self._inspection_loads: WeakValueDictionary[str, Lock] = WeakValueDictionary()
 
     def set_root_activity_lookup(
         self,
@@ -316,7 +323,11 @@ class ThreadProjectionService:
         summary = await self._summary(thread)
         continuation_id = None
         requests: tuple[DeferredRequestView, ...] = ()
-        if thread.continuation is not None:
+        if thread.parent_thread_id is not None:
+            child = await self._store.child_executions.latest_checkpoint_for_child(thread_id)
+            if child is not None and child.selected_checkpoint is not None:
+                continuation_id = child.selected_checkpoint.logical_digest
+        elif thread.continuation is not None:
             continuation_id = thread.continuation.logical_digest
             if thread.read_model is not None:
                 requests = _deferred_requests(thread.read_model.deferred_requests)
@@ -344,7 +355,7 @@ class ThreadProjectionService:
     async def retains_mcp_app(self, reference: AppReference) -> bool:
         """Search the selected display history, including entries outside the visible page."""
         thread = await self._required_thread(reference.thread_id)
-        header = await self._inspection_header(thread)
+        _, header = await self._inspection_header(thread)
         for start in range(0, header.message_count, 100):
             entries = await self._inspection_entries(
                 thread.thread_id, header.source_id, tuple(range(start, min(start + 100, header.message_count)))
@@ -365,13 +376,13 @@ class ThreadProjectionService:
         if not 1 <= limit <= 100:
             raise ThreadError("Transcript page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        header = await self._inspection_header(thread)
+        decoded = _decode_cursor(cursor, _TranscriptCursor, code="thread_history_cursor_invalid") if cursor else None
+        if decoded and decoded.thread_id != thread_id:
+            raise ThreadError("Cursor belongs to another Thread.", code="thread_history_cursor_mismatch")
+        thread, header = await self._inspection_header(
+            thread, expected_continuation_id, decoded.continuation_id if decoded else None
+        )
         continuation_id = header.source_id
-        if expected_continuation_id is not None and continuation_id != expected_continuation_id:
-            raise ThreadError(
-                "The selected Thread continuation changed before transcript projection.",
-                code="thread_history_continuation_changed",
-            )
         upper_bound = header.message_count
         if turn_id is not None and cursor is None:
             selected = await self._store.inspections.turns(thread_id, continuation_id, turn_id=turn_id, limit=1)
@@ -380,13 +391,7 @@ class ThreadProjectionService:
                 raise ThreadError("Input is not in the selected history.", code="thread_history_input_missing")
             upper_bound = selected_turn.end_position
         position = max(0, upper_bound - limit)
-        if cursor is not None:
-            decoded = _decode_cursor(cursor, _TranscriptCursor, code="thread_history_cursor_invalid")
-            if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
-                raise ThreadError(
-                    "Transcript cursor belongs to another continuation.",
-                    code="thread_history_cursor_mismatch",
-                )
+        if decoded is not None:
             if decoded.direction == "later":
                 position = decoded.position
                 upper_bound = min(header.message_count, position + limit)
@@ -460,7 +465,7 @@ class ThreadProjectionService:
     async def tool_execution_input(self, thread_id: str, tool_call_id: str) -> tuple[str | None, bool]:
         """Read the latest retained call with the execution tool-call identity."""
         thread = await self._required_thread(thread_id)
-        header = await self._inspection_header(thread)
+        _, header = await self._inspection_header(thread)
         candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, tool_call_id)
         entries = await to_thread.run_sync(
             lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
@@ -485,15 +490,15 @@ class ThreadProjectionService:
         if not 1 <= limit <= 100:
             raise ThreadError("Input page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        header = await self._inspection_header(thread)
+        decoded = _decode_cursor(cursor, _InputCursor, code="thread_history_cursor_invalid") if cursor else None
+        if decoded and decoded.thread_id != thread_id:
+            raise ThreadError("Cursor belongs to another Thread.", code="thread_history_cursor_mismatch")
+        _, header = await self._inspection_header(
+            thread, expected_continuation_id, decoded.continuation_id if decoded else None
+        )
         continuation_id = header.source_id
-        if expected_continuation_id is not None and expected_continuation_id != continuation_id:
-            raise ThreadError("History changed before input projection.", code="thread_history_continuation_changed")
         position = 0
-        if cursor:
-            decoded = _decode_cursor(cursor, _InputCursor, code="thread_history_cursor_invalid")
-            if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
-                raise ThreadError("Input cursor belongs to another history.", code="thread_history_cursor_mismatch")
+        if decoded is not None:
             position = decoded.position
         if position > header.turn_count:
             raise ThreadError("Input cursor is outside history.", code="thread_history_cursor_invalid")
@@ -520,13 +525,8 @@ class ThreadProjectionService:
         position: int,
     ) -> TranscriptEntry:
         thread = await self._required_thread(thread_id)
-        header = await self._inspection_header(thread)
+        _, header = await self._inspection_header(thread, expected_continuation_id)
         continuation_id = header.source_id
-        if continuation_id != expected_continuation_id:
-            raise ThreadError(
-                "The selected Thread continuation changed before transcript projection.",
-                code="thread_history_continuation_changed",
-            )
         if position < 0 or position >= header.message_count:
             raise ThreadError("Transcript position is invalid.", code="thread_history_position_invalid")
         return (await self._inspection_entries(thread_id, continuation_id, (position,)))[0]
@@ -670,7 +670,7 @@ class ThreadProjectionService:
         )
 
     async def inspection(self, thread: Thread) -> ThreadInspection:
-        header = await self._inspection_header(thread)
+        _, header = await self._inspection_header(thread)
         return ThreadInspection.model_validate_json(header.metadata_json)
 
     async def _inspection_entries(
@@ -679,66 +679,105 @@ class ThreadProjectionService:
         values = await self._store.inspections.entries(thread_id, source_id, positions)
         return await to_thread.run_sync(lambda: tuple(TranscriptEntry.model_validate_json(value) for value in values))
 
-    async def _inspection_header(self, thread: Thread) -> InspectionHeader:
+    async def _inspection_source(self, thread: Thread) -> tuple[str, ChildExecutionHead | None]:
         child = (
             await self._store.child_executions.latest_checkpoint_for_child(thread.thread_id)
             if thread.parent_thread_id is not None
             else None
         )
-        source_id = (
-            child.selected_checkpoint.logical_digest
-            if child is not None and child.selected_checkpoint is not None
-            else (
-                thread.continuation.logical_digest
-                if thread.continuation
-                else f"initial:{thread.initial_state.logical_digest}"
-            )
-        )
-        if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
-            return header
-        # Only callers building the same Thread wait together. No native history
-        # remains cached, and idle per-Thread locks disappear with the last waiter.
-        lock, users = self._inspection_loads.get(thread.thread_id, (Lock(), 0))
-        self._inspection_loads[thread.thread_id] = (lock, users + 1)
-        try:
-            async with lock:
-                if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
-                    return header
-                if child is not None:
-                    stored = await self._store.read_child_checkpoint(child)
-                    if stored.child_thread_id != thread.thread_id or stored.execution_id != child.execution_id:
-                        raise ThreadError(
-                            "Child checkpoint identity is invalid.", code="thread_continuation_incompatible"
-                        )
-                elif thread.continuation is None:
-                    stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
-                else:
-                    stored = await self._store.read_continuation(
-                        thread.thread_id, thread.continuation, include_display=True
-                    )
-                    if stored.display is not None:
-                        from a13n_harness_ui.storage.display import DisplayArchive, read_display
+        reference = child.selected_checkpoint if child else thread.continuation
+        return reference.logical_digest if reference else f"initial:{thread.initial_state.logical_digest}", child
 
-                        display = await read_display(self._store.objects, stored.display)
-                        stored = stored.model_copy(update={"display": DisplayArchive(tail=display)})
-                data = await to_thread.run_sync(
-                    partial(
-                        build_thread_inspection,
-                        thread,
-                        stored,
-                        source_id=source_id if child is not None else None,
-                        child_succeeded=child is not None and child.status == "succeeded",
+    async def _inspection_header(
+        self, thread: Thread, expected_source: str | None = None, cursor_source: str | None = None
+    ) -> tuple[Thread, InspectionHeader]:
+        def check_source(source: str) -> None:
+            if expected_source is not None and expected_source != source:
+                raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
+            if cursor_source is not None and cursor_source != source:
+                raise ThreadError("Cursor belongs to another history.", code="thread_history_cursor_mismatch")
+
+        thread_id = thread.thread_id
+        source, _ = await self._inspection_source(thread)
+        check_source(source)
+        if (header := await self._store.inspections.header(thread_id, source)) is not None:
+            return thread, header
+
+        lock = self._inspection_loads.setdefault(thread_id, Lock())
+        async with lock:
+            started = monotonic()
+            rebuilt: InspectionData | None = None
+            for attempt in range(3):
+                thread = await self._required_thread(thread_id)
+                source, child = await self._inspection_source(thread)
+                # After doing expensive work, finish repairing the current source
+                # even when the initiating reader must re-anchor.
+                if attempt == 0:
+                    check_source(source)
+                if (header := await self._store.inspections.header(thread_id, source)) is not None:
+                    check_source(source)
+                    return thread, header
+                try:
+                    rebuilt = await self._rebuild_inspection(thread, source, child, rebuilt)
+                except StoreConflictError:
+                    continue
+                if await self._store.inspections.publish(thread_id, source, rebuilt):
+                    get_logger(__name__).info(
+                        "Rebuilt transcript index",
+                        extra={
+                            "thread_id": thread_id,
+                            "duration_ms": round((monotonic() - started) * 1000),
+                        },
                     )
+                    check_source(source)
+                    return thread, InspectionHeader(
+                        source,
+                        rebuilt.entry_offset + len(rebuilt.entries),
+                        rebuilt.turn_offset + len(rebuilt.turns),
+                        rebuilt.metadata_json,
+                    )
+            raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
+
+    async def _rebuild_inspection(
+        self, thread: Thread, source: str, child: ChildExecutionHead | None, previous: InspectionData | None
+    ) -> InspectionData:
+        if child is not None:
+            stored = await self._store.read_child_checkpoint(child)
+            if stored.child_thread_id != thread.thread_id or stored.execution_id != child.execution_id:
+                raise ThreadError("Child checkpoint identity is invalid.", code="thread_continuation_incompatible")
+            prefix = await self._store.inspections.sealed_prefix(thread.thread_id)
+            return await to_thread.run_sync(
+                partial(
+                    build_thread_inspection,
+                    thread,
+                    stored,
+                    source_id=source,
+                    child_succeeded=child.status == "succeeded",
+                    indexed_child_prefix=prefix,
                 )
-                if not await self._store.inspections.publish(thread.thread_id, source_id, data):
-                    raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
-                return InspectionHeader(source_id, len(data.entries), len(data.turns), data.metadata_json)
-        finally:
-            _, users = self._inspection_loads[thread.thread_id]
-            if users == 1:
-                del self._inspection_loads[thread.thread_id]
-            else:
-                self._inspection_loads[thread.thread_id] = (lock, users - 1)
+            )
+        if thread.continuation is None:
+            initial = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
+            return await to_thread.run_sync(build_thread_inspection, thread, initial)
+
+        continuation = await self._store.read_continuation(thread.thread_id, thread.continuation, include_display=True)
+        archive = continuation.display
+        if archive is None or archive.prefix is None:
+            return await to_thread.run_sync(build_thread_inspection, thread, continuation)
+        digest = archive.prefix.logical_digest
+        if await self._store.inspections.sealed_prefix(thread.thread_id) == digest:
+            return await to_thread.run_sync(build_thread_inspection, thread, continuation)
+        if previous is not None and previous.entry_offset == 0 and previous.sealed_prefix_digest == digest:
+            tail = await to_thread.run_sync(build_thread_inspection, thread, continuation)
+            return replace(
+                tail,
+                entry_offset=0,
+                turn_offset=0,
+                entries=previous.entries[: tail.entry_offset] + tail.entries,
+                turns=previous.turns[: tail.turn_offset] + tail.turns,
+            )
+        windows = await read_display_windows(self._store.objects, archive)
+        return await to_thread.run_sync(partial(build_thread_inspection, thread, continuation, windows=windows))
 
 
 def project_task(task: Task) -> TaskView:
@@ -798,6 +837,8 @@ def build_thread_inspection(
     *,
     source_id: str | None = None,
     child_succeeded: bool = False,
+    indexed_child_prefix: str | None = None,
+    windows: list[DisplayHistory] | None = None,
 ) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
@@ -806,9 +847,21 @@ def build_thread_inspection(
     display = stored.display_history if isinstance(stored, Continuation) else None
     model_history = state.message_history
     from a13n_harness_ui.display_history import import_display_history
-    from a13n_harness_ui.display_projection import display_entries, display_turns
 
-    display = display if display is not None else import_display_history(model_history)
+    archive = stored.display if isinstance(stored, Continuation) else None
+    entry_offset = archive.entry_offset if archive else 0
+    turn_offset = archive.turn_offset if archive else 0
+    prefix_digest = archive.prefix.logical_digest if archive and archive.prefix else None
+    if isinstance(stored, StoredChildCheckpoint):
+        inputs = _transcript_inputs(model_history)
+        if inputs and (boundary := inputs[-1][0]) > 0:
+            # Child checkpoints store native messages. Verify the content before
+            # the final input across resumes, context replacement and compaction.
+            prefix_digest = hashlib.sha256(encode_messages(model_history[:boundary])).hexdigest()
+            if prefix_digest == indexed_child_prefix:
+                entry_offset, turn_offset = boundary, len(inputs) - 1
+    if display is None:
+        display = import_display_history(model_history[entry_offset:], position_offset=entry_offset)
     if isinstance(stored, StoredChildCheckpoint) and stored.terminal and child_succeeded:
         final = next(
             (
@@ -848,11 +901,30 @@ def build_thread_inspection(
         notes=notes,
         tasks=tasks,
     )
-    entry_offset = stored.display.entry_offset if isinstance(stored, Continuation) and stored.display is not None else 0
-    turn_offset = stored.display.turn_offset if isinstance(stored, Continuation) and stored.display is not None else 0
+    if windows is not None:
+        entry_offset = turn_offset = 0
+    entries: list[str] = []
+    turns: list[InspectionTurn] = []
+    for window in windows or [display]:
+        projected, boundaries = _inspection_rows(window, entry_offset + len(entries))
+        entries.extend(projected)
+        turns.extend(boundaries)
+    return InspectionData(
+        entry_offset=entry_offset,
+        turn_offset=turn_offset,
+        sealed_prefix_digest=prefix_digest,
+        metadata_json=metadata.model_dump_json(),
+        entries=tuple(entries),
+        turns=tuple(turns),
+    )
+
+
+def _inspection_rows(display: DisplayHistory, entry_offset: int) -> tuple[tuple[str, ...], tuple[InspectionTurn, ...]]:
+    from a13n_harness_ui.display_projection import display_entries, display_turns
+
     entries = tuple(
         entry.model_copy(update={"position": entry.position + entry_offset}).model_dump_json()
-        for entry in display_entries(display, thread)
+        for entry in display_entries(display)
     )
     turns = tuple(
         turn.model_copy(
@@ -869,15 +941,8 @@ def build_thread_inspection(
         )
         for turn in display_turns(display)
     )
-    return InspectionData(
-        entry_offset=entry_offset,
-        turn_offset=turn_offset,
-        metadata_json=metadata.model_dump_json(),
-        entries=entries,
-        turns=tuple(
-            InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
-            for turn in turns
-        ),
+    return entries, tuple(
+        InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json()) for turn in turns
     )
 
 
@@ -913,11 +978,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
     return len(identities)
 
 
-def _transcript_turns(
-    history: tuple[ModelMessage, ...],
-    completed: tuple[int, ...] = (),
-) -> tuple[TranscriptTurn, ...]:
-    """Project input boundaries from retained native metadata, never text matching."""
+def _transcript_inputs(history: tuple[ModelMessage, ...], position_offset: int = 0) -> list[tuple[int, str, str]]:
     inputs: list[tuple[int, str, str]] = []
     for position, message in enumerate(history):
         metadata = message.metadata or {}
@@ -937,7 +998,18 @@ def _transcript_turns(
             ),
             None,
         )
-        inputs.append((position, source or f"entry:{position}", excerpt_text(preview, 512)))
+        inputs.append((position, source or f"entry:{position_offset + position}", excerpt_text(preview, 512)))
+    return inputs
+
+
+def _transcript_turns(
+    history: tuple[ModelMessage, ...],
+    completed: tuple[int, ...] = (),
+    *,
+    position_offset: int = 0,
+) -> tuple[TranscriptTurn, ...]:
+    """Project input boundaries from retained native metadata, never text matching."""
+    inputs = _transcript_inputs(history, position_offset)
     turns: list[TranscriptTurn] = []
     completed_set = set(completed)
     for index, (position, identity, preview) in enumerate(inputs):

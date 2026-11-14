@@ -156,8 +156,18 @@ def _timestamp(row: _Row) -> datetime | None:
 
 
 def original_text(display: DisplayHistory, message: int, part: int) -> str | None:
-    rows = _rows(display)
-    if message >= len(rows) or part >= len(rows[message].parts):
+    return original_window_text([display], message, part)
+
+
+def original_window_text(windows: list[DisplayHistory], message: int, part: int) -> str | None:
+    for window in windows:
+        rows = _rows(window)
+        if message < len(rows):
+            break
+        message -= len(rows)
+    else:
+        return None
+    if part >= len(rows[message].parts):
         return None
     source = rows[message].parts[part]
     metadata = source.get("metadata") or {}

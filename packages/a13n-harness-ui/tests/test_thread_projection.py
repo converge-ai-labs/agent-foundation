@@ -253,7 +253,7 @@ async def test_background_input_reads_latest_matching_tool_call() -> None:
     projection = object.__new__(ThreadProjectionService)
     projection._store = store
     projection._required_thread = AsyncMock(return_value=thread)
-    projection._inspection_header = AsyncMock(return_value=header)
+    projection._inspection_header = AsyncMock(return_value=(thread, header))
     value, truncated = await projection.tool_execution_input("thread-one", "reused")
     assert value == '{"command": "pnpm test --watch"}' and truncated
     store.inspections.matching_entries.assert_awaited_once_with("thread-one", "source-one", "reused")

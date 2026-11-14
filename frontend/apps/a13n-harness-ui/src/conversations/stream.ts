@@ -146,6 +146,7 @@ export class FocusDisplay {
   replayCount = 0;
   sequence = 0;
   gap = false;
+  recoveryCheckpoint?: string;
   recovery?: {
     id: string;
     state: "retrying" | "resumed" | "ended";
@@ -208,6 +209,7 @@ export class FocusDisplay {
     this.recovery = undefined;
     this.terminalFailure = undefined;
     this.checkpoints.clear();
+    this.recoveryCheckpoint = undefined;
     this.savedBlocks.clear();
   }
   accept(frame: FocusFrame) {
@@ -358,19 +360,24 @@ export class FocusDisplay {
     child.display.trimChildOutput();
   }
   private trimChildOutput() {
+    const retainSaved = (id: string) => {
+      if (this.savedBlocks.has(id))
+        this.recoveryCheckpoint = [...this.checkpoints.keys()].at(-1);
+      else this.gap = true;
+    };
     // Bound both long deltas and event cardinality; saved output is fetched
     // independently and never synthesized from this lossy display window.
     while (this.blocks.size > 128) {
       const id = this.blocks.keys().next().value!;
       this.blocks.delete(id);
-      if (!this.savedBlocks.has(id)) this.gap = true;
+      retainSaved(id);
     }
     let remaining = 128 * 1024;
     for (const [key, block] of [...this.blocks].reverse()) {
       const size = JSON.stringify(block).length;
       if (remaining <= 0) {
         this.blocks.delete(key);
-        if (!this.savedBlocks.has(key)) this.gap = true;
+        retainSaved(key);
       } else if (
         size > remaining &&
         (block.kind === "assistant" || block.kind === "thinking")
@@ -384,10 +391,10 @@ export class FocusDisplay {
           done: block.done,
         });
         remaining = 0;
-        if (!this.savedBlocks.has(key)) this.gap = true;
+        retainSaved(key);
       } else if (size > remaining) {
         this.blocks.delete(key);
-        if (!this.savedBlocks.has(key)) this.gap = true;
+        retainSaved(key);
       } else remaining -= size;
     }
   }
@@ -880,6 +887,7 @@ export class FocusDisplay {
       typeof source.continuation_id === "string"
     ) {
       const ordinal = this.checkpoints.size + 1;
+      if (this.gap) this.recoveryCheckpoint = source.continuation_id;
       this.checkpoints.set(source.continuation_id, ordinal);
       this.gap = false;
       for (const id of this.blocks.keys()) {

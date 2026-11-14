@@ -17,6 +17,7 @@ from a13n_harness_ui.storage.metadata import harness_ui_metadata
 from a13n_harness_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
 from a13n_harness_ui.surfaces import RootOperationStatus
 from alembic import command
+from alembic.script import ScriptDirectory
 from anyio import Event, fail_after
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import MetaData, create_engine, inspect, text
@@ -33,43 +34,11 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     the navigation migration itself has separate real old-schema coverage.
     """
     newer = tmp_path / "comment-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
-    (newer / "versions/20261112_172cb05de184_allow_dynamic_subagent_sources.py").unlink()
-    (newer / "versions/20261112_60710c8b48e4_add_explicit_connector_group_names.py").unlink()
-    (newer / "versions/20261112_5304b6a9760a_add_application_owned_mcp_oauth_accounts.py").unlink()
-    (newer / "versions/20261112_b816fd5edbe8_add_connector_plugin_state_and_.py").unlink()
-    (newer / "versions/20261112_7f64c893cc4a_retain_thread_messages_in_bot_inbox.py").unlink()
-    (newer / "versions/20261112_9450d8b1a589_add_shared_thread_read_state.py").unlink()
-    (newer / "versions/20261111_f196302d868f_retain_latest_thread_external_context.py").unlink()
-    (newer / "versions/20261111_2e9f82450690_add_notification_scope_and_language.py").unlink()
-    (newer / "versions/20261111_2444030a5191_retain_configured_routes_for_chat_usage.py").unlink()
-    (newer / "versions/20261110_7147a04d1d58_add_bot_notes_and_unified_automatic_.py").unlink()
-    (newer / "versions/20261111_63bab3fe8f7b_index_configured_usage_models.py").unlink()
-    (newer / "versions/20261110_e94e15093b5d_persist_shared_webui_composer_drafts.py").unlink()
-    (newer / "versions/20261106_d9e633ce9a00_separate_thread_device_session_bindings.py").unlink()
-    (newer / "versions/20261105_dd0077431d5b_retain_tool_executions_and_completion_.py").unlink()
-    (newer / "versions/20261029_1f69a2ed231f_record_deleted_threads_for_checkpoint_.py").unlink()
-    (newer / "versions/20261026_62534972e2d6_retain_background_compaction_operations.py").unlink()
-    (newer / "versions/20261019_f3d4ba03d1cc_add_scoped_sharing_grants.py").unlink()
-    (newer / "versions/20261012_cb56f9a0a4df_add_live_voice_transcript_head_and_.py").unlink()
-    (newer / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
-    (newer / "versions/20261010_4bd3d3ab1b82_retain_latest_root_execution_summary.py").unlink()
-    (newer / "versions/20261001_c82e5ae6ef80_add_small_thread_work_projections.py").unlink()
-    (newer / "versions/20260926_1da116a90fda_add_memory_scope_to_observable_threads.py").unlink()
-    (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
-    (newer / "versions/20260924_0a7582171995_replace_project_leads_with_thread_.py").unlink()
-    (newer / "versions/20260923_78e4e7206898_add_project_lead_worker_ownership.py").unlink()
-    (newer / "versions/20260923_027c7c879425_add_canonical_project_lead.py").unlink()
-    (newer / "versions/20260918_ba240ec65035_add_planned_update_handoff.py").unlink()
-    (newer / "versions/20260918_63e8be47c2e2_replace_push_thread_interest_with_.py").unlink()
-    (newer / "versions/20260919_3a52b4914bbb_add_thread_owned_local_roots.py").unlink()
-    (newer / "versions/20260919_0c38589db1f4_add_device_environment_bindings_and_.py").unlink()
-    (newer / "versions/20260918_e416fbd4674c_add_thread_default_model.py").unlink()
-    (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
-    (newer / "versions/20260917_acd7efeb9fd8_add_continuation_read_models.py").unlink()
-    (newer / "versions/20260917_9aeed42d15b3_add_browser_push_subscriptions.py").unlink()
-    (newer / "versions/20260916_57b54299e47e_add_durable_thread_completion_markers.py").unlink()
-    (newer / "versions/20260916_122039abf689_add_thread_navigation_touch_time.py").unlink()
+    shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("versions", "__pycache__"))
+    versions = newer / "versions"
+    versions.mkdir()
+    for revision in ScriptDirectory(str(migration.MIGRATIONS_PATH)).walk_revisions(head="20e4b84abfd1"):
+        shutil.copy2(revision.path, versions)
     older = tmp_path / "older-migrations"
     shutil.copytree(newer, older)
     monkeypatch.setattr(migration, "MIGRATIONS_PATH", newer)

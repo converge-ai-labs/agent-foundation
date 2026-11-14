@@ -420,7 +420,7 @@ class RootRunExecutor:
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
-                history = state.message_history
+                history = await to_thread.run_sync(lambda: state.message_history)
                 frozen = display.capture(history)
                 excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
                 del history
@@ -1117,10 +1117,10 @@ class RootRunExecutor:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
-        # execution checkpoint. Missing indexes rebuild on the next inspection.
+        # execution checkpoint. A later checkpoint or history read can catch up.
         try:
             inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
-            await self._store.inspections.publish(
+            indexed = await self._store.inspections.publish(
                 thread.thread_id,
                 published_ref.logical_digest,
                 inspection,
@@ -1128,6 +1128,8 @@ class RootRunExecutor:
                 if thread.continuation is not None
                 else f"initial:{thread.initial_state.logical_digest}",
             )
+            if not indexed:
+                get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread.thread_id})
         except Exception as exc:
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",

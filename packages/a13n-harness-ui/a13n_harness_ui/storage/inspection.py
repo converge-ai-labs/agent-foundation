@@ -21,7 +21,7 @@ from .models import (
 )
 from .repositories import latest_child_checkpoint_query
 
-INSPECTION_VERSION = 7
+INSPECTION_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ class InspectionData:
     turns: tuple[InspectionTurn, ...]
     entry_offset: int = 0
     turn_offset: int = 0
+    sealed_prefix_digest: str | None = None
 
 
 async def _selected_source(session: AsyncSession, thread: ThreadRecord) -> str:
@@ -95,6 +96,14 @@ class InspectionRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
+    async def sealed_prefix(self, thread_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            return await session.scalar(
+                select(ThreadInspectionRecord.sealed_prefix_digest).where(
+                    ThreadInspectionRecord.thread_id == thread_id, ThreadInspectionRecord.version == INSPECTION_VERSION
+                )
+            )
+
     async def header(self, thread_id: str, source_id: str) -> InspectionHeader | None:
         async with short_session(self._sessions) as session:
             record = await session.get(ThreadInspectionRecord, thread_id)
@@ -115,13 +124,21 @@ class InspectionRepository:
                 thread = await session.get(ThreadRecord, thread_id)
                 if thread is None or await _selected_source(session, thread) != source_id:
                     return False
-                previous = _header_key(await session.get(ThreadInspectionRecord, thread_id))
+                record = await session.get(ThreadInspectionRecord, thread_id)
+                previous = _header_key(record)
                 if previous == target:
                     return True
                 if (data.entry_offset or data.turn_offset) and previous != (expected_source, INSPECTION_VERSION):
-                    # A missing/stale derived prefix rebuilds on inspection, never
-                    # from execution authority or an unverified index base.
-                    return False
+                    # Every checkpoint in the same Run can replace its entire revisable tail.
+                    if not (
+                        record is not None
+                        and record.version == INSPECTION_VERSION
+                        and data.sealed_prefix_digest is not None
+                        and record.sealed_prefix_digest == data.sealed_prefix_digest
+                        and record.message_count >= data.entry_offset
+                        and record.turn_count >= data.turn_offset
+                    ):
+                        return False
                 entries = (
                     (
                         await session.execute(
@@ -171,6 +188,7 @@ class InspectionRepository:
                     message_count=data.entry_offset + len(data.entries),
                     turn_count=data.turn_offset + len(data.turns),
                     metadata_json=data.metadata_json,
+                    sealed_prefix_digest=data.sealed_prefix_digest,
                 )
                 await session.execute(
                     header.on_conflict_do_update(
@@ -181,6 +199,7 @@ class InspectionRepository:
                             "message_count": header.excluded.message_count,
                             "turn_count": header.excluded.turn_count,
                             "metadata_json": header.excluded.metadata_json,
+                            "sealed_prefix_digest": header.excluded.sealed_prefix_digest,
                         },
                     )
                 )

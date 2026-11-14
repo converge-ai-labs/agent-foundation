@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from itertools import groupby
+
 from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -97,8 +100,17 @@ async def seal_display(objects: ImmutableObjectStore, archive: DisplayArchive) -
     )
 
 
-async def read_display(objects: ImmutableObjectStore, archive: DisplayArchive) -> DisplayHistory:
-    """Materialize history only for inspection rebuilds and explicit originals."""
+def _join_display(segments: Sequence[DisplayHistory]) -> DisplayHistory:
+    return segments[-1].model_copy(
+        update={
+            "items": tuple(item for segment in segments for item in segment.items),
+            "completed": tuple(key for segment in segments for key in segment.completed),
+        }
+    )
+
+
+async def read_display_windows(objects: ImmutableObjectStore, archive: DisplayArchive) -> list[DisplayHistory]:
+    """Restore each seal as projected when its absolute offsets were recorded."""
     segments: list[DisplayHistory] = []
     reference = archive.prefix
     while reference is not None:
@@ -108,10 +120,10 @@ async def read_display(objects: ImmutableObjectStore, archive: DisplayArchive) -
         segments.append(segment.display)
         reference = segment.previous
     segments.reverse()
-    segments.append(archive.tail)
-    return archive.tail.model_copy(
-        update={
-            "items": tuple(item for segment in segments for item in segment.items),
-            "completed": tuple(key for segment in segments for key in segment.completed),
-        }
-    )
+    # Segments split at 256 items share the producer cut that sealed them.
+    windows = [_join_display(list(group)) for _, group in groupby(segments, key=lambda d: (d.run_id, d.position))]
+    return [*windows, archive.tail]
+
+
+async def read_display(objects: ImmutableObjectStore, archive: DisplayArchive) -> DisplayHistory:
+    return _join_display(await read_display_windows(objects, archive))

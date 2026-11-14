@@ -406,6 +406,7 @@ class ThreadInspectionRecord(Base):
     )
     source_id: Mapped[str] = mapped_column(String(80), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    sealed_prefix_digest: Mapped[str | None] = mapped_column(String(64))
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False)

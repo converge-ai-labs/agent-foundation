@@ -160,13 +160,15 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
   const bg = useBackground();
   const child = item.child!;
   const live = bg.display?.childOutput(child);
-  const checkpoint =
-    item.running && live ? [...live.checkpoints.keys()].at(-1) : undefined;
-  // Terminal publication changes the head without another request-boundary marker.
-  const detail = useThread(child.child_thread_id, child.updated_at);
+  const detail = useThread(
+    child.child_thread_id,
+    item.running
+      ? (live?.recoveryCheckpoint ?? child.execution_id)
+      : child.updated_at,
+  );
   const history = useHistory(
     child.child_thread_id,
-    checkpoint ?? detail.data?.continuation_id,
+    detail.data?.continuation_id,
     !!detail.data,
   );
   const source = history.data?.pages[0]?.continuation_id;
@@ -194,10 +196,13 @@ function ChildRecord({ item }: { item: BackgroundItem }) {
         }}
       >
         <ErrorNotice
-          error={history.error}
-          retry={() => void history.refetch()}
+          error={detail.error ?? history.error}
+          retry={() =>
+            void (detail.error ? detail.refetch() : history.retryRead())
+          }
         />
-        {history.isPending &&
+        {!detail.isError &&
+          history.isPending &&
           !entries.length &&
           !live?.blocksAfter(source).length && (
             <p role="status">{t("Loading subagent conversation…")}</p>

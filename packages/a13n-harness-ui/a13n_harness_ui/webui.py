@@ -28,7 +28,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     credential_digest,
 )
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, run_process, sleep
+from anyio import CancelScope, Event, create_task_group, current_time, fail_after, move_on_after, run_process, sleep
 from anyio.abc import TaskStatus
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -2426,6 +2426,7 @@ def create_webui(
                             event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
                         )
         except HarnessUiError as exc:
+            get_logger(__name__).info("Reset focused live channel", extra={"thread_id": thread_id, "reason": exc.code})
             yield ResetFrame(reason=exc.code)
 
     async def summary_frames(after: str | None) -> AsyncGenerator[SummaryOpenFrame | SummaryEventFrame | ResetFrame]:
@@ -2444,6 +2445,7 @@ def create_webui(
                         event=event, resume_cursor=_cursor("summary", None, event.epoch, event.sequence)
                     )
         except HarnessUiError as exc:
+            get_logger(__name__).info("Reset summary live channel", extra={"reason": exc.code})
             yield ResetFrame(reason=exc.code)
 
     @server.websocket("/api/shared/{share_id}/realtime/connect")
@@ -2524,8 +2526,14 @@ def create_webui(
                     while not stopping.is_set():
                         await trim_idle_channels()
                         await send(RealtimePing())
+                        deadline = current_time() + 20
                         with move_on_after(20):
                             await stopping.wait()
+                        lag = current_time() - deadline
+                        if lag > 1:
+                            get_logger(__name__).warning(
+                                "Realtime heartbeat delayed", extra={"lag_ms": round(lag * 1000)}
+                            )
                     await close(code=1001)
                     group.cancel_scope.cancel()
 
