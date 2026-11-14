@@ -3505,5 +3505,9 @@
   "The agent can choose from these. Choose at least one.": "智能体可从中选择。至少选择一个。",
   "Used when the agent does not choose a model.": "智能体未指定模型时使用。",
   "Maximum running subagents": "最多同时运行的子智能体",
-  "Shared by all subagents of one chat.": "同一对话的所有子智能体共享此上限。"
+  "Shared by all subagents of one chat.": "同一对话的所有子智能体共享此上限。",
+  "Generate title": "生成标题",
+  "Chat titles": "聊天标题",
+  "Title generation model": "标题生成模型",
+  "Current chat model": "当前聊天模型"
 }

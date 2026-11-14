@@ -258,6 +258,41 @@ class InspectionRepository:
             raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
         return values
 
+    async def title_entries(self, thread_id: str, source_id: str) -> tuple[str, ...]:
+        """Read the first and last authored entries without loading intervening tool results."""
+        async with short_session(self._sessions) as session:
+            parts = func.json_each(TranscriptEntryRecord.value_json, "$.parts").table_valued("value")
+            user_text = (
+                select(1)
+                .select_from(parts)
+                .where(
+                    func.json_extract(parts.c.value, "$.kind") == "user",
+                    func.coalesce(func.json_extract(parts.c.value, "$.metadata.display"), 1) == 1,
+                    func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.steering-source"'), "user")
+                    == "user",
+                    func.json_extract(parts.c.value, "$.metadata.harness_ui.mcp_app_context").is_(None),
+                    func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text_skipped").is_(None),
+                    (
+                        func.json_extract(parts.c.value, "$.metadata.harness_ui.attachment").is_(None)
+                        | (func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text") == 1)
+                    ),
+                )
+            )
+            position = TranscriptEntryRecord.position
+            query = (
+                select(position, TranscriptEntryRecord.value_json)
+                .join(ThreadInspectionRecord)
+                .where(
+                    TranscriptEntryRecord.thread_id == thread_id,
+                    ThreadInspectionRecord.source_id == source_id,
+                    user_text.exists(),
+                )
+            )
+            first = query.order_by(position).limit(32).subquery()
+            last = query.order_by(position.desc()).limit(32).subquery()
+            edges = select(first).union(select(last)).subquery()
+            return tuple(await session.scalars(select(edges.c.value_json).order_by(edges.c.position)))
+
     async def matching_entries(self, thread_id: str, source_id: str, reference: str) -> tuple[str, ...]:
         """Bounded retained rows containing a tool-call reference."""
         async with short_session(self._sessions) as session:

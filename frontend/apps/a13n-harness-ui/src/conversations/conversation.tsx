@@ -233,7 +233,6 @@ function ConversationContent({
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
-  const [title, setTitle] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [inspectionActions, setInspectionActions] =
     useState<HTMLDivElement | null>(null);
@@ -241,9 +240,6 @@ function ConversationContent({
   const setInspection = (open: boolean) => {
     if (!open) closeDialog();
   };
-  useEffect(() => {
-    if (rename) setTitle(detail.data?.thread.title ?? "");
-  }, [rename, detail.data?.thread.title]);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -1250,37 +1246,18 @@ function ConversationContent({
           title={t("Rename chat")}
           closeLabel={t("Close")}
         >
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              metadata.mutate({ title: title || null });
-            }}
-          >
-            <TextField
-              label={t("Title")}
-              value={title}
-              onChange={(value) => setTitle(value.slice(0, 512))}
+          {rename && thread && (
+            <RenameChatForm
+              key={threadId}
+              threadId={threadId}
+              initialTitle={thread.title ?? ""}
+              modelId={draft.modelId}
+              saving={metadata.isPending}
+              error={metadata.error}
+              onCancel={() => setRename(false)}
+              onSave={(title) => metadata.mutate({ title: title || null })}
             />
-            <ErrorNotice error={metadata.error} />
-            <div className={layout.dialogActions} data-a13n-form-actions>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={metadata.isPending}
-                onClick={() => setRename(false)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="submit"
-                loading={metadata.isPending}
-                disabled={!thread}
-              >
-                {t("Save title")}
-              </Button>
-            </div>
-          </form>
+          )}
         </ModalFrame>
         <ModalFrame
           open={inspection}
@@ -1362,5 +1339,78 @@ function ConversationContent({
         {content}
       </ReplyAnnotations>
     </ConversationOpening>
+  );
+}
+
+function RenameChatForm({
+  threadId,
+  initialTitle,
+  modelId,
+  saving,
+  error,
+  onCancel,
+  onSave,
+}: {
+  threadId: string;
+  initialTitle: string;
+  modelId?: string;
+  saving: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onSave: (title: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { client } = useTransport();
+  const [title, setTitle] = useState(initialTitle);
+  const suggestion = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/threads/{thread_id}/title-suggestion", {
+          params: {
+            path: { thread_id: threadId },
+            query: { model_id: modelId },
+          },
+        }),
+      ),
+    onSuccess: setTitle,
+  });
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(title);
+      }}
+    >
+      <TextField
+        label={t("Title")}
+        value={title}
+        disabled={suggestion.isPending || saving}
+        onChange={(value) => setTitle(value.slice(0, 512))}
+      />
+      <ErrorNotice error={suggestion.error || error} />
+      <div className={layout.dialogActions} data-a13n-form-actions>
+        <Button
+          type="button"
+          variant="outline"
+          loading={suggestion.isPending}
+          disabled={saving}
+          onClick={() => suggestion.mutate()}
+        >
+          {t("Generate title")}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          {t("Cancel")}
+        </Button>
+        <Button type="submit" loading={saving} disabled={suggestion.isPending}>
+          {t("Save title")}
+        </Button>
+      </div>
+    </form>
   );
 }
