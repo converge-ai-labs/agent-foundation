@@ -1614,6 +1614,10 @@ def create_webui(
     async def dictate(request: Request) -> DictationResult:
         return await app().transcribe(await _document(request, DictationInput, max_bytes=16 * _MAX_BODY))
 
+    @server.post("/api/threads/{thread_id}/title-suggestion", response_model=str)
+    async def suggest_chat_title(thread_id: str, model_id: str | None = None) -> str:
+        return await app().suggest_chat_title(thread_id, model_id=model_id)
+
     @server.get("/api/models/choices", response_model=ModelChoices)
     async def model_choices() -> ModelChoices:
         return await app().model_choices()

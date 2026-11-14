@@ -23,8 +23,15 @@ import {
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { ArrowDown } from "@phosphor-icons/react";
+import {
+  Button,
+  Input,
+  ModalFrame,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
+} from "a13n-ui";
+import { ArrowDown, Sparkle } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
@@ -33,7 +40,7 @@ import {
 } from "../transport/context";
 import { SharePanel } from "../sharing";
 import coordinatorStyles from "./coordinator.module.css";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
@@ -230,10 +237,10 @@ function ConversationContent({
     // The composer retains its own connection/control guards before sending.
   );
   const rename = !isBot && !guest && !readOnly && dialog === "rename";
+  const renameInput = useRef<HTMLInputElement>(null);
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
-  const [title, setTitle] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [inspectionActions, setInspectionActions] =
     useState<HTMLDivElement | null>(null);
@@ -241,9 +248,6 @@ function ConversationContent({
   const setInspection = (open: boolean) => {
     if (!open) closeDialog();
   };
-  useEffect(() => {
-    if (rename) setTitle(detail.data?.thread.title ?? "");
-  }, [rename, detail.data?.thread.title]);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -1246,41 +1250,24 @@ function ConversationContent({
         )}
         <ModalFrame
           open={rename}
+          initialFocus={renameInput}
           onOpenChange={setRename}
           title={t("Rename chat")}
           closeLabel={t("Close")}
         >
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              metadata.mutate({ title: title || null });
-            }}
-          >
-            <TextField
-              label={t("Title")}
-              value={title}
-              onChange={(value) => setTitle(value.slice(0, 512))}
+          {rename && thread && (
+            <RenameChatForm
+              key={threadId}
+              threadId={threadId}
+              inputRef={renameInput}
+              initialTitle={thread.title ?? ""}
+              modelId={draft.modelId}
+              saving={metadata.isPending}
+              error={metadata.error}
+              onCancel={() => setRename(false)}
+              onSave={(title) => metadata.mutate({ title: title || null })}
             />
-            <ErrorNotice error={metadata.error} />
-            <div className={layout.dialogActions} data-a13n-form-actions>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={metadata.isPending}
-                onClick={() => setRename(false)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="submit"
-                loading={metadata.isPending}
-                disabled={!thread}
-              >
-                {t("Save title")}
-              </Button>
-            </div>
-          </form>
+          )}
         </ModalFrame>
         <ModalFrame
           open={inspection}
@@ -1362,5 +1349,95 @@ function ConversationContent({
         {content}
       </ReplyAnnotations>
     </ConversationOpening>
+  );
+}
+
+function RenameChatForm({
+  threadId,
+  inputRef,
+  initialTitle,
+  modelId,
+  saving,
+  error,
+  onCancel,
+  onSave,
+}: {
+  threadId: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  initialTitle: string;
+  modelId?: string;
+  saving: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onSave: (title: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { client } = useTransport();
+  const [title, setTitle] = useState(initialTitle);
+  const suggestion = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/threads/{thread_id}/title-suggestion", {
+          params: {
+            path: { thread_id: threadId },
+            query: { model_id: modelId },
+          },
+        }),
+      ),
+    onSuccess: setTitle,
+  });
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(title);
+      }}
+    >
+      <div className={styles.renameField}>
+        <Input
+          ref={inputRef}
+          aria-label={t("Title")}
+          placeholder={t("Title")}
+          value={title}
+          maxLength={512}
+          disabled={suggestion.isPending || saving}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                className={styles.generateTitle}
+                variant="ghost"
+                size="icon-sm"
+                loading={suggestion.isPending}
+                disabled={saving}
+              />
+            }
+            aria-label={t("Generate title")}
+            onClick={() => suggestion.mutate()}
+          >
+            <Sparkle aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Generate title")}</TooltipPopup>
+        </Tooltip>
+      </div>
+      <ErrorNotice error={suggestion.error || error} />
+      <div className={layout.dialogActions}>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          {t("Cancel")}
+        </Button>
+        <Button type="submit" loading={saving} disabled={suggestion.isPending}>
+          {t("Save")}
+        </Button>
+      </div>
+    </form>
   );
 }

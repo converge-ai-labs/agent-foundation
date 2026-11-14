@@ -2432,6 +2432,29 @@ it("keeps shared Model selection responsive during a background detail read", as
   }
 });
 
+it("generates an editable title suggestion and discards it on cancel", async () => {
+  const fetcher = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) =>
+      request.url.endsWith("/title-suggestion")
+        ? json("Checkout totals")
+        : fetcher(request),
+    ),
+  );
+  const user = userEvent.setup();
+  mount(`/threads/${id}?dialog=rename`);
+  await user.click(
+    await screen.findByRole("button", { name: "Generate title" }),
+  );
+  const title = await screen.findByDisplayValue("Checkout totals");
+  await user.type(title, " review");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(writes.filter((request) => request.method === "PATCH")).toHaveLength(
+    0,
+  );
+});
+
 it("publishes a saved title before a follow-up read and leaves history untouched", async () => {
   const fetcher = globalThis.fetch;
   vi.stubGlobal(
@@ -2453,7 +2476,7 @@ it("publishes a saved title before a follow-up read and leaves history untouched
   const title = await screen.findByRole("textbox", { name: "Title" });
   await user.type(title, "Renamed immediately");
   const before = reads.filter((path) => path.endsWith("/transcript")).length;
-  await user.click(screen.getByRole("button", { name: "Save title" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Title" })).toBeNull(),
   );

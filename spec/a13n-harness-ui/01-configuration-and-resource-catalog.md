@@ -244,6 +244,10 @@ The Agent selection is resolved before axes that can use that Agent's defaults. 
 
 Collection defaults are ordered exact resource IDs. The first explicitly supplied collection wins as a whole; collections are not concatenated or unioned across layers. Omission continues fallback and an explicitly empty collection selects none. A missing referenced resource, wrong-kind reference, or duplicate default rejects the candidate generation.
 
+## Chat titles
+
+The optional root field `chat_title_model` references a configured Model for automatic and manual WebUI chat titles. When omitted, title generation uses the current chat Model.
+
 ## Dictation
 
 Root `dictation` configures private WebUI draft transcription independently of the conversation Model. `backend` is `model` by default: a non-null `model` selects an audio-input Model resource; null disables dictation. Existing `dictation.model` configurations retain this behavior. Native subscription login alone never selects or enables the Codex backend.

@@ -465,6 +465,7 @@ class HarnessUiDocument(ConfigurationModel):
         default_factory=McpConfiguration,
         exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
     )
+    chat_title_model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     dictation: DictationConfiguration = Field(
         default_factory=DictationConfiguration, exclude_if=lambda v: v == DictationConfiguration()
     )
@@ -1104,6 +1105,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             _require_reference(model_id, self.models, field)
             if kind not in self.models[model_id].media_capabilities():
                 raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
+        _require_reference(self.document.chat_title_model, self.models, "chat_title_model")
         dictation = self.document.dictation
         if dictation.model:
             _require_reference(dictation.model, self.models, "dictation.model")

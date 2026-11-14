@@ -64,6 +64,8 @@ flowchart TB
 
 ### Project 与已保存的对话
 
+新聊天在发送第一条消息后会在后台生成简短标题。打开 **重命名聊天 → 生成标题** 可以根据已有的用户消息重新拟定标题。建议可以编辑，点击 **保存标题** 生效。在 **设置 → 通用 → 聊天标题** 中可以选择模型，默认使用当前聊天模型。
+
 展开 Project 可查看最近更新的五个根对话。**Show more** 加载该 Project 的下一页，折叠后保留已加载页面。搜索覆盖全部保存的根对话，包括未加载页面。**Without a project**、**Unavailable projects** 和 **Archived** 分别保留无 Project、Project 已移除和已归档对话的入口。
 
 使用对话 **…** 菜单改名、加星、分享、检查、归档或删除。在 **Archived** 恢复归档对话。**Project settings** 则修改 Project。对话不能拖到其他 Project。

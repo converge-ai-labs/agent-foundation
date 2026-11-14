@@ -502,7 +502,7 @@ class RootRunCoordinator:
             await self._on_human_admitted(admission, operation)
         except Exception:
             # Admission already succeeded. Notification cannot reject or replay it.
-            get_logger(__name__).warning("Could not notify Coordinator of human admission", exc_info=True)
+            get_logger(__name__).warning("Could not process human admission notification", exc_info=True)
 
     async def get(self, receipt_id: str) -> RootOperationView:
         operation = self._operations.get(receipt_id)

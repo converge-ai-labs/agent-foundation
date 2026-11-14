@@ -49,7 +49,7 @@ class RootInputFiles:
         candidates = [
             (index, text)
             for index, part in enumerate(parts)
-            if (text := _authored_text(part)) is not None and threshold is not None and len(text) > threshold
+            if (text := authored_text(part)) is not None and threshold is not None and len(text) > threshold
         ]
         if not candidates:
             return prompt
@@ -125,16 +125,21 @@ class RootInputFiles:
         return tuple(parts)
 
 
-def _authored_text(part: UserContent | ContentItem) -> str | None:
+def authored_text(part: UserContent | ContentItem) -> str | None:
     if isinstance(part, ContentItem):
         namespace = (part.metadata.model_extra or {}).get("harness_ui")
         if (
             not part.metadata.display
             or "a13n.steering-source" in (part.metadata.model_extra or {})
-            or (isinstance(namespace, dict) and ("attachment" in namespace or namespace.get("long_text_skipped")))
+            or (
+                isinstance(namespace, dict)
+                and (
+                    "attachment" in namespace or namespace.get("long_text_skipped") or namespace.get("mcp_app_context")
+                )
+            )
         ):
             return None
-        return _authored_text(part.value)
+        return authored_text(part.value)
     if isinstance(part, str):
         return part
     if not isinstance(part, TextContent):
@@ -142,7 +147,8 @@ def _authored_text(part: UserContent | ContentItem) -> str | None:
     metadata = part.metadata or {}
     namespace = metadata.get("harness_ui")
     if metadata.get("display") is False or (
-        isinstance(namespace, dict) and ("attachment" in namespace or namespace.get("long_text_skipped"))
+        isinstance(namespace, dict)
+        and ("attachment" in namespace or namespace.get("long_text_skipped") or namespace.get("mcp_app_context"))
     ):
         return None
     return part.content

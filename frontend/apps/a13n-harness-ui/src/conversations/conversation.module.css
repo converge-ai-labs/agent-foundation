@@ -589,6 +589,23 @@
   display: grid;
   gap: 16px;
 }
+:global([data-a13n-modal][data-size="md"]):has(.renameField) {
+  max-width: 400px;
+}
+.renameField {
+  position: relative;
+}
+.renameField input {
+  height: 40px;
+  padding-inline-end: 42px;
+}
+.renameField .generateTitle {
+  position: absolute;
+  inset-inline-end: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--a13n-secondary);
+}
 .summary {
   border-radius: 8px;
   padding: 12px;

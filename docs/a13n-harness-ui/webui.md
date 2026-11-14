@@ -64,6 +64,8 @@ Open the three-dot menu immediately left of the sidebar heading’s plus button 
 
 ### Projects and saved conversations
 
+New chats get a short title in the background after the first message. To suggest a fresh title, open **Rename chat → Generate title**. Edit the suggestion and choose **Save title** to apply it. **Settings → General → Chat titles** selects the model. The current chat model is the default.
+
 Expand a Project for its five most recently updated root conversations. **Show more** loads another page for that Project; collapsing it preserves loaded pages. Search covers all saved roots, including unloaded pages. **Without a project**, **Unavailable projects**, and **Archived** keep unassigned, removed-Project, and archived conversations reachable.
 
 Use a conversation's **…** menu to rename, star, share, inspect, archive, or delete it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.

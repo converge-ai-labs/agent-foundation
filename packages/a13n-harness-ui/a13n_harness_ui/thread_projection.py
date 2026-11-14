@@ -479,6 +479,12 @@ class ThreadProjectionService:
                     )
         return None, False
 
+    async def title_entries(self, thread_id: str) -> tuple[TranscriptEntry, ...]:
+        thread = await self._required_thread(thread_id)
+        _, header = await self._inspection_header(thread)
+        entries = await self._store.inspections.title_entries(thread_id, header.source_id)
+        return tuple(TranscriptEntry.model_validate_json(entry) for entry in entries)
+
     async def transcript_inputs(
         self,
         *,

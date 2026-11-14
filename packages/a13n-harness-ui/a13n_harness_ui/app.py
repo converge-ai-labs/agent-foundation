@@ -22,6 +22,7 @@ from a13n_harness import HarnessInstrumentation
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.errors import ModelResolutionError
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_catalog_updates import run_official_model_updates
@@ -52,6 +53,7 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
+from a13n_harness_ui.chat_titles import generate_title
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -61,7 +63,7 @@ from a13n_harness_ui.composition import (
     RunCompositionService,
     ThreadCompositionSelection,
 )
-from a13n_harness_ui.composition.models import ResolvedMcpRecipe
+from a13n_harness_ui.composition.models import ResolvedMcpRecipe, ResolvedModelRecipe
 from a13n_harness_ui.configuration import (
     ConfigurationMutationResult,
     ExternalSubagentImportCandidate,
@@ -211,6 +213,8 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, A
 from a13n_harness_ui.shutdown import Shutdown
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
@@ -272,8 +276,8 @@ from a13n_harness_ui.page_presence import (
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
-from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
+from a13n_harness_ui.root_input import authored_text, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -341,6 +345,7 @@ from a13n_harness_ui.surfaces import (
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
+    ThreadMetadataPatch,
     ThreadPage,
     ThreadReadAcknowledgement,
     ThreadSelectorCatalog,
@@ -510,7 +515,7 @@ class HarnessUiApp:
         self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
-        self._dictation_sources = subscription_sources
+        self._subscription_sources = subscription_sources
         self._catalog = catalog
         self._configurations = configurations
         self._threads = threads
@@ -604,22 +609,101 @@ class HarnessUiApp:
                 return await self._transcribe_subscription(request, source)
             if not source or not (model_id := source.document.dictation.model):
                 raise HarnessUiError("Select a dictation source in settings.", code="dictation_unconfigured")
-            recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
-            key = model_recipe_id(recipe)
-            resolver = HarnessUiModelResolver(
-                {key: recipe},
-                api_keys=self._api_keys,
-                subscription_sources=self._dictation_sources,
-                configuration=source.document.run_configuration,
-            )
-            model = await resolver.resolve(key, thread_id=request.thread_id or "dictation")
+            model, recipe = await self._utility_model(source, model_id, request.thread_id or "dictation")
             return DictationResult(text=await transcribe_audio(request, model, recipe.settings))
+
+    async def _utility_model(
+        self, source: LoadedHarnessUiConfiguration, model_id: str, thread_id: str
+    ) -> tuple[Model, ResolvedModelRecipe]:
+        recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
+        key = model_recipe_id(recipe)
+        resolver = HarnessUiModelResolver(
+            {key: recipe},
+            api_keys=self._api_keys,
+            subscription_sources=self._subscription_sources,
+            configuration=source.document.run_configuration,
+        )
+        return await resolver.resolve(key, thread_id=thread_id), recipe
+
+    async def suggest_chat_title(self, thread_id: str, *, model_id: str | None = None) -> str:
+        async with self._operation():
+            messages = []
+            for entry in await self._projections.title_entries(thread_id):
+                pieces = []
+                for part in entry.parts:
+                    meta = part.metadata.model_extra or {}
+                    if (
+                        part.kind != "user"
+                        or not part.metadata.display
+                        or meta.get("a13n.steering-source", "user") != "user"
+                    ):
+                        continue
+                    ui = meta.get("harness_ui", {})
+                    if ui.get("long_text"):
+                        _, data = await self._thread_files.read(thread_id, ui["attachment"]["attachment_id"])
+                        pieces.append(data.decode("utf-8"))
+                    elif (
+                        not (ui.get("attachment") or ui.get("long_text_skipped") or ui.get("mcp_app_context"))
+                        and part.text
+                    ):
+                        pieces.append(part.text)
+                if pieces:
+                    messages.append(" ".join(pieces))
+            source = await self._configurations.current()
+            if source is None:
+                raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
+            model_id = source.document.chat_title_model or model_id
+            if not model_id:
+                config = await self.inspect_thread_configuration(thread_id)
+                model_id = config.next_model_id
+            if not model_id or model_id not in source.models:
+                raise ThreadError("Select a chat title model in Settings.", code="chat_title_model_unavailable")
+            return await self._generate_chat_title(thread_id, messages, source, model_id)
+
+    async def _generate_chat_title(
+        self, thread_id: str, messages: list[str], source: LoadedHarnessUiConfiguration, model_id: str
+    ) -> str:
+        try:
+            model, recipe = await self._utility_model(source, model_id, thread_id)
+        except ModelResolutionError as exc:
+            raise HarnessUiError(str(exc), code=exc.code) from None
+        return await generate_title(messages, model, recipe.settings)
+
+    async def _title_new_chat(self, admission: RootRunAdmission) -> None:
+        thread = admission.thread
+        if thread.thread_id == BOT_THREAD_ID or thread.title or thread.continuation or thread.last_execution:
+            return
+        prompt = admission.prompt
+        if prompt is None:
+            return
+        text = (
+            prompt if isinstance(prompt, str) else " ".join(value for part in prompt if (value := authored_text(part)))
+        )
+        if not text.strip():
+            return
+        try:
+            title = await self._generate_chat_title(
+                thread.thread_id,
+                [text],
+                admission.source,
+                admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+            )
+        except HarnessUiError as exc:
+            get_logger(__name__).info(
+                "Automatic chat title unavailable", extra={"thread_id": thread.thread_id, "code": exc.code}
+            )
+            return
+        await self.update_thread_metadata(
+            thread_id=thread.thread_id,
+            mutation=ThreadMetadataMutation(
+                expected_version=thread.metadata_version,
+                patch=ThreadMetadataPatch(title=title),
+            ),
+        )
 
     async def _transcribe_subscription(
         self, request: DictationInput, source: LoadedHarnessUiConfiguration
     ) -> DictationResult:
-        from a13n_harness.errors import ModelResolutionError
-
         from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
 
         options = source.document.dictation.codex
@@ -4268,6 +4352,11 @@ async def open_harness_ui_app(
                 if app is not None and app._voice is not None:
                     await app._voice.executor_settled(operation)
 
+            async def human_admitted(admission: RootRunAdmission, operation: RootOperationView) -> None:
+                await thread_tools.notify_worker_admitted(admission, operation)
+                if app is not None:
+                    await app._title_new_chat(admission)
+
             root_runs = RootRunCoordinator(
                 root_executor,
                 tool_executions=tool_executions,
@@ -4275,11 +4364,7 @@ async def open_harness_ui_app(
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
-                on_human_admitted=(
-                    lambda admission, operation: thread_tools.notify_worker_admitted(admission, operation)
-                )
-                if host_mode == "webui"
-                else None,
+                on_human_admitted=human_admitted if host_mode == "webui" else None,
                 on_settled=notify_settled if host_mode == "webui" else None,
                 summary_hub=summary_hub,
                 observation=observation,

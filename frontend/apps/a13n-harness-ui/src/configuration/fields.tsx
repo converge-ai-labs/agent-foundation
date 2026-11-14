@@ -520,6 +520,19 @@ export function ResourceFields({
                 />
               </SettingsRow>
             </SettingsSection>
+            <SettingsSection variant="grouped" title={t("Chat titles")}>
+              <ResourceChoice
+                label={t("Title generation model")}
+                value={text(["chat_title_model"])}
+                options={[
+                  { value: "", label: t("Current chat model") },
+                  ...models,
+                ]}
+                onValueChange={(value) =>
+                  set(["chat_title_model"], value || undefined)
+                }
+              />
+            </SettingsSection>
             <DictationFields source={source} onChange={onChange} />
             <SettingsSection variant="grouped" title={t("Memory")}>
               <SettingsRow
