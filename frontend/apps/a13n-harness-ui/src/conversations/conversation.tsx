@@ -25,6 +25,7 @@ import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Input,
   ModalFrame,
   Tooltip,
   TooltipTrigger,
@@ -39,7 +40,7 @@ import {
 } from "../transport/context";
 import { SharePanel } from "../sharing";
 import coordinatorStyles from "./coordinator.module.css";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
@@ -236,6 +237,7 @@ function ConversationContent({
     // The composer retains its own connection/control guards before sending.
   );
   const rename = !isBot && !guest && !readOnly && dialog === "rename";
+  const renameInput = useRef<HTMLInputElement>(null);
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
@@ -1248,6 +1250,7 @@ function ConversationContent({
         )}
         <ModalFrame
           open={rename}
+          initialFocus={renameInput}
           onOpenChange={setRename}
           title={t("Rename chat")}
           closeLabel={t("Close")}
@@ -1256,6 +1259,7 @@ function ConversationContent({
             <RenameChatForm
               key={threadId}
               threadId={threadId}
+              inputRef={renameInput}
               initialTitle={thread.title ?? ""}
               modelId={draft.modelId}
               saving={metadata.isPending}
@@ -1350,6 +1354,7 @@ function ConversationContent({
 
 function RenameChatForm({
   threadId,
+  inputRef,
   initialTitle,
   modelId,
   saving,
@@ -1358,6 +1363,7 @@ function RenameChatForm({
   onSave,
 }: {
   threadId: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   initialTitle: string;
   modelId?: string;
   saving: boolean;
@@ -1388,19 +1394,22 @@ function RenameChatForm({
         onSave(title);
       }}
     >
-      <TextField
-        label={t("Title")}
-        value={title}
-        disabled={suggestion.isPending || saving}
-        onChange={(value) => setTitle(value.slice(0, 512))}
-      />
-      <ErrorNotice error={suggestion.error || error} />
-      <div className={layout.dialogActions} data-a13n-form-actions>
+      <div className={styles.renameField}>
+        <Input
+          ref={inputRef}
+          aria-label={t("Title")}
+          placeholder={t("Title")}
+          value={title}
+          maxLength={512}
+          disabled={suggestion.isPending || saving}
+          onChange={(event) => setTitle(event.target.value)}
+        />
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 type="button"
+                className={styles.generateTitle}
                 variant="ghost"
                 size="icon-sm"
                 loading={suggestion.isPending}
@@ -1414,16 +1423,19 @@ function RenameChatForm({
           </TooltipTrigger>
           <TooltipPopup>{t("Generate title")}</TooltipPopup>
         </Tooltip>
+      </div>
+      <ErrorNotice error={suggestion.error || error} />
+      <div className={layout.dialogActions}>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           disabled={saving}
           onClick={onCancel}
         >
           {t("Cancel")}
         </Button>
         <Button type="submit" loading={saving} disabled={suggestion.isPending}>
-          {t("Save title")}
+          {t("Save")}
         </Button>
       </div>
     </form>

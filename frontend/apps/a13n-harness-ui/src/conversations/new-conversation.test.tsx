@@ -2476,7 +2476,7 @@ it("publishes a saved title before a follow-up read and leaves history untouched
   const title = await screen.findByRole("textbox", { name: "Title" });
   await user.type(title, "Renamed immediately");
   const before = reads.filter((path) => path.endsWith("/transcript")).length;
-  await user.click(screen.getByRole("button", { name: "Save title" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Title" })).toBeNull(),
   );
