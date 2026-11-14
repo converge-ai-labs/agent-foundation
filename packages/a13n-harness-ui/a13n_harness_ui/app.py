@@ -22,6 +22,7 @@ from a13n_harness import HarnessInstrumentation
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.errors import ModelResolutionError
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_catalog_updates import run_official_model_updates
@@ -662,7 +663,10 @@ class HarnessUiApp:
     async def _generate_chat_title(
         self, thread_id: str, messages: list[str], source: LoadedHarnessUiConfiguration, model_id: str
     ) -> str:
-        model, recipe = await self._utility_model(source, model_id, thread_id)
+        try:
+            model, recipe = await self._utility_model(source, model_id, thread_id)
+        except ModelResolutionError as exc:
+            raise HarnessUiError(str(exc), code=exc.code) from None
         return await generate_title(messages, model, recipe.settings)
 
     async def _title_new_chat(self, admission: RootRunAdmission) -> None:
@@ -677,12 +681,18 @@ class HarnessUiApp:
         )
         if not text.strip():
             return
-        title = await self._generate_chat_title(
-            thread.thread_id,
-            [text],
-            admission.source,
-            admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
-        )
+        try:
+            title = await self._generate_chat_title(
+                thread.thread_id,
+                [text],
+                admission.source,
+                admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+            )
+        except HarnessUiError as exc:
+            get_logger(__name__).info(
+                "Automatic chat title unavailable", extra={"thread_id": thread.thread_id, "code": exc.code}
+            )
+            return
         await self.update_thread_metadata(
             thread_id=thread.thread_id,
             mutation=ThreadMetadataMutation(
@@ -694,8 +704,6 @@ class HarnessUiApp:
     async def _transcribe_subscription(
         self, request: DictationInput, source: LoadedHarnessUiConfiguration
     ) -> DictationResult:
-        from a13n_harness.errors import ModelResolutionError
-
         from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
 
         options = source.document.dictation.codex

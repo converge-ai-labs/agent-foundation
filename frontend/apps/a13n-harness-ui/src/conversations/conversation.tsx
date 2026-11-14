@@ -23,8 +23,14 @@ import {
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { ArrowDown } from "@phosphor-icons/react";
+import {
+  Button,
+  ModalFrame,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
+} from "a13n-ui";
+import { ArrowDown, Sparkle } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
@@ -1390,15 +1396,24 @@ function RenameChatForm({
       />
       <ErrorNotice error={suggestion.error || error} />
       <div className={layout.dialogActions} data-a13n-form-actions>
-        <Button
-          type="button"
-          variant="outline"
-          loading={suggestion.isPending}
-          disabled={saving}
-          onClick={() => suggestion.mutate()}
-        >
-          {t("Generate title")}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                loading={suggestion.isPending}
+                disabled={saving}
+              />
+            }
+            aria-label={t("Generate title")}
+            onClick={() => suggestion.mutate()}
+          >
+            <Sparkle aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Generate title")}</TooltipPopup>
+        </Tooltip>
         <Button
           type="button"
           variant="outline"
