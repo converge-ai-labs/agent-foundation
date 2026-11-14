@@ -800,3 +800,49 @@ it("requests another history page only after Show more", async () => {
   expect(pages).toBe(2);
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
 });
+
+it("retries the failed child detail before loading the transcript", async () => {
+  const test = setup([child("one", "running")]);
+  const read = test.GET.getMockImplementation()!;
+  let fail = true;
+  test.GET.mockImplementation(async (path, options) => {
+    if (
+      path === "/api/threads/{thread_id}" &&
+      (options?.params as { path?: { thread_id: string } })?.path?.thread_id ===
+        "one" &&
+      fail
+    )
+      throw new Error("Child detail unavailable");
+    return read(path, options);
+  });
+  render(
+    test.view(
+      "root",
+      <BackgroundPanel
+        target={{
+          kind: "child",
+          threadId: "root",
+          id: "one",
+          title: "Agent one",
+        }}
+      />,
+    ),
+  );
+  await screen.findByText("Child detail unavailable");
+  expect(screen.queryByText("Loading subagent conversation…")).toBeNull();
+  fail = false;
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(screen.queryByText("Child detail unavailable")).toBeNull(),
+  );
+  await waitFor(() =>
+    expect(
+      test.GET.mock.calls.some(
+        ([path, options]) =>
+          path.endsWith("/transcript") &&
+          (options?.params as { path?: { thread_id: string } })?.path
+            ?.thread_id === "one",
+      ),
+    ).toBe(true),
+  );
+});

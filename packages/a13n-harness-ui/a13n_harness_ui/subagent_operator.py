@@ -310,7 +310,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         thread_files: ThreadFiles | None = None,
         mcp_apps: AppSnapshots | None = None,
         tool_executions: ToolExecutions | None = None,
+        schedule_inspection: Callable[[str], None] | None = None,
     ) -> None:
+        self._schedule_inspection = schedule_inspection
         self._tool_executions = tool_executions
         self._thread_files = thread_files
         self._mcp_apps = mcp_apps
@@ -2042,6 +2044,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 child_run_id=run_id,
                 tool_completions=completion_ids(state.message_history),
             )
+        if self._schedule_inspection is not None:
+            self._schedule_inspection(head.child_thread_id)
         await self._remove_superseded_checkpoint(head, superseded)
         async with self._lock:
             self._signal_change_locked()
@@ -2167,6 +2171,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             await self._publish_summary(head)
 
     async def _publish_summary(self, head: ChildExecutionHead) -> None:
+        if head.status != "running" and head.selected_checkpoint is not None and self._schedule_inspection is not None:
+            self._schedule_inspection(head.child_thread_id)
         if self._summary_hub is None:
             return
         child = await self._store.threads.get(head.child_thread_id)

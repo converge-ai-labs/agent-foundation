@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useInfiniteQuery,
   useQuery,
@@ -8,7 +8,13 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result, type Schema, type Transport } from "../transport/client";
+import {
+  ApiError,
+  NetworkError,
+  result,
+  type Schema,
+  type Transport,
+} from "../transport/client";
 import { retainThreadSelections } from "./thread-updates";
 
 const pendingRefreshes = new WeakSet<Query>();
@@ -239,17 +245,94 @@ export function seedThreadSnapshot(
   }
 }
 
+export function historySignal(signal: AbortSignal) {
+  return AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+}
+
+export function retryHistoryRead(failures: number, error: Error) {
+  return (
+    failures < 1 &&
+    (error instanceof NetworkError ||
+      (error instanceof ApiError && error.status >= 500) ||
+      error.name === "TimeoutError")
+  );
+}
+
+function historyConflict(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    (error.code === "thread_history_continuation_changed" ||
+      error.code === "thread_history_cursor_mismatch")
+  );
+}
+
+export function useHistoryRecovery(
+  threadId: string,
+  source: string | null | undefined,
+  error: unknown,
+  refetch: () => Promise<unknown>,
+  success: boolean,
+) {
+  const queries = useQueryClient();
+  const attempts = useRef(0);
+  const refreshSource = useCallback(
+    () =>
+      queries.invalidateQueries(
+        { queryKey: ["thread", threadId, "detail"] },
+        { cancelRefetch: false },
+      ),
+    [queries, threadId],
+  );
+  useEffect(() => {
+    if (success) attempts.current = 0;
+  }, [success, threadId]);
+  useEffect(() => {
+    if (!historyConflict(error) || attempts.current >= 2) return;
+    attempts.current++;
+    void refreshSource();
+  }, [refreshSource, error]);
+  return async () => {
+    attempts.current = 0;
+    if (historyConflict(error)) {
+      await refreshSource();
+      const current = queries
+        .getQueriesData<Schema<"ThreadDetail">>({
+          queryKey: ["thread", threadId, "detail"],
+          type: "active",
+        })
+        .some(([, detail]) => detail?.continuation_id === source);
+      if (current) {
+        await refetch();
+        return;
+      }
+      // Retry the active window, even when the visible turn belongs to the
+      // last successful source and its replacement failed independently.
+      await queries.refetchQueries(
+        {
+          queryKey: ["thread", threadId, "history"],
+          type: "active",
+          predicate: (query) => query.state.status === "error",
+        },
+        { cancelRefetch: false },
+      );
+      return;
+    }
+    await refetch();
+  };
+}
+
 export function useThread(threadId: string, revision?: string) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useQuery({
     queryKey: ["thread", threadId, "detail", ...(revision ? [revision] : [])],
     enabled: !!threadId,
+    retry: retryHistoryRead,
     queryFn: async ({ signal }) => {
       const detail = await result(
         client.GET("/api/threads/{thread_id}", {
           params: { path: { thread_id: threadId } },
-          signal,
+          signal: historySignal(signal),
         }),
       );
       return {
@@ -296,7 +379,9 @@ export function useHistory(
     // returning to a cached page must not refetch every loaded history page.
     staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam, signal }) => {
+    retry: retryHistoryRead,
+    queryFn: async ({ pageParam, signal: querySignal }) => {
+      const signal = historySignal(querySignal);
       const previous =
         pageParam === undefined
           ? queries
@@ -398,19 +483,30 @@ export function useHistory(
           entry,
         ]),
       );
-      for (const turn of page.turns ?? []) {
-        const loaded = [...entries.keys()].filter(
-          (position) =>
-            position >= turn.input_position && position < turn.end_position,
-        ).length;
-        if (loaded === turn.end_position - turn.input_position) continue;
-        for (const entry of await queries.fetchQuery({
-          queryKey: turnHistoryKey(threadId, continuation, turn),
-          staleTime: Infinity,
-          queryFn: () =>
-            readTurnHistory(client, threadId, continuation, turn, signal),
-        }))
-          entries.set(entry.position, entry);
+      const incomplete = (page.turns ?? []).filter((turn) => {
+        for (let pos = turn.input_position; pos < turn.end_position; pos++) {
+          if (!entries.has(pos)) return true;
+        }
+        return false;
+      });
+      for (let start = 0; start < incomplete.length; start += 3) {
+        const batch = await Promise.all(
+          incomplete
+            .slice(start, start + 3)
+            .map((turn) =>
+              completeTurn(
+                queries,
+                client,
+                threadId,
+                continuation,
+                turn,
+                signal,
+                entries.values(),
+              ),
+            ),
+        );
+        for (const turnEntries of batch)
+          for (const entry of turnEntries) entries.set(entry.position, entry);
       }
       return {
         ...page,
@@ -444,8 +540,16 @@ export function useHistory(
       : cached
         ? queries.getQueryData<NonNullable<typeof query.data>>(cached.queryKey)
         : undefined;
+  const retryRead = useHistoryRecovery(
+    threadId,
+    continuation,
+    query.error,
+    query.refetch,
+    query.isSuccess,
+  );
   return {
     ...query,
+    retryRead,
     data: query.data ?? retained,
     hasNextPage: !!query.data && query.hasNextPage,
     isPreviousHistory: !query.data && !!retained,
@@ -464,22 +568,44 @@ function laterHistoryCursor(page: Schema<"TranscriptPage">) {
     : page.later_turns_cursor;
 }
 
-function turnHistoryKey(
+function completeTurnKey(
   threadId: string,
-  continuation: string | null | undefined,
   turn: Schema<"TranscriptTurn"> | undefined,
 ) {
-  // Only the server's complete-entry digest proves cross-checkpoint equality.
-  // Old servers/indexes without it keep continuation-scoped caching.
   return [
     "thread",
     threadId,
-    "turn-history",
+    "turn-content",
     turn?.turn_id,
-    turn?.content_revision
-      ? ["content", turn.content_revision]
-      : ["continuation", continuation],
+    turn?.content_revision,
   ];
+}
+
+async function completeTurn(
+  queries: QueryClient,
+  client: Transport["client"],
+  threadId: string,
+  continuation: string | null | undefined,
+  turn: Schema<"TranscriptTurn">,
+  signal: AbortSignal,
+  known?: Iterable<Schema<"TranscriptEntry">>,
+) {
+  const key = completeTurnKey(threadId, turn);
+  const cached =
+    turn.content_revision &&
+    queries.getQueryData<Schema<"TranscriptEntry">[]>(key);
+  if (cached) return cached;
+  const entries = await readTurnHistory(
+    client,
+    threadId,
+    continuation,
+    turn,
+    signal,
+    known,
+  );
+  signal.throwIfAborted();
+  if (turn.content_revision) queries.setQueryData(key, entries);
+  return entries;
 }
 
 // Complete each visible turn in one load. Transport pages stay bounded, but
@@ -489,16 +615,40 @@ export function useTurnHistory(
   continuation: string | null | undefined,
   turn: Schema<"TranscriptTurn"> | undefined,
   enabled: boolean,
+  known?: Schema<"TranscriptEntry">[],
 ) {
   const { client } = useTransport();
-  return useQuery({
-    queryKey: turnHistoryKey(threadId, continuation, turn),
+  const queries = useQueryClient();
+  const query = useQuery({
+    queryKey: ["thread", threadId, "turn-history", continuation, turn?.turn_id],
+    initialData: () =>
+      turn?.content_revision
+        ? queries.getQueryData<Schema<"TranscriptEntry">[]>(
+            completeTurnKey(threadId, turn),
+          )
+        : undefined,
     enabled: enabled && !!turn,
     staleTime: Infinity,
-    retry: false,
+    retry: retryHistoryRead,
     queryFn: ({ signal }) =>
-      readTurnHistory(client, threadId, continuation, turn!, signal),
+      completeTurn(
+        queries,
+        client,
+        threadId,
+        continuation,
+        turn!,
+        historySignal(signal),
+        known,
+      ),
   });
+  const retryRead = useHistoryRecovery(
+    threadId,
+    continuation,
+    query.error,
+    query.refetch,
+    query.isSuccess,
+  );
+  return { ...query, retryRead };
 }
 
 async function readTurnHistory(
@@ -507,8 +657,16 @@ async function readTurnHistory(
   continuation: string | null | undefined,
   turn: Schema<"TranscriptTurn">,
   signal: AbortSignal,
+  known?: Iterable<Schema<"TranscriptEntry">>,
 ) {
   const entries = new Map<number, Schema<"TranscriptEntry">>();
+  for (const entry of known ?? []) {
+    if (
+      entry.position >= turn.input_position &&
+      entry.position < turn.end_position
+    )
+      entries.set(entry.position, entry);
+  }
   let cursor: string | undefined;
   let earliest = turn.end_position;
   do {
@@ -534,6 +692,7 @@ async function readTurnHistory(
       )
         entries.set(entry.position, entry);
     }
+    if (entries.size === turn.end_position - turn.input_position) break;
     const first = page.entries[0]?.position;
     if (first === undefined || first >= earliest)
       throw new Error("Turn history is incomplete.");

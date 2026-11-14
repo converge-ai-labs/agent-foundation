@@ -3500,12 +3500,12 @@ class HarnessUiApp:
     ) -> ThreadWatch:
         async with self._operation():
             thread = await self._projections.detail(root_thread_id)
+            if thread.thread.parent_thread_id is not None:
+                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             if thread.continuation_id != base_continuation_id:
                 raise LivePresentationError(
                     "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
                 )
-            if thread.thread.parent_thread_id is not None:
-                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             root_operation = await self._root_runs.active(root_thread_id)
             selected = await self._threads.get(root_thread_id)
             selected_id = selected.continuation.logical_digest if selected.continuation is not None else None
@@ -4164,7 +4164,9 @@ async def open_harness_ui_app(
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui" and automation_owned)
             tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
+            projections = ThreadProjectionService(store=store, configurations=configurations)
             operator = HarnessUiSubagentOperator(
+                schedule_inspection=projections.schedule_inspection,
                 tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 thread_files=thread_files,
@@ -4207,6 +4209,7 @@ async def open_harness_ui_app(
             resources.push_async_callback(browsers.close)
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                schedule_inspection=projections.schedule_inspection,
                 browsers=browsers,
                 compaction=compaction,
                 tool_executions=tool_executions,
@@ -4287,12 +4290,7 @@ async def open_harness_ui_app(
                 save_execution=store.threads.save_execution,
                 interaction_timeouts=host_mode == "webui",
             )
-            projections = ThreadProjectionService(
-                store=store,
-                configurations=configurations,
-                root_activity=root_runs.activity,
-                root_activities=root_runs.activities,
-            )
+            projections.set_root_activity_lookup(root_runs.activity, root_runs.activities)
             terminal_projections = TerminalProjectionService(
                 store=store,
                 configurations=configurations,
@@ -4466,6 +4464,7 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    projections.start_inspection_repairs(background)
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)

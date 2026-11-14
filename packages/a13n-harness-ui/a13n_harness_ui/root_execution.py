@@ -174,7 +174,9 @@ class RootRunExecutor:
         browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
         compaction: BackgroundCompaction | None = None,
+        schedule_inspection: Callable[[str], None] | None = None,
     ) -> None:
+        self._schedule_inspection = schedule_inspection
         self._browsers = browsers
         self._compaction = compaction
         self._tool_executions = tool_executions
@@ -420,7 +422,7 @@ class RootRunExecutor:
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
-                history = state.message_history
+                history = await to_thread.run_sync(lambda: state.message_history)
                 frozen = display.capture(history)
                 excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
                 del history
@@ -1117,10 +1119,10 @@ class RootRunExecutor:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
-        # execution checkpoint. Missing indexes rebuild on the next inspection.
+        # execution checkpoint. Queue a repair when the selected index cannot accept this tail.
         try:
             inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
-            await self._store.inspections.publish(
+            indexed = await self._store.inspections.publish(
                 thread.thread_id,
                 published_ref.logical_digest,
                 inspection,
@@ -1128,7 +1130,14 @@ class RootRunExecutor:
                 if thread.continuation is not None
                 else f"initial:{thread.initial_state.logical_digest}",
             )
+            if not indexed and self._schedule_inspection is not None:
+                get_logger(__name__).warning(
+                    "Scheduling transcript index repair", extra={"thread_id": thread.thread_id}
+                )
+                self._schedule_inspection(thread.thread_id)
         except Exception as exc:
+            if self._schedule_inspection is not None:
+                self._schedule_inspection(thread.thread_id)
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",
                 extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},

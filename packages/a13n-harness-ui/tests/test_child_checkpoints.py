@@ -122,6 +122,12 @@ async def test_running_child_checkpoint_transcript_marker_and_replacement(tmp_pa
             )
             assert info.executions[0].status == waited.executions[0].status == "running"
             assert not info.executions[0].resumable and not waited.executions[0].resumable
+            # A running child publishes its index even before a browser opens it.
+            digest = current.selected_checkpoint.logical_digest
+            with fail_after(10):
+                while await app._store.inspections.header(current.child_thread_id, digest) is None:
+                    await sleep(0.01)
+            assert (await app._projections.detail(current.child_thread_id)).continuation_id == digest
             async with transcript_client(app) as client:
                 page = await child_transcript(client, current.child_thread_id)
                 assert page["continuation_id"] == current.selected_checkpoint.logical_digest
@@ -169,6 +175,17 @@ async def test_child_resumed_twice_has_one_cumulative_transcript(tmp_path, monke
             )
             assert head.child_thread_id == child_id and head.segment_index == segment
         latest = await app._store.child_executions.latest_for_child(child_id)
+        from a13n_harness_ui.thread_projection import build_thread_inspection
+
+        thread = await app._store.threads.get(child_id)
+        checkpoint = await app._store.read_child_checkpoint(latest)
+        full = build_thread_inspection(thread, checkpoint, child_succeeded=True)
+        tail = build_thread_inspection(
+            thread, checkpoint, child_succeeded=True, indexed_child_prefix=full.sealed_prefix_digest
+        )
+        assert tail.entry_offset > 0 and tail.turn_offset == 2
+        assert tail.entries == full.entries[tail.entry_offset :]
+        assert tail.turns == full.turns[tail.turn_offset :]
         async with transcript_client(app) as client:
             page = await child_transcript(client, child_id)
             text = json.dumps(page)

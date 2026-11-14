@@ -133,3 +133,117 @@ async def test_turn_content_revision_matches_sealed_and_rebuilt_entries(tmp_path
         )
         after = TranscriptTurn.model_validate_json(updated.turns[-1].value_json)
         assert before.content_revision and before.content_revision != after.content_revision
+
+
+async def test_rebuild_reuses_sealed_windows_when_another_checkpoint_wins(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    import a13n_harness_ui.thread_projection as projection
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.display_history import DisplayHistory
+    from a13n_harness_ui.errors import ThreadError
+    from a13n_harness_ui.storage.read_models import project_continuation
+
+    from .test_app import _settings, _write_configuration
+
+    seed = history(2).items
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        summary = await app.create_thread()
+        store = app._store
+        thread = await store.threads.get(summary.thread_id)
+        state = HarnessState.new(thread_id=thread.thread_id)
+        archive = await seal_display(store.objects, DisplayArchive(tail=DisplayHistory(items=seed)))
+        value = Continuation(
+            harness_release="test",
+            created_at=datetime.now(UTC),
+            run_composition=ObjectRef(
+                object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
+            ),
+            harness_state=state,
+            display=archive,
+        )
+
+        async def advance(previous, current):
+            ref = await publish_continuation(store.objects, current)
+            return await store.threads.select_continuation(
+                thread_id=thread.thread_id, expected=previous, replacement=ref, read_model=project_continuation(current)
+            )
+
+        first = await advance(None, value)
+        second = None
+
+        async def raced(objects, selected):
+            nonlocal second
+            windows = await read_windows(objects, selected)
+            assert second is None
+            second = await advance(first.continuation, value)
+            return windows
+
+        read_windows = projection.read_display_windows
+        monkeypatch.setattr(projection, "read_display_windows", raced)
+        with pytest.raises(ThreadError) as stale:
+            await app.get_thread_transcript(
+                thread_id=thread.thread_id, expected_continuation_id=first.continuation.logical_digest
+            )
+        assert stale.value.code == "thread_history_continuation_changed"
+        assert second is not None
+        monkeypatch.setattr(projection, "read_display_windows", Mock(side_effect=AssertionError("prefix reread")))
+        page = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert page.total == len(seed) and page.continuation_id == second.continuation.logical_digest
+        # Miss one notification, then let the next tail catch up directly.
+        missed = await advance(second.continuation, value)
+        latest = await advance(missed.continuation, value)
+        tail = projection.build_thread_inspection(latest, value)
+        assert tail.entry_offset > 0
+        assert await store.inspections.publish(
+            thread.thread_id,
+            latest.continuation.logical_digest,
+            tail,
+            expected_source=missed.continuation.logical_digest,
+        )
+        assert (await app.get_thread_transcript(thread_id=thread.thread_id)).entries == page.entries
+
+        # A browser can catch up from the same persisted prefix after a restart.
+        await advance(latest.continuation, value)
+        assert (await app.get_thread_transcript(thread_id=thread.thread_id)).entries == page.entries
+
+
+async def test_separate_seals_preserve_reused_response_groups_and_output_positions(tmp_path):
+    from a13n_harness_ui.display_history import DisplayHistory
+    from a13n_harness_ui.display_projection import original_window_text
+    from a13n_harness_ui.storage.display import read_display_windows
+
+    def turn(index):
+        prompt, answer = history(1).items
+        return (
+            prompt.model_copy(
+                update={
+                    "id": f"user-{index}",
+                    "kind": "text_message",
+                    "content": {"role": "user", "text": f"question {index}"},
+                }
+            ),
+            answer.model_copy(
+                update={
+                    "id": f"answer-{index}",
+                    "kind": "text_message",
+                    "content": {"role": "assistant", "text": f"answer {index}", "responseGroup": "result"},
+                }
+            ),
+        )
+
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        archive = DisplayArchive(tail=DisplayHistory(run_id="first", items=(*turn(0), *turn(1))))
+        first = await seal_display(store.objects, archive)
+        tail = first.tail.model_copy(update={"run_id": "second", "items": (*first.tail.items, *turn(2))})
+        second = await seal_display(store.objects, first.model_copy(update={"tail": tail}))
+        windows = await read_display_windows(store.objects, second)
+        assert second.entry_offset == 4
+        assert [len(display_entries(window)) for window in windows] == [2, 2, 2]
+        assert [original_window_text(windows, position, 0) for position in (1, 3, 5)] == [
+            "answer 0",
+            "answer 1",
+            "answer 2",
+        ]
