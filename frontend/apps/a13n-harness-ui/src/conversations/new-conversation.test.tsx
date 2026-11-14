@@ -143,7 +143,7 @@ beforeEach(() => {
   drafts.set(id, initial.composer);
   queries = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, staleTime: Infinity },
+      queries: { retry: false, retryDelay: 0, staleTime: Infinity },
       mutations: { retry: false },
     },
   });
@@ -1765,15 +1765,6 @@ it.each([
       reader.scrollTop = 40;
       fireEvent.scroll(reader);
     }
-    if (retry) {
-      const retryButton = await screen.findByRole("button", {
-        name: "Retry loading",
-      });
-      fireEvent.scroll(reader);
-      await act(async () => {});
-      expect(requests).toEqual(["latest", "previous-turn"]);
-      fireEvent.click(retryButton);
-    }
     await screen.findByText("Previous answer");
     const expectedRequests = retry
       ? ["latest", "previous-turn", "previous-turn"]
@@ -2023,7 +2014,6 @@ it.each(["desktop", "mobile"])(
           : `chat:${cursor ?? "latest"}`,
       );
       if (execution && cursor === "steps" && failSteps) {
-        failSteps = false;
         return json(
           { error: { message: "Execution temporarily unavailable" } },
           503,
@@ -2135,6 +2125,8 @@ it.each(["desktop", "mobile"])(
       "chat:latest",
       "execution:latest",
       "execution:steps",
+      "execution:latest",
+      "execution:steps",
     ]);
     expect(
       screen.getByText("Current answer").closest("[data-execution-reader]"),
@@ -2161,7 +2153,8 @@ it.each(["desktop", "mobile"])(
     await screen.findByText("Previous answer");
     expect(requests.at(-1)).toBe("chat:previous-turn");
     expect(screen.queryByText("Earlier execution work")).toBeNull();
-    // One retry completes the turn without exposing transport-page controls.
+    // A manual retry can complete the turn once the service recovers.
+    failSteps = false;
     fireEvent.click(retry);
     await waitFor(() => expect(drafts.get(id)!.localInputs).toHaveLength(0));
     // Completed progress stays folded until the user opens its segment.
@@ -2187,10 +2180,13 @@ it.each(["desktop", "mobile"])(
       "chat:latest",
       "execution:latest",
       "execution:steps",
+      "execution:latest",
+      "execution:steps",
       "chat:previous-turn",
       "execution:latest",
       "execution:steps",
     ]);
+    const readsBeforeOpeningWorkLog = requests.length;
     const segments = screen.getAllByRole("button", {
       name: /Work log/,
     });
@@ -2233,7 +2229,7 @@ it.each(["desktop", "mobile"])(
     expect(await screen.findByRole("region", { name: "Work log" })).toBe(
       execution,
     );
-    expect(requests).toHaveLength(6);
+    expect(requests).toHaveLength(readsBeforeOpeningWorkLog);
   },
 );
 

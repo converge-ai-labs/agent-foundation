@@ -4452,11 +4452,13 @@ async def open_harness_ui_app(
                         ]
                     )
                 )
-            connector_resources = create_task_group()
-            await connector_resources.__aenter__()
+            controller_tasks = create_task_group()
+            await controller_tasks.__aenter__()
             # Join owned controller tasks without feeding an unrelated surface
             # failure through a second TaskGroup exception boundary.
-            resources.push_async_callback(connector_resources.__aexit__, None, None, None)
+            resources.push_async_callback(controller_tasks.__aexit__, None, None, None)
+            # Final child checkpoints can queue index work while Run supervisors close.
+            projections.start_inspection_repairs(controller_tasks)
             if app._connectors is not None:
                 resources.push_async_callback(app._connectors.close)
             try:
@@ -4464,12 +4466,11 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
-                    projections.start_inspection_repairs(background)
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
                     if app._connectors is not None:
-                        await app._connectors.start(background, resources=connector_resources)
+                        await app._connectors.start(background, resources=controller_tasks)
                     if app._bot is not None:
                         background.start_soon(app._bot.run, automation_owned)
                     if app._voice is not None:
