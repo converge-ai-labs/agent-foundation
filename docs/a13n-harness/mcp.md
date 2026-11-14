@@ -50,7 +50,7 @@ async def main() -> None:
     executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
     async with Client(server, mode="auto") as client:
         for prompt in ("Add 3 and 5", "Add them again"):
-            projection = MCPToolset(client, id="calculator", cache_tools=False)
+            projection = MCPToolset(client, id="calculator")
             bindings = RunBindings.embedded(capabilities=(MCP(id="calculator", local=projection),))
             result = await executable.run(prompt, bindings=bindings)
             assert result.output_or_raise() == "Result: 8"
