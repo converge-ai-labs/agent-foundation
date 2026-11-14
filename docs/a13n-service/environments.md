@@ -205,7 +205,7 @@ With `recipe.image` omitted, Service selects its reviewed `ghcr.io/converge-ai-l
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.8.1`   |
+| Stable or RC                                          | `0.8.2`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Sandbox versions belong to Envd and are independent of Service versions. Set an explicit tag or digest to choose another image. `pull_policy: if_missing` uses the Engine's local image or pulls it at first creation; `never` requires the image to be present. Provisioned templates save an explicit image, so upgrades preserve that choice.

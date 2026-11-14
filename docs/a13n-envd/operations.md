@@ -31,7 +31,7 @@ After the three crash replacements are exhausted, or an accepted restart fails t
 After atomically installing a release at the original executable path, request a version-selected restart from the same account:
 
 ```sh
-a13n-envd restart --runtime-dir /run/a13n-envd-state --version 0.8.1
+a13n-envd restart --runtime-dir /run/a13n-envd-state --version 0.8.2
 ```
 
 The runtime directory defaults to `A13N_ENVD_RUNTIME_DIR`. The command verifies the installed version before stopping the old daemon. If the selected version is already running, it succeeds without another restart, so a lost receipt can be retried. An explicit restart does not consume or reset the crash-replacement budget. A restart receipt confirms that the launched child's compiled version matches the requested version; verify authenticated EIP readiness before dispatching work.
