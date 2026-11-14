@@ -39,6 +39,7 @@
     background: var(--a13n-selected);
     color: var(--a13n-text);
     font: var(--a13n-font-caption);
+    white-space: nowrap;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
@@ -53,7 +54,14 @@
     color: var(--a13n-quaternary);
   }
   .actions button.destructive {
-    color: var(--a13n-danger);
+    background: var(--destructive);
+    color: #fff;
+  }
+  .actions button.destructive:active {
+    background: color-mix(in srgb, var(--destructive) 88%, #000);
+  }
+  .actions button.destructive:disabled {
+    opacity: 0.5;
   }
   .actions svg {
     width: 18px;

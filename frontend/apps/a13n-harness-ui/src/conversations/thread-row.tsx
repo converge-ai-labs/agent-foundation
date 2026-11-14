@@ -270,6 +270,9 @@ export function ThreadRow({
           {canArchive && (
             <button
               type="button"
+              aria-label={
+                row.thread.archived ? t("Restore chat") : t("Archive chat")
+              }
               disabled={
                 archive.isPending ||
                 row.thread.root_activity.state !== "inactive"
@@ -284,12 +287,13 @@ export function ThreadRow({
               ) : (
                 <Archive aria-hidden="true" />
               )}
-              {row.thread.archived ? t("Restore chat") : t("Archive chat")}
+              {row.thread.archived ? t("Restore") : t("Archive")}
             </button>
           )}
           {canDelete && (
             <button
               type="button"
+              aria-label={t("Delete chat")}
               className={touchStyles.destructive}
               disabled={row.thread.root_activity.state !== "inactive"}
               onClick={() => {
@@ -298,7 +302,7 @@ export function ThreadRow({
               }}
             >
               <Trash aria-hidden="true" />
-              {t("Delete chat")}
+              {t("Delete")}
             </button>
           )}
         </div>
