@@ -19,7 +19,7 @@ class HostToolset(MCPToolset[AgentContext]):
         super().__init__(
             connection.client,
             id=connection.server_id,
-            cache_tools=False,
+            cache_tools=True,
             cache_resources=False,
             cache_prompts=False,
             prefer_tasks=False,

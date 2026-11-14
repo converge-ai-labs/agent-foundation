@@ -204,6 +204,8 @@ Connection initialization retries transient timeouts, transport interruptions an
 
 Each protocol override accepts `auto`, `legacy`, or `2026-07-28`; omission uses `auto`. Use `auto` unless the server requires a specific mode. This setting controls Core protocol negotiation, separately from connection lifetime and the MCP Apps UI protocol.
 
+Harness UI fetches each MCP server's tool list once per Run and reuses it for that Run's model steps. Tool changes that a server makes during a Run appear in the next Run.
+
 ## Startup failure policy
 
 Every MCP server defaults to `on_error: skip`, for Bot, ordinary Threads and children alike. If connection initialization fails after any applicable retries, the current Run continues with the remaining capabilities. That server's tools stay unavailable for the rest of the Run, and the model receives an unavailability notice. Host logs identify the skipped server. A later Run tries again; Bot keeps its normal Heartbeat schedule.

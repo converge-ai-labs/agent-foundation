@@ -425,3 +425,84 @@ async def test_close_settles_startup_waiter_even_if_client_resists_cancellation(
     finally:
         release.set()
         await connection._task
+
+
+async def test_run_caches_tools_but_next_run_lists_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness_ui.mcp_adapters as adapters
+    from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
+    from a13n_harness_ui.composition.models import ResolvedMcpRecipe
+    from a13n_harness_ui.configuration.models import McpRemoteTransport
+    from fastmcp import FastMCP
+    from fastmcp.client.transports import FastMCPTransport
+    from fastmcp.server.middleware import Middleware
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    lists = 0
+    steps = 0
+    calls = 0
+
+    class CountLists(Middleware):
+        async def on_list_tools(self, context, call_next):
+            nonlocal lists
+            lists += 1
+            return await call_next(context)
+
+    server = FastMCP("Run cache fixture", middleware=[CountLists()])
+
+    @server.tool
+    def counter() -> int:
+        nonlocal calls
+        calls += 1
+        return calls
+
+    monkeypatch.setattr(adapters, "StreamableHttpTransport", lambda *a, **kw: FastMCPTransport(server))
+    recipe = ResolvedMcpRecipe(
+        server_id="counter",
+        transport=McpRemoteTransport(url="https://example.com/mcp"),
+        host_owned=True,
+    )
+
+    async def model(messages, info):
+        nonlocal steps
+        steps += 1
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if len(returns) == 3:
+            yield "done"
+        else:
+            tool = next(tool for tool in info.function_tools if tool.name.endswith("counter"))
+            yield {0: DeltaToolCall(name=tool.name, json_args="{}", tool_call_id=f"call-{steps}")}
+
+    connections = Connections()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(adapters.HarnessUiMCP(recipe, connections=connections),),
+    )
+    try:
+        original = None
+        for run in (1, 2):
+            result = await executable.run(
+                "Count three times",
+                bindings=RunBindings.embedded(),
+                previous_state=HarnessState.new(thread_id="thread_one"),
+            )
+            assert result.output_or_raise() == "done"
+            assert steps == run * 4
+            assert calls == run * 3
+            assert lists == run
+            connection = connections.get("thread_one", "counter")
+            assert connection is not None and connection.connected
+            if original is None:
+                original = connection
+            else:
+                assert connection is original
+    finally:
+        await connections.close()

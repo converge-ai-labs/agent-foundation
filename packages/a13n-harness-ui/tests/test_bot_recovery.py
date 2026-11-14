@@ -76,7 +76,9 @@ async def test_failed_mcp_run_preserves_heartbeat_and_later_recovers(tmp_path: P
             assert operation.status is RootOperationStatus.failed
             assert operation.outcome is None
             assert operation.failure.code == "root_operation_failed"
-            state = (await bot.snapshot()).state
+            # Input settlement is saved before the corresponding BotState update.
+            async with bot._settlement_lock:
+                state = (await bot.snapshot()).state
             assert state.paused is paused
             assert state.last_error
             assert attempts == 3 and not prompts
@@ -94,7 +96,8 @@ async def test_failed_mcp_run_preserves_heartbeat_and_later_recovers(tmp_path: P
                 await bot.deliver_automatic_inputs()
                 inputs = await app._store.bot.inputs()
                 await consumed(app, inputs[-1].input_id)
-            snapshot = await bot.snapshot()
+            async with bot._settlement_lock:
+                snapshot = await bot.snapshot()
             assert len(snapshot.inputs) == 2
             assert snapshot.inputs[0] == failed
             assert snapshot.inputs[-1].source == "automatic"
