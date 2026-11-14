@@ -76,6 +76,7 @@ import { EnvironmentMonitor } from "./environment-monitor";
 import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
+import shellStyles from "../shell/workbench.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
 import { terminalShortcut } from "./terminal-shortcuts";
 import { BrowserPanel } from "../browser/panel";
@@ -126,10 +127,12 @@ export function NativeWorkspace({
   unauthorized,
   navigation,
   profile,
+  profileMenu,
 }: {
   children: ReactNode;
   navigation?: ReactNode;
   profile?: ReactNode;
+  profileMenu?: ReactNode;
   onFocus: (target: Schema<"PageTarget"> | null) => void;
   unauthorized: () => void;
 }) {
@@ -204,8 +207,9 @@ export function NativeWorkspace({
     writePreference(panelKey, collapsed ? "closed" : "open");
   };
   const narrow = useMediaQuery("(max-width: 999px)");
-  const [narrowSidebar, setNarrowSidebar] = useState(false);
-  const showOneView = tabLayout || (narrow && !narrowSidebar);
+  const compactHeader = useMediaQuery("(max-width: 760px)");
+  const showOneView = tabLayout || narrow;
+  const sheetSwipe = useRef<{ x: number; y: number } | null>(null);
   const singleView = hasSupportingViews && !sidebarCollapsed && showOneView;
   const supportingExpanded =
     hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);
@@ -235,8 +239,7 @@ export function NativeWorkspace({
   const toggleSupportingPanel = () => {
     animateLayout(
       () => {
-        setTabLayout(false);
-        setNarrowSidebar(narrow);
+        if (!narrow) setTabLayout(false);
         setSidebarCollapsed(supportingExpanded);
         if (supportingExpanded) focusCenter();
         else {
@@ -321,15 +324,22 @@ export function NativeWorkspace({
     observer?.observe(element);
     for (const child of element.children) observer?.observe(child);
     element.addEventListener("scroll", measure, { passive: true });
+    // Tab entry motion can change scroll metrics without resizing an observed box.
+    element.addEventListener("animationend", measure);
+    element.addEventListener("transitionend", measure);
     measure();
     return () => {
       observer?.disconnect();
       element.removeEventListener("scroll", measure);
+      element.removeEventListener("animationend", measure);
+      element.removeEventListener("transitionend", measure);
     };
   }, [
     isWorkspace,
     singleView,
     sidebarCollapsed,
+    narrow,
+    supportingExpanded,
     status.data?.features?.host_files,
     status.data?.features?.host_git,
     status.data?.features?.browser,
@@ -832,7 +842,6 @@ export function NativeWorkspace({
         if (next.kind === "tabs") {
           setSidebarCollapsed(false);
           setTabLayout(true);
-          setNarrowSidebar(false);
 
           setNativeActive(true);
           setFocusedArea(
@@ -846,7 +855,6 @@ export function NativeWorkspace({
         } else {
           setSidebarCollapsed(next.kind === "close");
           setTabLayout(false);
-          setNarrowSidebar(narrow);
           if (next.kind === "close") focusCenter();
         }
       },
@@ -983,7 +991,7 @@ export function NativeWorkspace({
     },
   ].filter((choice) => choice.available);
   const workspaceViews = [
-    ...(singleView
+    ...(singleView && !narrow
       ? [
           {
             key: "conversation",
@@ -1112,6 +1120,33 @@ export function NativeWorkspace({
             className={`${styles.layout} ${splitLayout ? styles.splitLayout : ""}`}
             style={{ "--panel-width": `${width}%` } as CSSProperties}
             data-resizing={resizing || undefined}
+            data-native-sheet={(narrow && supportingExpanded) || undefined}
+            onTouchStart={(event) => {
+              const touch = event.touches[0];
+              const left = event.currentTarget.getBoundingClientRect().left;
+              sheetSwipe.current =
+                narrow &&
+                supportingExpanded &&
+                touch &&
+                touch.clientX - left < 24
+                  ? { x: touch.clientX, y: touch.clientY }
+                  : null;
+            }}
+            onTouchEnd={(event) => {
+              const start = sheetSwipe.current;
+              sheetSwipe.current = null;
+              const touch = event.changedTouches[0];
+              if (
+                start &&
+                touch &&
+                touch.clientX - start.x > 72 &&
+                Math.abs(touch.clientY - start.y) < 64
+              )
+                toggleSupportingPanel();
+            }}
+            onTouchCancel={() => {
+              sheetSwipe.current = null;
+            }}
             onPointerMove={(event) => {
               const start = resizeStart.current;
               if (
@@ -1143,14 +1178,14 @@ export function NativeWorkspace({
             }}
           >
             <header
-              className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
+              className={`${styles.workToolbar} ${shellStyles.workbenchHeader} ${!isWorkspace && !threadId ? `${styles.documentToolbar} ${shellStyles.workbenchDocumentHeader}` : ""}`}
             >
               {navigation}
               {thread.data?.thread.role === "coordinator" && (
                 <CoordinatorMark />
               )}
-              <div className={styles.workspaceHeading}>
-                {resolvedProject && (
+              <div className={styles.workspaceHeading} data-workbench-heading>
+                {resolvedProject && !isNew && (
                   <span
                     className={styles.projectBreadcrumb}
                     title={resolvedProject.name}
@@ -1158,46 +1193,75 @@ export function NativeWorkspace({
                     <span>{resolvedProject.name}</span>
                   </span>
                 )}
-                <ToolbarTitle className={styles.workspaceTitle} title={title}>
-                  {title}
-                </ToolbarTitle>
+                {(!isNew || compactHeader) && (
+                  <ToolbarTitle className={styles.workspaceTitle} title={title}>
+                    {title}
+                  </ToolbarTitle>
+                )}
               </div>
-              {isWorkspace && threadId && status.data?.features?.browser && (
-                <BrowserActivity
-                  key={threadId}
-                  threadId={threadId}
-                  occupied={
-                    tabLayout ||
-                    (!sidebarCollapsed && (pane !== null || view !== "page"))
-                  }
-                  visible={
-                    !sidebarCollapsed &&
-                    pane === "browser" &&
-                    (!singleView || nativeActive)
-                  }
-                  reveal={() => revealTab({ kind: "browser" })}
-                  open={() => show("browser")}
-                />
-              )}
+              {!compactHeader &&
+                isWorkspace &&
+                threadId &&
+                status.data?.features?.browser && (
+                  <BrowserActivity
+                    key={threadId}
+                    threadId={threadId}
+                    occupied={
+                      tabLayout ||
+                      (!sidebarCollapsed && (pane !== null || view !== "page"))
+                    }
+                    visible={
+                      !sidebarCollapsed &&
+                      pane === "browser" &&
+                      (!singleView || nativeActive)
+                    }
+                    reveal={() => revealTab({ kind: "browser" })}
+                    open={() => show("browser")}
+                  />
+                )}
               {isWorkspace && threadId && (
                 <>
-                  <ShareButton />
+                  {!compactHeader && <ShareButton />}
                   <BackgroundToggle />
                 </>
               )}
-              {profile}
+              {!compactHeader && profile}
               {botMode && (
                 <>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t("Work notes")}
-                    title={t("Work notes")}
-                    onClick={() => show("work-notes")}
+                  {!compactHeader && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t("Work notes")}
+                      title={t("Work notes")}
+                      onClick={() => show("work-notes")}
+                    >
+                      <Notebook />
+                    </Button>
+                  )}
+                  <BotActions
+                    trailingActions={
+                      compactHeader &&
+                      hasSupportingViews && (
+                        <MenuItem onClick={toggleSupportingPanel}>
+                          <SidebarSimple />
+                          {supportingExpanded
+                            ? t("Close supporting panel")
+                            : t("Open supporting panel")}
+                        </MenuItem>
+                      )
+                    }
                   >
-                    <Notebook />
-                  </Button>
-                  <BotActions />
+                    {compactHeader && (
+                      <>
+                        {profileMenu}
+                        <MenuItem onClick={() => show("work-notes")}>
+                          <Notebook />
+                          {t("Work notes")}
+                        </MenuItem>
+                      </>
+                    )}
+                  </BotActions>
                 </>
               )}
               {threadId && !botMode && !unavailableThread && (
@@ -1209,6 +1273,30 @@ export function NativeWorkspace({
                     <DotsThree />
                   </MenuTrigger>
                   <MenuPopup align="end">
+                    {compactHeader && (
+                      <MenuItem
+                        onClick={() => {
+                          const search = new URLSearchParams(location.search);
+                          search.set("dialog", "share");
+                          navigate({
+                            pathname: location.pathname,
+                            search: search.toString(),
+                          });
+                        }}
+                      >
+                        <ShareNetwork />
+                        {t("Share")}
+                      </MenuItem>
+                    )}
+                    {compactHeader && profileMenu}
+                    {compactHeader && isWorkspace && hasSupportingViews && (
+                      <MenuItem onClick={toggleSupportingPanel}>
+                        <SidebarSimple />
+                        {supportingExpanded
+                          ? t("Close supporting panel")
+                          : t("Open supporting panel")}
+                      </MenuItem>
+                    )}
                     {(
                       [
                         ["rename", "Rename", PencilSimple],
@@ -1218,7 +1306,9 @@ export function NativeWorkspace({
                     )
                       .filter(
                         ([action]) =>
-                          threadId !== BOT_THREAD_ID || action === "details",
+                          (threadId !== BOT_THREAD_ID ||
+                            action === "details") &&
+                          (!compactHeader || action !== "share"),
                       )
                       .map(([action, label, Icon]) => (
                         <MenuItem
@@ -1239,7 +1329,7 @@ export function NativeWorkspace({
                   </MenuPopup>
                 </Menu>
               )}
-              {!splitLayout && panelToggle}
+              {!splitLayout && (!compactHeader || !threadId) && panelToggle}
             </header>
             {isWorkspace && threadId && (
               <div
@@ -1256,8 +1346,19 @@ export function NativeWorkspace({
               <nav
                 className={styles.workspaceTabs}
                 aria-label={t("Workbench views")}
-                hidden={sidebarCollapsed}
+                hidden={sidebarCollapsed || (narrow && !supportingExpanded)}
               >
+                {narrow && supportingExpanded && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("Back to chat")}
+                    title={t("Back to chat")}
+                    onClick={toggleSupportingPanel}
+                  >
+                    <ArrowLeft />
+                  </Button>
+                )}
                 <div
                   ref={viewTabsElement}
                   className={styles.panelTools}
@@ -1320,9 +1421,9 @@ export function NativeWorkspace({
                         {tab?.kind === "background" &&
                         tab.target.kind === "child" ? (
                           <SubagentGlyph id={tab.target.id} />
-                        ) : (
+                        ) : tab?.kind !== "new" ? (
                           <Icon />
-                        )}{" "}
+                        ) : null}{" "}
                         <span>{label}</span>
                       </Button>
                       {tab && (
@@ -1361,9 +1462,11 @@ export function NativeWorkspace({
             <div
               className={styles.center}
               id={`${workspaceId}-conversation`}
-              role={isWorkspace && singleView ? "tabpanel" : undefined}
+              role={
+                isWorkspace && singleView && !narrow ? "tabpanel" : undefined
+              }
               aria-labelledby={
-                isWorkspace && singleView
+                isWorkspace && singleView && !narrow
                   ? `${workspaceId}-conversation-tab`
                   : undefined
               }

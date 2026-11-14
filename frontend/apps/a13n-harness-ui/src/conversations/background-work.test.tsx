@@ -31,6 +31,12 @@ import { executionHeaders } from "./background-links";
 import { ChildInputLabels, InputContent } from "./input-content";
 import { workspaceTabs, emptyTabs } from "../native/workspace-tabs";
 
+// jsdom has no Web Animations API; ScrollArea checks active CSS transitions.
+Object.defineProperty(Element.prototype, "getAnimations", {
+  configurable: true,
+  value: () => [],
+});
+
 const t = (key: string) => key;
 const live = vi.hoisted(() => ({ display: null as unknown, revision: 0 }));
 vi.mock("./live-threads", () => ({ useLiveThread: () => live }));

@@ -17,7 +17,7 @@
   border-bottom: 0;
 }
 .splitLayout > .workToolbar {
-  border-bottom: 1px solid var(--a13n-border);
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
 /* Toolbar controls share one 32px height; touch devices keep
    a centered 44px hit area from Button. */
@@ -190,20 +190,21 @@
 }
 /* The picker uses the same supporting surface as files and browser views. */
 .newTabPage {
-  align-items: center;
-  justify-content: center;
-  padding: 28px 20px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 24px;
 }
 .newTabChoices {
-  width: min(100%, 340px);
+  width: min(100%, 440px);
+  margin-inline: auto;
 }
 .newTabChoices h2 {
   margin: 0 0 8px;
-  font-size: calc(var(--a13n-text-body) * 20 / 14);
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }
 .newTabChoices > p {
-  margin: 0 0 24px;
+  margin: 0 0 16px;
   color: var(--a13n-secondary);
   font-size: calc(var(--a13n-text-body) * 13 / 14);
 }
@@ -211,20 +212,28 @@
   display: flex;
   justify-content: flex-start;
   width: 100%;
-  min-height: 64px;
+  min-height: 56px;
   gap: 12px;
-  padding: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  white-space: normal;
+  touch-action: manipulation;
   text-align: left;
 }
 .newTabChoices > button > svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
 .newTabChoices > button > svg:last-child {
   width: 16px;
   margin-left: auto;
+}
+.newTabChoices > button > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .newTabChoices strong {
   font-weight: 500;
@@ -234,7 +243,7 @@
   display: block;
 }
 .newTabChoices small {
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--a13n-secondary);
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
@@ -244,11 +253,22 @@
   grid-row: 1 / -1;
   cursor: col-resize;
   touch-action: none;
+  position: relative;
+  z-index: 2;
   background: transparent;
 }
-.resizeHandle:hover,
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+.resizeHandle:is(:hover, :focus-visible),
+.layout[data-resizing] .resizeHandle {
+  background: var(--a13n-signal);
+}
 .resizeHandle:focus-visible {
-  background: var(--a13n-border);
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
 }
 .workspaceTabs {
   view-transition-name: harness-panel-tabs;
@@ -258,64 +278,53 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 40px;
-  padding-inline: 6px;
-  background: var(--a13n-surface);
+  height: var(--a13n-workbench-header-height, 48px);
+  min-height: var(--a13n-workbench-header-height, 48px);
+  padding-inline: 8px;
+  background: var(--a13n-canvas);
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
 .splitLayout .workspaceTabs {
   grid-column: 3;
   grid-row: 1;
-  border-left: 1px solid var(--a13n-border);
+  border-left: 1px solid var(--a13n-border-soft);
 }
 .workspaceTab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  align-self: stretch;
+  align-self: center;
   flex-shrink: 0;
   max-width: 212px;
+  min-height: 32px;
   padding-inline: 4px;
-  border-radius: 9px 9px 0 0;
+  border-radius: 8px;
+  animation: tab-enter var(--a13n-duration-base) var(--a13n-ease-out);
   color: var(--a13n-secondary);
 }
 .workspaceTab:hover {
-  background: var(--a13n-selected);
+  background: var(--a13n-hover);
 }
 .workspaceTab[data-active] {
-  background: var(--a13n-canvas);
+  background: var(--a13n-selected);
   color: var(--a13n-text);
   z-index: 1;
 }
-/* Reverse the lower corners where the active tab meets the page. */
-.workspaceTab[data-active]::before,
-.workspaceTab[data-active]::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 6px;
-  height: 6px;
-  pointer-events: none;
-}
-.workspaceTab[data-active]::before {
-  right: 100%;
-  background: radial-gradient(
-    circle at top left,
-    transparent 5.5px,
-    var(--a13n-canvas) 6px
-  );
-}
-.workspaceTab[data-active]::after {
-  left: 100%;
-  background: radial-gradient(
-    circle at top right,
-    transparent 5.5px,
-    var(--a13n-canvas) 6px
-  );
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .workspaceTab > [role="tab"] {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   color: inherit;
+  justify-content: flex-start;
   padding-inline: 8px 4px;
   background: transparent;
 }
@@ -333,11 +342,11 @@
   margin-right: 4px;
   opacity: 0;
 }
-.workspaceTab:is([data-active], :hover, :focus-within) > button:last-child,
+.workspaceTab:is(:hover, :focus-within) > button:last-child,
 .workspaceTab > button:last-child:focus-visible {
   opacity: 1;
 }
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .workspaceTab > button:last-child:not([role="tab"]) {
     opacity: 1;
   }
@@ -347,7 +356,7 @@
   height: 12px;
 }
 .workspaceTabs > .panelTools {
-  padding: 7px 6px 0;
+  padding: 0 2px;
   gap: 2px;
   align-self: stretch;
   flex: 0 1 auto;
@@ -361,6 +370,9 @@
     #000 calc(100% - var(--tabs-fade-right, 0px)),
     transparent
   );
+}
+.workspaceTabs > .panelTools {
+  overscroll-behavior-x: contain;
 }
 .workspaceTabs > .panelTools::-webkit-scrollbar {
   display: none;
@@ -625,8 +637,8 @@
 .fileRow {
   display: flex;
   align-items: center;
-  margin-bottom: 4px;
-  border-radius: 6px;
+  margin-bottom: 2px;
+  border-radius: 8px;
 }
 .fileLink,
 .changeRow {
@@ -634,6 +646,8 @@
   background: transparent;
   color: var(--a13n-text);
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -647,7 +661,7 @@
   border-radius: 6px;
 }
 .changeRow {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 @media (pointer: coarse) {
   .fileLink,
@@ -686,9 +700,20 @@
 }
 .fileRow:hover,
 .fileRow:has([data-popup-open]),
-.changeRow:hover,
+.changeRow:hover {
+  background: var(--a13n-hover);
+}
 .selected {
-  background: var(--a13n-surface);
+  background: var(--a13n-selected);
+}
+.fileLink:focus-visible,
+.changeRow:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.fileLink:active,
+.changeRow:active {
+  background: var(--a13n-selected);
 }
 .file {
   flex: 1;
@@ -1082,8 +1107,8 @@
 :global(::view-transition-new(harness-panel)),
 :global(::view-transition-old(harness-panel-tabs)),
 :global(::view-transition-new(harness-panel-tabs)) {
-  animation-duration: 180ms;
-  animation-timing-function: ease;
+  animation-duration: var(--a13n-duration-slow);
+  animation-timing-function: var(--a13n-ease-sheet);
 }
 
 :global(::view-transition-old(harness-chat)),
@@ -1121,9 +1146,17 @@
       harness-panel-tabs
     )
 ) {
-  animation-name: panel-slide-right;
-  animation-direction: reverse;
+  animation-name: panel-slide-in;
   animation-fill-mode: both;
+}
+
+@keyframes panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 @keyframes panel-slide-right {
@@ -1222,7 +1255,54 @@
 
 .backgroundOverlay {
   position: absolute;
-  inset: 48px 0 0;
+  inset: var(--a13n-workbench-header-height, 48px) 0 0;
   pointer-events: none;
   z-index: 20;
+}
+
+/* A narrow supporting view is a route-like sheet, never two cramped columns. */
+.layout[data-native-sheet] {
+  grid-template-rows: var(--a13n-workbench-header-height, 48px) minmax(0, 1fr);
+}
+.layout[data-native-sheet] > .workToolbar,
+.layout[data-native-sheet] > .backgroundOverlay {
+  display: none;
+}
+.layout[data-native-sheet] > .workspaceTabs {
+  grid-row: 1;
+}
+.layout[data-native-sheet] > .pane {
+  grid-row: 2;
+  border-left: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior: contain;
+}
+@media (pointer: coarse) {
+  .workspaceTabs {
+    gap: 0;
+  }
+  .workspaceTab {
+    max-width: 240px;
+  }
+  .workspaceTab > button:last-child:not([role="tab"]) {
+    width: 36px;
+    height: 44px;
+    margin-right: 0;
+    /* Full-height touch target with symmetric chip padding around the glyph. */
+    justify-content: center;
+    padding-inline: 5px 0;
+  }
+  .workspaceTab > [role="tab"] {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspaceTab {
+    animation: none;
+  }
+  :global(::view-transition-group(harness-chat)),
+  :global(::view-transition-group(harness-panel)),
+  :global(::view-transition-group(harness-panel-tabs)) {
+    animation-duration: 1ms;
+  }
 }

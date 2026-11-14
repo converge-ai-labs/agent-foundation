@@ -138,9 +138,16 @@ export function BackgroundToggle() {
 export function BackgroundCard({ showWork = true }: { showWork?: boolean }) {
   const { t } = useTranslation();
   const bg = useBackground();
-  if (!bg.cardOpen) return null;
+  const [opened, setOpened] = useState(bg.cardOpen);
+  useEffect(() => {
+    if (bg.cardOpen) setOpened(true);
+  }, [bg.cardOpen]);
+  // Mount readers only on first use; retain them afterwards for CSS exit motion.
+  if (!bg.cardOpen && !opened) return null;
   return (
     <section
+      hidden={!bg.cardOpen}
+      inert={!bg.cardOpen}
       id="background-work-card"
       className={styles.card}
       aria-label={t("Activity")}
@@ -159,24 +166,28 @@ export function BackgroundCard({ showWork = true }: { showWork?: boolean }) {
           <X />
         </Button>
       </header>
-      <BackgroundList showWork={showWork} />
+      <BackgroundList active={bg.cardOpen} showWork={showWork} />
     </section>
   );
 }
 export function BackgroundList({
   section,
+  active = true,
   showWork = true,
 }: {
   section?: BackgroundSection;
+  active?: boolean;
   showWork?: boolean;
 }) {
   const { t } = useTranslation();
   const bg = useBackground();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [active]);
   // The card previews both sections; a section tab lists one complete history.
   const compact = !section;
   const groups = backgroundGroups(bg.items).filter(

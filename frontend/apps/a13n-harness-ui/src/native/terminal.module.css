@@ -33,7 +33,9 @@
 }
 .sessionBar {
   flex-shrink: 0;
-  max-height: 36px;
+  min-height: 32px;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
   flex-wrap: nowrap;
   overflow: auto;
 }
@@ -81,6 +83,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .emulator {
   width: 100%;

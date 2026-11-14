@@ -335,6 +335,7 @@ export function TerminalPanel({
         </p>
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={!!closing}
         onOpenChange={(open) => {
           if (!open && !pending) {

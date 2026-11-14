@@ -651,6 +651,7 @@ export default function AnnotationEditor({
           )}
         </footer>
         <ModalFrame
+          bottomStickOnMobile
           open={confirmClose}
           onOpenChange={setConfirmClose}
           title={t("Discard annotations?")}

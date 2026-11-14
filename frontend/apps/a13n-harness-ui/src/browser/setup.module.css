@@ -9,7 +9,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -24,8 +24,8 @@
 }
 .heading h3 {
   margin: 0;
-  font-size: calc(var(--a13n-text-body) * 17 / 14);
-  font-weight: 600;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
+  font-weight: 500;
 }
 .summary,
 .instructions > p {
@@ -46,7 +46,7 @@
 .requirements li {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 12px;
   padding: 12px 0;
 }
 .requirements li > svg {
@@ -58,7 +58,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .requirements strong,
 .step strong,
@@ -74,7 +74,7 @@
 .requirements li > div > span,
 .state {
   color: var(--a13n-secondary);
-  font-size: calc(var(--a13n-text-body) * 11 / 14);
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -124,7 +124,7 @@
 .requirementKind {
   margin-inline-start: 8px;
   color: var(--a13n-secondary);
-  font-size: calc(var(--a13n-text-body) * 11 / 14);
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-weight: 400;
 }
 

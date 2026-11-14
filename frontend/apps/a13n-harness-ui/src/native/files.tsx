@@ -556,6 +556,7 @@ export function Files({
         </>
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={!!operation}
         onOpenChange={(value) => {
           if (!value) setOperation(null);

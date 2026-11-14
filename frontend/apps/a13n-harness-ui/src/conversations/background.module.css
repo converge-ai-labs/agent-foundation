@@ -24,6 +24,26 @@
   box-shadow: var(--a13n-shadow);
   font-size: var(--a13n-text-body);
   color: var(--a13n-text);
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--a13n-duration-base) var(--a13n-ease-out),
+    transform var(--a13n-duration-base) var(--a13n-ease-out),
+    display var(--a13n-duration-base) allow-discrete;
+}
+.card[hidden] {
+  display: none;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition-duration: var(--a13n-duration-fast);
+  transition-timing-function: var(--a13n-ease-in);
+}
+@starting-style {
+  .card {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }
 .card > header {
   display: flex;
@@ -102,6 +122,15 @@
   text-align: left;
   background: none;
   color: inherit;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.item:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.row:active {
+  background: var(--a13n-selected);
 }
 .icon {
   grid-column: 1;
@@ -187,7 +216,9 @@
 }
 @media (max-width: 760px) {
   .card {
-    --card-inset: 36px;
+    --card-inset: calc(12px + env(safe-area-inset-right));
+    width: min(320px, calc(100% - var(--card-inset) - 12px));
+    max-height: min(480px, calc(100% - 160px));
   }
 }
 @media (hover: none), (pointer: coarse) {
@@ -201,19 +232,6 @@
   height: 16px;
   flex-shrink: 0;
   overflow: visible;
-}
-.glyph[data-running] {
-  animation: breathe 2s ease-in-out infinite;
-}
-@keyframes breathe {
-  50% {
-    transform: scale(0.93);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .glyph[data-running] {
-    animation: none;
-  }
 }
 .panel {
   display: flex;
@@ -325,8 +343,16 @@
     min-height: 44px;
   }
   .action {
+    flex-basis: 44px;
     align-self: center;
     padding-top: 0;
+  }
+  .action button {
+    width: 44px;
+    height: 44px;
+  }
+  .finishedToggle {
+    min-height: 44px;
   }
 }
 

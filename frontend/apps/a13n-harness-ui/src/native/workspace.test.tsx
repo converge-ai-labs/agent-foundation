@@ -158,6 +158,10 @@ vi.mock("./terminal", () => ({
   },
 }));
 beforeEach(() => {
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   // Resource interaction tests start with an explicitly opened supporting panel.
   for (const chat of ["current", "other", "new"]) {
     localStorage.setItem(`a13n-harness-ui.native-panel.${chat}`, "open");
@@ -365,8 +369,8 @@ it("keeps the full chat title available while bounding the document title", asyn
   expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeTruthy();
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-  await screen.findByRole("heading", { name: "New chat" });
-  expect(document.title).toBe("New chat - Harness UI");
+  await waitFor(() => expect(document.title).toBe("New chat - Harness UI"));
+  expect(screen.queryByRole("heading", { name: "New chat" })).toBeNull();
 });
 
 it("opens Bot in the existing native workspace before activation without loading a missing Thread", async () => {
@@ -413,12 +417,14 @@ function expandSupportingPanel() {
   }
 }
 function restoreSideBySide() {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Close supporting panel" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Open supporting panel" }),
-  );
+  for (const name of ["Close supporting panel", "Open supporting panel"]) {
+    const direct = screen.queryByRole("button", { name });
+    if (direct) fireEvent.click(direct);
+    else {
+      fireEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name }));
+    }
+  }
 }
 
 it.each(["/", "/new", "/threads/current"])(
@@ -1122,34 +1128,94 @@ it("ignores superseded animation updates during a drag and ends on pointer cance
   }
 });
 
-it("uses tabs in narrow windows without replacing the saved desktop layout", async () => {
-  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
-  await screen.findByText("Editor /native/first.txt");
-  vi.stubGlobal("matchMedia", () => ({
-    matches: true,
-    addEventListener() {},
-    removeEventListener() {},
-  }));
-  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
-  fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
-  expect(
-    screen
-      .getByTestId("chat")
-      .closest('[role="tabpanel"]')
-      ?.hasAttribute("hidden"),
-  ).toBe(false);
-  fireEvent.click(screen.getByRole("tab", { name: "Files" }));
-  expect(
-    screen.getByRole("tab", { name: "Files", selected: true }),
-  ).toBeTruthy();
-  expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("sidebar");
-  restoreSideBySide();
-  expect(screen.getByRole("tablist", { name: "Workspace views" })).toBeTruthy();
-  expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
-  expect(
-    screen.getByRole("button", { name: "Close supporting panel" }),
-  ).toBeTruthy();
-});
+it.each(["sidebar", "tabs"])(
+  "hides retained resource tabs in narrow Chat without changing desktop %s layout",
+  async (layout) => {
+    localStorage.setItem("a13n-harness-ui.native-layout", layout);
+    setup("/threads/current");
+    await screen.findByRole("button", { name: "Chat actions" });
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Another chat" }));
+    await screen.findByText("Chat remains mounted /threads/other");
+    expect(
+      screen.queryByRole("navigation", { name: "Workbench views" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("tablist", { name: "Workspace views" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Open supporting panel" }),
+    );
+    expect(screen.getByRole("button", { name: "Back to chat" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "New tab" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+    expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe(layout);
+  },
+);
+
+it.each(["Back", "edge swipe"])(
+  "uses a narrow sheet dismissed by %s without replacing the saved desktop layout",
+  async (dismiss) => {
+    setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+    await screen.findByText("Editor /native/first.txt");
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+    expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+    expect(
+      screen.getByRole("tab", { name: "Files", selected: true }),
+    ).toBeTruthy();
+    expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe(
+      "sidebar",
+    );
+    expect(
+      screen.queryByRole("separator", { name: "Resize supporting panel" }),
+    ).toBeNull();
+    const back = screen.getByRole("button", { name: "Back to chat" });
+    const sheet = back.closest("[data-native-sheet]")!;
+    const conversation = screen.getByTestId("chat");
+    if (dismiss === "Back") fireEvent.click(back);
+    else {
+      fireEvent.touchStart(sheet, { touches: [{ clientX: 8, clientY: 200 }] });
+      fireEvent.touchEnd(sheet, {
+        changedTouches: [{ clientX: 100, clientY: 208 }],
+      });
+    }
+    expect(
+      screen.queryByRole("tablist", { name: "Workspace views" }),
+    ).toBeNull();
+    expect(screen.getByTestId("chat")).toBe(conversation);
+    expect(conversation.closest("[hidden]")).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Workbench views" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Open supporting panel" }),
+    );
+    expect(
+      screen.getByRole("tab", { name: "Files", selected: true }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Chat" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    expect(
+      screen.getByRole("heading", { name: "Open a new tab" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to chat" })).toBeTruthy();
+    expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe(
+      "sidebar",
+    );
+  },
+);
 
 it("retains resource tabs through Settings and direct Chat interaction updates focus", async () => {
   const { focus } = setup(

@@ -8,7 +8,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  flex-wrap: wrap;
+  font-size: var(--a13n-text-sm);
   color: var(--a13n-secondary);
 }
 .navigation select {
@@ -32,12 +33,12 @@
 }
 .grid table {
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--harness-code-size);
 }
 .grid td,
 .grid th {
   border: 1px solid var(--a13n-border);
-  padding: 5px 9px;
+  padding: 8px;
   white-space: pre;
   max-width: 32ch;
   overflow: hidden;
@@ -50,4 +51,11 @@
 }
 .grid th {
   background: var(--a13n-surface);
+}
+
+@media (pointer: coarse) {
+  .navigation select {
+    min-height: 44px;
+    font-size: 16px;
+  }
 }

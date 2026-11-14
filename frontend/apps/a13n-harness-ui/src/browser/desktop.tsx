@@ -41,6 +41,7 @@ function CaptureStatus({
   const { t } = useTranslation();
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       onOpenChange={(open) => {
         if (!open) onClose();

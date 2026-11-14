@@ -37,6 +37,7 @@ export function EnvironmentMonitor() {
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={setOpen}
       size="xl"
