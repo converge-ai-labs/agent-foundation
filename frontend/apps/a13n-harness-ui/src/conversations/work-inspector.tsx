@@ -1,3 +1,4 @@
+import { useBackground } from "./background-context";
 import { useTranslation } from "../i18n";
 import { HelpTip } from "../shell/help-tip";
 import { ThreadBotNote } from "../bot-notes";
@@ -21,7 +22,7 @@ import { useGuestAccess } from "../transport/context";
 import { useThreadWork, workCaption } from "./work";
 import { useDebug } from "../shell/debug";
 import { ErrorNotice } from "../shell/ui";
-import { TaskIcon, TaskList, NoteList } from "./work-lists";
+import { TaskList, NoteList } from "./work-lists";
 import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
 
@@ -79,41 +80,30 @@ export function WorkInspector({
   const saved = work.tasks;
   const page = work.tasks.data?.tasks.page ?? undefined;
   const summary = work.summary.data;
-  const active = summary?.tasks.active;
   const complete = summary?.tasks.completed ?? 0;
   const total = summary?.tasks.total ?? 0;
   const counts: Partial<Record<ActivityView, number | string>> = {
     tasks: total ? `${complete}/${total}` : undefined,
     notes: summary?.notes.total,
   };
+  const hasActivityCard = !!useBackground().threadId;
   const tabs = ["tasks", "notes"] as const;
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
     <div className={styles.strip} aria-label={t("Work inspection")}>
-      {showDetails && (goal || active) && (
+      {showDetails && goal && (
         <div className={styles.summary}>
-          {goal && (
-            <GoalStatus
-              goal={goal}
-              activity={activity}
-              open={tab === "goal"}
-              onOpenChange={(open) =>
-                setTab((current) =>
-                  open ? "goal" : current === "goal" ? null : current,
-                )
-              }
-              onUseObjective={onUseGoal}
-            />
-          )}
-          {active && (
-            <span
-              className={styles.active}
-              title={active.active_form || active.subject}
-            >
-              <TaskIcon status={active.status} />
-              <span>{active.active_form || active.subject}</span>
-            </span>
-          )}
+          <GoalStatus
+            goal={goal}
+            activity={activity}
+            open={tab === "goal"}
+            onOpenChange={(open) =>
+              setTab((current) =>
+                open ? "goal" : current === "goal" ? null : current,
+              )
+            }
+            onUseObjective={onUseGoal}
+          />
         </div>
       )}
       <Dialog
@@ -124,6 +114,7 @@ export function WorkInspector({
       >
         <div className={styles.shortcuts}>
           {showDetails &&
+            !hasActivityCard &&
             tabs.map((item) => {
               const { Icon } = activityViews[item];
               const label = labels[item];
@@ -147,7 +138,7 @@ export function WorkInspector({
                 </DialogTrigger>
               );
             })}
-          {showDetails && (
+          {showDetails && !hasActivityCard && (
             <Menu>
               <MenuTrigger
                 ref={moreTrigger}

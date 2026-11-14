@@ -117,6 +117,13 @@ function setup(
       path: string,
       _init?: { params?: { query?: Record<string, unknown> } },
     ): Promise<{ data: unknown }> => {
+      if (path.endsWith("/work"))
+        return {
+          data: {
+            tasks: { total: 0, available: true, page: { tasks: [] } },
+            notes: { total: 0, available: true, page: { notes: [] } },
+          },
+        };
       if (path.endsWith("/children"))
         return { data: { executions: [...children], total: children.length } };
       if (path.endsWith("/tool-executions")) return { data: [...tools] };
@@ -203,11 +210,11 @@ it("stays closed as work arrives, remembers open per Thread, and only exposes pe
   const page = render(test.view("root"));
   await waitFor(() =>
     expect(
-      screen.getByRole("button", { name: "Background work" }).textContent,
+      screen.getByRole("button", { name: "Activity" }).textContent,
     ).toContain("2"),
   );
-  expect(screen.queryByRole("region", { name: "Background work" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Background work" }));
+  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Activity" }));
   expect(screen.getAllByRole("button", { name: "Stop subagent" })).toHaveLength(
     1,
   );
@@ -216,16 +223,14 @@ it("stays closed as work arrives, remembers open per Thread, and only exposes pe
     expect.objectContaining({ id: "one", kind: "child" }),
   );
   page.rerender(test.view("another"));
-  expect(screen.queryByRole("region", { name: "Background work" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
   page.rerender(test.view("root"));
-  expect(screen.getByRole("region", { name: "Background work" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Activity" })).toBeTruthy();
 });
 it("keeps the row action separate from opening a resource tab", async () => {
   const test = setup([child("one", "running")]);
   render(test.view("root"));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await userEvent.click(
     await screen.findByRole("button", { name: "Stop subagent" }),
   );
@@ -243,9 +248,7 @@ it("limits each card section to three rows and opens its own history tab", async
     ...Array.from({ length: 24 }, (_, i) => child(String(i))),
   ]);
   const page = render(test.view("root"));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await screen.findByRole("button", { name: "View all" });
   expect(screen.getAllByRole("button", { name: /Agent / })).toHaveLength(3);
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
@@ -256,9 +259,7 @@ it("limits each card section to three rows and opens its own history tab", async
     threadId: "root",
     title: "Subagents",
   });
-  await userEvent.click(
-    screen.getByRole("button", { name: "Close background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Close activity" }));
   page.rerender(
     test.view(
       "root",
@@ -518,9 +519,7 @@ it("shows Cancel only for API-authorized tools and keeps Shell observations read
     { process_id: "process-observed", status: { phase: "running" } },
   );
   render(test.view("root"));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await screen.findByRole("button", { name: "Cancel execution" });
   expect(
     screen.getAllByRole("button", { name: "Cancel execution" }),
@@ -534,14 +533,13 @@ it("omits a zero badge and distinguishes an empty card", async () => {
   const test = setup([]);
   render(test.view("root"));
   await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Background work" }).textContent,
-    ).toBe(""),
+    expect(screen.getByRole("button", { name: "Activity" }).textContent).toBe(
+      "",
+    ),
   );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
-  expect(await screen.findByText("Nothing is running.")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
+  expect(await screen.findByText("No tasks yet.")).toBeTruthy();
+  expect(await screen.findByText("No notes yet.")).toBeTruthy();
 });
 
 it("closes the card when opening a resource in the narrow layout without fetching tool output per row", async () => {
@@ -560,14 +558,12 @@ it("closes the card when opening a resource in the narrow layout without fetchin
     true,
   );
   render(test.view("root"));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await userEvent.click(
     await screen.findByRole("button", { name: /^pnpm test/ }),
   );
   expect(test.open).toHaveBeenCalled();
-  expect(screen.queryByRole("region", { name: "Background work" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
   expect(test.GET.mock.calls.some(([path]) => path.endsWith("/output"))).toBe(
     false,
   );
@@ -686,9 +682,7 @@ it("reads the terminal child checkpoint when its head settles after a running re
 it("uses the title alone without a preview and never queries child inputs for tooltips", async () => {
   const test = setup([child("one", "running")]);
   render(test.view("root"));
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   const row = await screen.findByRole("button", { name: /Agent one/ });
   expect(within(row).getByText("Agent one").title).toBe("Agent one");
   await userEvent.hover(within(row).getByRole("img", { name: "Running" }));
@@ -739,9 +733,7 @@ it("shares server tool cancellation progress across the card, history and item h
       </>,
     ),
   );
-  await userEvent.click(
-    screen.getByRole("button", { name: "Background work" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await userEvent.click(
     (await screen.findAllByRole("button", { name: "Cancel execution" }))[0],
   );

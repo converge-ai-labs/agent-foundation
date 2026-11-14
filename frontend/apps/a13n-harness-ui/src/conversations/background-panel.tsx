@@ -1,3 +1,4 @@
+import { WorkPanel } from "./work-activity";
 import { BackgroundStateIcon } from "./background-state-icon";
 import { TerminalWindow, Wrench, CirclesThree } from "@phosphor-icons/react";
 import { ChildInputLabels } from "./input-content";
@@ -34,6 +35,17 @@ import { useChildControlState } from "./child-controls";
 import { ShellOutput } from "./tool-call";
 
 export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
+  if (target.kind === "tasks" || target.kind === "notes")
+    return (
+      <WorkPanel
+        threadId={target.threadId}
+        section={target.kind}
+        selection={target.selection}
+      />
+    );
+  return <ExecutionPanel target={target} />;
+}
+function ExecutionPanel({ target }: { target: BackgroundTarget }) {
   const { t } = useTranslation();
   const bg = useBackground();
   const listed = bg.items.find(
@@ -110,7 +122,9 @@ export function BackgroundPanel({ target }: { target: BackgroundTarget }) {
       </header>
       {!section && <ErrorNotice error={bg.error} retry={bg.refresh} />}
       {section ? (
-        <BackgroundList section={section} />
+        <BackgroundList
+          section={section === "subagents" ? "subagents" : "tools"}
+        />
       ) : target.kind === "tool" ? (
         <ToolRecord target={target} item={item} />
       ) : !item ? (

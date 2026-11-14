@@ -55,6 +55,7 @@ import {
   SlidersHorizontal,
   ShareNetwork,
   ChatCircle,
+  ListChecks,
   Notebook,
   CirclesThree,
   Wrench,
@@ -96,7 +97,7 @@ import { ComposerDrafts } from "../conversations/composer";
 import { conversationTitle } from "../conversations/local-input";
 import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
-import { DebugOnly } from "../shell/debug";
+import { DebugOnly, useDebug } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
 import { readPreference, writePreference } from "../shell/preferences";
 
@@ -140,6 +141,7 @@ export function NativeWorkspace({
   const buffers = useContext(FileBuffers);
   const location = useLocation();
   const navigate = useNavigate();
+  const debug = useDebug();
   const botMode = location.pathname === "/bot";
   const bot = useBot(botMode);
   const threadId = botMode
@@ -1035,11 +1037,15 @@ export function NativeWorkspace({
                         : t("Browser"),
       icon:
         tab.kind === "background"
-          ? tab.target.kind === "process" || tab.target.icon === "terminal"
-            ? TerminalWindow
-            : tab.target.kind === "tool" || tab.target.kind === "tools"
-              ? Wrench
-              : CirclesThree
+          ? tab.target.kind === "tasks"
+            ? ListChecks
+            : tab.target.kind === "notes"
+              ? Notebook
+              : tab.target.kind === "process" || tab.target.icon === "terminal"
+                ? TerminalWindow
+                : tab.target.kind === "tool" || tab.target.kind === "tools"
+                  ? Wrench
+                  : CirclesThree
           : tab.kind === "new"
             ? Plus
             : tab.kind === "file"
@@ -1197,9 +1203,8 @@ export function NativeWorkspace({
               {threadId && !botMode && !unavailableThread && (
                 <Menu>
                   <MenuTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
+                    render={<Button variant="ghost" size="icon-sm" tooltip />}
                     aria-label={t("Chat actions")}
-                    title={t("Chat actions")}
                   >
                     <DotsThree />
                   </MenuTrigger>
@@ -1241,7 +1246,10 @@ export function NativeWorkspace({
                 className={styles.backgroundOverlay}
                 style={{ right: splitLayout ? `${width}%` : 0 }}
               >
-                <BackgroundCard key={threadId} />
+                <BackgroundCard
+                  key={threadId}
+                  showWork={!botMode || debug.enabled}
+                />
               </div>
             )}
             {isWorkspace && hasSupportingViews && (

@@ -1,4 +1,4 @@
-import type { BackgroundSection } from "../conversations/background-work";
+import type { ActivitySection } from "../conversations/background-work";
 import type { Schema } from "../transport/client";
 
 export function pageLink(
@@ -78,7 +78,7 @@ export function nativeLink(search: string): {
   diffPath: string;
   comparison: "staged" | "unstaged" | "untracked" | null;
   terminal: string;
-  background: BackgroundSection | null;
+  background: ActivitySection | null;
 } {
   const query = new URLSearchParams(search);
   const pane = query.get("native");
@@ -94,6 +94,12 @@ export function nativeLink(search: string): {
         ? comparison
         : null,
     terminal: query.get("terminal") || "",
-    background: pane === "subagents" || pane === "tools" ? pane : null,
+    background:
+      pane === "subagents" ||
+      pane === "tools" ||
+      pane === "tasks" ||
+      pane === "notes"
+        ? pane
+        : null,
   };
 }
