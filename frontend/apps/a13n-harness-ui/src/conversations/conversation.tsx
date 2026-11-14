@@ -23,14 +23,7 @@ import {
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Input,
-  ModalFrame,
-  Tooltip,
-  TooltipTrigger,
-  TooltipPopup,
-} from "a13n-ui";
+import { Button, Input, ModalFrame } from "a13n-ui";
 import { ArrowDown, Sparkle } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import {
@@ -1404,25 +1397,18 @@ function RenameChatForm({
           disabled={suggestion.isPending || saving}
           onChange={(event) => setTitle(event.target.value)}
         />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                className={styles.generateTitle}
-                variant="ghost"
-                size="icon-sm"
-                loading={suggestion.isPending}
-                disabled={saving}
-              />
-            }
-            aria-label={t("Generate title")}
-            onClick={() => suggestion.mutate()}
-          >
-            <Sparkle aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipPopup>{t("Generate title")}</TooltipPopup>
-        </Tooltip>
+        <Button
+          type="button"
+          className={styles.generateTitle}
+          variant="ghost"
+          size="icon-sm"
+          loading={suggestion.isPending}
+          disabled={saving}
+          aria-label={t("Generate title")}
+          onClick={() => suggestion.mutate()}
+        >
+          {!suggestion.isPending && <Sparkle aria-hidden="true" />}
+        </Button>
       </div>
       <ErrorNotice error={suggestion.error || error} />
       <div className={layout.dialogActions}>

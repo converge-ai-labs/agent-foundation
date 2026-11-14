@@ -1,4 +1,5 @@
 .workarea {
+  --work-header-height: 36px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -11,8 +12,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
-  min-height: 40px;
+  padding: 1px 8px;
+  min-height: var(--work-header-height);
   flex-shrink: 0;
   border-bottom: 0;
 }
@@ -138,6 +139,7 @@
   scrollbar-gutter: stable both-edges;
 }
 .center > .page.chatPage {
+  padding-top: 0;
   overflow: hidden;
   scrollbar-gutter: auto;
 }
@@ -258,8 +260,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 40px;
-  padding-inline: 6px;
+  min-height: var(--work-header-height);
+  padding-inline: 4px;
   background: var(--a13n-surface);
 }
 .splitLayout .workspaceTabs {
@@ -347,7 +349,7 @@
   height: 12px;
 }
 .workspaceTabs > .panelTools {
-  padding: 7px 6px 0;
+  padding: 2px 4px 0;
   gap: 2px;
   align-self: stretch;
   flex: 0 1 auto;
@@ -1222,7 +1224,7 @@
 
 .backgroundOverlay {
   position: absolute;
-  inset: 48px 0 0;
+  inset: var(--work-header-height) 0 0;
   pointer-events: none;
   z-index: 20;
 }
