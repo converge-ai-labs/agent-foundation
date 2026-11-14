@@ -17,9 +17,6 @@
   flex-shrink: 0;
   border-bottom: 0;
 }
-.splitLayout > .workToolbar {
-  border-bottom: 1px solid var(--a13n-border);
-}
 /* Toolbar controls share one 32px height; touch devices keep
    a centered 44px hit area from Button. */
 .workToolbar button {

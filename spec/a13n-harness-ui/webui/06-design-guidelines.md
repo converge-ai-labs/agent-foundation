@@ -83,7 +83,7 @@ Usage popovers lead with the requested figure and unit, then aligned supporting 
 
 Content fades continuously toward the header and composer. No hard seam, ghosted text, text-shadow halo or blurred strip crosses a readable line. Apply the effect at the reading boundary; keep controls crisp and content fully readable away from it. Prose, tables and code retain their geometry through scrolling.
 
-The header divider appears only with the supporting right pane open. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
+Chat headers use the same compact height without a bottom divider in single-column and split layouts. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
 
 ## Background Work
 
