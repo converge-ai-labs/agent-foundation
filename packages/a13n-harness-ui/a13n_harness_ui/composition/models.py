@@ -22,6 +22,7 @@ from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
+from a13n_harness_ui.surfaces import RunModelOverrides
 
 
 class CompositionModel(BaseModel):
@@ -224,6 +225,8 @@ class ResolvedRunComposition(CompositionModel):
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None
+    # The Run's explicit Model selection. Admissions without one reuse it.
+    model_overrides: RunModelOverrides | None = Field(default=None, exclude_if=lambda value: value is None)
     media_understanding: dict[NativeInputMediaKind, ResolvedModelRecipe] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )

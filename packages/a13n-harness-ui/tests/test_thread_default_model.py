@@ -77,6 +77,46 @@ async def test_default_model_override_patch_clear_and_restart(tmp_path, monkeypa
         assert (await app.inspect_operation_configuration(receipt.receipt_id)).agent.model_id == "model-primary"
 
 
+async def test_run_without_model_selection_reuses_previous_run_selection(tmp_path, monkeypatch):
+    root = configuration(tmp_path)
+
+    async def stream(messages, info):
+        yield "Completed"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        source = await app.create_thread()
+        target = await app.create_thread()
+
+        async def captured_agent(receipt_id: str):
+            assert (await app.wait_root_operation(receipt_id)).status is RootOperationStatus.completed
+            return (await app.inspect_operation_configuration(receipt_id)).agent
+
+        async def message():
+            sent = await controller(app).send_thread_message(
+                source_thread_id=source.thread_id, thread_id=target.thread_id, message="Automatic"
+            )
+            return await captured_agent(sent["receipt"]["receipt_id"])
+
+        chosen = await app.submit_thread(
+            thread_id=target.thread_id,
+            prompt="Chosen",
+            model_overrides=RunModelOverrides(model_id="model-secondary", thinking="high"),
+        )
+        selected = await captured_agent(chosen.receipt_id)
+        assert selected.model_id == "model-secondary"
+        # A Thread message selects nothing, so it keeps the previous Run's Model and controls.
+        assert await message() == selected
+        # An explicit empty selection returns to the defaults, which later automatic Runs keep.
+        reset = await app.submit_thread(thread_id=target.thread_id, prompt="Reset", model_overrides=RunModelOverrides())
+        assert (await captured_agent(reset.receipt_id)).model_id == "model-primary"
+        assert (await message()).model_id == "model-primary"
+
+
 async def test_missing_default_model_rejects_creation_and_patch_without_fallback(tmp_path):
     root = configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
