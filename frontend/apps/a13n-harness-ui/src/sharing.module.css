@@ -1,4 +1,5 @@
 .panel {
+  min-width: 0;
   display: grid;
   gap: 12px;
 }
@@ -86,7 +87,7 @@
   font-weight: 400;
 }
 .manageButton > svg {
-  transition: transform 150ms ease;
+  transition: transform var(--a13n-duration-base) var(--a13n-ease-out);
 }
 .manageButton[aria-expanded="true"] > svg {
   transform: rotate(180deg);
@@ -135,24 +136,26 @@
   min-width: 180px;
 }
 .grant strong {
+  overflow-wrap: anywhere;
   font-weight: 500;
   font-size: var(--a13n-text-body);
 }
 .grant p {
+  overflow-wrap: anywhere;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
   margin-top: 4px;
 }
 .guest {
-  height: 100dvh;
+  height: var(--visible-height, 100dvh);
   display: flex;
   flex-direction: column;
   color: var(--a13n-text);
   background: var(--a13n-canvas);
 }
 .header {
-  min-height: 56px;
-  padding: 12px 24px;
+  min-height: var(--a13n-workbench-header-height, 48px);
+  padding: 8px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -266,7 +269,7 @@
 }
 .welcome {
   margin: auto;
-  padding: 48px;
+  padding: 32px 24px;
   max-width: 460px;
   text-align: center;
 }
@@ -303,7 +306,7 @@
 }
 @media (max-width: 700px) {
   .header {
-    padding: 8px 12px;
+    padding: max(8px, env(safe-area-inset-top)) 16px 8px;
     gap: 8px;
   }
   .identity {
@@ -324,7 +327,7 @@
     gap: 8px;
   }
   .conversation {
-    padding: 0 12px;
+    padding: 0 16px max(16px, env(safe-area-inset-bottom));
   }
   .expiry {
     display: none;

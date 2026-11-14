@@ -1,7 +1,8 @@
 .popup {
   display: flex;
   flex-direction: column;
-  max-width: 520px;
+  max-width: 560px;
+  max-height: min(560px, calc(var(--visible-height, 100dvh) - 104px));
 }
 .search {
   display: flex;
@@ -55,26 +56,43 @@
   color: var(--a13n-secondary);
 }
 .results {
-  max-height: min(420px, 55dvh);
+  min-height: 0;
+  flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding: 8px;
   padding: 8px;
   border-top: 1px solid var(--a13n-border);
 }
 .result {
   display: flex;
   align-items: center;
-  min-height: 44px;
-  padding: 8px 8px;
-  border-radius: 6px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px;
+  border-radius: 8px;
+  touch-action: manipulation;
 }
 .result:hover,
-.result:focus-visible {
+.result:active {
   background: var(--a13n-hover);
-  outline: none;
+}
+/* While typing, mark the result that Enter opens. */
+.popup:has(.search input:focus) .result:first-of-type {
+  background: var(--a13n-selected);
+}
+.result:focus-visible {
+  background: var(--a13n-selected);
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.result > svg {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
 }
 .result > span {
   display: grid;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
 }
 .result strong {
@@ -88,19 +106,41 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
   line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .empty {
-  padding: 16px 16px;
+  margin: 0;
+  padding: 24px 16px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
 }
-@media (max-width: 600px) {
-  .search input {
-    font-size: 16px;
+@media (max-width: 760px) {
+  .popup {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--visible-top, 0px);
+    width: 100%;
+    max-width: none;
+    max-height: var(--visible-height, 100dvh);
+    border-radius: 0 0 16px 16px;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: var(--keyboard-bottom-inset, env(safe-area-inset-bottom));
   }
   .search {
     min-height: 56px;
     padding-inline: 12px 8px;
     gap: 4px;
+  }
+}
+@media (pointer: coarse) {
+  .search input {
+    font-size: max(16px, var(--a13n-text-body));
+  }
+  .scope button {
+    overflow-wrap: anywhere;
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }

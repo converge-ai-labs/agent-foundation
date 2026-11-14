@@ -24,9 +24,10 @@ import {
   ComboboxItem,
   ComboboxEmpty,
 } from "a13n-ui";
-import { MagnifyingGlass, Funnel, X } from "@phosphor-icons/react";
+import { MagnifyingGlass, ChatCircle, Funnel, X } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
+import { fitVisualViewport } from "../shell/visual-viewport";
 import { isFindShortcut } from "../platform/find-shortcut";
 import { modifierLabel, usesCommandKey } from "../platform";
 import { useThreads } from "./queries";
@@ -38,6 +39,10 @@ const ChatSearchContext = createContext<{
   open: boolean;
   show: (from: HTMLElement) => void;
 } | null>(null);
+
+export function useChatSearchOpen() {
+  return useContext(ChatSearchContext)?.open ?? false;
+}
 
 export function ChatSearch({ onOpen }: { onOpen: () => void }) {
   const { t } = useTranslation();
@@ -76,6 +81,10 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
     })),
   ];
   const input = useRef<HTMLInputElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open && popup.current) return fitVisualViewport(popup.current);
+  }, [open]);
   const results = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const show = (from: HTMLElement) => {
@@ -126,11 +135,19 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
         }}
       >
         <DialogPopup
+          ref={popup}
           placement="top"
           showCloseButton={false}
           className={styles.popup}
           initialFocus={input}
-          finalFocus={() => returnFocus.current}
+          finalFocus={() =>
+            returnFocus.current?.isConnected &&
+            !returnFocus.current.closest('[aria-hidden="true"], [inert]')
+              ? returnFocus.current
+              : document.querySelector<HTMLElement>(
+                  '[aria-controls="workbench-navigation"]',
+                )
+          }
           onKeyDown={(event) => {
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             const links = [
@@ -161,6 +178,15 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
               placeholder={t("Search chats…")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter opens the leading result, as the row hint shows.
+                if (event.key !== "Enter" || event.nativeEvent.isComposing)
+                  return;
+                const first = results.current?.querySelector<HTMLElement>("a");
+                if (!first) return;
+                event.preventDefault();
+                first.click();
+              }}
             />
             <Combobox
               items={projectOptions}
@@ -277,6 +303,7 @@ function SearchResults({
           aria-label={conversationTitle(row.thread, [], t("Untitled chat"))}
           onClick={close}
         >
+          <ChatCircle size={18} aria-hidden="true" />
           <span>
             <strong>
               {conversationTitle(row.thread, [], t("Untitled chat"))}

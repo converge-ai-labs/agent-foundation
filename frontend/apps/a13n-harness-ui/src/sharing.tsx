@@ -83,6 +83,7 @@ export function SharePanel({
   const { t } = useTranslation();
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={(value) => {
         if (!value) onClose();

@@ -90,3 +90,20 @@ it("changes language without closing the presence popover or translating partici
     await i18n.changeLanguage("en");
   }
 });
+
+it("uses a generic label for unnamed pages and deduplicates only repeated participant identities", async () => {
+  render(
+    <ParticipantAvatars
+      participants={[
+        participant("same-tab"),
+        participant("same-tab"),
+        participant("distinct-tab"),
+      ]}
+      threadTitle="   "
+    />,
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "People here (2)" }),
+  );
+  expect(await screen.findAllByRole("listitem")).toHaveLength(2);
+});

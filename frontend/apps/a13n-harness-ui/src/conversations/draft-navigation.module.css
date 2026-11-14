@@ -1,0 +1,19 @@
+.popup {
+  width: min(320px, var(--available-width));
+}
+.list {
+  max-height: min(320px, calc(var(--available-height, 100dvh) - 112px));
+  overscroll-behavior: contain;
+  scroll-padding: 4px;
+}
+.link {
+  min-height: 56px;
+  justify-content: center;
+  touch-action: manipulation;
+}
+.link:active {
+  background: var(--a13n-hover);
+}
+.link:focus-visible {
+  background: var(--a13n-selected);
+}

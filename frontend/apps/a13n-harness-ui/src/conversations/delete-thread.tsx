@@ -73,6 +73,7 @@ export function DeleteThread({
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       onOpenChange={(open) => {
         if (!open && !deletion.isPending) close();

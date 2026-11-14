@@ -9,23 +9,25 @@
 }
 .heading h2 {
   margin: 0 0 8px;
-  font-size: 16px;
+  font-size: calc(var(--a13n-text-body) * 16 / 14);
   font-weight: 500;
 }
 .heading p,
 .caption {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .reader {
+  flex: 1;
+  overscroll-behavior: contain;
   overflow: auto;
   min-height: 0;
   padding: 0 24px 24px;
 }
 .note {
-  padding: 20px 0;
+  padding: 16px 0;
   border-top: 1px solid var(--a13n-border-soft);
 }
 .noteHeading {
@@ -34,6 +36,8 @@
   gap: 8px;
 }
 .title {
+  min-height: 32px;
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -57,9 +61,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  margin: 6px 0 12px;
+  margin: 8px 0 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-body);
 }
 .preview {
   max-height: 9em;
@@ -68,7 +72,7 @@
 }
 .preview,
 .full {
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   overflow-wrap: anywhere;
 }
 .full {
@@ -76,12 +80,12 @@
 }
 .empty {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-body);
   line-height: 1.6;
 }
 .own {
   margin-top: 24px;
-  padding-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--a13n-border-soft);
 }
 .ownHeading {
@@ -93,13 +97,42 @@
 }
 .ownHeading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-body);
   font-weight: 500;
 }
 .ownHeading span {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-body);
 }
 .own .caption {
   margin-bottom: 16px;
+}
+
+.emptyState {
+  display: flex;
+  min-height: 160px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  color: var(--a13n-secondary);
+  text-align: center;
+  font-size: var(--a13n-text-body);
+}
+.emptyState p {
+  margin: 0;
+}
+@media (pointer: coarse) {
+  .title {
+    min-height: 44px;
+  }
+}
+@media (max-width: 600px) {
+  .heading {
+    padding: 16px;
+  }
+  .reader {
+    padding: 0 16px max(16px, env(safe-area-inset-bottom));
+  }
 }

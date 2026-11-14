@@ -74,8 +74,17 @@ export function ParticipantAvatars({
   threadTitle: string;
 }) {
   const { t } = useTranslation();
-  if (!participants.length) return null;
-  const count = participants.length;
+  const people = [
+    ...new Map(
+      participants.map((participant) => [
+        participant.participant_id,
+        participant,
+      ]),
+    ).values(),
+  ];
+  if (!people.length) return null;
+  const count = people.length;
+  const title = threadTitle.trim();
   return (
     <Popover>
       <PopoverTrigger
@@ -83,15 +92,19 @@ export function ParticipantAvatars({
         delay={150}
         render={<Button variant="ghost" size="sm" />}
         className={styles.trigger}
-        aria-label={t(
-          count === 1
-            ? "{{count}} person online in {{title}}"
-            : "{{count}} people online in {{title}}",
-          { count, title: threadTitle },
-        )}
+        aria-label={
+          title
+            ? t(
+                count === 1
+                  ? "{{count}} person online in {{title}}"
+                  : "{{count}} people online in {{title}}",
+                { count, title },
+              )
+            : `${t("People here")} (${count})`
+        }
       >
         <span className={styles.avatars}>
-          {participants.slice(0, 3).map((participant) => (
+          {people.slice(0, 3).map((participant) => (
             <ParticipantAvatar
               key={participant.participant_id}
               participant={participant}
@@ -113,7 +126,7 @@ export function ParticipantAvatars({
         </PopoverTitle>
         <ScrollArea autoHeight scrollbarGutter className={styles.peopleScroll}>
           <ul className={styles.people}>
-            {participants.map((participant) => (
+            {people.map((participant) => (
               <li key={participant.participant_id}>
                 <ParticipantAvatar participant={participant} />
                 <div className={styles.identity}>

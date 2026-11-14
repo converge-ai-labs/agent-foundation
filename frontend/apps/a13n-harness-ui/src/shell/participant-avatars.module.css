@@ -45,7 +45,7 @@
   box-shadow: none;
 }
 .popup {
-  width: 260px;
+  width: min(280px, var(--available-width));
 }
 .title {
   display: flex;
@@ -59,7 +59,8 @@
   font-variant-numeric: tabular-nums;
 }
 .peopleScroll {
-  max-height: 280px;
+  max-height: min(320px, calc(var(--available-height, 100dvh) - 72px));
+  overscroll-behavior: contain;
   margin-top: 16px;
 }
 .people {
@@ -73,6 +74,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 44px;
 }
 .people .avatar {
   width: 30px;

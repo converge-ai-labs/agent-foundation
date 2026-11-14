@@ -8,8 +8,15 @@ import {
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink } from "react-router";
-import { Button } from "a13n-ui";
-import { Robot, Pause, Play, Gear } from "@phosphor-icons/react";
+import {
+  Button,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  useMediaQuery,
+} from "a13n-ui";
+import { Robot, Pause, Play, Gear, DotsThree } from "@phosphor-icons/react";
 import { useTranslation } from "./i18n";
 import { ApiError, result, type Schema } from "./transport/client";
 import { useTransport } from "./transport/context";
@@ -241,8 +248,15 @@ export function BotComposerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function BotActions() {
+export function BotActions({
+  children,
+  trailingActions,
+}: {
+  children?: ReactNode;
+  trailingActions?: ReactNode;
+}) {
   const { t } = useTranslation();
+  const compact = useMediaQuery("(max-width: 760px)");
   const { client } = useTransport();
   const queries = useQueryClient();
   const { data } = useBot();
@@ -252,6 +266,40 @@ export function BotActions() {
       result(client.POST("/api/bot/pause", { body: { paused } })),
     onSuccess: (snapshot) => queries.setQueryData(["bot"], snapshot),
   });
+  if (compact)
+    return (
+      <>
+        <Menu>
+          <MenuTrigger
+            render={<Button variant="ghost" size="icon-sm" />}
+            aria-label={t("Chat actions")}
+            title={t("Chat actions")}
+          >
+            <DotsThree />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            {children}
+            <MenuItem render={<Link to="/settings#bot" />}>
+              <Gear />
+              {t("Bot settings")}
+            </MenuItem>
+            {data?.enabled && (
+              <MenuItem
+                disabled={!data.available || pause.isPending}
+                onClick={() => pause.mutate(!data.state.paused)}
+              >
+                {data.state.paused ? <Play /> : <Pause />}
+                {data.state.paused
+                  ? t("Resume automation")
+                  : t("Pause automation")}
+              </MenuItem>
+            )}
+            {trailingActions}
+          </MenuPopup>
+        </Menu>
+        <ErrorNotice error={pause.error} />
+      </>
+    );
   if (data && !data.enabled && !data.thread && !data.messages?.length)
     return null;
   return (

@@ -24,6 +24,7 @@ export function ConfirmAction({
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
+      bottomStickOnMobile
       trigger={trigger}
       open={open}
       onOpenChange={(nextOpen, details) => {

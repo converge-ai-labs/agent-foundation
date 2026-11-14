@@ -24,6 +24,7 @@ import { readDocument } from "./configuration/documents";
 import { DebugProvider } from "./shell/debug";
 import { recordAudio } from "./conversations/dictation-audio";
 import conversationStyles from "./conversations/conversation.module.css";
+import { MenuItem } from "a13n-ui";
 
 vi.mock("./conversations/dictation-audio", () => ({
   recordAudio: vi.fn(),
@@ -837,7 +838,9 @@ it("freezes all setup fields and retains the save across navigation while public
   fireEvent.click(screen.getByText("Leave"));
   fireEvent.click(screen.getByText("Return"));
   expect(
-    screen.getByRole("button", { name: "Saving…" }).hasAttribute("disabled"),
+    screen
+      .getByRole("button", { name: "Turn on Bot" })
+      .hasAttribute("disabled"),
   ).toBe(true);
   expect(
     (
@@ -1597,4 +1600,44 @@ it("retains readable Bot publications when native detail is temporarily missing"
   await screen.findByText("Chat not found");
   expect(screen.queryByText("Loading messages…")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
+});
+
+it("consolidates narrow Bot header actions into one menu in desktop order", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(max-width: 760px)",
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  snapshot = { ...snapshot, enabled: true, available: true };
+  queries.setQueryData(["bot"], snapshot);
+  const supporting = vi.fn();
+  render(
+    <TransportContext value={transport}>
+      <QueryClientProvider client={queries}>
+        <MemoryRouter>
+          <BotActions
+            trailingActions={
+              <MenuItem onClick={supporting}>Open supporting panel</MenuItem>
+            }
+          >
+            <MenuItem>Work notes</MenuItem>
+          </BotActions>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </TransportContext>,
+  );
+  expect(screen.getAllByRole("button")).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+  expect(
+    (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+  ).toEqual([
+    "Work notes",
+    "Bot settings",
+    "Pause automation",
+    "Open supporting panel",
+  ]);
+  await userEvent.click(
+    screen.getByRole("menuitem", { name: "Open supporting panel" }),
+  );
+  expect(supporting).toHaveBeenCalledOnce();
 });

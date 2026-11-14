@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Button, Skeleton } from "a13n-ui";
-import { ArrowUpRight } from "@phosphor-icons/react";
+import { ArrowUpRight, Notebook } from "@phosphor-icons/react";
 import { useTranslation } from "./i18n";
 import { useProjects, useTransport } from "./transport/context";
 import { result, type Schema } from "./transport/client";
@@ -49,7 +49,10 @@ function WorkNote({ note }: { note: Schema<"BotNoteSummary"> }) {
           {new Date(note.updated_at).toLocaleString()}
         </time>
       </div>
-      <div className={expanded ? styles.full : styles.preview}>
+      <div
+        className={expanded ? styles.full : styles.preview}
+        aria-busy={expanded && full.isFetching}
+      >
         <MessageText
           text={
             expanded && full.data ? (full.data.content ?? "") : note.summary
@@ -99,7 +102,10 @@ export function BotWorkNotes() {
         <ErrorNotice error={notes.error} retry={() => void notes.refetch()} />
         {notes.isPending && <Skeleton className="h-16 w-full" />}
         {!notes.isPending && !notes.isError && !rows.length && (
-          <p className={styles.empty}>{t("No work needs follow-up yet.")}</p>
+          <div className={styles.emptyState}>
+            <Notebook size={28} aria-hidden="true" />
+            <p>{t("No work needs follow-up yet.")}</p>
+          </div>
         )}
         {rows.map((note) => (
           <WorkNote key={note.thread_id} note={note} />
@@ -107,7 +113,7 @@ export function BotWorkNotes() {
         {notes.hasNextPage && (
           <Button
             variant="ghost"
-            disabled={notes.isFetchingNextPage}
+            loading={notes.isFetchingNextPage}
             onClick={() => void notes.fetchNextPage()}
           >
             {t("Show more")}

@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Skeleton } from "a13n-ui";
 import { useTranslation } from "./i18n";
 import { useSelectors, useTransport } from "./transport/context";
 import {
@@ -169,6 +169,17 @@ export function BotSetup() {
           "Keeps track of ongoing work across your chats and checks in on a schedule.",
         )}
       />
+      {root.isPending && (
+        <div
+          className={styles.setupLoading}
+          role="status"
+          aria-label={t("Loading…")}
+        >
+          <Skeleton className="h-8 w-48 max-w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      )}
       {root.data?.content && (
         <fieldset
           className={styles.setupFields}
@@ -204,15 +215,16 @@ export function BotSetup() {
               )}
         </p>
         {uncertain ? (
-          <Button disabled={check.isPending} onClick={() => check.mutate()}>
+          <Button loading={check.isPending} onClick={() => check.mutate()}>
             {t("Check again")}
           </Button>
         ) : (
           <Button
-            disabled={!root.data?.writable || !canEnable || enable.isPending}
+            disabled={!root.data?.writable || !canEnable}
+            loading={enable.isPending}
             onClick={() => enable.mutate()}
           >
-            {enable.isPending ? t("Saving…") : t("Turn on Bot")}
+            {t("Turn on Bot")}
           </Button>
         )}
       </div>

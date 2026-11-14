@@ -67,3 +67,16 @@
     flex-direction: column;
   }
 }
+
+.setupLoading {
+  display: grid;
+  gap: 16px;
+  min-height: 288px;
+}
+.offBar strong {
+  font-weight: 500;
+  font-size: var(--a13n-text-body);
+}
+.offBar p {
+  margin-top: 4px;
+}

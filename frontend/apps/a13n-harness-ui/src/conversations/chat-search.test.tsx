@@ -9,14 +9,27 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChatSearch, ChatSearchProvider } from "./chat-search";
+import { useState } from "react";
+import { MemoryRouter, useLocation } from "react-router";
+import { MobileNavigation } from "../shell/sidebar";
 
 vi.mock("../transport/context", () => ({
   useProjects: () => ({ data: [] }),
 }));
+const searchRows = vi.hoisted(
+  () => [] as { thread: { thread_id: string; title: string } }[],
+);
 vi.mock("./queries", () => ({
-  useThreads: () => ({ data: { pages: [] }, isSuccess: true }),
+  useThreads: () => ({
+    data: { pages: [{ rows: searchRows }] },
+    isSuccess: true,
+  }),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  searchRows.length = 0;
+});
 
 function fixture() {
   const opened = vi.fn();
@@ -116,4 +129,69 @@ it("uses Command+F on Apple platforms", async () => {
   } finally {
     platform.mockRestore();
   }
+});
+
+it("opens the leading result with Enter from the query", async () => {
+  searchRows.push(
+    { thread: { thread_id: "thread_first", title: "First match" } },
+    { thread: { thread_id: "thread_second", title: "Second match" } },
+  );
+  function Location() {
+    return <output aria-label="Location">{useLocation().pathname}</output>;
+  }
+  render(
+    <MemoryRouter>
+      <ChatSearchProvider>
+        <ChatSearch onOpen={() => {}} />
+        <Location />
+      </ChatSearchProvider>
+    </MemoryRouter>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Search chats" }));
+  const input = await screen.findByRole("searchbox", { name: "Find chats" });
+  await userEvent.type(input, "match");
+  await screen.findByRole("link", { name: "First match" });
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("status", { name: "Location" }).textContent).toBe(
+    "/threads/thread_first",
+  );
+});
+
+it("replaces mobile navigation with search without restoring drawer focus over the input", async () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  function Navigation() {
+    const [open, setOpen] = useState(true);
+    return (
+      <MobileNavigation
+        open={open}
+        onOpenChange={setOpen}
+        finalFocus={() => null}
+      >
+        <ChatSearch onOpen={() => {}} />
+      </MobileNavigation>
+    );
+  }
+  render(
+    <ChatSearchProvider>
+      <Navigation />
+    </ChatSearchProvider>,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Search chats" }),
+  );
+  const input = await screen.findByRole("searchbox", { name: "Find chats" });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Close navigation" }),
+    ).toBeNull(),
+  );
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

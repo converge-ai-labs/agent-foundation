@@ -74,6 +74,7 @@ export function NewProject({
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       title={t("Add project")}
       closeLabel={t("Close")}
@@ -88,7 +89,13 @@ export function NewProject({
           if (name.trim() && validRoots && !save.isPending) save.mutate();
         }}
       >
-        <TextField label={t("Project name")} value={name} onChange={setName} />
+        <TextField
+          label={t("Project name")}
+          value={name}
+          onChange={setName}
+          autoFocus
+          disabled={save.isPending}
+        />
         <EnvironmentsEditor
           requireWorkspace
           value={environments}

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -66,6 +67,7 @@ afterEach(() => {
   queries.clear();
   newDrafts.dispose();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 function Location() {
   const location = useLocation();
@@ -559,4 +561,36 @@ it("marks unread without navigation, waits for confirmation, and keeps failure e
   );
   await screen.findByText("Reading state unavailable");
   expect(results.isUnread("thread-one")).toBe(true);
+});
+
+it("opens the row menu on context-click without navigating", async () => {
+  mount({ selected: false });
+  fireEvent.contextMenu(screen.getByRole("link", { name: "Example" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "Rename chat" }),
+  ).toBeTruthy();
+  expect(screen.getByLabelText("Location").textContent).toBe("/settings");
+});
+
+it("opens the touch menu after a stationary long press and suppresses release navigation", () => {
+  vi.useFakeTimers();
+  mount({ selected: false });
+  const link = screen.getByRole("link", { name: "Example" });
+  const pointer = new MouseEvent("pointerdown", {
+    bubbles: true,
+    clientX: 60,
+    clientY: 100,
+  });
+  Object.defineProperties(pointer, {
+    pointerType: { value: "touch" },
+    isPrimary: { value: true },
+  });
+  fireEvent(link, pointer);
+  act(() => vi.advanceTimersByTime(499));
+  expect(screen.queryByRole("menu")).toBeNull();
+  act(() => vi.advanceTimersByTime(1));
+  expect(screen.getByRole("menuitem", { name: "Rename chat" })).toBeTruthy();
+  fireEvent.pointerUp(link);
+  fireEvent.click(link);
+  expect(screen.getByLabelText("Location").textContent).toBe("/settings");
 });

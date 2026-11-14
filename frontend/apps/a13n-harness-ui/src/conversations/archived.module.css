@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 680px;
+  max-width: var(--harness-reading-width);
   margin-inline: auto;
 }
 .page > button {
@@ -11,16 +11,14 @@
 }
 .rows {
   display: grid;
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  overflow: hidden;
+  min-width: 0;
 }
 .rows:empty {
   display: none;
 }
 .row {
   min-width: 0;
-  padding: 8px;
+  padding: 8px 0;
 }
 .row + .row {
   border-top: 1px solid var(--a13n-border-soft);
@@ -39,6 +37,15 @@
   padding: 48px 16px;
   text-align: center;
   color: var(--a13n-secondary);
+}
+.empty p {
+  margin: 0;
+  max-width: 360px;
+  line-height: 1.6;
+}
+.skeletons {
+  display: grid;
+  gap: 8px;
 }
 .empty h2 {
   margin: 0;

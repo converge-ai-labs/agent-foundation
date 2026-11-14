@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   Button,
+  Skeleton,
   SearchPicker,
   Tabs,
   TabsList,
@@ -92,6 +93,7 @@ export function MemoryPage(props: {
   if (!enabled)
     return (
       <div className={styles.empty}>
+        <Brain size={28} aria-hidden="true" />
         <h2>{t("Memory is disabled")}</h2>
         <p>
           {t(
@@ -166,14 +168,15 @@ export function MemoryPage(props: {
             threadId={thread.thread_id}
             {...props}
           />
-        ) : (
+        ) : !history.error ? (
           <div className={styles.empty}>
-            <h2>
+            <Brain size={28} aria-hidden="true" />
+            <h2 role={history.isPending ? "status" : undefined}>
               {t(history.isPending ? "Loading history…" : "No updates yet")}
             </h2>
             <p>{t("Automatic memory updates appear here.")}</p>
           </div>
-        )}
+        ) : null}
       </TabsPanel>
     </Tabs>
   );
@@ -220,9 +223,14 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
         }}
       />
       {files.isPending && (
-        <p role="status" className={styles.loading}>
-          {t("Loading memory\u2026")}
-        </p>
+        <div
+          role="status"
+          aria-label={t("Loading memory\u2026")}
+          className={styles.skeletons}
+        >
+          <Skeleton className="h-8 w-64 max-w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
       )}
       {files.data?.length === 0 && (
         <div className={styles.empty}>
@@ -259,9 +267,14 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
         </div>
       )}
       {file.isFetching && !file.data && path && (
-        <p role="status" className={styles.loading}>
-          {t("Loading file\u2026")}
-        </p>
+        <div
+          role="status"
+          aria-label={t("Loading file\u2026")}
+          className={styles.skeletons}
+        >
+          <Skeleton className="h-8 w-48 max-w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
       )}
       {file.data && (
         <div className={`${styles.file} a13n-scrollbar`}>

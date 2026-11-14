@@ -1,6 +1,8 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
-import { Button } from "a13n-ui";
+import { Button, Skeleton } from "a13n-ui";
+import { Archive } from "@phosphor-icons/react";
+import { Link } from "react-router";
 import { PageHeader, ErrorNotice, SearchField } from "../shell/ui";
 import { useThreads } from "./queries";
 import { ThreadRow } from "./thread-row";
@@ -33,9 +35,20 @@ export function ArchivedPage() {
         onChange={setQuery}
       />
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
-      {list.isPending && <p role="status">{t("Loading archived chats…")}</p>}
+      {list.isPending && (
+        <div
+          className={styles.skeletons}
+          role="status"
+          aria-label={t("Loading archived chats…")}
+        >
+          {[0, 1, 2].map((key) => (
+            <Skeleton key={key} className="h-16 w-full" />
+          ))}
+        </div>
+      )}
       {list.isSuccess && !rows.length && (
         <div className={styles.empty}>
+          <Archive size={28} aria-hidden="true" />
           <h2>
             {query.trim() ? t("No matching chats") : t("No archived chats")}
           </h2>
@@ -46,6 +59,15 @@ export function ArchivedPage() {
                   "Use a chat's menu to archive it without deleting its history.",
                 )}
           </p>
+          {query.trim() ? (
+            <Button variant="outline" onClick={() => setQuery("")}>
+              {t("Clear")}
+            </Button>
+          ) : (
+            <Button variant="outline" render={<Link to="/" />}>
+              {t("New chat")}
+            </Button>
+          )}
         </div>
       )}
       <div className={styles.rows}>

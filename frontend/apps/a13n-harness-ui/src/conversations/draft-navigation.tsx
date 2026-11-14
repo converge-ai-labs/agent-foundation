@@ -13,6 +13,7 @@ import { ErrorNotice } from "../shell/ui";
 import { conversationTitle } from "./local-input";
 import { useUnsent } from "./unsent";
 import styles from "./conversation.module.css";
+import draftStyles from "./draft-navigation.module.css";
 
 export function DraftNavigation() {
   const { t } = useTranslation();
@@ -50,7 +51,7 @@ export function DraftNavigation() {
       </PopoverTrigger>
       <PopoverPopup
         align="start"
-        className={styles.draftsPopup}
+        className={`${styles.draftsPopup} ${draftStyles.popup}`}
         finalFocus={() => !openingDraft.current}
       >
         <PopoverTitle className={styles.draftsTitle}>
@@ -61,7 +62,9 @@ export function DraftNavigation() {
         </PopoverDescription>
         <ErrorNotice error={error} retry={retry} />
         {rows.length > 0 ? (
-          <ul className={`${styles.draftsList} a13n-scrollbar`}>
+          <ul
+            className={`${styles.draftsList} ${draftStyles.list} a13n-scrollbar`}
+          >
             {rows.map((row) => {
               const path = `/threads/${encodeURIComponent(row.thread.thread_id)}`;
               const title = conversationTitle(
@@ -73,7 +76,7 @@ export function DraftNavigation() {
                 <li key={row.thread.thread_id}>
                   <Link
                     to={`${path}?compose=1`}
-                    className={styles.draftShortcut}
+                    className={`${styles.draftShortcut} ${draftStyles.link}`}
                     onClick={(event) => {
                       if (
                         event.metaKey ||

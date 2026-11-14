@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "../i18n";
-import { useContext, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -92,6 +92,18 @@ export function ThreadRow({
   const { t } = useTranslation();
   const drag = useContext(NavigationDragContext);
   const rowElement = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const press = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const cancelPress = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  useEffect(() => cancelPress, []);
   const sortable =
     !!drag &&
     !row.thread.archived &&
@@ -214,6 +226,59 @@ export function ThreadRow({
         ref={rowElement}
         key={row.thread.thread_id}
         className={styles.threadRow}
+        data-menu-open={menuOpen || undefined}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          cancelPress();
+          setMenuOpen(true);
+        }}
+        onPointerDown={(event) => {
+          if (
+            event.pointerType !== "touch" ||
+            !event.isPrimary ||
+            (event.target as HTMLElement).closest("button")
+          )
+            return;
+          cancelPress();
+          suppressClick.current = false;
+          press.current = {
+            x: event.clientX,
+            y: event.clientY,
+            timer: setTimeout(() => {
+              suppressClick.current = true;
+              press.current = null;
+              setMenuOpen(true);
+            }, 500),
+          };
+        }}
+        onPointerMove={(event) => {
+          if (
+            press.current &&
+            Math.hypot(
+              event.clientX - press.current.x,
+              event.clientY - press.current.y,
+            ) > 8
+          )
+            cancelPress();
+        }}
+        onPointerUp={() => {
+          cancelPress();
+          // Suppress the release click, not a later deliberate menu action.
+          setTimeout(() => {
+            suppressClick.current = false;
+          }, 0);
+        }}
+        onPointerCancel={() => {
+          cancelPress();
+          suppressClick.current = false;
+        }}
+        onPointerLeave={cancelPress}
+        onClickCapture={(event) => {
+          if (!suppressClick.current) return;
+          suppressClick.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
         data-nav-thread={sortable ? row.thread.thread_id : undefined}
         data-nav-source={drag?.moving === row.thread.thread_id || undefined}
       >
@@ -351,7 +416,7 @@ export function ThreadRow({
             <Star size={12} weight="fill" aria-hidden="true" />
           </span>
         )}
-        <Menu>
+        <Menu open={menuOpen} onOpenChange={setMenuOpen}>
           <MenuTrigger
             render={
               <Button ref={actionsButton} variant="ghost" size="icon-sm" />
