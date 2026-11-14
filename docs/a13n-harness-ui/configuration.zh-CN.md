@@ -231,7 +231,7 @@ background_compaction:
 
 记忆默认开启。在选中 YAML 旁，`memory/global/` 保存跨 Project 事实，`memory/projects/<project-id>/` 保存 Project 事实。无 Project 对话只使用全局记忆。`MEMORY.md` 保持短索引，详细主题分文件保存。记忆是历史上下文，与对话历史和 Full Control 权限分开。
 
-在 **Settings → General → Memory** 选择整理 Model 和指令，或合并：
+在 **Settings → Memory** 选择整理 Model 和指令，或合并：
 
 ```yaml title="a13n-harness-ui.yaml — memory organization"
 memory:
@@ -259,7 +259,7 @@ WebUI 输入可触发已变化记忆的整理。每个范围有只读 Memory Thr
 
 ### 听写
 
-在**设置 → 通用 → 听写 → 语音输入**中选择 **Codex 订阅**，再选择原生账号或订阅组。预设语音服务和 Luna 文本校正无需 Model 资源。高级设置提供校正模型和上下文预算。录音及文本插入流程见[语音输入](webui.md#voice-input)。
+在**设置 → 聊天 → 听写 → 语音输入**中选择 **Codex 订阅**，再选择原生账号或订阅组。预设语音服务和 Luna 文本校正无需 Model 资源。高级设置提供校正模型和上下文预算。录音及文本插入流程见[语音输入](webui.md#voice-input)。
 
 ```yaml
 dictation:
@@ -344,17 +344,17 @@ webui:
 
 ### WebUI Bot
 
-**设置 → 常规 → Bot** 为内置个人助手选择 Agent、Model，并按需添加自定义指令。`webui.bot.agent` 默认为 `null`，沿用全局默认 Agent。Bot 继承该 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用所选 Agent 的 Model，也可显式覆盖。`webui.bot` 下独立的 `files_enabled`、`shell_enabled`、`computer_enabled` 默认为 `null`（跟随 Agent）；显式 `true` 或 `false` 可覆盖 Bot 对应的访问开关，工具白名单和 Environment 限制仍然生效。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
+**设置 → Bot** 为内置个人助手选择 Agent、Model，并按需添加自定义指令。`webui.bot.agent` 默认为 `null`，沿用全局默认 Agent。Bot 继承该 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用所选 Agent 的 Model，也可显式覆盖。`webui.bot` 下独立的 `files_enabled`、`shell_enabled`、`computer_enabled` 默认为 `null`（跟随 Agent）；显式 `true` 或 `false` 可覆盖 Bot 对应的访问开关，工具白名单和 Environment 限制仍然生效。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
 
 `webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。首次开启且 Model 可用时，服务器通过正常模型请求代发一条可见的预设用户消息，介绍工作区；已有活动或引导尝试会阻止重复发送。打开页面不会启动工作。开启后还会独立安排一个间隔后的首次 Heartbeat。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
 
 ### WebUI 子智能体
 
-在 **Settings → General → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
+在 **Settings → Agents → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
 
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
+**Settings → Agents → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:

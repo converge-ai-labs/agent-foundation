@@ -9,10 +9,10 @@ Live 模式让你在切换 WebUI 页面时通过语音与 Harness UI 交谈。�
 
 开始前，先配置并登录一个 [Codex subscription Model](models-and-authentication.md)。使用支持麦克风采集和 WebRTC 的浏览器，通过 HTTPS 或 localhost 打开 WebUI。语音还要求账户和网络能够访问 Codex Live。
 
-1. 打开 **Settings → General → Live**。
+1. 打开 **Settings → Chats → Live**。
 2. 启用 Live，选择已有的 Codex subscription Model。
 3. 首次测试保留默认音色 `cove`。选择是否允许 Live 执行器使用文件工具，然后保存。
-4. 打开侧栏底部的工作区菜单，选择 **Live**。
+4. 在同一分组选择 **Open Live**。
 5. 点击 **Start voice**，允许麦克风访问，等待 **Connected**。
 6. 说一个简短请求，例如“告诉我你能协助协调哪些任务”。检查 **You**、**Assistant** 字幕及语音回复。
 7. 点击顶部的 **Stop** 或 Live 页面的 **Stop voice**，确认麦克风指示消失。

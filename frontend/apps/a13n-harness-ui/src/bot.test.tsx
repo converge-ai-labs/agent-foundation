@@ -711,7 +711,7 @@ it("keeps used off Bot history read-only with settings recovery and no Notes man
   expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
   expect(
     screen.getByRole("link", { name: "Bot settings" }).getAttribute("href"),
-  ).toBe("/settings#bot");
+  ).toBe("/settings/bot");
   expect(screen.queryByText("Registered work")).toBeNull();
 });
 
@@ -903,7 +903,7 @@ it("offers Settings recovery and keeps busy chat available without queue warning
   );
   expect(
     screen.getByRole("link", { name: "Bot settings" }).getAttribute("href"),
-  ).toBe("/settings#bot");
+  ).toBe("/settings/bot");
   snapshot = {
     ...snapshot,
     available: true,

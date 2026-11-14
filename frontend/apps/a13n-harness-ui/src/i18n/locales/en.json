@@ -3541,5 +3541,13 @@
   "Generate title": "Generate title",
   "Chat titles": "Chat titles",
   "Title generation model": "Title generation model",
-  "Current chat model": "Current chat model"
+  "Current chat model": "Current chat model",
+  "About": "About",
+  "Diagnostics": "Diagnostics",
+  "Open Live": "Open Live",
+  "Open memory": "Open memory",
+  "Preferences": "Preferences",
+  "View archived chats": "View archived chats",
+  "New chats": "New chats",
+  "Language": "Language"
 }

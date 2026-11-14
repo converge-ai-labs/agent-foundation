@@ -9,10 +9,10 @@ Live Mode lets you speak to Harness UI while moving between WebUI pages. Voice a
 
 Before starting, configure and sign in to a [Codex subscription Model](models-and-authentication.md). Open WebUI over HTTPS or localhost in a browser with microphone capture and WebRTC support. Voice also requires account and network access to Codex Live.
 
-1. Open **Settings → General → Live**.
+1. Open **Settings → Chats → Live**.
 2. Enable Live and select your existing Codex subscription Model.
 3. Choose a voice. Keep the default `cove` for the first test. Choose whether the Live executor may use file tools, then save.
-4. Open the workspace menu at the bottom of the sidebar and select **Live**.
+4. Select **Open Live** in the same section.
 5. Press **Start voice** and allow microphone access. Wait for **Connected**.
 6. Say a short request, such as “Tell me what tasks you can help coordinate.” Check the **You** and **Assistant** captions and the spoken response.
 7. Press **Stop** in the header or **Stop voice** on the Live page. Confirm that the microphone indicator clears.
@@ -67,7 +67,7 @@ The browser sends audio directly to OpenAI. Subscription credentials stay on the
 
 | Problem                                   | What to do                                                             |
 | ----------------------------------------- | ---------------------------------------------------------------------- |
-| No Live link or Start control             | Enable Live in General settings and save.                              |
+| No Live link or Start control             | Enable Live in Chat settings and save.                                 |
 | Microphone cannot start                   | Check browser permission, HTTPS or localhost, and capture support.     |
 | Another browser owns voice                | Stop that call before starting here.                                   |
 | Provider or network connection fails      | Read the error, correct access or connectivity, then start a new call. |

@@ -78,7 +78,7 @@ a13n-harness-ui config validate
 
 `config path` locates the selected configuration and data paths. The root YAML holds defaults; sibling `models/` and `agents/` directories hold the Model and Agent resources. `config validate` checks the files and references. It does not send a model request, so keep the response test above as a separate check.
 
-Setup seeds [WebUI Sidekick](configuration.md#webui-sidekick) defaults with `webui.sidekick: {}` for new configurations. Sidekick is always available in WebUI; configure its Agent/Model defaults in **Settings → General**. Existing selections are preserved. Legacy null uses inherited defaults, and saving preferences starts no work.
+Setup seeds [WebUI Sidekick](configuration.md#webui-sidekick) defaults with `webui.sidekick: {}` for new configurations. Sidekick is always available in WebUI; configure its Agent/Model defaults in **Settings → Agents → Sidekick**. Existing selections are preserved. Legacy null uses inherited defaults, and saving preferences starts no work.
 
 ## Add another connection or Agent
 

@@ -28,14 +28,20 @@ import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
 
+export type RootSettingsGroup = "chats" | "agents" | "bot" | "memory";
+
 export function ResourceFields({
   source,
   onChange,
   connectionsOnly = false,
+  group,
+  liveAvailable,
   onReady,
 }: {
   onReady?: (ready: boolean) => void;
   connectionsOnly?: boolean;
+  group?: RootSettingsGroup;
+  liveAvailable?: boolean;
   source: string;
   onChange: (value: string) => void;
 }) {
@@ -399,351 +405,396 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
-            <SettingsSection variant="grouped" title={t("Chats")}>
-              {scalar(t("Default agent"), ["defaults", "agent"], agentOptions)}
-            </SettingsSection>
-            <SettingsSection
-              title={
-                <span className="flex items-center gap-1">
-                  {t("Sidekick")}
-                  <HelpTip label={t("About Sidekick")}>
-                    {t(
-                      "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
-                    )}
-                  </HelpTip>
-                </span>
-              }
-            >
-              {scalar(
-                t("Sidekick agent"),
-                ["webui", "sidekick", "agent"],
-                agentOptions,
-                t("Use current agent"),
-              )}
-              {scalar(
-                t("Sidekick model"),
-                ["webui", "sidekick", "model"],
-                models,
-                t("Use agent model"),
-              )}
-            </SettingsSection>
-            <SettingsSection
-              title={
-                <span className="flex items-center gap-1">
-                  {t("Subagents")}
-                  <HelpTip label={t("About subagents")}>
-                    {t(
-                      "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.",
-                    )}
-                  </HelpTip>
-                </span>
-              }
-            >
-              <SettingsRow
-                label={t("Let the agent create subagents")}
-                controlId="dynamic-subagents-enabled"
-              >
-                <Switch
-                  id="dynamic-subagents-enabled"
-                  checked={get(["subagents", "dynamic", "enabled"]) === true}
-                  onCheckedChange={(enabled) =>
-                    set(
-                      ["subagents", "dynamic", "enabled"],
-                      enabled || undefined,
-                    )
-                  }
-                />
-              </SettingsRow>
-              {get(["subagents", "dynamic", "enabled"]) === true && (
-                <>
-                  <ModelSelectionField
-                    label={t("Models for created subagents")}
-                    description={t(
-                      "The agent can choose from these. Choose at least one.",
-                    )}
-                    models={selectors.data?.models ?? []}
-                    value={allowedModels}
-                    onChange={(value) => {
-                      let updated = updateDocument(
-                        source,
-                        ["subagents", "dynamic", "allowed_models"],
-                        value,
-                      );
-                      // The default must stay one of the allowed models.
-                      const fallback = text(defaultModelPath);
-                      if (fallback && !value?.includes(fallback))
-                        updated = updateDocument(
-                          updated,
-                          defaultModelPath,
-                          undefined,
-                        );
-                      onChange(updated);
-                    }}
-                  />
-                  {allowedModels.length > 0 && (
-                    <ResourceChoice
-                      label={t("Default model")}
-                      description={t(
-                        "Used when the agent does not choose a model.",
-                      )}
-                      value={text(defaultModelPath)}
-                      placeholder={t("Choose a model")}
-                      loading={selectors.isPending || sources.isPending}
-                      onValueChange={(value) => set(defaultModelPath, value)}
-                      options={models.filter((model) =>
-                        allowedModels.includes(model.value),
-                      )}
-                    />
+            {(!group || group === "chats") && (
+              <>
+                <SettingsSection variant="grouped" title={t("New chats")}>
+                  {scalar(
+                    t("Default agent"),
+                    ["defaults", "agent"],
+                    agentOptions,
                   )}
-                </>
-              )}
-              <SettingsRow
-                label={t("Maximum running subagents")}
-                controlId="subagents-max-concurrent"
-                description={t("Shared by all subagents of one chat.")}
-              >
-                <Input
-                  id="subagents-max-concurrent"
-                  type="number"
-                  min={1}
-                  step={1}
-                  className={styles.settingControl}
-                  value={Number(get(["subagents", "max_concurrent"]) ?? 8)}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isInteger(value) && value > 0)
-                      set(
-                        ["subagents", "max_concurrent"],
-                        value === 8 ? undefined : value,
-                      );
-                  }}
-                />
-              </SettingsRow>
-            </SettingsSection>
-            <SettingsSection variant="grouped" title={t("Chat titles")}>
-              <ResourceChoice
-                label={t("Title generation model")}
-                value={text(["chat_title_model"])}
-                options={[
-                  { value: "", label: t("Current chat model") },
-                  ...models,
-                ]}
-                onValueChange={(value) =>
-                  set(["chat_title_model"], value || undefined)
-                }
-              />
-            </SettingsSection>
-            <DictationFields source={source} onChange={onChange} />
-            <SettingsSection variant="grouped" title={t("Memory")}>
-              <SettingsRow
-                label={t("File memory")}
-                controlId="memory-enabled"
-                stackOnNarrow={false}
-                description={t(
-                  "Remember preferences and keep knowledge for each project.",
+
+                  <ResourceChoice
+                    label={t("Title generation model")}
+                    value={text(["chat_title_model"])}
+                    options={[
+                      { value: "", label: t("Current chat model") },
+                      ...models,
+                    ]}
+                    onValueChange={(value) =>
+                      set(["chat_title_model"], value || undefined)
+                    }
+                  />
+                </SettingsSection>
+                <DictationFields source={source} onChange={onChange} />
+                {group === "chats" && (
+                  <SettingsSection title={t("Archived chats")}>
+                    <Link to="/archived">{t("View archived chats")}</Link>
+                  </SettingsSection>
                 )}
-              >
-                <Switch
-                  id="memory-enabled"
-                  checked={get(["memory", "enabled"]) !== false}
-                  onCheckedChange={(enabled) =>
-                    set(["memory", "enabled"], enabled)
-                  }
-                />
-              </SettingsRow>
-              {get(["memory", "enabled"]) !== false && (
-                <>
-                  <SettingsRow
-                    label={t("Automatic organization")}
-                    controlId="memory-organization-enabled"
-                    stackOnNarrow={false}
-                    description={t(
-                      "Use extra model requests to keep memory files organized.",
+                <section id="live">
+                  <SettingsSection variant="grouped" title={t("Live voice")}>
+                    <SettingsRow
+                      label={t("Live")}
+                      controlId="live-enabled"
+                      stackOnNarrow={false}
+                      description={t(
+                        "Talk to your agent using your Codex subscription.",
+                      )}
+                    >
+                      <Switch
+                        id="live-enabled"
+                        checked={get(["live", "enabled"]) === true}
+                        onCheckedChange={(enabled) =>
+                          set(["live", "enabled"], enabled)
+                        }
+                      />
+                    </SettingsRow>
+                    {get(["live", "enabled"]) === true && (
+                      <>
+                        {group === "chats" && liveAvailable && (
+                          <Link to="/live">{t("Open Live")}</Link>
+                        )}
+                        <details
+                          className={layout.groupDisclosure}
+                          open={location.hash === "#live" || undefined}
+                        >
+                          <summary>{t("Voice settings")}</summary>
+                          <div>
+                            <ResourceChoice
+                              label={t("Codex model")}
+                              value={text(["live", "model"])}
+                              loading={selectors.isPending || sources.isPending}
+                              onValueChange={(value) =>
+                                set(["live", "model"], value || undefined)
+                              }
+                              options={[
+                                {
+                                  value: "",
+                                  label: codexModels.length
+                                    ? t("Choose a Codex model")
+                                    : t("Not configured"),
+                                },
+                                ...codexModels,
+                              ]}
+                              description={
+                                !selectors.isPending && !codexModels.length ? (
+                                  <>
+                                    {t("Add a Codex subscription model in")}{" "}
+                                    <Link
+                                      className="underline underline-offset-2"
+                                      to="/settings/models"
+                                    >
+                                      {t("Models")}
+                                    </Link>{" "}
+                                    {t("to use live voice.")}
+                                  </>
+                                ) : undefined
+                              }
+                            />
+                            <SettingsRow label={t("Voice")}>
+                              <ChoiceField
+                                label={t("Voice")}
+                                hideLabel
+                                value={text(["live", "voice"]) || "cove"}
+                                options={[
+                                  "cove",
+                                  "juniper",
+                                  "maple",
+                                  "spruce",
+                                  "ember",
+                                  "vale",
+                                  "breeze",
+                                  "arbor",
+                                  "sol",
+                                  "aube",
+                                  "bubbie",
+                                  "haetsal",
+                                  "hanul",
+                                  "himari",
+                                  "leher",
+                                  "miko",
+                                  "neer",
+                                  "porto",
+                                  "rindo",
+                                  "rio",
+                                  "rivage",
+                                  "selva",
+                                  "sonna",
+                                  "tinta",
+                                  "viola",
+                                ].map((value) => ({
+                                  value,
+                                  label:
+                                    value[0]!.toUpperCase() + value.slice(1),
+                                }))}
+                                onValueChange={(value) =>
+                                  set(["live", "voice"], value)
+                                }
+                              />
+                            </SettingsRow>
+                            <SettingsRow
+                              label={t("Workspace files")}
+                              description={t(
+                                "Let Live read and edit files in its workspace.",
+                              )}
+                            >
+                              <ChoiceField
+                                label={t("Live file access")}
+                                hideLabel
+                                value={
+                                  get(["live", "files_enabled"]) === false
+                                    ? "disabled"
+                                    : "enabled"
+                                }
+                                options={[
+                                  { value: "enabled", label: t("Enabled") },
+                                  { value: "disabled", label: t("Disabled") },
+                                ]}
+                                onValueChange={(value) =>
+                                  set(
+                                    ["live", "files_enabled"],
+                                    value === "enabled",
+                                  )
+                                }
+                              />
+                            </SettingsRow>
+                            <div className={styles.fieldGroup}>
+                              <FormField label={t("Live instructions")}>
+                                <Textarea
+                                  variant="soft"
+                                  value={text(["live", "instructions"])}
+                                  onChange={(event) =>
+                                    set(
+                                      ["live", "instructions"],
+                                      event.target.value,
+                                    )
+                                  }
+                                  rows={3}
+                                />
+                              </FormField>
+                            </div>
+                          </div>
+                        </details>
+                      </>
                     )}
+                  </SettingsSection>
+                </section>
+              </>
+            )}
+            {(!group || group === "agents") && (
+              <>
+                <SettingsSection
+                  title={
+                    <span className="flex items-center gap-1">
+                      {t("Sidekick")}
+                      <HelpTip label={t("About Sidekick")}>
+                        {t(
+                          "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
+                        )}
+                      </HelpTip>
+                    </span>
+                  }
+                >
+                  {scalar(
+                    t("Sidekick agent"),
+                    ["webui", "sidekick", "agent"],
+                    agentOptions,
+                    t("Use current agent"),
+                  )}
+                  {scalar(
+                    t("Sidekick model"),
+                    ["webui", "sidekick", "model"],
+                    models,
+                    t("Use agent model"),
+                  )}
+                </SettingsSection>
+                <SettingsSection
+                  title={
+                    <span className="flex items-center gap-1">
+                      {t("Subagents")}
+                      <HelpTip label={t("About subagents")}>
+                        {t(
+                          "Subagents run in the background inside the current chat. They do not add chats to your list. Follow them in Activity. Their results return to the main agent automatically.",
+                        )}
+                      </HelpTip>
+                    </span>
+                  }
+                >
+                  <SettingsRow
+                    label={t("Let the agent create subagents")}
+                    controlId="dynamic-subagents-enabled"
                   >
                     <Switch
-                      id="memory-organization-enabled"
+                      id="dynamic-subagents-enabled"
                       checked={
-                        get(["memory", "auto_organize", "enabled"]) !== false
+                        get(["subagents", "dynamic", "enabled"]) === true
                       }
                       onCheckedChange={(enabled) =>
-                        set(["memory", "auto_organize", "enabled"], enabled)
+                        set(
+                          ["subagents", "dynamic", "enabled"],
+                          enabled || undefined,
+                        )
                       }
                     />
                   </SettingsRow>
-                  <details className={layout.groupDisclosure}>
-                    <summary>{t("Memory updates")}</summary>
-                    <div>
-                      {scalar(
-                        t("Update model"),
-                        ["memory", "auto_organize", "model"],
-                        models,
-                        t("Use default agent model"),
-                      )}
-                      <div className={styles.fieldGroup}>
-                        <FormField
-                          label={t("Update instructions")}
+                  {get(["subagents", "dynamic", "enabled"]) === true && (
+                    <>
+                      <ModelSelectionField
+                        label={t("Models for created subagents")}
+                        description={t(
+                          "The agent can choose from these. Choose at least one.",
+                        )}
+                        models={selectors.data?.models ?? []}
+                        value={allowedModels}
+                        onChange={(value) => {
+                          let updated = updateDocument(
+                            source,
+                            ["subagents", "dynamic", "allowed_models"],
+                            value,
+                          );
+                          // The default must stay one of the allowed models.
+                          const fallback = text(defaultModelPath);
+                          if (fallback && !value?.includes(fallback))
+                            updated = updateDocument(
+                              updated,
+                              defaultModelPath,
+                              undefined,
+                            );
+                          onChange(updated);
+                        }}
+                      />
+                      {allowedModels.length > 0 && (
+                        <ResourceChoice
+                          label={t("Default model")}
                           description={t(
-                            "How to update and organize memory files.",
+                            "Used when the agent does not choose a model.",
                           )}
-                        >
-                          <Textarea
-                            variant="soft"
-                            value={text([
-                              "memory",
-                              "auto_organize",
-                              "instructions",
-                            ])}
-                            rows={4}
-                            onChange={(event) =>
-                              set(
-                                ["memory", "auto_organize", "instructions"],
-                                event.target.value,
-                              )
-                            }
-                          />
-                        </FormField>
-                      </div>
-                    </div>
-                  </details>
-                </>
-              )}
-            </SettingsSection>
-            <section id="bot">
-              <BotFields source={source} onChange={onChange} />
-            </section>
-            <section id="live">
-              <SettingsSection variant="grouped" title={t("Live voice")}>
-                <SettingsRow
-                  label={t("Live")}
-                  controlId="live-enabled"
-                  stackOnNarrow={false}
-                  description={t(
-                    "Talk to your agent using your Codex subscription.",
+                          value={text(defaultModelPath)}
+                          placeholder={t("Choose a model")}
+                          loading={selectors.isPending || sources.isPending}
+                          onValueChange={(value) =>
+                            set(defaultModelPath, value)
+                          }
+                          options={models.filter((model) =>
+                            allowedModels.includes(model.value),
+                          )}
+                        />
+                      )}
+                    </>
                   )}
-                >
-                  <Switch
-                    id="live-enabled"
-                    checked={get(["live", "enabled"]) === true}
-                    onCheckedChange={(enabled) =>
-                      set(["live", "enabled"], enabled)
-                    }
-                  />
-                </SettingsRow>
-                <details
-                  className={layout.groupDisclosure}
-                  open={location.hash === "#live" || undefined}
-                >
-                  <summary>{t("Voice settings")}</summary>
-                  <div>
-                    <ResourceChoice
-                      label={t("Codex model")}
-                      value={text(["live", "model"])}
-                      loading={selectors.isPending || sources.isPending}
-                      onValueChange={(value) =>
-                        set(["live", "model"], value || undefined)
-                      }
-                      options={[
-                        {
-                          value: "",
-                          label: codexModels.length
-                            ? t("Choose a Codex model")
-                            : t("Not configured"),
-                        },
-                        ...codexModels,
-                      ]}
-                      description={
-                        !selectors.isPending && !codexModels.length ? (
-                          <>
-                            {t("Add a Codex subscription model in")}{" "}
-                            <Link
-                              className="underline underline-offset-2"
-                              to="/settings/models"
-                            >
-                              {t("Models")}
-                            </Link>{" "}
-                            {t("to use live voice.")}
-                          </>
-                        ) : undefined
+                  <SettingsRow
+                    label={t("Maximum running subagents")}
+                    controlId="subagents-max-concurrent"
+                    description={t("Shared by all subagents of one chat.")}
+                  >
+                    <Input
+                      id="subagents-max-concurrent"
+                      type="number"
+                      min={1}
+                      step={1}
+                      className={styles.settingControl}
+                      value={Number(get(["subagents", "max_concurrent"]) ?? 8)}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value > 0)
+                          set(
+                            ["subagents", "max_concurrent"],
+                            value === 8 ? undefined : value,
+                          );
+                      }}
+                    />
+                  </SettingsRow>
+                </SettingsSection>
+              </>
+            )}
+            {(!group || group === "bot") && (
+              <BotFields
+                source={source}
+                onChange={onChange}
+                showHeading={!group}
+              />
+            )}
+            {(!group || group === "memory") && (
+              <>
+                <SettingsSection variant="grouped" title={t("Memory")}>
+                  <SettingsRow
+                    label={t("File memory")}
+                    controlId="memory-enabled"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Remember preferences and keep knowledge for each project.",
+                    )}
+                  >
+                    <Switch
+                      id="memory-enabled"
+                      checked={get(["memory", "enabled"]) !== false}
+                      onCheckedChange={(enabled) =>
+                        set(["memory", "enabled"], enabled)
                       }
                     />
-                    <SettingsRow label={t("Voice")}>
-                      <ChoiceField
-                        label={t("Voice")}
-                        hideLabel
-                        value={text(["live", "voice"]) || "cove"}
-                        options={[
-                          "cove",
-                          "juniper",
-                          "maple",
-                          "spruce",
-                          "ember",
-                          "vale",
-                          "breeze",
-                          "arbor",
-                          "sol",
-                          "aube",
-                          "bubbie",
-                          "haetsal",
-                          "hanul",
-                          "himari",
-                          "leher",
-                          "miko",
-                          "neer",
-                          "porto",
-                          "rindo",
-                          "rio",
-                          "rivage",
-                          "selva",
-                          "sonna",
-                          "tinta",
-                          "viola",
-                        ].map((value) => ({
-                          value,
-                          label: value[0]!.toUpperCase() + value.slice(1),
-                        }))}
-                        onValueChange={(value) => set(["live", "voice"], value)}
-                      />
-                    </SettingsRow>
-                    <SettingsRow
-                      label={t("Workspace files")}
-                      description={t(
-                        "Let Live read and edit files in its workspace.",
-                      )}
-                    >
-                      <ChoiceField
-                        label={t("Live file access")}
-                        hideLabel
-                        value={
-                          get(["live", "files_enabled"]) === false
-                            ? "disabled"
-                            : "enabled"
-                        }
-                        options={[
-                          { value: "enabled", label: t("Enabled") },
-                          { value: "disabled", label: t("Disabled") },
-                        ]}
-                        onValueChange={(value) =>
-                          set(["live", "files_enabled"], value === "enabled")
-                        }
-                      />
-                    </SettingsRow>
-                    <div className={styles.fieldGroup}>
-                      <FormField label={t("Live instructions")}>
-                        <Textarea
-                          variant="soft"
-                          value={text(["live", "instructions"])}
-                          onChange={(event) =>
-                            set(["live", "instructions"], event.target.value)
+                  </SettingsRow>
+                  {get(["memory", "enabled"]) !== false && (
+                    <>
+                      <SettingsRow
+                        label={t("Automatic organization")}
+                        controlId="memory-organization-enabled"
+                        stackOnNarrow={false}
+                        description={t(
+                          "Use extra model requests to keep memory files organized.",
+                        )}
+                      >
+                        <Switch
+                          id="memory-organization-enabled"
+                          checked={
+                            get(["memory", "auto_organize", "enabled"]) !==
+                            false
                           }
-                          rows={3}
+                          onCheckedChange={(enabled) =>
+                            set(["memory", "auto_organize", "enabled"], enabled)
+                          }
                         />
-                      </FormField>
-                    </div>
-                  </div>
-                </details>
-              </SettingsSection>
-            </section>
+                      </SettingsRow>
+                      <details className={layout.groupDisclosure}>
+                        <summary>{t("Memory updates")}</summary>
+                        <div>
+                          {scalar(
+                            t("Update model"),
+                            ["memory", "auto_organize", "model"],
+                            models,
+                            t("Use default agent model"),
+                          )}
+                          <div className={styles.fieldGroup}>
+                            <FormField
+                              label={t("Update instructions")}
+                              description={t(
+                                "How to update and organize memory files.",
+                              )}
+                            >
+                              <Textarea
+                                variant="soft"
+                                value={text([
+                                  "memory",
+                                  "auto_organize",
+                                  "instructions",
+                                ])}
+                                rows={4}
+                                onChange={(event) =>
+                                  set(
+                                    ["memory", "auto_organize", "instructions"],
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </FormField>
+                          </div>
+                        </div>
+                      </details>
+                    </>
+                  )}
+                </SettingsSection>
+              </>
+            )}
           </>
         )}
       {[

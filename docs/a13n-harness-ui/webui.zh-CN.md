@@ -64,7 +64,7 @@ flowchart TB
 
 ### Project 与已保存的对话
 
-新聊天在发送第一条消息后会在后台生成简短标题。打开 **重命名聊天 → 生成标题** 可以根据已有的用户消息重新拟定标题。建议可以编辑，点击 **保存标题** 生效。在 **设置 → 通用 → 聊天标题** 中可以选择模型，默认使用当前聊天模型。
+新聊天在发送第一条消息后会在后台生成简短标题。打开 **重命名聊天 → 生成标题** 可以根据已有的用户消息重新拟定标题。建议可以编辑，点击 **保存标题** 生效。在 **设置 → 聊天 → 新聊天** 中可以选择模型，默认使用当前聊天模型。
 
 展开 Project 可查看最近更新的五个根对话。**Show more** 加载该 Project 的下一页，折叠后保留已加载页面。搜索覆盖全部保存的根对话，包括未加载页面。**Without a project**、**Unavailable projects** 和 **Archived** 分别保留无 Project、Project 已移除和已归档对话的入口。
 
@@ -130,7 +130,7 @@ flowchart TB
 
 ## 语音输入
 
-在**设置 → 通用 → 听写**中选择 **Codex 订阅**，再选择已登录的 Codex 账号或订阅组。语音识别和 Luna 文本校正均有预设，无需 API 密钥或 Model 资源。两步从所选订阅组中独立选择账号；选择单个账号时，两步都固定使用该账号。仅登录账号不会启用听写。展开**高级语音转写设置**，可以从受支持的 Codex 模型中更换校正 LLM，并调整上下文预算（默认前后各 2,000 词）。也可以选择已有的音频输入 Model，使用单次请求完成转写。
+在**设置 → 聊天 → 听写**中选择 **Codex 订阅**，再选择已登录的 Codex 账号或订阅组。语音识别和 Luna 文本校正均有预设，无需 API 密钥或 Model 资源。两步从所选订阅组中独立选择账号；选择单个账号时，两步都固定使用该账号。仅登录账号不会启用听写。展开**高级语音转写设置**，可以从受支持的 Codex 模型中更换校正 LLM，并调整上下文预算（默认前后各 2,000 词）。也可以选择已有的音频输入 Model，使用单次请求完成转写。
 
 在聊天输入框或「添加到聊天」批注中点击麦克风，再点击停止。后端结合草稿、聊天标题及附近对话正文生成最终文本。Codex 订阅听写先执行 ASR，再进行文本校正，中间文本不显示。最终片段会一次性插入输入框当前选区，无需预览或确认，也不会自动发送消息。文本校正失败时，插入原始转写并显示提示。语音识别失败后，重试会使用同一段录音和已捕获的上下文；取消则丢弃结果。浏览器录音需要 localhost 或 HTTPS。
 
@@ -360,7 +360,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择首个 Run 的模型，`run_thread` 可以为后续 Run 另选模型。没有选择模型就启动的 Run（例如消息或后台结果触发的 Run）沿用上一个 Run 的模型。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
 
-在 **设置 → 常规 → 子 Agent 默认值** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
+在 **设置 → 智能体 → Sidekick** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 
 ## 创建对话副本
 
@@ -393,7 +393,7 @@ Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork�
 
 右侧显示作用域当前文件，即使还没有整理 Run。打开不开始工作。查看器只读且独立于计算机共享。编辑时通过服务器 Host 访问修改所选根配置旁的 `memory/`。
 
-在 **Settings → General** 关闭自动整理保留查看器，关闭 Memory 隐藏它。两者都不删除文件或历史。
+在 **Settings → Memory** 关闭自动整理保留查看器，关闭 Memory 隐藏它。两者都不删除文件或历史。
 
 ## 配置工作台
 
@@ -444,7 +444,7 @@ Project 可混用本地/远程目录，也可只有远程目录；始终至少�
 
 Bot 发布的消息显示**Bot 给你发了消息**和实际消息预览。选择**查看消息**或点击系统通知即可打开 Bot。同一轮运行中的不同消息会分别通知。需要输入时显示 **Bot 需要你的回应**，点击后在 Activity 中处理。系统通知标题使用当前浏览器最近同步的显示语言，消息正文保持原文。
 
-1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → General → Notifications**。
+1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → Preferences → Notifications**。
 2. 选择 **Allow notifications** 或 **Enable background notifications**，接受浏览器提示。
 3. 确认 **Enabled on this device**，再点击 **Send test notification**。
 4. 保持 WebUI 页面可见以更新设备活动，发送任务，并在离开 WebUI 后检查系统提醒。
@@ -471,7 +471,7 @@ Android Chrome 需检查站点和系统权限、省电/勿扰限制以及推送�
 
 ## 安装为应用
 
-打开 **Settings → General → Install Harness UI**，使用提供的 **Install app** 或浏览器安装/添加到主屏幕操作。支持时，Safari 在 iPhone/iPad 提供 **Share → Add to Home Screen**，在 Mac 提供 **File → Add to Dock**。
+打开 **Settings → Diagnostics → About**，使用提供的 **Install app** 或浏览器安装/添加到主屏幕操作。支持时，Safari 在 iPhone/iPad 提供 **Share → Add to Home Screen**，在 Mac 提供 **File → Add to Dock**。
 
 使用 HTTPS 或回环，并保持协议、主机名、端口稳定。手机通过局域网普通 HTTP 访问不具有相同安装支持。更改 origin 可能需要重新安装和登录。安装窗口仍需要服务器，不增加离线执行或未保存编辑器恢复。后台通知需另行开启。
 

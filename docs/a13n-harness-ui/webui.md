@@ -64,7 +64,7 @@ Open the three-dot menu immediately left of the sidebar heading’s plus button 
 
 ### Projects and saved conversations
 
-New chats get a short title in the background after the first message. To suggest a fresh title, open **Rename chat → Generate title**. Edit the suggestion and choose **Save title** to apply it. **Settings → General → Chat titles** selects the model. The current chat model is the default.
+New chats get a short title in the background after the first message. To suggest a fresh title, open **Rename chat → Generate title**. Edit the suggestion and choose **Save title** to apply it. **Settings → Chats → New chats** selects the model. The current chat model is the default.
 
 Expand a Project for its five most recently updated root conversations. **Show more** loads another page for that Project; collapsing it preserves loaded pages. Search covers all saved roots, including unloaded pages. **Without a project**, **Unavailable projects**, and **Archived** keep unassigned, removed-Project, and archived conversations reachable.
 
@@ -132,7 +132,7 @@ New Runs look up prices using the selected Model’s configured route. In chat u
 
 ## Voice input
 
-In **Settings → General → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
+In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
 
 Click the microphone in the composer or an **Add to chat** comment, then click Stop. The backend generates the final text, using the draft, chat title and nearby authored conversation as context. Codex subscription dictation runs ASR followed by text correction; intermediate text is not shown. The final fragment is inserted once at the current input selection without a preview or confirmation step. Nothing is sent automatically. If correction fails, the original transcript is inserted with a warning. After a recognition error, Retry uses the same recording and captured context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
@@ -362,7 +362,7 @@ These limits apply to model tools, not human WebUI access. Workers cannot create
 
 An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
 
-Configure **Settings → General → Subagent defaults** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 
 ## Fork a conversation
 
@@ -395,7 +395,7 @@ Open **Memory** in the bottom-left navigation to inspect enabled Global or Proje
 
 The right panel displays current scope files, including before any organization Run. Opening it starts no work. The viewer is read-only and independent of computer sharing. To edit, use server Host access to `memory/` beside the selected root configuration.
 
-In **Settings → General**, disabling automatic organization retains the viewer; disabling Memory hides it. Neither deletes files or history.
+In **Settings → Memory**, disabling automatic organization retains the viewer; disabling Memory hides it. Neither deletes files or history.
 
 ## Configure the workbench
 
@@ -446,7 +446,7 @@ Choose **All** or **Bot only** under **Notify me about** in Notifications settin
 
 Bot publications show **New message from Bot** and a preview of the actual message. Choose **View message**, or click the system notification, to open Bot. Different messages from the same Run remain distinct. Bot input requests use **Bot needs your response** and open the decision in Activity. System notification titles follow the display language last synchronized by that browser; authored message text stays unchanged.
 
-1. On the receiving device, open **Settings → General → Notifications** at a stable HTTPS address.
+1. On the receiving device, open **Settings → Preferences → Notifications** at a stable HTTPS address.
 2. Choose **Allow notifications** or **Enable background notifications** and accept the browser prompt.
 3. Check **Enabled on this device**, then choose **Send test notification**.
 4. Keep a WebUI page visible to renew device activity, send a task, and check the system alert after leaving WebUI.
@@ -473,7 +473,7 @@ Turn off **Enable browser notifications** before clearing site data when possibl
 
 ## Install as an app
 
-Open **Settings → General → Install Harness UI**, then use the offered **Install app** prompt or your browser's installation/Add to Home Screen action. Safari also provides **Share → Add to Home Screen** on iPhone/iPad and **File → Add to Dock** on Mac where supported.
+Open **Settings → Diagnostics → About**, then use the offered **Install app** prompt or your browser's installation/Add to Home Screen action. Safari also provides **Share → Add to Home Screen** on iPhone/iPad and **File → Add to Dock** on Mac where supported.
 
 Use HTTPS or loopback and keep scheme, hostname, and port stable. A phone's plain-HTTP LAN connection does not have the same installation support. Changing origin can require installation and login again. The installed window still needs the server; it adds no offline execution or unsaved-editor recovery. Enable background notifications separately.
 
