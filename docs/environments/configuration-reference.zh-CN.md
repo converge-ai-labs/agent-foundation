@@ -22,8 +22,9 @@ description: 从模型生成的 Harness 执行输入、Service 管理 recipe、�
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelRecipe](#vercelrecipe)                                       | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| boxd           | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdConnectionConfiguration](#boxdconnectionconfiguration)       | [TokenCredential](#tokencredential) |
 
-Runloop 的执行与管理使用同一配置模型，没有独立的 Service 桌面 recipe。
+Runloop 和 boxd 的执行与管理使用同一配置模型，没有独立的 Service 桌面 recipe。
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -526,6 +527,23 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `resource_size`           | false | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                        |
 | `idle_timeout_seconds`    | false | integer                                          | minimum=300; maximum=172800; default=3600              |
 
+## `BoxdEnvironmentConfiguration`
+
+| Field                            | Required | Type / choices                       | Constraints and default                                |
+| -------------------------------- | -------- | ------------------------------------ | ------------------------------------------------------ |
+| `environment`                    | false    | EnvironmentVariables                 | —; default from model factory                          |
+| `root`                           | false    | string                               | default="/home/boxd"                                   |
+| `python`                         | false    | string                               | default="python3"                                      |
+| `shell`                          | false    | string                               | default="/bin/bash"                                    |
+| `request_timeout_seconds`        | false    | number                               | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`                 | false    | integer                              | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`              | false    | integer                              | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`               | false    | integer                              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `size`                           | false    | "1x4", "2x8", "4x16", "8x32" or null | default=null                                           |
+| `from_snapshot`                  | false    | string or null                       | minLength=1; maxLength=128; default=null               |
+| `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
+| `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
+
 ## `RemoteEnvdEnvironmentConfiguration`
 
 | 字段                | 必填  | 类型 / 可选值                   | 约束与默认值                             |
@@ -610,6 +628,13 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段           | 必填 | 类型 / 可选值 | 约束与默认值               |
 | -------------- | ---- | ------------- | -------------------------- |
 | `organization` | true | string        | minLength=1; maxLength=128 |
+
+## `BoxdConnectionConfiguration`
+
+| Field          | Required | Type / choices | Constraints and default                  |
+| -------------- | -------- | -------------- | ---------------------------------------- |
+| `region`       | true     | "fra", "nyc"   | —                                        |
+| `organization` | false    | string or null | minLength=1; maxLength=128; default=null |
 
 ## `TokenCredential`
 

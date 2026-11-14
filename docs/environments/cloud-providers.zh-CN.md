@@ -8,7 +8,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 
 ## 云 provider
 
-创建计费目标前，准备所选账号与目标配置。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
+创建计费目标前，准备所选账号与目标配置。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop 和 boxd 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
 
 | Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
 | -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -18,6 +18,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 | Vercel Sandbox | `team_id`, `project_id`                                                                  | `api_key`（Vercel access token） | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                      |
 | Fly.io Sprites | `organization`                                                                           | `api_key`（Sprites token）       | `region`                                                                                                       |
 | Runloop        | `organization`                                                                           | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                        |
+| boxd           | `region`（`fra` 或 `nyc`）、可选 `organization`                                          | `api_key`（boxd API 密钥）       | `size`, `from_snapshot`, `auto_suspend_timeout_seconds`, `auto_hibernate_timeout_seconds`                      |
 
 将凭据保存在目标配置与重连状态之外。组织/团队字段描述后端命名空间，不授予权限。Modal 凭据选择工作区，可选 `workspace` 字段只是标签。Service 的 E2B 连接通过域名选择 E2B 云或兼容后端，见 [Service provider](../a13n-service/environments.md#providers)。
 
@@ -34,14 +35,15 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 3. 构建固定目标 connector，并在使用后关闭每个执行。
 4. 按后端支持的生命周期，通过管理端停止、续期或销毁目标。
 
-| Provider       | 显式停止/恢复                           | 内存             | 过期与保留                                                                                               |
-| -------------- | --------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| E2B            | 原生暂停/恢复保留文件                   | 原生暂停保留内存 | 整个沙箱 TTL 可续期；保活报告观测到的过期时间，不恢复已暂停沙箱。                                        |
-| Daytona        | 原生停止/启动，包括已归档沙箱           | 不承诺保留       | 请求禁用自动停止/删除，且无硬 TTL。组织强制硬 TTL 会在就绪检查时被拒绝。                                 |
-| Modal          | 文件系统快照后终止；恢复从快照创建沙箱  | 不保留           | 运行中沙箱最多固定 24 小时。保活报告保守的已知期限，拒绝承诺延期。停止快照不过期，成功恢复或销毁后删除。 |
-| Vercel Sandbox | 命名原生沙箱停止/恢复，保留文件系统     | 不保留           | 运行会话有有限超时。续期验证返回期限并遵循配置总上限。原生停止快照配置为不过期。                         |
-| Fly.io Sprites | 无显式停止 API；空闲时休眠，exec 时唤醒 | 不承诺保留       | 持久文件系统在原生自动休眠后保留。该 provider 不支持 `stop()`，因此不要调度显式停止；销毁是独立操作。    |
-| Runloop        | 原生挂起/恢复保留磁盘                   | 不保留           | 空闲策略挂起 Devbox。保活确认新的空闲间隔，不能启动已挂起目标。                                          |
+| Provider       | 显式停止/恢复                           | 内存             | 过期与保留                                                                                                                                                                      |
+| -------------- | --------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B            | 原生暂停/恢复保留文件                   | 原生暂停保留内存 | 整个沙箱 TTL 可续期；保活报告观测到的过期时间，不恢复已暂停沙箱。                                                                                                               |
+| Daytona        | 原生停止/启动，包括已归档沙箱           | 不承诺保留       | 请求禁用自动停止/删除，且无硬 TTL。组织强制硬 TTL 会在就绪检查时被拒绝。                                                                                                        |
+| Modal          | 文件系统快照后终止；恢复从快照创建沙箱  | 不保留           | 运行中沙箱最多固定 24 小时。保活报告保守的已知期限，拒绝承诺延期。停止快照不过期，成功恢复或销毁后删除。                                                                        |
+| Vercel Sandbox | 命名原生沙箱停止/恢复，保留文件系统     | 不保留           | 运行会话有有限超时。续期验证返回期限并遵循配置总上限。原生停止快照配置为不过期。                                                                                                |
+| Fly.io Sprites | 无显式停止 API；空闲时休眠，exec 时唤醒 | 不承诺保留       | 持久文件系统在原生自动休眠后保留。该 provider 不支持 `stop()`，因此不要调度显式停止；销毁是独立操作。                                                                           |
+| Runloop        | 原生挂起/恢复保留磁盘                   | 不保留           | 空闲策略挂起 Devbox。保活确认新的空闲间隔，不能启动已挂起目标。                                                                                                                 |
+| boxd           | 原生休眠/唤醒保留磁盘和内存             | 休眠时保留       | 机器不会过期，也不需要保活。空闲休眠默认关闭；设置 `auto_hibernate_timeout_seconds` 后，空闲机器会休眠，并在调用 `start()` 前保持停止状态。可选的空闲待机会在下一条命令时恢复。 |
 
 Modal 的 `start()` 恢复保存的文件系统快照，并返回新引用。`open()` 不执行恢复或快照清理。删除快照需要匹配原生所有权标签。外部注册的状态提供连接信息，不授予销毁权限。
 
@@ -260,6 +262,10 @@ Native 执行使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`�
 
 默认根目录使用 `/home/user`，Python 使用客体 PATH 中的 `python3`。参见 Runloop 的[默认非特权用户](https://docs.runloop.ai/docs/devboxes/configuration/user-parameters)和 [Python 环境](https://docs.runloop.ai/docs/devboxes/overview)。保活采用返回的空闲间隔，清除状态前检查关闭完成。此 provider 用于 Native Files & Shell；历史独立 Envd 探测不能证明 Provider 或 Console 已集成。
 
+### boxd
+
+默认根目录使用 `/home/boxd`，Python 使用客体 PATH 中的 `python3`。每个 Environment 对应一台 [boxd](https://boxd.sh?ref=agent-foundation) 机器。机器以隔离模式创建，不加入组织的私有网络。`size` 选择 vCPU 和内存（`1x4`、`2x8`、`4x16` 或 `8x32`）；省略时使用组织默认值或快照的规格。`from_snapshot` 从预先准备的 boxd 快照启动机器。`stop()` 休眠机器并保留内存和进程；`start()` 唤醒机器。销毁操作删除记录中的那台机器，并等待确认其不存在。通过 `boxd` extra（`a13n-harness[boxd]`）安装 SDK。使用 `boxd auth keys create <name>` 创建 API 密钥；一个密钥只作用于一个组织。
+
 ### 嵌入式配置
 
 从自己的 Host 连接前，先从管理端取得 `saved_state`，从凭据存储取得 `api_key`。以下异步集成片段选择内置 Daytona 定义并读取有界目录列表：
@@ -290,6 +296,6 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
   PYTHON_TEST_DIRS=packages/a13n-service/tests/environment_providers/test_cloud_live.py
 ```
 
-Modal、Vercel、Sprites 和 Runloop 使用对应大写前缀。按需用 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 创建计费目标，即使失败也尝试删除。凭据 JSON 保持私有。未启用或缺少凭据会跳过，不是实时验证通过。
+Modal、Vercel、Sprites、Runloop 和 boxd 使用对应大写前缀。按需用 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 创建计费目标，即使失败也尝试删除。凭据 JSON 保持私有。未启用或缺少凭据会跳过，不是实时验证通过。
 
-原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/) 和 [Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)。
+原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/)、[Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html) 和 [boxd Python SDK](https://docs.boxd.sh/reference/python-sdk?ref=agent-foundation)。

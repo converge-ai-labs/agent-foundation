@@ -21,6 +21,7 @@ CONFIG: dict[tuple[str, str], Json] = {
     ("model", "aws_bedrock"): {"region": "us-east-1"},
     ("model", "ollama"): {"base_url": "http://127.0.0.1:11434"},
     ("model", "alibaba_model_studio"): {"region": "cn-beijing", "domain_type": "mainland_china"},
+    ("environment", "boxd"): {"region": "nyc"},
     ("environment", "daytona"): {"organization_id": "northstar-fictional"},
     ("environment", "modal"): {"workspace": "northstar-fictional", "app_name": "a13n-fictional"},
     ("environment", "runloop"): {"organization": "northstar-fictional"},

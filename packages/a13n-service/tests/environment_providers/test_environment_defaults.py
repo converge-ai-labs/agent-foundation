@@ -15,6 +15,7 @@ INPUTS = {
     "daytona": {"snapshot": "custom-envd"},
     "modal": {"image": "im-custom", "startup_command": ["/usr/local/bin/start-envd"]},
     "runloop": {},
+    "boxd": {},
     "sprites": {},
     "vercel": {},
 }

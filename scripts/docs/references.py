@@ -7,6 +7,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from a13n_harness.providers.environment.boxd.provider import (
+    BoxdConnectionConfiguration,
+    BoxdEnvironmentConfiguration,
+)
 from a13n_harness.providers.environment.configuration import HostLocalProviderConfiguration
 from a13n_harness.providers.environment.daytona.provider import (
     DaytonaConnectionConfiguration,
@@ -174,6 +178,7 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     VercelEnvironmentConfiguration,
     SpritesEnvironmentConfiguration,
     RunloopEnvironmentConfiguration,
+    BoxdEnvironmentConfiguration,
     RemoteEnvdEnvironmentConfiguration,
     HostLocalProviderConfiguration,
     DockerConnectionConfiguration,
@@ -185,6 +190,7 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     VercelConnectionConfiguration,
     SpritesConnectionConfiguration,
     RunloopConnectionConfiguration,
+    BoxdConnectionConfiguration,
     TokenCredential,
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -217,8 +223,9 @@ Choose the execution column for a fixed-target Harness connector, or the managem
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration) | [VercelRecipe](#vercelrecipe) | [VercelConnectionConfiguration](#vercelconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| boxd | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration) | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration) | [BoxdConnectionConfiguration](#boxdconnectionconfiguration) | [TokenCredential](#tokencredential) |
 
-Runloop uses the same configuration model for execution and management; it has no separate Service desktop recipe.
+Runloop and boxd use the same configuration model for execution and management; they have no separate Service desktop recipe.
 
 """
     emitted: set[str] = set()

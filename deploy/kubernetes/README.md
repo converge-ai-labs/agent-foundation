@@ -230,7 +230,7 @@ To install the Chart of this checkout instead, build and push the image, set `im
 
 ## Agent execution environments
 
-The Chart creates no per-agent Pods, Docker daemon, privileged container or Docker socket mount. Hosted sandbox providers (E2B, Daytona, Modal, Vercel, Sprites, Runloop) need outbound access from the Worker Pods to their vendor APIs; external envd targets need network access from the Worker Pods to their endpoints. Running Envd targets or managing Kubernetes sandboxes is a separate deployment concern.
+The Chart creates no per-agent Pods, Docker daemon, privileged container or Docker socket mount. Hosted sandbox providers (E2B, Daytona, Modal, Vercel, Sprites, Runloop, boxd) need outbound access from the Worker Pods to their vendor APIs; external envd targets need network access from the Worker Pods to their endpoints. Running Envd targets or managing Kubernetes sandboxes is a separate deployment concern.
 
 ## Upgrades and backups
 

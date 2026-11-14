@@ -184,7 +184,7 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert '"a13n-harness[docker,e2b,modal]==3.2.1rc4"' in ui_manifest
     assert '"a13n-stream-protocol==3.2.1rc4"' in ui_manifest
     service_manifest = (tmp_path / "packages/a13n-service/pyproject.toml").read_text()
-    assert '"a13n-harness[e2b,kubernetes]==3.2.1rc4"' in service_manifest
+    assert '"a13n-harness[boxd,e2b,kubernetes]==3.2.1rc4"' in service_manifest
     assert '"a13n-stream-protocol==3.2.1rc4"' in service_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()

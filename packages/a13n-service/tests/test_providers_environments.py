@@ -22,6 +22,7 @@ ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
     "vercel": ({"team_id": "team_1", "project_id": "prj_1"}, {"api_key": SECRET}, {"vcpus": 1}),
     "sprites": ({"organization": "fly-org"}, {"api_key": SECRET}, {"privileged": True}),
     "runloop": ({"organization": "runloop-org"}, {"api_key": SECRET}, {"resource_size": "HUGE"}),
+    "boxd": ({"region": "nyc"}, {"api_key": SECRET}, {"size": "3x12"}),
 }
 
 
@@ -36,6 +37,7 @@ async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # typ
         "vercel": {"team_id", "project_id"},
         "sprites": {"organization"},
         "runloop": {"organization"},
+        "boxd": {"region", "organization"},
     }
     collection = f"{service.api}/environment-providers"
     for config in ({"domain": "https://sandboxes.example"}, {"api_url": "https://10.0.0.1"}):

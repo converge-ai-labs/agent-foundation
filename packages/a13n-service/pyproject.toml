@@ -12,7 +12,7 @@ dependencies = [
     "modal>=1.6.3,<2",
     "a13n-logging",
     "a13n-envd-client",
-    "a13n-harness[e2b,kubernetes]",
+    "a13n-harness[boxd,e2b,kubernetes]",
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
     "aiobotocore[httpx2]>=3.9,<4",
