@@ -1927,6 +1927,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 
 .readerFrame {
+  --reader-fade-top: 20px;
   position: relative;
   isolation: isolate;
   display: flex;
@@ -1941,7 +1942,7 @@ dl.detailGrid > .detailLongRow dd {
   scrollbar-gutter: stable both-edges;
   /* Match the fade depth so the first message stays fully legible
      at scroll origin, then dissolves as it approaches the titlebar. */
-  padding-top: 48px;
+  padding-top: var(--reader-fade-top);
 }
 /* One masked surface keeps diffusion and tint on the same continuous curve.
    Stacking backdrop filters leaves dark halos around partially faded text. */
