@@ -401,7 +401,7 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         assert captured.agent.model_id == expected_model
         saved = (await app.get_thread(result["thread_id"])).thread.configuration
         assert saved.default_model_id == sidekick.get("model")
-        # Host defaults are persistent; explicit overrides are still per-operation.
+        # Host defaults are persistent; explicit overrides never change the saved default.
         again = await controller(app).run_thread(
             source_thread_id=source.thread_id, thread_id=result["thread_id"], prompt="Follow-up"
         )
@@ -455,7 +455,9 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         )
         receipt = resumed["receipt"]["receipt_id"]
         assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
+        # A message selects no Model, so it keeps the last explicit override rather than the saved default.
+        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == override
+        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
         ordinary = await controller(app).send_thread_message(
             source_thread_id=result["thread_id"], thread_id=source.thread_id, message="Return report"
         )
