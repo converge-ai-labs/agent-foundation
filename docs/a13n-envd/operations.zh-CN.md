@@ -31,7 +31,7 @@ description: 管理守护进程就绪状态、会话生命周期、保留输出�
 在原始可执行文件路径原子安装发布版本后，以同一账号发起指定版本的重启：
 
 ```sh
-a13n-envd restart --runtime-dir /run/a13n-envd-state --version 0.8.1
+a13n-envd restart --runtime-dir /run/a13n-envd-state --version 0.8.2
 ```
 
 运行目录默认使用 `A13N_ENVD_RUNTIME_DIR`。命令先验证已安装版本，再停止旧守护进程。如果目标版本已经运行，则直接成功，不再重启，因此丢失回执后可以重试。显式重启既不消耗，也不重置崩溃替换预算。重启回执确认实际启动子进程的编译版本与请求版本一致；分派工作前仍须验证认证 EIP 就绪状态。

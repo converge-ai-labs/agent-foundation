@@ -205,7 +205,7 @@ curl -sS -X POST "$A13N_URL/api/v1/environment-templates" \
 
 | Service 构建                            | 镜像标签 |
 | --------------------------------------- | -------- |
-| 稳定版或 RC                             | `0.8.1`  |
+| 稳定版或 RC                             | `0.8.2`  |
 | 源码（`0.0.0`，包括本地后缀）或 `.devN` | `dev`    |
 
 Sandbox 版本归 Envd 管理，与 Service 版本独立。设置明确的标签或 digest 可选择其他镜像。`pull_policy: if_missing` 使用 Engine 本地镜像，缺失时在首次创建时拉取；`never` 要求镜像已经存在。自动配置的模板保存明确镜像，因此升级会保留这一选择。
