@@ -409,13 +409,43 @@ function ProjectGroup({
       .map(({ thread }) => thread.coordinator_thread_id)
       .filter(Boolean),
   );
-  const selectedRootId = selected?.coordinator_thread_id ?? selected?.thread_id;
+  const route = useMatch("/threads/:threadId");
+  const openingRoot = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    openingRoot.current = undefined;
+  }, [route?.params.threadId]);
+  const selectedRootId =
+    openingRoot.current ??
+    selected?.coordinator_thread_id ??
+    route?.params.threadId;
+  // A just-opened off-page result can be acknowledged before its detail
+  // arrives. Bridge that gap with the previously visible row, not a new query.
+  const previousRows = useRef(new Map<string, NavigationRow>());
+  const pendingRow = selectedRootId
+    ? previousRows.current.get(selectedRootId)
+    : undefined;
+  if (pendingRow && !observed.has(pendingRow.thread.thread_id)) {
+    const thread =
+      results.threads.get(pendingRow.thread.thread_id)?.thread ??
+      pendingRow.thread;
+    if (!thread.archived && belongs(thread))
+      observed.set(thread.thread_id, { ...pendingRow, thread });
+  }
+  previousRows.current = observed;
+  const previousBuckets = useRef(
+    new Map<string, "active" | "unread" | "recent">(),
+  );
   const selectedPlacement = useRef<{
     id: string | undefined;
     bucket?: "active" | "unread" | "recent";
   }>({ id: selectedRootId });
   if (selectedPlacement.current.id !== selectedRootId)
-    selectedPlacement.current = { id: selectedRootId };
+    selectedPlacement.current = {
+      id: selectedRootId,
+      bucket: selectedRootId
+        ? previousBuckets.current.get(selectedRootId)
+        : undefined,
+    };
   const activeRows: NavigationRow[] = [];
   const unreadRows: NavigationRow[] = [];
   const recentRows: NavigationRow[] = [];
@@ -434,6 +464,7 @@ function ProjectGroup({
         : unread || unreadOwners.has(row.thread.thread_id)
           ? "unread"
           : "recent";
+    previousBuckets.current.set(row.thread.thread_id, bucket);
     // Reading a result must not move the open row out from under the reader.
     // The shared state changes immediately; only this view's placement waits.
     if (row.thread.thread_id === selectedRootId) {
@@ -508,6 +539,26 @@ function ProjectGroup({
   };
   return (
     <section
+      onClickCapture={(event) => {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey ||
+          event.shiftKey
+        )
+          return;
+        const link = (event.target as Element).closest<HTMLAnchorElement>(
+          'a[href^="/threads/"]',
+        );
+        if (!link) return;
+        const id = decodeURIComponent(
+          new URL(link.href).pathname.slice("/threads/".length),
+        );
+        // Capture intent before NavLink and the read-state subscription can
+        // render in separate batches. Both must keep the existing row mounted.
+        if (previousBuckets.current.has(id)) openingRoot.current = id;
+      }}
       data-project-key={group.projectId}
       data-nav-group={group.id}
       data-nav-source={drag.source?.id === group.id || undefined}
@@ -765,21 +816,6 @@ function ProjectGroup({
                         </small>
                       )}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      loading={markingRead}
-                      disabled={unreadResultCount === 0}
-                      aria-label={t("Mark all results read in {{name}}", {
-                        name: group.name,
-                      })}
-                      title={t(
-                        "Mark all current results in this group as read",
-                      )}
-                      onClick={() => void markAllRead()}
-                    >
-                      <Check />
-                    </Button>
                   </div>
                 )}
                 <div

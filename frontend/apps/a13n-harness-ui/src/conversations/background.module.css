@@ -7,20 +7,19 @@
   height: 18px;
 }
 .card {
-  /* Clear the chat page padding and the transcript scrollbar gutter. */
-  --card-inset: 48px;
   pointer-events: auto;
-  position: absolute;
-  top: 8px;
-  right: var(--card-inset);
-  z-index: 20;
-  width: min(320px, calc(100% - var(--card-inset) - 8px));
-  max-height: calc(100% - 16px);
+  position: fixed;
+  z-index: 60;
+  width: min(320px, calc(100vw - 24px - env(safe-area-inset-right)));
+  max-height: calc(
+    100dvh - var(--activity-top, 64px) - 12px - env(safe-area-inset-bottom)
+  );
   display: flex;
   flex-direction: column;
   border: 1px solid var(--a13n-border-soft);
   border-radius: 16px;
-  background: var(--a13n-elevated);
+  background: var(--a13n-material-overlay);
+  backdrop-filter: var(--a13n-material-filter);
   box-shadow: var(--a13n-shadow);
   font-size: var(--a13n-text-body);
   color: var(--a13n-text);
@@ -71,9 +70,8 @@
 }
 .groupHeader h3 {
   margin: 0;
-  color: var(--a13n-secondary);
-  font-size: inherit;
-  font-weight: 400;
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-label);
 }
 .groupHeader button {
   padding-inline: 0;
@@ -216,9 +214,12 @@
 }
 @media (max-width: 760px) {
   .card {
-    --card-inset: calc(12px + env(safe-area-inset-right));
-    width: min(320px, calc(100% - var(--card-inset) - 12px));
-    max-height: min(480px, calc(100% - 160px));
+    max-height: min(
+      480px,
+      calc(
+        100dvh - var(--activity-top, 64px) - 96px - env(safe-area-inset-bottom)
+      )
+    );
   }
 }
 @media (hover: none), (pointer: coarse) {

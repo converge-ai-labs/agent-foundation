@@ -180,6 +180,84 @@ it("opens from the edge, follows the finger and closes with a directional swipe"
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("reserves row and control gestures, lets vertical scroll win, and settles cancelled drawer drags", () => {
+  viewport(390);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const change = vi.fn();
+  render(
+    <MobileNavigation open onOpenChange={change} finalFocus={() => null}>
+      <div data-touch-thread-row>
+        <a href="/threads/one">Thread row</a>
+      </div>
+      <button>Project control</button>
+    </MobileNavigation>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Harness" });
+  for (const target of [
+    screen.getByText("Thread row"),
+    screen.getByText("Project control"),
+  ]) {
+    touch(target, "touchstart", 250);
+    touch(target, "touchmove", 20);
+    touch(target, "touchend", 20);
+  }
+  expect(change).not.toHaveBeenCalled();
+  expect(dialog.style.transform).toBe("");
+  const header = screen.getByText("Harness");
+  touch(header, "touchstart", 250);
+  touch(header, "touchmove", 245, 160);
+  touch(header, "touchend", 245, 160);
+  expect(change).not.toHaveBeenCalled();
+  touch(header, "touchstart", 250);
+  touch(header, "touchmove", 150);
+  expect(dialog.style.transform).toBe("translateX(-100px)");
+  expect(
+    Number(
+      document.querySelector<HTMLElement>("[data-mobile-navigation-scrim]")!
+        .style.opacity,
+    ),
+  ).toBeCloseTo(2 / 3);
+  touch(header, "touchcancel", 150);
+  expect(change).toHaveBeenLastCalledWith(true);
+  expect(dialog.style.transform).toBe("");
+});
+
+it("uses recent release velocity, not a stale flick, for a short drawer drag", () => {
+  viewport(390);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const change = vi.fn();
+  const now = vi.spyOn(performance, "now").mockReturnValue(0);
+  try {
+    render(
+      <MobileNavigation open onOpenChange={change} finalFocus={() => null}>
+        Navigation
+      </MobileNavigation>,
+    );
+    const header = screen.getByText("Harness");
+    touch(header, "touchstart", 250);
+    now.mockReturnValue(40);
+    touch(header, "touchmove", 190);
+    now.mockReturnValue(300);
+    touch(header, "touchend", 190);
+    expect(change).toHaveBeenLastCalledWith(true);
+    touch(header, "touchstart", 250);
+    now.mockReturnValue(340);
+    touch(header, "touchmove", 190);
+    touch(header, "touchend", 190);
+    expect(change).toHaveBeenLastCalledWith(false);
+  } finally {
+    now.mockRestore();
+  }
+});
+
 it("leaves vertical gestures and nested horizontal readers to native scrolling", () => {
   viewport(390);
   const change = vi.fn();

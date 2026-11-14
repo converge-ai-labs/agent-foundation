@@ -446,3 +446,12 @@
     display: none;
   }
 }
+
+@media (pointer: coarse) {
+  .toolbar select,
+  .chartToolbar select {
+    min-height: 44px;
+    font-size: 16px;
+    touch-action: manipulation;
+  }
+}

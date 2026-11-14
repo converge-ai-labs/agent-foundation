@@ -13,7 +13,11 @@
   display: flex;
   flex-direction: column;
   padding: 8px 8px 12px;
-  background: var(--sidebar);
+  /* Opaque face for swiped rows so trailing actions never show through. */
+  --a13n-swipe-surface: var(--sidebar);
+  background: var(--a13n-material-bar, var(--sidebar));
+  backdrop-filter: var(--a13n-material-filter);
+  -webkit-backdrop-filter: var(--a13n-material-filter);
   transition: transform var(--a13n-duration-slow) var(--a13n-ease-sheet);
 }
 .sidebar[data-collapsed="true"] {
@@ -87,19 +91,18 @@
   overflow: hidden;
   padding: max(8px, env(safe-area-inset-top)) 8px
     max(12px, env(safe-area-inset-bottom));
+  /* A modal drawer sits over a scrim, so it stays opaque; swiped rows share its face. */
+  --a13n-swipe-surface: var(--sidebar);
   background: var(--sidebar);
   color: var(--a13n-text);
   box-shadow: 12px 0 40px rgb(0 0 0 / 0.16);
   transform: translateX(0);
-  transition: transform var(--a13n-duration-slow) var(--a13n-ease-sheet);
+  transition: transform var(--a13n-duration-spring) var(--a13n-ease-spring);
+  -webkit-tap-highlight-color: transparent;
 }
 .mobileNavigation[data-starting-style],
 .mobileNavigation[data-ending-style] {
   transform: translateX(-100%);
-}
-.mobileNavigation[data-ending-style] {
-  transition-duration: var(--a13n-duration-base);
-  transition-timing-function: var(--a13n-ease-in);
 }
 .mobileNavigation[data-nested-dialog-open] {
   opacity: 0;
@@ -107,10 +110,7 @@
 }
 .mobileBackdrop {
   background: rgb(0 0 0 / 0.36);
-  transition: opacity var(--a13n-duration-slow) var(--a13n-ease-sheet);
-}
-.mobileBackdrop[data-ending-style] {
-  transition-duration: var(--a13n-duration-base);
+  transition: opacity var(--a13n-duration-spring) var(--a13n-ease-spring);
 }
 .mobileNavigation[data-dragging],
 .mobileBackdrop[data-dragging] {

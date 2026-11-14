@@ -1,6 +1,13 @@
 import { WorkPreview } from "./work-activity";
 import { BackgroundStateIcon } from "./background-state-icon";
-import { useEffect, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
 import { Button, ScrollArea } from "a13n-ui";
 import {
   CaretRight,
@@ -127,6 +134,8 @@ export function BackgroundToggle() {
       tooltip
       aria-expanded={bg.cardOpen}
       aria-controls="background-work-card"
+      aria-haspopup="dialog"
+      data-background-trigger
       className={styles.toggle}
       onClick={() => bg.setCardOpen(!bg.cardOpen)}
     >
@@ -138,22 +147,76 @@ export function BackgroundToggle() {
 export function BackgroundCard({ showWork = true }: { showWork?: boolean }) {
   const { t } = useTranslation();
   const bg = useBackground();
+  const card = useRef<HTMLElement>(null);
+  const [position, setPosition] = useState({ top: 0, right: 12 });
+  useLayoutEffect(() => {
+    if (!bg.cardOpen) return;
+    const trigger = document.querySelector<HTMLElement>(
+      "[data-background-trigger]",
+    );
+    const place = () => {
+      const rect = trigger?.getBoundingClientRect();
+      if (rect)
+        setPosition({
+          top: rect.bottom + 8,
+          right: Math.max(12, window.innerWidth - rect.right),
+        });
+    };
+    place();
+    card.current?.focus({ preventScroll: true });
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [bg.cardOpen]);
+  useEffect(() => {
+    if (!bg.cardOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element;
+      if (
+        !card.current?.contains(target) &&
+        !target.closest("[data-background-trigger]")
+      )
+        bg.setCardOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      bg.setCardOpen(false);
+      document.querySelector<HTMLElement>("[data-background-trigger]")?.focus();
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [bg.cardOpen, bg.setCardOpen]);
   const [opened, setOpened] = useState(bg.cardOpen);
   useEffect(() => {
     if (bg.cardOpen) setOpened(true);
   }, [bg.cardOpen]);
   // Mount readers only on first use; retain them afterwards for CSS exit motion.
   if (!bg.cardOpen && !opened) return null;
-  return (
+  return createPortal(
     <section
+      ref={card}
+      role="dialog"
+      tabIndex={-1}
+      style={
+        {
+          top: position.top,
+          right: position.right,
+          "--activity-top": `${position.top}px`,
+        } as CSSProperties
+      }
       hidden={!bg.cardOpen}
       inert={!bg.cardOpen}
       id="background-work-card"
       className={styles.card}
       aria-label={t("Activity")}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") bg.setCardOpen(false);
-      }}
     >
       <header>
         <h2>{t("Activity")}</h2>
@@ -167,7 +230,8 @@ export function BackgroundCard({ showWork = true }: { showWork?: boolean }) {
         </Button>
       </header>
       <BackgroundList active={bg.cardOpen} showWork={showWork} />
-    </section>
+    </section>,
+    document.body,
   );
 }
 export function BackgroundList({

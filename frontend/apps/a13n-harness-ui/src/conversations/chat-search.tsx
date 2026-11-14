@@ -1,5 +1,6 @@
 import { useTranslation } from "../i18n";
 import {
+  Fragment,
   createContext,
   useContext,
   useEffect,
@@ -56,12 +57,17 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
       type="button"
       className={navigation.homeLink}
       aria-label={t("Search chats")}
-      aria-keyshortcuts={usesCommandKey() ? "Meta+F" : "Control+F"}
-      title={`${t("Search chats")} (${modifierLabel()}+F)`}
+      aria-keyshortcuts={
+        usesCommandKey() ? "Meta+F Meta+K" : "Control+F Control+K"
+      }
+      title={`${t("Search chats")} (${modifierLabel()}+K / ${modifierLabel()}+F)`}
       onClick={(event) => search.show(event.currentTarget)}
     >
       <MagnifyingGlass size={18} aria-hidden="true" />
       <span>{t("Search")}</span>
+      <kbd className={styles.shortcut}>
+        {`${modifierLabel()}${usesCommandKey() ? "" : " "}K`}
+      </kbd>
     </button>
   );
 }
@@ -93,7 +99,31 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
   };
   useEffect(() => {
     const find = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !isFindShortcut(event)) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const paletteShortcut =
+        event.key.toLowerCase() === "k" &&
+        (usesCommandKey()
+          ? event.metaKey && !event.ctrlKey
+          : event.ctrlKey && !event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.isComposing;
+      if (
+        event.defaultPrevented ||
+        (!isFindShortcut(event) && !paletteShortcut)
+      )
+        return;
+      if (
+        paletteShortcut &&
+        (target?.closest(
+          "[data-native-find], .xterm, [data-native-pane], [data-browser-pane], [data-desktop-pane]",
+        ) ||
+          (!usesCommandKey() &&
+            target?.closest(
+              'input, textarea, [contenteditable="true"], [role="textbox"]',
+            )))
+      )
+        return;
       if (open) {
         event.preventDefault();
         setFilterOpen(false);
@@ -263,11 +293,22 @@ export function ChatSearchProvider({ children }: { children: ReactNode }) {
               </button>
             </div>
           )}
-          {open && query.trim() && (
+          {open && (
             <div ref={results} className={`${styles.results} a13n-scrollbar`}>
               <SearchResults query={query.trim()} scope={scope} close={close} />
             </div>
           )}
+          <footer className={styles.hints} aria-hidden="true">
+            <span>
+              <kbd>↵</kbd> {t("Open")}
+            </span>
+            <span>
+              <kbd>↑↓</kbd> {t("Move")}
+            </span>
+            <span>
+              <kbd>{t("Esc")}</kbd> {t("Close")}
+            </span>
+          </footer>
         </DialogPopup>
       </Dialog>
     </ChatSearchContext>
@@ -293,30 +334,56 @@ function SearchResults({
       ]),
     ).values(),
   ];
+  const projectName = (row: (typeof rows)[number]) =>
+    row.project_name ?? t("Without a project");
+  // Recent chats keep recency order; search results group by Project.
+  const grouped = query
+    ? [...new Set(rows.map(projectName))].flatMap((name) =>
+        rows.filter((row) => projectName(row) === name),
+      )
+    : rows;
   return (
     <section aria-label={t("Chat search results")}>
-      {rows.map((row) => (
-        <Link
-          key={row.thread.thread_id}
-          to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
-          className={styles.result}
-          aria-label={conversationTitle(row.thread, [], t("Untitled chat"))}
-          onClick={close}
-        >
-          <ChatCircle size={18} aria-hidden="true" />
-          <span>
-            <strong>
-              {conversationTitle(row.thread, [], t("Untitled chat"))}
-            </strong>
-            <small>
-              {row.thread.coordinator_thread_id
-                ? t("{{project}} - Coordinator worker", {
-                    project: row.project_name ?? t("Without a project"),
-                  })
-                : (row.project_name ?? t("Without a project"))}
-            </small>
-          </span>
-        </Link>
+      {!query && <h2 className={styles.groupLabel}>{t("Recent")}</h2>}
+      {grouped.map((row, index) => (
+        <Fragment key={row.thread.thread_id}>
+          {query &&
+            (index === 0 ||
+              projectName(grouped[index - 1]) !== projectName(row)) && (
+              <h3 className={styles.groupLabel}>{projectName(row)}</h3>
+            )}
+          <Link
+            key={row.thread.thread_id}
+            to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
+            className={styles.result}
+            data-leading={index === 0 || undefined}
+            aria-label={conversationTitle(row.thread, [], t("Untitled chat"))}
+            onClick={close}
+          >
+            <ChatCircle size={18} aria-hidden="true" />
+            <span>
+              <strong>
+                <MatchText
+                  text={conversationTitle(row.thread, [], t("Untitled chat"))}
+                  query={query}
+                />
+              </strong>
+              {query ? (
+                row.thread.coordinator_thread_id && (
+                  <small>{t("Coordinator worker")}</small>
+                )
+              ) : (
+                <small>
+                  {row.thread.coordinator_thread_id
+                    ? t("{{project}} - Coordinator worker", {
+                        project: projectName(row),
+                      })
+                    : projectName(row)}
+                </small>
+              )}
+            </span>
+          </Link>
+        </Fragment>
       ))}
       {list.isFetching && !list.isFetchingNextPage && (
         <p role="status" className={styles.empty}>
@@ -324,7 +391,9 @@ function SearchResults({
         </p>
       )}
       {list.isSuccess && !rows.length && (
-        <p className={styles.empty}>{t("No matching chats.")}</p>
+        <p className={styles.empty}>
+          {query ? t("No matching chats.") : t("No chats yet")}
+        </p>
       )}
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.hasNextPage && (
@@ -337,5 +406,19 @@ function SearchResults({
         </Button>
       )}
     </section>
+  );
+}
+
+function MatchText({ text, query }: { text: string; query: string }) {
+  const start = query
+    ? text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase())
+    : -1;
+  if (start < 0) return text;
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark>{text.slice(start, start + query.length)}</mark>
+      {text.slice(start + query.length)}
+    </>
   );
 }

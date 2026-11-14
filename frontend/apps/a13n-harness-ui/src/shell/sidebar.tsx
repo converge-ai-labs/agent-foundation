@@ -160,8 +160,8 @@ export function WorkbenchSidebar({
 }
 
 // Base UI owns modality, focus restoration, Escape and background scroll locking.
-// Only horizontal gestures are claimed; vertical and nested horizontal readers
-// keep their native scrolling behavior.
+// Rows own their swipe/hold gestures. Drawer drag starts only on the header,
+// noninteractive empty space or scrim; vertical and nested readers scroll natively.
 export function MobileNavigation({
   open,
   onOpenChange,
@@ -208,7 +208,21 @@ export function MobileNavigation({
         )
       )
         return;
-      if (target.closest("[data-nested-dialog-open]")) return;
+      if (target.closest("[data-nested-dialog-open], [data-touch-thread-row]"))
+        return;
+      if (
+        !opening &&
+        target.closest(
+          "a, button, input, textarea, select, [role=button], [contenteditable]",
+        )
+      )
+        return;
+      if (
+        target.closest(
+          "[role=menu], [role=dialog]:not([data-mobile-navigation])",
+        )
+      )
+        return;
       // Do not steal a swipe from a horizontally scrolling code block or editor.
       for (
         let node: HTMLElement | null = target;
@@ -222,7 +236,7 @@ export function MobileNavigation({
           return;
       }
       const width =
-        popup.current?.offsetWidth ?? Math.min(300, window.innerWidth - 48);
+        popup.current?.offsetWidth || Math.min(300, window.innerWidth - 48);
       gesture = {
         x: point.clientX,
         y: point.clientY,
@@ -238,7 +252,13 @@ export function MobileNavigation({
       };
     };
     const move = (event: TouchEvent) => {
-      if (!gesture || event.touches.length !== 1) return;
+      if (!gesture) return;
+      if (event.touches.length !== 1 || !event.cancelable) {
+        gesture = null;
+        setOffset(null);
+        setProgress(null);
+        return;
+      }
       const point = event.touches[0]!;
       const dx = point.clientX - gesture.x;
       const dy = point.clientY - gesture.y;

@@ -822,9 +822,8 @@
 .settingsNavigationTitle {
   padding: 0 8px;
   margin: 0 0 8px;
-  font-size: var(--a13n-text-body);
-  font-weight: 500;
-  color: var(--a13n-secondary);
+  font: var(--a13n-font-label);
+  color: var(--a13n-tertiary);
 }
 .settingsNav {
   display: grid;
@@ -1195,6 +1194,12 @@
 
 /* The navigation and document titlebars share a 48px desktop center line. */
 .workbenchHeader {
+  position: relative;
+  z-index: 20;
+  background: var(--a13n-material-bar, var(--a13n-canvas));
+  backdrop-filter: var(--a13n-material-filter);
+  -webkit-backdrop-filter: var(--a13n-material-filter);
+  border-bottom-color: var(--a13n-separator);
   min-height: var(--a13n-workbench-header-height, 48px);
   align-items: center;
 }

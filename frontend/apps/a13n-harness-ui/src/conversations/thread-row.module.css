@@ -1,0 +1,77 @@
+.actions {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .swipeRow {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    isolation: isolate;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .foreground {
+    min-height: var(--a13n-row-height-touch, 44px);
+  }
+  /* Rows stay flat at rest; only a revealed row needs an opaque face. */
+  .swipeRow:has(> .actions:not([aria-hidden="true"])) .foreground {
+    background: var(--a13n-swipe-surface, var(--a13n-canvas));
+  }
+  .actions[aria-hidden="true"] {
+    visibility: hidden;
+  }
+  .actions {
+    position: absolute;
+    inset: 0 0 var(--a13n-row-gap, 2px) auto;
+    display: flex;
+    align-items: stretch;
+  }
+  .actions button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 72px;
+    min-height: 44px;
+    padding: 4px;
+    border: 0;
+    background: var(--a13n-selected);
+    color: var(--a13n-text);
+    font: var(--a13n-font-caption);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .actions button:active {
+    background: var(--a13n-hover);
+  }
+  .actions button:focus-visible {
+    outline: 2px solid var(--a13n-signal);
+    outline-offset: -2px;
+  }
+  .actions button:disabled {
+    color: var(--a13n-quaternary);
+  }
+  .actions button.destructive {
+    color: var(--a13n-danger);
+  }
+  .actions svg {
+    width: 18px;
+    height: 18px;
+  }
+  /* Still in the tab order and accessibility tree; touch uses hold or swipe. */
+  .foreground .menuTrigger:not(:focus-visible) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    right: 0;
+    clip-path: inset(50%);
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}

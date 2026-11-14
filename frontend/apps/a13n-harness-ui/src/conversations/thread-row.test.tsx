@@ -572,7 +572,51 @@ it("opens the row menu on context-click without navigating", async () => {
   expect(screen.getByLabelText("Location").textContent).toBe("/settings");
 });
 
+function revealTouchActions() {
+  const link = screen.getByRole("link", { name: "Example" });
+  fireEvent.touchStart(link, { touches: [{ clientX: 300, clientY: 100 }] });
+  fireEvent.touchMove(link, { touches: [{ clientX: 50, clientY: 100 }] });
+  fireEvent.touchEnd(link, { touches: [] });
+  return link;
+}
+
+it("reveals touch actions without navigation and keeps deletion behind confirmation", async () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  mount({ selected: false });
+  const link = revealTouchActions();
+  fireEvent.click(link);
+  expect(screen.getByLabelText("Location").textContent).toBe("/settings");
+  fireEvent.click(screen.getByRole("button", { name: "Delete chat" }));
+  expect(await screen.findByRole("dialog")).toBeTruthy();
+  expect(requests.some((request) => request.method === "DELETE")).toBe(false);
+});
+
+it("uses the existing rename destination and hides archive for live threads", () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  mount({ selected: false, live: true });
+  revealTouchActions();
+  expect(screen.queryByRole("button", { name: "Archive chat" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Rename chat" }));
+  expect(screen.getByLabelText("Location").textContent).toBe(
+    "/threads/thread-one",
+  );
+  expect(screen.getByLabelText("Search").textContent).toBe("?dialog=rename");
+});
+
 it("opens the touch menu after a stationary long press and suppresses release navigation", () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.useFakeTimers();
   mount({ selected: false });
   const link = screen.getByRole("link", { name: "Example" });
@@ -586,7 +630,7 @@ it("opens the touch menu after a stationary long press and suppresses release na
     isPrimary: { value: true },
   });
   fireEvent(link, pointer);
-  act(() => vi.advanceTimersByTime(499));
+  act(() => vi.advanceTimersByTime(449));
   expect(screen.queryByRole("menu")).toBeNull();
   act(() => vi.advanceTimersByTime(1));
   expect(screen.getByRole("menuitem", { name: "Rename chat" })).toBeTruthy();

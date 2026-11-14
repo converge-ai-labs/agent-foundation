@@ -199,54 +199,85 @@
   margin-inline: auto;
 }
 .newTabChoices h2 {
-  margin: 0 0 8px;
-  font-size: calc(var(--a13n-text-body) * 16 / 14);
-  font-weight: 500;
+  margin: 0 8px 16px;
+  font: var(--a13n-font-title);
 }
-.newTabChoices > p {
-  margin: 0 0 16px;
-  color: var(--a13n-secondary);
-  font-size: calc(var(--a13n-text-body) * 13 / 14);
-}
-.newTabChoices > button {
+.launcherGroup > button {
   display: flex;
   justify-content: flex-start;
   width: 100%;
-  min-height: 56px;
+  min-height: var(--a13n-row-height-lg, 44px);
   gap: 12px;
-  padding: 8px;
+  height: auto;
+  padding: 4px var(--a13n-inset, 8px);
+  margin-block: var(--a13n-row-gap, 2px);
   border-radius: 8px;
   white-space: normal;
   touch-action: manipulation;
   text-align: left;
 }
-.newTabChoices > button > svg {
+.launcherGroup > button > svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
-.newTabChoices > button > svg:last-child {
-  width: 16px;
-  margin-left: auto;
+.launcherGroup + .launcherGroup {
+  margin-top: var(--a13n-group-gap, 16px);
 }
-.newTabChoices > button > span {
+.newTabChoices .launcherGroup h3 {
+  margin: 0 8px 4px;
+  display: flex;
+  align-items: center;
+  min-height: var(--a13n-row-height, 32px);
+  font: var(--a13n-font-label);
+  color: var(--a13n-tertiary);
+}
+.newTabChoices kbd {
+  font: var(--a13n-font-caption);
+  color: var(--a13n-quaternary);
+}
+.launcherGroup kbd {
+  opacity: 0;
+}
+.launcherGroup button:is(:hover, :focus-visible) kbd {
+  opacity: 1;
+}
+.newTabChoices footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 20px 8px 0;
+  font: var(--a13n-font-caption);
+  color: var(--a13n-tertiary);
+}
+.newTabChoices footer span {
+  margin-inline: 4px 12px;
+}
+@media (pointer: coarse) {
+  .launcherGroup > button {
+    min-height: var(--a13n-row-height-touch, 44px);
+  }
+  .newTabChoices footer,
+  .launcherGroup kbd {
+    display: none;
+  }
+}
+.launcherGroup > button > span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .newTabChoices strong {
-  font-weight: 500;
+  font: var(--a13n-font-headline);
 }
 .newTabChoices strong,
 .newTabChoices small {
   display: block;
 }
-.newTabChoices small {
-  margin-top: 2px;
-  color: var(--a13n-secondary);
-  font-size: calc(var(--a13n-text-body) * 12 / 14);
-  font-weight: 400;
+.newTabChoices .launcherGroup small {
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-caption);
 }
 .resizeHandle {
   grid-column: 2;
@@ -281,8 +312,9 @@
   height: var(--a13n-workbench-header-height, 48px);
   min-height: var(--a13n-workbench-header-height, 48px);
   padding-inline: 8px;
-  background: var(--a13n-canvas);
-  border-bottom: 1px solid var(--a13n-border-soft);
+  background: var(--a13n-material-bar);
+  backdrop-filter: var(--a13n-material-filter);
+  border-bottom: 1px solid var(--a13n-separator);
 }
 .splitLayout .workspaceTabs {
   grid-column: 3;
@@ -1285,7 +1317,7 @@
     max-width: 240px;
   }
   .workspaceTab > button:last-child:not([role="tab"]) {
-    width: 36px;
+    width: 44px;
     height: 44px;
     margin-right: 0;
     /* Full-height touch target with symmetric chip padding around the glyph. */

@@ -45,6 +45,9 @@ import {
 } from "./coordinator-settings";
 
 import { NavigationDragContext } from "./navigation-drag";
+import { useSwipeActions } from "../shell/use-swipe-actions";
+import { useLongPress } from "../shell/use-long-press";
+import touchStyles from "./thread-row.module.css";
 
 function threadState(row: ActivityRow, t: TFunction) {
   if (row.pending_decision) return t("Needs your answer");
@@ -93,17 +96,40 @@ export function ThreadRow({
   const drag = useContext(NavigationDragContext);
   const rowElement = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const press = useRef<{
-    timer: ReturnType<typeof setTimeout>;
-    x: number;
-    y: number;
-  } | null>(null);
-  const suppressClick = useRef(false);
-  const cancelPress = () => {
-    if (press.current) clearTimeout(press.current.timer);
-    press.current = null;
-  };
-  useEffect(() => cancelPress, []);
+  const [coarse, setCoarse] = useState(
+    () => window.matchMedia?.("(pointer: coarse)").matches ?? false,
+  );
+  useEffect(() => {
+    const media = window.matchMedia?.("(pointer: coarse)");
+    if (!media) return;
+    const change = () => setCoarse(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  const canArchive = row.thread.configuration.agent_source.kind !== "live";
+  const canDelete = canDeleteThread(row.thread);
+  const swipe = useSwipeActions({
+    actionWidth: 72 * (1 + Number(canArchive) + Number(canDelete)),
+    disabled: !coarse || menuOpen,
+  });
+  // The finger that opened the menu by holding lifts outside it; that release
+  // is not a dismissal. The next touch anywhere ends this grace.
+  const heldOpen = useRef(false);
+  const { pressProps } = useLongPress(
+    () => {
+      swipe.close();
+      heldOpen.current = true;
+      window.addEventListener(
+        "pointerdown",
+        () => {
+          heldOpen.current = false;
+        },
+        { capture: true, once: true },
+      );
+      setMenuOpen(true);
+    },
+    { disabled: !coarse },
+  );
   const sortable =
     !!drag &&
     !row.thread.archived &&
@@ -223,343 +249,373 @@ export function ThreadRow({
   return (
     <div>
       <div
-        ref={rowElement}
-        key={row.thread.thread_id}
-        className={styles.threadRow}
-        data-menu-open={menuOpen || undefined}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          cancelPress();
-          setMenuOpen(true);
-        }}
-        onPointerDown={(event) => {
-          if (
-            event.pointerType !== "touch" ||
-            !event.isPrimary ||
-            (event.target as HTMLElement).closest("button")
-          )
-            return;
-          cancelPress();
-          suppressClick.current = false;
-          press.current = {
-            x: event.clientX,
-            y: event.clientY,
-            timer: setTimeout(() => {
-              suppressClick.current = true;
-              press.current = null;
-              setMenuOpen(true);
-            }, 500),
-          };
-        }}
-        onPointerMove={(event) => {
-          if (
-            press.current &&
-            Math.hypot(
-              event.clientX - press.current.x,
-              event.clientY - press.current.y,
-            ) > 8
-          )
-            cancelPress();
-        }}
-        onPointerUp={() => {
-          cancelPress();
-          // Suppress the release click, not a later deliberate menu action.
-          setTimeout(() => {
-            suppressClick.current = false;
-          }, 0);
-        }}
-        onPointerCancel={() => {
-          cancelPress();
-          suppressClick.current = false;
-        }}
-        onPointerLeave={cancelPress}
-        onClickCapture={(event) => {
-          if (!suppressClick.current) return;
-          suppressClick.current = false;
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        data-nav-thread={sortable ? row.thread.thread_id : undefined}
-        data-nav-source={drag?.moving === row.thread.thread_id || undefined}
+        ref={swipe.rootRef}
+        className={touchStyles.swipeRow}
+        data-touch-thread-row
       >
-        {disclosure && (
+        <div className={touchStyles.actions} {...swipe.actionsProps}>
           <button
             type="button"
-            className={styles.threadDisclosure}
-            aria-label={
-              disclosure.expanded
-                ? t("Collapse workers for {{title}}", { title })
-                : t("Expand workers for {{title}}", { title })
-            }
-            aria-expanded={disclosure.expanded}
-            onClick={disclosure.onToggle}
+            aria-label={t("Rename chat")}
+            onClick={() => {
+              swipe.close();
+              navigate(
+                `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=rename`,
+              );
+            }}
           >
-            <CaretRight
-              aria-hidden="true"
-              className={
-                disclosure.expanded ? styles.expandedChevron : undefined
-              }
-            />
+            <PencilSimple aria-hidden="true" />
+            {t("Rename")}
           </button>
-        )}
-        <NavLink
-          draggable={false}
-          onPointerDown={
-            sortable
-              ? (event) =>
-                  drag.begin(event, {
-                    kind: "thread",
-                    id: row.thread.thread_id,
-                    label: title,
-                    thread: row.thread,
-                  })
-              : undefined
-          }
-          onKeyDown={
-            sortable
-              ? (event) => {
-                  if (
-                    event.altKey &&
-                    ["ArrowUp", "ArrowDown"].includes(event.key)
-                  ) {
-                    event.preventDefault();
-                    drag.moveThread(
-                      row.thread,
-                      rowElement.current!,
-                      event.key === "ArrowUp" ? -1 : 1,
-                    );
-                    requestAnimationFrame(() =>
-                      rowElement.current
-                        ?.querySelector<HTMLElement>("a")
-                        ?.focus(),
-                    );
-                  }
-                }
-              : undefined
-          }
-          aria-keyshortcuts={sortable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
-          to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
-          className={({ isActive }) =>
-            `${styles.threadLink} ${isActive ? styles.selected : ""}`
-          }
-        >
-          <span className={styles.threadLabel}>
-            <strong title={title}>{title}</strong>
-            {row.thread.role === "coordinator" &&
-              title !== t("Coordinator") && (
-                <span className={styles.srOnly}>{t("Coordinator")}</span>
+          {canArchive && (
+            <button
+              type="button"
+              disabled={
+                archive.isPending ||
+                row.thread.root_activity.state !== "inactive"
+              }
+              onClick={() => {
+                swipe.close();
+                archive.mutate();
+              }}
+            >
+              {row.thread.archived ? (
+                <ArrowCounterClockwise aria-hidden="true" />
+              ) : (
+                <Archive aria-hidden="true" />
               )}
-            {showProject && (
-              <small>
-                {row.project_name ??
-                  (row.thread.configuration.project_id
-                    ? t("Unavailable project")
-                    : t("Without a project"))}
+              {row.thread.archived ? t("Restore chat") : t("Archive chat")}
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              className={touchStyles.destructive}
+              disabled={row.thread.root_activity.state !== "inactive"}
+              onClick={() => {
+                swipe.close();
+                setDeleting(true);
+              }}
+            >
+              <Trash aria-hidden="true" />
+              {t("Delete chat")}
+            </button>
+          )}
+        </div>
+        <div
+          ref={rowElement}
+          key={row.thread.thread_id}
+          className={`${styles.threadRow} ${touchStyles.foreground}`}
+          style={coarse ? swipe.contentStyle : undefined}
+          data-menu-open={menuOpen || undefined}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            swipe.close();
+            setMenuOpen(true);
+          }}
+          data-nav-thread={sortable ? row.thread.thread_id : undefined}
+          data-nav-source={drag?.moving === row.thread.thread_id || undefined}
+        >
+          {disclosure && (
+            <button
+              type="button"
+              className={styles.threadDisclosure}
+              aria-label={
+                disclosure.expanded
+                  ? t("Collapse workers for {{title}}", { title })
+                  : t("Expand workers for {{title}}", { title })
+              }
+              aria-expanded={disclosure.expanded}
+              onClick={disclosure.onToggle}
+            >
+              <CaretRight
+                aria-hidden="true"
+                className={
+                  disclosure.expanded ? styles.expandedChevron : undefined
+                }
+              />
+            </button>
+          )}
+          <NavLink
+            {...(coarse ? pressProps : {})}
+            draggable={false}
+            onPointerDown={(event) => {
+              pressProps.onPointerDown?.(event);
+              if (sortable)
+                drag.begin(event, {
+                  kind: "thread",
+                  id: row.thread.thread_id,
+                  label: title,
+                  thread: row.thread,
+                });
+            }}
+            onKeyDown={
+              sortable
+                ? (event) => {
+                    if (
+                      event.altKey &&
+                      ["ArrowUp", "ArrowDown"].includes(event.key)
+                    ) {
+                      event.preventDefault();
+                      drag.moveThread(
+                        row.thread,
+                        rowElement.current!,
+                        event.key === "ArrowUp" ? -1 : 1,
+                      );
+                      requestAnimationFrame(() =>
+                        rowElement.current
+                          ?.querySelector<HTMLElement>("a")
+                          ?.focus(),
+                      );
+                    }
+                  }
+                : undefined
+            }
+            aria-keyshortcuts={
+              sortable ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+            }
+            to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
+            className={({ isActive }) =>
+              `${styles.threadLink} ${isActive ? styles.selected : ""}`
+            }
+          >
+            <span className={styles.threadLabel}>
+              <strong title={title}>{title}</strong>
+              {row.thread.role === "coordinator" &&
+                title !== t("Coordinator") && (
+                  <span className={styles.srOnly}>{t("Coordinator")}</span>
+                )}
+              {showProject && (
+                <small>
+                  {row.project_name ??
+                    (row.thread.configuration.project_id
+                      ? t("Unavailable project")
+                      : t("Without a project"))}
+                </small>
+              )}
+            </span>
+            {isCoordinator && workerActivity && (
+              <small
+                className={styles.coordinatorActivity}
+                title={workerActivity}
+                aria-label={workerActivity}
+              >
+                {t("{{count, number}} active", { count: activeWorkerCount })}
               </small>
             )}
-          </span>
-          {isCoordinator && workerActivity && (
-            <small
-              className={styles.coordinatorActivity}
-              title={workerActivity}
-              aria-label={workerActivity}
+            {unsent && (
+              <span
+                className={styles.draftMarker}
+                role="img"
+                aria-label={t("Draft - Unsent input")}
+                title={t("Unsent input")}
+              >
+                <PencilSimple size={12} aria-hidden="true" />
+              </span>
+            )}
+            {state && (
+              <span className={styles.threadStatus} title={state}>
+                <ThreadStateIcon row={row} />
+                <span className={styles.srOnly}>{state}</span>
+              </span>
+            )}
+            {unread && (
+              <span
+                className={styles.resultDot}
+                role="img"
+                aria-label={t("New result")}
+                title={t("New result")}
+              />
+            )}
+          </NavLink>
+          {showRestore && row.thread.archived && (
+            <Button
+              variant="ghost"
+              size={showRestore === "compact" ? "icon-sm" : "sm"}
+              title={t("Restore {{title}}", { title })}
+              loading={archive.isPending}
+              disabled={row.thread.root_activity.state !== "inactive"}
+              onClick={() => archive.mutate()}
+              aria-label={t("Restore {{title}}", { title })}
             >
-              {t("{{count, number}} active", { count: activeWorkerCount })}
-            </small>
+              <ArrowCounterClockwise />
+              {showRestore !== "compact" && t("Restore")}
+            </Button>
           )}
-          {unsent && (
+          {canStar && row.thread.starred && (
             <span
-              className={styles.draftMarker}
+              className={styles.threadStar}
               role="img"
-              aria-label={t("Draft - Unsent input")}
-              title={t("Unsent input")}
+              aria-label={t("Starred chat: {{title}}", { title })}
+              title={t("Starred - Shared with everyone in this project")}
             >
-              <PencilSimple size={12} aria-hidden="true" />
+              <Star size={12} weight="fill" aria-hidden="true" />
             </span>
           )}
-          {state && (
-            <span className={styles.threadStatus} title={state}>
-              <ThreadStateIcon row={row} />
-              <span className={styles.srOnly}>{state}</span>
-            </span>
-          )}
-          {unread && (
-            <span
-              className={styles.resultDot}
-              role="img"
-              aria-label={t("New result")}
-              title={t("New result")}
-            />
-          )}
-        </NavLink>
-        {showRestore && row.thread.archived && (
-          <Button
-            variant="ghost"
-            size={showRestore === "compact" ? "icon-sm" : "sm"}
-            title={t("Restore {{title}}", { title })}
-            loading={archive.isPending}
-            disabled={row.thread.root_activity.state !== "inactive"}
-            onClick={() => archive.mutate()}
-            aria-label={t("Restore {{title}}", { title })}
+          <Menu
+            open={menuOpen}
+            onOpenChange={(open, details) => {
+              if (
+                !open &&
+                heldOpen.current &&
+                details.reason === "outside-press"
+              )
+                return;
+              heldOpen.current = false;
+              setMenuOpen(open);
+            }}
           >
-            <ArrowCounterClockwise />
-            {showRestore !== "compact" && t("Restore")}
-          </Button>
-        )}
-        {canStar && row.thread.starred && (
-          <span
-            className={styles.threadStar}
-            role="img"
-            aria-label={t("Starred chat: {{title}}", { title })}
-            title={t("Starred - Shared with everyone in this project")}
-          >
-            <Star size={12} weight="fill" aria-hidden="true" />
-          </span>
-        )}
-        <Menu open={menuOpen} onOpenChange={setMenuOpen}>
-          <MenuTrigger
-            render={
-              <Button ref={actionsButton} variant="ghost" size="icon-sm" />
-            }
-            className={styles.threadActions}
-            aria-busy={star.isPending || fork.isPending || markUnread.isPending}
-            aria-label={t("Actions for {{name}}", { name: title })}
-          >
-            <DotsThree />
-          </MenuTrigger>
-          <MenuPopup align="start" side="right">
-            {row.thread.role === "coordinator" && (
-              <MenuItem
-                disabled={row.thread.archived}
-                onClick={() =>
-                  navigate(
-                    newConversationPath(
-                      row.thread.configuration.project_id,
-                      row.thread.thread_id,
-                    ),
-                  )
-                }
-              >
-                <ChatCircle />
-                {t("New worker")}
-              </MenuItem>
-            )}
-            {sortable && (
-              <>
+            <MenuTrigger
+              render={
+                <Button ref={actionsButton} variant="ghost" size="icon-sm" />
+              }
+              className={`${styles.threadActions} ${touchStyles.menuTrigger}`}
+              aria-busy={
+                star.isPending || fork.isPending || markUnread.isPending
+              }
+              aria-label={t("Actions for {{name}}", { name: title })}
+            >
+              <DotsThree />
+            </MenuTrigger>
+            <MenuPopup align="start" side="right">
+              {row.thread.role === "coordinator" && (
                 <MenuItem
+                  disabled={row.thread.archived}
                   onClick={() =>
-                    drag.moveThread(row.thread, rowElement.current!, -1)
+                    navigate(
+                      newConversationPath(
+                        row.thread.configuration.project_id,
+                        row.thread.thread_id,
+                      ),
+                    )
                   }
                 >
-                  <ArrowUp />
-                  {t("Move up")}
-                </MenuItem>
-                <MenuItem
-                  onClick={() =>
-                    drag.moveThread(row.thread, rowElement.current!, 1)
-                  }
-                >
-                  <ArrowDown />
-                  {t("Move down")}
-                </MenuItem>
-              </>
-            )}
-            {!row.thread.parent_thread_id && !row.thread.memory_scope && (
-              <MenuItem
-                disabled={markUnread.isPending}
-                onClick={() => {
-                  if (!markUnread.isPending) markUnread.mutate();
-                }}
-              >
-                <EnvelopeSimple />
-                {t("Mark unread")}
-              </MenuItem>
-            )}
-            {canStar && (
-              <MenuItem disabled={star.isPending} onClick={toggleStar}>
-                <Star weight={row.thread.starred ? "fill" : "regular"} />
-                {starLabel}
-              </MenuItem>
-            )}
-            {(
-              [
-                ["rename", t("Rename chat"), t("Rename"), PencilSimple],
-                ["share", t("Share chat"), t("Share"), ShareNetwork],
-                ["details", t("Chat details"), t("Details"), SlidersHorizontal],
-              ] as const
-            ).map(([action, label, caption, Icon]) => (
-              <MenuItem
-                key={action}
-                aria-label={label}
-                onClick={() =>
-                  navigate(
-                    `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
-                  )
-                }
-              >
-                <Icon />
-                {caption}
-              </MenuItem>
-            ))}
-            {row.thread.role === "ordinary" &&
-              !row.thread.parent_thread_id &&
-              !row.thread.memory_scope &&
-              row.thread.configuration.agent_source.kind === "agent" && (
-                <MenuItem
-                  disabled={fork.isPending}
-                  onClick={() => fork.mutate()}
-                >
-                  <GitFork />
-                  {t("Fork chat")}
+                  <ChatCircle />
+                  {t("New worker")}
                 </MenuItem>
               )}
-            {row.thread.role === "ordinary" &&
-              row.thread.configuration.project_id && (
+              {sortable && (
+                <>
+                  <MenuItem
+                    onClick={() =>
+                      drag.moveThread(row.thread, rowElement.current!, -1)
+                    }
+                  >
+                    <ArrowUp />
+                    {t("Move up")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() =>
+                      drag.moveThread(row.thread, rowElement.current!, 1)
+                    }
+                  >
+                    <ArrowDown />
+                    {t("Move down")}
+                  </MenuItem>
+                </>
+              )}
+              {!row.thread.parent_thread_id && !row.thread.memory_scope && (
                 <MenuItem
-                  disabled={
-                    !canPromoteCoordinator(row.thread, !!row.pending_decision)
+                  disabled={markUnread.isPending}
+                  onClick={() => {
+                    if (!markUnread.isPending) markUnread.mutate();
+                  }}
+                >
+                  <EnvelopeSimple />
+                  {t("Mark unread")}
+                </MenuItem>
+              )}
+              {canStar && (
+                <MenuItem disabled={star.isPending} onClick={toggleStar}>
+                  <Star weight={row.thread.starred ? "fill" : "regular"} />
+                  {starLabel}
+                </MenuItem>
+              )}
+              {(
+                [
+                  ["rename", t("Rename chat"), t("Rename"), PencilSimple],
+                  ["share", t("Share chat"), t("Share"), ShareNetwork],
+                  [
+                    "details",
+                    t("Chat details"),
+                    t("Details"),
+                    SlidersHorizontal,
+                  ],
+                ] as const
+              ).map(([action, label, caption, Icon]) => (
+                <MenuItem
+                  key={action}
+                  aria-label={label}
+                  onClick={() =>
+                    navigate(
+                      `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
+                    )
                   }
-                  onClick={() => setPromoting(true)}
+                >
+                  <Icon />
+                  {caption}
+                </MenuItem>
+              ))}
+              {row.thread.role === "ordinary" &&
+                !row.thread.parent_thread_id &&
+                !row.thread.memory_scope &&
+                row.thread.configuration.agent_source.kind === "agent" && (
+                  <MenuItem
+                    disabled={fork.isPending}
+                    onClick={() => fork.mutate()}
+                  >
+                    <GitFork />
+                    {t("Fork chat")}
+                  </MenuItem>
+                )}
+              {row.thread.role === "ordinary" &&
+                row.thread.configuration.project_id && (
+                  <MenuItem
+                    disabled={
+                      !canPromoteCoordinator(row.thread, !!row.pending_decision)
+                    }
+                    onClick={() => setPromoting(true)}
+                  >
+                    <CoordinatorIcon size={16} />
+                    {t("Make Coordinator")}
+                  </MenuItem>
+                )}
+              {row.thread.role === "coordinator" && (
+                <MenuItem
+                  disabled={coordinator.isPending}
+                  onClick={() => coordinator.mutate(!row.thread.auto_followup)}
                 >
                   <CoordinatorIcon size={16} />
-                  {t("Make Coordinator")}
+                  {row.thread.auto_followup
+                    ? t("Pause follow-ups")
+                    : t("Enable follow-ups")}
                 </MenuItem>
               )}
-            {row.thread.role === "coordinator" && (
-              <MenuItem
-                disabled={coordinator.isPending}
-                onClick={() => coordinator.mutate(!row.thread.auto_followup)}
-              >
-                <CoordinatorIcon size={16} />
-                {row.thread.auto_followup
-                  ? t("Pause follow-ups")
-                  : t("Enable follow-ups")}
-              </MenuItem>
-            )}
-            {row.thread.configuration.agent_source.kind !== "live" && (
-              <MenuItem
-                disabled={
-                  archive.isPending ||
-                  row.thread.root_activity.state !== "inactive"
-                }
-                onClick={() => archive.mutate()}
-              >
-                <Archive />
-                {row.thread.archived ? t("Restore chat") : t("Archive chat")}
-              </MenuItem>
-            )}
-            {canDeleteThread(row.thread) && (
-              <MenuItem
-                variant="destructive"
-                disabled={row.thread.root_activity.state !== "inactive"}
-                onClick={() => setDeleting(true)}
-              >
-                <Trash />
-                {t("Delete chat")}
-              </MenuItem>
-            )}
-          </MenuPopup>
-        </Menu>
+              {canArchive && (
+                <MenuItem
+                  disabled={
+                    archive.isPending ||
+                    row.thread.root_activity.state !== "inactive"
+                  }
+                  onClick={() => archive.mutate()}
+                >
+                  <Archive />
+                  {row.thread.archived ? t("Restore chat") : t("Archive chat")}
+                </MenuItem>
+              )}
+              {canDelete && (
+                <MenuItem
+                  variant="destructive"
+                  disabled={row.thread.root_activity.state !== "inactive"}
+                  onClick={() => setDeleting(true)}
+                >
+                  <Trash />
+                  {t("Delete chat")}
+                </MenuItem>
+              )}
+            </MenuPopup>
+          </Menu>
+        </div>
       </div>
       <ErrorNotice
         error={

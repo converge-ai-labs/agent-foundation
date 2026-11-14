@@ -594,8 +594,8 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   fireEvent.change(screen.getByRole("searchbox"), {
     target: { value: "match" },
   });
-  await screen.findByText("Global match");
-  expect(activity).toHaveLength(calls + 1);
+  await screen.findByRole("link", { name: "Global match" });
+  expect(activity).toHaveLength(calls + 2);
   expect(activity.at(-1)?.searchParams.has("project_id")).toBe(false);
   expect(screen.queryByRole("button", { name: "One" })).toBeNull();
   if (!screen.queryByRole("searchbox"))
@@ -603,7 +603,7 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   fireEvent.click(screen.getByRole("button", { name: "Close search" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
-  expect(activity).toHaveLength(calls + 1);
+  expect(activity).toHaveLength(calls + 2);
 });
 
 it("locates a deep-linked selected row without fetching preceding pages and preserves explicit collapse", async () => {
@@ -898,18 +898,18 @@ it("scopes the search dialog without resetting the sidebar's loaded pages", asyn
   await user.click(trigger);
   const search = screen.getByRole("searchbox", { name: "Find chats" });
   await waitFor(() => expect(document.activeElement).toBe(search));
-  expect(activity).toHaveLength(calls);
+  await waitFor(() => expect(activity).toHaveLength(calls + 1));
   await user.click(screen.getByRole("combobox", { name: "Project scope" }));
   await user.click(await screen.findByRole("option", { name: "Two" }));
-  expect(activity).toHaveLength(calls);
+  await waitFor(() => expect(activity).toHaveLength(calls + 2));
   fireEvent.change(search, { target: { value: "match" } });
-  await screen.findByText("Global match");
+  await screen.findByRole("link", { name: "Global match" });
   expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
-  expect(activity).toHaveLength(calls + 1);
+  expect(activity).toHaveLength(calls + 3);
   await user.click(trigger);
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
   expect(screen.getByRole("combobox", { name: "Project scope" })).toBeTruthy();
@@ -1304,8 +1304,13 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   await act(async () => {
     results.observe({ ...otherProject, unread: true, read_state_version: 1 });
   });
-  fireEvent.click(
-    within(group).getByRole("button", { name: "Mark all results read in One" }),
+  await userEvent.click(
+    within(group).getByRole("button", { name: "Actions for One" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", {
+      name: "Mark all results read in One",
+    }),
   );
   await waitFor(() => expect(results.isUnread(unread.thread_id)).toBe(false));
   expect(results.isUnread(running.thread_id)).toBe(false);
@@ -1668,7 +1673,8 @@ it("finds workers through ordinary global search without expanding the Coordinat
     target: { value: "worker" },
   });
   await screen.findByRole("link", { name: "search-worker" });
-  expect(screen.getByText("One - Coordinator worker")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "One" })).toBeTruthy();
+  expect(screen.getByText("Coordinator worker")).toBeTruthy();
   const request = activity.find(
     (url) => url.searchParams.get("query") === "worker",
   )!;
@@ -2720,5 +2726,32 @@ it("keeps the selected result in place after acknowledgement until selection cha
         "recent",
     ).toBe("recent");
   });
+  vi.restoreAllMocks();
+});
+
+it("retains a listed result's bucket when navigation and read acknowledgement arrive together", async () => {
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const unread = {
+    ...thread("selected-old"),
+    unread: true,
+    read_state_version: 1,
+  } as Schema<"ThreadSummary">;
+  results.observe(unread);
+  mount("/", false, results);
+  await userEvent.click(await screen.findByRole("button", { name: /^One/ }));
+  const link = await screen.findByRole("link", { name: /selected-old/ });
+  expect(
+    link.closest("[data-nav-bucket]")?.getAttribute("data-nav-bucket"),
+  ).toBe("unread");
+  act(() => {
+    fireEvent.click(link);
+    results.observe({ ...unread, unread: false, read_state_version: 2 });
+  });
+  await waitFor(() => expect(link.getAttribute("aria-current")).toBe("page"));
+  expect(
+    link.closest("[data-nav-bucket]")?.getAttribute("data-nav-bucket"),
+  ).toBe("unread");
+  expect(within(link).queryByRole("img", { name: "New result" })).toBeNull();
   vi.restoreAllMocks();
 });

@@ -121,7 +121,7 @@ it("uses Command+F on Apple platforms", async () => {
       screen
         .getByRole("button", { name: "Search chats" })
         .getAttribute("aria-keyshortcuts"),
-    ).toBe("Meta+F");
+    ).toBe("Meta+F Meta+K");
     expect(fireEvent.keyDown(message, { key: "f", ctrlKey: true })).toBe(true);
     expect(fireEvent.keyDown(message, { key: "f", metaKey: true })).toBe(false);
     const search = await screen.findByRole("searchbox", { name: "Find chats" });
@@ -194,4 +194,41 @@ it("replaces mobile navigation with search without restoring drawer focus over t
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   await userEvent.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("shows recent grouped chats before typing and highlights matching title text", async () => {
+  searchRows.push({ thread: { thread_id: "recent", title: "Recent match" } });
+  render(
+    <MemoryRouter>
+      <ChatSearchProvider>
+        <ChatSearch onOpen={() => {}} />
+      </ChatSearchProvider>
+    </MemoryRouter>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Search chats" }));
+  expect(
+    await screen.findByRole("link", { name: "Recent match" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Recent" })).toBeTruthy();
+  await userEvent.type(
+    screen.getByRole("searchbox", { name: "Find chats" }),
+    "match",
+  );
+  expect(
+    screen.getByRole("link", { name: "Recent match" }).querySelector("mark")
+      ?.textContent,
+  ).toBe("match");
+});
+
+it("leaves Ctrl+K to editable fields and native panes but opens from ordinary content", async () => {
+  const { message } = fixture();
+  expect(fireEvent.keyDown(message, { key: "k", ctrlKey: true })).toBe(true);
+  const native = screen.getByRole("button", { name: "File preview" });
+  expect(fireEvent.keyDown(native, { key: "k", ctrlKey: true })).toBe(true);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const button = screen.getByRole("button", { name: "Search chats" });
+  expect(fireEvent.keyDown(button, { key: "k", ctrlKey: true })).toBe(false);
+  expect(
+    await screen.findByRole("searchbox", { name: "Find chats" }),
+  ).toBeTruthy();
 });

@@ -3,9 +3,9 @@
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  min-height: max(var(--harness-nav-height, 32px), calc(1.5em + 8px));
+  min-height: max(var(--a13n-row-height, 32px), calc(1.5em + 8px));
   min-width: 0;
-  padding: 4px 8px;
+  padding: 4px var(--a13n-inset, 8px);
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -47,6 +47,6 @@
 
 @media (pointer: coarse) {
   .row {
-    min-height: 44px;
+    min-height: var(--a13n-row-height-touch, 44px);
   }
 }

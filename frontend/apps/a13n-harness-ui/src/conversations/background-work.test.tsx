@@ -115,7 +115,6 @@ it("uses stable child identity and deduplicates Shell execution observations", (
 function setup(
   children: Schema<"ChildExecutionView">[],
   tools: Schema<"ToolExecutionView">[] = [],
-  closeOnOpen = false,
 ) {
   live.display = new FocusDisplay();
   const GET = vi.fn(
@@ -190,11 +189,7 @@ function setup(
       >
         <MemoryRouter>
           <ChildControlsProvider>
-            <BackgroundScope
-              threadId={id}
-              onOpen={open}
-              closeOnOpen={closeOnOpen}
-            >
+            <BackgroundScope threadId={id} onOpen={open}>
               <BackgroundToggle />
               <BackgroundCard />
               {content}
@@ -206,7 +201,7 @@ function setup(
   );
   return { view, open, GET, POST, query };
 }
-it("stays closed as work arrives, remembers open per Thread, and only exposes permitted controls", async () => {
+it("stays closed as work arrives and after navigation, and only exposes permitted controls", async () => {
   const user = userEvent.setup();
   const children = [
     child("one", "running"),
@@ -219,7 +214,7 @@ it("stays closed as work arrives, remembers open per Thread, and only exposes pe
       screen.getByRole("button", { name: "Activity" }).textContent,
     ).toContain("2"),
   );
-  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Activity" }));
   expect(screen.getAllByRole("button", { name: "Stop subagent" })).toHaveLength(
     1,
@@ -229,9 +224,9 @@ it("stays closed as work arrives, remembers open per Thread, and only exposes pe
     expect.objectContaining({ id: "one", kind: "child" }),
   );
   page.rerender(test.view("another"));
-  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
   page.rerender(test.view("root"));
-  expect(screen.getByRole("region", { name: "Activity" })).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
 });
 it("keeps the row action separate from opening a resource tab", async () => {
   const test = setup([child("one", "running")]);
@@ -265,7 +260,7 @@ it("limits each card section to three rows and opens its own history tab", async
     threadId: "root",
     title: "Subagents",
   });
-  await userEvent.click(screen.getByRole("button", { name: "Close activity" }));
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
   page.rerender(
     test.view(
       "root",
@@ -561,7 +556,6 @@ it("closes the card when opening a resource in the narrow layout without fetchin
         available_actions: ["cancel"],
       } as Schema<"ToolExecutionView">,
     ],
-    true,
   );
   render(test.view("root"));
   await userEvent.click(screen.getByRole("button", { name: "Activity" }));
@@ -569,7 +563,7 @@ it("closes the card when opening a resource in the narrow layout without fetchin
     await screen.findByRole("button", { name: /^pnpm test/ }),
   );
   expect(test.open).toHaveBeenCalled();
-  expect(screen.queryByRole("region", { name: "Activity" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
   expect(test.GET.mock.calls.some(([path]) => path.endsWith("/output"))).toBe(
     false,
   );
@@ -741,7 +735,10 @@ it("shares server tool cancellation progress across the card, history and item h
   );
   await userEvent.click(screen.getByRole("button", { name: "Activity" }));
   await userEvent.click(
-    (await screen.findAllByRole("button", { name: "Cancel execution" }))[0],
+    await within(screen.getByRole("dialog", { name: "Activity" })).findByRole(
+      "button",
+      { name: "Cancel execution" },
+    ),
   );
   await waitFor(() =>
     expect(screen.getAllByRole("button", { name: "Stopping…" })).toHaveLength(
@@ -805,4 +802,21 @@ it("requests another history page only after Show more", async () => {
   await screen.findByRole("button", { name: /Agent older/ });
   expect(pages).toBe(2);
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+});
+
+it("ignores the old stored open preference and dismisses on outside click and Escape", async () => {
+  localStorage.setItem("a13n-harness-ui.background.root", "open");
+  const test = setup([child("one", "running")]);
+  render(test.view("root"));
+  const trigger = screen.getByRole("button", { name: "Activity" });
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
+  await userEvent.click(trigger);
+  expect(screen.getByRole("dialog", { name: "Activity" })).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  await userEvent.click(trigger);
+  await userEvent.click(document.body);
+  expect(screen.queryByRole("dialog", { name: "Activity" })).toBeNull();
+  expect(trigger.textContent).toContain("1");
 });

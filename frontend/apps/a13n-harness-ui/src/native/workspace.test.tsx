@@ -518,6 +518,17 @@ it("adds files through the new-tab picker in one strip and closes views without 
     screen.getByRole("tab", { name: "New tab", selected: true }),
   ).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Open a new tab" })).toBeTruthy();
+  const launcher = screen.getByRole("heading", {
+    name: "Open a new tab",
+  }).parentElement!;
+  const choices = within(launcher).getAllByRole("button");
+  choices[0].focus();
+  fireEvent.keyDown(choices[0], { key: "ArrowDown" });
+  expect(document.activeElement).toBe(choices[1]);
+  fireEvent.keyDown(choices[1], { key: "End" });
+  expect(document.activeElement).toBe(choices.at(-1));
+  fireEvent.keyDown(choices.at(-1)!, { key: "Home" });
+  expect(document.activeElement).toBe(choices[0]);
   expect(buffers.get("/native/first.txt")).toBe(dirty);
   expect(screen.getByTestId("chat")).toBe(conversation);
   expect(screen.getByLabelText("Private draft")).toBe(draft);

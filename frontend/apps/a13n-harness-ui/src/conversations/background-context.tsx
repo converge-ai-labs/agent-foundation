@@ -1,5 +1,6 @@
 import {
   createContext,
+  useEffect,
   useContext,
   useMemo,
   useState,
@@ -19,7 +20,7 @@ import {
   type BackgroundSection,
   type BackgroundTarget,
 } from "./background-work";
-import { readPreference, writePreference } from "../shell/preferences";
+import { useLocation } from "react-router";
 import type { FocusDisplay } from "./stream";
 
 type BackgroundState = {
@@ -55,7 +56,6 @@ export const useBackground = () => useContext(Context);
 type BackgroundScopeProps = {
   threadId: string;
   observe?: boolean;
-  closeOnOpen?: boolean;
   onOpen: BackgroundState["open"];
   children: ReactNode;
 };
@@ -69,7 +69,6 @@ function ThreadBackgroundScope({
   onOpen,
   children,
   observe = false,
-  closeOnOpen = false,
 }: BackgroundScopeProps) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -129,15 +128,9 @@ function ThreadBackgroundScope({
     revision,
     t,
   ]);
-  const [cardStates, setCardStates] = useState<Record<string, boolean>>({});
-  const cardOpen =
-    !!threadId &&
-    (cardStates[threadId] ??
-      readPreference(`background.${threadId}`, "closed") === "open");
-  const setCardOpen = (value: boolean) => {
-    setCardStates((current) => ({ ...current, [threadId]: value }));
-    writePreference(`background.${threadId}`, value ? "open" : "closed");
-  };
+  const [cardOpen, setCardOpen] = useState(false);
+  const location = useLocation();
+  useEffect(() => setCardOpen(false), [threadId, location.key]);
   const refresh = () => {
     void queries.invalidateQueries({
       queryKey: ["thread", threadId, "children"],
@@ -167,7 +160,7 @@ function ThreadBackgroundScope({
         display,
         open: (target) => {
           onOpen(target);
-          if (closeOnOpen) setCardOpen(false);
+          setCardOpen(false);
         },
         cardOpen,
         more: {

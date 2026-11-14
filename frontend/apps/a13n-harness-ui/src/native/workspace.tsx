@@ -1,4 +1,5 @@
 import { ShareButton } from "../sharing";
+import { animateTabClose } from "./tab-motion";
 import { BackgroundScope } from "../conversations/background-context";
 import {
   BackgroundCard,
@@ -510,15 +511,19 @@ export function NativeWorkspace({
     const action = { type: "close" as const, id, emptyId: nextTabId() };
     const next = workspaceTabs(tabs, action);
     if (tabs.items.length === 1) {
-      animateLayout(() => {
-        dispatchTabs(action);
-        applyTab(next.items[0]!);
-        setSidebarCollapsed(true);
-        focusCenter();
-      }, "panel-close");
+      animateTabClose(viewTabsElement.current, id, () => {
+        animateLayout(() => {
+          dispatchTabs(action);
+          applyTab(next.items[0]!);
+          setSidebarCollapsed(true);
+          focusCenter();
+        }, "panel-close");
+      });
       return;
     }
-    dispatchTabs(action);
+    animateTabClose(viewTabsElement.current, id, () =>
+      flushSync(() => dispatchTabs(action)),
+    );
     if (tabs.active === id) {
       applyTab(next.items.find((tab) => tab.id === next.active)!);
       requestAnimationFrame(() => {
@@ -766,6 +771,10 @@ export function NativeWorkspace({
           ? t("Project settings")
           : t("Page not found");
   const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
+  // Settings pages carry their own large title; the bar names the section.
+  const toolbarTitle = location.pathname.startsWith("/settings")
+    ? t("Settings")
+    : title;
   useEffect(() => {
     document.title = workspaceDocumentTitle(title);
     return () => {
@@ -1095,7 +1104,6 @@ export function NativeWorkspace({
   );
   return (
     <BackgroundScope
-      closeOnOpen={showOneView}
       threadId={botMode && !bot.data?.thread ? "" : (threadId ?? "")}
       onOpen={(target) => {
         setBackgroundAvailable(true);
@@ -1194,8 +1202,11 @@ export function NativeWorkspace({
                   </span>
                 )}
                 {(!isNew || compactHeader) && (
-                  <ToolbarTitle className={styles.workspaceTitle} title={title}>
-                    {title}
+                  <ToolbarTitle
+                    className={styles.workspaceTitle}
+                    title={toolbarTitle}
+                  >
+                    {toolbarTitle}
                   </ToolbarTitle>
                 )}
               </div>
@@ -1398,6 +1409,7 @@ export function NativeWorkspace({
                       className={styles.workspaceTab}
                       key={key}
                       data-active={activeView === key || undefined}
+                      data-tab-id={key}
                     >
                       <Button
                         variant="ghost"
@@ -1502,27 +1514,79 @@ export function NativeWorkspace({
                 role="tabpanel"
                 aria-labelledby={`${workspaceId}-${tabs.active}-tab`}
               >
-                <div className={styles.newTabChoices}>
+                <div
+                  className={styles.newTabChoices}
+                  onKeyDown={(event) => {
+                    const choices = Array.from(
+                      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                        "button:not(:disabled)",
+                      ),
+                    );
+                    const index = choices.indexOf(
+                      event.target as HTMLButtonElement,
+                    );
+                    const next =
+                      event.key === "ArrowDown"
+                        ? (index + 1) % choices.length
+                        : event.key === "ArrowUp"
+                          ? (index - 1 + choices.length) % choices.length
+                          : event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? choices.length - 1
+                              : -1;
+                    if (next < 0 || !choices.length) return;
+                    event.preventDefault();
+                    choices[next]?.focus();
+                  }}
+                >
                   <h2>{t("Open a new tab")}</h2>
-                  <p>{t("Choose what you want to work with.")}</p>
-                  {viewChoices.map(
-                    ({ key, label, description, icon: Icon }) => (
-                      <Button
-                        key={key}
-                        variant="ghost"
-                        aria-label={label}
-                        disabled={projectLoading}
-                        onClick={() => show(key)}
+                  {[
+                    {
+                      label: t("Project"),
+                      keys: ["work-notes", "files", "changes"],
+                    },
+                    { label: t("Environment"), keys: ["terminal", "browser"] },
+                  ].map((group) => {
+                    const choices = viewChoices.filter((choice) =>
+                      group.keys.includes(choice.key),
+                    );
+                    if (!choices.length) return null;
+                    return (
+                      <section
+                        key={group.label}
+                        className={styles.launcherGroup}
+                        aria-label={group.label}
                       >
-                        <Icon />
-                        <span>
-                          <strong>{label}</strong>
-                          <small>{description}</small>
-                        </span>
-                        <CaretRight />
-                      </Button>
-                    ),
-                  )}
+                        <h3>{group.label}</h3>
+                        {choices.map(
+                          ({ key, label, description, icon: Icon }) => (
+                            <Button
+                              key={key}
+                              variant="ghost"
+                              aria-label={label}
+                              disabled={projectLoading}
+                              onClick={() => show(key)}
+                            >
+                              <Icon aria-hidden="true" />
+                              <span>
+                                <strong>{label}</strong>
+                                <small>{description}</small>
+                              </span>
+                              <kbd aria-hidden="true">↵</kbd>
+                            </Button>
+                          ),
+                        )}
+                      </section>
+                    );
+                  })}
+                  <footer aria-hidden="true">
+                    <kbd>↑</kbd>
+                    <kbd>↓</kbd>
+                    <span>{t("Move")}</span>
+                    <kbd>↵</kbd>
+                    <span>{t("Open")}</span>
+                  </footer>
                 </div>
               </section>
             )}

@@ -85,7 +85,10 @@
   align-items: center;
   flex-shrink: 0;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 8px;
+  background: var(--a13n-material-bar);
+  backdrop-filter: var(--a13n-material-filter);
+  border-bottom: 1px solid var(--a13n-separator);
 }
 .connectionState {
   min-width: 0;
