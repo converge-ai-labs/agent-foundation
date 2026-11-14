@@ -11,7 +11,7 @@
   margin-bottom: 0;
 }
 .markdown p {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   font-size: inherit;
   line-height: inherit;
   color: inherit;
@@ -47,7 +47,13 @@
 .markdown ul,
 .markdown ol {
   padding-left: 24px;
-  margin-block: 12px;
+  margin-block: 16px;
+}
+.markdown li > :is(ul, ol) {
+  margin-block: 8px;
+}
+.markdown li > :last-child {
+  margin-bottom: 0;
 }
 .markdown ul {
   list-style: disc;
@@ -74,8 +80,8 @@
 .markdown h5,
 .markdown h6 {
   font-weight: 500;
-  line-height: 1.4;
-  margin: 24px 0 8px;
+  line-height: 1.3;
+  margin: 32px 0 12px;
   color: var(--a13n-text);
 }
 .markdown h1 {
@@ -143,7 +149,7 @@
   font-size: inherit;
 }
 .codeBlock {
-  margin: 12px 0;
+  margin: 16px 0;
   min-width: 0;
   overflow: hidden;
   background: var(--a13n-surface);
@@ -158,16 +164,15 @@
   min-height: 32px;
   padding: 4px 8px 4px 16px;
   border-bottom: 1px solid var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-body);
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-caption);
 }
 /* Header controls share the compact 32px height; coarse pointers
    keep the shared 44px hit area. */
 .codeHeader button {
   height: 32px;
   color: var(--a13n-secondary);
-  font-size: var(--a13n-text-body);
-  font-weight: 400;
+  font: var(--a13n-font-caption);
 }
 .codeHeader button:hover {
   color: var(--a13n-text);

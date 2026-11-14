@@ -1,6 +1,6 @@
 .navigation {
   --thread-label-inset: 32px;
-  --harness-nav-height: 30px;
+  --harness-nav-height: var(--a13n-row-height, 32px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -16,10 +16,9 @@
   justify-content: space-between;
   gap: 8px;
   padding-inline: 8px 4px;
-  color: var(--a13n-secondary);
-  font-size: var(--harness-nav-font);
-  font-weight: 500;
-  margin-top: 4px;
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-label);
+  margin-top: 8px;
 }
 .navigationHeadingActions {
   display: flex;
@@ -165,7 +164,7 @@
   }
 }
 .projectGroup {
-  margin-bottom: 2px;
+  margin-bottom: var(--a13n-group-gap, 16px);
 }
 .groupDisclosure {
   display: grid;
@@ -236,10 +235,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--a13n-text);
-  font-size: var(--harness-nav-font);
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-label);
   border-radius: 8px;
-  margin-bottom: 0;
+  margin-bottom: 4px;
 }
 .groupHeading:hover {
   background: var(--a13n-hover);
@@ -357,8 +356,8 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 30px;
-  margin-bottom: 2px;
+  min-height: var(--a13n-row-height, 32px);
+  margin-bottom: var(--a13n-row-gap, 2px);
   border-radius: 8px;
   transition: background-color 120ms ease-out;
 }
@@ -425,39 +424,26 @@
   .threadActions,
   .groupActions {
     opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--a13n-duration-fast) var(--a13n-ease-out);
   }
-  /* With a fine pointer the row menu floats over the title end only while
-     the row is hovered or focused, so idle titles use the full row width. */
-  .threadActions {
-    position: absolute;
-    top: 50%;
-    translate: 0 -50%;
-    inset-inline-end: 0;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
-    padding-inline-end: 32px;
-  }
-  .threadRow:has(.threadStar, .threadStatus, .draftMarker, .resultDot):is(
+  /* Actions remain in flex layout even while hidden, preserving title width
+     and the independent star/activity columns in every interaction state. */
+  .threadRow:is(
       :hover,
-      :focus-within,
-      :has([data-popup-open])
+      :has(:focus-visible),
+      :has(.selected),
+      [data-menu-open="true"]
     )
-    .threadLink {
-    padding-inline-end: 8px;
-  }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
-    :is(.threadStar, .threadStatus, .draftMarker, .resultDot) {
-    opacity: 0;
-  }
-  .threadRow:hover .threadActions,
-  .threadRow:focus-within .threadActions,
+    .threadActions,
   .threadActions[data-popup-open],
-  .groupHeading:hover .groupActions,
-  .groupHeading:focus-within .groupActions,
-  .groupActions:has([data-popup-open]) {
+  .groupHeading:is(:hover, :has(:focus-visible), :has([data-popup-open]))
+    .groupActions {
     opacity: 1;
+    pointer-events: auto;
   }
 }
+
 .threadActions:hover,
 .threadActions[data-popup-open],
 .groupActions button:hover,
@@ -471,8 +457,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
-  padding: 4px 8px;
+  min-height: var(--a13n-row-height, 32px);
+  padding: 4px var(--a13n-inset, 8px);
   padding-inline-start: var(--thread-label-inset, 32px);
   border-radius: 8px;
   color: var(--a13n-text);
@@ -533,26 +519,6 @@
   font-variant-numeric: tabular-nums;
   order: 1;
 }
-/* Keep the activity count at a stable trailing edge while the row menu and
-   star exchange visibility. Other status markers stay between it and the title. */
-.threadRow:has(.coordinatorActivity) .threadLink,
-.threadRow:has(.coordinatorActivity):is(
-    :hover,
-    :focus-within,
-    :has([data-popup-open])
-  )
-  .threadLink {
-  padding-inline-end: 32px;
-}
-.threadRow:has(.coordinatorActivity) .threadStar {
-  position: absolute;
-  inset-inline-end: 32px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .threadRow:has(.coordinatorActivity) .threadStar {
-    inset-inline-end: 0;
-  }
-}
 .resultDot {
   display: grid;
   place-items: center;
@@ -612,8 +578,8 @@
   font-size: var(--a13n-text-body);
 }
 .page {
-  --harness-reading-width: 800px;
-  --conversation-gutter: 42px;
+  --harness-reading-width: 704px;
+  --conversation-gutter: 48px;
   container: conversation-page / inline-size;
   position: relative;
   display: flex;
@@ -661,7 +627,7 @@
   margin-bottom: 4px;
 }
 .userInput {
-  margin: 8px 0 16px auto;
+  margin: 8px 0 24px auto;
   position: relative;
   width: fit-content;
   max-width: min(85%, 640px);
@@ -707,7 +673,7 @@
   max-width: 100%;
   margin-inline-start: auto;
   color: var(--a13n-text);
-  padding: 12px;
+  padding: 12px 16px;
   background: var(--a13n-surface);
   border-radius: 16px;
   font-size: var(--harness-prose-size);
@@ -725,8 +691,8 @@
   gap: 4px;
   min-height: 32px;
   margin-top: 4px;
-  margin-inline-start: -6px;
-  color: var(--a13n-secondary);
+  margin-inline-start: -4px;
+  color: var(--a13n-tertiary);
   opacity: 0;
   transition: opacity var(--a13n-duration-fast) var(--a13n-ease-out);
 }
@@ -737,9 +703,6 @@
 @container conversation-page (max-width: 600px) {
   .userInput {
     max-width: 90%;
-  }
-  .messageActions {
-    opacity: 1;
   }
 }
 .userInput:hover > .messageActions,
@@ -757,7 +720,7 @@
 .messageTime {
   margin-inline: 2px;
   color: var(--a13n-tertiary);
-  font-size: var(--a13n-text-xs);
+  font: var(--a13n-font-caption);
   white-space: nowrap;
 }
 .userInput .messageTime {
@@ -1125,26 +1088,35 @@ summary:is(:hover, :focus-visible) > .logCaret,
     "editor editor editor"
     "attach actions send";
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   border: 1px solid var(--a13n-input-border);
   border-radius: var(--harness-radius-composer);
-  padding: var(--composer-inset, 6px);
+  padding: var(--composer-inset, 8px);
   background: var(--card);
   box-shadow: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+  transition: border-color var(--a13n-duration-fast) var(--a13n-ease-out);
 }
 .composerInput:focus-within {
   border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .composerInput {
+    background: var(--a13n-material-bar);
+    backdrop-filter: var(--a13n-material-filter);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .composerInput {
+    background: var(--card);
+    backdrop-filter: none;
+  }
 }
 @media (max-width: 640px) {
   .reading {
     padding: 16px var(--conversation-gutter, 16px);
   }
   .composerInput {
-    padding: var(--composer-inset, 6px);
+    padding: var(--composer-inset, 8px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1698,8 +1670,7 @@ dl.detailGrid > .detailLongRow dd {
   margin-block: 8px 0;
   padding-inline: var(--thread-label-inset, 32px) 4px;
   color: var(--a13n-tertiary);
-  font-size: calc(var(--a13n-text-body) * 12 / 14);
-  font-weight: 400;
+  font: var(--a13n-font-label);
 }
 .sectionHeading:first-child {
   margin-block-start: 0;
@@ -1762,7 +1733,7 @@ dl.detailGrid > .detailLongRow dd {
   border-radius: 8px;
   background: var(--a13n-surface);
   font-family: inherit;
-  font-size: calc(var(--a13n-text-body) * 13 / 14);
+  font: var(--a13n-font-caption);
   line-height: 1;
   overflow: hidden;
 }
@@ -1777,7 +1748,7 @@ dl.detailGrid > .detailLongRow dd {
   color: var(--harness-log-text);
   font: inherit;
   cursor: pointer;
-  padding: 0 7px;
+  padding: 0 8px;
   min-width: 0;
 }
 .inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
@@ -1815,7 +1786,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 @media (pointer: coarse) {
   .inlineAttachment {
-    min-height: 46px;
+    min-height: 44px;
   }
   .inlineAttachmentOpen,
   .inlineAttachmentRemove {
@@ -1827,7 +1798,7 @@ dl.detailGrid > .detailLongRow dd {
   width: 112px;
   height: 60px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   outline: 1px solid var(--a13n-border-soft);
   outline-offset: -1px;
 
@@ -2273,14 +2244,13 @@ div:has(+ .execution) > .assistantMessage {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--harness-log-text);
-  font-size: var(--a13n-text-body);
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-label);
+  font-weight: 400;
   padding: 4px 8px;
   padding-inline-start: 0;
   cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
+  transition: color var(--a13n-duration-fast) var(--a13n-ease-out);
 }
 .executionPreview {
   flex: 1;
@@ -2290,8 +2260,7 @@ div:has(+ .execution) > .assistantMessage {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: inherit;
-  font-size: var(--a13n-text-body);
-  line-height: 20px;
+  font: var(--a13n-font-caption);
 }
 @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
   [data-running-label="true"] {
@@ -2316,8 +2285,8 @@ div:has(+ .execution) > .assistantMessage {
   }
 }
 .executionDuration {
-  color: var(--a13n-text-muted);
-  font-weight: 400;
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-caption);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -2327,8 +2296,8 @@ div:has(+ .execution) > .assistantMessage {
   height: 12px;
   opacity: 0;
   transition:
-    transform 150ms ease-out,
-    opacity 120ms ease;
+    transform var(--a13n-duration-base) var(--a13n-ease-out),
+    opacity var(--a13n-duration-fast) var(--a13n-ease-out);
 }
 .executionToggle[aria-expanded="true"] .executionCaret {
   transform: rotate(90deg);

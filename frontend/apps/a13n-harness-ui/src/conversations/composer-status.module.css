@@ -6,8 +6,8 @@
   align-items: center;
   flex-wrap: nowrap;
   gap: 0 4px;
-  color: var(--a13n-secondary);
-  font-size: calc(var(--a13n-text-body) * 12 / 14);
+  color: var(--a13n-tertiary);
+  font: var(--a13n-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .metric {

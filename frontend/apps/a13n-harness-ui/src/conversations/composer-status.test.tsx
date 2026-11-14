@@ -188,3 +188,52 @@ it("ticks the exact current receipt and paints live context and speed without wa
   view.unmount();
   queries.clear();
 });
+
+it("omits unavailable metrics and preserves reported zero usage", async () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  queries.setQueryData(["thread", "empty", "context-usage"], {
+    thread_id: "empty",
+  });
+  queries.setQueryData(["thread", "empty", "usage"], {
+    root: { tokens: [] },
+  });
+  const transport = {
+    client: { GET: vi.fn(async () => ({ data: { rows: [] } })) },
+  } as unknown as Transport;
+  render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={transport}>
+        <DebugProvider>
+          <ComposerStatus threadId="empty" />
+        </DebugProvider>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  expect(screen.queryByRole("button", { name: "Context details" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Cost details" })).toBeNull();
+  await act(async () => {
+    queries.setQueryData(["thread", "empty", "context-usage"], {
+      thread_id: "empty",
+      latest_request_tokens: 0,
+    });
+    queries.setQueryData(["thread", "empty", "usage"], {
+      first_observed_at: "2026-01-01T00:00:00Z",
+      combined: {
+        model_requests: 1,
+        unknown_model_costs: 0,
+        model_cost_usd: "0",
+        tokens: [],
+      },
+    });
+  });
+  expect(
+    await screen.findByRole("button", { name: "Context details" }),
+  ).toBeTruthy();
+  expect(screen.getByText("0.0k")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Cost details" }).textContent,
+  ).toContain("0.0000");
+  queries.clear();
+});

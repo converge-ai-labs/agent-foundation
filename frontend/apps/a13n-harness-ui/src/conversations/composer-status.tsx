@@ -128,7 +128,11 @@ export function ComposerStatus({
             ["Cost", summary.cost, t("Chat usage"), t("Cost")],
           ] as const
         )
-          .filter(([label]) => debug || label !== "Tokens")
+          .filter(([label, value]) => {
+            if (label === "Context") return tokens != null;
+            if (label === "Tokens" && !debug) return false;
+            return value !== "—";
+          })
           .map(([label, value, title, name]) => (
             <Popover
               key={label}

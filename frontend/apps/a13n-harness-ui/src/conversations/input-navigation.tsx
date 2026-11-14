@@ -47,6 +47,7 @@ export function InputNavigation({
   const [hovered, setHovered] = useState<number>();
   const [focused, setFocused] = useState<number>();
   const [open, setOpen] = useState(false);
+  const [scrolling, setScrolling] = useState(false);
   const waveOrigin = hovered ?? focused;
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "inputs", continuation],
@@ -108,14 +109,22 @@ export function InputNavigation({
   useEffect(() => {
     const element = reader.current;
     if (!element) return;
-    element.addEventListener("scroll", update, { passive: true });
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      update();
+      setScrolling(true);
+      clearTimeout(idle);
+      idle = setTimeout(() => setScrolling(false), 800);
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
     const resize =
       typeof ResizeObserver === "undefined"
         ? undefined
         : new ResizeObserver(update);
     if (element.firstElementChild) resize?.observe(element.firstElementChild);
     return () => {
-      element.removeEventListener("scroll", update);
+      element.removeEventListener("scroll", onScroll);
+      clearTimeout(idle);
       resize?.disconnect();
     };
   }, [reader, threadId, update]);
@@ -195,6 +204,7 @@ export function InputNavigation({
     <>
       <nav
         className={styles.rail}
+        data-scrolling={scrolling || undefined}
         aria-label={t("Input timeline")}
         onMouseLeave={() => setHovered(undefined)}
       >

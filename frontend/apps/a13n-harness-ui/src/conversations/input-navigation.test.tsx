@@ -223,3 +223,36 @@ it("keeps one reader observer while streaming revisions update the active input"
   client.clear();
   vi.unstubAllGlobals();
 });
+
+it("reveals the rail during reader scrolling and settles after scroll idle", async () => {
+  const client = new QueryClient();
+  const reader = createRef<HTMLDivElement>();
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <div ref={reader} />
+        <InputNavigation
+          threadId="one"
+          reader={reader}
+          revision={1}
+          onSelect={vi.fn()}
+          localInputs={["first", "second"].map((id) => ({
+            id,
+            action: "send",
+            state: "accepted",
+            parts: previewInput(id, [id]),
+          }))}
+        />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const rail = screen.getByRole("navigation", { name: "Input timeline" });
+  expect(rail.hasAttribute("data-scrolling")).toBe(false);
+  fireEvent.scroll(reader.current!);
+  expect(rail.hasAttribute("data-scrolling")).toBe(true);
+  await waitFor(() => expect(rail.hasAttribute("data-scrolling")).toBe(false));
+  view.unmount();
+  client.clear();
+});

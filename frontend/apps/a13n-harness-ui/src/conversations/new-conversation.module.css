@@ -1,5 +1,6 @@
 .page {
-  --conversation-gutter: 42px;
+  --harness-reading-width: 704px;
+  --conversation-gutter: 48px;
   container-type: size;
   container-name: new-conversation conversation-page;
   display: flex;
@@ -13,15 +14,17 @@
 .inputArea > .welcome {
   margin: 0 0 16px;
   text-align: center;
-  font-size: calc(var(--a13n-text-body) * 20 / 14);
-  font-weight: 500;
-  line-height: 1.25;
-  letter-spacing: -0.025em;
+  font: var(--a13n-font-large-title);
+  color: var(--a13n-text);
+  text-wrap: balance;
 }
 .inputArea {
-  --composer-inset: 6px;
+  --composer-inset: 8px;
   flex-shrink: 0;
-  width: min(800px, calc(100% - 2 * var(--conversation-gutter)));
+  width: min(
+    var(--harness-reading-width),
+    calc(100% - 2 * var(--conversation-gutter))
+  );
   margin: 0 auto;
 }
 .inputArea > section {
