@@ -1,4 +1,4 @@
-"""Attempt-owned clients retain lifetime, not stale per-projection discovery."""
+"""Attempt-owned clients share lifetime, while tool catalogs are cached per Harness Run."""
 
 import json
 
@@ -10,6 +10,7 @@ from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
 from a13n_service.resources.connections.runtime import _checked
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware
 from mcp_types import CLIENT_CAPABILITIES_META_KEY
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -19,8 +20,16 @@ from .test_connections import SECRET, create, opened, patch, remote, run_tool, s
 pytestmark = pytest.mark.anyio
 
 
-async def test_projection_refreshes_catalog_without_owning_client_or_handler():
-    server = FastMCP("Changing catalog")
+async def test_projection_caches_catalog_until_next_run_without_owning_client_or_handler():
+    lists = 0
+
+    class CountLists(Middleware):
+        async def on_list_tools(self, context, call_next):
+            nonlocal lists
+            lists += 1
+            return await call_next(context)
+
+    server = FastMCP("Changing catalog", middleware=[CountLists()])
 
     @server.tool
     def change() -> str:
@@ -53,19 +62,21 @@ async def test_projection_refreshes_catalog_without_owning_client_or_handler():
                 nonlocal calls
                 calls += 1
                 names = {tool.name for tool in info.function_tools}
-                if calls == 1:
-                    assert "added" not in names
-                    yield {0: DeltaToolCall(name="change", json_args=json.dumps({}), tool_call_id="change-one")}
+                assert ("added" in names) == (calls > 4)
+                if calls % 4:
+                    yield {0: DeltaToolCall(name="change", json_args="{}", tool_call_id=f"change-{calls}")}
                 else:
-                    assert "added" in names
                     yield "done"
 
             executable = HarnessBuilder().build(
                 AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
             )
-            result = await executable.run("Change the catalog", bindings=RunBindings.embedded())
-            assert result.output_or_raise() == "done"
-            assert client.is_connected()
+            for run in (1, 2):
+                result = await executable.run("Change the catalog", bindings=RunBindings.embedded())
+                assert result.output_or_raise() == "done"
+                assert calls == run * 4
+                assert lists == run
+                assert client.is_connected()
         assert not client.is_connected()
 
 

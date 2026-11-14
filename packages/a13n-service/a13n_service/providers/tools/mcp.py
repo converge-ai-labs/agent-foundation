@@ -281,9 +281,9 @@ def mcp_capability(
                 max_retries=0,
                 tool_error_behavior="failed",
                 prefer_tasks=False,
-                # The attempt's stable Host handler owns notifications. Each
-                # projection refreshes discovery instead of installing a handler.
-                cache_tools=False,
+                # Cache for this logical Harness Run. The attempt's stable Host
+                # handler owns notifications; tool-list changes appear next Run.
+                cache_tools=True,
                 cache_resources=False,
                 cache_prompts=False,
                 include_instructions=False,
