@@ -157,3 +157,66 @@
     min-height: 44px;
   }
 }
+
+.credentials {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.credentials > [data-slot="settings-row"] + [data-slot="settings-row"],
+.accountConnection > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.accountConnection > p {
+  margin: 0;
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 20px;
+}
+.accountConnection > a {
+  display: flex;
+  padding-top: 8px;
+}
+.navigation nav > a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--a13n-secondary);
+  text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.navigation nav > a > svg {
+  flex-shrink: 0;
+}
+.navigation nav > a:hover,
+.navigation nav > a:active {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.navigation nav > a[aria-current="page"] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.navigation > a {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.navigation a:focus-visible,
+.tabs a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+@media (pointer: coarse) {
+  .navigation nav > a,
+  .navigation > a,
+  .tabs a {
+    min-height: 44px;
+  }
+}

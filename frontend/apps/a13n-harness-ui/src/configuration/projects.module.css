@@ -1,6 +1,6 @@
 .list {
   padding: 4px;
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--a13n-surface);
 }
 .project {
@@ -10,11 +10,17 @@
   gap: 12px;
   padding: 8px 12px;
   min-height: 48px;
-  border-radius: 4px;
+  border-radius: 12px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   text-decoration: none;
 }
 .project + .project {
   border-top: 1px solid var(--a13n-border-soft);
+}
+.project:hover,
+.project:active {
+  background: var(--a13n-hover);
 }
 .project:focus-visible {
   outline: 2px solid var(--ring);

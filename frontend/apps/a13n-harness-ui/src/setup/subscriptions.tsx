@@ -773,6 +773,7 @@ export function SubscriptionAccounts({
         </details>
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={creating || !!editing}
         onOpenChange={(open) => {
           if (!open) {
@@ -855,6 +856,7 @@ export function SubscriptionAccounts({
         </div>
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={!!connectionLogin}
         onOpenChange={(open) => {
           if (!open) setConnectionLogin(null);
@@ -865,6 +867,7 @@ export function SubscriptionAccounts({
         {connectionLogin && renderConnection(connectionLogin)}
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={!!login}
         onOpenChange={(open) => {
           if (!open) setLogin(null);
@@ -875,6 +878,7 @@ export function SubscriptionAccounts({
         {login && renderLogin(login)}
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={!!deleting}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
@@ -1059,6 +1063,7 @@ function ResetVoucher({
   }, [selection]);
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       onOpenChange={(open) => {
         if (!open) close();
@@ -1493,6 +1498,7 @@ function GroupEditor({
         </div>
       </div>
       <ModalFrame
+        bottomStickOnMobile
         open={deleteConfirm}
         onOpenChange={(open) => {
           if (!busy) setDeleteConfirm(open);

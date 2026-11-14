@@ -201,3 +201,29 @@ it("keeps an edited name across a language change", async () => {
     await i18n.changeLanguage("en");
   });
 });
+
+it("selects the existing name and applies the same validity guard to Enter submission", async () => {
+  mount();
+  const input = screen.getByRole("textbox", {
+    name: "Project name",
+  }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(input.selectionStart).toBe(0);
+  expect(input.selectionEnd).toBe(input.value.length);
+  await screen.findByRole("link", { name: "Project settings" });
+  for (const value of ["One", "   ", "x".repeat(257)]) {
+    fireEvent.change(input, { target: { value } });
+    fireEvent.submit(input.closest("form")!);
+    expect(writes).toHaveLength(0);
+  }
+  fireEvent.change(input, { target: { value: "Valid rename" } });
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Save name" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.submit(input.closest("form")!);
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(writes).toHaveLength(1);
+});

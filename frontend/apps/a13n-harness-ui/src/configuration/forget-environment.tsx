@@ -46,6 +46,7 @@ export function ForgetEnvironment({
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={(next) => {
         if (!remove.isPending) {

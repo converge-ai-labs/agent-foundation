@@ -437,6 +437,7 @@ function AddModelDialog({
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       onOpenChange={(open) => {
         if (!open && !save.isPending) onClose();

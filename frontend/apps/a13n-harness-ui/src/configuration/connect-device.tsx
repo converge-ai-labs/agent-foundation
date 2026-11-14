@@ -32,6 +32,7 @@ export function ConnectDevice({
   const [open, setOpen] = useState(false);
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={setOpen}
       title={t("Connect device")}

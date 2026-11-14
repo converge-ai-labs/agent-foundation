@@ -1,0 +1,46 @@
+.field {
+  padding-bottom: 8px;
+  min-width: 0;
+}
+.list {
+  display: grid;
+  gap: 2px;
+  max-height: 240px;
+  overflow: auto;
+}
+.list > p {
+  margin: 0;
+  padding-block: 8px;
+  color: var(--a13n-secondary);
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.option > :first-child {
+  flex-shrink: 0;
+}
+.option > :last-child {
+  min-width: 0;
+}
+.option:hover,
+.option:active {
+  background: var(--a13n-hover);
+}
+.option:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .option {
+    min-height: 44px;
+  }
+}

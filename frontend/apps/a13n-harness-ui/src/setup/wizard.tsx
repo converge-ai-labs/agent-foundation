@@ -326,7 +326,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
           <DialogDescription>
             {t("Connect a model and choose where it can work.")}
           </DialogDescription>
-          <LanguageChoice />
+          <div className={styles.language}>
+            <LanguageChoice presentation="compact" />
+          </div>
           <ol className={styles.steps} aria-label={t("Setup progress")}>
             {steps.map((step, index) => (
               <li

@@ -138,8 +138,8 @@ export function AccountDialog({
   return (
     <>
       <ModalFrame
-        open
         bottomStickOnMobile
+        open
         keepVisibleWhenNested
         title={
           <span className={styles.identity}>
@@ -469,6 +469,7 @@ export function AccountDialog({
         </div>
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={discard}
         title={t("Discard unsaved changes?")}
         description={t("Your unsaved account changes will be discarded.")}

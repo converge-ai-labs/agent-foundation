@@ -1,7 +1,7 @@
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
 }
 .project {
@@ -17,7 +17,7 @@
 }
 .localEnvironment > [data-slot="settings-row"] {
   border-top: 1px solid var(--a13n-border-soft);
-  min-height: 42px;
+  min-height: 48px;
 }
 .remoteHeading {
   display: flex;
@@ -36,7 +36,7 @@
   cursor: pointer;
 }
 .applyDetails p {
-  margin-block: 6px 2px;
+  margin-block: 8px 4px;
 }
 .applyDetails button {
   padding-inline: 0;

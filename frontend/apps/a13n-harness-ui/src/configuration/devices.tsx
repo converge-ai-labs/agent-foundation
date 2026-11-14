@@ -128,6 +128,7 @@ function RevokeDevice({ device }: { device: Schema<"DeviceSummary"> }) {
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open={open}
       onOpenChange={(next) => {
         if (!revoke.isPending) {

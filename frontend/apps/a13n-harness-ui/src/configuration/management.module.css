@@ -116,8 +116,8 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: 16px;
+  padding: 0 16px;
   background: var(--a13n-surface);
   border: 0;
   overflow: hidden;
@@ -130,8 +130,9 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  padding: 8px 12px;
-  border-radius: 4px;
+  min-height: 64px;
+  padding: 12px 0;
+  border-radius: 0;
 }
 .modelLink::after {
   content: "";
@@ -154,8 +155,8 @@
   .modelList > .modelRow {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
-    align-items: start;
+    gap: 4px 12px;
+    align-items: center;
   }
   .modelRow > .resourceIdentity,
   .modelRow > .resourceMeta {
@@ -165,10 +166,16 @@
     align-items: flex-start;
     max-width: 100%;
     text-align: left;
+    grid-row: 2;
+    gap: 0;
+  }
+  .modelRow > .resourceIdentity {
+    grid-row: 1;
   }
   .modelRow > button {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 1 / 3;
+    align-self: center;
   }
 }
 
@@ -200,4 +207,29 @@
 :global([data-a13n-modal]) .modelTabs,
 :global([data-a13n-modal]) .modelPanel:not([hidden]) {
   gap: 16px;
+}
+
+.resourceIdentity {
+  flex: 1;
+  min-width: 0;
+}
+.resourceInfo > small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.resourceMeta .metadata > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelList > .modelRow + .modelRow {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.modelRow > button {
+  flex-shrink: 0;
 }

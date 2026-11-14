@@ -1,0 +1,67 @@
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: max(24px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  background: var(--a13n-canvas);
+}
+.card {
+  width: min(100%, 400px);
+  min-width: 0;
+  padding: 24px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-body);
+  font-weight: 500;
+}
+.card h1 {
+  margin: 0;
+  font-size: calc(var(--a13n-text-body) * 24 / 14);
+  line-height: 1.25;
+  font-weight: 500;
+  text-wrap: balance;
+}
+.card > p {
+  margin: 12px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+.form > button {
+  width: 100%;
+}
+.form [role="alert"] {
+  margin: 0;
+}
+.language {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+@media (max-width: 600px) {
+  .card {
+    padding: 16px;
+  }
+}
+@media (pointer: coarse) {
+  .form input {
+    min-height: 44px;
+    font-size: max(16px, var(--a13n-text-body));
+  }
+  .form > button {
+    min-height: 44px;
+  }
+}

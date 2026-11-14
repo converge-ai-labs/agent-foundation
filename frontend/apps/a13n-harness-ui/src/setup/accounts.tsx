@@ -580,6 +580,7 @@ export function ProviderAccount({
         {t("This account is shared by everyone on this server.")}
       </p>
       <ModalFrame
+        bottomStickOnMobile
         open={switchOpen}
         onOpenChange={setSwitchOpen}
         title={t("Allow account switching?")}
@@ -608,6 +609,7 @@ export function ProviderAccount({
         <ErrorNotice error={start.error} />
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={logoutOpen}
         onOpenChange={setLogoutOpen}
         title={t("Log out of {{provider}}?", { provider })}

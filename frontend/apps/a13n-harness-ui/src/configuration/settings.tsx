@@ -87,7 +87,10 @@ export function GeneralSettings() {
   );
   return (
     <>
-      <LanguageChoice />
+      <PageHeader title={t("General")} />
+      <SettingsSection>
+        <LanguageChoice presentation="row" />
+      </SettingsSection>
       <ErrorNotice error={sources.error} />
       {sources.isPending ? (
         <Skeleton className="h-80 w-full" />
@@ -96,7 +99,7 @@ export function GeneralSettings() {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title={t("General")}
+            title={null}
             embedded
           />
         </div>

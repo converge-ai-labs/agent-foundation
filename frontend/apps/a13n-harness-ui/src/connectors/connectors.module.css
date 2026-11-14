@@ -225,3 +225,33 @@
     align-items: start;
   }
 }
+
+.accountChoice,
+.toggle {
+  min-height: 36px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.accountChoice {
+  border-radius: 8px;
+  padding-inline: 8px;
+}
+.accountChoice:hover,
+.accountChoice:active {
+  background: var(--a13n-hover);
+}
+.accountChoice:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .accountChoice,
+  .toggle {
+    min-height: 44px;
+  }
+  .field input,
+  .field textarea,
+  .array input {
+    font-size: max(16px, var(--a13n-text-body));
+  }
+}

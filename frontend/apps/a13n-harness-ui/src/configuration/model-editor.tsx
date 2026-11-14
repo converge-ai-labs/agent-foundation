@@ -130,7 +130,7 @@ function CredentialField({
       label: t("{{reference}} (saved reference)", { reference: selected }),
     });
   return (
-    <fieldset disabled={save.isPending} className={styles.stack}>
+    <fieldset disabled={save.isPending} className={layout.credentials}>
       {!expanded ? (
         <SettingsRow
           label={t("API key")}

@@ -130,6 +130,7 @@ export function CreateConnector({
   if (cleanup)
     return (
       <ModalFrame
+        bottomStickOnMobile
         open
         title={t("Keep this connection for later?")}
         description={t(
@@ -161,8 +162,8 @@ export function CreateConnector({
     );
   return (
     <ModalFrame
-      open
       bottomStickOnMobile
+      open
       title={
         <span className={styles.identity}>
           <ConnectorIcon declaration={item.declaration} />

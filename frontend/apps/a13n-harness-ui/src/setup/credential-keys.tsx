@@ -261,6 +261,7 @@ export function CredentialKeys({
         </p>
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={!!editing}
         onOpenChange={(open) => {
           if (!open && !save.isPending) {
@@ -335,6 +336,7 @@ export function CredentialKeys({
         </form>
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={!!deleting}
         onOpenChange={(open) => {
           if (!open && !remove.isPending) setDeleting(null);

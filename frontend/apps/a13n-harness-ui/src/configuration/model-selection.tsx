@@ -3,7 +3,7 @@ import { ModelIdentity } from "../shell/model-identity";
 import { SettingsRow } from "../shell/settings";
 import { Checkbox } from "a13n-ui";
 import type { Schema } from "../transport/client";
-import styles from "../shell/workbench.module.css";
+import styles from "./model-selection.module.css";
 
 // An inline checklist shows that several models can be chosen, with each logo
 // beside its name. An empty selection is written as absence; IDs without a
@@ -37,12 +37,12 @@ export function ModelSelectionField({
       })),
   ];
   return (
-    <div className={styles.modelSelection}>
-      <SettingsRow label={label} description={description} className="pb-1">
+    <div className={styles.field}>
+      <SettingsRow label={label} description={description}>
         {null}
       </SettingsRow>
       <div
-        className={`${styles.selectionList} ${styles.modelSelectionList} a13n-scrollbar`}
+        className={`${styles.list} a13n-scrollbar`}
         role="group"
         aria-label={label}
       >
@@ -50,7 +50,7 @@ export function ModelSelectionField({
           <p>{t("No options yet. Add a configuration first.")}</p>
         )}
         {choices.map((choice) => (
-          <label key={choice.value} className={styles.selectionOption}>
+          <label key={choice.value} className={styles.option}>
             <Checkbox
               checked={value.includes(choice.value)}
               onCheckedChange={(checked) => {

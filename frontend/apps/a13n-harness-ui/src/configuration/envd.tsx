@@ -379,6 +379,7 @@ export function EnvdRuntime() {
         )}
       </SettingsSection>
       <ModalFrame
+        bottomStickOnMobile
         open={confirmation !== null}
         onOpenChange={(open) => {
           if (!open) setConfirmation(null);

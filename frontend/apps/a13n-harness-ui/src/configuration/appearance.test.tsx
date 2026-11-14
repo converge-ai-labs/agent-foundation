@@ -25,6 +25,9 @@ it("edits independent sizes, resets them, and reports persistence failure", asyn
       <AppearanceSettings />
     </AppearanceProvider>,
   );
+  expect(
+    screen.queryByRole("button", { name: "Reset Code font size" }),
+  ).toBeNull();
   const code = screen.getByRole("spinbutton", { name: "Code" });
   fireEvent.change(code, { target: { value: "18" } });
   expect(store.getSnapshot().appearance.sizes.code).toBe(18);
@@ -42,6 +45,9 @@ it("edits independent sizes, resets them, and reports persistence failure", asyn
     screen.getByRole("button", { name: "Reset Code font size" }),
   );
   expect((code as HTMLInputElement).value).toBe("12");
+  expect(
+    screen.queryByRole("button", { name: "Reset Code font size" }),
+  ).toBeNull();
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("quota");
   });

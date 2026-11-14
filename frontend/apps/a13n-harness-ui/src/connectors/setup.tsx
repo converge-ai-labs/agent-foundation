@@ -250,8 +250,8 @@ export function ConnectorSetup({
   return (
     <>
       <ModalFrame
-        open
         bottomStickOnMobile
+        open
         keepVisibleWhenNested
         title={
           <span tabIndex={-1} ref={heading} className={styles.identity}>
@@ -463,6 +463,7 @@ export function ConnectorSetup({
         </section>
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={discard !== null}
         title={t("Discard unsaved changes?")}
         description={t(

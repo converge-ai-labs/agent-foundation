@@ -1,7 +1,7 @@
 .inlineAccount {
   display: grid;
-  gap: 8px;
-  padding-block: 8px;
+  gap: 0;
+  padding-block: 0;
   min-width: 0;
 }
 .identity {
@@ -208,4 +208,26 @@
 }
 .accountHeader > :first-child {
   flex: 1 1 120px;
+}
+
+/* Inline authentication belongs to its existing settings group, not a second
+   card. Status and actions share the standard row height. */
+.inlineAccount .accountHeader {
+  min-height: 48px;
+  padding-block: 8px;
+}
+.inlineAccount > div:empty {
+  display: none;
+}
+.inlineAccount > details,
+.inlineAccount > section {
+  padding-block: 12px;
+}
+@media (pointer: coarse) {
+  .verificationLink,
+  .advanced summary,
+  .tabs a {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
 }

@@ -45,6 +45,11 @@ export function RenameProject({
   const dirty = !!draft && draft.content !== draft.base;
   const editable =
     !!source.data?.writable && !!source.data.content_available && !dirty;
+  const canSave =
+    editable &&
+    !!name.trim() &&
+    name.trim() !== originalName.trim() &&
+    name.trim().length <= 256;
   const save = useMutation({
     mutationFn: async () => {
       if (!path || !editable)
@@ -96,6 +101,7 @@ export function RenameProject({
   });
   return (
     <ModalFrame
+      bottomStickOnMobile
       open
       title={t("Rename project")}
       closeLabel={t("Close")}
@@ -107,10 +113,17 @@ export function RenameProject({
         className={styles.stack}
         onSubmit={(event) => {
           event.preventDefault();
-          if (editable && name.trim() && !save.isPending) save.mutate();
+          if (canSave && !save.isPending) save.mutate();
         }}
       >
-        <TextField label={t("Project name")} value={name} onChange={setName} />
+        <TextField
+          label={t("Project name")}
+          value={name}
+          onChange={setName}
+          autoFocus
+          disabled={save.isPending}
+          onFocus={(event) => event.currentTarget.select()}
+        />
         <ErrorNotice
           error={sources.error || source.error || save.error}
           retry={
@@ -152,16 +165,7 @@ export function RenameProject({
           >
             {t("Cancel")}
           </Button>
-          <Button
-            type="submit"
-            loading={save.isPending}
-            disabled={
-              !editable ||
-              !name.trim() ||
-              name.trim() === originalName ||
-              name.trim().length > 256
-            }
-          >
+          <Button type="submit" loading={save.isPending} disabled={!canSave}>
             {t("Save name")}
           </Button>
         </div>

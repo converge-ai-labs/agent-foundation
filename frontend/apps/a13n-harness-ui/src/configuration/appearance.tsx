@@ -86,7 +86,16 @@ function SizeControl({ region }: { region: SizeRegion }) {
           aria-label={t("Reset {{region}} font size", {
             region: t(labels[region]),
           })}
+          className={
+            value === rule.default && draft === null
+              ? styles.resetHidden
+              : undefined
+          }
           disabled={value === rule.default && draft === null}
+          tabIndex={value === rule.default && draft === null ? -1 : undefined}
+          aria-hidden={
+            value === rule.default && draft === null ? true : undefined
+          }
           onClick={() => {
             setDraft(null);
             store.setSize(region, rule.default);

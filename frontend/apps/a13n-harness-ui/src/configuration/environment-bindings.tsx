@@ -278,6 +278,7 @@ export function EnvironmentBindings({
         </Button>
       </div>
       <ModalFrame
+        bottomStickOnMobile
         open={editing !== undefined}
         onOpenChange={(open) => {
           if (!open) setEditing(undefined);
@@ -308,6 +309,7 @@ export function EnvironmentBindings({
         )}
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={!!removing}
         onOpenChange={(open) => {
           if (!open) setRemoving(undefined);

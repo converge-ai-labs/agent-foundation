@@ -63,7 +63,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
                   ? "/settings/connections"
                   : "/settings/resources";
   return (
-    <div className={styles.settingsNavigation}>
+    <div className={`${styles.settingsNavigation} ${layout.navigation}`}>
       <Link className={styles.backToChats} to={backTo}>
         <ArrowLeft size={16} />
         {t("Back to chats")}
@@ -87,11 +87,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
               aria-current={active ? "page" : undefined}
               className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? layout.utilityLink : ""}`}
             >
-              <Icon
-                aria-hidden="true"
-                size={18}
-                weight={active ? "duotone" : "regular"}
-              />
+              <Icon aria-hidden="true" size={16} weight="regular" />
               {label}
             </Link>
           );

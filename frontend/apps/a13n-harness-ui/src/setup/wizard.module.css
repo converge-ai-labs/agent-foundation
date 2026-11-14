@@ -110,8 +110,8 @@
   color: var(--a13n-text);
   cursor: pointer;
   transition:
-    background-color 120ms ease-out,
-    border-color 120ms ease-out;
+    background-color var(--a13n-duration-fast) var(--a13n-ease-out),
+    border-color var(--a13n-duration-fast) var(--a13n-ease-out);
 }
 .connections button:hover,
 .environments button:hover {
@@ -273,5 +273,57 @@
   .footer > div {
     gap: 8px;
     margin-left: auto;
+  }
+}
+
+.language {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.steps {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.steps li[data-complete="true"] > span {
+  color: var(--a13n-text);
+  background: var(--a13n-selected);
+}
+.connections button,
+.environments button {
+  min-width: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.connections button:active,
+.environments button:active {
+  background: var(--a13n-selected);
+}
+.summary strong,
+.summary span {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .connections {
+    grid-template-columns: 1fr;
+    margin-bottom: 16px;
+  }
+  .connections button {
+    display: grid;
+    gap: 4px;
+  }
+  .footer {
+    padding-inline: 16px;
+  }
+}
+@media (pointer: coarse) {
+  .connections button,
+  .environments button,
+  .later {
+    min-height: 44px;
+  }
+  .content input,
+  .content textarea {
+    font-size: max(16px, var(--a13n-text-body));
   }
 }

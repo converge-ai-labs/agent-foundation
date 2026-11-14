@@ -360,6 +360,7 @@ export function SourcesPage({
         )}
       </div>
       <ModalFrame
+        bottomStickOnMobile
         open={creating}
         onOpenChange={setCreating}
         title={t("Add configuration")}
@@ -865,6 +866,7 @@ export function SourceDocument({
         </Panel>
       )}
       <ModalFrame
+        bottomStickOnMobile
         open={deleting}
         onOpenChange={setDeleting}
         title={t("Delete this configuration?")}
@@ -891,6 +893,7 @@ export function SourceDocument({
         <ErrorNotice error={remove.error} />
       </ModalFrame>
       <ModalFrame
+        bottomStickOnMobile
         open={replacing}
         onOpenChange={setReplacing}
         title={t("Discard this local draft?")}

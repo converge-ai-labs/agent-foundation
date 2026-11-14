@@ -36,24 +36,34 @@
 .previewNav {
   padding: 12px 8px;
   background: var(--sidebar);
+  border-inline-end: 1px solid var(--a13n-border-soft);
 }
 .previewNav > div {
   cursor: default;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .selected {
   background: var(--a13n-selected);
 }
 .previewBody {
+  display: grid;
+  gap: 16px;
   min-width: 0;
   padding: 16px;
+  background: var(--a13n-canvas);
 }
 .previewBody h3 {
   margin-top: 0;
 }
 .previewTerminal {
   overflow-x: auto;
-  margin: 12px 0;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
   font: var(--harness-terminal-size)/1.5 var(--a13n-mono);
   white-space: pre;
 }
@@ -66,9 +76,11 @@
   border-radius: var(--harness-radius-composer);
   font-size: var(--composer-font-size);
   line-height: 1.5;
+  color: var(--a13n-secondary);
+  background: var(--a13n-elevated);
 }
 .previewMetadata {
-  margin-top: 8px;
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
 }
@@ -88,5 +100,16 @@
   .sizeRow {
     flex-wrap: wrap;
     gap: 8px;
+  }
+}
+
+.resetHidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .previewNav {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--a13n-border-soft);
   }
 }
