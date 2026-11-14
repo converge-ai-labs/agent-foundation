@@ -101,6 +101,7 @@ export function Button({
 
   const label = props["aria-label"];
   const showTooltip =
+    !isDisabled &&
     label &&
     (tooltip ??
       (size?.startsWith("icon") && props["aria-haspopup"] !== "menu"));

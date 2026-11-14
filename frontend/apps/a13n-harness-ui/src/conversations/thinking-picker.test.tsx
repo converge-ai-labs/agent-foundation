@@ -179,7 +179,9 @@ it("keeps opaque backend labels and stale values while localizing their recovery
   render(<ThinkingPicker model={model} value="max" onChange={change} />);
   await act(() => i18n.changeLanguage("zh-CN"));
   const inherited = screen.getByRole("button", { name: "使用默认思考设置" });
-  expect(inherited.getAttribute("title")).toBe("预算 - 8,192 token");
+  await userEvent.hover(inherited);
+  expect(await screen.findByText("预算 - 8,192 token")).toBeTruthy();
+  expect(inherited.hasAttribute("title")).toBe(false);
   expect(inherited.getAttribute("aria-pressed")).toBe("false");
   expect(screen.getByRole("button", { name: "Quick" })).toBeTruthy();
   const disabled = screen.getByRole("button", { name: "Deep" });
