@@ -1,0 +1,170 @@
+/* Base UI owns presence and positioning; shared styles own motion. Never
+   transition measured popup dimensions or positioner coordinates. */
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-popup"],
+  [data-slot="tooltip-popup"],
+  [data-slot="dialog-popup"]
+) {
+  transform-origin: var(--transform-origin, center);
+  transition-property: opacity, scale;
+  transition-duration: var(--a13n-duration-base);
+  transition-timing-function: var(--a13n-ease-out);
+}
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-popup"],
+  [data-slot="tooltip-popup"],
+  [data-slot="dialog-popup"]
+):is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+  scale: 0.96;
+}
+:is(
+  [data-slot="menu-popup"],
+  [data-slot="popover-popup"],
+  [data-slot="select-popup"],
+  [data-slot="combobox-popup"],
+  [data-slot="tooltip-popup"],
+  [data-slot="dialog-popup"],
+  [data-slot="dialog-backdrop"],
+  [data-slot="sheet-backdrop"],
+  [data-slot="sheet-popup"]
+)[data-ending-style] {
+  transition-duration: var(--a13n-duration-fast);
+  transition-timing-function: var(--a13n-ease-in);
+}
+[data-slot="popover-positioner"] {
+  transition: none;
+}
+:is([data-slot="dialog-backdrop"], [data-slot="sheet-backdrop"]) {
+  transition: opacity var(--a13n-duration-base) var(--a13n-ease-out);
+}
+[data-slot="tooltip-popup"] {
+  transition-duration: var(--a13n-duration-fast);
+}
+[data-slot="tooltip-popup"][data-instant] {
+  transition-duration: 1ms;
+}
+[data-slot="sheet-popup"] {
+  transition:
+    translate var(--a13n-duration-slow) var(--a13n-ease-sheet),
+    opacity var(--a13n-duration-base) var(--a13n-ease-out);
+}
+[data-slot="sheet-popup"]:is([data-starting-style], [data-ending-style]) {
+  translate: var(--sheet-x, 0) var(--sheet-y, 0);
+}
+[data-slot="sheet-popup"][data-side="right"] {
+  --sheet-x: 100%;
+}
+[data-slot="sheet-popup"][data-side="left"] {
+  --sheet-x: -100%;
+}
+[data-slot="sheet-popup"][data-side="top"] {
+  --sheet-y: -100%;
+}
+[data-slot="sheet-popup"][data-side="bottom"] {
+  --sheet-y: 100%;
+}
+/* Console retains opacity-only dialogs; Harness opts into scale in its theme. */
+[data-slot="dialog-popup"] {
+  transition-duration: var(--a13n-dialog-duration, 120ms);
+}
+[data-slot="dialog-popup"]:is([data-starting-style], [data-ending-style]) {
+  scale: var(--a13n-dialog-start-scale, 1);
+}
+
+/* Disabled primary actions become a quiet surface, not a dimmed black slab.
+   Loading retains its geometry and indicator. */
+[data-a13n-button]:is(:disabled, [data-disabled]):not([data-loading]) {
+  opacity: 1;
+  color: color-mix(in srgb, var(--a13n-secondary) 65%, var(--a13n-canvas));
+  background: var(--a13n-surface);
+  border-color: var(--a13n-border-soft);
+  box-shadow: none;
+}
+[data-a13n-button]:is(:disabled, [data-disabled]):is(
+    [data-variant="ghost"],
+    [data-variant="link"]
+  ):not([data-loading]) {
+  background: transparent;
+  border-color: transparent;
+}
+[data-a13n-button] {
+  scale: 1;
+}
+:is(
+  button,
+  a[href],
+  input,
+  textarea,
+  select,
+  summary,
+  [tabindex]
+):focus-visible {
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  :is(
+    [data-slot="menu-item"],
+    [data-slot="menu-link-item"],
+    [data-slot="menu-checkbox-item"],
+    [data-slot="menu-radio-item"],
+    [data-slot="menu-sub-trigger"],
+    [data-slot="select-item"],
+    [data-slot="combobox-item"],
+    [data-a13n-button]
+  ) {
+    min-height: 44px;
+  }
+  [data-a13n-button][data-size^="icon"] {
+    min-width: 44px;
+  }
+  :is([data-slot="input"], [data-slot="textarea"]) {
+    font-size: max(16px, var(--a13n-text-body));
+  }
+  [data-slot="scroll-area-scrollbar"],
+  [data-slot="scroll-area-corner"] {
+    display: none;
+  }
+  /* Base UI hides native bars to render its own. Restore native overlay
+     scrolling on touch instead of displaying a second custom thumb. */
+  [data-slot="scroll-area-viewport"][data-slot] {
+    scrollbar-width: thin;
+    /* Classic touch-capable desktops still reserve both axes here; keep the
+       track and corner transparent so only the themed thumb shows. */
+    scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
+  }
+  [data-slot="scroll-area-viewport"][data-slot]::-webkit-scrollbar {
+    display: initial;
+  }
+}
+
+/* Combobox keeps a separate surface for its anchored width contract. Move
+   that whole surface with the inner popup rather than scaling text alone. */
+[data-slot="combobox-surface"] {
+  transform-origin: var(--transform-origin, top center);
+  transition:
+    scale var(--a13n-duration-base) var(--a13n-ease-out),
+    opacity var(--a13n-duration-base) var(--a13n-ease-out);
+}
+[data-slot="combobox-surface"]:has(
+  [data-slot="combobox-popup"]:is([data-starting-style], [data-ending-style])
+) {
+  scale: 0.96;
+  opacity: 0;
+}
+[data-slot="combobox-surface"]:has([data-ending-style]) {
+  transition-duration: var(--a13n-duration-fast);
+  transition-timing-function: var(--a13n-ease-in);
+}
+[data-slot="combobox-popup"]:is([data-starting-style], [data-ending-style]) {
+  scale: 1;
+}

@@ -5,6 +5,8 @@
 @import "./tokens.css";
 @import "./scrollbars.css";
 @import "./base.css";
+@import "./primitives.css";
+@import "./toast.css";
 @source "../../../../apps/a13n-console/src";
 @source "../../dev";
 @source "../";

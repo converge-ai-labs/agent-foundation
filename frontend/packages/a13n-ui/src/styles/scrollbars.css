@@ -1,35 +1,44 @@
-/* Native scroll owners can opt in individually or across an application. */
-.a13n-scrollbar {
-  scrollbar-gutter: stable;
-}
-:where(.a13n-scrollbar, .a13n-scrollbars, .a13n-scrollbars *) {
-  scrollbar-width: thin;
-  scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
-  &:hover {
-    scrollbar-color: var(--a13n-scrollbar-thumb-hover) transparent;
+/* Native touch scrolling keeps the platform's transient overlay indicators.
+   Desktop scroll owners opt into quiet, thin thumbs without changing gutters. */
+@media (pointer: fine) {
+  .a13n-scrollbar {
+    scrollbar-gutter: stable;
   }
-  @supports selector(::-webkit-scrollbar) {
-    &,
-    &:hover {
-      scrollbar-width: auto;
-      scrollbar-color: auto;
+  :where(.a13n-scrollbar, .a13n-scrollbars, .a13n-scrollbars *) {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    &:hover,
+    &:focus-within {
+      scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
     }
-    &::-webkit-scrollbar {
-      width: var(--a13n-scrollbar-size);
-      height: var(--a13n-scrollbar-size);
-    }
-    &::-webkit-scrollbar-track,
-    &::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-    &::-webkit-scrollbar-thumb {
-      min-height: 24px;
-      border-radius: 999px;
-      background: var(--a13n-scrollbar-thumb);
-    }
-    &::-webkit-scrollbar-thumb:hover,
-    &::-webkit-scrollbar-thumb:active {
-      background: var(--a13n-scrollbar-thumb-hover);
+    @supports selector(::-webkit-scrollbar) {
+      &,
+      &:hover,
+      &:focus-within {
+        scrollbar-width: auto;
+        scrollbar-color: auto;
+      }
+      &::-webkit-scrollbar {
+        width: var(--a13n-scrollbar-size);
+        height: var(--a13n-scrollbar-size);
+      }
+      &::-webkit-scrollbar-track,
+      &::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      &::-webkit-scrollbar-thumb {
+        min-height: 24px;
+        border-radius: 999px;
+        background: transparent;
+      }
+      &:hover::-webkit-scrollbar-thumb,
+      &:focus-within::-webkit-scrollbar-thumb {
+        background: var(--a13n-scrollbar-thumb);
+      }
+      &::-webkit-scrollbar-thumb:hover,
+      &::-webkit-scrollbar-thumb:active {
+        background: var(--a13n-scrollbar-thumb-hover);
+      }
     }
   }
 }

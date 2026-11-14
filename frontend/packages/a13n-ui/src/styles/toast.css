@@ -1,0 +1,157 @@
+.a13n-toast-viewport {
+  --toast-gap: 8px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: 50%;
+  z-index: 100;
+  width: min(420px, calc(100vw - 32px));
+  height: var(--toast-frontmost-height, 0px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 32px);
+  transform: translateX(-50%);
+  outline: none;
+  pointer-events: none;
+}
+.a13n-toast {
+  --deck-y: calc(var(--toast-index) * 8px);
+  --deck-scale: calc(1 - var(--toast-index) * 0.04);
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: calc(10 - var(--toast-index));
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 28px;
+  align-items: start;
+  column-gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 16px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--a13n-shadow);
+  transform-origin: top center;
+  transform: translate(
+      var(--toast-swipe-movement-x, 0px),
+      calc(var(--deck-y) + var(--toast-swipe-movement-y, 0px))
+    )
+    scale(var(--deck-scale));
+  transition:
+    transform var(--a13n-duration-slow) var(--a13n-ease-out),
+    opacity var(--a13n-duration-base) var(--a13n-ease-out);
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+/* Transparent bridges keep pointer travel between expanded cards connected. */
+.a13n-toast::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto;
+  height: var(--toast-gap);
+}
+.a13n-toast[data-expanded] {
+  --deck-y: calc(var(--toast-offset-y) + var(--toast-index) * var(--toast-gap));
+  --deck-scale: 1;
+}
+.a13n-toast:not([data-expanded]) {
+  height: var(--toast-frontmost-height);
+}
+.a13n-toast[data-limited] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.a13n-toast[data-starting-style] {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+}
+.a13n-toast[data-ending-style] {
+  opacity: 0;
+  transform: translate(
+      var(--toast-swipe-movement-x, 0px),
+      calc(var(--deck-y) - 12px)
+    )
+    scale(0.96);
+  transition-duration: var(--a13n-duration-fast);
+  transition-timing-function: var(--a13n-ease-in);
+  pointer-events: none;
+}
+.a13n-toast[data-ending-style][data-swipe-direction="left"] {
+  transform: translateX(-110%) scale(0.96);
+}
+.a13n-toast[data-ending-style][data-swipe-direction="right"] {
+  transform: translateX(110%) scale(0.96);
+}
+.a13n-toast[data-ending-style][data-swipe-direction="up"] {
+  transform: translateY(-110%) scale(0.96);
+}
+.a13n-toast-content {
+  min-width: 0;
+}
+.a13n-toast-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.a13n-toast-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.a13n-toast-description:empty {
+  display: none;
+}
+.a13n-toast-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-top: 4px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--a13n-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.a13n-toast-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--a13n-secondary);
+}
+.a13n-toast-close:hover,
+.a13n-toast-close:active,
+.a13n-toast-action:hover,
+.a13n-toast-action:active {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.a13n-toast:not([data-expanded]):not([data-front])
+  :is(.a13n-toast-content, .a13n-toast-icon, .a13n-toast-close) {
+  opacity: 0;
+  pointer-events: none;
+}
+.a13n-toast-content,
+.a13n-toast-icon,
+.a13n-toast-close {
+  transition: opacity var(--a13n-duration-fast) var(--a13n-ease-out);
+}
+@media (pointer: coarse) {
+  .a13n-toast {
+    grid-template-columns: 24px minmax(0, 1fr) 44px;
+    padding: 8px;
+  }
+  .a13n-toast-close {
+    width: 44px;
+    height: 44px;
+  }
+  .a13n-toast-action {
+    min-height: 44px;
+  }
+}

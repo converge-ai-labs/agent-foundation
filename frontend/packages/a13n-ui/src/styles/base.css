@@ -63,3 +63,26 @@
     animation-iteration-count: infinite !important;
   }
 }
+
+.a13n-root {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+:where(
+  button,
+  a[href],
+  summary,
+  select,
+  [role="button"],
+  [role="menuitem"],
+  [role="tab"],
+  [role="switch"],
+  [role="option"]
+) {
+  touch-action: manipulation;
+}
+:where(button, summary, [role="menuitem"], [role="tab"], [role="switch"]) {
+  -webkit-user-select: none;
+  user-select: none;
+}

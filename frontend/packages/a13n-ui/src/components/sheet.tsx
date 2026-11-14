@@ -101,6 +101,7 @@ export function SheetPopup({
             className,
           )}
           data-slot="sheet-popup"
+          data-side={side}
           {...props}
         >
           {children}
