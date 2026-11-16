@@ -25,6 +25,7 @@
   margin-right: 4px;
 }
 .workers {
+  --thread-label-inset: 16px;
   margin-inline-start: 12px;
   padding-inline-start: 12px;
   border-inline-start: 1px solid var(--a13n-border-soft);
