@@ -1,5 +1,6 @@
 """App assembly adapters over the existing runtime, exit stack, HTTP router and sweep scheduler."""
 
+import asyncio
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -55,9 +56,12 @@ def open_assets(stack: AsyncExitStack, catalog: AppCatalog) -> dict[str, Path]:
 def _asset(roots: Mapping[str, Path], app: AppManifest, version: str, path: str) -> Path:
     root = roots.get(app.app_id)
     if root is not None and version == app.version:
-        asset = (root / path).resolve()
-        if asset.is_relative_to(root) and asset.is_file():
-            return asset
+        try:
+            asset = (root / path).resolve()
+            if asset.is_relative_to(root) and asset.is_file():
+                return asset
+        except (OSError, ValueError):
+            pass
     raise not_found("app_asset", path)
 
 
@@ -101,6 +105,7 @@ class _Organizations:
             )
         if not ids:
             self.cursor = ""
+        failures: list[Exception] = []
         for organization_id in ids:
             self.cursor = organization_id
             # Each organization is a new admission, including after a previous callback awaited I/O.
@@ -108,15 +113,24 @@ class _Organizations:
                 organization = await session.get_one(OrganizationRow, organization_id)
                 enabled = self.app_id in policy(organization.settings).enabled
             if enabled:
-                await self.sweep.run(self.runtime, organization_id)
+                try:
+                    async with asyncio.timeout(self.sweep.timeout):
+                        await self.sweep.run(self.runtime, organization_id)
+                except Exception as error:
+                    error.add_note(f"App {self.app_id} sweep {self.sweep.name}, organization {organization_id}")
+                    failures.append(error)
+        if failures:
+            raise ExceptionGroup("App organization sweep callbacks failed", failures)
 
 
 def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
+    admission_timeout = runtime.settings.database.connect_timeout + runtime.settings.database.statement_timeout
+    # One scan plus one policy read and bounded callback per selected organization.
     return [
         Sweep(
             name=f"app:{app.app_id}:{sweep.name}",
             every=sweep.every,
-            timeout=sweep.timeout,
+            timeout=admission_timeout + runtime.settings.control.sweep_batch * (admission_timeout + sweep.timeout),
             run=_Organizations(runtime, app.app_id, sweep),
         )
         for app in apps
