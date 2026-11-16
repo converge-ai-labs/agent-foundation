@@ -7,6 +7,7 @@ import sys
 
 # Optional vendor SDKs, Service, and the Agent runtime that Provider metadata must never import.
 _BLOCKED = (
+    "boxd",
     "docker",
     "e2b",
     "modal",
@@ -48,7 +49,7 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         "from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS\n"
         "from a13n_harness.providers.web.builtins import built_in_web_providers\n"
         "manifest = ProviderManifest(api_version=1, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
-        "assert len(manifest.environment) == 11\n"
+        "assert len(manifest.environment) == 12\n"
         "assert all(item.configuration_model.model_json_schema() for item in manifest.environment)\n"
         "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
         "chatgpt = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == 'openai_chatgpt')\n"

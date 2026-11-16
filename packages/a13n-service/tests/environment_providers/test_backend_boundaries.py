@@ -4,6 +4,7 @@ import inspect
 
 import pytest
 from a13n_harness.providers.environment._backend import ExecutionBackend
+from a13n_harness.providers.environment.boxd.execution import BoxdExecution
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
@@ -13,6 +14,7 @@ from a13n_harness.providers.environment.runloop.execution import RunloopExecutio
 from a13n_harness.providers.environment.sprites.execution import SpritesExecution
 from a13n_harness.providers.environment.vercel.execution import VercelExecution
 from a13n_service.providers.environment._backend import ManagementBackend
+from a13n_service.providers.environments.boxd.management import BoxdManagement
 from a13n_service.providers.environments.daytona.management import DaytonaManagement
 from a13n_service.providers.environments.docker.management import DockerManagement
 from a13n_service.providers.environments.e2b.management import E2BManagement
@@ -31,6 +33,7 @@ from a13n_service.providers.environments.vercel.management import VercelManageme
         LocalEnvdExecution,
         RemoteEnvdExecution,
         RunloopExecution,
+        BoxdExecution,
         SpritesExecution,
         VercelExecution,
     ],
@@ -52,6 +55,7 @@ def test_execution_implementation_has_no_management_authority(implementation):
         E2BManagement,
         ModalManagement,
         RunloopManagement,
+        BoxdManagement,
         SpritesManagement,
         VercelManagement,
     ],

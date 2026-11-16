@@ -15,7 +15,7 @@ The Host explicitly manages backing targets through `EnvironmentProvider`, recor
 | Envd           | `http_envd`      | General execution over HTTP(S) EIP           | Connect-only                    |
 | Envd           | `websocket_envd` | General execution over reverse WebSocket EIP | Connect-only; Host owns ingress |
 
-The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/environments/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
+The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/environments/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, Runloop, and boxd implementations; their opt-in checks are documented there.
 
 [desktop_template.py](desktop_template.py) builds an operator-owned E2B Envd template with the shared desktop launcher, CJK fonts, Chromium and revocable viewer supervisor. From this source checkout, securely set `E2B_API_KEY`, run `uv sync --locked` in this directory, then `uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd`. Supply a compatible Linux amd64 binary from the matching release or source build. The build creates or updates the named template; it installs components but does not start a daemon or embed instance credentials. Select `execution="envd_http"`, `desktop=true` and that template in Console. Service performs per-instance startup and authenticated attachment; all Agent operations use EIP. See [E2B desktop preparation](../../docs/environments/providers.md#e2b-desktop-preparation).
 

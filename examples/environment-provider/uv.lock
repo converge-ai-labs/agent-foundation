@@ -105,6 +105,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+boxd = [
+    { name = "boxd" },
+]
 docker = [
     { name = "docker" },
 ]
@@ -124,6 +127,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
+    { name = "boxd", marker = "extra == 'boxd'", specifier = ">=0.3.1,<0.4" },
     { name = "cdp-use", specifier = ">=1.4.5,<2" },
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
     { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
@@ -155,7 +159,7 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.15,<5" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
-provides-extras = ["docker", "e2b", "modal", "kubernetes"]
+provides-extras = ["boxd", "docker", "e2b", "modal", "kubernetes"]
 
 [package.metadata.requires-dev]
 test = [
@@ -181,7 +185,7 @@ version = "0.0.0"
 source = { editable = "../../packages/a13n-service" }
 dependencies = [
     { name = "a13n-envd-client" },
-    { name = "a13n-harness", extra = ["e2b", "kubernetes"] },
+    { name = "a13n-harness", extra = ["boxd", "e2b", "kubernetes"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -234,7 +238,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "../../packages/a13n-envd-client" },
-    { name = "a13n-harness", extras = ["e2b", "kubernetes"], editable = "../../packages/a13n-harness" },
+    { name = "a13n-harness", extras = ["boxd", "e2b", "kubernetes"], editable = "../../packages/a13n-harness" },
     { name = "a13n-logging", editable = "../../packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "../../packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
@@ -695,6 +699,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b9/cc/7f84a5d3071fe878380e9f610ab36ca87b8cbbc4aa81ba2727f90e1f3ea3/botocore-1.43.56.tar.gz", hash = "sha256:6c01f85f0ff9863076f4c761e74ee3aa96c5ccc1ad09fc1efd62ef8f2d22bf57", size = 15733117, upload-time = "2026-07-24T19:31:38.125Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/cd/86fe9e659e9699f62f8dd5ecd8c6725474334b23cab8aa71d82b5f56f1a4/botocore-1.43.56-py3-none-any.whl", hash = "sha256:aafc741f1b10f6fd63253eaf6ea029680c1ff436d87e1b8969d62aefa0c76976", size = 15418773, upload-time = "2026-07-24T19:31:34.758Z" },
+]
+
+[[package]]
+name = "boxd"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "httpx" },
+    { name = "protobuf" },
+    { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
+    { name = "pydantic", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/3b/33b32dd1b92215f07e3b880752878961074ef8f0882178dc2f57dc7eac04/boxd-0.3.1.tar.gz", hash = "sha256:723c15e6e611e4a9399f859d45b683efe52e0493ab52a6adcc8e476cb42ca4c0", size = 295610, upload-time = "2026-11-10T16:46:53.221Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/7a/dc92b6b533c87e2f870b293294e41c54c61cc284f6441ec4676dcd0a4230/boxd-0.3.1-py3-none-any.whl", hash = "sha256:9185d3e5196b5c1a788b96bf3a5f2e56df4be55033a4a2e0ef35d54f2577d99e", size = 192156, upload-time = "2026-11-10T16:46:51.937Z" },
 ]
 
 [[package]]

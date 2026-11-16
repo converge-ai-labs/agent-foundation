@@ -108,6 +108,10 @@ Continue to [cloud Provider setup and limits](cloud-providers.md#flyio-sprites).
 
 Continue to [cloud Provider setup and limits](cloud-providers.md#runloop).
 
+### boxd
+
+Continue to [cloud Provider setup and limits](cloud-providers.md#boxd).
+
 ### Embedded configuration
 
 Continue to [cloud Provider setup and limits](cloud-providers.md#embedded-configuration).
