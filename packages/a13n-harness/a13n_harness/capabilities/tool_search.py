@@ -167,6 +167,8 @@ class ToolSearchPlan:
         self,
         capabilities: Sequence[AbstractCapability[AgentContext]],
         contributions: Mapping[str, tuple[AbstractCapability[AgentContext], ...]],
+        *,
+        disabled_plugins: frozenset[str] = frozenset(),
     ) -> tuple[AbstractCapability[AgentContext], ...]:
         memberships: dict[int, dict[str | None, _ToolGroup]] = {}
         plugin_memberships: dict[str, str] = {}
@@ -175,6 +177,8 @@ class ToolSearchPlan:
         for name, selection in self.groups.items():
             sources = list(selection.capabilities)
             for plugin_id in selection.plugins:
+                if plugin_id in disabled_plugins:
+                    continue
                 if plugin_id in plugin_memberships:
                     raise ValueError(
                         f"ToolSearch plugin {plugin_id!r} belongs to both {plugin_memberships[plugin_id]!r} and {name!r}"

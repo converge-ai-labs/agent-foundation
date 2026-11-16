@@ -101,6 +101,25 @@ The example selects `AuditPlugin("audit-primary")` through `build(plugins=...)`.
 
 Give every plugin a unique ID. Definition order is the default; `PluginOrdering` can add `wraps`, `wrapped_by`, or outermost/innermost constraints. `requires` checks presence without ordering the pair. Invalid references and cycles fail construction.
 
+### Select Plugins Before Construction
+
+Use `PluginSource` when a Host controls enablement. Harness checks `enabled` before calling the factory, binding the plugin, or collecting its tools and Capabilities. Disabling a source removes its entire contribution, not just its outer middleware.
+
+```python
+from a13n_harness import PluginSource
+
+source = PluginSource("audit-primary", lambda: AuditPlugin("audit-primary"), enabled=False)
+# Pass sources alongside direct objects through build(plugins=(source, ...)).
+```
+
+For an existing object, use `PluginSource.from_plugin(plugin, enabled=False)`. Previous imports and construction remain in effect. Change the sources and build a new executable for the next Run; an active Run keeps its original selection through internal recovery.
+
+Inside `for_run(context)` and middleware, `context.plugins.activation.is_enabled("audit-primary")` reads the fixed selection. `enabled_ids` and `disabled_ids` contain this executable's instance IDs, not package or factory keys. Peer objects become available through `context.plugins.require(id, PluginType)` after all Run binding completes.
+
+Plugins can exchange typed Run-local values with `context.plugins.shared.write("acme.audit", value)` and `context.plugins.shared.read("acme.audit", ExpectedType)`, including during binding. Each Run gets fresh scratch storage. Use `context.state` explicitly for portable persistent state.
+
+A package catalog can produce a lazy source with `catalog.plugin_source(factory_context, enabled=...)`. The catalog owns configuration validation and factory invocation. If the Host already persisted normalized output from `catalog.validate_configuration()`, pass `configuration_validated=True` to avoid applying input normalization twice. Hosts keep their root and child selections on each corresponding `AgentDefinition.plugins`; builder-level configuration applies recursively to every definition.
+
 ### Feature Capabilities and Current Provider Clients
 
 A feature such as Web has two inputs: the definition enables its tools, and each Run receives current clients and policy. This helper reuses `AuditPlugin` from `plugin_demo.py`; the application supplies its Model and Host-owned `WebBinding`.

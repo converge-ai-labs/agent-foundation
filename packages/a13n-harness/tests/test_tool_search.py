@@ -1190,7 +1190,7 @@ async def test_plan_duplicate_tool_error_names_group_and_both_plugin_instances()
     from a13n_harness.plugins import bind_agent_plugins
     from pydantic_ai import Agent
 
-    _, contributions = bind_agent_plugins((Plugin("plugin-one"), Plugin("plugin-two")))
+    _, contributions, _ = bind_agent_plugins((Plugin("plugin-one"), Plugin("plugin-two")))
     sources = tuple(source for values in contributions.values() for source in values)
     plan = ToolSearchPlan(
         groups={
@@ -1970,3 +1970,19 @@ async def test_real_search_control_retry_points_to_its_own_guidance() -> None:
         "Guidance: `/release-guidance/harness/tool_search.md`. Read with view before deciding whether to retry."
     )
     assert part.retry.attempt == 1 and part.retry.max_retries == 5
+
+
+def test_plan_omits_known_disabled_plugins_but_rejects_unknown_in_each_definition() -> None:
+    from a13n_harness import AgentDefinition, PluginSource, SubagentDefinition
+
+    disabled = PluginSource("disabled", lambda: pytest.fail("must not construct"), enabled=False)
+    plan = ToolSearchPlan(groups={"optional": ToolSearchSelection("Optional tools", plugins=("disabled",))})
+    builder = HarnessBuilder(configured_plugins_enabled=False)
+    root = AgentDefinition(agent=AgentSpec(model="test"), output_type=str, plugins=(disabled,), tool_search=plan)
+    assert builder.build(root)._plugins == ()
+    # A parent's known ID is not part of its child's source scope.
+    child = AgentDefinition(agent=AgentSpec(model="test"), output_type=str, tool_search=plan)
+    with pytest.raises(ValueError, match="unavailable plugin"):
+        builder.build(
+            root.with_updates(subagents=(SubagentDefinition(name="child", description="child", agent=child),))
+        )

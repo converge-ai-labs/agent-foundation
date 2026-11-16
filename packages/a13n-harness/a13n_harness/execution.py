@@ -22,7 +22,7 @@ from a13n_harness.input import RunInputFactory, RunInputValue
 from a13n_harness.live import HarnessLiveStream
 from a13n_harness.models.binding import RunModelResolver
 from a13n_harness.observation import _ObservationRuntime
-from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.plugins import AbstractHarnessPlugin, PluginActivation
 from a13n_harness.pricing import AbstractModelCostCapability
 from a13n_harness.recovery import ToolRecoveryMode
 from a13n_harness.result import HarnessRunResult
@@ -44,6 +44,7 @@ class ExecutableAgent[OutputT]:
         system_prompt: tuple[str, ...],
         output_adapter: TypeAdapter[Any],
         plugins: tuple[AbstractHarnessPlugin, ...],
+        plugin_activation: PluginActivation,
         subagents: SubagentCollection,
         definition_reserved_capability_ids: frozenset[str],
         model_inference: RunModelResolver,
@@ -57,6 +58,7 @@ class ExecutableAgent[OutputT]:
         self._system_prompt = system_prompt
         self._output_adapter = output_adapter
         self._plugins = plugins
+        self.plugin_activation = plugin_activation
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
         self._model_inference = model_inference
         self._observation = observation

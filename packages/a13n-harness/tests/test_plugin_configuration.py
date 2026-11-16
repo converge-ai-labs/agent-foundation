@@ -473,6 +473,7 @@ def test_builder_applies_enabled_entries_to_each_definition_with_fresh_instances
 
     assert selected.load_count == 1
     assert unselected.load_count == 0
+    assert executable.plugin_activation.disabled_ids == frozenset({"disabled-1"})
     assert len(_ConfiguredFactory.contexts) == 4
     assert len({id(plugin) for plugin in _ConfiguredFactory.plugins}) == 4
     assert [context.plugin_id for context in _ConfiguredFactory.contexts] == [

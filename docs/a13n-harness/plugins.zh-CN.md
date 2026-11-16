@@ -101,6 +101,25 @@ Run 通过有界事件通道投递扩展观察事件，消费缓慢会产生背�
 
 每个插件需要唯一 ID。默认按定义顺序排列；`PluginOrdering` 可以增加 `wraps`、`wrapped_by` 或最外层、最内层约束。`requires` 只检查存在性，不决定两者顺序。无效引用和循环依赖会使构建失败。
 
+### 在构造前选择插件
+
+Host 需要控制启停时，使用 `PluginSource`。Harness 在调用工厂、绑定插件或收集工具与 Capability 之前检查 `enabled`。禁用 source 会移除它的全部贡献，而不只是外层中间件。
+
+```python
+from a13n_harness import PluginSource
+
+source = PluginSource("audit-primary", lambda: AuditPlugin("audit-primary"), enabled=False)
+# Pass sources alongside direct objects through build(plugins=(source, ...)).
+```
+
+对于已有对象，使用 `PluginSource.from_plugin(plugin, enabled=False)`。此前的导入和构造仍然有效。改变 source 后，为下一个 Run 构建新的 executable；正在执行的 Run 在内部恢复期间保持原有选择。
+
+在 `for_run(context)` 和中间件中，通过 `context.plugins.activation.is_enabled("audit-primary")` 读取固定选择。`enabled_ids` 和 `disabled_ids` 包含当前 executable 的实例 ID，而不是包名或工厂 key。全部 Run 绑定完成后，通过 `context.plugins.require(id, PluginType)` 获取其他插件对象。
+
+插件可以通过 `context.plugins.shared.write("acme.audit", value)` 和 `context.plugins.shared.read("acme.audit", ExpectedType)` 交换带类型检查的 Run 内数据，绑定阶段也可以使用。每个 Run 拥有独立的临时存储。需要可移植的持久状态时，显式使用 `context.state`。
+
+包目录通过 `catalog.plugin_source(factory_context, enabled=...)` 生成延迟 source。目录负责配置校验和工厂调用。若 Host 已保存 `catalog.validate_configuration()` 的归一化结果，传入 `configuration_validated=True`，避免重复归一化。Host 将根 Agent 和子 Agent 的选择分别放在对应的 `AgentDefinition.plugins` 中；builder 级配置则递归应用于所有定义。
+
 ### 功能 Capability 与当前 Provider 客户端
 
 Web 等功能有两类输入：定义启用工具，每个 Run 接收当前客户端和策略。下面的辅助函数复用 `plugin_demo.py` 中的 `AuditPlugin`；应用提供 Model 和由 Host 管理的 `WebBinding`。

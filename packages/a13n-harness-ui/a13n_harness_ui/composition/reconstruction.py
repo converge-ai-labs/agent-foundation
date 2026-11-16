@@ -573,13 +573,14 @@ class AgentReconstructor:
             capabilities.extend(root_capabilities)
 
         plugins = tuple(
-            plugin_catalog.create_plugin(
+            plugin_catalog.plugin_source(
                 HarnessPluginFactoryContext(
                     plugin_key=item.plugin_key,
                     plugin_id=item.plugin_id,
                     configuration=item.configuration,
                     extensions={},
-                )
+                ),
+                configuration_validated=True,
             )
             for item in node.harness_plugins
         )
