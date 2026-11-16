@@ -1,3 +1,5 @@
+import { presentationTool } from "./tool-names";
+
 export type ProcessObservation = {
   runId: string;
   processId: string;
@@ -49,9 +51,10 @@ export class ProcessObservations {
     return item;
   }
   command(runId: string, name: string, args: unknown): string | undefined {
+    name = presentationTool(name, {}).name;
     if (
       !name.startsWith("shell_") &&
-      !["tool_execution_result", "tool_execution_wait"].includes(name)
+      !["execution_result", "execution_wait"].includes(name)
     )
       return;
     const input = parsed(args);
@@ -60,7 +63,7 @@ export class ProcessObservations {
       return typeof input.command === "string" ? input.command : undefined;
     const reference = name.startsWith("shell_")
       ? input.process_id
-      : ["tool_execution_result", "tool_execution_wait"].includes(name)
+      : ["execution_result", "execution_wait"].includes(name)
         ? input.execution_id
         : undefined;
     if (typeof reference !== "string") return;
@@ -72,6 +75,7 @@ export class ProcessObservations {
     args: unknown,
     content: unknown,
   ) {
+    if (name) name = presentationTool(name, {}).name;
     if (
       !name ||
       ![
@@ -79,20 +83,20 @@ export class ProcessObservations {
         "shell_start",
         "shell_wait",
         "shell_info",
-        "tool_execution_result",
-        "tool_execution_wait",
+        "execution_result",
+        "execution_wait",
       ].includes(name)
     )
       return;
     const input = parsed(args);
     const retrievesShell =
-      (name === "tool_execution_result" || name === "tool_execution_wait") &&
+      (name === "execution_result" || name === "execution_wait") &&
       object(input) &&
       typeof input.execution_id === "string" &&
       this.entries.has(`${runId}:${input.execution_id}`);
     if (
       !retrievesShell &&
-      ["tool_execution_result", "tool_execution_wait"].includes(name)
+      ["execution_result", "execution_wait"].includes(name)
     )
       return;
     const value = parsed(content);

@@ -683,12 +683,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
           {typeof args.message === "string" && (
             <CodeContent title={t("Message")} value={args.message} />
           )}
-          {[
-            "create_thread",
-            "run_thread",
-            "send_thread_message",
-            "steer_thread",
-          ].includes(tool.name) && (
+          {["create_thread", "send_message"].includes(info.name) && (
             <small>
               {t(
                 "Check progress in the chat. Accepted doesn't mean finished or saved. Check the outcome before retrying.",

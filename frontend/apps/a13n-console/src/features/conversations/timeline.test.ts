@@ -101,27 +101,37 @@ it("reads a failed request as an error and keeps an unknown model unknown", () =
   });
 });
 
-it("treats later user text as guidance and never the Run input", () => {
-  const { entries } = timeline(
-    text("input", "user", "Ship the release"),
-    lifecycle("model_request_started"),
-    text("notice", "user", "A subagent finished", {
-      "a13n.steering-source": "async_subagent",
-    }),
-    text("steer", "user", "Skip the changelog"),
-  );
-  const guidance = entries.filter((entry) => entry.kind === "guidance");
-  expect(guidance).toHaveLength(2);
-  expect(guidance[0]).toMatchObject({
-    text: "A subagent finished",
-    steeringSource: "async_subagent",
-  });
-  expect(
-    entries.some(
-      (entry) => "text" in entry && entry.text === "Ship the release",
-    ),
-  ).toBe(false);
-});
+it.each(["legacy", "current"])(
+  "treats %s notices and later user text as guidance and never the Run input",
+  (format) => {
+    const { entries } = timeline(
+      text("input", "user", "Ship the release"),
+      lifecycle("model_request_started"),
+      text("notice", "user", "A subagent finished", {
+        ...(format === "legacy"
+          ? { "a13n.steering-source": "async_subagent" }
+          : {
+              "a13n.input": {
+                kind: "result",
+                sender: { kind: "agent", name: "async_subagent" },
+              },
+            }),
+      }),
+      text("steer", "user", "Skip the changelog"),
+    );
+    const guidance = entries.filter((entry) => entry.kind === "guidance");
+    expect(guidance).toHaveLength(2);
+    expect(guidance[0]).toMatchObject({
+      text: "A subagent finished",
+      steeringSource: "async_subagent",
+    });
+    expect(
+      entries.some(
+        (entry) => "text" in entry && entry.text === "Ship the release",
+      ),
+    ).toBe(false);
+  },
+);
 
 it("reads guidance before the request that read it", () => {
   const { entries } = timeline(

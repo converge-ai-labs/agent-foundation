@@ -281,7 +281,7 @@ it("navigates to a created Thread inline even when run admission failed, without
   expect(screen.getByText("Worker chat")).toBeTruthy();
 });
 
-it.each(["run_thread", "steer_thread", "send_thread_message"])(
+it.each(["send_message", "run_thread", "steer_thread", "send_thread_message"])(
   "links %s to its exact argument target and distinguishes admission from completion",
   (name) => {
     render(
@@ -290,7 +290,10 @@ it.each(["run_thread", "steer_thread", "send_thread_message"])(
           tool={{
             id: "target",
             name,
-            input: { thread_id: "thread / target", message: "Question" },
+            input:
+              name === "send_message"
+                ? { to: "thread / target", message: "Question" }
+                : { thread_id: "thread / target", message: "Question" },
             result: {
               ok: true,
               accepted: true,
@@ -457,7 +460,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
     {
       id: "inspect",
       kind: "tool" as const,
-      name: "tool_execution_info",
+      name: "execution_info",
       text: '{"execution_id":"exec-one"}',
       result: JSON.stringify(observation),
       done: true,
@@ -465,7 +468,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
     {
       id: "wait",
       kind: "tool" as const,
-      name: "tool_execution_wait",
+      name: "execution_wait",
       text: '{"execution_id":"exec-one"}',
       done: true,
     },
@@ -525,7 +528,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
 });
 
 it("keeps execution failures and cancellation requests visible without interpreting native result status as execution state", () => {
-  const waiting = completed("tool_execution_wait", {
+  const waiting = completed("execution_wait", {
     execution_id: "exec-one",
   });
   const failed = {
@@ -552,7 +555,7 @@ it("keeps execution failures and cancellation requests visible without interpret
   ).toBe("Result received");
   const cancelled = {
     ...failed,
-    name: "tool_execution_cancel",
+    name: "execution_cancel",
     result: { ...failed.result, status: "running" },
   };
   expect(describeTool(cancelled).phase).toBe("Cancellation requested");
@@ -625,13 +628,13 @@ it("renders saved Shell retrieval failures and output with exact receipt provena
         },
         {
           kind: "tool_call",
-          tool_name: "tool_execution_result",
+          tool_name: "execution_result",
           tool_call_id: "result",
           value: { execution_id: "exec-one" },
         },
         {
           kind: "tool_result",
-          tool_name: "tool_execution_result",
+          tool_name: "execution_result",
           tool_call_id: "result",
           value: {
             ok: true,
@@ -754,4 +757,31 @@ it("keeps successful foreground Shell completion distinct from an observation", 
       result,
     }).phase,
   ).toBe("Exited at last check");
+});
+
+it("renders an accepted unified message as a compact conversation disclosure", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "message",
+        name: "send_message",
+        input: { to: "parent", message: "Review complete" },
+        result: { accepted: true, input_id: "input-one" },
+      }}
+    />,
+  );
+  expect({
+    title: screen.getByText("Send message").parentElement?.outerHTML,
+    phase: screen.getByText("Message accepted").outerHTML,
+    expanded: screen
+      .getByRole("button", { name: /Send message/ })
+      .getAttribute("aria-expanded"),
+  }).toMatchInlineSnapshot(`
+    {
+      "expanded": "false",
+      "phase": "<span class="_phase_20628d">Message accepted</span>",
+      "title": "<span class="_title_20628d"><strong>Send message</strong> <span title="Review complete">Review complete</span></span>",
+    }
+  `);
+  expect(screen.getByText("Message accepted")).toBeTruthy();
 });

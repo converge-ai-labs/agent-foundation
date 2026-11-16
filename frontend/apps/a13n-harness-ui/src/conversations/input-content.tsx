@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "../i18n";
+import { inputOrigin } from "a13n-ui/input-origin";
 import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
@@ -34,20 +35,16 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function threadMessage(metadata: InputPart["metadata"]) {
-  const ui = metadata?.harness_ui;
-  const source = object(ui) ? ui.thread_message : undefined;
+  const origin = inputOrigin(metadata);
   if (
-    !object(source) ||
-    typeof source.source_thread_id !== "string" ||
-    !source.source_thread_id.trim()
+    origin?.kind !== "agent_message" ||
+    origin.execution ||
+    !origin.sender.thread_id?.trim()
   )
     return undefined;
   return {
-    id: source.source_thread_id,
-    title:
-      typeof source.source_thread_title === "string"
-        ? source.source_thread_title.trim()
-        : "",
+    id: origin.sender.thread_id,
+    title: origin.sender.name?.trim() ?? "",
   };
 }
 
@@ -299,9 +296,10 @@ export function InputContent({
   const contentId = useId();
   const guest = useGuestAccess();
   const childLabels = useContext(ChildInputLabels);
-  const parentInput = parts.some(
-    (part) => part.metadata?.["a13n.steering-source"] === "parent_agent",
-  );
+  const parentInput = parts.some((part) => {
+    const origin = inputOrigin(part.metadata);
+    return origin?.kind === "agent_message" && origin.sender.name === "parent";
+  });
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);

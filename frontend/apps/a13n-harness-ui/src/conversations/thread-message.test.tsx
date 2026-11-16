@@ -29,9 +29,33 @@ const parts: Schema<"TranscriptPart">[] = [
   },
 ];
 
-it.each(["live", "saved"])(
-  "shows attributed %s input without the template and navigates to its source",
-  async (mode) => {
+it.each(
+  ["live", "saved"].flatMap((mode) =>
+    ["legacy", "current"].map((format) => ({ mode, format })),
+  ),
+)(
+  "shows attributed $format $mode input without the template and navigates to its source",
+  async ({ mode, format }) => {
+    const inputParts =
+      format === "legacy"
+        ? parts
+        : parts.map((part, index) =>
+            index === 1
+              ? {
+                  ...part,
+                  metadata: {
+                    "a13n.input": {
+                      kind: "agent_message",
+                      sender: {
+                        kind: "agent",
+                        thread_id: "thread-origin",
+                        name: "Release review",
+                      },
+                    },
+                  },
+                }
+              : part,
+          );
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/threads/thread-worker"]}>
@@ -43,12 +67,18 @@ it.each(["live", "saved"])(
                 threadId="thread-worker"
                 entries={
                   mode === "saved"
-                    ? [{ position: 0, message_kind: "request", parts }]
+                    ? [
+                        {
+                          position: 0,
+                          message_kind: "request",
+                          parts: inputParts,
+                        },
+                      ]
                     : []
                 }
                 blocks={
                   mode === "live"
-                    ? parts.map((part, index) => ({
+                    ? inputParts.map((part, index) => ({
                         id: `run-worker:input:0:${index}`,
                         kind: "user" as const,
                         text: part.text!,

@@ -71,21 +71,31 @@ it("leaves an unfinished or untimed Item without the times it never reported", (
   });
 });
 
-it("keeps steering provenance so an enqueued notice is not read as authored input", () => {
-  expect(
-    presentItem(
-      item({
-        content: {
-          role: "user",
-          metadata: {
-            "a13n.steering-source": "async_subagent",
-            display: false,
+it.each(["legacy", "current"])(
+  "keeps %s provenance so an enqueued notice is not read as authored input",
+  (format) => {
+    expect(
+      presentItem(
+        item({
+          content: {
+            role: "user",
+            metadata: {
+              ...(format === "legacy"
+                ? { "a13n.steering-source": "async_subagent" }
+                : {
+                    "a13n.input": {
+                      kind: "result",
+                      sender: { kind: "agent", name: "async_subagent" },
+                    },
+                  }),
+              display: false,
+            },
           },
-        },
-      }),
-    ),
-  ).toMatchObject({ steeringSource: "async_subagent", display: false });
-});
+        }),
+      ),
+    ).toMatchObject({ steeringSource: "async_subagent", display: false });
+  },
+);
 
 it("presents the messages and tool calls in the order they first appeared", () => {
   expect(

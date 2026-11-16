@@ -89,7 +89,7 @@ export interface ContentEntry extends EntryBase {
   /** `hidden` is input the model read that its producer hid from Chat. */
   kind: "reasoning" | "reply" | "guidance" | "hidden";
   text: string;
-  /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
+  /** Shared input-origin provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
   sourceId?: string;
   protectedReasoning: boolean;

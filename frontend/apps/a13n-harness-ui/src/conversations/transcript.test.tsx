@@ -133,13 +133,32 @@ it("renders saved output and does not load remote Markdown images or HTML", () =
   expect(view.container.querySelector("img,script")).toBeNull();
 });
 
-it.each(["background_process", "async_subagent"])(
-  "renders %s notices as system activity in saved and live output",
-  (source) => {
+it.each(
+  ["background_process", "async_subagent", "tool_execution"].flatMap((source) =>
+    ["legacy", "current"].map((format) => ({ source, format })),
+  ),
+)(
+  "renders $format $source notices as system activity in saved and live output",
+  ({ source, format }) => {
     const text =
       "Background process process-example has exited. Call shell_wait for available output.";
     const parts = [
-      { kind: "user", text, metadata: { "a13n.steering-source": source } },
+      {
+        kind: "user",
+        text,
+        metadata:
+          format === "legacy"
+            ? { "a13n.steering-source": source }
+            : {
+                "a13n.input": {
+                  kind: source === "background_process" ? "event" : "result",
+                  sender: {
+                    kind: source === "async_subagent" ? "agent" : "system",
+                    name: source,
+                  },
+                },
+              },
+      },
       { kind: "system", text: "System context" },
       { kind: "user", text: "Request context", metadata: { display: false } },
     ];
@@ -155,7 +174,11 @@ it.each(["background_process", "async_subagent"])(
       />,
     );
     const title =
-      source === "background_process" ? "Process update" : "Subagent update";
+      source === "background_process"
+        ? "Process update"
+        : source === "tool_execution"
+          ? "Tool notification"
+          : "Subagent update";
     expect(screen.getByText(title).closest("details")?.open).toBe(false);
     expect(screen.queryByText("You")).toBeNull();
     expect(screen.queryByText("System context")).toBeNull();
@@ -322,3 +345,34 @@ it("hides Bot silent-finish calls live and after reload without hiding ordinary 
   view.rerender(<SavedEntry entry={entry} threadId="ordinary-thread" />);
   expect(screen.getByText("finish_silently")).toBeTruthy();
 });
+
+it.each(["saved", "live"])(
+  "renders a malformed provenance marker as %s activity, never authored input",
+  (mode) => {
+    const text = "Unrecognized automatic input";
+    const metadata = {
+      "a13n.input": { kind: "message", sender: { kind: "invalid" } },
+    };
+    render(
+      mode === "saved" ? (
+        <SavedEntry
+          entry={
+            {
+              position: 0,
+              message_kind: "request",
+              parts: [{ kind: "user", text, metadata }],
+            } as Schema<"TranscriptEntry">
+          }
+        />
+      ) : (
+        <LiveOutput
+          gap={false}
+          blocks={[{ id: "unknown", kind: "user", text, metadata }]}
+        />
+      ),
+    );
+    expect(screen.getByText("Activity").closest("details")).toBeTruthy();
+    expect(screen.getByText(text).closest("details")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
+  },
+);

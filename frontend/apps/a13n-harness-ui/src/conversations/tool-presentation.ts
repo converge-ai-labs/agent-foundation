@@ -3,6 +3,7 @@ import { readContentParts } from "a13n-ui";
 import { toolExecutionReceipt } from "a13n-ui/display";
 import type { Schema } from "../transport/client";
 import { ProcessObservations } from "./process-observations";
+import { presentationTool } from "./tool-names";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
@@ -50,22 +51,32 @@ export function sourceText(value: unknown): string {
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
 const executionTools = new Set([
-  "tool_execution_info",
-  "tool_execution_result",
-  "tool_execution_wait",
-  "tool_execution_cancel",
+  "execution_info",
+  "execution_result",
+  "execution_wait",
+  "execution_cancel",
 ]);
 
 /** These are observations at return, never a live execution subscription. */
 function executionPhase(name: string, output: unknown): string | undefined {
-  if (name === "tool_execution_info" && Array.isArray(output))
+  if (name === "execution_info" && Array.isArray(output))
     return `${output.length} execution${output.length === 1 ? "" : "s"} listed`;
   if (!record(output)) return;
+  if (
+    name === "execution_info" &&
+    record(output.agent_executions) &&
+    Array.isArray(output.agent_executions.executions) &&
+    Array.isArray(output.tool_executions)
+  ) {
+    const count =
+      output.agent_executions.executions.length + output.tool_executions.length;
+    return `${count} execution${count === 1 ? "" : "s"} listed`;
+  }
   if (output.status === "unavailable") return "Unavailable";
   if (
     typeof output.execution_id !== "string" ||
-    typeof output.tool_name !== "string" ||
-    typeof output.run_id !== "string"
+    (typeof output.tool_name !== "string" &&
+      typeof output.subagent_name !== "string")
   )
     return;
   const status = text(output.status);
@@ -75,10 +86,7 @@ function executionPhase(name: string, output: unknown): string | undefined {
     )
   )
     return;
-  if (
-    name === "tool_execution_cancel" &&
-    ["queued", "running"].includes(status)
-  )
+  if (name === "execution_cancel" && ["queued", "running"].includes(status))
     return "Cancellation requested";
   return `${status[0].toUpperCase()}${status.slice(1)} at last check`;
 }
@@ -100,20 +108,33 @@ export function toolSummary(
 
 export function describeTool(tool: ToolView) {
   const input = parsed(tool.input);
-  const args = record(input) ? input : {};
+  const {
+    name,
+    args,
+    executionKind: savedExecutionKind,
+  } = presentationTool(tool.name, record(input) ? input : {});
   const output = parsed(tool.result);
   const result = record(output) ? output : {};
   const executionReceipt = toolExecutionReceipt(output);
+  const executionId = text(args.execution_id) || text(result.execution_id);
+  const executionKind =
+    typeof result.subagent_name === "string"
+      ? "agent"
+      : typeof result.tool_name === "string" || executionId.startsWith("exec-")
+        ? "tool"
+        : executionId
+          ? "agent"
+          : savedExecutionKind;
   const path =
     tool.edit?.file_path ||
     tool.editPath ||
     text(result.file_path) ||
     text(args.file_path) ||
-    (tool.name === "view" ? text(args.path) : "");
+    (name === "view" ? text(args.path) : "");
   const shell =
-    tool.name.startsWith("shell_") ||
+    name.startsWith("shell_") ||
     (!!tool.shellCommand &&
-      ["tool_execution_result", "tool_execution_wait"].includes(tool.name));
+      ["execution_result", "execution_wait"].includes(name));
   const command = shell ? text(args.command) || tool.shellCommand || "" : "";
   const status = record(result.status) ? result.status : {};
   const exitCode =
@@ -130,7 +151,7 @@ export function describeTool(tool: ToolView) {
     result.ok === false ||
     // OpenAI native search returns its own status with the default success outcome.
     (tool.provider === "openai" &&
-      tool.name === "web_search" &&
+      name === "web_search" &&
       result.status === "failed") ||
     (shell &&
       ((exitCode !== undefined && exitCode !== 0) ||
@@ -158,14 +179,14 @@ export function describeTool(tool: ToolView) {
                 ? "Awaiting result"
                 : "Receiving input";
   const pending = phase === "Receiving input" || phase === "Awaiting result";
-  let label = tool.name || "Tool";
+  let label = name || "Tool";
   let generatedLabel = true;
   let summary = path;
   let generatedSummary = false;
   let kind:
     "file" | "edit" | "shell" | "search" | "web" | "thread" | "code" | "tool" =
     "tool";
-  switch (tool.name) {
+  switch (name) {
     case "computer_observe":
       label = "Observe desktop";
       summary = text(result.target_id) || text(args.alias);
@@ -184,7 +205,7 @@ export function describeTool(tool: ToolView) {
     case "computer_scroll":
     case "computer_type_text":
     case "computer_press_keys":
-      label = `Desktop - ${tool.name.slice(9).replaceAll("_", " ")}`;
+      label = `Desktop - ${name.slice(9).replaceAll("_", " ")}`;
       summary = text(args.observation_id) || text(args.alias);
       break;
     case "view":
@@ -215,22 +236,32 @@ export function describeTool(tool: ToolView) {
       kind = "search";
       summary = text(args.pattern);
       break;
-    case "tool_execution_info":
-      label = text(args.execution_id)
-        ? "Inspect tool execution"
-        : "List tool executions";
+    case "execution_info":
+      label =
+        executionKind === "agent"
+          ? "Inspect subagent"
+          : text(args.execution_id)
+            ? "Inspect tool execution"
+            : executionKind === "tool"
+              ? "List tool executions"
+              : "List executions";
       summary = text(args.execution_id);
       break;
-    case "tool_execution_result":
-      label = "Retrieve tool result";
+    case "execution_result":
+      label =
+        executionKind === "agent" ? "Subagent result" : "Retrieve tool result";
       summary = text(args.execution_id);
       break;
-    case "tool_execution_wait":
-      label = "Wait for tool execution";
+    case "execution_wait":
+      label =
+        executionKind === "agent"
+          ? "Wait for subagents"
+          : "Wait for tool execution";
       summary = text(args.execution_id);
       break;
-    case "tool_execution_cancel":
-      label = "Cancel tool execution";
+    case "execution_cancel":
+      label =
+        executionKind === "agent" ? "Stop subagent" : "Cancel tool execution";
       summary = text(args.execution_id);
       break;
     case "shell_exec":
@@ -308,7 +339,7 @@ export function describeTool(tool: ToolView) {
     case "list_projects":
     case "list_agents":
     case "list_models":
-      label = `Find ${tool.name.slice(5)}`;
+      label = `Find ${name.slice(5)}`;
       kind = "search";
       summary = text(args.query) || "Configured resources";
       generatedSummary = !text(args.query);
@@ -323,18 +354,10 @@ export function describeTool(tool: ToolView) {
       kind = "thread";
       summary = text(args.title) || text(args.prompt);
       break;
-    case "run_thread":
-      label = "Continue chat";
-      kind = "thread";
-      summary = text(args.prompt);
-      break;
-    case "steer_thread":
-      label = "Send instruction";
-      kind = "thread";
-      summary = text(args.message);
-      break;
-    case "send_thread_message":
-      label = "Message chat";
+    case "send_message":
+      label = text(args.to).startsWith("thread")
+        ? "Message chat"
+        : "Send message";
       kind = "thread";
       summary = text(args.message);
       break;
@@ -359,16 +382,16 @@ export function describeTool(tool: ToolView) {
       break;
     case "task_get":
     case "task_list":
-      label = tool.name === "task_get" ? "Inspect task" : "List tasks";
+      label = name === "task_get" ? "Inspect task" : "List tasks";
       summary = text(args.task_id);
       break;
     case "note_write":
     case "note_delete":
     case "note_get":
       label =
-        tool.name === "note_write"
+        name === "note_write"
           ? "Update note"
-          : tool.name === "note_delete"
+          : name === "note_delete"
             ? "Delete note"
             : "Read notes";
       summary = text(args.key);
@@ -381,19 +404,9 @@ export function describeTool(tool: ToolView) {
       label = "Delegate";
       summary = text(args.subagent_name);
       break;
-    case "subagent_info":
-    case "wait_subagent":
-    case "steer_subagent":
-    case "cancel_subagent":
     case "resume_subagent":
-      label = {
-        subagent_info: "Inspect subagent",
-        wait_subagent: "Wait for subagents",
-        steer_subagent: "Guide subagent",
-        cancel_subagent: "Stop subagent",
-        resume_subagent: "Resume subagent",
-      }[tool.name];
-      summary = text(args.execution_id);
+      label = "Resume subagent";
+      summary = text(args.subagent_id);
       break;
     case "call":
       generatedLabel = false;
@@ -406,10 +419,10 @@ export function describeTool(tool: ToolView) {
       }
       break;
     default:
-      generatedLabel = !tool.name;
+      generatedLabel = !name;
   }
 
-  if (shell && command && tool.name !== "shell_exec")
+  if (shell && command && name !== "shell_exec")
     summary = [summary, command].filter(Boolean).join(" - ");
   // An unfinished or omitted argument object cannot establish default targets.
   if (!record(input) && !hasResult && !tool.edit && !tool.editOmitted)
@@ -427,34 +440,22 @@ export function describeTool(tool: ToolView) {
   ) {
     if (executionReceipt) phase = "Moved to background";
     else if (result.accepted === false) phase = "Not accepted";
-    else if (
-      !failed &&
-      record(result.receipt) &&
-      ["create_thread", "run_thread"].includes(tool.name)
-    )
+    else if (!failed && record(result.receipt) && name === "create_thread")
       phase = "Run accepted";
     else if (
       !failed &&
-      result.ok === true &&
-      ["run", "steer"].includes(text(result.mode)) &&
-      tool.name === "send_thread_message"
+      name === "send_message" &&
+      (result.accepted === true ||
+        (result.ok === true && ["run", "steer"].includes(text(result.mode))) ||
+        record(result.receipt))
     )
-      phase =
-        result.mode === "run"
-          ? "Message accepted - new turn"
-          : "Message accepted - instruction";
-    else if (
-      !failed &&
-      tool.name === "steer_thread" &&
-      result.accepted === true
-    )
-      phase = "Instruction accepted";
+      phase = "Message accepted";
   }
-  if (executionTools.has(tool.name)) {
-    if (phase === "Awaiting result" && tool.name === "tool_execution_wait")
+  if (executionTools.has(name)) {
+    if (phase === "Awaiting result" && name === "execution_wait")
       phase = "Waiting";
     else if (phase === "Result received" && !tool.resultOmitted)
-      phase = executionPhase(tool.name, output) ?? phase;
+      phase = executionPhase(name, output) ?? phase;
   }
   if (
     shell &&
@@ -462,22 +463,22 @@ export function describeTool(tool: ToolView) {
     typeof status.phase === "string" &&
     status.phase &&
     (status.phase === "running" ||
-      !["shell_exec", "shell_start"].includes(tool.name))
+      !["shell_exec", "shell_start"].includes(name))
   )
     phase = `${status.phase[0].toUpperCase()}${status.phase.slice(1).replaceAll("_", " ")} at last check`;
   const detail = record(result.thread) ? result.thread : {};
   const thread = record(detail.thread) ? detail.thread : detail;
   const receipt = record(result.receipt) ? result.receipt : {};
   const threadId =
-    kind === "thread" && tool.name !== "list_threads"
+    kind === "thread" && name !== "list_threads"
       ? text(result.thread_id) ||
         text(thread.thread_id) ||
         text(receipt.thread_id) ||
-        text(args.thread_id)
+        text(args.thread_id) ||
+        (text(args.to).startsWith("thread") ? text(args.to) : "")
       : "";
   const threadTitle =
-    text(thread.title) ||
-    (tool.name === "create_thread" ? text(args.title) : "");
+    text(thread.title) || (name === "create_thread" ? text(args.title) : "");
   const errorText = tool.failure || text(error.message) || text(error.code);
   const stdout = record(result.stdout) ? result.stdout : {};
   const stderr = record(result.stderr) ? result.stderr : {};
@@ -489,6 +490,8 @@ export function describeTool(tool: ToolView) {
         stream.omitted_before_bytes > 0),
   );
   return {
+    name,
+    executionKind,
     args,
     result,
     path,
@@ -672,7 +675,12 @@ export const MAX_ACTIVITY_TOOLS = 16;
 export type ActivityKind =
   "explore" | "shell" | "web" | "edit" | "work" | "subagents" | "executions";
 export function activityKind(tool: ToolView): ActivityKind | undefined {
-  if (executionTools.has(tool.name)) return "executions";
+  const input = parsed(tool.input);
+  const { name } = presentationTool(tool.name, record(input) ? input : {});
+  if (executionTools.has(name))
+    return describeTool(tool).executionKind === "agent"
+      ? "subagents"
+      : "executions";
   if (
     [
       "task_create",
@@ -685,17 +693,7 @@ export function activityKind(tool: ToolView): ActivityKind | undefined {
     ].includes(tool.name)
   )
     return "work";
-  if (
-    [
-      "delegate",
-      "subagent_info",
-      "wait_subagent",
-      "steer_subagent",
-      "cancel_subagent",
-      "resume_subagent",
-    ].includes(tool.name)
-  )
-    return "subagents";
+  if (["delegate", "resume_subagent"].includes(name)) return "subagents";
   const kind = describeTool(tool).kind;
   if (kind === "edit" || kind === "shell" || kind === "web") return kind;
   if (kind === "file" || kind === "search") return "explore";
@@ -813,7 +811,7 @@ export function activitySummary(tools: ToolView[]) {
     (info) => info.phase !== "Failed" || kind === "executions",
   );
   const cancellations = tools.filter(
-    (tool) => tool.name === "tool_execution_cancel",
+    (tool) => presentationTool(tool.name, {}).name === "execution_cancel",
   ).length;
   const last = infos.at(-1);
   return {

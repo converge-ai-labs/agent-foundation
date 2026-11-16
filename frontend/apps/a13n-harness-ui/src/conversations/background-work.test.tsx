@@ -280,58 +280,82 @@ it("limits each card section to three rows and opens its own history tab", async
     expect(screen.getAllByRole("button", { name: /Agent / })).toHaveLength(25),
   );
 });
-it("distinguishes canonical notice kinds, preserves source-marked rows and links executions", async () => {
-  const test = setup([child("one", "running")]);
-  const notices = [
-    "Subagent message",
-    "Subagent result",
-    "Tool notification",
-    "Tool result",
-  ];
-  const entries = notices.map((kind, i) => ({
-    position: i,
-    message_kind: "request",
-    parts: [
-      {
-        kind: "user",
-        text: `${kind} · Agent one · execution_id=exec-one-0 · running\nActual update`,
-        metadata: {
-          display: true,
-          "a13n.steering-source": kind.startsWith("Tool")
-            ? "tool_execution"
-            : "async_subagent",
-        },
-      },
-    ],
-  })) as Schema<"TranscriptEntry">[];
-  render(
-    test.view(
-      "root",
-      <ConversationTranscript
-        threadId="root"
-        entries={entries}
-        blocks={[]}
-        localInputs={[]}
-      />,
-    ),
-  );
-  await waitFor(() =>
-    expect(executionHeaders(entries[0].parts[0].text!)[0].kind).toBe(
+it.each(["legacy", "current"])(
+  "distinguishes %s canonical notice kinds, preserves source-marked rows and links executions",
+  async (format) => {
+    const test = setup([child("one", "running")]);
+    const notices = [
       "Subagent message",
-    ),
-  );
-  for (const kind of notices)
-    expect(screen.getByText(kind, { exact: true })).toBeTruthy();
-  for (const kind of notices)
-    expect(screen.getByText(kind, { exact: true })).toBeTruthy();
-  await waitFor(() =>
-    expect(screen.getAllByRole("button", { name: "Agent one" }).length).toBe(4),
-  );
-  await userEvent.click(
-    screen.getAllByRole("button", { name: "Agent one" })[0],
-  );
-  expect(test.open).toHaveBeenCalled();
-});
+      "Subagent result",
+      "Tool notification",
+      "Tool result",
+    ];
+    const entries = notices.map((kind, i) => ({
+      position: i,
+      message_kind: "request",
+      parts: [
+        {
+          kind: "user",
+          text: `${kind} · Agent one · execution_id=exec-one-0 · running\nActual update`,
+          metadata: {
+            display: true,
+            ...(format === "legacy"
+              ? {
+                  "a13n.steering-source": kind.startsWith("Tool")
+                    ? "tool_execution"
+                    : "async_subagent",
+                }
+              : {
+                  "a13n.input": {
+                    kind:
+                      kind === "Subagent message" ? "agent_message" : "result",
+                    sender: {
+                      kind: kind.startsWith("Tool") ? "system" : "agent",
+                      name: "Agent one",
+                    },
+                    execution: {
+                      execution_id: "exec-one-0",
+                      kind: kind.startsWith("Tool") ? "tool" : "agent",
+                      name: "Agent one",
+                      state: "running",
+                    },
+                  },
+                }),
+          },
+        },
+      ],
+    })) as Schema<"TranscriptEntry">[];
+    render(
+      test.view(
+        "root",
+        <ConversationTranscript
+          threadId="root"
+          entries={entries}
+          blocks={[]}
+          localInputs={[]}
+        />,
+      ),
+    );
+    await waitFor(() =>
+      expect(executionHeaders(entries[0].parts[0].text!)[0].kind).toBe(
+        "Subagent message",
+      ),
+    );
+    for (const kind of notices)
+      expect(screen.getByText(kind, { exact: true })).toBeTruthy();
+    for (const kind of notices)
+      expect(screen.getByText(kind, { exact: true })).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Agent one" }).length).toBe(
+        4,
+      ),
+    );
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Agent one" })[0],
+    );
+    expect(test.open).toHaveBeenCalled();
+  },
+);
 it("opens a handed-off shell call from its single inline action before the activity list loads it", async () => {
   const test = setup([]);
   render(
@@ -444,34 +468,45 @@ it("links a retained-file notice from an earlier segment using its execution met
     expect.objectContaining({ kind: "child", id: "one" }),
   );
 });
-it("labels parent inputs Main agent and unmarked child inputs User", () => {
-  const test = setup([]);
-  render(
-    test.view(
-      "root",
-      <ChildInputLabels value={true}>
-        <InputContent
-          renderText={(text) => text}
-          threadId="one"
-          parts={[
-            {
-              kind: "user",
-              text: "Parent task",
-              metadata: { "a13n.steering-source": "parent_agent" },
-            },
-          ]}
-        />
-        <InputContent
-          renderText={(text) => text}
-          threadId="one"
-          parts={[{ kind: "user", text: "Human steer" }]}
-        />
-      </ChildInputLabels>,
-    ),
-  );
-  expect(screen.getByText("Main agent")).toBeTruthy();
-  expect(screen.getByText("User")).toBeTruthy();
-});
+it.each(["legacy", "current"])(
+  "labels %s parent inputs Main agent and unmarked child inputs User",
+  (format) => {
+    const test = setup([]);
+    render(
+      test.view(
+        "root",
+        <ChildInputLabels value={true}>
+          <InputContent
+            renderText={(text) => text}
+            threadId="one"
+            parts={[
+              {
+                kind: "user",
+                text: "Parent task",
+                metadata:
+                  format === "legacy"
+                    ? { "a13n.steering-source": "parent_agent" }
+                    : {
+                        "a13n.input": {
+                          kind: "agent_message",
+                          sender: { kind: "agent", name: "parent" },
+                        },
+                      },
+              },
+            ]}
+          />
+          <InputContent
+            renderText={(text) => text}
+            threadId="one"
+            parts={[{ kind: "user", text: "Human steer" }]}
+          />
+        </ChildInputLabels>,
+      ),
+    );
+    expect(screen.getByText("Main agent")).toBeTruthy();
+    expect(screen.getByText("User")).toBeTruthy();
+  },
+);
 it("opens each background resource once in the existing tab strip", () => {
   const target = {
     kind: "child" as const,

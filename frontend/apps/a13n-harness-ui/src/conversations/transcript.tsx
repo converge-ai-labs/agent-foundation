@@ -20,6 +20,7 @@ import {
   type ReactNode,
 } from "react";
 import { ScrollArea } from "a13n-ui";
+import { inputOrigin } from "a13n-ui/input-origin";
 import { useTurnHistory } from "./queries";
 import {
   captureReadingAnchor,
@@ -67,12 +68,31 @@ import { DebugData } from "../shell/debug";
 import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
-  const source = metadata?.["a13n.steering-source"];
-  return source === "background_process" ||
-    source === "async_subagent" ||
-    source === "tool_execution"
-    ? source
-    : undefined;
+  const origin = inputOrigin(metadata);
+  if (!origin) return;
+  let source: string;
+  if (
+    origin.kind === "result" ||
+    (origin.kind === "agent_message" && origin.execution)
+  )
+    source =
+      origin.execution?.kind === "tool" || origin.sender.kind === "system"
+        ? "tool_execution"
+        : "async_subagent";
+  else if (
+    origin.kind === "event" &&
+    origin.sender.name === "background_process"
+  )
+    source = "background_process";
+  else if (origin.kind === "event" && origin.sender.name === "unknown")
+    source = "event";
+  else return;
+  return {
+    source,
+    executionIds: origin.execution
+      ? [origin.execution.execution_id]
+      : metadata?.execution_ids,
+  };
 }
 
 // Generated run, subagent and recovery chrome is translated here; backend
@@ -237,6 +257,7 @@ function savedRows(
       // Sibling parts can grow at later checkpoints without replacing this part.
       const id = `saved:${savedEntryIdentity({ ...entry, parts: [part] })}:${index}`;
       const context = part.metadata?.["a13n.context"];
+      const notice = systemNotice(part.metadata);
       if (context === "handoff" || context === "compaction") {
         const operation = part.metadata?.operation_id;
         rows.push({
@@ -245,7 +266,7 @@ function savedRows(
           context,
           text: part.text ?? "",
         });
-      } else if (systemNotice(part.metadata)) {
+      } else if (notice) {
         splitExecutionNotices(
           part.text ?? JSON.stringify(part.value, null, 2),
         ).forEach((text, index) => {
@@ -255,8 +276,7 @@ function savedRows(
             notices: [
               {
                 id: `${id}:${index}`,
-                source: systemNotice(part.metadata)!,
-                executionIds: part.metadata?.execution_ids,
+                ...notice,
                 text,
               },
             ],
@@ -353,6 +373,7 @@ function liveRows(
     )
       continue;
     const firstRow = rows.length;
+    const notice = systemNotice(block.metadata);
     if (block.subagentRunId && block.subagentRunId !== previousChild) {
       rows.push({
         id: `${block.id}:origin`,
@@ -370,7 +391,7 @@ function liveRows(
         state: block.contextState,
         diagnostics: block.contextDiagnostics,
       });
-    } else if (systemNotice(block.metadata)) {
+    } else if (notice) {
       splitExecutionNotices(block.text).forEach((text, index) => {
         rows.push({
           id: `${block.id}:${index}`,
@@ -378,8 +399,7 @@ function liveRows(
           notices: [
             {
               id: `${block.id}:${index}`,
-              source: systemNotice(block.metadata)!,
-              executionIds: block.metadata?.execution_ids,
+              ...notice,
               text,
             },
           ],

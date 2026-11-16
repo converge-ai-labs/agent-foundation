@@ -39,7 +39,9 @@ export function useNoticeLabel() {
         ? t("Tool notification")
         : source === "background_process"
           ? t("Process update")
-          : t("Subagent update"))
+          : source === "event"
+            ? t("Activity")
+            : t("Subagent update"))
     );
   };
 }

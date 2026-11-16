@@ -140,7 +140,7 @@ it("translates grouped exploration titles and the operations they contain", asyn
 it("translates execution counts in the group title and its observed phase", async () => {
   show(
     <ToolActivity
-      tools={[completed("listed", "tool_execution_info", {}, [{}, {}, {}])]}
+      tools={[completed("listed", "execution_info", {}, [{}, {}, {}])]}
     />,
   );
   expect(screen.getByText("Tool calls - 1 operation")).toBeTruthy();
@@ -240,4 +240,43 @@ it("presents dynamic creation with a translated action and the child's authored 
   expect(
     screen.getByRole("button", { name: "启动子智能体 Checkout reviewer" }),
   ).toBeTruthy();
+});
+
+it("translates unified execution and message labels without altering their payloads", async () => {
+  show(
+    <>
+      <ToolCall
+        tool={completed(
+          "list",
+          "execution_info",
+          {},
+          {
+            agent_executions: {
+              executions: [],
+              execution_offset: 0,
+              total: 0,
+              next_offset: null,
+            },
+            tool_executions: [],
+          },
+        )}
+      />
+      <ToolCall
+        tool={completed(
+          "send",
+          "send_message",
+          { to: "parent", message: "Review complete" },
+          { accepted: true, input_id: "input-one" },
+        )}
+      />
+    </>,
+  );
+  expect(screen.getByText("List executions")).toBeTruthy();
+  expect(screen.getByText("Send message")).toBeTruthy();
+  expect(screen.getByText("Message accepted")).toBeTruthy();
+  await language("简体中文");
+  expect(screen.getByText("列出执行")).toBeTruthy();
+  expect(screen.getByText("发送消息")).toBeTruthy();
+  expect(screen.getByText("消息已接受")).toBeTruthy();
+  expect(screen.getByText("Review complete")).toBeTruthy();
 });

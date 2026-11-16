@@ -1985,7 +1985,7 @@ it.each([
             7,
             {
               toolCallId: "retrieval-call",
-              toolCallName: "tool_execution_result",
+              toolCallName: "execution_result",
               arguments: JSON.stringify({ execution_id: processId }),
               value: {
                 ok: true,
