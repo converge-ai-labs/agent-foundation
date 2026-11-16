@@ -138,6 +138,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "thread_configuration",
             "thread_inspection",
             "thread_work",
+            "thread_inbox",
             "tool_execution",
             "transcript_entry",
             "transcript_turn",
@@ -181,7 +182,7 @@ def test_deleted_thread_migration_starts_empty_and_downgrade_only_discards_evide
     try:
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
-        migrator.upgrade()
+        migrator._run(lambda config: command.upgrade(config, "1f69a2ed231f"), write=True)
         with engine.begin() as connection:
             assert connection.execute(text("SELECT count(*) FROM deleted_thread")).scalar_one() == 0
             connection.execute(text("INSERT INTO deleted_thread (thread_id) VALUES ('thread-deleted')"))
@@ -559,7 +560,7 @@ def test_default_model_migration_preserves_populated_configuration(tmp_path: Pat
 def test_dynamic_source_blocks_constraint_downgrade_until_removed(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     migrator = DatabaseMigrator(path)
-    migrator.upgrade()
+    migrator._run(lambda config: command.upgrade(config, "2a7cffc5be82"), write=True)
     engine = create_engine(f"sqlite:///{path}")
     try:
         with engine.begin() as connection:
@@ -580,7 +581,6 @@ def test_dynamic_source_blocks_constraint_downgrade_until_removed(tmp_path: Path
             )
         with pytest.raises(RuntimeError, match="dynamic child Threads exist"):
             migrator._run(lambda config: command.downgrade(config, "60710c8b48e4"), write=True)
-        migrator.verify_current()
         with engine.begin() as connection:
             connection.execute(text("UPDATE thread_configuration SET agent_source_kind = 'agent'"))
         migrator._run(lambda config: command.downgrade(config, "60710c8b48e4"), write=True)

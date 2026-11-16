@@ -50,7 +50,7 @@ Keep always-applicable workspace guidance in `bot/AGENTS.md`. When present, its 
 
 Bot manages recurring checks in `bot/HEARTBEAT.md`. Each heartbeat tells Bot to read the current file if it exists and follow its checklist. The contents are read on demand rather than automatically injected. Bot can create and edit the file to track checks, priorities, and follow-up criteria, and remove obsolete items. You can edit it too. A missing file does not block a heartbeat. File edits change future checks without triggering a Run; heartbeat timing still comes from Settings.
 
-When a background tool or an async subagent finishes during an active Bot Run, the Host delivers a status notice to that Run. If Bot is idle, nothing wakes it; it can inspect the retained result on its next permitted Run.
+Bot’s own background-tool and async-subagent completions enter its durable Thread inbox. An active Bot receives steering; an idle eligible Bot starts a Run to integrate the result, including the child’s full final reply. Off, paused, unavailable or decision-blocked Bot keeps the input for later. Ordinary failed Runs allow later automatic input; cancelled or uncertain execution pauses automation.
 
 Bot can use `create_project` to create a normal Project configuration and `create_thread` to start work with normal Sidekick/global Agent defaults. Project creation, Thread creation, Run admission, and task completion are separate outcomes. Bot is instructed to inspect saved results before reporting success.
 
@@ -90,7 +90,7 @@ A failed Run retains its input and error for inspection without pausing automati
 
 ## Connector ingress foundation
 
-The Host includes private database storage for Connector settings, credentials, and selected event envelopes. Heartbeat and selected Connector events share one automatic inbox, independent of active Model execution. A periodic delivery attempt fairly batches a pending tick with events across Connectors and submits or steers the exact Bot operation. Native acceptance consumes that batch; model acknowledgement or task completion is not required. Pending human decisions hold delivery.
+The Host privately stores Connector settings, credentials and selected events. All nonhuman Bot inputs share the Thread inbox. Automatic source inputs arrive as one JSON object per input, with their own identity and provenance, not a batch wrapper. A batch places the pending heartbeat first, then oldest eligible Connector/Thread inputs, up to 32 inputs and 60 KiB. Execution results are outside that source budget. Submission or steering acceptance alone does not delete input: selecting a checkpoint that carries it consumes the exact IDs. Pending decisions hold delivery; restart retries uncheckpointed input without replaying saved input.
 
 Manage accounts in **Settings → Connections → Connectors**, or open a setup card offered in a conversation. [Connectors](connectors.md) supplies a trusted plugin SDK, structured setup and rule forms, private state and atomic event ingress. The built-in GitHub provider exposes service tools using the reusable Remote MCP library; that library adds no generic MCP configuration entry. Event-producing plugins own collection and matching. Connector credentials are plaintext in the private local database; protect the data directory and its backups. External event content supplies context, not human authorization.
 

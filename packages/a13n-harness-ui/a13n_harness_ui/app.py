@@ -21,6 +21,7 @@ from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
+from a13n_harness.envelopes import Envelope, Sender, input_source
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.http import outbound_tls_verify
@@ -40,7 +41,6 @@ from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
-from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -211,6 +211,7 @@ from a13n_harness_ui.model_accounts import (
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
 from a13n_harness_ui.shutdown import Shutdown
+from a13n_harness_ui.thread_inbox import ThreadInbox
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -485,6 +486,7 @@ class HarnessUiApp:
         self._browsers = browsers
         if browsers is not None:
             browsers.handback.deliver = self._deliver_browser_handback
+            browsers.handback.withdraw = self._withdraw_browser_handback
         self._compaction = compaction
         self._settings = settings
         self.shutdown = Shutdown()
@@ -531,11 +533,14 @@ class HarnessUiApp:
         self._page_presence = PagePresence()
         self._root_runs = root_runs
         self._tool_executions = tool_executions
-        tool_executions.deliver = self._deliver_tool_completion
-        tool_executions.deliver_subagent = self._deliver_subagent_input
         tool_executions.runtime.reports_background_completions = True
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
+
+        self._inbox = ThreadInbox(self)
+        root_runs.inbox = self._inbox
+        tool_executions.inbox = self._inbox
+        subagent_operator.inbox = self._inbox
         self._live_hub = live_hub
         self._summary_hub = summary_hub
         self._copilot_account = copilot_account
@@ -632,11 +637,7 @@ class HarnessUiApp:
                 pieces = []
                 for part in entry.parts:
                     meta = part.metadata.model_extra or {}
-                    if (
-                        part.kind != "user"
-                        or not part.metadata.display
-                        or meta.get("a13n.steering-source", "user") != "user"
-                    ):
+                    if part.kind != "user" or not part.metadata.display or input_source(meta) is not None:
                         continue
                     ui = meta.get("harness_ui", {})
                     if ui.get("long_text"):
@@ -2035,10 +2036,9 @@ class HarnessUiApp:
                             thread_id,
                             expected_version=expected_version,
                             active_execution_ids=active,
-                            busy_thread_ids=self._tool_executions.busy_thread_ids(),
+                            busy_thread_ids=self._tool_executions.busy_thread_ids() | self._inbox.busy_thread_ids(),
                         )
                     for removed in deleted:
-                        self._tool_executions.forget(removed)
                         self._tool_executions.clear_state(removed)
                         if (draft := self._shared_drafts.pop(removed, None)) is not None:
                             draft.close()
@@ -2061,6 +2061,7 @@ class HarnessUiApp:
             if mutation.patch.archived is True:
                 async with self._root_runs.require_inactive(thread_id):
                     await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+                    await self._store.thread_inbox.discard(thread_id)
                     if self._browsers is not None:
                         self._browsers.handback.suppress(thread_id)
                 await self._retire_mcp_owners()
@@ -2754,7 +2755,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
-            self._tool_executions.retry(thread_id, refresh=True)
+            self._inbox.schedule(thread_id)
             await self._clear_submitted_draft(thread_id, draft_clear)
             return receipt
 
@@ -2911,108 +2912,24 @@ class HarnessUiApp:
                 kind="thread", thread_id=thread_id, root_thread_id=await self._subagent_operator._root_thread_id(thread)
             )
 
-    async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
-        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="tool_execution")
+    async def _withdraw_browser_handback(self, thread_id: str, identity: str) -> None:
+        await self._store.thread_inbox.discard(thread_id, ids=(identity,))
 
-    async def _deliver_subagent_input(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
-        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="async_subagent")
-
-    async def _deliver_background_input(
-        self,
-        thread_id: str,
-        prompt: str,
-        execution_ids: tuple[str, ...],
-        *,
-        source: Literal["async_subagent", "tool_execution"],
+    async def _deliver_browser_handback(
+        self, thread_id: str, prompt: str, current: Callable[[], bool], identity: str
     ) -> bool:
-        if self._state is not AppState.ready:
-            return False
-        operation = await self._root_runs.active(thread_id)
-        if thread_id == BOT_THREAD_ID and operation is None:
-            # An idle Bot lists retained work on its next permitted Run; completion never starts one.
-            return True
-        detail = await self._projections.detail(thread_id)
-        if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
-            return False
 
-        def before_accept() -> None:
-            if self._state is not AppState.ready:
-                raise RunCoordinationError("The App is stopping.", code="app_stopping")
-
-        async def authorize() -> None:
-            # Called under root admission fencing after capture. A retained result
-            # cannot authorize a new attempt after cancellation or process loss.
-            thread = await self._store.threads.get(thread_id)
-            if (
-                thread is None
-                or thread.archived
-                or thread.last_execution is None
-                or thread.last_execution.status != "completed"
-            ):
-                raise RunCoordinationError(
-                    "The last root execution cannot continue automatically.", code="tool_completion_not_eligible"
-                )
-            before_accept()
-
-        # Lifecycle hints are model context, not human-authored messages. Keep
-        # the annotation through active steering and idle continuation alike.
-        content = background_input(prompt, execution_ids, source=source)
-        if detail.thread.parent_thread_id is not None:
-            return await self._subagent_operator.deliver_tool_completion(
-                thread_id, content, before_accept=before_accept
-            )
-        if operation is not None:
-            result = await self._root_runs.steer(
-                receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
-            )
-            return result.accepted
-        # Repeated completion offers must not prepare a Run that is already
-        # ineligible. The fenced authorize callback rechecks after capture waits.
-        if detail.thread.last_execution is None or detail.thread.last_execution.status != "completed":
+        if not current():
             return False
-        try:
-            await self._root_runs.submit_prompt(
-                thread_id=thread_id, prompt=content, reject_deferred=True, authorize=authorize
-            )
-        except RunCoordinationError:
-            return False
-        return True
-
-    async def _deliver_browser_handback(self, thread_id: str, prompt: str, current: Callable[[], bool]) -> bool:
-        if thread_id == BOT_THREAD_ID:
-            return True
-        if self._state is not AppState.ready or not current():
-            return False
-        detail = await self._projections.detail(thread_id)
-        if (
-            detail.thread.archived
-            or detail.thread.memory_scope is not None
-            or detail.thread.parent_thread_id is not None
-            or detail.deferred_requests
-        ):
-            return False
-
-        def before_accept() -> None:
-            # Check at native enqueue or idle admission, after all preparation waits.
-            if self._state is not AppState.ready or not current():
-                raise RunCoordinationError("Browser handback notice is no longer current.", code="browser_notice_stale")
-
-        async def authorize() -> None:
-            before_accept()
-
-        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="browser.handback")),)
-        operation = await self._root_runs.active(thread_id)
-        if operation is not None:
-            result = await self._root_runs.steer(
-                receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
-            )
-            return result.accepted
-        try:
-            await self._root_runs.submit_prompt(
-                thread_id=thread_id, prompt=content, authorize=authorize, reject_deferred=True
-            )
-        except RunCoordinationError:
-            return False
+        await self._inbox.deliver(
+            thread_id,
+            Envelope(
+                id=identity,
+                kind="event",
+                sender=Sender(kind="system", name="browser.handback"),
+                text=prompt,
+            ),
+        )
         return True
 
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
@@ -3077,7 +2994,7 @@ class HarnessUiApp:
                 touch=True,
             )
             if result.accepted:
-                self._tool_executions.retry(operation.receipt.thread_id, refresh=True)
+                self._inbox.schedule(operation.receipt.thread_id)
                 if self._browsers is not None:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
@@ -3144,7 +3061,7 @@ class HarnessUiApp:
             if result.accepted:
                 head = await self._store.child_executions.get(execution_id)
                 if head is not None:
-                    self._tool_executions.retry(head.child_thread_id, refresh=True)
+                    self._inbox.schedule(head.child_thread_id)
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,
@@ -3163,6 +3080,7 @@ class HarnessUiApp:
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
             )
+            assert result.status != "queued"  # UI child heads never use queued.
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,
@@ -4349,7 +4267,7 @@ async def open_harness_ui_app(
             )
 
             async def notify_settled(project_id: str | None, operation: RootOperationView) -> None:
-                await thread_tools.notify_coordinator(project_id, operation)
+                await thread_tools.notify_coordinator(operation)
                 if app is not None and app._voice is not None:
                     await app._voice.executor_settled(operation)
 
@@ -4519,6 +4437,7 @@ async def open_harness_ui_app(
                     create_project=app.create_project,
                     read_project_memory=app.read_project_memory,
                 )
+                thread_tools.inbox = app._inbox
                 root_executor.set_root_capability_factory(
                     lambda composition: CombinedCapability(
                         [
@@ -4540,6 +4459,11 @@ async def open_harness_ui_app(
                         ]
                     )
                 )
+            if app._bot is not None:
+                app._bot.inbox = app._inbox
+            if app._voice is not None:
+                app._voice.inbox = app._inbox
+            root_executor.inbox = app._inbox
             connector_resources = create_task_group()
             await connector_resources.__aenter__()
             # Join owned controller tasks without feeding an unrelated surface
@@ -4552,6 +4476,7 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    app._inbox.start(background)
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
@@ -4569,7 +4494,8 @@ async def open_harness_ui_app(
                         background.start_soon(environment_monitoring.run)
                     await recover_restart(restart_coordinator, root_runs, operator)
                     await tool_executions.recover()
-                    await tool_executions.restore()
+                    await app._inbox.scan()
+                    background.start_soon(app._inbox.maintain)
                     background.start_soon(tool_executions.maintain)
                     if web_push is not None:
                         background.start_soon(web_push.run)
@@ -4581,8 +4507,11 @@ async def open_harness_ui_app(
                         graceful = True
                     finally:
                         with CancelScope(shield=True):
+                            app._inbox.stop()
                             await app._stop(graceful=graceful)
                         background.cancel_scope.cancel()
+                        with CancelScope(shield=True):
+                            await app._inbox.close()
             finally:
                 try:
                     await app._close_collaborators()

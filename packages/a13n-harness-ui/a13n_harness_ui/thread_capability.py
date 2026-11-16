@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_harness.context import AgentContext
+from a13n_harness.envelopes import Envelope, InputOrigin, Sender
 from a13n_harness.errors import DefinitionError
-from a13n_harness.input import RunInputValue
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -23,7 +23,6 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets.output import disclose_mapping_field
-from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.messages import TextContent
@@ -31,6 +30,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness_ui.bot import BotController
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.builtin_guidance import instruction_reference_root, ui_guidance
 from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
 from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
 from a13n_harness_ui.configuration.models import ProjectDefaults, ProjectResource, ProjectRoot, ResourceId
@@ -41,6 +41,7 @@ from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage.repositories import ThreadRepository
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
+from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.voice import VoiceController
 
@@ -99,6 +100,7 @@ class ThreadToolController:
         self._configurations = configurations
         self._inspect_configuration = inspect_configuration
         self._voice = voice
+        self.inbox: ThreadInbox | None = None
         self.bot = bot
         self.create_project = create_project
         self.read_project_memory = read_project_memory
@@ -181,14 +183,11 @@ class ThreadToolController:
         if not prompt.strip():
             raise ThreadError("A non-empty prompt is required.", code="thread_prompt_empty")
         await self._require_target(source_thread_id, thread_id, control=True)
-        source = await self._projections.detail(source_thread_id)
-        receipt = await self._root_runs.submit_prompt(
-            thread_id=thread_id,
-            prompt=_thread_input(source.thread, prompt),
-            model_overrides=RunModelOverrides(model_id=model_id) if model_id is not None else None,
-            touch=True,
-        )
-        return receipt.model_dump(mode="json")
+        if model_id is not None:
+            raise ThreadError(
+                "Message delivery uses the target Thread's Model.", code="thread_model_override_unsupported"
+            )
+        return await self._deliver_message(source_thread_id, thread_id, prompt)
 
     async def create_thread(
         self,
@@ -281,43 +280,13 @@ class ThreadToolController:
         return {"ok": True, "thread_id": created.thread_id, "receipt": receipt.model_dump(mode="json")}
 
     async def notify_worker_admitted(self, admission: RootRunAdmission, operation: RootOperationView) -> None:
-        if admission.thread.continuation is None and admission.published.value.coordinator_thread_id is not None:
-            await self.notify_coordinator(admission.published.value.project_id, operation, started=True)
+        # Obligations were committed with the execution summary, before this callback.
+        await self.notify_coordinator(operation)
 
-    async def notify_coordinator(
-        self, project_id: str | None, operation: RootOperationView, *, started: bool = False
-    ) -> None:
-        """Notify only the explicit owner of a managed worker, without retries or a queue."""
-        owner_id = (await self._threads.worker_owners((operation.receipt.thread_id,))).get(operation.receipt.thread_id)
-        if owner_id is None:
-            return
-        coordinator = (await self._threads.coordinators((owner_id,))).get(owner_id)
-        if coordinator is None or not coordinator.auto_followup:
-            return
-        message = (
-            f"Host notification: Thread {operation.receipt.thread_id} ended a root operation "
-            f"in Project {project_id}. Receipt: {operation.receipt.receipt_id}. "
-            f"Run: {operation.run_id or 'not started'}. Status: {operation.status.value}. "
-            "Use get_thread to inspect its saved results and reconcile your tasks and notes. "
-            "This lifecycle notice is separate from any worker report; an ended operation does not prove "
-            "the task succeeded. Do not send an acknowledgement or repeat an already integrated report."
-        )
-        if started:
-            message = (
-                f"Host notification: A user directly started work in your managed Thread {operation.receipt.thread_id} "
-                f"in Project {project_id}. Receipt: {operation.receipt.receipt_id}. "
-                "The task is already admitted; do not recreate or redispatch it. Include this worker in your "
-                "coordination, inspect its current state with get_thread, and review its saved outcome when available. "
-                "Its first input may not be saved yet. This notice is not a completion report; do not acknowledge it."
-            )
-        result = await self._run_or_steer(
-            thread_id=owner_id,
-            prompt=[TextContent(message, metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})],
-        )
-        if not result["ok"]:
-            get_logger(__name__).info(
-                "Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id
-            )
+    async def notify_coordinator(self, operation: RootOperationView) -> None:
+        owner = (await self._threads.worker_owners((operation.receipt.thread_id,))).get(operation.receipt.thread_id)
+        if owner is not None and self.inbox is not None:
+            self.inbox.schedule(owner)
 
     async def _require_target(self, source_thread_id: str, thread_id: str, *, control: bool = False) -> None:
         target = await self._threads.get(thread_id)
@@ -388,43 +357,34 @@ class ThreadToolController:
                 source_thread_id=source_thread_id, target_thread_id=thread_id, message=message, kind=kind
             )
         await self._require_target(source_thread_id, thread_id)
-        source = await self._projections.detail(source_thread_id)
-        return await self._run_or_steer(thread_id=thread_id, prompt=_thread_input(source.thread, message))
+        return await self._deliver_message(source_thread_id, thread_id, message)
 
-    async def _run_or_steer(self, *, thread_id: str, prompt: RunInputValue) -> dict[str, Any]:
-        detail = await self._projections.detail(thread_id)
-        if detail.thread.memory_scope is not None:
-            raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
-        if detail.thread.parent_thread_id is not None:
-            raise ThreadError("Child Threads use parent-scoped delegation controls.", code="child_thread_scoped")
-        if detail.thread.archived:
-            raise ThreadError("An archived Thread cannot receive messages.", code="thread_archived")
-        operation = await self._root_runs.active(thread_id)
-        if operation is not None:
-            # Resolve once. A rejected steer never falls through into a different operation.
-            result = await self._root_runs.steer(receipt_id=operation.receipt.receipt_id, message=prompt)
-            return {"ok": result.accepted, "mode": "steer", **result.model_dump(mode="json")}
-        if detail.deferred_requests:
-            raise ThreadError(
-                "Resolve this Thread's pending decisions before sending a message.", code="thread_deferred_pending"
-            )
-        # Admission serializes concurrent sends. If another operation wins, report its conflict without retrying.
-        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
-        return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
+    async def _deliver_message(self, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
+
+        source = await self._projections.get_thread(source_thread_id)
+        assert self.inbox is not None
+        return {
+            "ok": True,
+            **await self.inbox.deliver(
+                thread_id,
+                Envelope(
+                    id=f"message-{uuid4().hex}",
+                    kind="agent_message",
+                    sender=Sender(
+                        kind="agent",
+                        thread_id=source_thread_id,
+                        name=source.title or source.excerpt.first_input or None,
+                    ),
+                    text=message,
+                ),
+            ),
+        }
 
     async def steer_thread(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
         if not message.strip():
             raise ThreadError("A non-empty message is required.", code="thread_message_empty")
         await self._require_target(source_thread_id, thread_id, control=True)
-        operation = await self._root_runs.active(thread_id)
-        if operation is None:
-            return {"accepted": False, "receipt_id": None, "enqueue_id": None}
-        source = await self._projections.detail(source_thread_id)
-        result = await self._root_runs.steer(
-            receipt_id=operation.receipt.receipt_id,
-            message=_thread_input(source.thread, message),
-        )
-        return result.model_dump(mode="json")
+        return await self._deliver_message(source_thread_id, thread_id, message)
 
 
 @dataclass(kw_only=True, slots=True)
@@ -452,7 +412,6 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         )
 
     def _guidance(self, name: str) -> str:
-        from a13n_harness_ui.builtin_guidance import instruction_reference_root, ui_guidance
 
         root = instruction_reference_root(self.composition.root) if self.composition is not None else None
         return ui_guidance(name, root)
@@ -1069,12 +1028,14 @@ def _thread_input(source: ThreadSummary, text: str, *, context: str | None = Non
         TextContent(
             text,
             metadata={
-                "harness_ui": {
-                    "thread_message": {
-                        "source_thread_id": source.thread_id,
-                        "source_thread_title": source.title or source.excerpt.first_input or None,
-                    }
-                }
+                "a13n.input": InputOrigin(
+                    kind="agent_message",
+                    sender=Sender(
+                        kind="agent",
+                        thread_id=source.thread_id,
+                        name=source.title or source.excerpt.first_input or None,
+                    ),
+                ).model_dump(mode="json", exclude_none=True)
             },
         ),
     )

@@ -9,13 +9,13 @@ from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInboxInput, BotSubmit
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
 from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorInput
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.storage.bot_inbox import serialize_batch
+from a13n_harness_ui.storage.thread_inbox import consume
 from a13n_harness_ui.surfaces import RootControlResult
 from anyio import Event, fail_after
 
 from .test_app import _CompletedReconstructor, _settings, _SlowReconstructor
 from .test_app import _write_configuration as base_configuration
-from .test_bot import _write_configuration, consumed, ready
+from .test_bot import _write_configuration, consumed, delivered, ready
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -30,6 +30,11 @@ def event(source_id: str, *, event_type: str = "changed", connector_id: str = "c
         source_event_id=source_id,
         text=f"Event {source_id}",
     )
+
+
+async def pending(app):
+    rows = await app._store.thread_inbox.bot_batch(await app._store.thread_inbox.pending(BOT_THREAD_ID))
+    return tuple(BotInboxInput.model_validate_json(row.envelope.text) for row in rows)
 
 
 async def retain(app, connector_id, inputs):
@@ -72,18 +77,18 @@ async def test_heartbeat_policy_arms_independently_and_first_due_tick_needs_no_c
             await bot.submit(BotSubmit(input_id="off", text="No run"))
         assert error.value.code == "bot_disabled"
         await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
-        assert not await app._store.bot_inbox.pending()
+        assert not await pending(app)
         await policy(app, root, enabled=True)
         snapshot = await bot.snapshot()
         due = snapshot.state.next_heartbeat_at
         assert due and due > datetime.now(UTC)
         assert not snapshot.thread and not snapshot.inputs and not snapshot.state.activated
         await bot.tick(now=due)
-        batch = await app._store.bot_inbox.pending()
+        batch = await pending(app)
         assert len(batch) == 1 and batch[0].source == "heartbeat"
         await bot.tick(now=due + timedelta(days=10))
-        assert await app._store.bot_inbox.pending() == batch
-        await bot.deliver_automatic_inputs()
+        assert await pending(app) == batch
+        await delivered(bot)
         item = (await bot.snapshot()).inputs[-1]
         assert item.source == "automatic" and batch[0].input_id in item.text
         assert (await consumed(app, item.input_id)).state == "completed"
@@ -106,9 +111,9 @@ async def test_busy_run_retains_ticks_and_fair_mixed_batch_steers_exact_receipt(
         for index in range(40):
             await retain(app, "connector-example", (event(str(index)),))
         await bot.tick(now=due)
-        batch = await app._store.bot_inbox.pending()
+        batch = await pending(app)
         assert len(batch) == 32 and batch[0].source == "heartbeat"
-        assert len(serialize_batch(batch).encode()) <= 60 * 1024
+        assert sum(len(item.model_dump_json().encode()) for item in batch) <= 60 * 1024
         receipt = (await app._root_runs.active(BOT_THREAD_ID)).receipt.receipt_id
         attempts = []
 
@@ -117,12 +122,12 @@ async def test_busy_run_retains_ticks_and_fair_mixed_batch_steers_exact_receipt(
             return RootControlResult(receipt_id=receipt, accepted=False)
 
         monkeypatch.setattr(app._root_runs, "steer", reject)
-        await bot.deliver_automatic_inputs()
+        await delivered(bot)
         assert attempts[0]["receipt_id"] == receipt
         assert len((await bot.snapshot()).inputs) == 1
-        assert await app._store.bot_inbox.pending() == batch
+        assert await pending(app) == batch
         await bot.tick(now=due + timedelta(hours=3))
-        assert await app._store.bot_inbox.pending() == batch  # Selected tick identity is immutable.
+        assert await pending(app) == batch  # Selected tick identity is immutable.
 
         async def accept(**kwargs):
             await retain(app, "connector-example", (event("new"),))
@@ -130,8 +135,16 @@ async def test_busy_run_retains_ticks_and_fair_mixed_batch_steers_exact_receipt(
 
         monkeypatch.setattr(app._root_runs, "steer", accept)
         next_due = (await bot.snapshot()).state.next_heartbeat_at
-        await bot.deliver_automatic_inputs()
-        remainder = await app._store.bot_inbox.pending()
+        await delivered(bot)
+        remainder = await pending(app)
+        # Native acceptance is not consumption. Only the selected checkpoint
+        # transaction may delete the selected IDs.
+        assert remainder[: len(batch)] == batch
+        from a13n_harness_ui.storage.database import transaction
+
+        async with transaction(app._store.database.sessions) as session:
+            await consume(session, BOT_THREAD_ID, tuple(item.input_id for item in batch))
+        remainder = await pending(app)
         assert len(remainder) == 10 and all(item.source == "connector" for item in remainder)
         assert (await bot.snapshot()).state.next_heartbeat_at == next_due
         await app._root_runs.cancel(receipt_id=receipt)
@@ -147,16 +160,16 @@ async def test_off_pause_missing_model_and_heartbeat_policy_preserve_selected_in
         due = (await bot.snapshot()).state.next_heartbeat_at
         await bot.tick(now=due)
         await retain(app, "connector-example", (event("kept"),))
-        batch = await app._store.bot_inbox.pending()
+        batch = await pending(app)
         assert len(batch) == 2
-        await bot.deliver_automatic_inputs()
+        await delivered(bot)
         assert not (await bot.snapshot()).inputs
         await policy(app, root, enabled=False)
         await retain(app, "connector-example", (event("while-off"),))
         await bot.tick(now=due + timedelta(days=1))
-        assert len(await app._store.bot_inbox.pending()) == 3
+        assert len(await pending(app)) == 3
         await policy(app, root, heartbeat_enabled=False)
-        remaining = await app._store.bot_inbox.pending()
+        remaining = await pending(app)
         assert len(remaining) == 2 and all(item.source == "connector" for item in remaining)
         await policy(app, root, enabled=True)
         assert not (await bot.snapshot()).inputs
@@ -172,17 +185,17 @@ async def test_off_pause_missing_model_and_heartbeat_policy_preserve_selected_in
         )
         assert not (await bot.snapshot()).available
         await bot.pause(False)
-        await bot.deliver_automatic_inputs()
-        assert await app._store.bot_inbox.pending() == remaining
+        await delivered(bot)
+        assert await pending(app) == remaining
         document["defaults"]["agent"] = "agent-assistant"
         await app.mutate_configuration(
             relative_path=root.name, request=ResourceMutationRequest(content=yaml.safe_dump(document))
         )
         app._root_runs._executor._agents = _CompletedReconstructor()
-        await bot.deliver_automatic_inputs()
+        await delivered(bot)
         item = (await bot.snapshot()).inputs[-1]
         assert (await consumed(app, item.input_id)).state == "completed"
-        assert not await app._store.bot_inbox.pending()
+        assert not await pending(app)
 
 
 async def test_serialized_batch_limit_and_delivery_opt_in(tmp_path: Path) -> None:
@@ -195,13 +208,13 @@ async def test_serialized_batch_limit_and_delivery_opt_in(tmp_path: Path) -> Non
         with pytest.raises(HarnessUiError) as error:
             await retain(app, configuration.connector_id, (event("ignored"),))
         assert error.value.code == "connector_delivery_disabled"
-        assert not await app._store.bot_inbox.pending()
+        assert not await pending(app)
         await app._store.connectors.configure(configuration, expected_version=disabled.version)
         for index in range(10):
             await retain(app, configuration.connector_id, (event(str(index)).model_copy(update={"text": "界" * 5000}),))
-        batch = await app._store.bot_inbox.pending()
+        batch = await pending(app)
         assert 1 < len(batch) < 10
-        assert len(serialize_batch(batch).encode()) <= 60 * 1024
+        assert sum(len(item.model_dump_json().encode()) for item in batch) <= 60 * 1024
 
 
 async def test_settlement_failure_is_supervised_and_does_not_stop_bot_loops(tmp_path: Path, monkeypatch) -> None:
@@ -257,7 +270,7 @@ async def test_oversized_serialized_envelope_rolls_back_source_and_cannot_block_
             await app._store.connectors.configuration(configuration.connector_id)
         ).settings == configuration.settings
         await retain(app, configuration.connector_id, (event("after-large"),))
-        assert len(await app._store.bot_inbox.pending()) == 1
+        assert len(await pending(app)) == 1
 
 
 async def test_automatic_policy_read_failure_is_supervised_and_retried(tmp_path: Path, monkeypatch) -> None:

@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from a13n_harness.content import request_input_content
+from a13n_harness.envelopes import Envelope, ExecutionRef, Sender
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
 from a13n_harness.tool_execution_payload import ToolExecutionPayload
 from a13n_logging import get_logger
 from pydantic import BaseModel
-from pydantic_ai.messages import ModelMessage, ModelRequest
 from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,9 +22,10 @@ from a13n_harness_ui.errors import ObjectIntegrityError
 
 from .checkpoint_lock import checkpoint_lock
 from .database import DatabaseSessions, short_session, transaction
-from .models import DeletedThreadRecord, ToolExecutionHeadRecord
+from .models import DeletedThreadRecord, ThreadInboxRecord, ToolExecutionHeadRecord
 from .objects import ImmutableObjectStore, ObjectKind, ObjectRef
 from .ownership import OwnershipLocks
+from .thread_inbox import append
 
 RESULT_RETENTION = timedelta(hours=1)
 MAX_RESULT_RETENTION = timedelta(days=1)
@@ -71,48 +71,36 @@ def payload_ref(row: ToolExecutionHeadRecord) -> ObjectRef:
 
 
 def consumed(row: ToolExecutionHeadRecord, at: datetime) -> None:
-    row.completion_state = "consumed"
     if row.consumed_at is None:
         row.consumed_at = at
         if row.expires_at is not None:
             row.expires_at = min(row.expires_at, at + RESULT_RETENTION)
 
 
-def notify(row: ToolExecutionHeadRecord) -> None:
-    if row.terminal and row.foreground_released and row.completion_state == "waiting":
-        row.completion_state = "pending"
+async def notify(session: AsyncSession, row: ToolExecutionHeadRecord, *, previously_eligible: bool) -> None:
+
     if row.delivery_acknowledged:
         consumed(row, datetime.now(UTC))
-
-
-def completion_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
-    """Read Host-authored completion identities actually incorporated in history."""
-    result: set[str] = set()
-    for message in messages:
-        if not isinstance(message, ModelRequest):
-            continue
-        for item in request_input_content(message):
-            if item.metadata.source_id != "tool_execution.completion":
-                continue
-            ids = (item.metadata.model_extra or {}).get("execution_ids")
-            if isinstance(ids, list):
-                result.update(value for value in ids if isinstance(value, str))
-    return tuple(sorted(result))
-
-
-async def consume_completions(session: AsyncSession, thread_id: str, execution_ids: Sequence[str]) -> None:
-    """Join the checkpoint transaction that incorporates completion input."""
-    if execution_ids:
-        rows = await session.scalars(
-            select(ToolExecutionHeadRecord).where(
-                ToolExecutionHeadRecord.thread_id == thread_id,
-                ToolExecutionHeadRecord.execution_id.in_(execution_ids),
-                ToolExecutionHeadRecord.completion_state == "pending",
+        await session.execute(
+            delete(ThreadInboxRecord).where(
+                ThreadInboxRecord.thread_id == row.thread_id, ThreadInboxRecord.id == "result:" + row.execution_id
             )
         )
-        at = datetime.now(UTC)
-        for row in rows:
-            consumed(row, at)
+    elif row.terminal and row.foreground_released and not previously_eligible:
+        record = observation(row)
+        await append(
+            session,
+            row.thread_id,
+            Envelope(
+                id="result:" + row.execution_id,
+                kind="result",
+                sender=Sender(kind="system", name="tool_execution"),
+                text="",
+                execution=ExecutionRef(
+                    execution_id=row.execution_id, kind="tool", name=record.tool_name, state=record.status
+                ),
+            ),
+        )
 
 
 class ToolExecutionRepository:
@@ -121,7 +109,6 @@ class ToolExecutionRepository:
     def __init__(self, sessions: DatabaseSessions, objects: ImmutableObjectStore, root: Path) -> None:
         self.sessions, self.objects = sessions, objects
         self.owners = OwnershipLocks(root / "execution-locks")
-        self.completion_owners = OwnershipLocks(root / "completion-locks")
         self._root = root / "tool-execution-files"
         self._prune_cursor: str | None = None
 
@@ -147,9 +134,10 @@ class ToolExecutionRepository:
             if row is not None and row.thread_id != record.thread_id:
                 raise ValueError("Execution belongs to another Thread")
             if row is not None and row.terminal:
+                eligible = row.terminal and row.foreground_released
                 row.foreground_released |= record.foreground_released
                 row.delivery_acknowledged |= record.delivery_acknowledged
-                notify(row)
+                await notify(session, row, previously_eligible=eligible)
                 return True
         payload = ExecutionPayload(
             execution_id=record.execution_id,
@@ -162,6 +150,7 @@ class ToolExecutionRepository:
             if await session.get(DeletedThreadRecord, record.thread_id) is not None:
                 raise ValueError("Execution belongs to a deleted Thread")
             row = await session.get(ToolExecutionHeadRecord, record.execution_id)
+            eligible = row is not None and row.terminal and row.foreground_released
             if row is None:
                 composition = _COMPOSITION.get()
                 row = ToolExecutionHeadRecord(
@@ -174,7 +163,6 @@ class ToolExecutionRepository:
                     created_at=record.created_at,
                     foreground_released=record.foreground_released,
                     delivery_acknowledged=record.delivery_acknowledged,
-                    completion_state="waiting",
                     expires_at=(record.completed_at or datetime.now(UTC)) + MAX_RESULT_RETENTION
                     if record.terminal
                     else None,
@@ -196,7 +184,7 @@ class ToolExecutionRepository:
                         row.expires_at = (record.completed_at or datetime.now(UTC)) + MAX_RESULT_RETENTION
                 row.foreground_released |= record.foreground_released
                 row.delivery_acknowledged |= record.delivery_acknowledged
-            notify(row)
+            await notify(session, row, previously_eligible=eligible)
         return record.terminal
 
     async def get(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
@@ -255,8 +243,6 @@ class ToolExecutionRepository:
                                 continue
                             row.payload_digest = None
                             row.composition_json = None
-                            if row.completion_state in {"waiting", "pending"}:
-                                row.completion_state = "expired"
                     # Commit the released reference before file deletion. A crash
                     # here leaves an orphan that the next scan can safely remove.
                     await self.objects.remove(reference)
@@ -319,8 +305,9 @@ class ToolExecutionRepository:
         async with transaction(self.sessions) as session:
             row = await session.get(ToolExecutionHeadRecord, execution_id)
             if row is not None and row.thread_id == thread_id:
+                eligible = row.terminal and row.foreground_released
                 row.foreground_released = True
-                notify(row)
+                await notify(session, row, previously_eligible=eligible)
 
     async def request_cancellation(self, thread_id: str, execution_id: str) -> None:
         async with transaction(self.sessions) as session:
@@ -333,37 +320,4 @@ class ToolExecutionRepository:
             row = await session.get(ToolExecutionHeadRecord, execution_id)
             if row is not None and row.thread_id == thread_id and observation(row).result_available:
                 row.delivery_acknowledged = True
-                consumed(row, datetime.now(UTC))
-
-    async def pending(
-        self, thread_id: str, *, exclude: Sequence[str] = (), limit: int = 256
-    ) -> tuple[ToolExecutionRecord, ...]:
-        async with short_session(self.sessions) as session:
-            rows = await session.scalars(
-                select(ToolExecutionHeadRecord)
-                .where(
-                    ToolExecutionHeadRecord.thread_id == thread_id,
-                    ToolExecutionHeadRecord.completion_state == "pending",
-                    ToolExecutionHeadRecord.expires_at > datetime.now(UTC),
-                    ToolExecutionHeadRecord.execution_id.not_in(exclude),
-                )
-                .order_by(ToolExecutionHeadRecord.execution_id)
-                .limit(limit)
-            )
-            return tuple(observation(row) for row in rows)
-
-    async def pending_threads(self, *, after: str = "", limit: int = 100) -> tuple[str, ...]:
-        async with short_session(self.sessions) as session:
-            return tuple(
-                await session.scalars(
-                    select(ToolExecutionHeadRecord.thread_id)
-                    .where(
-                        ToolExecutionHeadRecord.completion_state == "pending",
-                        ToolExecutionHeadRecord.expires_at > datetime.now(UTC),
-                        ToolExecutionHeadRecord.thread_id > after,
-                    )
-                    .distinct()
-                    .order_by(ToolExecutionHeadRecord.thread_id)
-                    .limit(limit)
-                )
-            )
+                await notify(session, row, previously_eligible=True)

@@ -125,7 +125,8 @@ class ToolExecutionHeadRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     foreground_released: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     delivery_acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    completion_state: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting", index=True)
+    # Retired; retained for mixed-version Apps, dropped by the later contract migration.
+    completion_state: Mapped[str] = mapped_column(String(16), nullable=False, server_default="waiting", index=True)
 
 
 class ConnectorConfigurationRecord(Base):
@@ -174,6 +175,29 @@ class ConnectorSetupOfferRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class ThreadInboxRecord(Base):
+    """Pending non-human input; selected checkpoints consume these rows."""
+
+    __tablename__ = "thread_inbox"
+    __table_args__ = (
+        CheckConstraint("kind IN ('message', 'agent_message', 'result', 'event')", name="kind"),
+        CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
+        Index("ix_thread_inbox_pending", "thread_id", "created_at", "id"),
+        UniqueConstraint("thread_id", "dedupe_key", name="thread_inbox_dedupe"),
+    )
+
+    id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    sender: Mapped[str] = mapped_column(Text, nullable=False)
+    execution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    delivery: Mapped[str] = mapped_column(String(16), nullable=False)
+    dedupe_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+# Retired; retained for mixed-version Apps, dropped by the later contract migration.
 class BotInboxRecord(Base):
     __tablename__ = "bot_inbox"
     __table_args__ = (

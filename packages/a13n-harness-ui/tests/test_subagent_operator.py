@@ -368,6 +368,7 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
     publish = AsyncMock(return_value=checkpoint)
     monkeypatch.setattr(operator, "bind_parent_run", bind_parent_run)
     monkeypatch.setattr(operator, "_publish_checkpoint_object", publish)
+    monkeypatch.setattr(operator, "_finish_execution", finish)
     monkeypatch.setattr(operator, "_publish_summary", AsyncMock())
     monkeypatch.setattr(operator, "_publish_summary_by_execution", AsyncMock())
     now = datetime.now(UTC)

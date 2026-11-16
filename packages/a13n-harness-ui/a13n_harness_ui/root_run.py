@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
@@ -57,6 +57,7 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
     ThreadDeferredResponse,
 )
+from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.tool_executions import ToolExecutions
 
 _MAX_WAIT_SECONDS = 60.0
@@ -94,6 +95,7 @@ class _RootOperation:
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
+    human_input: bool = False
     main_account: MainAccountSelection | None = None
     skill_catalog: BoundSkillCatalog | None = None
 
@@ -112,6 +114,10 @@ class _ThreadFence:
     users: int = 0
 
 
+class SaveExecution(Protocol):
+    async def __call__(self, thread_id: str, value: ThreadExecution, *, notify_started: bool = False) -> bool: ...
+
+
 class RootRunCoordinator:
     """Own App-lifetime root tasks and correlate every control to one receipt.
 
@@ -128,7 +134,7 @@ class RootRunCoordinator:
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
-        save_execution: Callable[[str, ThreadExecution], Awaitable[bool]] | None = None,
+        save_execution: SaveExecution | None = None,
         interaction_timeouts: bool = False,
         notify: Callable[[str, RootOperationNotice], None] | None = None,
         on_settled: Callable[[str | None, RootOperationView], Awaitable[None]] | None = None,
@@ -145,6 +151,7 @@ class RootRunCoordinator:
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
+        self.inbox: ThreadInbox | None = None
         self._touch_thread = touch_thread
         self._save_execution = save_execution
         self._summary_hub = summary_hub
@@ -413,6 +420,7 @@ class RootRunCoordinator:
             restart=restart,
             goal=goal,
             observation_only=organization is not None,
+            human_input=human_input,
         )
         async with self._thread_fence(thread_id):
             if self._restart is not None:
@@ -813,8 +821,8 @@ class RootRunCoordinator:
             if self._active_by_thread.get(thread_id) == operation.receipt.receipt_id:
                 self._active_by_thread.pop(thread_id, None)
             operation.done.set()
-            if self._tool_executions is not None:
-                self._tool_executions.run_settled(thread_id)
+            if self.inbox is not None:
+                self.inbox.settled(thread_id)
             if self._browser_handback is not None:
                 self._browser_handback.retry(thread_id)
             # Notify only after the Host has settled execution and continuation selection.
@@ -924,8 +932,8 @@ class RootRunCoordinator:
         await self._publish_change(operation)
         if cancel_requested:
             await self._request_cancel(operation)
-        elif self._tool_executions is not None:
-            self._tool_executions.retry(operation.receipt.thread_id)
+        elif self.inbox is not None:
+            self.inbox.schedule(operation.receipt.thread_id)
         if not operation.cancel_requested and self._browser_handback is not None:
             self._browser_handback.retry(operation.receipt.thread_id)
 
@@ -968,6 +976,7 @@ class RootRunCoordinator:
                 error_code=failure.code if failure is not None else None,
                 error_message=failure.message[:4096] if failure is not None else None,
             ),
+            **({"notify_started": True} if operation.human_input else {}),
         )
 
     async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:

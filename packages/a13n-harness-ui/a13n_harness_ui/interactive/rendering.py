@@ -10,7 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from a13n_harness_ui.background_input import ACTIVITY_SOURCES
+from a13n_harness.envelopes import input_source
+
 from a13n_harness_ui.skill_input import retained_skill_spans
 
 from .context_activity import ContextActivity
@@ -844,7 +845,7 @@ class StreamRenderer:
                     if content.get("role") == "user"
                     else "text"
                 )
-                activity = kind == "user" and (meta.model_extra or {}).get("a13n.steering-source") in ACTIVITY_SOURCES
+                activity = kind == "user" and input_source(meta) is not None
                 if activity:
                     kind = "tool"
                 if activity:
@@ -947,11 +948,9 @@ class StreamRenderer:
         if isinstance(inline_child, str):
             child, run_id = True, inline_child
         input_value = payload.get("value")
-        input_source = input_value.get("event") if isinstance(input_value, dict) else None
+        input_event = input_value.get("event") if isinstance(input_value, dict) else None
         role = (
-            input_source.get("role")
-            if event_type == "CUSTOM" and isinstance(input_source, dict)
-            else payload.get("role")
+            input_event.get("role") if event_type == "CUSTOM" and isinstance(input_event, dict) else payload.get("role")
         )
         metadata = ContentMetadata.from_native(payload.get("metadata"))
         if not metadata.display:
@@ -1026,7 +1025,7 @@ class StreamRenderer:
         thinking = event_type.startswith("REASONING_MESSAGE")
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
-        notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in ACTIVITY_SOURCES
+        notification = user and input_source(metadata) is not None
         if user and not child and metadata.source_id in self._local_inputs:
             # Correlate explicit authored input identity, never equal text. Keep
             # the identity across repeated model boundaries of this operation.

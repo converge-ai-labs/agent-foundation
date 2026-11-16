@@ -15,7 +15,16 @@ from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sl
 from filelock import AsyncFileLock, Timeout
 from pydantic_ai.messages import TextContent
 
-from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotNotesPage, BotProse, BotState, BotSubmit
+from a13n_harness_ui.bot_models import (
+    BOT_THREAD_ID,
+    BotInboxInput,
+    BotInput,
+    BotMessage,
+    BotNotesPage,
+    BotProse,
+    BotState,
+    BotSubmit,
+)
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration.models import BotConfiguration
 from a13n_harness_ui.connectors.models import SetupOffer
@@ -25,7 +34,7 @@ from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, ThreadConfigurationMutation
-from a13n_harness_ui.storage.bot_inbox import serialize_batch
+from a13n_harness_ui.storage.thread_inbox import bot_envelope
 from a13n_harness_ui.surfaces import (
     RootOperationStatus,
     RootOperationView,
@@ -36,6 +45,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
 )
 from a13n_harness_ui.thread_files import ComposerAttachmentReference, ComposerInput, ThreadAttachment, ThreadFiles
+from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import ThreadService
 
@@ -109,6 +119,7 @@ class BotController:
         self._settlement_lock = Lock()
         self._inbox_changed = Event()
         self._owned = False
+        self.inbox: ThreadInbox | None = None
         self.notes = store.bot_notes
         self.notes.on_change = self._note_changed
 
@@ -130,14 +141,21 @@ class BotController:
     async def receive_thread_message(
         self, *, source_thread_id: str, source_thread_title: str | None, text: str, kind: Literal["task", "report"]
     ) -> dict[str, object]:
-        input_id = await self._store.bot_inbox.thread_message(
+        item = BotInboxInput(
+            input_id=f"thread-{uuid4().hex}",
+            source="thread",
             source_thread_id=source_thread_id,
             source_thread_title=source_thread_title,
+            source_event_id=f"message-{uuid4().hex}",
+            event_type="message",
             text=text,
-            kind=kind,
+            created_at=datetime.now(UTC),
         )
-        self._inbox_changed.set()
-        return {"ok": True, "mode": "inbox", "input_id": input_id}
+        envelope = bot_envelope(item)
+        if len(envelope.text.encode("utf-8")) > 60 * 1024:
+            raise ThreadError("Thread message exceeds the automatic input budget.", code="thread_message_too_large")
+        assert self.inbox is not None
+        return {"ok": True, **await self.inbox.deliver(BOT_THREAD_ID, envelope)}
 
     async def snapshot(self) -> BotSnapshot:
         policy = await self._policy()
@@ -523,7 +541,7 @@ class BotController:
     async def reconcile_policy(self, *, now: datetime | None = None) -> None:
         if self._owned:
             async with self._lock:
-                await self._store.bot_inbox.heartbeat(
+                await self._store.thread_inbox.heartbeat(
                     policy=await self._policy(), now=now or datetime.now(UTC), text=_HEARTBEAT
                 )
 
@@ -540,48 +558,22 @@ class BotController:
                 await sleep(1)
 
     async def deliver_automatic_inputs(self) -> None:
-        """Freeze one batch; exact native acceptance consumes only its selected IDs."""
-        # An immediately notified report must not win the first activation over visible orientation.
-        await self.introduce_workspace()
+        assert self.inbox is not None
+        self.inbox.schedule(BOT_THREAD_ID)
+
+    async def admit_inputs(
+        self, prompt: RunInputValue, ids: tuple[str, ...], *, authorize: Callable[[], Awaitable[None]]
+    ) -> bool:
         async with self._lock:
-            state = await self._store.bot.state()
-            if not await self._can_deliver() or state.paused:
-                return
-            batch = await self._store.bot_inbox.pending()
-            if not batch:
-                return
-            await self._threads.bot_thread()
-            detail = await self._projections.detail(BOT_THREAD_ID)
-            if detail.deferred_requests:
-                return
-            text = (
-                "Automatic inputs (Thread messages, external content and Host ticks, never human approval). Use tools for internal coordination; do not acknowledge reports. Human messages received during this Run still deserve a timely response:\n"
-                + serialize_batch(batch)
-            )
-            if state.last_error:
-                text += (
-                    "\nA previous Bot input failed. Inspect the saved Bot Thread execution failure and working Thread outcomes before "
-                    "continuing. This is a fresh opportunity, not a replay of that input or permission to repeat "
-                    "uncertain tool effects.\n" + state.last_error
-                )
-            prompt = [TextContent(text, metadata={"display": False})]
-            active = await self._runs.active(BOT_THREAD_ID)
-            if active is not None:
-                result = await self._runs.steer(receipt_id=active.receipt.receipt_id, message=prompt)
-                if result.accepted:
-                    with CancelScope(shield=True):
-                        await self._store.bot_inbox.delivered(batch)
-                return
-            # Human prompts have ordinary idle-admission priority.
             if any(
                 item.state in {"dispatching", "admitted"} or (item.source == "user" and item.state == "queued")
                 for item in await self._store.bot.inputs(pending_only=True)
             ):
-                return
+                return False
             item = BotInput(
                 input_id=f"automatic-{uuid4().hex}",
                 source="automatic",
-                text=text,
+                text="Automatic Thread inputs: " + ", ".join(ids),
                 created_at=datetime.now(UTC),
                 state="dispatching",
             )
@@ -589,17 +581,15 @@ class BotController:
                 await self._store.bot.retain(item)
             except ThreadError as exc:
                 if exc.code == "bot_input_full":
-                    return
+                    return False
                 raise
-            if await self._admit(item, prompt):
-                with CancelScope(shield=True):
-                    await self._store.bot_inbox.delivered(batch)
+            return await self._admit(item, prompt, authorize=authorize)
 
     async def tick(self, *, now: datetime | None = None) -> None:
         """Produce Heartbeats independently of direct human input and Run settlement."""
         await self.reconcile_policy(now=now)
 
-    async def _admit(self, item: BotInput, prompt: RunInputValue) -> bool:
+    async def _admit(self, item: BotInput, prompt: RunInputValue, *, authorize=None) -> bool:
         try:
             receipt = await self._runs.submit_prompt(
                 thread_id=BOT_THREAD_ID,
@@ -607,9 +597,10 @@ class BotController:
                 human_input=item.source == "user",
                 reject_deferred=True,
                 bot_input=True,
+                authorize=authorize,
             )
         except HarnessUiError as exc:
-            if exc.code in {"thread_run_active", "thread_deferred_pending"}:
+            if exc.code in {"thread_run_active", "thread_deferred_pending", "inbox_held"}:
                 await self._store.bot.save_input(item.model_copy(update={"state": "discarded", "error": str(exc)}))
             else:
                 await self._save_interrupted(item, str(exc))

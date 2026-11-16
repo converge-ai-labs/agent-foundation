@@ -7,6 +7,7 @@ from typing import Literal
 
 from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessRunResult
 from a13n_harness.content import ContentItem, ContentMetadata, request_input_content
+from a13n_harness.envelopes import input_source
 from a13n_harness.events import InputMediaEvent, InputTextEvent
 from a13n_stream_protocol.messages import project_input_content
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,8 +18,6 @@ from pydantic_ai.messages import (
     TextPart,
     UserContent,
 )
-
-from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 
 EXCERPT_LIMIT = 2048
 
@@ -61,9 +60,9 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
     attachments: list[str] = []
     for value, metadata in content:
         extra = metadata.model_extra or {}
-        source = extra.get("a13n.steering-source")
+        source = input_source(metadata)
         # Parent-authored tasks still supply the child conversation's preview.
-        if not metadata.display or (source in ACTIVITY_SOURCES and source != "parent_agent"):
+        if not metadata.display or (source is not None and source.kind in {"result", "event"}):
             continue
         attachment = extra.get("harness_ui")
         if isinstance(attachment, dict) and isinstance(attachment.get("attachment"), dict):

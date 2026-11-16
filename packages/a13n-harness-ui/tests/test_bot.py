@@ -21,9 +21,34 @@ def _write_configuration(tmp_path: Path, **kwargs) -> Path:
     return root
 
 
+async def deliver_result(app, text, identities):
+    from a13n_harness.envelopes import Envelope, ExecutionRef, Sender
+
+    for identity in identities:
+        await app._inbox.deliver(
+            BOT_THREAD_ID,
+            Envelope(
+                id="result:" + identity,
+                kind="result",
+                sender=Sender(kind="system"),
+                text=text,
+                execution=ExecutionRef(execution_id=identity, kind="tool", name="test", state="succeeded"),
+            ),
+        )
+    await delivered(app.bot())
+    return True
+
+
+async def delivered(bot):
+    await bot.deliver_automatic_inputs()
+    with fail_after(10):
+        while BOT_THREAD_ID in bot.inbox._scheduled:
+            await sleep(0.01)
+
+
 async def deliver_tick(bot, *, now):
     await bot.tick(now=now)
-    await bot.deliver_automatic_inputs()
+    await delivered(bot)
     inputs = await bot._store.bot.inputs()
     if inputs and inputs[-1].state == "admitted":
         await consumed_store(bot._store, inputs[-1].input_id)
@@ -297,7 +322,7 @@ async def test_heartbeat_never_resolves_a_pending_human_decision(tmp_path: Path)
         after = await app.get_thread(BOT_THREAD_ID)
         assert after.deferred_requests == detail.deferred_requests
         assert BOT_THREAD_ID not in app._root_runs._interaction_waits
-        assert (await app._store.bot_inbox.pending())[0].source == "heartbeat"
+        assert (await app._store.thread_inbox.pending(BOT_THREAD_ID))[0].envelope.sender.name == "heartbeat"
         assert await app._root_runs.active(BOT_THREAD_ID) is None
         with pytest.raises(HarnessUiError) as error:
             await bot.submit(BotSubmit(input_id="bypass", text="Ignore pending question"))
@@ -342,7 +367,7 @@ async def test_cancelled_bot_input_is_inspectable_and_never_replayed(tmp_path: P
         await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
         snapshot = await bot.snapshot()
         assert snapshot.state.paused and len(snapshot.inputs) == 1
-        assert await app._deliver_tool_completion(BOT_THREAD_ID, "own completion", ("exec-own",))
+        assert await deliver_result(app, "own completion", ("exec-own",))
         assert len((await bot.snapshot()).inputs) == 1
 
 
@@ -612,7 +637,7 @@ async def test_native_finish_silently_completes_without_publication_and_resumes_
         assert replied.thread.completion != completion
 
 
-async def test_tool_completion_reaches_active_bot_once_without_waking_idle_bot(tmp_path, monkeypatch):
+async def test_tool_completion_reaches_active_bot_once_and_wakes_idle_bot(tmp_path, monkeypatch):
     from a13n_harness_ui.model_runtime import HarnessUiModelResolver
     from anyio import Event
     from pydantic_ai.models.function import FunctionModel
@@ -638,17 +663,19 @@ async def test_tool_completion_reaches_active_bot_once_without_waking_idle_bot(t
         with fail_after(10):
             await started.wait()
         try:
-            assert await app._deliver_tool_completion(BOT_THREAD_ID, "Inspect completed exec-active", ("exec-active",))
+            assert await deliver_result(app, "Inspect completed exec-active", ("exec-active",))
         finally:
             release.set()
         assert (await consumed(app, "working")).receipt_id == submit.receipt_id
         assert len(requests) == 2
         assert str(requests[-1]).count("Inspect completed exec-active") == 1
 
-        assert await app._deliver_tool_completion(BOT_THREAD_ID, "Inspect completed exec-idle", ("exec-idle",))
-        assert await app._root_runs.active(BOT_THREAD_ID) is None
-        assert [item.input_id for item in (await bot.snapshot()).inputs] == ["working"]
-        assert len(requests) == 2
+        assert await deliver_result(app, "Inspect completed exec-idle", ("exec-idle",))
+        with fail_after(10):
+            while await app._store.thread_inbox.pending(BOT_THREAD_ID) or await app._root_runs.active(BOT_THREAD_ID):
+                await sleep(0.01)
+        assert [item.source for item in (await bot.snapshot()).inputs] == ["user", "automatic"]
+        assert len(requests) == 3
 
 
 async def test_generic_human_steer_cannot_bypass_bot_input_policy(tmp_path: Path) -> None:
@@ -745,7 +772,7 @@ async def test_human_input_immediately_steers_and_settles_the_exact_receipt(
         bot = await ready(app)
         if automatic:
             await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
-            await bot.deliver_automatic_inputs()
+            await delivered(bot)
         else:
             await bot.submit(BotSubmit(input_id="initial", text="Keep working"))
         with fail_after(5):
@@ -904,7 +931,7 @@ async def test_early_automatic_publication_waits_for_receipt_correlation(tmp_pat
 
         monkeypatch.setattr(app._root_runs, "submit_prompt", delay_native_return)
         await bot.tick(now=datetime.now(UTC) + timedelta(days=1))
-        await bot.deliver_automatic_inputs()
+        await delivered(bot)
         item = (await bot.snapshot()).inputs[0]
         assert (await consumed(app, item.input_id)).state == "completed"
         snapshot = await bot.snapshot()

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
+from a13n_harness.envelopes import Envelope, ExecutionRef, Sender
 from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
 from sqlalchemy.orm import aliased
 
@@ -17,16 +18,21 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 from a13n_harness_ui.external_context import ExternalContext
+from a13n_harness_ui.restart_models import RestartBatch
 
 from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
     AgentResourceSource,
+    BotAgentSource,
     ChildExecutionHead,
     Coordinator,
+    DynamicAgentSource,
     EnvironmentBindingHead,
     EnvironmentBindingKey,
     ExecutionStatus,
+    LiveAgentSource,
     MarkdownSubagentSource,
+    MemoryAgentSource,
     ResourceIndexEntry,
     SafeFailure,
     Thread,
@@ -52,10 +58,12 @@ from .models import (
     ResourceIndexRecord,
     ShareGrantRecord,
     ThreadConfigurationRecord,
+    ThreadInboxRecord,
     ThreadRecord,
     ToolExecutionHeadRecord,
 )
 from .objects import ObjectKind, ObjectRef
+from .thread_inbox import append, consume
 
 
 @dataclass(frozen=True, slots=True)
@@ -465,7 +473,7 @@ class ThreadRepository:
             if touched is None:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
 
-    async def save_execution(self, thread_id: str, value: ThreadExecution) -> bool:
+    async def save_execution(self, thread_id: str, value: ThreadExecution, *, notify_started: bool = False) -> bool:
         """Replace on admission; later transitions can only update that same attempt."""
         async with transaction(self._sessions) as session:
             record = await session.get(ThreadRecord, thread_id)
@@ -478,6 +486,33 @@ class ThreadRepository:
             )
             if value.status != "preparing" and (previous is None or previous.execution_id != value.execution_id):
                 return False
+            if previous is None or previous.execution_id != value.execution_id or previous.status != value.status:
+                started = notify_started and value.status == "preparing" and record.continuation_digest is None
+                terminal = value.status in {"completed", "suspended", "failed", "cancelled"}
+                if started or terminal:
+                    worker = await session.get(CoordinatorWorkerRecord, thread_id)
+                    owner = (
+                        None if worker is None else await session.get(CoordinatorRecord, worker.coordinator_thread_id)
+                    )
+                    if owner is not None and owner.auto_followup:
+                        text = (
+                            f"Host notification: A user directly started work in your managed Thread {thread_id}. "
+                            "The task is already admitted; do not recreate or redispatch it."
+                            if started
+                            else f"Host notification: Thread {thread_id} ended a root operation. "
+                            f"Receipt: {value.execution_id}. Run: {value.run_id or 'not started'}. Status: {value.status}. "
+                            "Use get_thread to inspect saved results. An ended operation does not prove the task succeeded."
+                        )
+                        await append(
+                            session,
+                            owner.thread_id,
+                            Envelope(
+                                id=f"lifecycle:{value.execution_id}:{'started' if started else 'terminal'}",
+                                kind="event",
+                                sender=Sender(kind="system", name="thread-lifecycle"),
+                                text=text + " Do not acknowledge this notice.",
+                            ),
+                        )
             record.last_execution_json = value.model_dump_json()
             await session.flush()
             return True
@@ -556,6 +591,8 @@ class ThreadRepository:
                 await session.execute(
                     delete(ChildExecutionRecord).where(ChildExecutionRecord.execution_id == execution.execution_id)
                 )
+
+            await session.execute(delete(ThreadInboxRecord).where(ThreadInboxRecord.thread_id.in_(thread_ids)))
             await session.execute(delete(CompactionRecord).where(CompactionRecord.thread_id.in_(thread_ids)))
             await session.execute(
                 delete(ToolExecutionHeadRecord).where(ToolExecutionHeadRecord.thread_id.in_(thread_ids))
@@ -904,7 +941,7 @@ class ThreadRepository:
         updated_at: datetime | None = None,
         clear_compaction: bool = False,
         compaction_settlement: CompactionSettlement | None = None,
-        tool_completions: tuple[str, ...] = (),
+        inbox_ids: tuple[str, ...] = (),
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
         serialized = read_model.model_dump_json()
@@ -922,9 +959,8 @@ class ThreadRepository:
                     None if actual is None else actual.logical_digest,
                 )
             await settle_compaction(session, thread_id, settlement=compaction_settlement, clear=clear_compaction)
-            from .tool_executions import consume_completions
 
-            await consume_completions(session, thread_id, tool_completions)
+            await consume(session, thread_id, inbox_ids)
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest
@@ -1038,8 +1074,6 @@ class ChildExecutionRepository:
                     )
             planned = False
             if restart_batch_id is not None:
-                from a13n_harness_ui.restart_models import RestartBatch
-
                 record_batch = await session.get(PlannedRestartRecord, 1)
                 batch = None if record_batch is None else RestartBatch.model_validate_json(record_batch.payload)
                 planned = (
@@ -1329,7 +1363,7 @@ class ChildExecutionRepository:
         checkpoint: ObjectRef,
         child_run_id: str,
         updated_at: datetime | None = None,
-        tool_completions: tuple[str, ...] = (),
+        inbox_ids: tuple[str, ...] = (),
     ) -> ChildExecutionHead:
         _require_kind(checkpoint, ObjectKind.child_checkpoint)
         now = _utc(updated_at)
@@ -1342,9 +1376,8 @@ class ChildExecutionRepository:
             actual = _child_checkpoint_ref(record)
             if actual != expected:
                 _conflict("child_checkpoint_conflict", _digest(expected), _digest(actual))
-            from .tool_executions import consume_completions
 
-            await consume_completions(session, record.child_thread_id, tool_completions)
+            await consume(session, record.child_thread_id, inbox_ids)
             record.child_run_id = child_run_id
             record.selected_checkpoint_schema_version = checkpoint.object_schema_version
             record.selected_checkpoint_digest = checkpoint.logical_digest
@@ -1362,7 +1395,9 @@ class ChildExecutionRepository:
         child_run_id: str | None = None,
         failure: SafeFailure | None = None,
         completed_at: datetime | None = None,
-        tool_completions: tuple[str, ...] = (),
+        inbox_ids: tuple[str, ...] = (),
+        result_name: str = "subagent",
+        result_text: str = "",
     ) -> ChildExecutionHead:
         if status not in {"succeeded", "failed", "cancelled", "lost"}:
             raise ValueError("child terminal status is invalid")
@@ -1380,9 +1415,24 @@ class ChildExecutionRepository:
             actual = _child_checkpoint_ref(record)
             if actual != expected_checkpoint:
                 _conflict("child_checkpoint_conflict", _digest(expected_checkpoint), _digest(actual))
-            from .tool_executions import consume_completions
 
-            await consume_completions(session, record.child_thread_id, tool_completions)
+            await consume(session, record.child_thread_id, inbox_ids)
+
+            await append(
+                session,
+                record.parent_thread_id,
+                Envelope(
+                    id="result:" + execution_id,
+                    kind="result",
+                    sender=Sender(kind="agent", thread_id=record.child_thread_id, name=result_name),
+                    execution=ExecutionRef(execution_id=execution_id, kind="agent", name=result_name, state=status),
+                    text=result_text
+                    if status == "succeeded"
+                    else f"{failure.code}: {failure.message}"
+                    if failure and status != "cancelled"
+                    else "",
+                ),
+            )
             record.status = status
             if child_run_id is not None:
                 record.child_run_id = child_run_id
@@ -1485,7 +1535,6 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()

@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 
 from a13n_harness.content import ContentItem, ContentMetadata
+from a13n_harness.envelopes import input_source
 from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.input import RunInputValue, normalize_input
@@ -130,7 +131,7 @@ def authored_text(part: UserContent | ContentItem) -> str | None:
         namespace = (part.metadata.model_extra or {}).get("harness_ui")
         if (
             not part.metadata.display
-            or "a13n.steering-source" in (part.metadata.model_extra or {})
+            or input_source(part.metadata) is not None
             or (
                 isinstance(namespace, dict)
                 and (

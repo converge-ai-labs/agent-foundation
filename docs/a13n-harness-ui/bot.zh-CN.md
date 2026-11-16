@@ -50,7 +50,7 @@ Bot 可以直接访问所有已配置 Project 的 Environment，无需仅为访�
 
 Bot 通过 `bot/HEARTBEAT.md` 管理周期检查。每次 heartbeat 都会提醒 Bot 读取当前文件（如果存在），并按清单检查；文件内容按需读取，不会自动注入。Bot 可以创建和编辑该文件，记录检查项、优先级和跟进条件，并删除过时事项。你也可以直接编辑。文件缺失不会阻止 heartbeat。修改文件会改变后续检查内容，但不会触发 Run；heartbeat 的时间间隔仍由设置控制。
 
-后台工具或异步子智能体在 Bot 运行期间完成时，Host 会把完成通知发给当前 Run。如果 Bot 已空闲，不会被唤醒，结果会保留到下一次获准运行时查询。
+Bot 自己的后台工具和异步子智能体完成通知会进入其 Thread 的持久收件箱。活动 Bot 通过 steering 接收；空闲且符合条件时会启动 Run 整合结果，包含子级完整的最终回复。关闭、暂停、不可用或等待决策时，输入保留到以后。普通运行失败允许后续自动输入继续；取消或不确定的执行会暂停自动处理。
 
 Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_thread` 按正常的 Sidekick/全局 Agent 默认值启动工作。Project 创建、Thread 创建、Run 接受和任务完成是独立结果。内置指令要求 Bot 检查保存的结果后再报告成功。
 
@@ -90,7 +90,7 @@ Run 失败后会保留输入和错误供检查，但不会暂停自动处理。�
 
 ## Connector 入站基础
 
-Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。heartbeat 和所选 Connector 事件共用自动 inbox，收集不受模型运行状态影响。周期性投递会公平合并待处理 tick 与跨 Connector 事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
+Host 私下保存 Connector 设置、凭据和已选择事件。所有非人类 Bot 输入共用 Thread 收件箱。自动来源输入逐条以 JSON 对象送达，各有身份和来源标记，没有批次包装。每批优先处理待处理 heartbeat，再按时间处理 Connector/Thread 输入，最多 32 条和 60 KiB；执行结果不占此来源预算。提交或 steering 被接受不会立即删除输入：只有选定包含输入的 checkpoint 才消费相应 ID。等待决策时输入保留；重启会重试未 checkpoint 的输入，不重放已保存输入。
 
 在 **Settings → Connections → Connectors** 管理账户，也可以打开对话中的配置卡片。[Connector](connectors.md) 提供可信插件 SDK、结构化配置和规则表单、私有状态及原子事件入站。内置 GitHub provider 通过可复用的 Remote MCP 代码库提供服务工具；代码库不增加通用 MCP 配置入口。事件插件负责收集和匹配。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
 

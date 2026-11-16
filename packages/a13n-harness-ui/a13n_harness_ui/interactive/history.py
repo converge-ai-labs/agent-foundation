@@ -6,7 +6,8 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from a13n_harness_ui.background_input import ACTIVITY_SOURCES
+from a13n_harness.envelopes import input_source
+
 from a13n_harness_ui.surfaces import TranscriptFailure
 
 from .input_display import composer_history
@@ -81,10 +82,7 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
                 kind="tool",
                 collapsed_lines=renderer.status.max_tool_result_lines,
             )
-        elif (
-            part.kind in {"user", "media"}
-            and (part.metadata.model_extra or {}).get("a13n.steering-source") in ACTIVITY_SOURCES
-        ):
+        elif part.kind in {"user", "media"} and input_source(part.metadata) is not None:
             renderer.append("Activity · " + text, kind="tool")
         else:
             user = part.kind in {"user", "media"}

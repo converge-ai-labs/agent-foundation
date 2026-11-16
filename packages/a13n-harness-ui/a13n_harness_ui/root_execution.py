@@ -26,6 +26,7 @@ from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
+from a13n_harness.capabilities.steering import envelope_ids
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
@@ -102,10 +103,11 @@ from a13n_harness_ui.storage.continuations import publish_continuation, remove_c
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
 from a13n_harness_ui.storage.display import DisplayArchive, seal_display
 from a13n_harness_ui.storage.read_models import project_continuation
-from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
+from a13n_harness_ui.storage.tool_executions import execution_composition
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
+from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
@@ -179,6 +181,7 @@ class RootRunExecutor:
         self._compaction = compaction
         self._tool_executions = tool_executions
         self._store = store
+        self.inbox: ThreadInbox | None = None
         self._mcp_apps = mcp_apps
         self._restart = restart_coordinator
         self._threads = threads
@@ -1101,7 +1104,7 @@ class RootRunExecutor:
                     excerpt=excerpt,
                     activity_changed=activity_changed,
                     compaction_settlement=settlement,
-                    tool_completions=completion_ids(state.message_history),
+                    inbox_ids=envelope_ids(state),
                 )
                 # Only this Run's previous successful checkpoint is replaceable.
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.
@@ -1115,6 +1118,8 @@ class RootRunExecutor:
                         )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
+        if self.inbox is not None:
+            self.inbox.schedule(thread.thread_id)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
         # execution checkpoint. A later checkpoint or history read can catch up.

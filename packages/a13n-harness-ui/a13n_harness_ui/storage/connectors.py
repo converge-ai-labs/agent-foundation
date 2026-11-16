@@ -2,11 +2,13 @@
 
 import json
 
+from a13n_harness.envelopes import Sender
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInboxInput
 from a13n_harness_ui.connector_models import (
     ConnectorConfiguration,
     ConnectorGroupName,
@@ -19,7 +21,8 @@ from a13n_harness_ui.connectors.models import SetupOffer
 from a13n_harness_ui.errors import HarnessUiError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import BotInboxRecord, ConnectorConfigurationRecord, ConnectorSetupOfferRecord, ConnectorStateRecord
+from .models import ConnectorConfigurationRecord, ConnectorSetupOfferRecord, ConnectorStateRecord, ThreadInboxRecord
+from .thread_inbox import append, bot_envelope, sender_json
 
 _RULES = TypeAdapter(tuple[ConnectorRule, ...])
 _GROUP_NAME = TypeAdapter(ConnectorGroupName)
@@ -65,39 +68,38 @@ async def enqueue_inputs(
         raise HarnessUiError("At most 32 inputs can be retained per commit.", code="connector_input_too_large")
     retained: list[str] = []
     pending = await session.scalar(
-        select(func.count()).select_from(BotInboxRecord).where(BotInboxRecord.connector_id == connector_id)
+        select(func.count())
+        .select_from(ThreadInboxRecord)
+        .where(ThreadInboxRecord.sender == sender_json(Sender(kind="connector", name=connector_id)))
     )
     for item in inputs:
         if item.connector_id != connector_id:
             raise HarnessUiError("Connector input belongs to another instance.", code="connector_input_invalid")
-        envelope = {**item.model_dump(mode="json"), "source": "connector"}
-        if len(_json([envelope]).encode("utf-8")) > 60 * 1024:
+        bot_item = BotInboxInput(**item.model_dump(), source="connector")
+        envelope = bot_envelope(bot_item)
+        if len(envelope.text.encode("utf-8")) > 60 * 1024:
             raise HarnessUiError(
                 "Connector envelope exceeds the automatic batch limit.", code="connector_input_too_large"
             )
         previous = await session.scalar(
-            select(BotInboxRecord).where(
-                BotInboxRecord.connector_id == connector_id,
-                BotInboxRecord.source_event_id == item.source_event_id,
+            select(ThreadInboxRecord).where(
+                ThreadInboxRecord.sender == sender_json(Sender(kind="connector", name=connector_id)),
+                ThreadInboxRecord.dedupe_key == json.dumps([connector_id, item.source_event_id]),
             )
         )
         if previous is not None:
-            retained.append(previous.input_id)
+            retained.append(previous.id)
             continue
         if (pending or 0) >= 1024:
             raise HarnessUiError(
                 "Connector inbox is full; retain the source cursor and retry later.", code="connector_inbox_full"
             )
-        session.add(
-            BotInboxRecord(
-                input_id=item.input_id,
-                source="connector",
-                connector_id=connector_id,
-                event_type=item.event_type,
-                source_event_id=item.source_event_id,
-                text=item.text,
-                created_at=item.created_at,
-            )
+        await append(
+            session,
+            BOT_THREAD_ID,
+            envelope,
+            dedupe_key=json.dumps([connector_id, item.source_event_id]),
+            created_at=item.created_at,
         )
         await session.flush()
         retained.append(item.input_id)
@@ -302,4 +304,8 @@ class ConnectorRepository:
             row.version += 1
             row.credential_version += 1
             await session.execute(delete(ConnectorStateRecord).where(ConnectorStateRecord.connector_id == connector_id))
-            await session.execute(delete(BotInboxRecord).where(BotInboxRecord.connector_id == connector_id))
+            await session.execute(
+                delete(ThreadInboxRecord).where(
+                    ThreadInboxRecord.sender == sender_json(Sender(kind="connector", name=connector_id))
+                )
+            )

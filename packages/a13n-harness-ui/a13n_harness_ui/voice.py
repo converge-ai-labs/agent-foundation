@@ -7,10 +7,12 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from a13n_harness.envelopes import Envelope, Sender
 from a13n_harness.models.codex_live import (
     CodexLiveError,
     CodexLiveModel,
@@ -22,9 +24,8 @@ from a13n_harness.models.codex_live import (
 from anyio import CancelScope, Event, Lock, create_task_group, fail_after
 from anyio.abc import TaskGroup
 from pydantic import Field
-from pydantic_ai.messages import TextContent
 
-from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
+from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.configuration.models import CodexSubscriptionAuthentication
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
@@ -32,6 +33,7 @@ from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, Thread
 from a13n_harness_ui.storage.voice import VoiceTurn
 from a13n_harness_ui.surfaces import RootOperationStatus, RootOperationView, SurfaceModel
+from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import ThreadService
 
@@ -76,6 +78,7 @@ class VoiceController:
         model: Callable[[LoadedHarnessUiConfiguration], Awaitable[tuple[CodexLiveModel, str | None]]],
     ) -> None:
         self._root = configuration_root
+        self.inbox: ThreadInbox | None = None
         self._configurations = configurations
         self._threads = threads
         self._store = store
@@ -250,9 +253,9 @@ class VoiceController:
                             continue
                         if len(call.delegations) >= 1024:
                             raise CodexLiveError("This voice session reached its task limit; start another session")
-                        call.delegations.add(event.item_id)
                         try:
                             result = await self._delegate(call, event)
+                            call.delegations.add(event.item_id)
                             if not result["ok"]:
                                 await session.append_status(
                                     "The executor did not accept this task. Ask the user before retrying.",
@@ -292,52 +295,50 @@ class VoiceController:
         ):
             raise ThreadError("Live settings changed. Restart voice to use them.", code="live_configuration_changed")
         context = "\n".join(f"{item.role}: {item.text}" for item in event.context)
-        prompt = [TextContent(f"Voice task: {event.text}\n\nRecent voice context:\n{context}")]
-        detail = await self._projections.detail(call.thread.thread_id)
-        operation = await self._runs.active(call.thread.thread_id)
-        if operation is not None:
-            reference = await self._runs.composition_reference(operation.receipt.receipt_id)
-            if reference is None:
-                raise ThreadError("The Live executor is still preparing.", code="live_executor_preparing")
-            composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
-            if composition.root.model.model_id != settings.model:
-                raise ThreadError(
-                    "The active executor uses another Model. Wait for it to finish.", code="live_executor_conflict"
-                )
-            result = await self._runs.steer(
-                receipt_id=operation.receipt.receipt_id, message=prompt, authorize=lambda: self._authorize_task(call)
-            )
-            return {"ok": result.accepted, "mode": "steer", **result.model_dump(mode="json")}
-        if detail.deferred_requests:
-            raise ThreadError(
-                "Resolve the Live Thread's pending decision before adding a task.", code="live_executor_deferred"
-            )
-        receipt = await self._runs.submit_prompt(
-            thread_id=call.thread.thread_id, prompt=prompt, touch=True, authorize=lambda: self._authorize_task(call)
-        )
-        return {"ok": True, "mode": "start", "receipt": receipt.model_dump(mode="json")}
+
+        await self._authorize_task(call)
+        assert self.inbox is not None
+        return {
+            "ok": True,
+            **await self.inbox.deliver(
+                call.thread.thread_id,
+                Envelope(
+                    id="voice-" + sha256((call.start_id + event.item_id).encode()).hexdigest(),
+                    kind="event",
+                    sender=Sender(kind="system", name="voice"),
+                    text=f"Voice task: {event.text}\n\nRecent voice context:\n{context}",
+                ),
+            ),
+        }
 
     async def receive(
-        self, *, source_thread_id: str, target_thread_id: str = "live", message: str, kind: Literal["task", "report"]
+        self,
+        *,
+        source_thread_id: str,
+        target_thread_id: str = "live",
+        message: str,
+        kind: Literal["task", "report"] = "task",
     ) -> dict:
-        call = self._call
-        if call is None or call.session is None or not call.media.is_set() or call.stop.is_set():
-            return {"ok": False, "mode": "skipped", "reason": "live_offline"}
-        if target_thread_id not in {"live", call.thread.thread_id}:
-            return {"ok": False, "mode": "skipped", "reason": "live_offline"}
-        text = f"Report from Thread {source_thread_id}:\n{message}"
-        if kind == "report":
-            try:
-                await call.session.append_speech(text)
-            except CodexLiveError as error:
-                raise ThreadError(str(error), code="live_delivery_uncertain") from None
-            return {"ok": True, "mode": "voice_context", "start_id": call.start_id}
-        try:
-            return await self._delegate(call, Delegation("message_" + uuid4().hex, text))
-        except ThreadError as error:
-            if error.code == "live_offline":
-                return {"ok": False, "mode": "skipped", "reason": "live_offline"}
-            raise
+
+        thread = await self._threads.live_thread(configuration_root=self._root)
+        if target_thread_id not in {"live", thread.thread_id}:
+            raise ThreadError("The Live Thread is unavailable.", code="thread_missing")
+        source = await self._store.threads.get(source_thread_id)
+        assert self.inbox is not None
+        return {
+            "ok": True,
+            **await self.inbox.deliver(
+                thread.thread_id,
+                Envelope(
+                    id=f"message-{uuid4().hex}",
+                    kind="agent_message",
+                    sender=Sender(
+                        kind="agent", thread_id=source_thread_id, name=None if source is None else source.title
+                    ),
+                    text=message,
+                ),
+            ),
+        }
 
     async def executor_settled(self, operation: RootOperationView) -> None:
         call = self._call

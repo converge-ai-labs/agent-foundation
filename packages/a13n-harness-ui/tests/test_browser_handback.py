@@ -1,8 +1,9 @@
 """Handback registration and event-driven delivery, without model polling."""
 
 import pytest
+from a13n_harness.envelopes import input_source
 from a13n_harness_ui.browser_handback import BLOCKED, HANDBACK, BrowserHandback
-from anyio import Event, create_task_group, fail_after, wait_all_tasks_blocked
+from anyio import Event, create_task_group, fail_after, sleep, wait_all_tasks_blocked
 
 pytestmark = pytest.mark.anyio
 
@@ -11,7 +12,7 @@ async def test_only_blocked_threads_are_registered_and_repeated_takeovers_coales
     notices = BrowserHandback()
     delivered = []
 
-    async def deliver(thread, prompt, current):
+    async def deliver(thread, prompt, current, identity):
         assert current()
         delivered.append((thread, prompt))
         return True
@@ -44,7 +45,7 @@ async def test_failed_admission_waits_for_lifecycle_retry_not_a_timer():
     attempts = []
     ready = False
 
-    async def deliver(thread, prompt, current):
+    async def deliver(thread, prompt, current, identity):
         attempts.append(thread)
         return ready and current()
 
@@ -70,11 +71,12 @@ async def test_explicit_stop_cancels_delivery_and_new_input_does_not_restore_old
     notices = BrowserHandback()
     entered = Event()
     calls = []
+    release = Event()
 
-    async def deliver(thread, prompt, current):
+    async def deliver(thread, prompt, current, identity):
         calls.append(current)
         entered.set()
-        await Event().wait()
+        await release.wait()
         return True
 
     notices.deliver = deliver
@@ -91,6 +93,8 @@ async def test_explicit_stop_cancels_delivery_and_new_input_does_not_restore_old
         notices.user_input("thread-b")
         await wait_all_tasks_blocked()
         assert len(calls) == 1
+        assert not calls[0]()
+        release.set()
         notices.stop()
 
 
@@ -98,7 +102,7 @@ async def test_new_episode_block_during_delivery_survives_prior_acceptance():
     notices = BrowserHandback()
     calls = []
 
-    async def deliver(thread, prompt, current):
+    async def deliver(thread, prompt, current, identity):
         calls.append(current)
         if len(calls) == 1:
             notices.takeover()
@@ -180,8 +184,8 @@ async def test_app_handback_steers_active_or_wakes_idle_without_resuming_goal(tm
         original_deliver = notices.deliver
         receipts = []
 
-        async def delivery(thread_id, prompt, current):
-            accepted = await original_deliver(thread_id, prompt, current)
+        async def delivery(thread_id, prompt, current, identity):
+            accepted = await original_deliver(thread_id, prompt, current, identity)
             if accepted:
                 operation = await app.active_root_operation(thread_id)
                 receipts.append(operation.receipt.receipt_id if operation else None)
@@ -221,7 +225,7 @@ async def test_app_handback_steers_active_or_wakes_idle_without_resuming_goal(tm
             part
             for entry in transcript.entries
             for part in entry.parts
-            if part.metadata.source_id == "browser.handback"
+            if (origin := input_source(part.metadata)) is not None and origin.sender.name == "browser.handback"
         ]
         assert len(hints) == 1 and not hints[0].metadata.display
 
@@ -341,8 +345,8 @@ async def test_app_handback_waits_for_real_approval_resolution(tmp_path, monkeyp
             await app.wait_root_operation(receipt.receipt_id)
         original = notices.deliver
 
-        async def delivery(thread_id, prompt, current):
-            accepted = await original(thread_id, prompt, current)
+        async def delivery(thread_id, prompt, current, identity):
+            accepted = await original(thread_id, prompt, current, identity)
             if accepted:
                 delivered.set()
             attempted.set()
@@ -353,8 +357,9 @@ async def test_app_handback_waits_for_real_approval_resolution(tmp_path, monkeyp
         # Projection and Run settlement can be blocked on I/O while tasks are idle.
         with fail_after(15):
             await attempted.wait()
-        assert calls == 1 and effects == [] and not delivered.is_set()
-        assert thread.thread_id in notices._pending
+        await app.wait_root_operation(receipt.receipt_id)
+        assert calls == 1 and effects == [] and delivered.is_set()
+        assert await app._store.thread_inbox.pending(thread.thread_id)
         detail = await app.get_thread(thread.thread_id)
         assert len(detail.deferred_requests) == 1
         await app.respond_thread(
@@ -365,13 +370,18 @@ async def test_app_handback_waits_for_real_approval_resolution(tmp_path, monkeyp
             ),
         )
         with fail_after(15):
-            await delivered.wait()
-            while (active := await app.active_root_operation(thread.thread_id)) is not None:
-                await app.wait_root_operation(active.receipt.receipt_id)
+            while await app._store.thread_inbox.pending(thread.thread_id) or await app.active_root_operation(
+                thread.thread_id
+            ):
+                await sleep(0.01)
         assert effects == ["approved"]
         transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
         assert (
-            sum(part.metadata.source_id == "browser.handback" for entry in transcript.entries for part in entry.parts)
+            sum(
+                (origin := input_source(part.metadata)) is not None and origin.sender.name == "browser.handback"
+                for entry in transcript.entries
+                for part in entry.parts
+            )
             == 1
         )
 
@@ -410,10 +420,11 @@ async def test_app_retake_while_native_steering_waits_preserves_notice(tmp_path,
                 notices.takeover()
             await wait_all_tasks_blocked()
             assert not bridge._pending_requests
-            assert thread.thread_id in notices._pending
+            while thread.thread_id not in notices._pending:
+                await sleep(0.01)
             notices.released()
-            await wait_all_tasks_blocked()
-            assert len(bridge._pending_requests) == 1
+            while len(bridge._pending_requests) != 1:
+                await sleep(0.01)
             assert thread.thread_id not in notices._pending
             proceed.set()
             await app.wait_root_operation(receipt.receipt_id)

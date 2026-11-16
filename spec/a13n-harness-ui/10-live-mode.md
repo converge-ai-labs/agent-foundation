@@ -11,7 +11,7 @@ flowchart TD
     App <-->|Bootstrap and sideband| Codex
     App --> Executor[Live Thread Harness Run]
     Executor --> Roots[Independent roots and Coordinators]
-    Roots -->|Report while voice is active| App
+    Roots -->|Persistent message| Executor
 ```
 
 ## Configuration and Executor
@@ -34,11 +34,11 @@ Navigation within the WebUI retains the same microphone and peer. Start voice is
 
 ## Tasks and Reports
 
-A client delegation is processed once per provider item ID within its call. Its text and bounded recent speech context enter the ordinary Live Thread. An inactive executor starts a Run; a compatible active executor receives steering addressed to its exact receipt. A preparing executor, a pending decision, or a conflicting Model is rejected without fallback dispatch. Live settings changes require restarting voice before admitting another task.
+A client delegation is persisted once per provider item ID within its call, after checking current media ownership and captured settings. Its text and bounded recent speech context become an event in the persistent Live executor Thread inbox. Active compatible execution receives steering; idle eligible execution starts a Run. Preparing execution, pending decisions, disabled settings and an incompatible active Model hold input rather than dropping it or starting a competing Run. Live settings changes still require restarting voice before accepting another provider delegation.
 
-After the Live executor saves a selected successful continuation, its final string output is appended once as session-level speech. A pending decision produces status directing the human to the Live Thread. Partial text, private reasoning, and tool chatter are not automatically spoken.
+After the Live executor saves a selected successful continuation, its final string output is appended once as session-level speech only to the currently active call. A pending decision produces status directing that human to the Live Thread. Partial text, private reasoning and tool chatter are not automatically spoken. Without an active call, the result stays in ordinary Thread history; reconnecting never replays old output as speech.
 
-Root and Coordinator tools can send to the well-known `thread_id="live"` or the actual Live Thread ID. `kind="report"` directly appends source-attributed speech context; `kind="task"` uses ordinary executor admission. This is a message-only exception for Coordinators, not authority to inspect or control unrelated roots. Managed workers and children do not gain this destination. Reports require an active call, sideband, and media owner. Offline reports return `skipped/live_offline` without starting a Run, provider write, call, queue, or later replay. There are no single-use reply grants or request registries. Source results remain in their ordinary Threads.
+Root and Coordinator tools can send to the well-known `thread_id="live"` or the actual Live Thread ID. Messages enter the persistent executor inbox as `agent_message`; the executor decides the response. The temporary `kind` parameter does not select direct speech or bypass execution. An offline call does not prevent persistence or eligible executor execution. No message starts microphone capture. This remains a message-only exception for Coordinators, not authority to inspect or control unrelated roots. Managed workers and children gain no broader destination authority.
 
 ## Persistence and API
 

@@ -141,7 +141,7 @@ The running-child limit applies to dynamic, configured and built-in helpers, inc
 
 Final results arrive as parent input automatically, including after the parent turn ends. Every child can call `send_parent_message` while continuing to work. A child that needs an answer to continue ends with its question; the main Agent can resume it with an answer. Messages and results identify the child name, execution ID and state. Repeated results with the same ID are possible.
 
-An active parent receives steering. An idle parent can start a new Run after normal completion, which adds Model use. Stop, failure, suspension, interruption, pending user decisions and archival prevent automatic restart. The TUI shows marked parent and completion inputs as Activity.
+Messages and results first enter the parent Thread’s durable inbox. An active parent receives steering; an idle eligible parent starts a new Run, which adds Model use. This also applies when a grandchild finishes after its child parent became idle: the child resumes with its original delegation authority and unchanged configuration. Preparing work and pending user decisions hold input. Stop, failure, cancellation and unknown execution state pause automatic continuation; archived Threads reject input. Input is consumed only when a checkpoint containing it is selected. The TUI shows marked messages and results as Activity.
 
 Before upgrading an existing data root, stop all Harness UI processes using it. Upgrade TUI and WebUI together, then reopen. Mixed-version access is unsupported; schema repair is forward-only or requires restoring a pre-upgrade backup.
 

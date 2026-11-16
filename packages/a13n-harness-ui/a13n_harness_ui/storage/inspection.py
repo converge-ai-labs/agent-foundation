@@ -270,6 +270,7 @@ class InspectionRepository:
                     func.coalesce(func.json_extract(parts.c.value, "$.metadata.display"), 1) == 1,
                     func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.steering-source"'), "user")
                     == "user",
+                    func.json_extract(parts.c.value, '$.metadata."a13n.input"').is_(None),
                     func.json_extract(parts.c.value, "$.metadata.harness_ui.mcp_app_context").is_(None),
                     func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text_skipped").is_(None),
                     (

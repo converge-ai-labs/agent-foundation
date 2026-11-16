@@ -10,14 +10,14 @@ from a13n_harness_ui.thread_capability import ThreadToolController, _thread_inpu
 from anyio import fail_after, sleep
 
 from .test_app import _CompletedReconstructor, _settings, _write_configuration
-from .test_bot import ready
-from .test_bot_inbox import policy
+from .test_bot import delivered, ready
+from .test_bot_inbox import pending, policy
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
 def controller(app):
-    return ThreadToolController(
+    tools = ThreadToolController(
         projections=app._projections,
         threads=app._store.threads,
         root_runs=app._root_runs,
@@ -25,6 +25,8 @@ def controller(app):
         configurations=app._configurations,
         bot=app.bot(),
     )
+    tools.inbox = app._inbox
+    return tools
 
 
 async def test_thread_report_retains_host_provenance_while_off_and_delivers_on_enabled_opportunity(tmp_path: Path):
@@ -39,24 +41,27 @@ async def test_thread_report_retains_host_provenance_while_off_and_delivers_on_e
             kind="report",
             message="Verified result; please integrate.",
         )
-        assert accepted["ok"] and accepted["mode"] == "inbox"
-        batch = await app._store.bot_inbox.pending()
+        assert accepted["ok"] and accepted["accepted"]
+        batch = await pending(app)
         assert len(batch) == 1 and batch[0].source == "thread"
         assert batch[0].source_thread_id == source.thread_id
         assert batch[0].source_thread_title == "Release work"
-        assert batch[0].event_type == "report"
-        await bot.deliver_automatic_inputs()
+        assert batch[0].event_type == "message"
+        await delivered(bot)
         assert not (await bot.snapshot()).thread
-        assert await app._store.bot_inbox.pending() == batch
+        assert await pending(app) == batch
         # Pause before enabling: configuration publication signals immediate delivery.
         await bot.pause(True)
         app._root_runs._executor._agents = _CompletedReconstructor()
         await policy(app, root, enabled=True)
-        await bot.deliver_automatic_inputs()
-        assert await app._store.bot_inbox.pending() == batch
+        await delivered(bot)
+        assert await pending(app) == batch
         await bot.pause(False)
-        await bot.deliver_automatic_inputs()
-        assert not await app._store.bot_inbox.pending()
+        await delivered(bot)
+        with fail_after(10):
+            while await pending(app):
+                await sleep(0.01)
+        assert not await pending(app)
         assert (await bot.snapshot()).inputs[0].source == "automatic"
         with pytest.raises(HarnessUiError):
             await tools.send_thread_message(source_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID, message="self")
@@ -73,9 +78,9 @@ async def test_thread_report_notifies_existing_loop_without_waiting_for_period(t
             source_thread_id=source.thread_id, thread_id="bot", kind="report", message="A blocker needs attention"
         )
         with fail_after(5):
-            while not (await bot.snapshot()).inputs or await app._store.bot_inbox.pending():
+            while not (await bot.snapshot()).inputs or await pending(app):
                 await sleep(0.01)
-        assert not await app._store.bot_inbox.pending()
+        assert not await pending(app)
 
 
 async def test_bot_return_address_is_hidden_and_shared_by_all_thread_input_paths(tmp_path: Path):
@@ -90,7 +95,7 @@ async def test_bot_return_address_is_hidden_and_shared_by_all_thread_input_paths
             assert "kind='report'" in hidden.content
             assert "saved final response" in hidden.content
             assert visible.content == "Do the bounded task"
-            assert visible.metadata["harness_ui"]["thread_message"]["source_thread_id"] == BOT_THREAD_ID
+            assert visible.metadata["a13n.input"]["sender"]["thread_id"] == BOT_THREAD_ID
 
 
 async def test_own_note_context_is_changed_only_including_empty_and_disabled(tmp_path: Path, monkeypatch):
@@ -235,8 +240,8 @@ async def test_oversized_thread_envelope_is_rejected_before_retention(tmp_path: 
                 source_thread_id=source.thread_id, thread_id=BOT_THREAD_ID, message="😀" * 16384
             )
         assert error.value.code == "thread_message_too_large"
-        assert not await app._store.bot_inbox.pending()
+        assert not await pending(app)
         await tools.send_thread_message(
             source_thread_id=source.thread_id, thread_id=BOT_THREAD_ID, message="Short report"
         )
-        assert len(await app._store.bot_inbox.pending()) == 1
+        assert len(await pending(app)) == 1

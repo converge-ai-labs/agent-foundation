@@ -4,14 +4,33 @@ from importlib import import_module
 import pytest
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
 from a13n_harness_ui.settings import StorageSettings
-from a13n_harness_ui.storage import tool_executions
+from a13n_harness_ui.storage import thread_inbox, tool_executions
 from a13n_harness_ui.storage.database import short_session, transaction
 from a13n_harness_ui.storage.models import ThreadRecord, ToolExecutionHeadRecord
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.storage.runtime import open_local_store
-from anyio import Event, create_task_group, fail_after
+from anyio import Event, create_task_group, fail_after, sleep, wait_all_tasks_blocked
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+def inbox(store):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui.thread_inbox import ThreadInbox
+
+    thread = SimpleNamespace(parent_thread_id=None)
+    owner = ThreadInbox(
+        SimpleNamespace(
+            _store=store,
+            _state=SimpleNamespace(value="ready"),
+            _root_runs=SimpleNamespace(submit_prompt=AsyncMock()),
+        )
+    )
+    owner.app._store.threads.get = AsyncMock(return_value=thread)
+    owner.condition = AsyncMock(return_value="idle")
+    return owner
 
 
 async def seed_thread(store, thread_id="thread-a"):
@@ -54,6 +73,7 @@ def clock(monkeypatch):
             return cls.current
 
     monkeypatch.setattr(tool_executions, "datetime", Clock)
+    monkeypatch.setattr(thread_inbox, "datetime", Clock)
     return Clock
 
 
@@ -66,7 +86,7 @@ async def test_retention_starts_at_consumption_and_keeps_independent_maximum(tmp
         repo = store.tool_executions
         await repo.save(original)
         clock.current += timedelta(hours=12)
-        assert len(await repo.pending("thread-a")) == 1
+        assert len(await store.thread_inbox.pending("thread-a")) == 1
         assert (await repo.get("thread-a", "exec-a")).result == "same result"
         async with short_session(store.database.sessions) as session:
             row = await session.get(ToolExecutionHeadRecord, "exec-a")
@@ -74,7 +94,7 @@ async def test_retention_starts_at_consumption_and_keeps_independent_maximum(tmp
             assert row.expires_at == original.record.completed_at + timedelta(days=1)
         if consume == "checkpoint":
             async with transaction(store.database.sessions) as session:
-                await tool_executions.consume_completions(session, "thread-a", ("exec-a",))
+                await thread_inbox.consume(session, "thread-a", ("result:exec-a",))
         elif consume == "result":
             await repo.acknowledge_delivery("thread-a", "exec-a")
         clock.current += timedelta(minutes=30)
@@ -96,8 +116,9 @@ async def test_retention_starts_at_consumption_and_keeps_independent_maximum(tmp
         assert not (await repo.get("thread-a", "exec-a")).record.result_available
         assert not (await repo.list("thread-a", offset=0, limit=10))[0].result_available
         assert not [ref for ref in await store.objects.references() if ref.object_kind == ObjectKind.tool_execution]
-        assert await repo.pending("thread-a") == ()
-        assert await repo.pending_threads() == ()
+        pending = await store.thread_inbox.pending("thread-a")
+        assert bool(pending) == (consume == "never")
+        assert await store.thread_inbox.threads() == (("thread-a",) if consume == "never" else ())
         # Stale saves must not recreate a result or reset expiration.
         await repo.save(original)
         assert not (await repo.get("thread-a", "exec-a")).record.result_available
@@ -187,35 +208,26 @@ async def test_collection_waits_for_in_flight_result_read_across_stores(tmp_path
 
 @pytest.mark.parametrize("checkpointed", [False, True])
 async def test_completion_offer_has_one_app_owner_until_settlement_or_owner_exit(tmp_path, checkpointed):
-    from a13n_harness_ui.tool_executions import ToolExecutions
-
     settings = StorageSettings(data_root=tmp_path)
     async with open_local_store(settings) as first, open_local_store(settings) as second:
         await first.tool_executions.save(execution())
-        owners = [ToolExecutions(first.tool_executions), ToolExecutions(second.tool_executions)]
-        offers = []
-
-        async def deliver(thread_id, prompt, identities):
-            offers.append(identities)
-            return True
-
-        for owner in owners:
-            owner.deliver = deliver
-        await owners[0]._deliver("thread-a")
-        await owners[1]._deliver("thread-a")
-        await owners[0]._deliver("thread-a")
-        assert offers == [("exec-a",)]
+        owners = [inbox(first), inbox(second)]
+        await owners[0]._dispatch("thread-a")
+        await owners[1]._dispatch("thread-a")
+        await owners[0]._dispatch("thread-a")
+        assert owners[0].app._root_runs.submit_prompt.await_count == 1
+        assert owners[1].app._root_runs.submit_prompt.await_count == 0
         if checkpointed:
             async with transaction(first.database.sessions) as session:
-                await tool_executions.consume_completions(session, "thread-a", ("exec-a",))
-            owners[0].run_settled("thread-a")
-            await owners[0]._deliver("thread-a")
+                await thread_inbox.consume(session, "thread-a", ("result:exec-a",))
+            owners[0].settled("thread-a")
+            await owners[0]._dispatch("thread-a")
         else:
-            # Loss of the offer owner must not consume an uncheckpointed hint.
-            owners[0].stop()
-            await first.tool_executions.completion_owners.close()
-        await owners[1]._deliver("thread-a")
-        assert offers == [("exec-a",)] * (1 if checkpointed else 2)
+            await owners[0].close()
+        await owners[1]._dispatch("thread-a")
+        assert owners[1].app._root_runs.submit_prompt.await_count == (0 if checkpointed else 1)
+        await owners[0].close()
+        await owners[1].close()
 
 
 async def test_deletion_blocks_retained_work_and_collects_only_deleted_family(tmp_path):
@@ -255,61 +267,47 @@ async def test_deletion_blocks_retained_work_and_collects_only_deleted_family(tm
         assert await repo.get(child.thread_id, "exec-a") is None
         async with short_session(app._store.database.sessions) as session:
             assert await session.get(ThreadRecord, child.thread_id) is None
-        app._tool_executions.forget(child.thread_id)
         assert await repo.prune() == 2
         assert (await repo.get("unrelated-thread", "exec-b")).result == "same result"
 
 
 async def test_successor_discovers_results_published_by_another_app(tmp_path):
-    from a13n_harness_ui.tool_executions import ToolExecutions
-
     settings = StorageSettings(data_root=tmp_path)
     async with open_local_store(settings) as first, open_local_store(settings) as second:
-        await seed_thread(first)
-        owners = [ToolExecutions(first.tool_executions), ToolExecutions(second.tool_executions)]
-        await owners[1].restore()
+        successor = inbox(second)
         await first.tool_executions.save(execution())
-        owners[0].stop()
-        delivered = Event()
-        offers = []
-
-        async def deliver(thread_id, prompt, identities):
-            offers.append(identities)
-            delivered.set()
-            return True
-
-        owners[1].deliver = deliver
-        with fail_after(5):
-            async with create_task_group() as group:
-                owners[1].start(group)
-                group.start_soon(owners[1].maintain)
-                await delivered.wait()
-                owners[1].stop()
-        assert offers == [("exec-a",)]
+        async with create_task_group() as group:
+            successor.start(group)
+            await successor.scan()
+            with fail_after(5):
+                while not successor.app._root_runs.submit_prompt.await_count:
+                    await sleep(0.01)
+            group.cancel_scope.cancel()
+        assert successor.app._root_runs.submit_prompt.await_count == 1
+        await successor.close()
 
 
-async def test_completion_retries_publish_change_only_for_new_completion(tmp_path):
+async def test_completion_callback_only_schedules_common_inbox_and_publishes_change(tmp_path):
+    from unittest.mock import Mock
+
     from a13n_harness_ui.tool_executions import ToolExecutions
 
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         owner = ToolExecutions(store.tool_executions)
-        original = execution()
-        await store.tool_executions.save(original)
-        changes, offers = [], []
+        owner.inbox = Mock()
+        changes = []
 
         async def changed(thread_id):
             changes.append(thread_id)
 
-        async def blocked(thread_id, prompt, identities):
-            offers.append(identities)
-            return False
-
-        owner.changed, owner.deliver = changed, blocked
-        owner._completed(original.record)
-        for _ in range(3):
-            await owner._deliver("thread-a")
-        assert changes == ["thread-a"]
-        assert offers == [("exec-a",)] * 3
+        owner.changed = changed
+        async with create_task_group() as group:
+            owner.start(group)
+            owner._completed(execution().record)
+            await wait_all_tasks_blocked()
+            assert changes == ["thread-a"]
+            owner.inbox.schedule.assert_called_once_with("thread-a")
+            owner.stop()
         await owner.close(timeout_seconds=0)
 
 
@@ -358,7 +356,7 @@ async def test_head_collection_is_bounded_and_preserves_active_calls(tmp_path, c
         active = execution("exec-active", terminal=False)
         await repo.save(active)
         clock.current += timedelta(days=3)
-        assert await repo.pending_threads() == ()
+        assert await store.thread_inbox.threads() == ("thread-a",)
         for remaining in (2, 1, 0):
             await repo.prune(limit=1)
             assert len(await repo.list("thread-a", offset=0, limit=10)) == remaining + 1

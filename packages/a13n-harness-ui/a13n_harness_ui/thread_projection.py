@@ -16,6 +16,7 @@ from weakref import WeakValueDictionary
 from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
+from a13n_harness.envelopes import input_source
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.state import encode_messages
 from a13n_harness.tools._output import tool_execution_value
@@ -42,7 +43,6 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
@@ -960,7 +960,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             not isinstance(message, ModelRequest)
             or "a13n.steering-run" not in metadata
             or metadata.get("a13n.context")
-            or metadata.get("a13n.steering-source") in ACTIVITY_SOURCES
+            or input_source(metadata) is not None
         ):
             continue
         visible = [
@@ -968,7 +968,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             for item in request_input_content(message)
             if (projected := project_input_content(item)) is not None
             and projected[1].display
-            and (projected[1].model_extra or {}).get("a13n.steering-source") not in ACTIVITY_SOURCES
+            and input_source(projected[1]) is None
         ]
         if not visible:
             continue

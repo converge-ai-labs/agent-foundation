@@ -51,13 +51,13 @@ Opening the Live page leaves the microphone off. Navigation inside WebUI keeps t
 
 A spoken delegation starts the Live executor, or steers compatible active work. Pending decisions remain in its Thread. During an active call, the selected successful final result is returned to voice after saving; tool chatter and private reasoning are not automatically spoken.
 
-Other independent roots and Coordinators can send a report to the connected call. This is an Agent tool call, not a shell command:
+Other independent roots and Coordinators can send a message to the persistent Live executor. This is an Agent tool call, not a shell command:
 
 ```python
-send_thread_message(thread_id="live", message="The requested checks passed.", kind="report")
+send_thread_message(thread_id="live", message="The requested checks passed.")
 ```
 
-Use `kind="report"` for speech context and `kind="task"` when the executor should do more work. Managed workers and child executions do not gain this destination. An offline call returns `skipped` with reason `live_offline`; no task or later playback is queued.
+Messages persist even without a voice call and can run an eligible executor offline. Preparing work, unavailable settings and pending decisions hold input. The executor decides how to respond; the temporary `kind` parameter no longer selects direct speech. Only a currently active call receives its saved response. Offline results stay in Thread history, and reconnecting never speaks old results. Messages do not start the microphone. Managed workers and children gain no additional destination authority.
 
 Speech transcripts and task history are saved separately. Accepted speech context does not prove that the user heard it. Open the source Thread for the task's saved result, especially after a disconnect.
 
