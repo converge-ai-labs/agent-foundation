@@ -18,13 +18,22 @@ export function useApp() {
     request: (path: string, init: RequestInit = {}) => {
       if (!workspace)
         throw new Error("App business requests require a selected workspace.");
-      if (!path.startsWith("/") || path.startsWith("//"))
+      if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\"))
         throw new TypeError(
           "App requests use a relative path beginning with /.",
         );
+      const namespace = `/api/v1/apps/${appId}/`;
+      const url = new URL(
+        `${namespace}${path.slice(1)}`,
+        window.location.origin,
+      );
+      if (!url.pathname.startsWith(namespace))
+        throw new TypeError(
+          "App requests must stay within their App namespace.",
+        );
       const headers = new Headers(init.headers);
       headers.set("X-Workspace-ID", workspace.id);
-      return client.request(`/api/v1/apps/${appId}${path}`, {
+      return client.request(`${url.pathname}${url.search}`, {
         ...init,
         headers,
       });

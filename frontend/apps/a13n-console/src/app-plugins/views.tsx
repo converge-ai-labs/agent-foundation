@@ -9,12 +9,20 @@ import { useAppPlugins } from "./registry";
 import { appText, type AppSettings } from "./types";
 
 class ContributionBoundary extends Component<
-  { children: ReactNode; fallback: (error: unknown) => ReactNode },
+  {
+    children: ReactNode;
+    fallback: (error: unknown) => ReactNode;
+    resetKey: string;
+  },
   { error: unknown }
 > {
-  state = { error: null };
+  state: { error: unknown } = { error: null };
   static getDerivedStateFromError(error: unknown) {
     return { error };
+  }
+  componentDidUpdate(previous: Readonly<{ resetKey: string }>) {
+    if (this.state.error && previous.resetKey !== this.props.resetKey)
+      this.setState({ error: null });
   }
   render() {
     return this.state.error
@@ -31,9 +39,11 @@ export function AppSurface({
 }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  const { organization, workspace } = useAccess();
   return (
     <ContributionBoundary
-      key={`${appId}:${pathname}`}
+      key={`${organization.id}:${workspace?.id}:${appId}`}
+      resetKey={pathname}
       fallback={(error) => (
         <ErrorPage
           error={error}
@@ -77,7 +87,13 @@ export function AppRoute() {
         )}
       />
     );
-  return <AppSurface appId={appId!} component={page.component} />;
+  return (
+    <AppSurface
+      key={`${appId}:${pageId}`}
+      appId={appId!}
+      component={page.component}
+    />
+  );
 }
 export function WorkspaceHome() {
   const { apps, pending } = useAppPlugins();

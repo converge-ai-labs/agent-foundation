@@ -42,7 +42,7 @@ export function AppManagement() {
     },
   });
   if (catalog.isPending) return <Loading />;
-  if (catalog.error)
+  if (catalog.error && !catalog.data)
     return (
       <ErrorPage
         error={catalog.error}
@@ -70,13 +70,14 @@ export function AppManagement() {
           "Enable apps for everyone in this organization. New Runs use the updated selection; active Runs keep theirs.",
         )}
       </p>
-      <ErrorToast error={update.error} />
+      <ErrorToast error={update.error ?? catalog.error} />
       {update.error && (
         <Button
           variant="outline"
-          onClick={() => {
-            update.reset();
-            void catalog.refetch();
+          disabled={catalog.isFetching}
+          onClick={async () => {
+            const fresh = await catalog.refetch();
+            if (fresh.isSuccess) update.reset();
           }}
         >
           {t("Reload installed apps")}

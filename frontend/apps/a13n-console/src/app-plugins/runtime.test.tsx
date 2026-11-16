@@ -3,9 +3,11 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
 } from "@testing-library/react";
+import { ToastProvider } from "a13n-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +15,7 @@ import { createClient, type Client } from "../service-client";
 import { i18n } from "../i18n";
 import { AppPluginsProvider, catalogKey } from "./registry";
 import { AppRoute, WorkspaceHome } from "./views";
+import { AppContext, useApp } from "./context";
 import { AppManagement } from "./management";
 import { SettingsLayout } from "../features/settings/layout";
 import { WorkspaceSettings } from "../features/settings/pages";
@@ -50,6 +53,7 @@ let cache: QueryClient;
 let requests: Request[];
 let enabled: boolean;
 let catalogRead: (() => Promise<unknown>) | undefined;
+let policyWrite: (() => Promise<Response>) | undefined;
 const inventory = () => ({
   id: "org_demo",
   version: enabled ? 2 : 1,
@@ -72,6 +76,7 @@ beforeEach(async () => {
   requests = [];
   enabled = true;
   catalogRead = undefined;
+  policyWrite = undefined;
   state.workspaceId = "ws_one";
   cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -96,6 +101,7 @@ beforeEach(async () => {
         value = { title: request.headers.get("X-Workspace-ID") };
       else if (path.endsWith("/preview")) value = { ready: true };
       else if (request.method === "PUT") {
+        if (policyWrite) return policyWrite();
         enabled = (await request.json()).enabled;
         value = inventory();
       } else value = catalogRead ? await catalogRead() : inventory();
@@ -112,35 +118,41 @@ afterEach(() => {
   cache.clear();
   vi.restoreAllMocks();
 });
-function mount(path: string) {
-  return render(
+function Runtime({ path }: { path: string }) {
+  return (
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppPluginsProvider>
-          <Link to="/agents">Core agents</Link>
-          <Routes>
-            <Route path="/apps/:appId/:pageId" element={<AppRoute />} />
-            <Route path="/home" element={<WorkspaceHome />} />
-            <Route path="/agents" element={<h1>Core agents page</h1>} />
-            <Route path="/manage" element={<AppManagement />} />
-            <Route
-              path="/workspace/:workspaceId/settings/:section"
-              element={<WorkspaceSettings />}
-            />
-            <Route
-              path="/organization/settings/:section"
-              element={
-                <SettingsLayout
-                  scope="organization"
-                  content={{ "app-plugins": <AppManagement /> }}
-                />
-              }
-            />
-          </Routes>
-        </AppPluginsProvider>
-      </MemoryRouter>
-    </QueryClientProvider>,
+      <ToastProvider closeLabel="Dismiss">
+        <MemoryRouter initialEntries={[path]}>
+          <AppPluginsProvider>
+            <Link to="/agents">Core agents</Link>
+            <Link to="/apps/acme.reports/stateful/two">Open report</Link>
+            <Routes>
+              <Route path="/apps/:appId/:pageId/*" element={<AppRoute />} />
+              <Route path="/home" element={<WorkspaceHome />} />
+              <Route path="/agents" element={<h1>Core agents page</h1>} />
+              <Route path="/manage" element={<AppManagement />} />
+              <Route
+                path="/workspace/:workspaceId/settings/:section"
+                element={<WorkspaceSettings />}
+              />
+              <Route
+                path="/organization/settings/:section"
+                element={
+                  <SettingsLayout
+                    scope="organization"
+                    content={{ "app-plugins": <AppManagement /> }}
+                  />
+                }
+              />
+            </Routes>
+          </AppPluginsProvider>
+        </MemoryRouter>
+      </ToastProvider>
+    </QueryClientProvider>
   );
+}
+function mount(path: string) {
+  return render(<Runtime path={path} />);
 }
 it("loads an enabled module into host providers, scopes requests and separates workspace caches", async () => {
   const mounted = mount("/apps/acme.reports/overview");
@@ -271,4 +283,174 @@ it("routes workspace home through the named replacement without replacing Agents
   await screen.findByRole("heading", { name: "Installed report" });
   fireEvent.click(screen.getByRole("link", { name: "Core agents" }));
   await screen.findByRole("heading", { name: "Core agents page" });
+});
+
+it("normalizes App request paths and rejects paths leaving the namespace before transport", async () => {
+  const { result } = renderHook(() => useApp(), {
+    wrapper: ({ children }) => (
+      <AppContext.Provider value="acme.reports">{children}</AppContext.Provider>
+    ),
+  });
+  for (const path of [
+    "/../other/preview",
+    "/%2e%2e/other/preview",
+    "/.%2e/other/preview",
+    "/../../organizations/org_demo/app-plugins",
+    "/\\../other/preview",
+    "//other/preview",
+    "https://other.example/preview",
+  ]) {
+    expect(() => result.current.request(path, { method: "POST" })).toThrow(
+      TypeError,
+    );
+  }
+  expect(requests).toHaveLength(0);
+  await result.current.request("/reports/../preview?mode=draft", {
+    method: "POST",
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0].url).toBe(
+    "https://service.example/api/v1/apps/acme.reports/preview?mode=draft",
+  );
+  expect(requests[0].headers.get("X-Workspace-ID")).toBe("ws_one");
+  expect(requests[0].headers.get("X-CSRF-Token")).toBe("csrf-proof");
+});
+it("preserves App local state and focused input across its subroutes", async () => {
+  mount("/apps/acme.reports/stateful/one");
+  const input = await screen.findByRole("textbox", { name: "Report draft" });
+  fireEvent.change(input, { target: { value: "Keep this draft" } });
+  input.focus();
+  fireEvent.click(screen.getByRole("link", { name: "Next report" }));
+  await screen.findByText("/apps/acme.reports/stateful/two");
+  expect(screen.getByRole("textbox", { name: "Report draft" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("Keep this draft");
+  expect(document.activeElement).toBe(input);
+});
+it("recovers a failed App boundary when navigating to another subroute", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  mount("/apps/acme.reports/stateful/one");
+  fireEvent.click(await screen.findByRole("link", { name: "Broken report" }));
+  await screen.findByText("Subpage failed");
+  fireEvent.click(screen.getByRole("link", { name: "Open report" }));
+  await screen.findByRole("textbox", { name: "Report draft" });
+});
+it.each([
+  ["/apps/acme.reports/overview", "Installed report"],
+  ["/workspace/ws_one/settings/app.acme.reports.reporting", "Report settings"],
+  ["/manage", undefined],
+] as const)(
+  "keeps confirmed content after a catalog refetch fails at %s",
+  async (path, heading) => {
+    mount(path);
+    if (heading) await screen.findByRole("heading", { name: heading });
+    else await screen.findByRole("switch", { name: "Enable Reports" });
+    catalogRead = async () => {
+      throw new Error("Catalog refresh failed");
+    };
+    await act(async () => {
+      await cache.refetchQueries({
+        queryKey: catalogKey("org_demo"),
+        exact: true,
+      });
+    });
+    await waitFor(() =>
+      expect(cache.getQueryState(catalogKey("org_demo"))?.error).toBeTruthy(),
+    );
+    if (heading)
+      expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+    else
+      expect(
+        screen.getByRole("switch", { name: "Enable Reports" }),
+      ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "App unavailable" }),
+    ).toBeNull();
+  },
+);
+it("keeps failed policy updates locked until a fresh catalog read succeeds", async () => {
+  mount("/manage");
+  const toggle = await screen.findByRole("switch", { name: "Enable Reports" });
+  policyWrite = async () => {
+    throw new Error("Policy response lost");
+  };
+  fireEvent.click(toggle);
+  const reload = await screen.findByRole("button", {
+    name: "Reload installed apps",
+  });
+  expect(toggle.hasAttribute("data-disabled")).toBe(true);
+  let failRead!: (reason: unknown) => void;
+  const delayedRead = new Promise<unknown>((_, reject) => {
+    failRead = reject;
+  });
+  const read = vi.fn(() => delayedRead);
+  catalogRead = read;
+  fireEvent.click(reload);
+  await waitFor(() => expect(read).toHaveBeenCalledOnce());
+  expect(toggle.hasAttribute("data-disabled")).toBe(true);
+  expect(reload.hasAttribute("disabled")).toBe(true);
+  await act(async () => {
+    failRead(new Error("Catalog read failed"));
+  });
+  await waitFor(() =>
+    expect(cache.getQueryState(catalogKey("org_demo"))?.fetchStatus).toBe(
+      "idle",
+    ),
+  );
+  expect(screen.getByRole("switch", { name: "Enable Reports" })).toBe(toggle);
+  expect(toggle.hasAttribute("data-disabled")).toBe(true);
+  expect(
+    screen
+      .getByRole("button", { name: "Reload installed apps" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
+  const fresh = { ...inventory(), version: 3 };
+  catalogRead = async () => fresh;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reload installed apps" }),
+  );
+  await waitFor(() => expect(toggle.hasAttribute("data-disabled")).toBe(false));
+  expect(
+    screen.queryByRole("button", { name: "Reload installed apps" }),
+  ).toBeNull();
+  policyWrite = undefined;
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(requests.filter((request) => request.method === "PUT")).toHaveLength(
+      2,
+    ),
+  );
+  expect(
+    requests
+      .filter((request) => request.method === "PUT")[1]
+      .headers.get("If-Match"),
+  ).toBe('"org_demo:3"');
+});
+
+it.each(["/apps/acme.reports/overview", "/manage"])(
+  "shows catalog failure when no confirmed inventory exists at %s",
+  async (path) => {
+    catalogRead = async () => {
+      throw new Error("Initial catalog read failed");
+    };
+    mount(path);
+    await screen.findByText("Initial catalog read failed");
+    expect(screen.queryByRole("switch", { name: "Enable Reports" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Installed report" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Core agents" }));
+    await screen.findByRole("heading", { name: "Core agents page" });
+  },
+);
+
+it("resets App component state when its host workspace changes", async () => {
+  const path = "/apps/acme.reports/stateful/one";
+  const mounted = mount(path);
+  const input = await screen.findByRole("textbox", { name: "Report draft" });
+  fireEvent.change(input, { target: { value: "Workspace one draft" } });
+  state.workspaceId = "ws_two";
+  mounted.rerender(<Runtime path={path} />);
+  const replacement = screen.getByRole("textbox", { name: "Report draft" });
+  expect(replacement).not.toBe(input);
+  expect((replacement as HTMLInputElement).value).toBe("");
 });

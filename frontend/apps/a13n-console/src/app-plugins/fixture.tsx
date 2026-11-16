@@ -2,6 +2,9 @@
 import {
   React,
   Button,
+  Link,
+  useLocation,
+  useState,
   useApp,
   useQuery,
   useQueryClient,
@@ -36,6 +39,23 @@ function Overview() {
     </div>
   );
 }
+function Stateful() {
+  const [draft, setDraft] = useState("");
+  const { pathname } = useLocation();
+  if (pathname.endsWith("/failure")) throw new Error("Subpage failed");
+  return (
+    <div>
+      <input
+        aria-label="Report draft"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <Link to="/apps/acme.reports/stateful/two">Next report</Link>
+      <Link to="/apps/acme.reports/stateful/failure">Broken report</Link>
+      <p>{pathname}</p>
+    </div>
+  );
+}
 function Failure(): never {
   throw new Error("App render failed");
 }
@@ -44,6 +64,7 @@ export default {
   pages: [
     { id: "overview", label: "Reports", component: Overview },
     { id: "failure", label: "Failure", component: Failure },
+    { id: "stateful", label: "Stateful", component: Stateful },
   ],
   settings: [
     {

@@ -103,7 +103,9 @@ const contribution: AppContribution = {
 export default contribution;
 ```
 
-`useApp()` 提供 `appId`、`organizationId`、`workspaceId`、带作用域的 `queryKey(...)` 和 `request(path, init)`。请求路径以 `/` 开头，解析到 `/api/v1/apps/{appId}` 下。Host 添加所选 workspace 请求头，并使用已有认证、CSRF 处理和传输层。业务请求需要选择 workspace。
+`useApp()` 提供 `appId`、`organizationId`、`workspaceId`、带作用域的 `queryKey(...)` 和 `request(path, init)`。请求路径以 `/` 开头，规范化后仍位于 `/api/v1/apps/{appId}/` 下。Host 添加所选 workspace 请求头，并使用已有认证、CSRF 处理和传输层。业务请求需要选择 workspace。
+
+在组织设置中，Host 选择记住的可访问 workspace；没有记住的 workspace 时，选择第一个活跃 workspace。如果只有已归档 workspace 可用，Host 选择第一个。没有可用 workspace 时，`workspaceId` 为 undefined。设置的 scope 决定设置项的显示位置；App 业务 HTTP 请求仍以 workspace 为作用域。
 
 页面位于 `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`。页面 ID 以字母开头，使用小写字母、数字和连字符。可选的 `description` 和 `permission` 字段用于描述页面，并控制其在 Console 中的显示和路由访问。业务端点仍自行执行授权。标签和描述可以是字符串，也可以是包含 `en` 和可选 `zh-CN` 的对象。`settings` 条目使用相同字段，并添加 `scope: "workspace"` 或 `"organization"`；Host 中的设置 key 为 `app.{appId}.{sectionId}`。
 

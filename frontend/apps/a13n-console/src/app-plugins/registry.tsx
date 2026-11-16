@@ -104,7 +104,7 @@ export function AppPluginsProvider({ children }: { children: ReactNode }) {
       value={{
         apps: current ? (loaded?.apps ?? []) : [],
         pending: catalog.isPending || (!!catalog.data && !current),
-        error: catalog.error,
+        error: catalog.data ? null : catalog.error,
       }}
     >
       {children}

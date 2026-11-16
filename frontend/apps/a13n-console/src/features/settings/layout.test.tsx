@@ -39,6 +39,7 @@ function mount(entry: string) {
                 scope={scope}
                 content={{
                   general: <p>Workspace general</p>,
+                  "app-plugins": <p>App management content</p>,
                   preferences: <p>Preferences content</p>,
                   members: <p>Workspace members</p>,
                   providers: <p>Workspace providers</p>,
@@ -104,4 +105,14 @@ it("keeps scope positions fixed when navigating between settings", async () => {
   expect(
     within(navigation).queryByRole("link", { name: "Invitations" }),
   ).toBeNull();
+});
+
+it("keeps General as the organization settings landing page", () => {
+  mount("/organization/settings");
+  expect(screen.getByRole("heading", { name: "General" })).toBeTruthy();
+  expect(screen.getByText("Workspace general")).toBeTruthy();
+  expect(screen.queryByText("App management content")).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "App plugins" }).getAttribute("href"),
+  ).toBe("/organization/settings/app-plugins");
 });

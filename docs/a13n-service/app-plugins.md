@@ -103,7 +103,9 @@ const contribution: AppContribution = {
 export default contribution;
 ```
 
-`useApp()` supplies `appId`, `organizationId`, `workspaceId`, a scoped `queryKey(...)`, and `request(path, init)`. The request path starts with `/` and resolves under `/api/v1/apps/{appId}`. The host adds the selected workspace header and uses its existing authentication, CSRF handling and transport. Business requests require a selected workspace.
+`useApp()` supplies `appId`, `organizationId`, `workspaceId`, a scoped `queryKey(...)`, and `request(path, init)`. A request path starts with `/` and remains within `/api/v1/apps/{appId}/` after normalization. The host adds the selected workspace header and uses its existing authentication, CSRF handling and transport. Business requests require a selected workspace.
+
+In organization settings, the host selects the remembered accessible workspace, or the first active workspace when none is remembered. If only archived workspaces are available, the host selects the first one. `workspaceId` is undefined when no workspace is available. The settings scope determines where the section appears; App business HTTP requests remain workspace-scoped.
 
 Pages appear under `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`. Page IDs use lowercase letters, digits and hyphens, starting with a letter. Optional `description` and `permission` fields describe a page and control its Console visibility and route access. Business endpoints still enforce their own authorization. Labels and descriptions accept a string or an object with `en` and optional `zh-CN`. A `settings` entry uses the same fields and adds `scope: "workspace"` or `"organization"`; its host settings key is `app.{appId}.{sectionId}`.
 

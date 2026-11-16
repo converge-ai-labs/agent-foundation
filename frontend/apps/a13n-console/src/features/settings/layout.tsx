@@ -51,6 +51,9 @@ export function SettingsLayout({
     current.sections.find(
       (item) => item.value === requested && item.value in content,
     ) ??
+    current.sections.find(
+      (item) => item.value === "general" && item.value in content,
+    ) ??
     current.sections.find((item) => item.value in content) ??
     current.sections[0];
   const term = filter.trim().toLocaleLowerCase();
