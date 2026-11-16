@@ -154,6 +154,8 @@ Normal setup includes all three built-in children. Advanced setup offers all or 
 
 Global disabled tool switches override explicit Agent Capability selections; tool allowlists still apply. Setup fills omitted tool fields and preserves existing values. The old `tools.ask_user_question_timeout_seconds` key is accepted on input; saves use `interaction_timeout_seconds`. Timeout never invents an answer or approves a command, and editing an answer does not restart the timer. See [TUI decisions](everyday-use.md#approvals-and-questions) and [WebUI decisions](webui.md#questions-and-approval-timeouts).
 
+In the WebUI, open **Settings → Agents → Tool execution** to change the execution mode and foreground wait.
+
 For a shorter foreground wait, merge:
 
 ```yaml title="a13n-harness-ui.yaml — tool execution"

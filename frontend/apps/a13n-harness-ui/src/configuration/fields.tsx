@@ -706,6 +706,53 @@ export function ResourceFields({
                     />
                   </SettingsRow>
                 </SettingsSection>
+                <section id="tool-execution">
+                  <SettingsSection
+                    variant="grouped"
+                    title={t("Tool execution")}
+                  >
+                    <ChoiceField
+                      label={t("Automatic background execution")}
+                      value={text(["tools", "execution", "mode"]) || "inline"}
+                      options={[
+                        { value: "inline", label: t("Shell only") },
+                        { value: "auto", label: t("All eligible tools") },
+                      ]}
+                      onValueChange={(value) =>
+                        set(["tools", "execution", "mode"], value)
+                      }
+                    />
+                    <SettingsRow
+                      label={t("Foreground wait (seconds)")}
+                      controlId="tool-foreground-wait"
+                      description={t(
+                        "Tools still running after this wait continue in the background if eligible.",
+                      )}
+                    >
+                      <Input
+                        id="tool-foreground-wait"
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={Number(
+                          get([
+                            "tools",
+                            "execution",
+                            "foreground_wait_seconds",
+                          ]) ?? 5,
+                        )}
+                        onChange={(event) => {
+                          const seconds = event.target.valueAsNumber;
+                          if (Number.isFinite(seconds) && seconds >= 0)
+                            set(
+                              ["tools", "execution", "foreground_wait_seconds"],
+                              seconds,
+                            );
+                        }}
+                      />
+                    </SettingsRow>
+                  </SettingsSection>
+                </section>
               </>
             )}
             {(!group || group === "bot") && (
