@@ -15,7 +15,7 @@ no PATH changes. Explicit flags override these environment variables:
   A13N_ENVD_VERSION       Exact canonical release version
   A13N_ENVD_INSTALL_DIR   Absolute destination directory
   A13N_ENVD_ADD_TO_PATH   1 to opt in, 0 to leave PATH unchanged
-Requires curl or GNU wget, tar, sha256sum or shasum; jq for automatic version selection.
+Requires curl or GNU wget, tar, sha256sum or shasum.
 EOF
 }
 variant=${A13N_ENVD_VARIANT:-default}
@@ -111,18 +111,11 @@ trap 'rm -rf "$stage"' EXIT
 trap 'exit 1' HUP INT TERM
 
 if [ -z "$version" ]; then
-    command -v jq >/dev/null 2>&1 || fail 'jq is required to select the newest stable release; alternatively supply --version'
-    page=1
-    while :; do
-        download "https://api.github.com/repos/converge-ai-labs/agent-foundation/releases?per_page=100&page=$page" "$stage/releases.json"
-        jq -e 'type == "array"' "$stage/releases.json" >/dev/null || fail 'invalid GitHub release list'
-        version=$(jq -r '[.[] | select(.draft == false and .prerelease == false) | .tag_name |
-            select(test("^release/a13n-envd-v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))][0] // empty |
-            sub("^release/a13n-envd-v"; "")' "$stage/releases.json")
-        [ -z "$version" ] || break
-        [ "$(jq 'length' "$stage/releases.json")" -gt 0 ] || fail 'no stable envd release found'
-        page=$((page + 1))
-    done
+    download "https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/release-metadata/a13n-envd/stable.txt" "$stage/stable.txt"
+    version=$(cat "$stage/stable.txt")
+    [ "$(printf '%s' "$version" | tr -d '\r\n')" = "$version" ] &&
+        printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' ||
+        fail 'invalid Envd stable metadata; supply --version to select an exact release'
 fi
 archive="a13n-envd-$version-$target$suffix.tar.gz"
 release="https://github.com/converge-ai-labs/agent-foundation/releases/download/release/a13n-envd-v$version"

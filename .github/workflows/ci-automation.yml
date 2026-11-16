@@ -19,6 +19,7 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/envd_release_metadata.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
@@ -64,6 +65,7 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/envd_release_metadata.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
@@ -153,6 +155,7 @@ jobs:
           scripts/prepare-release-version.py
           scripts/release_notes.py
           scripts/release_version.py
+          scripts/envd_release_metadata.py
           scripts/run_python_tests.py
           scripts/verify.py
           scripts/verify_inputs.py
@@ -185,6 +188,7 @@ jobs:
           scripts/tests/test_impact.py
           scripts/tests/test_sandbox_init.py
           scripts/tests/test_envd_release_workflow.py
+          scripts/tests/test_envd_release_metadata.py
           scripts/tests/test_envd_size.py
           scripts/tests/test_envd_size_report.py
           scripts/tests/test_k8s_local.py

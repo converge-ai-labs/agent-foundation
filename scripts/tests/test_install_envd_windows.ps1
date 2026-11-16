@@ -195,31 +195,25 @@ try {
             Assert-Throws { Get-EnvdNativeArchitecture } '*native Windows only*'
         }
     }
-    Test-Case 'paginated monorepo releases skip draft, RC, malformed, and other channels' {
-        $script:Pages = @()
-        function Invoke-RestMethod {
-            param($Uri, $Headers, $TimeoutSec, $ErrorAction)
-            Assert-True ($Uri -cmatch '\Ahttps://api.github.com/repos/converge-ai-labs/agent-foundation/releases\?per_page=100&page=([0-9]+)\z')
-            $page = [int]$Matches[1]
-            $script:Pages += $page
-            if ($page -eq 1) {
-                return @(
-                    @{ tag_name = 'release/a13n-harness-v99.0.0'; draft = $false; prerelease = $false },
-                    @{ tag_name = 'release/a13n-envd-v9.0.0-rc.1'; draft = $false; prerelease = $false },
-                    @{ tag_name = 'release/a13n-envd-v8.0.0'; draft = $false; prerelease = $true },
-                    @{ tag_name = 'release/a13n-envd-v7.0.0'; draft = $true; prerelease = $false },
-                    @{ tag_name = 'release/a13n-envd-v06.0.0'; draft = $false; prerelease = $false }
-                )
-            }
-            return @(
-                @{ tag_name = 'release/a13n-envd-v1.2.3'; draft = $false; prerelease = $false },
-                @{ tag_name = 'release/a13n-envd-v1.2.2'; draft = $false; prerelease = $false }
-            )
+    Test-Case 'stable version comes from one component pointer without API requests' {
+        $script:MetadataRequests = 0
+        function Invoke-WebRequest {
+            param($Uri, [switch]$UseBasicParsing, $Headers, $TimeoutSec, $ErrorAction)
+            Assert-Equal $Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/release-metadata/a13n-envd/stable.txt'
+            $script:MetadataRequests++
+            return @{ Content = $script:Metadata }
         }
-        Assert-Equal (Get-EnvdLatestStableVersion) '1.2.3'
-        Assert-Equal ($script:Pages -join ',') '1,2'
-        function Invoke-RestMethod { return @() }
-        Assert-Throws { Get-EnvdLatestStableVersion } '*No stable*'
+        foreach ($text in @('1.2.3', "1.2.3`n")) {
+            $script:Metadata = $text
+            Assert-Equal (Get-EnvdLatestStableVersion) '1.2.3'
+        }
+        Assert-Equal $script:MetadataRequests 2
+        foreach ($text in @('', 'invalid', '01.2.3', '1.2.3-rc.1', "1.2.3`n2.0.0", ' 1.2.3', "1.2.3`r`n")) {
+            $script:Metadata = $text
+            Assert-Throws { Get-EnvdLatestStableVersion } '*Invalid Envd stable metadata*'
+        }
+        function Invoke-WebRequest { throw 'Metadata unavailable' }
+        Assert-Throws { Get-EnvdLatestStableVersion } '*Metadata unavailable*'
     }
     Test-Case 'checksum exact filename, markers, missing, malformed, duplicate, mismatch' {
         New-ZipFixture $Archive $validEntries

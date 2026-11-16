@@ -7,7 +7,7 @@ Usage: install-a13n-envd.ps1 [--version X.Y.Z[-rc.N]] [--install-dir ABSOLUTE_PA
                              [--variant default|slim] [--add-to-path | --no-add-to-path] [--help]
 
 Install a verified a13n-envd release from converge-ai-labs/agent-foundation.
-Without --version, select the newest stable a13n-envd GitHub Release.
+Without --version, read the published a13n-envd stable version pointer.
 Defaults: A13N_ENVD_VARIANT (default), A13N_ENVD_VERSION, A13N_ENVD_INSTALL_DIR, A13N_ENVD_ADD_TO_PATH (1/0).
 Flags override environment values. The default directory is %LOCALAPPDATA%\A13N\bin.
 PATH is unchanged by default; --add-to-path updates only the Windows user PATH.
@@ -116,27 +116,14 @@ function Get-EnvdTarget {
     }
 }
 
-function Get-EnvdReleasePage {
-    param([int]$Page)
-    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/converge-ai-labs/agent-foundation/releases?per_page=100&page=$Page" `
-        -Headers @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'a13n-envd-installer' } `
-        -TimeoutSec 60 -ErrorAction Stop
-    foreach ($release in $releases) { $release }
-}
-
 function Get-EnvdLatestStableVersion {
-    for ($page = 1; ; $page++) {
-        $releases = @(Get-EnvdReleasePage $page)
-        if ($releases.Count -eq 0) { throw 'No stable a13n-envd GitHub Release was found.' }
-        foreach ($release in $releases) {
-            if ($release.draft -or $release.prerelease) { continue }
-            $prefix = 'release/a13n-envd-v'
-            if ($release.tag_name -and $release.tag_name.StartsWith($prefix, [StringComparison]::Ordinal)) {
-                $version = $release.tag_name.Substring($prefix.Length)
-                if (Test-EnvdVersion $version -StableOnly) { return $version }
-            }
-        }
+    $response = Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/release-metadata/a13n-envd/stable.txt' `
+        -UseBasicParsing -Headers @{ 'User-Agent' = 'a13n-envd-installer' } -TimeoutSec 60 -ErrorAction Stop
+    $version = ([string]$response.Content).TrimEnd([char]10)
+    if (-not (Test-EnvdVersion $version -StableOnly)) {
+        throw 'Invalid Envd stable metadata; supply --version to select an exact release.'
     }
+    return $version
 }
 
 function Save-EnvdDownload {
