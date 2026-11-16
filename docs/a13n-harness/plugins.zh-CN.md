@@ -150,6 +150,8 @@ async def run_web(model: Model, web: WebBinding, url: str) -> str:
 Host 需要通过配置选择插件时，再添加工厂。将 `AuditPlugin` 及其 import 语句移入包内的 `acme_harness/plugin.py`，并在同一模块添加以下类。`label` 字段会进入诊断事件的 payload，实际影响输出。
 
 ```python
+from typing import cast
+
 from pydantic import BaseModel, ConfigDict, Field
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 
@@ -169,8 +171,8 @@ class AuditPluginFactory(HarnessPluginFactory):
         return "acme.audit"
 
     def create_plugin(self, context: HarnessPluginFactoryContext) -> AuditPlugin:
-        configuration = AuditConfiguration.model_validate(dict(context.configuration))
-        return AuditPlugin(context.plugin_id, label=configuration.label)
+        label = cast(str, context.configuration["label"])
+        return AuditPlugin(context.plugin_id, label=label)
 ```
 
 在发行包的 `pyproject.toml` 中注册无参工厂类。入口点名称必须等于 `plugin_key()`。
@@ -181,6 +183,29 @@ class AuditPluginFactory(HarnessPluginFactory):
 ```
 
 工厂校验和构造不应执行 I/O。通过 `for_run()` 分配每个 Run 的可变状态，不要将其存放在工厂中。
+
+### 从目录创建延迟 source
+
+管理插件选择的 Host 可以先验证用户填写的配置，再将规范化结果传给延迟 source。本例直接使用上面的 factory；已安装的 factory 可以改用 `plugin_keys=("acme.audit",)` 选择。
+
+```python
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactoryContext,
+    build_harness_plugin_factory_catalog,
+)
+from acme_harness.plugin import AuditPluginFactory
+
+catalog = build_harness_plugin_factory_catalog(explicit_factories=(AuditPluginFactory(),))
+configuration = catalog.validate_configuration("acme.audit", {"label": "production"})
+context = HarnessPluginFactoryContext(
+    plugin_key="acme.audit", plugin_id="audit-primary",
+    configuration=configuration, extensions={},
+)
+source = catalog.plugin_source(context, enabled=True)
+# Pass source to HarnessBuilder.build(..., plugins=(source,)).
+```
+
+`plugin_source()` 和 `create_plugin()` 接收规范化后的配置。factory 直接读取已接受的配置，不再重复运行验证器。禁用的 source 不会创建插件；Host 如果跳过禁用项的验证，应在启用时验证。
 
 ### 为配置编辑器提供描述
 
