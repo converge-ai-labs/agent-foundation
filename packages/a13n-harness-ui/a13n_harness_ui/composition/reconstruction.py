@@ -580,7 +580,6 @@ class AgentReconstructor:
                     configuration=item.configuration,
                     extensions={},
                 ),
-                configuration_validated=True,
             )
             for item in node.harness_plugins
         )

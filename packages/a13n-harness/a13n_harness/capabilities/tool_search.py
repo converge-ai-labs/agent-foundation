@@ -177,15 +177,15 @@ class ToolSearchPlan:
         for name, selection in self.groups.items():
             sources = list(selection.capabilities)
             for plugin_id in selection.plugins:
-                if plugin_id in disabled_plugins:
-                    continue
                 if plugin_id in plugin_memberships:
                     raise ValueError(
                         f"ToolSearch plugin {plugin_id!r} belongs to both {plugin_memberships[plugin_id]!r} and {name!r}"
                     )
+                plugin_memberships[plugin_id] = name
+                if plugin_id in disabled_plugins:
+                    continue
                 if plugin_id not in contributions:
                     raise ValueError(f"ToolSearch group {name!r} references unavailable plugin {plugin_id!r}")
-                plugin_memberships[plugin_id] = name
                 sources.extend(contributions[plugin_id])
             for source in sources:
                 if id(source) not in available:

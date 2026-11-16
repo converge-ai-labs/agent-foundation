@@ -413,7 +413,6 @@ class _Host:
                         configuration=selected.config,
                         extensions={},
                     ),
-                    configuration_validated=True,
                 )
                 for selected in config.plugins
             ),

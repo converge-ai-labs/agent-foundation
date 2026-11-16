@@ -25,7 +25,7 @@ async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal
     tmp_path, monkeypatch, ending, automatic
 ):
     root = _write_configuration(tmp_path)
-    started, release = Event(), Event()
+    started, release, notified = Event(), Event(), Event()
     steps = 0
     resources = ThreadToolController.resources
 
@@ -55,7 +55,12 @@ async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal
         bot = await ready(app)
         await app._threads.bot_thread()
         notices = []
-        bot._notify = lambda thread_id, notice: notices.append(notice)
+
+        def notify(thread_id, notice):
+            notices.append(notice)
+            notified.set()
+
+        bot._notify = notify
         if automatic:
             await bot.tick(now=datetime.now(UTC) + timedelta(hours=1))
             await bot.deliver_automatic_inputs()
@@ -65,6 +70,7 @@ async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal
             await bot.submit(BotSubmit(input_id=input_id, text="Report important progress"))
         with fail_after(10):
             await started.wait()
+            await notified.wait()
         assert [notice.brief for notice in notices] == ["Important progress before slow work."]
         before = await app._threads.get(BOT_THREAD_ID)
         assert before.unread and before.read_state_version == 1

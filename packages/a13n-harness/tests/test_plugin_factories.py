@@ -601,7 +601,7 @@ def test_legacy_factory_keeps_custom_validation_without_declaring_a_model() -> N
     assert catalog.validate_configuration("test.plugin", {"name": "legacy"}) == {"name": "legacy"}
 
 
-def test_catalog_sources_defer_validation_and_create_fresh_detached_instances() -> None:
+def test_catalog_sources_create_fresh_detached_instances_only_when_selected() -> None:
     from a13n_harness import AgentDefinition
 
     _Factory.calls.clear()
@@ -639,7 +639,7 @@ def test_catalog_source_preserves_host_accepted_configuration_without_normalizin
     catalog = build_harness_plugin_factory_catalog(explicit_factories=(AliasedFactory(),))
     accepted = catalog.validate_configuration("test.plugin", {"authored_value": "accepted"})
     assert accepted == {"value": "accepted"}
-    source = catalog.plugin_source(_build_context(dict(accepted)), configuration_validated=True)
+    source = catalog.plugin_source(_build_context(dict(accepted)))
     assert _Factory.calls == []
     HarnessBuilder(configured_plugins_enabled=False).build(AgentSpec(model="test"), output_type=str, plugins=(source,))
     assert _Factory.calls == [{"value": "accepted"}]

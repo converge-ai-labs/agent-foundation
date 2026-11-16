@@ -1224,6 +1224,18 @@ def test_plan_is_immutable_and_rejects_unselected_or_duplicate_sources() -> None
         ToolSearchPlan(groups={"host": ToolSearchSelection("Host tools", plugins=("plugin-missing",))})._compose((), {})
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("same_group", [False, True])
+def test_plan_rejects_duplicate_plugin_membership_regardless_of_activation(enabled: bool, same_group: bool) -> None:
+    groups = {"first": ToolSearchSelection("Tools", plugins=("plugin", "plugin") if same_group else ("plugin",))}
+    if not same_group:
+        groups["second"] = ToolSearchSelection("Other tools", plugins=("plugin",))
+    with pytest.raises(ValueError, match="belongs to both"):
+        ToolSearchPlan(groups=groups)._compose(
+            (), {"plugin": ()} if enabled else {}, disabled_plugins=frozenset() if enabled else frozenset({"plugin"})
+        )
+
+
 @pytest.mark.parametrize("use_plan", [False, True])
 async def test_grouped_custom_container_retains_native_binding_hooks_and_state(use_plan: bool) -> None:
     from copy import copy

@@ -24,7 +24,7 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
-from pydantic import JsonValue, RootModel
+from pydantic import BaseModel, Field, JsonValue, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 
 
@@ -522,3 +522,26 @@ def test_direct_and_configured_plugin_id_collision_fails(monkeypatch: pytest.Mon
         )
 
     assert exc_info.value.code == "plugin_id_duplicate"
+
+
+def test_configured_source_normalizes_authored_values_once_after_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    class AliasedConfiguration(BaseModel):
+        marker: str = Field(validation_alias="authored_marker")
+
+    class AliasedFactory(_ConfiguredFactory):
+        configuration_model = AliasedConfiguration
+        validate_configuration = HarnessPluginFactory.validate_configuration
+
+    _ConfiguredFactory.contexts.clear()
+    _patch_entry_points(monkeypatch, _FakeEntryPoint("test.configured", AliasedFactory))
+    context = HarnessBuildContext.from_configuration(
+        _document(
+            {**_entry(), "configuration": {"authored_marker": "accepted"}},
+            {**_entry("disabled", enabled=False), "configuration": {}},
+        )
+    )
+    builder = HarnessBuilder(build_context=context)
+    assert _ConfiguredFactory.contexts == []
+    executable = builder.build(_definition("root"))
+    assert [item.configuration for item in _ConfiguredFactory.contexts] == [{"marker": "accepted"}]
+    assert executable.plugin_activation.disabled_ids == frozenset({"disabled"})

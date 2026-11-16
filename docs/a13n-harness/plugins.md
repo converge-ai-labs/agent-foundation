@@ -118,7 +118,7 @@ Inside `for_run(context)` and middleware, `context.plugins.activation.is_enabled
 
 Plugins can exchange typed Run-local values with `context.plugins.shared.write("acme.audit", value)` and `context.plugins.shared.read("acme.audit", ExpectedType)`, including during binding. Each Run gets fresh scratch storage. Use `context.state` explicitly for portable persistent state.
 
-A package catalog can produce a lazy source with `catalog.plugin_source(factory_context, enabled=...)`. The catalog owns configuration validation and factory invocation. If the Host already persisted normalized output from `catalog.validate_configuration()`, pass `configuration_validated=True` to avoid applying input normalization twice. Hosts keep their root and child selections on each corresponding `AgentDefinition.plugins`; builder-level configuration applies recursively to every definition.
+A package catalog can produce a lazy source with `catalog.plugin_source(factory_context, enabled=...)`. Like `catalog.create_plugin()`, it consumes configuration already normalized by `catalog.validate_configuration()` and defers construction without applying normalization again. Automatic builder configuration validates authored values only after selecting an enabled source. Hosts keep their root and child selections on each corresponding `AgentDefinition.plugins`; builder-level configuration applies recursively to every definition.
 
 ### Feature Capabilities and Current Provider Clients
 

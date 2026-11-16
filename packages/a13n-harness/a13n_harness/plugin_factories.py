@@ -178,29 +178,15 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
         context: HarnessPluginFactoryContext,
         *,
         enabled: bool = True,
-        configuration_validated: bool = False,
     ) -> PluginSource:
-        """Defer creation; normalize authored configuration once unless already accepted by the Host."""
+        """Defer creation from accepted configuration, with the same input contract as create_plugin."""
         context = HarnessPluginFactoryContext(
             plugin_key=context.plugin_key,
             plugin_id=context.plugin_id,
             configuration=context.configuration,
             extensions=context.extensions,
         )
-
-        def create() -> AbstractHarnessPlugin:
-            return self.create_plugin(
-                HarnessPluginFactoryContext(
-                    plugin_key=context.plugin_key,
-                    plugin_id=context.plugin_id,
-                    configuration=context.configuration
-                    if configuration_validated
-                    else self.validate_configuration(context.plugin_key, context.configuration),
-                    extensions=context.extensions,
-                )
-            )
-
-        return PluginSource(context.plugin_id, create, enabled)
+        return PluginSource(context.plugin_id, lambda: self.create_plugin(context), enabled)
 
     def create_plugin(
         self,
