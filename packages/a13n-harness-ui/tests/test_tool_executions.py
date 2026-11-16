@@ -6,7 +6,7 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import StoredToolExecution, ToolExecutionRecord
+from a13n_harness import StoredToolExecution, ToolExecutionRecord, input_source
 from a13n_harness.tools._output import tool_execution_value
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui.app import open_harness_ui_app
@@ -42,85 +42,6 @@ async def complete(owner, execution_id, *, detached=True, delivered=False):
     owner._completed(record)
 
 
-async def test_completion_hints_coalesce_and_skip_fast_or_delivered_calls():
-    owner = ToolExecutions()
-    hints = []
-    delivered = Event()
-
-    async def deliver(thread_id, prompt, execution_ids):
-        hints.append((thread_id, prompt))
-        delivered.set()
-        return True
-
-    owner.deliver = deliver
-    async with create_task_group() as group:
-        owner.start(group)
-        await complete(owner, "fast", detached=False)
-        await complete(owner, "consumed", delivered=True)
-        await complete(owner, "first")
-        await complete(owner, "second")
-        await delivered.wait()
-        assert len(hints) == 1
-        assert all(
-            f"Tool notification · lookup · execution_id={key} · finished" in hints[0][1] for key in ("first", "second")
-        )
-        assert "fast" not in hints[0][1] and "consumed" not in hints[0][1]
-        await owner.close(timeout_seconds=0)
-
-
-async def test_completion_blocked_by_preparation_retries_after_settlement_without_polling():
-    owner = ToolExecutions()
-    attempts = []
-    attempted, delivered = Event(), Event()
-    ready = False
-
-    async def deliver(thread_id, prompt, execution_ids):
-        attempts.append(prompt)
-        attempted.set()
-        if ready:
-            delivered.set()
-        return ready
-
-    owner.deliver = deliver
-    async with create_task_group() as group:
-        owner.start(group)
-        await complete(owner, "first")
-        await attempted.wait()
-        # An explicit lifecycle transition retries retained input, not a timer.
-        ready = True
-        owner.retry("thread-a")
-        await delivered.wait()
-        assert len(attempts) == 2
-        await owner.close(timeout_seconds=0)
-
-
-async def test_rejected_completion_remains_available_for_new_execution():
-    owner = ToolExecutions()
-    attempted, delivered = Event(), Event()
-    eligible = False
-    hints = []
-
-    async def deliver(thread_id, prompt, execution_ids):
-        attempted.set()
-        if not eligible:
-            return False
-        hints.append(prompt)
-        delivered.set()
-        return True
-
-    owner.deliver = deliver
-    async with create_task_group() as group:
-        owner.start(group)
-        await complete(owner, "before-stop")
-        await attempted.wait()
-        eligible = True
-        owner.retry("thread-a")
-        await delivered.wait()
-        assert len(hints) == 1 and "before-stop" in hints[0]
-        assert (await owner.runtime.result("thread-a", "before-stop")).result is not None
-        await owner.close(timeout_seconds=0)
-
-
 async def test_shutdown_joins_retained_cleanup_after_bounded_cancellation():
     owner = ToolExecutions()
     entered, cleaning, finish, closed = Event(), Event(), Event(), Event()
@@ -148,89 +69,6 @@ async def test_shutdown_joins_retained_cleanup_after_bounded_cancellation():
         assert not closed.is_set()
         finish.set()
         await closed.wait()
-
-
-@pytest.mark.parametrize("failure", ["rejected", "exception"])
-async def test_completion_racing_failed_delivery_is_retried_without_loss(failure):
-    owner = ToolExecutions()
-    entered, release, delivered = Event(), Event(), Event()
-    attempts = []
-
-    async def deliver(thread_id, prompt, execution_ids):
-        attempts.append(prompt)
-        if len(attempts) == 1:
-            entered.set()
-            await release.wait()
-            if failure == "exception":
-                raise RuntimeError("preparation failed")
-            return False
-        delivered.set()
-        return True
-
-    owner.deliver = deliver
-    async with create_task_group() as group:
-        owner.start(group)
-        await complete(owner, "first")
-        with fail_after(10):
-            await entered.wait()
-            await complete(owner, "second")
-            release.set()
-            await delivered.wait()
-        assert len(attempts) == 2
-        assert "first" in attempts[1] and "second" in attempts[1]
-        for execution_id in ("first", "second"):
-            assert not (await owner.runtime.info("thread-a", execution_id)).delivery_acknowledged
-        await owner.close(timeout_seconds=0)
-
-
-@pytest.mark.parametrize(
-    ("status", "notice_status"),
-    [("succeeded", "finished"), ("failed", "failed"), ("cancelled", "cancelled"), ("lost", "lost")],
-)
-async def test_terminal_notifications_are_status_only_and_refresh_after_rejected_delivery(status, notice_status):
-    owner = ToolExecutions()
-    changed, delivered = Event(), Event()
-    hints = []
-
-    async def refresh(thread_id):
-        assert thread_id == "thread-a"
-        changed.set()
-
-    async def deliver(thread_id, prompt, execution_ids):
-        hints.append(prompt)
-        delivered.set()
-        return True
-
-    owner.changed, owner.deliver = refresh, deliver
-    record = ToolExecutionRecord(
-        execution_id="exec-terminal",
-        thread_id="thread-a",
-        run_id="run-a",
-        tool_call_id="call-a",
-        tool_name="lookup",
-        status=status,
-        result_available=status == "succeeded",
-        foreground_released=True,
-        error="PRIVATE FAILURE DETAIL" if status != "succeeded" else None,
-    )
-    await owner.runtime.store.save(StoredToolExecution(record, "PRIVATE RESULT BODY"))
-    async with create_task_group() as group:
-        owner.start(group)
-        owner._completed(record)
-        with fail_after(10):
-            await delivered.wait()
-        assert (
-            len(hints) == 1 and f"Tool notification · lookup · execution_id=exec-terminal · {notice_status}" in hints[0]
-        )
-        assert "PRIVATE" not in hints[0]
-        assert not (await owner.runtime.info("thread-a", record.execution_id)).delivery_acknowledged
-        owner.deliver = None
-        changed = Event()
-        owner._completed(record)
-        with fail_after(10):
-            await changed.wait()
-        assert len(hints) == 1
-        await owner.close(timeout_seconds=0)
 
 
 def install_slow_tool(monkeypatch, slow):
@@ -309,7 +147,7 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         elif current == 2:
             yield {
                 0: DeltaToolCall(
-                    name="tool_execution_result",
+                    name="execution_result",
                     json_args='{"execution_id":"' + execution_id + '"}',
                     tool_call_id="result",
                 )
@@ -330,15 +168,13 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         await app.set_thread_external_context(
             thread_id=thread.thread_id, context=ExternalContext(metadata={"tenant": "one"}, headers={"X-Tenant": "one"})
         )
-        original_deliver = app._tool_executions.deliver
+        original_deliver = app._inbox._dispatch
 
-        async def observe_delivery(thread_id, prompt, execution_ids):
-            accepted = await original_deliver(thread_id, prompt, execution_ids)
-            if accepted:
-                delivered.set()
-            return accepted
+        async def observe_delivery(thread_id):
+            await original_deliver(thread_id)
+            delivered.set()
 
-        app._tool_executions.deliver = observe_delivery
+        monkeypatch.setattr(app._inbox, "_dispatch", observe_delivery)
         first = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
         with fail_after(10):
             await waiting.wait()
@@ -366,17 +202,19 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         assert result.record.delivery_acknowledged
         assert calls == 1 and stage == 4
         contexts_by_run = {run_id: (metadata, headers) for run_id, metadata, headers in observed_contexts}
-        assert list(contexts_by_run.values()) == (
-            [({"tenant": "one"}, {"x-tenant": "one"})]
-            if complete_while_active
-            else [({"tenant": "one"}, {"x-tenant": "one"}), ({"tenant": "two"}, {"x-tenant": "two"})]
-        )
+        contexts = list(contexts_by_run.values())
+        assert contexts[0] == ({"tenant": "one"}, {"x-tenant": "one"})
+        assert all(value == ({"tenant": "two"}, {"x-tenant": "two"}) for value in contexts[1:])
+        if not complete_while_active:
+            assert len(contexts) == 2
         transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
         hints = [
             part
             for entry in transcript.entries
             for part in entry.parts
-            if part.metadata.source_id == "tool_execution.completion"
+            if (origin := input_source(part.metadata)) is not None
+            and origin.kind == "result"
+            and origin.execution.kind == "tool"
         ]
         assert len(hints) == 1 and hints[0].metadata.display
         assert (await app._tool_executions.state(thread.thread_id).snapshot()).values == {"late": 42}
@@ -437,7 +275,7 @@ async def test_clear_context_replaces_codeact_owner_and_isolates_late_writes(tmp
         await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=selected.continuation_id)
         fresh = app._tool_executions.state(thread.thread_id)
         assert fresh is not owner
-        app._tool_executions.deliver = None
+        app._inbox.stop()
         finish.set()
         records = await app.tool_executions(thread.thread_id)
         result = await app._tool_executions.runtime.wait(thread.thread_id, records[0].execution_id, timeout_seconds=10)
@@ -450,13 +288,22 @@ async def test_clear_context_replaces_codeact_owner_and_isolates_late_writes(tmp
 
 @pytest.mark.parametrize("change", [None, "source", "parent", "child", "stop", "stop_checkpoint", "stop_deferred"])
 async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monkeypatch, change):
-    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
     from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    # Isolate retained-tool continuation authority from unrelated parent result delivery.
+    from a13n_harness_ui.thread_inbox import ThreadInbox
 
     from .test_builtin_subagents import _source
 
-    # Isolate retained-tool continuation authority from unrelated parent result delivery.
-    monkeypatch.setattr(HarnessUiSubagentOperator, "_deliver_parent", AsyncMock())
+    condition = ThreadInbox.condition
+
+    async def child_only(self, thread_id):
+        thread = await self.app._store.threads.get(thread_id)
+        if thread is not None and thread.parent_thread_id is None:
+            return "paused"
+        return await condition(self, thread_id)
+
+    monkeypatch.setattr(ThreadInbox, "condition", child_only)
     path = _source(tmp_path, ("explorer",))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     finish, resumed, delivered = Event(), Event(), Event()
@@ -499,14 +346,26 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
                     resume_results.append(returned.content)
                 yield {
                     0: DeltaToolCall(
-                        name="wait_subagent", json_args='{"timeout_seconds":10}', tool_call_id=f"wait-{stage}"
+                        name="execution_wait",
+                        json_args=json.dumps(
+                            {
+                                "execution_id": next(
+                                    part.content["execution_id"]
+                                    for message in messages
+                                    for part in message.parts
+                                    if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                                ),
+                                "timeout_seconds": 10,
+                            }
+                        ),
+                        tool_call_id=f"wait-{stage}",
                     )
                 }
             elif stage == 3:
                 yield {
                     0: DeltaToolCall(
-                        name="resume_subagent",
-                        json_args=json.dumps({"execution_id": first.execution_id, "prompt": "Continue"}),
+                        name="send_message",
+                        json_args=json.dumps({"to": first.execution_id, "message": "Continue"}),
                         tool_call_id="resume",
                     )
                 }
@@ -531,7 +390,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             continuation_authority.append((continuation.identity, continuation.usage_limits))
             yield {
                 0: DeltaToolCall(
-                    name="tool_execution_result",
+                    name="execution_result",
                     json_args=json.dumps({"execution_id": execution_id}),
                     tool_call_id="result",
                 )
@@ -641,19 +500,16 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
                 expected_version=stored.configuration.version,
                 replacement=stored.configuration.model_copy(update={"version": stored.configuration.version + 1}),
             )
-        original = app._tool_executions.deliver
+        original = app._inbox._dispatch
         accepted = []
 
-        async def observe(thread_id, prompt, execution_ids):
-            # IDs have left _pending, but delivery still owns the authority.
-            app._subagent_operator._release_completion_continuation(thread_id)
-            assert app._subagent_operator._completion_continuations[thread_id] is retained
-            result = await original(thread_id, prompt, execution_ids)
-            accepted.append(result)
-            delivered.set()
-            return result
+        async def observe(thread_id):
+            await original(thread_id)
+            if thread_id == child_id and not delivered.is_set():
+                accepted.append(bool(app._inbox._offered.get(thread_id)))
+                delivered.set()
 
-        app._tool_executions.deliver = observe
+        monkeypatch.setattr(app._inbox, "_dispatch", observe)
         finish.set()
         with fail_after(10):
             result = await app._tool_executions.runtime.wait(child_id, execution_id, timeout_seconds=10)
@@ -674,8 +530,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
         else:
             assert accepted == [False]
             assert len(page.executions) == 1
-            if change not in {"stop", "stop_checkpoint", "stop_deferred"}:
-                assert app._subagent_operator._completion_continuations[child_id] is retained
+            assert await app._store.thread_inbox.pending(child_id)
         assert stages["parent"] == 3
         if change in {"stop_checkpoint", "stop_deferred"}:
             assert stages["child"] == 2
@@ -689,7 +544,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             with fail_after(10):
                 assert (await app.wait_root_operation(next_receipt.receipt_id)).status is RootOperationStatus.completed
             page = await app.query_child_executions(parent_thread_id=thread.thread_id)
-            assert resume_results == ["The retained subagent execution is not resumable."]
+            assert resume_results == ["Agent execution in state 'cancelled' cannot accept a message."]
             assert len(page.executions) == 1
             assert (await app._store.child_executions.latest_for_child(child_id)).status == "cancelled"
 
@@ -716,13 +571,23 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
     from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
     from a13n_harness_ui.surfaces import NewThreadDefaults
 
+    # Isolate retained-tool continuation authority from unrelated parent result delivery.
+    from a13n_harness_ui.thread_inbox import ThreadInbox
+
     from .test_builtin_subagents import _source
 
-    # Isolate retained-tool continuation authority from unrelated parent result delivery.
-    monkeypatch.setattr(HarnessUiSubagentOperator, "_deliver_parent", AsyncMock())
+    condition = ThreadInbox.condition
+
+    async def child_only(self, thread_id):
+        thread = await self.app._store.threads.get(thread_id)
+        if thread is not None and thread.parent_thread_id is None:
+            return "paused"
+        return await condition(self, thread_id)
+
+    monkeypatch.setattr(ThreadInbox, "condition", child_only)
     path = _source(tmp_path, ("explorer",))
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
-    finish, offered, resumed = Event(), Event(), Event()
+    finish, resumed = Event(), Event()
     stages = {"parent": 0, "child": 0}
     from a13n_harness_ui.external_context import ExternalContext
 
@@ -745,7 +610,23 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
                 )
             }
         elif lane == "parent" and stage == 1:
-            yield {0: DeltaToolCall(name="wait_subagent", json_args='{"timeout_seconds":10}', tool_call_id="wait")}
+            yield {
+                0: DeltaToolCall(
+                    name="execution_wait",
+                    json_args=json.dumps(
+                        {
+                            "execution_id": next(
+                                part.content["execution_id"]
+                                for message in messages
+                                for part in message.parts
+                                if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                            ),
+                            "timeout_seconds": 10,
+                        }
+                    ),
+                    tool_call_id="wait",
+                )
+            }
         elif lane == "child" and stage == 0:
             yield {0: DeltaToolCall(name="run_code", json_args='{"code":"await slow()"}', tool_call_id="runner")}
         else:
@@ -762,12 +643,7 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     settings = _settings(tmp_path / "state")
     async with open_harness_ui_app(settings, configuration_path=path) as app:
-
-        async def defer_delivery(*args):
-            offered.set()
-            return False
-
-        app._tool_executions.deliver = defer_delivery
+        app._inbox.stop()
         parent = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
         await app.set_thread_external_context(
             thread_id=parent.thread_id, context=ExternalContext(metadata={"tenant": "one"}, headers={"X-Tenant": "one"})
@@ -801,7 +677,8 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
             assert operator._completion_continuations[child_id] is newer
         finish.set()
         with fail_after(10):
-            await offered.wait()
+            while not await app._store.thread_inbox.pending(child_id):
+                await sleep(0.01)
         if change == "archived":
             await archive_child(app._store, child_id)
         elif change in {"parent", "child"}:
@@ -861,13 +738,15 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
             assert latest.execution_id != first.execution_id
             assert restored.authority == checkpoint.authority
             assert observed_contexts[-1] == (child_id, {"tenant": "two"}, {"x-tenant": "two"})
-            assert not await successor._store.tool_executions.pending(child_id)
+            assert not await successor._store.thread_inbox.pending(child_id)
         else:
             if change in {"archive_during_prepare", "parent_during_prepare", "child_during_prepare"}:
                 with fail_after(10):
                     await prepare_stopped.wait()
             # Exercise the public delivery boundary after startup restoration.
-            assert not await successor._deliver_tool_completion(child_id, "Completed", ())
+            await successor._inbox._dispatch(child_id)
+            pending = await successor._store.thread_inbox.pending(child_id)
+            assert bool(pending) is (change not in {"archived", "archive_during_prepare"})
             assert not resumed.is_set()
         page = await successor.query_child_executions(parent_thread_id=parent.thread_id)
         assert len(page.executions) == (2 if change in {None, "cache_replaced"} else 1)
@@ -984,7 +863,6 @@ async def test_tool_wait_policy_is_captured_and_old_compositions_default_inline(
 
 async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_not_completion(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock
 
     from a13n_harness_ui.surfaces import ChildControlResult, RootControlResult
 
@@ -1010,13 +888,28 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert root.call_args.kwargs["immediate"] is (mode != "queued")
             assert child.call_args.kwargs["immediate"] is (mode != "queued")
             assert child.call_args.kwargs["message"] == "Focus"  # Human input remains unmarked.
-            await app._deliver_tool_completion(thread.thread_id, "Tool completed", ("exec-test",))
+            from a13n_harness.envelopes import Envelope, ExecutionRef, Sender
+
+            app._inbox._offered.clear()
+            await app._store.thread_inbox.discard(thread.thread_id)
+            await app._store.thread_inbox.put(
+                thread.thread_id,
+                Envelope(
+                    id=f"notice-{mode}",
+                    kind="result",
+                    sender=Sender(kind="system"),
+                    execution=ExecutionRef(execution_id="exec-test", kind="tool", name="lookup", state="succeeded"),
+                    text="Tool completed",
+                ),
+            )
+            # The mocked active operation has no saved root status; provide the dispatcher condition.
+            monkeypatch.setattr(app._inbox, "condition", AsyncMock(return_value="active"))
+            await app._inbox._dispatch(thread.thread_id)
             assert root.call_args.kwargs["immediate"] is False
             content = root.call_args.kwargs["message"]
-            assert content[0].value == "Tool completed"
+            assert "Tool completed" in content[0].value
             assert content[0].metadata.display is True
-            assert content[0].metadata.source_id == "tool_execution.completion"
-            assert content[0].metadata.model_extra["a13n.steering-source"] == "tool_execution"
+            assert input_source(content[0].metadata).execution.execution_id == "exec-test"
 
 
 async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_once(tmp_path, monkeypatch):
@@ -1157,7 +1050,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
             assert shown.count("Follow-up completed.") == 1
             assert not renderer.gap
             assert shown.count("Tool execution succeeded") == 1
-            assert "Activity · Tool executions completed. Inspect" in shown
+            assert execution_id in shown and "Follow-up completed." in shown
             assert "> Tool executions completed. Inspect" not in shown
             assert shell.composer.text == "Unsent draft"
             assert not shell.busy and backend.receipt_id is None
@@ -1170,7 +1063,9 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
             transcript = await app.get_thread_transcript(thread_id=backend.thread_id)
             assert (
                 sum(
-                    part.metadata.source_id == "tool_execution.completion"
+                    (origin := input_source(part.metadata)) is not None
+                    and origin.kind == "result"
+                    and origin.execution.kind == "tool"
                     for entry in transcript.entries
                     for part in entry.parts
                 )
@@ -1329,41 +1224,6 @@ async def test_tui_background_observer_drains_burst_and_handles_terminal_receipt
             shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("outcome", ["accepted", "rejected", "exception", "deleted"])
-async def test_pending_work_includes_inflight_delivery_until_final_bookkeeping(outcome):
-    owner = ToolExecutions()
-    entered, finish, settled = Event(), Event(), Event()
-    observed = []
-
-    def on_settled(thread_id):
-        observed.append(owner.has_pending_work(thread_id))
-        if entered.is_set():
-            settled.set()
-
-    async def deliver(thread_id, prompt, execution_ids):
-        assert thread_id not in owner._pending
-        assert owner.has_pending_work(thread_id)
-        entered.set()
-        await finish.wait()
-        if outcome == "exception":
-            raise RuntimeError("Delivery failed")
-        return outcome == "accepted"
-
-    owner.deliver = deliver
-    owner.settled = on_settled
-    async with create_task_group() as group:
-        owner.start(group)
-        await complete(owner, "first")
-        await entered.wait()
-        if outcome == "deleted":
-            owner.forget("thread-a")
-        finish.set()
-    assert settled.is_set()
-    assert observed[0] is True
-    assert owner.has_pending_work("thread-a") is (outcome in {"rejected", "exception"})
-    assert observed[-1] is (outcome in {"rejected", "exception"})
-
-
 async def test_pending_work_retains_cleanup_and_notifies_after_inline_completion():
     owner = ToolExecutions()
     cleaning, finish, settled = Event(), Event(), Event()
@@ -1458,98 +1318,7 @@ async def test_durable_execution_roundtrip_preserves_native_payload_and_monotoni
         assert saved.artifacts[0].data == b"artifact"
         assert saved.shell == shell
         assert await store.tool_executions.get("another-thread", record.execution_id) is None
-        assert await store.tool_executions.pending(record.thread_id) == ()
-
-
-@pytest.mark.parametrize("settlement", ["uncheckpointed", "consumed"])
-async def test_completion_restart_uses_durable_intent_not_callback_or_enqueue(tmp_path, settlement):
-    from a13n_harness_ui.storage.database import transaction
-    from a13n_harness_ui.storage.runtime import open_local_store
-    from a13n_harness_ui.storage.tool_executions import consume_completions
-
-    from .test_tool_execution_retention import seed_thread
-
-    settings = _settings(tmp_path).storage
-    async with open_local_store(settings) as store:
-        owner = ToolExecutions(store.tool_executions)
-        await seed_thread(store)
-        # No task group and no callback delivery: simulate termination directly
-        # after terminal storage, before the process-local completion observer.
-        await complete(owner, "exec-completed")
-        if settlement == "consumed":
-            async with transaction(store.database.sessions) as session:
-                await consume_completions(session, "thread-a", ("exec-completed",))
-    async with open_local_store(settings) as store:
-        owner = ToolExecutions(store.tool_executions)
-        deliveries = []
-        delivered = Event()
-
-        async def deliver(thread_id, prompt, execution_ids):
-            deliveries.append(execution_ids)
-            delivered.set()
-            return True
-
-        owner.deliver = deliver
-        async with create_task_group() as group:
-            owner.start(group)
-            await owner.restore()
-            if settlement == "uncheckpointed":
-                with fail_after(3):
-                    await delivered.wait()
-                assert deliveries == [("exec-completed",)]
-                assert len(await store.tool_executions.pending("thread-a")) == 1
-                assert not (await store.tool_executions.get("thread-a", "exec-completed")).record.delivery_acknowledged
-            else:
-                assert await store.tool_executions.pending("thread-a") == ()
-                assert not owner.has_pending_work("thread-a")
-            await owner.close(timeout_seconds=0)
-
-
-async def test_completion_consumption_rolls_back_with_checkpoint_transaction(tmp_path):
-    from a13n_harness_ui.storage.database import transaction
-    from a13n_harness_ui.storage.runtime import open_local_store
-    from a13n_harness_ui.storage.tool_executions import consume_completions
-
-    async with open_local_store(_settings(tmp_path).storage) as store:
-        await complete(ToolExecutions(store.tool_executions), "exec-completed")
-        with pytest.raises(ValueError, match="checkpoint rejected"):
-            async with transaction(store.database.sessions) as session:
-                await consume_completions(session, "thread-a", ("exec-completed",))
-                raise ValueError("checkpoint rejected")
-        assert len(await store.tool_executions.pending("thread-a")) == 1
-        async with transaction(store.database.sessions) as session:
-            await consume_completions(session, "another-thread", ("exec-completed",))
-        assert len(await store.tool_executions.pending("thread-a")) == 1
-
-
-async def test_completion_delivery_drains_later_pages_before_consumption(tmp_path):
-    from a13n_harness_ui.storage.runtime import open_local_store
-
-    async with open_local_store(_settings(tmp_path).storage) as store:
-        owner = ToolExecutions(store.tool_executions)
-        expected = {f"exec-{index:03}" for index in range(257)}
-        for execution_id in sorted(expected):
-            await complete(owner, execution_id)
-        batches = []
-        delivered = Event()
-
-        async def deliver(thread_id, prompt, execution_ids):
-            batches.append(execution_ids)
-            if sum(map(len, batches)) == len(expected):
-                delivered.set()
-            return True
-
-        owner.deliver = deliver
-        async with create_task_group() as group:
-            owner.start(group)
-            await owner.restore()
-            with fail_after(5):
-                await delivered.wait()
-            assert [len(batch) for batch in batches] == [256, 1]
-            assert {value for batch in batches for value in batch} == expected
-            assert len(await store.tool_executions.pending("thread-a")) == 256
-            assert await store.tool_executions.pending("thread-a", exclude=tuple(expected)) == ()
-            await owner.close(timeout_seconds=0)
+        assert await store.thread_inbox.pending(record.thread_id) == ()
 
 
 async def test_completion_thread_scans_use_bounded_keyset_pages(tmp_path):
@@ -1568,8 +1337,8 @@ async def test_completion_thread_scans_use_bounded_keyset_pages(tmp_path):
                 foreground_released=True,
             )
             await store.tool_executions.save(StoredToolExecution(record, "done"))
-        assert await store.tool_executions.pending_threads(limit=2) == ("thread-0", "thread-1")
-        assert await store.tool_executions.pending_threads(after="thread-1", limit=2) == ("thread-2",)
+        assert await store.thread_inbox.threads(limit=2) == ("thread-0", "thread-1")
+        assert await store.thread_inbox.threads(after="thread-1", limit=2) == ("thread-2",)
 
 
 async def test_recovered_execution_holds_ownership_through_terminal_publication(tmp_path, monkeypatch):
@@ -1649,7 +1418,6 @@ async def test_shell_recovery_distinguishes_retryable_preparation_from_terminal_
     tmp_path, monkeypatch, code, terminal
 ):
     from types import SimpleNamespace
-    from unittest.mock import AsyncMock
 
     from a13n_harness.environment.process_recovery import EnvdProcessState, ShellExecutionState
     from a13n_harness.environment.retention import EnvironmentOutputPolicy
@@ -1697,7 +1465,7 @@ async def test_shell_recovery_distinguishes_retryable_preparation_from_terminal_
             assert saved.record.status == "failed"
             assert code in saved.record.error
             assert saved.record.foreground_released
-            assert len(await store.tool_executions.pending(record.thread_id)) == 1
+            assert len(await store.thread_inbox.pending(record.thread_id)) == 1
         await owner.recover()
         assert prepare.await_count == (1 if terminal else 2)
 
@@ -1723,7 +1491,7 @@ async def test_recovery_skips_live_generic_owner_and_marks_unowned_call_lost(tmp
         saved = await second.tool_executions.get(record.thread_id, record.execution_id)
         assert saved.record.status == "lost"
         assert saved.record.foreground_released
-        assert len(await second.tool_executions.pending(record.thread_id)) == 1
+        assert len(await second.thread_inbox.pending(record.thread_id)) == 1
 
 
 async def test_recovery_maintenance_survives_scan_failure(monkeypatch):
@@ -1759,7 +1527,6 @@ async def archive_child(store, child_id):
 @pytest.mark.parametrize("status", ["completed", "cancelled", "failed", "suspended", "unknown", "running", "preparing"])
 async def test_root_completion_after_restart_uses_execution_state(tmp_path, monkeypatch, status):
     from datetime import UTC, datetime
-    from unittest.mock import AsyncMock
 
     from a13n_harness_ui.storage.contracts import ThreadExecution
 
@@ -1784,19 +1551,18 @@ async def test_root_completion_after_restart_uses_execution_state(tmp_path, monk
         assert await app._store.threads.save_execution(thread.thread_id, initial.model_copy(update={"status": status}))
 
     async with open_harness_ui_app(settings, configuration_path=path) as successor:
-        successor._tool_executions.deliver = None
+        successor._inbox.stop()
         capture = AsyncMock(wraps=successor._root_runs._executor.capture)
         monkeypatch.setattr(successor._root_runs._executor, "capture", capture)
         repo = successor._store.tool_executions
         await repo.save(execution(thread_id=thread.thread_id))
-        accepted = await successor._deliver_tool_completion(thread.thread_id, "Completed", ("exec-a",))
-        assert accepted is (status == "completed")
-        if accepted:
+        await successor._inbox._dispatch(thread.thread_id)
+        if status == "completed":
             active = await successor._root_runs.active(thread.thread_id)
             if active is not None:
                 await successor.wait_root_operation(active.receipt.receipt_id)
         else:
-            assert not await successor._deliver_tool_completion(thread.thread_id, "Completed", ("exec-a",))
+            await successor._inbox._dispatch(thread.thread_id)
             capture.assert_not_awaited()
             assert calls == []
             assert (await repo.get(thread.thread_id, "exec-a")).result == "same result"
@@ -1817,7 +1583,11 @@ async def test_user_stop_of_released_tool_delivers_cancelled_parent_input(tmp_pa
         for message in messages:
             if isinstance(message, ModelRequest):
                 for item in request_input_content(message):
-                    if (item.metadata.model_extra or {}).get("a13n.steering-source") == "tool_execution":
+                    if (
+                        (origin := input_source(item.metadata)) is not None
+                        and origin.kind == "result"
+                        and origin.execution.kind == "tool"
+                    ):
                         inputs.append(str(item.value))
                         notified.set()
         yield "Ready"

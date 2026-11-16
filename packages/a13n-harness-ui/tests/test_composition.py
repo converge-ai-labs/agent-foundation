@@ -1978,4 +1978,4 @@ async def test_nested_declared_rosters_keep_delegation_in_definitions_and_child_
     assert any(isinstance(cap, SubagentCapability) for cap in definition.capabilities)
     (ui_tools,) = [cap for cap in definition.capabilities if isinstance(cap, SubagentTools)]
     assert ui_tools.has_children
-    assert set(ui_tools.get_toolset().tools) == {"send_parent_message"}
+    assert not ui_tools.get_toolset().tools

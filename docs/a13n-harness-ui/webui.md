@@ -183,7 +183,7 @@ Use **Steer** to correct direction while the Agent is working. By default, immed
 
 Acceptance means the guidance was queued. Unsupported tools use best-effort delivery at a normal execution boundary. Startup or recovery can wait up to five seconds for native steering readiness; a timeout or completed Run rejects the request. Root and child steering share `input.steering_mode`; choose `queued` in [configuration](configuration.md#built-in-tools-and-subagents) to wait for the next safe boundary.
 
-Open **Background work**, then **View all** under **Tool calls**, to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
+Open **Background work**, then **View all** under **Tool calls**, to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `execution_result` or `execution_wait`.
 
 Generic [automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in. Process-backed Shell yields after its configured foreground wait in either mode; immediate steering can release that wait sooner. Shell handles also have their own process view.
 
@@ -346,7 +346,7 @@ A worker is a root conversation with human controls, not a Subagent. **Managed b
 
 Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Sidekick defaults do not control Coordinator identity or automatic follow-up.
 
-Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
+With automatic follow-up enabled, first direct worker assignment and owned work finishing, failing, being cancelled or waiting for input save a notice in the Coordinator's durable inbox. The inbox steers active work, starts an idle Run, and holds input while paused, preparing or waiting on a decision. The Coordinator inspects saved results before accepting completion. Closing the browser leaves work running; stopping the Coordinator does not stop workers. Decision deadlines still apply.
 
 ## Agent collaboration and Sidekick
 
@@ -360,7 +360,7 @@ Use inline conversation links from collaboration tools to inspect other root wor
 
 These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
 
-An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the new Thread's Model. `send_message(to=thread_id, message=...)` uses the target Thread's configured Model, with no override. Messages persist in its inbox: active work receives steering, idle Threads start a Run, and paused, preparing or decision-blocked Threads hold input. The receipt `{accepted: true, input_id}` means persisted, not read or processed. Self, memory and child Thread targets are rejected; use an execution ID to message a child. Failures include a code such as `thread_access_denied`, `thread_recursive_message`, `thread_message_empty`, `thread_missing` or `thread_archived`. Inspect failed or uncertain sends with `get_thread` before retrying. Messages cannot grant human approval. Do not create acknowledgement loops or pass a task back to its requester.
 
 Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 

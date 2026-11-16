@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from a13n_harness import input_source
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.configuration import load_harness_ui_configuration
@@ -15,10 +16,12 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import RootControlResult, RootOperationStatus
 from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
 from anyio import Event, fail_after
-from pydantic_ai.messages import TextContent, ToolReturnPart
+from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from .test_app import _CompletedReconstructor, _settings, _write_configuration
+from .test_thread_inbox_dispatch import drained
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -43,14 +46,19 @@ def configuration(tmp_path: Path) -> Path:
 
 
 def controller(app) -> ThreadToolController:
-    return ThreadToolController(
+    tools = ThreadToolController(
         threads=app._store.threads,
         projections=app._projections,
         root_runs=app._root_runs,
         create_thread=app.create_thread,
         configurations=app._configurations,
         inspect_configuration=app.inspect_thread_configuration,
+        voice=app._voice,
+        bot=app._bot,
+        subagent_operator=app._subagent_operator,
     )
+    tools.inbox = app._inbox
+    return tools
 
 
 async def test_resource_discovery_is_filtered_paginated_and_credential_free(tmp_path: Path) -> None:
@@ -123,67 +131,49 @@ async def test_invalid_model_override_has_no_creation_or_admission_effect(tmp_pa
         created = await capability.create_thread(ctx, prompt="Work", model_id=model_id)
         assert created["ok"] is False and created["error"]["code"] == "thread_create_failed"
         assert (await app.list_threads()).total == 2
-        started = await capability.run_thread(ctx, thread_id=target.thread_id, prompt="Work", model_id=model_id)
-        assert started["ok"] is False and started["error"]["code"] == "thread_run_failed"
         assert await app._root_runs.active(target.thread_id) is None
 
 
-async def test_rejected_message_never_starts_a_replacement_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_rejected_message_never_starts_a_replacement_run(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
     root = configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
-        target = await app.create_thread()
         source = await app.create_thread(title="Requester")
-        calls = []
-
-        async def active(thread_id):
-            return SimpleNamespace(receipt=SimpleNamespace(receipt_id="receipt-captured"))
-
-        async def steer(*, receipt_id, message):
-            calls.append((receipt_id, message))
-            return RootControlResult(receipt_id=receipt_id, accepted=False)
-
-        async def submit(**kwargs):
-            pytest.fail("A rejected steer must not start another Run")
-
-        monkeypatch.setattr(app._root_runs, "active", active)
+        target = await app.create_thread()
+        app._inbox.stop()
+        monkeypatch.setattr(app._inbox, "condition", AsyncMock(return_value="active"))
+        monkeypatch.setattr(
+            app._root_runs,
+            "active",
+            AsyncMock(return_value=SimpleNamespace(receipt=SimpleNamespace(receipt_id="captured"))),
+        )
+        steer = AsyncMock(return_value=RootControlResult(receipt_id="captured", accepted=False))
+        submit = AsyncMock()
         monkeypatch.setattr(app._root_runs, "steer", steer)
         monkeypatch.setattr(app._root_runs, "submit_prompt", submit)
-        result = await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id=target.thread_id, message="Report"
+        receipt = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)), target.thread_id, "Report"
         )
-        assert result == {
-            "ok": False,
-            "mode": "steer",
-            "receipt_id": "receipt-captured",
-            "accepted": False,
-            "enqueue_id": None,
-        }
-        assert len(calls) == 1
-        receipt_id, parts = calls[0]
-        assert receipt_id == "receipt-captured"
-        assert parts == (
-            TextContent(
-                f"Message from Thread {source.thread_id}:",
-                metadata={"display": False, "source_id": "a13n-harness-ui.thread-message-context"},
-            ),
-            TextContent(
-                "Report",
-                metadata={
-                    "harness_ui": {
-                        "thread_message": {"source_thread_id": source.thread_id, "source_thread_title": "Requester"}
-                    }
-                },
-            ),
-        )
+        assert set(receipt) == {"accepted", "input_id"} and receipt["accepted"]
+        await app._inbox._dispatch(target.thread_id)
+        submit.assert_not_awaited()
+        assert (await app._store.thread_inbox.pending(target.thread_id))[0].envelope.id == receipt["input_id"]
+        item = steer.call_args.kwargs["message"][0]
+        assert input_source(item.metadata).sender.thread_id == source.thread_id
+        assert "Report" in item.value
 
 
-async def test_message_tools_reject_self_and_empty_input_before_admission() -> None:
-    capability = ThreadCollaborationCapability(controller=None, source_thread_id="thread-source")
-    ctx = SimpleNamespace(deps=SimpleNamespace(thread_id="thread-source"))
-    assert (await capability.send_thread_message(ctx, "thread-source", "Report"))["error"][
-        "code"
-    ] == "thread_recursive_message"
-    assert (await capability.send_thread_message(ctx, "thread-other", " "))["error"]["code"] == "thread_message_empty"
+async def test_message_tools_reject_self_and_empty_input_before_admission(tmp_path):
+    root = configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+        source = await app.create_thread()
+        tools = controller(app)
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id))
+        with pytest.raises(ToolFailed, match="thread_recursive_message"):
+            await tools.send(ctx, source.thread_id, "Report")
+        with pytest.raises(ToolFailed, match="thread_message_empty"):
+            await tools.send(ctx, "thread_other", " ")
 
 
 async def test_real_model_tools_discover_delegate_cross_project_and_report_to_idle_root(
@@ -239,16 +229,16 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
             elif step == 0:
                 assert origin_id in str(messages)
                 assert "Requesting Project: project-main" in str(messages)
-                assert f"send_thread_message(thread_id={origin_id!r}" in str(messages)
+                assert f"send_message(to={origin_id!r}" in str(messages)
                 assert "For clarification, decisions or blockers" in str(messages)
                 assert "When finished" in str(messages)
                 await origin_idle.wait()
                 yield {
                     0: DeltaToolCall(
-                        name="send_thread_message",
+                        name="send_message",
                         json_args=json.dumps(
                             {
-                                "thread_id": origin_id,
+                                "to": origin_id,
                                 "message": "worker findings",
                             }
                         ),
@@ -276,10 +266,9 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
                 await app.wait_root_operation(child["receipt"]["receipt_id"])
             ).status is RootOperationStatus.completed
             assert child["thread_id"] in results, {"steps": steps, "results": results, "child": child}
-            report = results[child["thread_id"]]["send_thread_message"]
-            assert report["ok"] and report["mode"] == "run", report
-            delivered = await app.wait_root_operation(report["receipt"]["receipt_id"])
-            assert delivered.status is RootOperationStatus.completed, delivered.model_dump_json()
+            report = results[child["thread_id"]]["send_message"]
+            assert report["accepted"] and report["input_id"], report
+            await drained(app, origin_id)
             assert reported.is_set()
         own = results[origin_id]["get_thread"]
         # The native output policy can wrap this inspection as guidance grows.
@@ -292,7 +281,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         worker = (await app.get_thread(child["thread_id"])).thread
         assert worker.parent_thread_id is None and worker.configuration.project_id == "project-other"
         transcript = await app.get_thread_transcript(thread_id=origin_id)
-        assert "Message from Thread" in transcript.model_dump_json()
+        assert "Message · from thread" in transcript.model_dump_json()
         assert "Integrated worker findings" in transcript.model_dump_json()
         for target, sender, text, template in (
             (worker.thread_id, origin_id, "Investigate", "Task from Thread"),
@@ -300,12 +289,13 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         ):
             history = await app.get_thread_transcript(thread_id=target)
             parts = [part for entry in history.entries for part in entry.parts]
-            context = next(part for part in parts if (part.text or "").startswith(template))
-            assert context.metadata.display is False
-            body = next(part for part in parts if part.text == text)
-            attribution = body.metadata.model_dump()["harness_ui"]["thread_message"]
-            assert attribution["source_thread_id"] == sender
-            assert attribution["source_thread_title"] == ("Release review" if sender == origin_id else "Investigate")
+            if target == worker.thread_id:
+                context = next(part for part in parts if (part.text or "").startswith(template))
+                assert context.metadata.display is False
+            body = next(part for part in parts if text in (part.text or "") and input_source(part.metadata) is not None)
+            attribution = input_source(body.metadata)
+            assert attribution.sender.thread_id == sender
+            assert attribution.sender.name == ("Release review" if sender == origin_id else "Investigate")
             assert body.metadata.display is True
         assert (await app.get_thread(worker.thread_id)).thread.excerpt.first_input == "Investigate"
     # Provenance and visibility survive re-opening the stored conversation.
@@ -313,7 +303,7 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         history = await app.get_thread_transcript(thread_id=worker.thread_id)
         parts = [part for entry in history.entries for part in entry.parts]
         body = next(part for part in parts if part.text == "Investigate")
-        assert body.metadata.model_dump()["harness_ui"]["thread_message"]["source_thread_id"] == origin_id
+        assert input_source(body.metadata).sender.thread_id == origin_id
         assert (
             next(part for part in parts if (part.text or "").startswith("Task from Thread")).metadata.display is False
         )
@@ -401,34 +391,17 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
         assert captured.agent.model_id == expected_model
         saved = (await app.get_thread(result["thread_id"])).thread.configuration
         assert saved.default_model_id == sidekick.get("model")
-        # Host defaults are persistent; explicit overrides never change the saved default.
-        again = await controller(app).run_thread(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], prompt="Follow-up"
+        # Inbox messages use the target's saved Model, with no model override parameter.
+        message = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+            to=result["thread_id"],
+            message="Follow-up",
         )
-        assert (await app.wait_root_operation(again["receipt_id"])).status is RootOperationStatus.completed
-        following = await app.inspect_operation_configuration(again["receipt_id"])
-        assert following.agent.model_id == expected_model
-        message = await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="Continue via message"
-        )
-        receipt = message["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
-        inspected = await controller(app).get_thread(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], history_cursor=None, history_limit=1
-        )
-        assert inspected["configuration"]["next_model_id"] == expected_model
-        assert inspected["configuration"]["captured"]["agent"]["model_id"] == expected_model
+        assert message["accepted"]
+        await drained(app, result["thread_id"])
+        inspected = await app.inspect_thread_configuration(result["thread_id"])
+        assert inspected.next_model_id == expected_model
         override = "model-secondary" if expected_model == "model-primary" else "model-primary"
-        explicit = await controller(app).run_thread(
-            source_thread_id=source.thread_id,
-            thread_id=result["thread_id"],
-            prompt="One-off override",
-            model_id=override,
-        )
-        assert (await app.wait_root_operation(explicit["receipt_id"])).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(explicit["receipt_id"])).agent.model_id == override
-        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
         # Explicit creation Agent and Model win independently; the configured default remains durable.
         explicit_create = await controller(app).create_thread(
             source_thread_id=source.thread_id,
@@ -450,20 +423,23 @@ async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
     document["webui"] = {"sidekick": None}
     root.write_text(yaml.safe_dump(document))
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
-        resumed = await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="After restart"
+        resumed = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+            to=result["thread_id"],
+            message="After restart",
         )
-        receipt = resumed["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        # A message selects no Model, so it keeps the last explicit override rather than the saved default.
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == override
+        assert resumed["accepted"]
+        await drained(app, result["thread_id"])
         assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
-        ordinary = await controller(app).send_thread_message(
-            source_thread_id=result["thread_id"], thread_id=source.thread_id, message="Return report"
+        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
+        ordinary = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=result["thread_id"])),
+            to=source.thread_id,
+            message="Return report",
         )
-        receipt = ordinary["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == "model-primary"
+        assert ordinary["accepted"]
+        await drained(app, source.thread_id)
+        assert (await app.inspect_thread_configuration(source.thread_id)).next_model_id == "model-primary"
 
 
 @pytest.mark.parametrize("configured", [False, True])
@@ -543,7 +519,7 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     assert "requester is the Coordinator" in str(messages)
                 if step == 0:
                     assert "Requesting Project: project-main" in str(messages)
-                    assert f"send_thread_message(thread_id={requester_id!r}" in str(messages)
+                    assert f"send_message(to={requester_id!r}" in str(messages)
                     target, text, call = requester_id, "Which format should I use?", "question"
                 elif step == 2:
                     assert "Use Markdown." in str(messages)
@@ -554,8 +530,8 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     return
             yield {
                 0: DeltaToolCall(
-                    name="send_thread_message",
-                    json_args=json.dumps({"thread_id": target, "message": text}),
+                    name="send_message",
+                    json_args=json.dumps({"to": target, "message": text}),
                     tool_call_id=call,
                 )
             }
@@ -584,17 +560,11 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                 await app.wait_root_operation(worker["receipt"]["receipt_id"])
             ).status is RootOperationStatus.completed
             worker_idle.set()
-            assert (
-                await app.wait_root_operation(returned["question"]["receipt"]["receipt_id"])
-            ).status is RootOperationStatus.completed
+            await drained(app, requester_id)
             requester_idle.set()
-            assert (
-                await app.wait_root_operation(returned["answer"]["receipt"]["receipt_id"])
-            ).status is RootOperationStatus.completed
-            assert (
-                await app.wait_root_operation(returned["report"]["receipt"]["receipt_id"])
-            ).status is RootOperationStatus.completed
-        assert all(result["ok"] for result in returned.values())
+            await drained(app, worker_id)
+            await drained(app, requester_id)
+        assert all(result["accepted"] for result in returned.values())
         requester_history = (await app.get_thread_transcript(thread_id=requester_id)).model_dump_json()
         worker_history = (await app.get_thread_transcript(thread_id=worker_id)).model_dump_json()
         assert "Which format should I use?" in requester_history and "Integrated report" in requester_history
@@ -638,74 +608,43 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
         assert f"Requesting Project: {project_id or 'No Project'}" in context.content
         assert "Requesting Project: project-main" not in context.content
         assert body.content == "Independent work"
-        assert body.metadata["harness_ui"]["thread_message"]["source_thread_id"] == source.thread_id
+        assert input_source(body.metadata).sender.thread_id == source.thread_id
 
 
-@pytest.mark.parametrize("delivery", ["run", "send", "steer"])
-async def test_follow_up_input_preserves_attribution_through_execution_and_history(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delivery: str
-) -> None:
+@pytest.mark.parametrize("active", [False, True])
+async def test_follow_up_input_preserves_attribution_through_execution_and_history(tmp_path, monkeypatch, active):
     root = configuration(tmp_path)
     started, release = Event(), Event()
 
     async def resolve(self, context, model_id):
         async def model(messages, info):
             if "Focus here" in str(messages):
-                assert "Message from Thread" in str(messages)
                 yield "Applied the feedback"
             else:
-                yield "Working"
                 started.set()
                 await release.wait()
+                yield "Working"
 
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread(title="Review source")
         target = await app.create_thread()
-        tools = controller(app)
-        with fail_after(15):
-            if delivery == "run":
-                receipt = await tools.run_thread(
-                    source_thread_id=source.thread_id, thread_id=target.thread_id, prompt="Focus here"
-                )
-                receipt_id = receipt["receipt_id"]
-            else:
-                receipt = await app.submit_thread(thread_id=target.thread_id, prompt="Start work")
-                receipt_id = receipt.receipt_id
+        if active:
+            await app.submit_thread(thread_id=target.thread_id, prompt="Start work")
+            with fail_after(10):
                 await started.wait()
-                send = tools.send_thread_message if delivery == "send" else tools.steer_thread
-                result = await send(source_thread_id=source.thread_id, thread_id=target.thread_id, message="Focus here")
-                assert result["accepted"] is True
-                assert result["receipt_id"] == receipt_id
-                release.set()
-            operation = await app.wait_root_operation(receipt_id)
-            assert operation.status is RootOperationStatus.completed, operation.model_dump_json()
+        receipt = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)), target.thread_id, "Focus here"
+        )
+        assert receipt["accepted"]
+        release.set()
+        await drained(app, target.thread_id)
         history = await app.get_thread_transcript(thread_id=target.thread_id)
         parts = [part for entry in history.entries for part in entry.parts]
-        context = next(part for part in parts if (part.text or "").startswith("Message from Thread"))
-        assert context.metadata.display is False
-        body = next(part for part in parts if part.text == "Focus here")
-        assert body.metadata.model_dump()["harness_ui"]["thread_message"] == {
-            "source_thread_id": source.thread_id,
-            "source_thread_title": "Review source",
-        }
-        assert body.metadata.display is True
+        body = next(part for part in parts if "Focus here" in (part.text or ""))
+        origin = input_source(body.metadata)
+        assert origin.kind == "agent_message" and origin.sender.thread_id == source.thread_id
+        assert origin.sender.name == "Review source" and body.metadata.display
         assert any(part.text == "Applied the feedback" for part in parts)
-
-
-@pytest.mark.parametrize("action", ["run", "steer"])
-async def test_hidden_context_does_not_admit_empty_cross_thread_input(tmp_path: Path, action: str) -> None:
-    root = configuration(tmp_path)
-    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
-        source = await app.create_thread()
-        target = await app.create_thread()
-        tools = controller(app)
-        with pytest.raises(ThreadError, match="non-empty"):
-            if action == "run":
-                await tools.run_thread(source_thread_id=source.thread_id, thread_id=target.thread_id, prompt=" \n")
-            else:
-                await tools.steer_thread(source_thread_id=source.thread_id, thread_id=target.thread_id, message=" \n")
-        assert await app._root_runs.active(target.thread_id) is None

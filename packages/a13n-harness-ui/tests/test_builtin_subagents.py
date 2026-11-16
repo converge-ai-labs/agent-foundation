@@ -339,6 +339,14 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
                 yield "Child completed."
                 return
             calls += 1
+            if calls > 1:
+                latest = next(
+                    part
+                    for message in reversed(messages)
+                    for part in reversed(message.parts)
+                    if isinstance(part, ToolReturnPart)
+                )
+                assert latest.outcome == "success", latest.content
             if calls == 1:
                 yield {
                     0: DeltaToolCall(
@@ -350,8 +358,19 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
             elif calls in {2, 4}:
                 yield {
                     0: DeltaToolCall(
-                        name="wait_subagent",
-                        json_args=json.dumps({"timeout_seconds": 90 if calls == 2 else 1000}),
+                        name="execution_wait",
+                        json_args=json.dumps(
+                            {
+                                "execution_id": next(
+                                    part.content["execution_id"]
+                                    for message in reversed(messages)
+                                    for part in message.parts
+                                    if isinstance(part, ToolReturnPart)
+                                    and part.tool_name in {"delegate", "send_message"}
+                                ),
+                                "timeout_seconds": 10,
+                            }
+                        ),
                         tool_call_id=f"wait-{calls}",
                     )
                 }
@@ -376,8 +395,8 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
                 assert isinstance(value, dict), value
                 yield {
                     0: DeltaToolCall(
-                        name="resume_subagent",
-                        json_args=json.dumps({"execution_id": value["execution_id"], "prompt": "Follow-up task"}),
+                        name="send_message",
+                        json_args=json.dumps({"to": value["execution_id"], "message": "Follow-up task"}),
                         tool_call_id="resume-1",
                     )
                 }
@@ -392,9 +411,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         configuration_path=path,
         host_mode="webui" if inject_apps else "local",
     ) as app:
-        # The exact usage counts cover explicit waits; an automatic result copy
-        # may also arrive after wait_subagent, depending on timing.
-        app._tool_executions.deliver_subagent = None
+        # Keep these usage counts scoped to explicit waits, without automatic
+        # result copies adding parent requests through the inbox.
+        app._inbox.stop()
         selected_root = tmp_path / "run-only"
         selected_root.mkdir()
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
@@ -429,7 +448,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
 
 
 @pytest.mark.parametrize(
-    "tool_name", ["subagent_info", "wait_subagent", "steer_subagent", "cancel_subagent", "resume_subagent"]
+    "tool_name", ["execution_info", "execution_wait", "execution_cancel", "execution_result", "send_message"]
 )
 @pytest.mark.anyio
 async def test_missing_subagent_execution_is_a_tool_failure_not_a_parent_run_failure(
@@ -453,10 +472,8 @@ async def test_missing_subagent_execution_is_a_tool_failure_not_a_parent_run_fai
             calls += 1
             if calls == 1:
                 arguments = {"execution_id": "execution-missing"}
-                if tool_name == "steer_subagent":
-                    arguments["message"] = "Continue"
-                elif tool_name == "resume_subagent":
-                    arguments["prompt"] = "Continue"
+                if tool_name == "send_message":
+                    arguments = {"to": "execution-missing", "message": "Continue"}
                 yield {0: DeltaToolCall(name=tool_name, json_args=json.dumps(arguments), tool_call_id="missing-1")}
             else:
                 returned = next(

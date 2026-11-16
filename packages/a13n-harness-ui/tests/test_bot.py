@@ -235,7 +235,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             if thread_id != BOT_THREAD_ID:
                 assert "publish_bot_message" not in names
                 assert not any(tool.name == "finish_silently" for tool in info.output_tools)
-                assert "kind='report'" in str(messages)
+                assert "send_message(to='bot'" in str(messages)
                 assert "saved final response" in str(messages)
                 working_runs += 1
                 yield "analysis complete" if working_runs == 1 else "follow-up complete"
@@ -263,7 +263,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             plan = {
                 0: ("create_thread", {"prompt": "Investigate the objective and save findings", "title": "Working"}),
                 2: ("get_thread", {"thread_id": target_id}),
-                3: ("send_thread_message", {"thread_id": target_id, "message": "Continue the verified result"}),
+                3: ("send_message", {"to": target_id, "message": "Continue the verified result"}),
                 4: ("publish_bot_message", {"text": "Verified the saved result and continued the working Thread."}),
             }
             call = plan.get(bot_steps)

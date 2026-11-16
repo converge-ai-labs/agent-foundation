@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
@@ -14,6 +15,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from .test_app import _settings
 from .test_thread_collaboration import configuration, controller
+from .test_thread_inbox_dispatch import drained
 
 pytestmark = pytest.mark.anyio
 
@@ -94,13 +96,13 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
         saved = await app.thread_work(thread_id=root.thread_id)
         assert saved.source == "saved" and saved.tasks.total == 1 and saved.notes.total == 1
         assert saved.tasks.page is None and saved.notes.page is None
-        report = await controller(app).send_thread_message(
-            source_thread_id=sidekick.thread_id,
-            thread_id=root.thread_id,
+        report = await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=sidekick.thread_id)),
+            to=root.thread_id,
             message="Sidekick findings",
         )
         try:
-            assert report["ok"] and report["mode"] == "run"
+            assert set(report) == {"accepted", "input_id"} and report["accepted"]
             with fail_after(10):
                 await reply_entered.wait()
             restored = await app.thread_work(thread_id=root.thread_id, include=("tasks",))
@@ -109,7 +111,7 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
             assert restored.tasks.page is not None and restored.tasks.page.tasks[0].subject == "Retained"
         finally:
             allow_reply.set()
-        assert (await app.wait_root_operation(report["receipt"]["receipt_id"])).status is RootOperationStatus.completed
+        await drained(app, root.thread_id)
         final = await app.thread_work(thread_id=root.thread_id)
         assert final.source == "saved" and final.notes.total == 0 and final.tasks.total == 1
     async with open_harness_ui_app(settings, configuration_path=path, instrumentation=None) as restarted:

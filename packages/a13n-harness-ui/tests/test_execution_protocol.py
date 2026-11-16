@@ -58,8 +58,14 @@ async def test_child_question_competing_response_history_and_restart(
         }
         if "delegate" not in returned:
             name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Bounded task"}
-        elif "wait_subagent" not in returned:
-            name, args = "wait_subagent", {"timeout_seconds": 10}
+        elif "execution_wait" not in returned:
+            child = next(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+            )
+            name, args = "execution_wait", {"execution_id": child["execution_id"], "timeout_seconds": 10}
         elif "ask_user_question" not in returned:
             name, args = (
                 "ask_user_question",
@@ -247,8 +253,14 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
             return
         if "delegate" not in returned:
             name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Inspect output"}
-        elif "wait_subagent" not in returned:
-            name, args = "wait_subagent", {"timeout_seconds": 40}
+        elif "execution_wait" not in returned:
+            child = next(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+            )
+            name, args = "execution_wait", {"execution_id": child["execution_id"], "timeout_seconds": 10}
         else:
             yield "Root complete."
             return

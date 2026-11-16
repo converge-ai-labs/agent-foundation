@@ -21,14 +21,6 @@ class _Controller:
         self.calls.append(("get", kwargs))
         return {"thread": {"thread_id": kwargs["thread_id"]}, "transcript": {"entries": []}}
 
-    async def run_thread(self, **kwargs: object) -> dict[str, Any]:
-        self.calls.append(("run", kwargs))
-        return {"receipt_id": "receipt-1"}
-
-    async def steer_thread(self, **kwargs: object) -> dict[str, Any]:
-        self.calls.append(("steer", kwargs))
-        return {"accepted": True, "receipt_id": "receipt-1", "enqueue_id": "enqueue-1"}
-
 
 async def test_thread_capability_uses_only_detached_controller_and_preserves_source_scope() -> None:
     controller: Any = _Controller()
@@ -41,16 +33,14 @@ async def test_thread_capability_uses_only_detached_controller_and_preserves_sou
     listed = await capability.list_threads(context, query="test", cursor=None, limit=5)
     assert listed == {"ok": True, "threads": [], "total": 0, "next_cursor": None}
 
-    recursive = await capability.run_thread(context, thread_id="thread-source", prompt="again")
-    assert recursive["ok"] is False
-    assert recursive["error"]["code"] == "thread_recursive_run"
-
-    run = await capability.run_thread(context, thread_id="thread-target", prompt="work")
-    assert run == {"ok": True, "receipt": {"receipt_id": "receipt-1"}}
-    steer = await capability.steer_thread(context, thread_id="thread-target", message="focus")
-    assert steer["ok"] is True
-    assert steer["receipt_id"] == "receipt-1"
-    assert [name for name, _kwargs in controller.calls] == ["list", "run", "steer"]
+    detail = await capability.get_thread(context, thread_id="thread-target")
+    assert detail == {
+        "ok": True,
+        "thread": {"thread_id": "thread-target"},
+        "transcript": {"entries": []},
+    }
+    assert [name for name, _kwargs in controller.calls] == ["list", "get"]
+    assert all(kwargs["source_thread_id"] == "thread-source" for _, kwargs in controller.calls)
 
     toolset = capability.get_toolset()
     assert toolset.id == "a13n-a13n-harness-ui-thread-tools"
@@ -68,7 +58,7 @@ async def test_thread_capability_rejects_reuse_in_a_child_scope() -> None:
     tools = capability.get_toolset().tools
     assert "create_thread" in tools
     assert "project_id" in tools["create_thread"].function_schema.json_schema.get("properties", {})
-    assert {"list_projects", "get_project", "list_agents", "list_models", "send_thread_message"} <= tools.keys()
+    assert {"list_projects", "get_project", "list_agents", "list_models"} <= tools.keys()
 
 
 async def test_thread_tools_are_built_once_per_capability_without_sharing_root_bindings(

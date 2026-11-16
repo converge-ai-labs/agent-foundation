@@ -343,9 +343,9 @@ Run cleanup releases borrowers; the final release detaches the connection and pr
 
 ## Thread Tools and Project Authority
 
-Model-visible root Thread tools can list and inspect Threads, start or continue another root Thread, and steer an active Run. `run_thread` rejects a child target, defaults to the root target's sticky configuration, and accepts no arbitrary local root paths from model arguments. It cannot bypass a selected deferred request set. Async child continuation uses the linked `resume_subagent` path so the current parent roster and delegation ceilings remain available. Changing Project requires an explicit authorized Thread configuration operation through the App boundary.
+Model-visible Thread tools list, inspect and create roots. `send_message(to=thread_id, message=...)` routes through the Host MessageRouter and the common Thread inbox under the [collaboration scope](05-runtime-subagents-and-surfaces.md#host-only-thread-collaboration-capability). It rejects child destinations and self-messages, preserves active Run captures, and uses the target's sticky configuration for a new Run. It accepts no Model override, Project definition, arbitrary roots, credentials or tool grants. Pending decisions and paused execution hold the input; a message cannot bypass explicit decision handling.
 
-`steer_thread` resolves and targets one exact process-local root receipt and preserves that Run's captured composition. Same-active-Thread recursive run or steer calls are rejected.
+Async child continuation uses `send_message(to=execution_id, message=...)` under the current parent roster and delegation ceilings. Changing Project requires an explicit authorized Thread configuration operation through the App boundary.
 
 ## Failure Semantics
 

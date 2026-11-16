@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -14,6 +15,7 @@ from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigura
 from a13n_harness_ui.surfaces import RootOperationStatus
 from anyio import CancelScope, Event, create_task_group, fail_after, sleep
 from pydantic import ValidationError
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _settings, _write_configuration
@@ -80,11 +82,14 @@ async def test_live_thread_uses_restricted_executor_and_retains_history(tmp_path
 
     async def model(messages, info):
         tools = {tool.name for tool in info.function_tools}
-        assert {"note_write", "task_create", "send_thread_message", "list_projects"} <= tools
+        assert {"note_write", "task_create", "send_message", "list_projects"} <= tools
         assert not tools & {"shell_exec", "run_code", "delegate", "web_search"}
         assert ("view" in tools) is files_enabled
         assert "/harness-ui-operations/" not in info.instructions
         assert "configuration inspection exposes" in info.instructions
+        assert "Messages to Live persist in its inbox even without an active call" in str(messages) + (
+            info.instructions or ""
+        )
         observed.append(messages)
         yield "Completed the delegated task."
 
@@ -189,14 +194,12 @@ async def test_voice_ownership_media_gate_receipts_and_transcript_restart(tmp_pa
             assert (await voice.status(owner_id="tab")).answer_sdp == fake.sessions[0].answer_sdp
             assert (await voice.begin(owner_id="tab", start_id="one", offer_sdp="different")).start_id == first.start_id
             assert len(fake.calls) == 1
-            assert (await voice.receive(source_thread_id="source", message="offline", kind="report"))[
-                "mode"
-            ] == "skipped"
+            assert (await voice.receive(source_thread_id="source", message="offline"))["accepted"]
             await voice.media_connected(owner_id="tab", start_id="one")
             await next_voice(queue, "active")
-            result = await voice.receive(source_thread_id="source", message="Done", kind="report")
-            assert result["mode"] == "voice_context"
-            assert fake.sessions[0].speech == ["Report from Thread source:\nDone"]
+            result = await voice.receive(source_thread_id="source", message="Done")
+            assert result["accepted"] and result["input_id"]
+            assert fake.sessions[0].speech == []  # Only settled executor output can speak.
             await fake.sessions[0].incoming.put(Transcript("user", "Remember this", True))
             with fail_after(5):
                 while not (await voice.status()).transcript:
@@ -210,7 +213,7 @@ async def test_voice_ownership_media_gate_receipts_and_transcript_restart(tmp_pa
             await next_voice(queue, "connecting")
             assert fake.calls[1][1]["initial_items"][0].text == "Remember this"
             assert (await voice.status()).thread_id == first.thread_id
-        assert (await voice.receive(source_thread_id="source", message="offline", kind="task"))["mode"] == "skipped"
+        assert (await voice.receive(source_thread_id="source", message="offline"))["accepted"]
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
         voice._model = fake.build
@@ -301,9 +304,11 @@ async def test_live_callbacks_allow_coordinator_reports_without_broadening_read_
         lead = await create_coordinator(app)
         worker = await app.create_thread(coordinator_thread_id=lead.thread_id)
         ordinary = await app.create_thread()
-        assert (await tools.send_thread_message(source_thread_id=lead.thread_id, thread_id="live", message="Before"))[
-            "mode"
-        ] == "skipped"
+        assert (
+            await tools.send(
+                SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id)), to="live", message="Before"
+            )
+        )["accepted"]
         async with voice.subscribe("tab") as queue:
             started = await voice.begin(owner_id="tab", start_id="one", offer_sdp="v=0")
             await next_voice(queue, "connecting")
@@ -311,18 +316,20 @@ async def test_live_callbacks_allow_coordinator_reports_without_broadening_read_
             await next_voice(queue, "active")
             for target in ("live", started.thread_id):
                 for source in (lead, ordinary):
-                    result = await tools.send_thread_message(
-                        source_thread_id=source.thread_id, thread_id=target, message="Done", kind="report"
+                    result = await tools.send(
+                        SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)), to=target, message="Done"
                     )
-                    assert result["mode"] == "voice_context"
-                with pytest.raises(ThreadError, match="independent"):
-                    await tools.send_thread_message(
-                        source_thread_id=worker.thread_id, thread_id=target, message="Forbidden", kind="report"
+                    assert result["accepted"] and result["input_id"]
+                with pytest.raises(ToolFailed, match="independent"):
+                    await tools.send(
+                        SimpleNamespace(deps=SimpleNamespace(thread_id=worker.thread_id)),
+                        to=target,
+                        message="Forbidden",
                     )
             with pytest.raises(ThreadError, match="not accessible"):
                 await tools._require_target(lead.thread_id, started.thread_id)
             assert await app._root_runs.latest(started.thread_id) is None
-        assert len(fake.sessions[0].speech) == 4
+        assert not fake.sessions[0].speech
 
 
 @pytest.mark.anyio
@@ -401,36 +408,22 @@ async def test_cancelled_start_does_not_leave_unowned_call(tmp_path, monkeypatch
 
 
 @pytest.mark.anyio
-async def test_stop_during_capture_rejects_new_task_before_registration(tmp_path, monkeypatch):
+async def test_stop_keeps_accepted_executor_input(tmp_path):
     root = live_configuration(tmp_path)
     fake = FakeVoiceModel()
-    captured, release = Event(), Event()
-    results = []
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
         voice._model = fake.build
-        original = app._root_runs._executor.capture
-
-        async def capture(*args, **kwargs):
-            value = await original(*args, **kwargs)
-            captured.set()
-            await release.wait()
-            return value
-
-        monkeypatch.setattr(app._root_runs._executor, "capture", capture)
+        app._inbox.stop()
         async with voice.subscribe("tab") as queue:
-            await voice.begin(owner_id="tab", start_id="one", offer_sdp="v=0")
+            started = await voice.begin(owner_id="tab", start_id="one", offer_sdp="v=0")
             await next_voice(queue, "connecting")
             await voice.media_connected(owner_id="tab", start_id="one")
             await next_voice(queue, "active")
-
-            async def receive():
-                results.append(await voice.receive(source_thread_id="source", message="Do work", kind="task"))
-
-            async with create_task_group() as group:
-                group.start_soon(receive)
-                with fail_after(5):
-                    await captured.wait()
-                await voice.stop()
-                release.set()
-            assert results == [{"ok": False, "mode": "skipped", "reason": "live_offline"}]
+            result = await voice.receive(source_thread_id="source", message="Do work")
+            assert result["accepted"]
+            await voice.stop()
+            pending = await app._store.thread_inbox.pending(started.thread_id)
+            assert [row.envelope.id for row in pending] == [result["input_id"]]
+            assert pending[0].envelope.kind == "agent_message"
+            assert not fake.sessions[0].speech

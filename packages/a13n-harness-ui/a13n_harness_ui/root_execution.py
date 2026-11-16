@@ -28,6 +28,7 @@ from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
 from a13n_harness.capabilities.steering import envelope_ids
 from a13n_harness.context import AgentContext
+from a13n_harness.envelopes import MessageRouter
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
 from a13n_harness.observation import record_span_metadata
@@ -182,6 +183,7 @@ class RootRunExecutor:
         self._tool_executions = tool_executions
         self._store = store
         self.inbox: ThreadInbox | None = None
+        self.message_router: MessageRouter | None = None
         self._mcp_apps = mcp_apps
         self._restart = restart_coordinator
         self._threads = threads
@@ -238,7 +240,7 @@ class RootRunExecutor:
         response = None if response is None else response.model_copy(deep=True)
         thread = await self._threads.get(thread_id)
         if thread.parent_thread_id is not None:
-            raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
+            raise ThreadError("Root input accepts only root Threads.", code="child_thread_scoped")
         if thread.archived:
             raise ThreadError("An archived Thread cannot run.", code="thread_archived")
         if thread.memory_scope is not None:
@@ -655,6 +657,7 @@ class RootRunExecutor:
                 data_root=self._store.settings.data_root,
                 thread_id=thread_id,
                 object_store_policy=self._store.settings.object_store,
+                message_router=self.message_router if admission.organization is None else None,
             )
             record_phase_result(
                 preparation_span,

@@ -401,7 +401,8 @@ async def test_terminal_steering_retains_uploads_and_delivers_native_images(
     async def model(messages, info):
         observed.append(messages)
         started.set()
-        await release.wait()
+        with fail_after(30):
+            await release.wait()
         yield "Received"
 
     monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
@@ -514,8 +515,14 @@ async def test_root_and_child_tool_results_use_their_own_thread_scratch(
         }
         if "delegate" not in returned:
             name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Produce a result"}
-        elif "wait_subagent" not in returned:
-            name, args = "wait_subagent", {"timeout_seconds": 10}
+        elif "execution_wait" not in returned:
+            child = next(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+            )
+            name, args = "execution_wait", {"execution_id": child["execution_id"], "timeout_seconds": 10}
         else:
             yield "Root completed."
             return

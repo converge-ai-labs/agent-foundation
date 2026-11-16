@@ -513,9 +513,7 @@ class StreamRenderer:
         if name in {"shell_exec", "shell_start"}:
             command = value.get("command")
             return " ".join(command.split())[:500] if isinstance(command, str) else ""
-        process_id = value.get(
-            "execution_id" if name in {"tool_execution_result", "tool_execution_wait"} else "process_id"
-        )
+        process_id = value.get("execution_id" if name in {"execution_result", "execution_wait"} else "process_id")
         if isinstance(process_id, str):
             observation = self._shell_processes.get((run_id, process_id))
             return observation.command if observation else ""
@@ -1149,7 +1147,7 @@ class StreamRenderer:
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
                 name = preview.name if preview else str(payload.get("toolCallName") or "tool")[:60]
-                if preview is not None and name in {"delegate", "steer_subagent"}:
+                if preview is not None and name in {"delegate", "send_message"}:
                     if (native_state is not None and preview.native_result_seen) or (
                         native_state is None and preview.protocol_result_seen
                     ):
@@ -1313,7 +1311,7 @@ class StreamRenderer:
                     preview.summary = tool_preview(
                         preview.arguments, name=preview.name, directory=self.status.directory
                     )
-                    if preview.name in {"tool_execution_result", "tool_execution_wait"}:
+                    if preview.name in {"execution_result", "execution_wait"}:
                         command = self._shell_command(preview.name, preview.arguments, run_id)
                         if command:
                             preview.summary = command

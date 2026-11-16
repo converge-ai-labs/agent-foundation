@@ -495,7 +495,7 @@ def test_unified_review_timeout_renders_without_local_timer() -> None:
     assert "Automatically denied" in panel.body and "call-one" in panel.body
 
 
-@pytest.mark.parametrize("name", ["tool_execution_result", "tool_execution_wait"])
+@pytest.mark.parametrize("name", ["execution_result", "execution_wait"])
 @pytest.mark.parametrize("run", ["root", "other"])
 def test_execution_control_renders_known_shell_result_without_crossing_runs(name: str, run: str) -> None:
     renderer = StreamRenderer(Status(mode="concise"))

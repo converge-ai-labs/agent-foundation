@@ -57,7 +57,7 @@ async def stream(messages, info):
     if mode == 'child':
         if not returned:
             yield {0: DeltaToolCall(name='delegate', tool_call_id='delegate-once', json_args='{"subagent_name":"agent-worker","prompt":"Bounded work"}')}
-        elif any(part.tool_name == 'subagent_info' for part in returned):
+        elif any(part.tool_name == 'execution_info' for part in returned):
             assert any('subagent_execution_unavailable' in str(part.content) for part in returned)
             yield 'Continued root without restarting its child'
             (root / 'root-completed').touch()
@@ -65,7 +65,8 @@ async def stream(messages, info):
             (root / 'root-started').touch()
             await asyncio.Event().wait()
         else:
-            yield {0: DeltaToolCall(name='subagent_info', tool_call_id='inspect-old-child', json_args='{}')}
+            execution_id = next(part.content['execution_id'] for part in returned if part.tool_name == 'delegate')
+            yield {0: DeltaToolCall(name='execution_info', tool_call_id='inspect-old-child', json_args=json.dumps({'execution_id': execution_id}))}
         return
     if not returned:
         (root / 'root-started').touch()

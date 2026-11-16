@@ -297,7 +297,7 @@ async def test_human_input_answers_original_call_after_foreground_detaches(tmp_p
         elif current == 2:
             yield {
                 0: DeltaToolCall(
-                    name="tool_execution_result",
+                    name="execution_result",
                     json_args=json.dumps({"execution_id": execution_id}),
                     tool_call_id="retrieval",
                 )

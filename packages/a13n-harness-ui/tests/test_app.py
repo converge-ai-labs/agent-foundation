@@ -2132,7 +2132,7 @@ async def test_thread_collaboration_tools_are_only_exposed_by_webui_roots(tmp_pa
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="inspect tools")
         operation = await app.wait_root_operation(receipt.receipt_id)
         assert operation.status is RootOperationStatus.completed
-    expected = {"list_threads", "get_thread", "run_thread", "create_thread", "steer_thread"}
+    expected = {"list_threads", "get_thread", "create_thread"}
     assert bool(expected & tools[0]) is (host_mode == "webui")
     if host_mode == "webui":
         assert expected <= tools[0]

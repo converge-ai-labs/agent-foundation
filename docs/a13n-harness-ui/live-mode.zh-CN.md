@@ -54,10 +54,10 @@ WebUI 首次设置为 Codex 提供默认勾选的 Live 选项，不需要时可�
 其他独立根 Thread 和 Coordinator 可以向持久 Live 执行器发送消息。下面是 Agent 工具调用，不是 shell 命令：
 
 ```python
-send_thread_message(thread_id="live", message="The requested checks passed.")
+send_message(to="live", message="The requested checks passed.")
 ```
 
-消息会持久保存，即使没有通话也可运行符合条件的执行器；准备中、配置不可用或等待决策时输入保留。执行器决定如何回应。临时保留的 `kind` 参数不再选择直接播报。只有当前活动通话接收执行器保存后的回复；离线结果留在 Thread 历史中，重新连接不会播报旧结果。消息不会启动麦克风。受管 worker 和子级执行不会获得额外目标权限。
+消息会持久保存，即使没有通话也可运行符合条件的执行器；准备中、配置不可用或等待决策时输入保留。执行器决定如何回应；消息没有 `kind` 参数或直接播报路径。回执 `{accepted: true, input_id}` 只表示已保存，不表示已读取或处理。只有当前活动通话接收执行器保存后的回复；离线结果留在 Thread 历史中，重新连接不会播报旧结果。消息不会启动麦克风。受管 worker 和子级执行不会获得额外目标权限。
 
 语音转录与任务历史分别保存。接受语音上下文不代表用户已听到。尤其在断线后，应打开来源 Thread 查看任务保存的结果。
 

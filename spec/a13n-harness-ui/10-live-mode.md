@@ -38,7 +38,7 @@ A client delegation is persisted once per provider item ID within its call, afte
 
 After the Live executor saves a selected successful continuation, its final string output is appended once as session-level speech only to the currently active call. A pending decision produces status directing that human to the Live Thread. Partial text, private reasoning and tool chatter are not automatically spoken. Without an active call, the result stays in ordinary Thread history; reconnecting never replays old output as speech.
 
-Root and Coordinator tools can send to the well-known `thread_id="live"` or the actual Live Thread ID. Messages enter the persistent executor inbox as `agent_message`; the executor decides the response. The temporary `kind` parameter does not select direct speech or bypass execution. An offline call does not prevent persistence or eligible executor execution. No message starts microphone capture. This remains a message-only exception for Coordinators, not authority to inspect or control unrelated roots. Managed workers and children gain no broader destination authority.
+Root and Coordinator tools can send to the well-known `to="live"` or the actual Live Thread ID. Messages enter the persistent executor inbox as `agent_message`; the executor decides the response. There is no `kind` selector or direct message-to-speech path. An offline call does not prevent persistence or eligible executor execution. No message starts microphone capture. This remains a message-only exception for Coordinators, not authority to inspect or control unrelated roots. Managed workers and children gain no broader destination authority.
 
 ## Persistence and API
 

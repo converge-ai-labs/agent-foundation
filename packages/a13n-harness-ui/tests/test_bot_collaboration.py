@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
-from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.thread_capability import ThreadToolController, _thread_input
 from anyio import fail_after, sleep
+from pydantic_ai.exceptions import ToolFailed
 
 from .test_app import _CompletedReconstructor, _settings, _write_configuration
 from .test_bot import delivered, ready
@@ -35,13 +36,12 @@ async def test_thread_report_retains_host_provenance_while_off_and_delivers_on_e
         bot = await ready(app)
         source = await app.create_thread(title="Release work")
         tools = controller(app)
-        accepted = await tools.send_thread_message(
-            source_thread_id=source.thread_id,
-            thread_id=BOT_THREAD_ID,
-            kind="report",
+        accepted = await tools.send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+            to=BOT_THREAD_ID,
             message="Verified result; please integrate.",
         )
-        assert accepted["ok"] and accepted["accepted"]
+        assert accepted["accepted"] and accepted["input_id"]
         batch = await pending(app)
         assert len(batch) == 1 and batch[0].source == "thread"
         assert batch[0].source_thread_id == source.thread_id
@@ -63,8 +63,10 @@ async def test_thread_report_retains_host_provenance_while_off_and_delivers_on_e
                 await sleep(0.01)
         assert not await pending(app)
         assert (await bot.snapshot()).inputs[0].source == "automatic"
-        with pytest.raises(HarnessUiError):
-            await tools.send_thread_message(source_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID, message="self")
+        with pytest.raises(ToolFailed):
+            await tools.send(
+                SimpleNamespace(deps=SimpleNamespace(thread_id=BOT_THREAD_ID)), to=BOT_THREAD_ID, message="self"
+            )
 
 
 async def test_thread_report_notifies_existing_loop_without_waiting_for_period(tmp_path: Path):
@@ -74,8 +76,10 @@ async def test_thread_report_notifies_existing_loop_without_waiting_for_period(t
         bot = await ready(app)
         app._root_runs._executor._agents = _CompletedReconstructor()
         source = await app.create_thread()
-        await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id="bot", kind="report", message="A blocker needs attention"
+        await controller(app).send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+            to="bot",
+            message="A blocker needs attention",
         )
         with fail_after(5):
             while not (await bot.snapshot()).inputs or await pending(app):
@@ -91,8 +95,7 @@ async def test_bot_return_address_is_hidden_and_shared_by_all_thread_input_paths
         for context in (None, "Created objective"):
             hidden, visible = _thread_input(source, "Do the bounded task", context=context)
             assert hidden.metadata["display"] is False
-            assert "thread_bot" in hidden.content
-            assert "kind='report'" in hidden.content
+            assert "send_message(to='bot'" in hidden.content
             assert "saved final response" in hidden.content
             assert visible.content == "Do the bounded task"
             assert visible.metadata["a13n.input"]["sender"]["thread_id"] == BOT_THREAD_ID
@@ -235,13 +238,15 @@ async def test_oversized_thread_envelope_is_rejected_before_retention(tmp_path: 
         await ready(app)
         source = await app.create_thread(title="Work")
         tools = controller(app)
-        with pytest.raises(HarnessUiError) as error:
-            await tools.send_thread_message(
-                source_thread_id=source.thread_id, thread_id=BOT_THREAD_ID, message="😀" * 16384
+        with pytest.raises(ToolFailed) as error:
+            await tools.send(
+                SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+                to=BOT_THREAD_ID,
+                message="😀" * 16384,
             )
-        assert error.value.code == "thread_message_too_large"
+        assert "thread_message_too_large" in str(error.value)
         assert not await pending(app)
-        await tools.send_thread_message(
-            source_thread_id=source.thread_id, thread_id=BOT_THREAD_ID, message="Short report"
+        await tools.send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)), to=BOT_THREAD_ID, message="Short report"
         )
         assert len(await pending(app)) == 1

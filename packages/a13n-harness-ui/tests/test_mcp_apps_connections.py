@@ -756,7 +756,7 @@ async def test_detached_result_keeps_original_app_across_runs(
         elif current == 2:
             yield {
                 0: DeltaToolCall(
-                    name="tool_execution_result",
+                    name="execution_result",
                     json_args=json.dumps({"execution_id": execution_id}),
                     tool_call_id="retrieval",
                 )

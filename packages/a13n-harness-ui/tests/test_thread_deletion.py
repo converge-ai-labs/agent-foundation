@@ -12,6 +12,7 @@ from a13n_harness_ui.storage.models import ChildExecutionRecord, DeletedThreadRe
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
 from a13n_harness_ui.thread_files import AttachmentUpload, ThreadFiles
 from anyio import Event, fail_after, sleep
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from sqlalchemy import select
 
@@ -206,7 +207,24 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
                     )
                 }
             elif stage == 1:
-                yield {0: DeltaToolCall(name="wait_subagent", json_args='{"timeout_seconds":10}', tool_call_id="wait")}
+                child = next(
+                    part.content
+                    for message in messages
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                )
+                yield {
+                    0: DeltaToolCall(
+                        name="execution_wait",
+                        json_args=json.dumps(
+                            {
+                                "execution_id": child["execution_id"],
+                                "timeout_seconds": 10,
+                            }
+                        ),
+                        tool_call_id="wait",
+                    )
+                }
             else:
                 yield "Parent finished"
         elif stage == 0:
@@ -223,17 +241,16 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=path) as app:
-        original_delivery = app._tool_executions.deliver
+        original_dispatch = app._inbox._dispatch
 
-        async def gated_delivery(thread_id, prompt, execution_ids):
-            delivery_entered.set()
-            await delivery_allowed.wait()
-            return await original_delivery(thread_id, prompt, execution_ids)
+        async def gated_dispatch(thread_id):
+            target = await app._store.threads.get(thread_id)
+            if target.parent_thread_id is not None:
+                delivery_entered.set()
+                await delivery_allowed.wait()
+            return await original_dispatch(thread_id)
 
-        app._tool_executions.deliver = gated_delivery
-        # The parent waits explicitly; an automatic result copy may arrive after
-        # wait_subagent and wake it while deletion is checked.
-        app._tool_executions.deliver_subagent = None
+        monkeypatch.setattr(app._inbox, "_dispatch", gated_dispatch)
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate")
         with fail_after(15):
@@ -246,10 +263,10 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
                 await delivery_entered.wait()
                 while app._tool_executions.runtime.active:
                     await sleep(0)
-                # The tool has finished, but its in-flight hint can still resume the child.
+                # The tool has finished, but its durable input can still resume the child.
                 assert not await app._subagent_operator.active_execution_ids()
-                assert child_id not in app._tool_executions._pending
-                assert child_id in app._tool_executions._scheduled
+                assert await app._store.thread_inbox.pending(child_id)
+                assert child_id in app._inbox.busy_thread_ids()
                 with pytest.raises(StoreConflictError) as failure:
                     await app.delete_thread(thread_id=thread.thread_id, expected_version=thread.metadata_version)
                 assert failure.value.code == "thread_run_active"
@@ -265,7 +282,12 @@ async def test_delete_waits_for_child_completion_delivery_and_resumed_run(tmp_pa
                 finish.set()
                 delivery_allowed.set()
                 release.set()
-            while await app._subagent_operator.active_execution_ids() or app._tool_executions.busy_thread_ids():
+            while (
+                await app._subagent_operator.active_execution_ids()
+                or app._tool_executions.busy_thread_ids()
+                or app._inbox.busy_thread_ids()
+                or await app._root_runs.active(thread.thread_id)
+            ):
                 await sleep(0)
             deleted = await app.delete_thread(thread_id=thread.thread_id, expected_version=thread.metadata_version)
             assert set(deleted) == {thread.thread_id, child_id}

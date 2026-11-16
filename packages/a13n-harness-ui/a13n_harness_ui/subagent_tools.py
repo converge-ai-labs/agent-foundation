@@ -1,23 +1,15 @@
-"""UI-owned child messaging, dynamic creation, and parent runtime reminders."""
+"""UI-owned dynamic child creation and collaboration guidance."""
 
 from __future__ import annotations
 
-import json
 from importlib.resources import files
 from typing import TYPE_CHECKING, Annotated, Any
 
 from a13n_harness import AgentContext
 from a13n_harness.capabilities import SubagentOperatorContext
-from a13n_harness.model_context import (
-    AbstractModelContextCapability,
-    ModelContextBlock,
-    ModelContextNext,
-    ModelContextPlacement,
-    ModelContextProjection,
-    ModelContextProjectionRequest,
-)
 from pydantic import Field
 from pydantic_ai import FunctionToolset, RunContext, Tool
+from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_harness_ui.model_thinking import ThinkingSelection
 
@@ -30,7 +22,7 @@ def guidance(name: str) -> str:
     return files("a13n_harness_ui.subagents").joinpath(f"{name}-guidance.md").read_text(encoding="utf-8").strip()
 
 
-class SubagentTools(AbstractModelContextCapability):
+class SubagentTools(AbstractCapability[AgentContext]):
     id = "a13n-harness-ui.subagent-tools"
 
     def __init__(
@@ -49,9 +41,7 @@ class SubagentTools(AbstractModelContextCapability):
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools = []
         instructions = []
-        if self.subagent:
-            tools.append(self.send_parent_message)
-        elif self.composition.subagents.dynamic.enabled:
+        if not self.subagent and self.composition.subagents.dynamic.enabled:
             tools.append(Tool(self.spawn_subagent, description=self._spawn_description()))
         if self.has_children:
             instructions.append(guidance("parent"))
@@ -88,37 +78,3 @@ class SubagentTools(AbstractModelContextCapability):
                 thinking=thinking,
             )
         ).model_dump(mode="json")
-
-    async def send_parent_message(
-        self, ctx: RunContext[AgentContext], message: Annotated[str, Field(min_length=1, max_length=1024 * 1024)]
-    ) -> dict[str, bool]:
-        """Send one message to the main agent and continue without waiting for a reply."""
-        execution_id = ctx.deps.instance.delegation_id
-        assert execution_id is not None
-        return await self.operator.send_parent_message(execution_id, message)
-
-    async def wrap_model_context(
-        self,
-        ctx: RunContext[AgentContext],
-        request: ModelContextProjectionRequest,
-        handler: ModelContextNext,
-    ) -> ModelContextProjection:
-        projection = await handler(request)
-        if not self.has_children:
-            return projection
-        records = await self.operator.reminder(ctx.deps.thread_id)
-        if not records:
-            return projection
-        block = ModelContextBlock(
-            source_id="a13n-harness-ui.subagents.summary",
-            context_group="runtime_state",
-            placement=ModelContextPlacement.REQUEST_EPILOGUE,
-            content="Check outstanding subagent work before reporting completion. "
-            + "Final results arrive automatically; do not poll only to get them."
-            + "\n"
-            + json.dumps(records[:20], ensure_ascii=False)
-            + ("\nMore executions are available through subagent_info." if len(records) > 20 else ""),
-        )
-        if request.history.matches_latest(block):
-            return projection
-        return ModelContextProjection(blocks=(*projection.blocks, block))

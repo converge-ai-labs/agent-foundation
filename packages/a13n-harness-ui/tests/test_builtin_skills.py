@@ -472,7 +472,19 @@ async def test_async_child_selects_and_reads_its_own_guidance_bundle(tmp_path, m
             elif calls[owner] == 2:
                 yield {
                     0: DeltaToolCall(
-                        name="wait_subagent", json_args='{"timeout_seconds": 10}', tool_call_id="wait-child"
+                        name="execution_wait",
+                        json_args=json.dumps(
+                            {
+                                "execution_id": next(
+                                    part.content["execution_id"]
+                                    for message in messages
+                                    for part in message.parts
+                                    if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                                ),
+                                "timeout_seconds": 10,
+                            }
+                        ),
+                        tool_call_id="wait-child",
                     )
                 }
             else:

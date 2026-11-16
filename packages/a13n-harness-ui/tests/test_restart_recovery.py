@@ -374,7 +374,23 @@ async def test_child_restores_with_active_or_completed_parent(
             )
         if calls[key] == 2 and not parent_completes:
             parent_waiting.set()
-            return ModelResponse(parts=[ToolCallPart("wait_subagent", {"timeout_seconds": 120})])
+            child = next(
+                part.content
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+            )
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "execution_wait",
+                        {
+                            "execution_id": child["execution_id"],
+                            "timeout_seconds": 30,
+                        },
+                    )
+                ]
+            )
         return ModelResponse(parts=[TextPart("Parent finished")])
 
     install_model(monkeypatch, model)

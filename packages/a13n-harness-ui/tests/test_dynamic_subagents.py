@@ -4,6 +4,7 @@ import json
 
 import pytest
 import yaml
+from a13n_harness import input_source
 from a13n_harness.content import request_input_content
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BotSubmit
@@ -104,7 +105,6 @@ async def new_thread(app):
 async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
     async def model(messages, info):
         assert "spawn_subagent" not in {tool.name for tool in info.function_tools}
-        assert "send_parent_message" not in {tool.name for tool in info.function_tools}
         yield "done"
 
     async with await open_app(tmp_path, monkeypatch, model, enabled=False) as app:
@@ -133,7 +133,7 @@ async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch)
 
     async def model(messages, info):
         tools = {tool.name: tool for tool in info.function_tools}
-        if "send_parent_message" in tools:
+        if guidance("child") in (info.instructions or ""):
             yield "CHILD_RESULT"
         elif not returned(messages):
             assert "model accepts model-main, model-alt; when omitted, it uses model-alt." in (
@@ -195,7 +195,7 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
 
     async def model(messages, info):
         tools = {tool.name for tool in info.function_tools}
-        if "send_parent_message" in tools:
+        if guidance("child") in (info.instructions or ""):
             assert "spawn_subagent" not in tools and "delegate" not in tools
             assert "PARENT_PRIVATE_ROLE" not in (info.instructions or "")
             assert (info.instructions or "").count("CHILD_ROLE") == 1
@@ -207,14 +207,14 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
             assert "CHILD_TASK" in str(messages)
             assert "GLOBAL_GUIDANCE" in str(messages)
             assert any(
-                (item.metadata.model_extra or {}).get("a13n.steering-source") == "parent_agent"
+                (origin := input_source(item.metadata)) is not None and origin.sender.kind == "agent"
                 for request in messages
                 if isinstance(request, ModelRequest)
                 for item in request_input_content(request)
             )
             await finish.wait()
             if message and not returned(messages):
-                yield {0: DeltaToolCall(name="send_parent_message", json_args='{"message":"PROGRESS_MESSAGE"}')}
+                yield {0: DeltaToolCall(name="send_message", json_args='{"to":"parent","message":"PROGRESS_MESSAGE"}')}
             else:
                 child_done.set()
                 yield "CHILD_RESULT"
@@ -272,7 +272,7 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
     child_calls, execution_ids = [], []
 
     async def model(messages, info):
-        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+        if guidance("child") in (info.instructions or ""):
             assert "CHILD_ROLE" in (info.instructions or "")
             child_calls.append(messages)
             yield "child done"
@@ -287,12 +287,12 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             }
         elif len(results) == 1:
             execution_ids.append(results[0].content["execution_id"])
-            yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps({"execution_id": execution_ids[0]}))}
+            yield {0: DeltaToolCall(name="execution_wait", json_args=json.dumps({"execution_id": execution_ids[0]}))}
         elif len(results) == 2:
             yield {
                 0: DeltaToolCall(
-                    name="resume_subagent",
-                    json_args=json.dumps({"execution_id": execution_ids[0], "prompt": "new task"}),
+                    name="send_message",
+                    json_args=json.dumps({"to": execution_ids[0], "message": "new task"}),
                 )
             }
         else:
@@ -322,7 +322,7 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             ]
             marked = [item for item in inputs if prompt in str(item.value)]
             assert marked and all(
-                (item.metadata.model_extra or {}).get("a13n.steering-source") == "parent_agent" for item in marked
+                (origin := input_source(item.metadata)) is not None and origin.sender.kind == "agent" for item in marked
             )
 
 
@@ -347,7 +347,7 @@ async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, mo
         return "\n".join([*parts, info.instructions or ""])
 
     async def stream(messages, info):
-        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+        if guidance("child") in (info.instructions or ""):
             child_instructions.append(prompt(messages, info))
             child_seen.set()
             yield "child done"
@@ -390,7 +390,7 @@ async def test_concurrency_limit_is_shared_by_declared_and_dynamic(tmp_path, mon
         )
 
     async def model(messages, info):
-        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+        if guidance("child") in (info.instructions or ""):
             await release.wait()
             yield "done"
             return
@@ -420,7 +420,7 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
 
     async def model(messages, info):
         nonlocal first_id
-        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+        if guidance("child") in (info.instructions or ""):
             if "BLOCKED_ROLE" in (info.instructions or ""):
                 await release.wait()
             yield "done"
@@ -434,7 +434,7 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
             }
         elif len(results) == 1:
             first_id = results[0].content["execution_id"]
-            yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps({"execution_id": first_id}))}
+            yield {0: DeltaToolCall(name="execution_wait", json_args=json.dumps({"execution_id": first_id}))}
         elif len(results) == 2:
             yield {
                 0: DeltaToolCall(
@@ -442,11 +442,7 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
                 )
             }
         elif len(results) == 3:
-            yield {
-                0: DeltaToolCall(
-                    name="resume_subagent", json_args=json.dumps({"execution_id": first_id, "prompt": "continue"})
-                )
-            }
+            yield {0: DeltaToolCall(name="send_message", json_args=json.dumps({"to": first_id, "message": "continue"}))}
         else:
             assert "subagents.max_concurrent" in str(results[-1].content)
             yield "limit respected"
@@ -468,13 +464,7 @@ async def test_plain_agent_has_no_subagent_surface_or_parent_prompt(tmp_path, mo
         names = {tool.name for tool in info.function_tools}
         assert not names & {
             "delegate",
-            "subagent_info",
-            "wait_subagent",
-            "steer_subagent",
-            "cancel_subagent",
-            "resume_subagent",
             "spawn_subagent",
-            "send_parent_message",
         }
         assert guidance("parent") not in (info.instructions or "")
         assert "Use `delegate` to start one declared subagent" not in (info.instructions or "")
@@ -494,21 +484,36 @@ async def test_plain_agent_has_no_subagent_surface_or_parent_prompt(tmp_path, mo
         ).status is RootOperationStatus.completed
 
 
-async def test_idle_declared_child_keeps_grandchild_results_without_automatic_resume(tmp_path, monkeypatch):
-    release, result_routed = Event(), Event()
+async def test_grandchild_result_resumes_idle_declared_child(tmp_path, monkeypatch):
+    release, delivery_entered, allow_delivery, result_received = (Event() for _ in range(4))
     child_id, grandchild_id = None, None
+    received = []
 
     async def model(messages, info):
         nonlocal child_id, grandchild_id
         names = {tool.name for tool in info.function_tools}
         results = returned(messages)
         if "CHILD_PARENT_ROLE" in (info.instructions or ""):
-            assert {"delegate", "subagent_info", "wait_subagent", "send_parent_message"} <= names
+            assert {"delegate", "execution_info", "execution_wait", "send_message"} <= names
             assert "spawn_subagent" not in names
             assert (info.instructions or "").count(guidance("child")) == 1
             assert (info.instructions or "").count(guidance("parent")) == 1
             assert (info.instructions or "").count("CHILD_PARENT_ROLE") == 1
-            if not results:
+            delivered = [
+                item
+                for request in messages
+                if isinstance(request, ModelRequest)
+                for item in request_input_content(request)
+                if (origin := input_source(item.metadata)) is not None
+                and origin.kind == "result"
+                and origin.execution is not None
+                and origin.execution.execution_id == grandchild_id
+            ]
+            if delivered:
+                received.extend(delivered)
+                result_received.set()
+                yield "Child integrated grandchild result."
+            elif not results:
                 yield {
                     0: DeltaToolCall(
                         name="delegate", json_args='{"subagent_name":"explorer","prompt":"Grandchild task"}'
@@ -516,14 +521,12 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
                 }
             else:
                 grandchild_id = results[-1].content["execution_id"]
-                assert "a13n-harness-ui.subagents.summary" in str(messages)
+                assert "Background work" in str(messages)
                 yield "Child finished while grandchild runs."
-        elif "send_parent_message" in names:
-            await release.wait()
-            if not results:
-                yield {0: DeltaToolCall(name="send_parent_message", json_args='{"message":"GRANDCHILD_PROGRESS"}')}
-            else:
-                yield "GRANDCHILD_RESULT"
+        elif guidance("child") in (info.instructions or ""):
+            with fail_after(20):
+                await release.wait()
+            yield "GRANDCHILD_RESULT"
         elif not results and "Subagent result ·" not in str(messages):
             yield {
                 0: DeltaToolCall(name="delegate", json_args='{"subagent_name":"agent-reviewer","prompt":"Child task"}')
@@ -552,6 +555,14 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
         )
     )
     async with context as app:
+        root_submissions = []
+        submit_prompt = app._root_runs.submit_prompt
+
+        async def observe_root(**kwargs):
+            root_submissions.append(kwargs["thread_id"])
+            return await submit_prompt(**kwargs)
+
+        monkeypatch.setattr(app._root_runs, "submit_prompt", observe_root)
         thread = await new_thread(app)
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Root task")
         assert (
@@ -562,28 +573,38 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
         )
         child_head = await app._store.child_executions.get(child_id)
         assert child_head.status == "succeeded" and grandchild_id is not None
-        original = app._subagent_operator._deliver_parent
-        delivered = []
+        original_dispatch = app._inbox._dispatch
 
-        async def observe(target, prompt, execution_ids):
-            handled = await original(target, prompt, execution_ids)
-            if grandchild_id in execution_ids:
-                delivered.append((target, str(prompt)))
-                if "GRANDCHILD_RESULT" in str(prompt):
-                    result_routed.set()
-            return handled
+        async def gated_dispatch(thread_id):
+            if thread_id == child_head.child_thread_id:
+                delivery_entered.set()
+                with fail_after(10):
+                    await allow_delivery.wait()
+            await original_dispatch(thread_id)
 
-        monkeypatch.setattr(app._subagent_operator, "_deliver_parent", observe)
-        release.set()
-        with fail_after(10):
-            await result_routed.wait()
-        latest = await app._store.child_executions.latest_for_child(child_head.child_thread_id)
-        assert latest.execution_id == child_id and latest.status == "succeeded"
-        assert all(target == child_head.child_thread_id for target, _ in delivered)
-        assert any("GRANDCHILD_PROGRESS" in text for _, text in delivered)
-        retained = await app._subagent_operator.inspect_executions(
-            parent_thread_id=child_head.child_thread_id,
-            execution_id=grandchild_id,
-        )
-        assert retained.executions[0].status == "succeeded"
-        assert "GRANDCHILD_RESULT" in retained.model_dump_json()
+        monkeypatch.setattr(app._inbox, "_dispatch", gated_dispatch)
+        try:
+            release.set()
+            with fail_after(10):
+                await delivery_entered.wait()
+            (pending,) = await app._store.thread_inbox.pending(child_head.child_thread_id)
+            assert pending.envelope.kind == "result"
+            assert pending.envelope.execution.execution_id == grandchild_id
+            assert "GRANDCHILD_RESULT" in pending.envelope.text
+            allow_delivery.set()
+            with fail_after(10):
+                await result_received.wait()
+            latest = await app._store.child_executions.latest_for_child(child_head.child_thread_id)
+            assert latest.execution_id != child_id and latest.resumed_from == child_id
+            assert latest.segment_index == child_head.segment_index + 1
+            await app._subagent_operator.wait_executions(
+                parent_thread_id=thread.thread_id, execution_id=latest.execution_id, timeout_seconds=10
+            )
+            latest = await app._store.child_executions.get(latest.execution_id)
+            assert latest.status == "succeeded"
+            assert received and "GRANDCHILD_RESULT" in received[0].value
+            assert not await app._store.thread_inbox.pending(child_head.child_thread_id)
+            assert root_submissions and set(root_submissions) == {thread.thread_id}
+        finally:
+            release.set()
+            allow_delivery.set()

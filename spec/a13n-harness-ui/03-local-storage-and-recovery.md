@@ -421,7 +421,7 @@ Resource index identity is `(generation_digest, resource_kind, resource_id)`, no
 
 ## Child Threads and Execution Segments
 
-A logical async child is an ordinary Thread with a `parent_thread_id`. `delegate` creates the child and segment zero. `resume_subagent` keeps `thread_id`, applies an optional sticky configuration patch, creates a new `child_run_id`, increments `segment_index`, and starts from the selected child `HarnessState`.
+A logical async child is an ordinary Thread with a `parent_thread_id`. `delegate` creates the child and segment zero. Continuation through `send_message(to=execution_id, message=...)` keeps `thread_id`, uses its Host-authorized sticky configuration, creates a new `child_run_id`, increments `segment_index`, and starts from the selected child `HarnessState`.
 
 ```python
 class ChildExecutionHead(BaseModel):

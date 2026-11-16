@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import ThreadError
@@ -15,6 +17,7 @@ from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _settings
 from .test_thread_collaboration import configuration, controller
+from .test_thread_inbox_dispatch import drained
 
 pytestmark = pytest.mark.anyio
 
@@ -97,10 +100,14 @@ async def test_run_without_model_selection_reuses_previous_run_selection(tmp_pat
             return (await app.inspect_operation_configuration(receipt_id)).agent
 
         async def message():
-            sent = await controller(app).send_thread_message(
-                source_thread_id=source.thread_id, thread_id=target.thread_id, message="Automatic"
+            sent = await controller(app).send(
+                SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+                to=target.thread_id,
+                message="Automatic",
             )
-            return await captured_agent(sent["receipt"]["receipt_id"])
+            assert set(sent) == {"accepted", "input_id"} and sent["accepted"]
+            await drained(app, target.thread_id)
+            return (await app.inspect_thread_configuration(target.thread_id)).captured.agent
 
         chosen = await app.submit_thread(
             thread_id=target.thread_id,

@@ -297,7 +297,6 @@ class AgentReconstructor:
         node = composition.root
         host_tools = set()
         if subagent:
-            host_tools.add("send_parent_message")
             node = node.model_copy(update={"instructions": (guidance("child"), *node.instructions)})
         elif dynamic:
             host_tools.add("spawn_subagent")

@@ -230,8 +230,8 @@ async def test_allowlist_filters_bound_execution_controls_without_resurrecting_u
     from a13n_harness import AgentSpec, HarnessBuilder, ToolExecutionRuntime
     from a13n_harness.capabilities import ToolExecutionCapability
 
-    controls = {f"tool_execution_{action}" for action in ("info", "result", "wait", "cancel")}
-    allowlist = _ToolAllowlistCapability(frozenset({"tool_execution_info"} if selected else set()))
+    controls = {f"execution_{action}" for action in ("info", "result", "wait", "cancel")}
+    allowlist = _ToolAllowlistCapability(frozenset({"execution_info"} if selected else set()))
     runtime = ToolExecutionRuntime()
     requests = 0
 
@@ -239,7 +239,7 @@ async def test_allowlist_filters_bound_execution_controls_without_resurrecting_u
         nonlocal requests
         requests += 1
         assert controls.intersection(tool.name for tool in info.function_tools) == (
-            {"tool_execution_info"} if bound and selected else set()
+            {"execution_info"} if bound and selected else set()
         )
         yield "done"
 

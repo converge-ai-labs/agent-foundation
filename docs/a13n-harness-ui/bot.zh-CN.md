@@ -64,7 +64,7 @@ Agent 为每个普通根 Thread 管理一份简短的 Markdown 交接笔记。Bo
 
 在 Bot 的辅助面板打开 **工作笔记**，可浏览 Thread 链接、Project、更新时间和 Markdown 预览，也可展开全文。普通 Thread 的 Notes 检查面板单独显示自己的 Bot Note，与私有工作笔记区分。两个视图均为只读。
 
-笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot。交接、结果、阻塞或问题需要关注时，工作 Thread 先更新笔记，再发送一条实质性 `send_thread_message(thread_id='thread_bot', kind='report', message=...)`。Host 保留来源 Thread 身份，并通知 Bot 现有的投递循环。Bot 关闭、暂停、不可用或等待人类决策时，报告保留待处理。受管 worker 通过 Coordinator 汇报。Bot 发出的 Thread 输入包含隐藏的回报地址指引；接收方除了回报，也保留已保存的最终结果。
+笔记用于保存目标、引用、已确认的发现和下一步，最多 16 KiB UTF-8。空白内容会清除，内容相同则不修改，最后提交的操作生效。Bot 关闭时仍可使用笔记。归档保留笔记，fork 不复制，删除 Thread 会移除其 slot。写笔记不会唤醒 Bot。交接、结果、阻塞或问题需要关注时，工作 Thread 先更新笔记，再发送一条实质性 `send_message(to="bot", message=...)`，最多 16,384 个字符。Host 保留来源 Thread 身份，将消息持久保存在 Bot 收件箱中。回执 `{accepted: true, input_id}` 只表示已保存，不表示已读取或处理。Bot 关闭、暂停、不可用或等待人类决策时，报告保留待处理。受管 worker 通过 Coordinator 汇报。Bot 发出的 Thread 输入包含隐藏的回报地址指引；接收方除了回报，也保留已保存的最终结果。
 
 ## 消息与决策
 

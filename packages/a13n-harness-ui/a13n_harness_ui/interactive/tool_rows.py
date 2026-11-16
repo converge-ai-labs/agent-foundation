@@ -13,7 +13,7 @@ from .transcript import Transcript
 
 EXPLORATION_TOOLS = {"view", "glob", "grep", "ls"}
 CONTEXT_TOOLS = {"summarize", "compact"}
-EXECUTION_TOOLS = {"tool_execution_info", "tool_execution_wait", "tool_execution_result", "tool_execution_cancel"}
+EXECUTION_TOOLS = {"execution_info", "execution_wait", "execution_result", "execution_cancel"}
 
 
 def activity_kind(name: str) -> Literal["explore", "executions"] | None:
@@ -41,12 +41,12 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
     """Build plain preview text; the renderer sanitizes it with terminal_text."""
     value = arguments_object(arguments)
 
-    if name in {"delegate", "steer_subagent"}:
+    if name in {"delegate", "send_message"}:
         if name == "delegate":
             heading = "Delegate to " + _excerpt(value.get("subagent_name"), "subagent unavailable")
             instruction = _excerpt(value.get("prompt"))
         else:
-            heading = "Steer " + _excerpt(value.get("execution_id"), "target unavailable")
+            heading = "Message " + _excerpt(value.get("to"), "target unavailable")
             instruction = _excerpt(value.get("message"))
         return heading + (f"\n  {instruction}" if instruction else ""), None
 
@@ -55,10 +55,10 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
 
     if name in EXECUTION_TOOLS:
         label = {
-            "tool_execution_info": "Inspect execution" if string("execution_id") else "List tool executions",
-            "tool_execution_wait": "Wait for execution",
-            "tool_execution_result": "Retrieve result",
-            "tool_execution_cancel": "Request cancellation",
+            "execution_info": "Inspect execution" if string("execution_id") else "List executions",
+            "execution_wait": "Wait for execution",
+            "execution_result": "Retrieve result",
+            "execution_cancel": "Request cancellation",
         }[name]
         return label + (f" · {string('execution_id')}" if string("execution_id") else ""), None
     if name in {"view", "ls"}:
@@ -97,7 +97,7 @@ def subagent_result_row(name: str, semantic: str, result: str) -> str | None:
     None leaves the original semantic row unchanged. Native failed/denied/retry
     handling takes precedence in the caller, which also applies terminal_text.
     """
-    if name not in {"delegate", "steer_subagent"}:
+    if name not in {"delegate", "send_message"}:
         return None
     value = arguments_object(result)
     if "part_kind" in value:
@@ -108,9 +108,9 @@ def subagent_result_row(name: str, semantic: str, result: str) -> str | None:
     if value.get("ok") is False or "error" in value:
         return None
     execution_id = _excerpt(value.get("execution_id"))
-    if not execution_id:
-        return None
     if name == "delegate":
+        if not execution_id:
+            return None
         status = value.get("status")
         if status is None:
             # Inline delegation can return an identity and output without status.
@@ -121,10 +121,12 @@ def subagent_result_row(name: str, semantic: str, result: str) -> str | None:
             return None
     else:
         accepted = value.get("accepted")
-        if not isinstance(accepted, bool) or semantic.partition("\n")[0] != f"Steer {execution_id}":
+        if not isinstance(accepted, bool):
             return None
         # Admission to the guidance queue says nothing about child consumption.
-        detail = "accepted for delivery" if accepted else "not accepted"
+        detail = "accepted" if accepted else "not accepted"
+        if accepted and execution_id:
+            detail += f" · {execution_id}"
     heading, separator, instruction = semantic.partition("\n")
     return heading + f" · {detail}" + separator + instruction
 
@@ -139,14 +141,16 @@ def execution_result_row(name: str, semantic: str, result: str) -> str | None:
         value = content if isinstance(content, dict) else arguments_object(content) if isinstance(content, str) else {}
     if value.get("status") == "unavailable":
         return semantic + " · unavailable"
-    if not all(isinstance(value.get(key), str) for key in ("execution_id", "tool_name", "run_id")):
+    if not isinstance(value.get("execution_id"), str):
         return None
+    if name == "execution_cancel" and isinstance(value.get("accepted"), bool):
+        return semantic + (" · cancellation requested" if value["accepted"] else " · not accepted")
     status = value.get("status")
     if not isinstance(status, str) or status not in {"queued", "running", "succeeded", "failed", "cancelled", "lost"}:
         return None
     observed = (
         "cancellation requested"
-        if name == "tool_execution_cancel" and status in {"queued", "running"}
+        if name == "execution_cancel" and status in {"queued", "running"}
         else f"{status} at last check"
     )
     return semantic + " · " + observed
@@ -202,7 +206,7 @@ class ToolActivityGroup:
             transcript.preview(first.block_id, first.brief)
             return
         if self.kind == "executions":
-            lines = [f"Tool executions · {len(self.members)} operations"]
+            lines = [f"Executions · {len(self.members)} operations"]
             for brief, repeated in groupby(self.members, key=lambda member: member.brief):
                 members = list(repeated)
                 if len(members) > 1 and all(not member.failed and not member.active for member in members):

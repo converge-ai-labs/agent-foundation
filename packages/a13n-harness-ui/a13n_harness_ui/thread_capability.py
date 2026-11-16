@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from html import escape
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
@@ -23,8 +23,9 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets.output import disclose_mapping_field
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic_ai import RunContext
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -44,6 +45,9 @@ from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunMo
 from a13n_harness_ui.thread_inbox import ThreadInbox
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.voice import VoiceController
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 
 _THREAD_CAPABILITY_ID = "a13n.harness-ui.thread-collaboration"
 _MAX_OUTPUT_CHARS = 64 * 1024
@@ -92,6 +96,7 @@ class ThreadToolController:
         bot: BotController | None = None,
         create_project: ProjectCreator | None = None,
         read_project_memory: ProjectMemoryReader | None = None,
+        subagent_operator: HarnessUiSubagentOperator | None = None,
     ) -> None:
         self._projections = projections
         self._threads = threads
@@ -104,6 +109,7 @@ class ThreadToolController:
         self.bot = bot
         self.create_project = create_project
         self.read_project_memory = read_project_memory
+        self._subagent_operator = subagent_operator
 
     async def resources(
         self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
@@ -177,18 +183,6 @@ class ThreadToolController:
             result["configuration"] = inspection.model_dump(mode="json")
         return result
 
-    async def run_thread(
-        self, *, source_thread_id: str, thread_id: str, prompt: str, model_id: str | None = None
-    ) -> dict[str, Any]:
-        if not prompt.strip():
-            raise ThreadError("A non-empty prompt is required.", code="thread_prompt_empty")
-        await self._require_target(source_thread_id, thread_id, control=True)
-        if model_id is not None:
-            raise ThreadError(
-                "Message delivery uses the target Thread's Model.", code="thread_model_override_unsupported"
-            )
-        return await self._deliver_message(source_thread_id, thread_id, prompt)
-
     async def create_thread(
         self,
         *,
@@ -254,7 +248,7 @@ class ThreadToolController:
         context = (
             f"Task from Thread {source_thread_id}. Requesting Project: {requester_project or 'No Project'}.\n"
             "This is an independent root Thread, not a delegated child. "
-            f"For clarification, decisions or blockers, use send_thread_message(thread_id={source_thread_id!r}, "
+            f"For clarification, decisions or blockers, use send_message(to={source_thread_id!r}, "
             "message=...) to ask the requester. The requester can reply with the same tool targeting your Thread. "
             "When finished, use that tool to report your findings, changes, validation and remaining issues to the requester. "
             "Sending a message does not wait for an answer; do not invent a reply. "
@@ -263,7 +257,7 @@ class ThreadToolController:
         if is_coordinator:
             context += (
                 " The requester is the Coordinator coordinating this work. "
-                "Use ordinary send_thread_message messages for coordination questions, not ask_user_question. "
+                "Use ordinary send_message messages for coordination questions, not ask_user_question. "
                 "If its answer is required, explain the blocker and finish this turn; its reply can start another Run. "
                 "Existing tool approvals still apply; ordinary messages cannot grant a denied approval."
             )
@@ -288,22 +282,16 @@ class ThreadToolController:
         if owner is not None and self.inbox is not None:
             self.inbox.schedule(owner)
 
-    async def _require_target(self, source_thread_id: str, thread_id: str, *, control: bool = False) -> None:
+    async def _require_target(self, source_thread_id: str, thread_id: str) -> None:
         target = await self._threads.get(thread_id)
         if target is None or target.memory_scope is not None or target.parent_thread_id is not None:
             raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
-        if control and thread_id == BOT_THREAD_ID:
-            raise ThreadError("Bot is controlled by human input and Host heartbeat.", code="bot_wake_rejected")
-        if control and target.configuration.agent_source.kind == "live":
-            raise ThreadError(
-                "Send a message to Live instead of controlling its executor.", code="live_thread_reserved"
-            )
         if source_thread_id == thread_id:
             return
         owners = await self._threads.worker_owners((source_thread_id, thread_id))
         source_owner, target_owner = owners.get(source_thread_id), owners.get(thread_id)
         if source_owner is not None:
-            allowed = thread_id == source_owner and not control
+            allowed = thread_id == source_owner
         elif await self._threads.is_coordinator(source_thread_id):
             allowed = target_owner == source_thread_id
         else:
@@ -311,53 +299,61 @@ class ThreadToolController:
         if not allowed:
             raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
 
-    async def send_thread_message(
-        self, *, source_thread_id: str, thread_id: str, message: str, kind: Literal["task", "report"] = "task"
-    ) -> dict[str, Any]:
-        if thread_id in {"bot", BOT_THREAD_ID}:
-            if not message.strip() or len(message) > 16384:
-                raise ThreadError(
-                    "A non-empty message of at most 16384 characters is required.", code="thread_message_invalid"
-                )
+    async def send(self, ctx: RunContext[AgentContext], to: str, message: str) -> dict[str, JsonValue]:
+        """Authorize a Host target and persist its input; acceptance never implies a read."""
+        source_thread_id = ctx.deps.thread_id
+        try:
+            if not message.strip():
+                raise ThreadError("A non-empty message is required.", code="thread_message_empty")
+            if to == "parent":
+                if self._subagent_operator is None:
+                    raise ToolFailed("This Run has no running parent relationship.")
+                receipt = await self._subagent_operator.message_parent(ctx, message)
+                return {"accepted": True, "input_id": cast(str, receipt["input_id"])}
             source = await self._threads.get(source_thread_id)
-            owners = await self._threads.worker_owners((source_thread_id,))
-            if (
-                source is None
-                or source.parent_thread_id is not None
-                or source.memory_scope is not None
-                or source_thread_id == BOT_THREAD_ID
-                or source_thread_id in owners
-                or source.configuration.agent_source.kind == "live"
-            ):
-                raise ThreadError(
-                    "Report through your Coordinator; only independent roots can message Bot.",
-                    code="thread_access_denied",
+            if source is None or source.parent_thread_id is not None or source.memory_scope is not None:
+                raise ThreadError("Only root Threads can message this target.", code="thread_access_denied")
+            if to == source_thread_id:
+                raise ThreadError("A Thread cannot message itself during its Run.", code="thread_recursive_message")
+            elif to in {"bot", BOT_THREAD_ID}:
+                if len(message) > 16384:
+                    raise ThreadError(
+                        "A message of at most 16384 characters is required.", code="thread_message_invalid"
+                    )
+                owners = await self._threads.worker_owners((source_thread_id,))
+                if (
+                    source_thread_id == BOT_THREAD_ID
+                    or source_thread_id in owners
+                    or source.configuration.agent_source.kind == "live"
+                ):
+                    raise ThreadError(
+                        "Report through your Coordinator; only independent roots can message Bot.",
+                        code="thread_access_denied",
+                    )
+                if self.bot is None:
+                    raise ThreadError("Bot is unavailable.", code="bot_unavailable")
+                receipt = await self.bot.receive_thread_message(
+                    source_thread_id=source_thread_id, source_thread_title=source.title, text=message
                 )
-            if self.bot is None:
-                raise ThreadError("Bot is unavailable.", code="bot_unavailable")
-            return await self.bot.receive_thread_message(
-                source_thread_id=source_thread_id, source_thread_title=source.title, text=message, kind=kind
-            )
-        target = None if thread_id == "live" else await self._threads.get(thread_id)
-        if thread_id == "live" or (target is not None and target.configuration.agent_source.kind == "live"):
-            source = await self._threads.get(source_thread_id)
-            owners = await self._threads.worker_owners((source_thread_id,))
-            if (
-                source is None
-                or source.parent_thread_id is not None
-                or source_thread_id in owners
-                or source.configuration.agent_source.kind == "live"
-            ):
-                raise ThreadError(
-                    "Only independent roots and Coordinators can report to Live.", code="thread_access_denied"
-                )
-            if self._voice is None:
-                return {"ok": False, "mode": "skipped", "reason": "live_offline"}
-            return await self._voice.receive(
-                source_thread_id=source_thread_id, target_thread_id=thread_id, message=message, kind=kind
-            )
-        await self._require_target(source_thread_id, thread_id)
-        return await self._deliver_message(source_thread_id, thread_id, message)
+            else:
+                target = None if to == "live" else await self._threads.get(to)
+                if to == "live" or (target is not None and target.configuration.agent_source.kind == "live"):
+                    owners = await self._threads.worker_owners((source_thread_id,))
+                    if source_thread_id in owners or source.configuration.agent_source.kind == "live":
+                        raise ThreadError(
+                            "Only independent roots and Coordinators can message Live.", code="thread_access_denied"
+                        )
+                    if self._voice is None:
+                        raise ThreadError("Live is unavailable.", code="live_unavailable")
+                    receipt = await self._voice.receive(
+                        source_thread_id=source_thread_id, target_thread_id=to, message=message
+                    )
+                else:
+                    await self._require_target(source_thread_id, to)
+                    receipt = await self._deliver_message(source_thread_id, to, message)
+        except HarnessUiError as exc:
+            raise ToolFailed(f"{exc.code}: {exc}") from exc
+        return {"accepted": True, "input_id": cast(str, receipt["input_id"])}
 
     async def _deliver_message(self, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
 
@@ -379,12 +375,6 @@ class ThreadToolController:
                 ),
             ),
         }
-
-    async def steer_thread(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        if not message.strip():
-            raise ThreadError("A non-empty message is required.", code="thread_message_empty")
-        await self._require_target(source_thread_id, thread_id, control=True)
-        return await self._deliver_message(source_thread_id, thread_id, message)
 
 
 @dataclass(kw_only=True, slots=True)
@@ -459,7 +449,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 "Give a bounded task and necessary context; inspect "
                 "results before integrating them. Other configured Agents and Models remain selectable. "
                 "The created task identifies your Thread and Project and tells the worker how to ask you questions "
-                "and report back through send_thread_message. Answer its questions through that same tool. "
+                "and report back through send_message. Answer its questions through that same tool. "
                 "If you are already executing another Thread's task, ask for clarification as needed, complete it and report to the requester "
                 "rather than creating another Sidekick for the same task. Do not create work merely because enabled."
             )
@@ -472,7 +462,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 "parts and clear_bot_note when nothing needs follow-up. Simple one-shot answers need no note. "
                 "The slot itself registers work; do not create a separate registration system. Read the latest projected "
                 "note before replacing it; read_bot_note recovers it after an uncertain write. Last committed write wins. "
-                "Notes are durable handoffs; send_thread_message(thread_id='thread_bot', kind='report', message=...) "
+                "Notes are durable handoffs; send_message(to='bot', message=...) "
                 "asks Bot for attention now. For an initial handoff, blocker, question or verified result requiring "
                 "attention, update the note first, then send one substantive message; never send acknowledgement-only "
                 "replies. Managed workers route coordination through their Coordinator. Writing or clearing notes never "
@@ -523,27 +513,9 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 _tool(self.list_agents, name="list_agents", effects={"read"}),
                 _tool(self.list_models, name="list_models", effects={"read"}),
                 _tool(
-                    self.send_thread_message,
-                    name="send_thread_message",
-                    effects={"read", "write", "external_communication"},
-                    idempotency="none",
-                ),
-                _tool(
                     self.create_thread,
                     name="create_thread",
                     effects={"read", "write", "external_communication"},
-                    idempotency="none",
-                ),
-                _tool(
-                    self.run_thread,
-                    name="run_thread",
-                    effects={"read", "write", "external_communication"},
-                    idempotency="none",
-                ),
-                _tool(
-                    self.steer_thread,
-                    name="steer_thread",
-                    effects={"write"},
                     idempotency="none",
                 ),
             ],
@@ -836,28 +808,6 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_get_failed")
 
-    async def run_thread(
-        self,
-        ctx: RunContext[AgentContext],
-        thread_id: str,
-        prompt: str,
-        model_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Start another idle Thread, optionally selecting its Model until another selection; its Agent stays."""
-        self._require_context(ctx)
-        if thread_id == self.source_thread_id:
-            return _failure_code(
-                "thread_recursive_run",
-                "A Thread cannot recursively run itself from its active root invocation.",
-            )
-        try:
-            receipt = await self.controller.run_thread(
-                source_thread_id=self.source_thread_id, thread_id=thread_id, prompt=prompt, model_id=model_id
-            )
-            return {"ok": True, "receipt": receipt}
-        except (HarnessUiError, ValueError) as exc:
-            return _failure(exc, "thread_run_failed")
-
     async def create_thread(
         self,
         ctx: RunContext[AgentContext],
@@ -899,26 +849,6 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_create_failed")
-
-    async def steer_thread(
-        self,
-        ctx: RunContext[AgentContext],
-        thread_id: str,
-        message: str,
-    ) -> dict[str, Any]:
-        self._require_context(ctx)
-        if thread_id == self.source_thread_id:
-            return _failure_code(
-                "thread_recursive_steer",
-                "A Thread cannot steer itself from its active root invocation.",
-            )
-        try:
-            result = await self.controller.steer_thread(
-                source_thread_id=self.source_thread_id, thread_id=thread_id, message=message
-            )
-            return {"ok": result["accepted"], **result}
-        except HarnessUiError as exc:
-            return _failure(exc, "thread_steer_failed")
 
     async def list_projects(
         self,
@@ -969,34 +899,6 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         except HarnessUiError as exc:
             return _failure(exc, "resource_list_failed")
 
-    async def send_thread_message(
-        self,
-        ctx: RunContext[AgentContext],
-        thread_id: str,
-        message: str,
-        kind: Literal["task", "report"] = "task",
-    ) -> dict[str, Any]:
-        """Report to another root with source attribution; steer if active or start a new turn if idle.
-
-        Independent roots and Coordinators may target 'live' at any time. Live skips offline
-        messages. With kind='report', it receives concise speech context without starting an Agent;
-        kind='task' asks its ordinary executor to handle follow-up work while voice is connected.
-
-        Returns acceptance, not processing or saved delivery. No offline queue, automatic retry or
-        fallback to a replacement operation. Inspect a rejected/uncertain send before submitting again.
-        """
-        self._require_context(ctx)
-        if thread_id == self.source_thread_id:
-            return _failure_code("thread_recursive_message", "A Thread cannot send itself a message during its Run.")
-        if not message.strip():
-            return _failure_code("thread_message_empty", "A non-empty message is required.")
-        try:
-            return await self.controller.send_thread_message(
-                source_thread_id=self.source_thread_id, thread_id=thread_id, message=message, kind=kind
-            )
-        except HarnessUiError as exc:
-            return _failure(exc, "thread_message_failed")
-
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps.thread_id != self.source_thread_id:
             raise DefinitionError(
@@ -1010,15 +912,14 @@ def _thread_input(source: ThreadSummary, text: str, *, context: str | None = Non
     if source.thread_id == BOT_THREAD_ID:
         context = (context or f"Message from Bot Thread {BOT_THREAD_ID}.") + (
             " Work within the objective and authorization. Update your Bot Note before sending substantive findings, "
-            "questions, blockers or results with send_thread_message(thread_id='thread_bot', kind='report', message=...). "
+            "questions, blockers or results with send_message(to='bot', message=...). "
             "Also keep findings and validation in your saved final response for inspection. Sending does not wait "
             "for an answer; finish the turn if blocked. Do not send acknowledgement-only replies or redispatch this task."
         )
     if source.configuration.agent_source.kind == "live":
         context = (context or f"Task from Live Thread {source.thread_id}.") + (
-            " Report progress or results with send_thread_message(thread_id='live', kind='report', message=...). "
-            "Use kind='task' for follow-up coordination. Offline reports are skipped without replay; "
-            "keep the result in this Thread. Do not acknowledge reports or redispatch existing work."
+            " Report progress or results with send_message(to='live', message=...). "
+            "Live accepts messages even without an active call; keep the result in this Thread too. Do not acknowledge reports or redispatch existing work."
         )
     return (
         TextContent(

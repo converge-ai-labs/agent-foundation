@@ -181,7 +181,7 @@ Agent 工作时，用 **Steer** 修正方向。默认即时 steering 会中断�
 
 接受成功表示指引已入队。不支持的工具会在正常执行边界尽力交付。启动或恢复期间可能等待最多五秒以准备原生 steering；超时或 Run 已完成时拒绝请求。根和子 steering 共用 `input.steering_mode`；在[配置](configuration.md#built-in-tools-and-subagents)中选择 `queued`，即可等到下一个安全边界。
 
-打开**后台工作**，点击**工具调用**一组的**查看全部**，检查执行来源 Run/调用、状态和记录，或取消活动的保留执行。读取状态不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果。
+打开**后台工作**，点击**工具调用**一组的**查看全部**，检查执行来源 Run/调用、状态和记录，或取消活动的保留执行。读取状态不消耗结果。Agent 通过 `execution_result` 或 `execution_wait` 获取结果。
 
 通用工具的[自动后台执行](configuration.md#built-in-tools-and-subagents)需显式开启。支持进程的 Shell 在两种模式下都会在前台等待到期后让出；即时 steering 可以提前释放等待。Shell handle 也有独立进程视图。
 
@@ -344,7 +344,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。Sidekick 默认值不控制 Coordinator 身份或自动跟进。
 
-自动跟进会在首次直接分配 worker 任务，以及所属工作完成、失败、取消或等待输入时尝试交付。Coordinator 先检查保存结果再接受完成。通知没有重试/重启重放。关闭浏览器保留工作；停止 Coordinator 不停止 worker，也不暂停之后通知。决策截止时间仍生效。
+启用自动跟进后，首次直接分配 worker 任务，以及所属工作完成、失败、取消或等待输入时，通知会保存到 Coordinator 的持久收件箱。活动工作通过 steering 接收输入，空闲时启动 Run；暂停、准备中或等待决策时保留输入。Coordinator 先检查保存结果再接受完成。关闭浏览器保留工作；停止 Coordinator 不会停止 worker。决策截止时间仍生效。
 
 ## Agent 协作与 Sidekick
 
@@ -358,7 +358,7 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 限制应用于模型工具，不限制人类 WebUI 访问。Worker 不能创建根、控制 owner 或访问兄弟 worker。
 
-普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择首个 Run 的模型，`run_thread` 可以为后续 Run 另选模型。没有选择模型就启动的 Run（例如消息或后台结果触发的 Run）沿用上一个 Run 的模型。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
+普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择新 Thread 的 Model。`send_message(to=thread_id, message=...)` 使用目标 Thread 配置的 Model，不能覆盖。消息持久保存在收件箱中：活动工作通过 steering 接收输入，空闲 Thread 启动 Run，暂停、准备中或等待决策时保留输入。回执 `{accepted: true, input_id}` 只表示已保存，不表示已读取或处理。不能以自身、memory 或子 Thread 为目标；向子级发消息应使用执行 ID。失败包含错误码，如 `thread_access_denied`、`thread_recursive_message`、`thread_message_empty`、`thread_missing` 或 `thread_archived`。发送失败或结果不确定时，先用 `get_thread` 检查再重试。消息不能授予人类审批，不要形成确认循环或把任务退回请求方。
 
 在 **设置 → 智能体 → Sidekick** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 

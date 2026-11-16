@@ -298,8 +298,14 @@ async def test_media_native_first_with_configured_auxiliary_in_root_and_child(
             }
             if "delegate" not in returned:
                 name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Read image"}
-            elif "wait_subagent" not in returned:
-                name, args = "wait_subagent", {"timeout_seconds": 10}
+            elif "execution_wait" not in returned:
+                child = next(
+                    part.content
+                    for message in messages
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                )
+                name, args = "execution_wait", {"execution_id": child["execution_id"], "timeout_seconds": 10}
             else:
                 yield "child finished"
                 return

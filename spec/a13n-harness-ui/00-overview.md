@@ -39,20 +39,20 @@ flowchart TB
 
 The core concepts are:
 
-| Concept                  | Meaning and owner                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Configuration generation | One complete stable and valid capture of the root YAML, resource YAML, and canonical Markdown sources                    |
-| Configured resource      | Stable file-defined Model, extension, MCP server, Agent, local or plugin subagent, or Project selected by ID             |
-| Content Plugin           | Git-installed editable declarative Skill and Markdown-subagent bundle; availability alone grants no selection            |
-| Installed catalog entry  | Available Capability or runtime-extension implementation; availability alone grants no selection                         |
-| Project                  | Optional file-defined mutable named ordered roots for organizing project-bound root Threads and execution context        |
-| Thread                   | Root or async child conversation with independent metadata and sticky-configuration heads plus one selected continuation |
-| Thread configuration     | Versioned Project, Agent, Environment, Plugin, Run Extension, and MCP selections used by default on subsequent Runs      |
-| Root operation           | One process-local prompt or deferred-response admission identified by an exact receipt                                   |
-| Resolved Run composition | Immutable configuration, resource content, selected local roots, and dependency provenance captured for one admitted Run |
-| Execution segment        | One accepted child `delegate` or `resume_subagent` execution; normally one Harness Run plus bounded denial continuation  |
-| Surface projection       | Detached, bounded, serializable summary, detail, transcript, operation, child, or live value                             |
-| Compact display          | Bounded AG-UI projection used for inspection and rendering, never for resume                                             |
+| Concept                  | Meaning and owner                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration generation | One complete stable and valid capture of the root YAML, resource YAML, and canonical Markdown sources                             |
+| Configured resource      | Stable file-defined Model, extension, MCP server, Agent, local or plugin subagent, or Project selected by ID                      |
+| Content Plugin           | Git-installed editable declarative Skill and Markdown-subagent bundle; availability alone grants no selection                     |
+| Installed catalog entry  | Available Capability or runtime-extension implementation; availability alone grants no selection                                  |
+| Project                  | Optional file-defined mutable named ordered roots for organizing project-bound root Threads and execution context                 |
+| Thread                   | Root or async child conversation with independent metadata and sticky-configuration heads plus one selected continuation          |
+| Thread configuration     | Versioned Project, Agent, Environment, Plugin, Run Extension, and MCP selections used by default on subsequent Runs               |
+| Root operation           | One process-local prompt or deferred-response admission identified by an exact receipt                                            |
+| Resolved Run composition | Immutable configuration, resource content, selected local roots, and dependency provenance captured for one admitted Run          |
+| Execution segment        | One accepted child `delegate` or `send_message` continuation execution; normally one Harness Run plus bounded denial continuation |
+| Surface projection       | Detached, bounded, serializable summary, detail, transcript, operation, child, or live value                                      |
+| Compact display          | Bounded AG-UI projection used for inspection and rendering, never for resume                                                      |
 
 ## Boundaries
 
@@ -107,7 +107,7 @@ Environment-state publication and continuation selection are independent complet
 
 ## Async Child Flow
 
-One `delegate` creates a child Thread and segment zero. The child retains its selected Agent-resource or Markdown-subagent source and owns its sticky configuration, while Project and Environment profile defaults are initialized from the admitting parent. `resume_subagent` retains the child Thread identity, applies an optional child configuration patch, and creates the next segment from the selected child `HarnessState`.
+One `delegate` creates a child Thread and segment zero. The child retains its selected Agent-resource or Markdown-subagent source and owns its sticky configuration, while Project and Environment profile defaults are initialized from the admitting parent. Continuation through `send_message(to=execution_id, message=...)` retains the child Thread identity, uses its Host-authorized sticky configuration, and creates the next segment from the selected child `HarnessState`.
 
 ```mermaid
 sequenceDiagram

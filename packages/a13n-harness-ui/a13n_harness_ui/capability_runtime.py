@@ -34,6 +34,7 @@ from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from a13n_harness.configuration import HostNotAllowedError, RunConfiguration
 from a13n_harness.context import AgentContext, RunBindings
+from a13n_harness.envelopes import MessageRouter
 from a13n_harness.http import outbound_tls_verify
 from anyio import to_thread
 from pydantic_ai import RunContext
@@ -222,11 +223,13 @@ def production_run_bindings(
     data_root: Path | None = None,
     thread_id: str | None = None,
     object_store_policy: ObjectStoreSettings | None = None,
+    message_router: MessageRouter | None = None,
 ) -> RunBindings:
     """Supply fresh Host collaborators required by one logical Harness Run."""
 
     from a13n_harness.objects import OBJECT_STORE_CAPABILITY_ID
 
+    bindings = replace(bindings, message_router=message_router)
     if OBJECT_STORE_CAPABILITY_ID in owner_capability_ids:
         from a13n_harness_ui.object_store import ThreadObjectStore
 

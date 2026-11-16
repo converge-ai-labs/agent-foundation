@@ -15,6 +15,7 @@ from a13n_harness_ui.storage.database import short_session
 from a13n_harness_ui.storage.models import EnvironmentBindingRecord
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
 from anyio import Event, fail_after, sleep_forever
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from sqlalchemy import select
 
@@ -48,7 +49,21 @@ async def delegation_app(tmp_path, monkeypatch, request):
                 }
             elif calls["parent"] == 2:
                 yield {
-                    0: DeltaToolCall(name="wait_subagent", json_args='{"timeout_seconds": 10}', tool_call_id="wait-1")
+                    0: DeltaToolCall(
+                        name="execution_wait",
+                        json_args=json.dumps(
+                            {
+                                "execution_id": next(
+                                    part.content["execution_id"]
+                                    for message in messages
+                                    for part in message.parts
+                                    if isinstance(part, ToolReturnPart) and part.tool_name == "delegate"
+                                ),
+                                "timeout_seconds": 10,
+                            }
+                        ),
+                        tool_call_id="wait-1",
+                    )
                 }
             else:
                 yield "Parent completed."

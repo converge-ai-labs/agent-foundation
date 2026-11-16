@@ -317,7 +317,6 @@ class VoiceController:
         source_thread_id: str,
         target_thread_id: str = "live",
         message: str,
-        kind: Literal["task", "report"] = "task",
     ) -> dict:
 
         thread = await self._threads.live_thread(configuration_root=self._root)

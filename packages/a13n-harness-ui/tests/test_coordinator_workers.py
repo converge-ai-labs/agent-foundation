@@ -9,10 +9,12 @@ from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError, Thre
 from a13n_harness_ui.storage import ThreadConfigurationMutation
 from a13n_harness_ui.surfaces import NewThreadDefaults
 from a13n_harness_ui.thread_capability import ThreadCollaborationCapability
+from pydantic_ai.exceptions import ToolFailed
 
 from .test_app import _CompletedReconstructor, _settings
 from .test_coordinators import coordinator_configuration, create_coordinator
 from .test_thread_collaboration import controller
+from .test_thread_inbox_dispatch import drained
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
@@ -72,25 +74,23 @@ async def test_lead_shared_tools_enforce_scope_even_with_automatic_mode_disabled
         assert (await capability.get_thread(ctx, history_limit=20))["thread"]["thread"]["thread_id"] == lead.thread_id
         assert (await capability.get_thread(ctx, thread_id=worker.thread_id, history_limit=20))["ok"]
         for target in (ordinary, other_lead, other_worker):
-            for action in (
-                capability.get_thread(ctx, thread_id=target.thread_id, history_limit=20),
-                capability.run_thread(ctx, thread_id=target.thread_id, prompt="Do not run"),
-                capability.steer_thread(ctx, thread_id=target.thread_id, message="Do not steer"),
-                capability.send_thread_message(ctx, thread_id=target.thread_id, message="Do not send"),
-            ):
-                result = await action
-                assert not result["ok"] and result["error"]["code"] == "thread_access_denied"
+            result = await capability.get_thread(ctx, thread_id=target.thread_id, history_limit=20)
+            assert not result["ok"] and result["error"]["code"] == "thread_access_denied"
+            with pytest.raises(ToolFailed, match="thread_access_denied"):
+                await capability.controller.send(ctx, target.thread_id, "Do not send")
             assert await app._root_runs.latest(target.thread_id) is None
         # The human App boundary is deliberately not restricted by the Coordinator's model-tool scope.
         receipt = await app.submit_thread(thread_id=worker.thread_id, prompt="Direct user input")
         await app.wait_root_operation(receipt.receipt_id)
-        result = await capability.send_thread_message(ctx, thread_id=worker.thread_id, message="Continue")
-        assert result["ok"]
-        await app.wait_root_operation(result["receipt"]["receipt_id"])
+        result = await capability.controller.send(ctx, worker.thread_id, "Continue")
+        assert result["accepted"]
+        await drained(app, worker.thread_id)
         # Ordinary roots cannot bypass private worker ownership either.
-        with pytest.raises(ThreadError, match="not accessible"):
-            await controller(app).send_thread_message(
-                source_thread_id=ordinary.thread_id, thread_id=other_worker.thread_id, message="Explicit request"
+        with pytest.raises(ToolFailed, match="not accessible"):
+            await controller(app).send(
+                SimpleNamespace(deps=SimpleNamespace(thread_id=ordinary.thread_id)),
+                to=other_worker.thread_id,
+                message="Explicit request",
             )
 
 
@@ -230,26 +230,25 @@ async def test_private_workers_are_filtered_before_search_and_pagination(tmp_pat
                 tools.get_thread(
                     source_thread_id=source.thread_id, thread_id=own.thread_id, history_cursor=None, history_limit=20
                 ),
-                tools.run_thread(source_thread_id=source.thread_id, thread_id=own.thread_id, prompt="Do not run"),
-                tools.steer_thread(source_thread_id=source.thread_id, thread_id=own.thread_id, message="Do not steer"),
-                tools.send_thread_message(
-                    source_thread_id=source.thread_id, thread_id=own.thread_id, message="Do not send"
+                tools.send(
+                    SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)),
+                    to=own.thread_id,
+                    message="Do not send",
                 ),
             ):
-                with pytest.raises(ThreadError, match="not accessible"):
+                with pytest.raises((ThreadError, ToolFailed), match="not accessible"):
                     await operation
-        # Workers can inspect/report to their owner, never control it directly.
+        # Workers can inspect and message their owner, not unrelated worker Threads.
         assert (
             await tools.get_thread(
                 source_thread_id=own.thread_id, thread_id=first.thread_id, history_cursor=None, history_limit=20
             )
         )["thread"]["thread"]["thread_id"] == first.thread_id
-        for operation in (
-            tools.run_thread(source_thread_id=own.thread_id, thread_id=first.thread_id, prompt="Do not run"),
-            tools.steer_thread(source_thread_id=own.thread_id, thread_id=first.thread_id, message="Do not steer"),
-        ):
-            with pytest.raises(ThreadError, match="not accessible"):
-                await operation
+        app._inbox.stop()
+        receipt = await tools.send(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=own.thread_id)), first.thread_id, "Report"
+        )
+        assert receipt["accepted"]
         with pytest.raises(ThreadError, match="another query"):
             await tools.list_threads(
                 source_thread_id=second.thread_id, query="Private", cursor=page["next_cursor"], limit=1

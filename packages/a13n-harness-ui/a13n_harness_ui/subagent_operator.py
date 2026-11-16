@@ -17,6 +17,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import (
+    AgentContext,
     AgentIdentityRef,
     AgentInstanceContext,
     DeferredToolRequests,
@@ -53,7 +54,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.steering import envelope_ids
 from a13n_harness.content import ContentItem, content_items
 from a13n_harness.content import ContentMetadata as HarnessContentMetadata
-from a13n_harness.envelopes import Envelope, ExecutionRef, InputOrigin, Sender, input_source
+from a13n_harness.envelopes import Envelope, ExecutionRef, InputOrigin, MessageRouter, Sender, input_source
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
@@ -78,7 +79,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai import ToolDenied
+from pydantic_ai import RunContext, ToolDenied
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
@@ -166,10 +167,11 @@ _PARENT_CONTROL_TOOLS = frozenset(
         "delegate",
         "resume_subagent",
         "spawn_subagent",
-        "subagent_info",
-        "wait_subagent",
-        "steer_subagent",
-        "cancel_subagent",
+        "execution_info",
+        "execution_wait",
+        "execution_cancel",
+        "execution_result",
+        "send_message",
     }
 )
 
@@ -337,6 +339,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._task_group: TaskGroup | None = None
         self._accepting = False
         self.inbox: ThreadInbox | None = None
+        self.message_router: MessageRouter | None = None
         if tool_executions is not None:
             tool_executions.settled = self._release_completion_continuation
 
@@ -724,23 +727,30 @@ class HarnessUiSubagentOperator(SubagentOperator):
             scope=scope, previous=previous, input=request.prompt, identity=identity, usage_limits=None
         )
 
-    async def send_parent_message(self, execution_id: str, message: str) -> dict[str, bool]:
-
-        head = await self._store.child_executions.get(execution_id)
-        if head is None or head.status != "running" or self.inbox is None:
-            raise ToolFailed("This child execution is no longer active.")
+    async def message_parent(self, ctx: RunContext[AgentContext], message: str) -> dict[str, object]:
+        execution_id = ctx.deps.instance.delegation_id
+        head = None if execution_id is None else await self._store.child_executions.get(execution_id)
+        active = None if head is None else await self._active_segment(head)
+        if (
+            head is None
+            or active is None
+            or active.status != "running"
+            or head.child_thread_id != ctx.deps.thread_id
+            or active.stream.run_id != ctx.deps.run_id
+            or self.inbox is None
+        ):
+            raise ToolFailed("The caller is not a running child execution.")
         name = (await self._execution_identity(head)).name
-        await self.inbox.deliver(
+        return await self.inbox.deliver(
             head.parent_thread_id,
             Envelope(
                 id=f"message-{uuid4().hex}",
                 kind="agent_message",
                 sender=Sender(kind="agent", thread_id=head.child_thread_id, name=name),
-                execution=ExecutionRef(execution_id=execution_id, kind="agent", name=name, state="running"),
+                execution=ExecutionRef(execution_id=head.execution_id, kind="agent", name=name, state="running"),
                 text=message,
             ),
         )
-        return {"accepted": True}
 
     @_subagent_tool
     async def info(
@@ -759,13 +769,20 @@ class HarnessUiSubagentOperator(SubagentOperator):
             execution_limit=request.execution_limit,
         )
 
-    async def reminder(self, parent_thread_id: str) -> list[dict[str, str]]:
-        heads = await self._store.child_executions.attention_for_parent(parent_thread_id, limit=21)
-        values = []
-        for head in heads:
-            name = (await self._execution_identity(head)).name
-            values.append({"name": name, "execution_id": head.execution_id, "state": head.status})
-        return values
+    async def attention(self, context: SubagentOperatorContext, *, limit: int = 21) -> tuple[ExecutionRef, ...]:
+        scope = await self._require_parent(context)
+        heads = await self._store.child_executions.attention_for_parent(scope.thread_id, limit=limit)
+        return tuple(
+            [
+                ExecutionRef(
+                    execution_id=head.execution_id,
+                    kind="agent",
+                    name=(await self._execution_identity(head)).name,
+                    state=head.status,
+                )
+                for head in heads
+            ]
+        )
 
     async def inspect_executions(
         self,
@@ -999,7 +1016,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent_thread_id=scope.thread_id,
             execution_id=request.execution_id,
             message=_parent_input(request.message),
-            immediate=request.immediate,
         )
 
     async def steer_execution(
@@ -1484,6 +1500,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             data_root=self._store.settings.data_root,
             thread_id=state.thread_id,
             object_store_policy=self._store.settings.object_store,
+            message_router=self.message_router,
         )
         stream = reconstructed.executable.stream(
             _parent_input(input)
@@ -2469,6 +2486,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             segment_index=head.segment_index,
             input=None,
             activity=_activity_snapshot(display),
+            output=(display.final_answer or None) if head.status != "running" else None,
         )
 
     async def _wait_event(self, execution_id: str) -> Event:

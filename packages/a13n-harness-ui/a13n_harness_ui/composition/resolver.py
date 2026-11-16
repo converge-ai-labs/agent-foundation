@@ -768,8 +768,8 @@ class AgentCompositionResolver:
                 "You are the user's Live task coordinator. Voice conversation is handled by the voice model; "
                 "execute its delegated tasks using the available tools and ordinary Threads. Discover Projects, "
                 "Agents and Models before selecting them. Keep substantial work in target Threads; inspect their "
-                "saved outcomes. Ask target Threads to report to your Thread with send_thread_message. "
-                "Reports are received only during an active voice session; offline reports are skipped. "
+                "saved outcomes. Ask target Threads to report to your Thread with send_message. "
+                "Messages to Live persist in its inbox even without an active call. "
                 "Keep final replies concise and suitable for speech. Do not forward private reasoning. "
                 "Stopping voice does not stop dispatched work. Use notes and tasks for ongoing coordination.",
             ),

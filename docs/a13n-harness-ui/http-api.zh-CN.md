@@ -288,7 +288,7 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 向该路由 PATCH `{"auto_followup":false}` 可暂停自动生命周期通知，true 则启用。这一设置采用最后写入生效，与 Sidekick 配置独立。Coordinator 和 worker 永久保留所属 Project。恢复已归档 Coordinator 使用普通的带版本元数据 API。
 
-通过 `POST /api/threads` 创建 worker，指定 `coordinator_thread_id`，并在 `defaults` 中选择所有者所属的可用 Project。所有者必须未归档。所有权永久保存，且与 `coordinator:true` 互斥；人工创建使用提供的默认值，不应用 Sidekick。创建不启动 Run。启用后续处理时，首次人工提交会安排尽力发送的所有者通知。客户端提供 `thread_id` 后，可以核对结果不确定的创建，而不另建 worker。
+通过 `POST /api/threads` 创建 worker，指定 `coordinator_thread_id`，并在 `defaults` 中选择所有者所属的可用 Project。所有者必须未归档。所有权永久保存，且与 `coordinator:true` 互斥；人工创建使用提供的默认值，不应用 Sidekick。创建不启动 Run。启用后续处理时，首次人工提交会将所有者通知保存到 Coordinator 的持久收件箱。活动工作通过 steering 接收输入，空闲 Coordinator 启动 Run，暂停、准备中或等待决策时保留通知。客户端提供 `thread_id` 后，可以核对结果不确定的创建，而不另建 worker。
 
 从 Thread 摘要读取 `role`（`ordinary`、`coordinator` 或 `worker`）、`coordinator_thread_id` 和 `auto_followup`。用 `coordinator_thread_id` 筛选 worker，或以 `independent_only=true` 排除 worker。游标绑定这些过滤条件。未过滤的人工搜索包含所有根；一个 Project 可以有多个 Coordinator。旧 Project lead 绑定迁移一次并保留 ID/历史；禁用的绑定转为关闭后续处理的 Coordinator。
 

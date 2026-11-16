@@ -7,6 +7,7 @@ import httpx
 import pytest
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.storage import ObjectKind, StoredChildCheckpoint
+from a13n_harness_ui.subagent_tools import guidance
 from a13n_harness_ui.webui import create_webui
 from anyio import Event, fail_after, sleep
 from pydantic_ai.models.function import DeltaToolCall
@@ -21,7 +22,7 @@ async def child_app(tmp_path, monkeypatch, child_model):
     actions, receipts = [], []
 
     async def model(messages, info):
-        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+        if guidance("child") in (info.instructions or ""):
             async for value in child_model(messages, info):
                 yield value
         elif actions:
@@ -34,7 +35,7 @@ async def child_app(tmp_path, monkeypatch, child_model):
     async with await open_app(tmp_path, monkeypatch, model) as app:
         # These tests drive the parent explicitly; an automatic result copy
         # would wake it between submissions.
-        app._tool_executions.deliver_subagent = None
+        app._inbox.stop()
         parent = await new_thread(app)
 
         async def submit(name="spawn_subagent", **arguments):
@@ -171,7 +172,7 @@ async def test_child_resumed_twice_has_one_cumulative_transcript(tmp_path, monke
         child_id = head.child_thread_id
         for segment in range(3):
             if segment:
-                head = await submit("resume_subagent", execution_id=head.execution_id, prompt=f"task-{segment}")
+                head = await submit("send_message", to=head.execution_id, message=f"task-{segment}")
             await app._subagent_operator.wait_executions(
                 parent_thread_id=parent.thread_id, execution_id=head.execution_id, timeout_seconds=10
             )

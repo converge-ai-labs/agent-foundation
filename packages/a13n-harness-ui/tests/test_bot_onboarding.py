@@ -165,7 +165,6 @@ async def test_immediate_thread_report_cannot_skip_first_visible_introduction(tm
             source_thread_id=working.thread_id,
             source_thread_title=working.title,
             text="A substantive saved result is ready for inspection.",
-            kind="report",
         )
         assert (await consumed(app, WORKSPACE_INTRODUCTION.input_id)).state == "completed"
         inputs = await app._store.bot.inputs()

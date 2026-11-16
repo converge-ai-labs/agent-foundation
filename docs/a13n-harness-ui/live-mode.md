@@ -54,10 +54,10 @@ A spoken delegation starts the Live executor, or steers compatible active work. 
 Other independent roots and Coordinators can send a message to the persistent Live executor. This is an Agent tool call, not a shell command:
 
 ```python
-send_thread_message(thread_id="live", message="The requested checks passed.")
+send_message(to="live", message="The requested checks passed.")
 ```
 
-Messages persist even without a voice call and can run an eligible executor offline. Preparing work, unavailable settings and pending decisions hold input. The executor decides how to respond; the temporary `kind` parameter no longer selects direct speech. Only a currently active call receives its saved response. Offline results stay in Thread history, and reconnecting never speaks old results. Messages do not start the microphone. Managed workers and children gain no additional destination authority.
+Messages persist even without a voice call and can run an eligible executor offline. Preparing work, unavailable settings and pending decisions hold input. The executor decides how to respond; messages have no `kind` parameter or direct speech path. The receipt `{accepted: true, input_id}` means persisted, not read or processed. Only a currently active call receives its saved response. Offline results stay in Thread history, and reconnecting never speaks old results. Messages do not start the microphone. Managed workers and children gain no additional destination authority.
 
 Speech transcripts and task history are saved separately. Accepted speech context does not prove that the user heard it. Open the source Thread for the task's saved result, especially after a disconnect.
 

@@ -155,3 +155,28 @@ async def test_heartbeat_coalescing_and_result_outside_bot_budget(tmp_path):
             policy=policy.model_copy(update={"heartbeat_enabled": False}), now=now, text=""
         )
         assert [row.envelope.id for row in await store.thread_inbox.pending("thread_bot")] == ["result-large"]
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled", "lost"])
+async def test_tool_notice_contains_status_not_private_payload_and_skips_inline_or_retrieved_calls(tmp_path, status):
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        for released, acknowledged, expected in ((False, False, 0), (True, True, 0), (True, False, 1)):
+            record = ToolExecutionRecord(
+                execution_id=f"exec-{released}-{acknowledged}",
+                thread_id="thread-a",
+                run_id="run-a",
+                tool_call_id="call-a",
+                tool_name="lookup",
+                status=status,
+                foreground_released=released,
+                delivery_acknowledged=acknowledged,
+                result_available=status == "succeeded",
+                error="PRIVATE failure" if status != "succeeded" else None,
+            )
+            await store.tool_executions.save(StoredToolExecution(record, "PRIVATE result"))
+            rows = await store.thread_inbox.pending("thread-a")
+            assert len(rows) == expected
+            if rows:
+                envelope = rows[0].envelope
+                assert envelope.kind == "result" and envelope.execution.state == status
+                assert "PRIVATE" not in envelope.text

@@ -137,9 +137,9 @@ subagents:
 
 省略 `enabled` 或设为 false 时，动态创建关闭。主 Agent 获得 `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`，工具说明会列出 `allowed_models`。显式选择必须属于 `allowed_models`。省略 `model` 时使用 `default_model`，它也必须属于 `allowed_models`。启用动态创建时两项都必须设置；辅助角色不会继承主 Agent 的 Model，启用但缺少这两项的配置无法加载。思考级别必须受所选 Model 支持。辅助角色继承工具和 Environment，接收全局指引、固定子级指引和自身角色指令，不接收父 Agent 指令或对话历史。动态子级不能继续委派或创建子级。
 
-运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 会收到明确错误，可以等待现有工作结束。通过返回的执行 ID 使用 `subagent_info`、`wait_subagent`、`steer_subagent`、`resume_subagent` 以及取消操作。
+运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 可以等待现有工作结束。Agent 与工具执行共用 `execution_info(execution_id=None, offset=0, limit=20)`、`execution_wait(execution_id, timeout_seconds=30)`、`execution_cancel(execution_id)` 和 `execution_result(execution_id)`。不传 ID 时，按执行类型分别返回一页。等待超时不会取消工作。统一的 **Background work** 提醒列出需要关注的执行；活动记录或空列表都不能证明成功。
 
-最终结果会自动投递给父级，包括父级结束本轮之后。所有子级都可以用 `send_parent_message` 发送消息并继续工作。必须得到答复才能继续时，子级以问题结束本轮，主 Agent 可以带着答案恢复它。消息和结果包含子级名称、执行 ID 和状态。同一 ID 的结果可能重复出现。
+子级最终回复或失败会自动作为输入投递给父级，包括父级结束本轮之后。工具完成后以 **Tool notification** 输入送达。运行中的子级可以使用 `send_message(to="parent", message=...)`；父级看到的 **Subagent message** 包含名称、执行 ID 和运行状态。必须得到答复才能继续时，子级以问题结束本轮。父级用 `send_message(to=execution_id, message=...)` 引导运行中的子级，或继续已结束且可恢复的子级。继续执行返回新的执行引用；其他状态会报错并注明状态。`execution_result` 获取保留的工具输出或 agent 已保存的最终回复，输出不可用时会明确说明。
 
 消息和结果先写入父 Thread 的持久收件箱。活动父级通过 steering 接收输入；空闲且符合条件的父级会启动新 Run，增加 Model 用量。孙级在其父级子智能体已空闲后完成时，也会按原始委派权限和未变化的配置恢复该子级。准备中或等待用户决策时，输入会保留。停止、失败、取消和未知执行状态会暂停自动继续；归档 Thread 拒绝输入。只有包含输入的 checkpoint 被选定后，该输入才被消费。TUI 将有来源标记的消息和结果显示为 Activity。
 

@@ -4398,9 +4398,6 @@ async def open_harness_ui_app(
                     notify=web_push.enqueue if web_push is not None else None,
                 )
                 root_executor.set_bot_display_publisher(app._bot.publish_display)
-                from pydantic_ai.capabilities import CombinedCapability
-
-                from a13n_harness_ui.connectors.capability import connector_capability
                 from a13n_harness_ui.connectors.catalog import Catalog as ConnectorCatalog
 
                 async def connector_changed() -> None:
@@ -4425,19 +4422,27 @@ async def open_harness_ui_app(
                         projections=projections,
                         model=app._voice_model,
                     )
-                thread_tools = ThreadToolController(
-                    threads=store.threads,
-                    projections=projections,
-                    root_runs=root_runs,
-                    create_thread=app.create_thread,
-                    configurations=configurations,
-                    inspect_configuration=app.inspect_thread_configuration,
-                    voice=app._voice,
-                    bot=app._bot,
-                    create_project=app.create_project,
-                    read_project_memory=app.read_project_memory,
-                )
-                thread_tools.inbox = app._inbox
+            thread_tools = ThreadToolController(
+                threads=store.threads,
+                projections=projections,
+                root_runs=root_runs,
+                create_thread=app.create_thread,
+                configurations=configurations,
+                inspect_configuration=app.inspect_thread_configuration,
+                voice=app._voice,
+                bot=app._bot,
+                create_project=app.create_project,
+                read_project_memory=app.read_project_memory,
+                subagent_operator=operator,
+            )
+            thread_tools.inbox = app._inbox
+            root_executor.message_router = thread_tools
+            operator.message_router = thread_tools
+            if host_mode == "webui":
+                from pydantic_ai.capabilities import CombinedCapability
+
+                from a13n_harness_ui.connectors.capability import connector_capability
+
                 root_executor.set_root_capability_factory(
                     lambda composition: CombinedCapability(
                         [

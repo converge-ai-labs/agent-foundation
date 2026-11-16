@@ -6,7 +6,6 @@ import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Literal
 from uuid import uuid4
 
 from a13n_harness.input import RunInputValue
@@ -139,7 +138,7 @@ class BotController:
         return {"enabled": (await self._policy()).enabled, "paused": (await self._store.bot.state()).paused}
 
     async def receive_thread_message(
-        self, *, source_thread_id: str, source_thread_title: str | None, text: str, kind: Literal["task", "report"]
+        self, *, source_thread_id: str, source_thread_title: str | None, text: str
     ) -> dict[str, object]:
         item = BotInboxInput(
             input_id=f"thread-{uuid4().hex}",
