@@ -1924,6 +1924,7 @@
   "{{count}} connections": "{{count}} connections",
   "{{count}} skills": "{{count}} skills",
   "{{count}} skills_one": "{{count}} skill",
+  "{{count}} skills_other": "{{count}} skills",
   "{{count}} connections_one": "{{count}} connection",
   "Connect {{provider}}": "Connect {{provider}}",
   "Choose the service that hosts your models.": "Choose the service that hosts your models.",

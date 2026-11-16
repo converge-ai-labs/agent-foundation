@@ -2175,6 +2175,7 @@
   "{{count}} connections": "{{count}} 个连接",
   "{{count}} skills": "{{count}} 个技能",
   "{{count}} skills_one": "{{count}} 个技能",
+  "{{count}} skills_other": "{{count}} 个技能",
   "{{count}} connections_one": "{{count}} 个连接",
   "Connect {{provider}}": "连接 {{provider}}",
   "Choose the service that hosts your models.": "选择托管模型的服务。",
