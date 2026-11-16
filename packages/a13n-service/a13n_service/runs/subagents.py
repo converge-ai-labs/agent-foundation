@@ -36,7 +36,7 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
-from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.envelopes import ExecutionState
 from a13n_harness.tool_execution import current_execution
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,7 +70,7 @@ from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
 
-_STATUS: dict[str, SubagentStatus] = {
+_STATUS: dict[str, ExecutionState] = {
     "accepted": "running",
     "running": "running",
     # A child waiting for a person is still in progress from its parent's point of view.

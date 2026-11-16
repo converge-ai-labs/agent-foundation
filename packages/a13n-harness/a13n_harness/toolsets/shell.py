@@ -490,11 +490,11 @@ class ShellToolset:
         )
         if resource is None:
             raise EnvironmentInvocationError(
-                "No live Shell control surface is available. Use tool_execution_info or tool_execution_result for this execution.",
+                "No live Shell control surface is available. Use execution_info or execution_result for this execution.",
                 code="environment_reference_invalid",
                 details={
                     "field": "process_id",
-                    "hint": "Inspect the execution with tool_execution_info or tool_execution_result.",
+                    "hint": "Inspect the execution with execution_info or execution_result.",
                 },
             )
         return ShellTarget.model_validate(resource)
@@ -519,12 +519,12 @@ class ShellToolset:
             )
             if result is None:
                 raise EnvironmentInvocationError(
-                    "Shell execution has settled. Use tool_execution_result for its retained result.",
+                    "Shell execution has settled. Use execution_result for its retained result.",
                     code="environment_reference_stale",
                     details={
                         "dispatch_stage": "pre_dispatch",
                         "field": "process_id",
-                        "hint": "Read the retained result with tool_execution_result.",
+                        "hint": "Read the retained result with execution_result.",
                     },
                 )
             result["process_id"] = process_id

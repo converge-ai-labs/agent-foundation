@@ -662,3 +662,7 @@ Direct instructions, public model-request hooks, native enqueue, and Capability 
 ### One Working State Capability vs. Independent Managers
 
 Tasks and notes share tool presentation and one state owner without turning `AgentContext` into a collection of managers. Their separate request overlays preserve distinct recall semantics while retaining one storage namespace and lifecycle. A typed task cell supports atomic parent/child coordination, while notes, messages, and unrelated Capability state remain isolated. Handoff owns narrative continuity, automatic compaction owns history reduction, Notes own structured session facts, and Tasks own structured execution state; these Capabilities coordinate through instructions and fresh projection rather than direct dependencies.
+
+## Background Work Projection
+
+The shared execution surface contributes one change-driven `Background work` request epilogue in `runtime_state`. Its bounded tool/agent attention and receipt suppression follow [Tool Execution](07-tool-execution.md#host-held-tool-executions). Agent activity/output is not copied into this projection, and a bounded page cannot prove there is no other outstanding work.

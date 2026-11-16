@@ -39,6 +39,7 @@ from pydantic_ai.models import ModelRequestParameters, _instruction_parts_of
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.content import ContentMetadata, prompt_content
+from a13n_harness.envelopes import input_source
 
 type ContextGroupName = Literal[
     "system", "tools", "skills", "memory", "environment_context", "runtime_state", "conversation", "tool_calls", "other"
@@ -103,6 +104,7 @@ def _untagged_source_group(source: str | None, default: ContextGroupName) -> Con
         "a13n.background_process",
         "a13n.envd_session",
         "tool_execution.summary",
+        "execution.summary",
         "codeact.stored_keys",
     ) or (source or "").startswith("a13n.working-state"):
         return "runtime_state"
@@ -126,6 +128,7 @@ _WORKING_SOURCES = {
     "a13n.working-state.notes": "Notes",
     "a13n.working-state.tasks": "Tasks",
     "tool_execution.summary": "Tool execution status",
+    "execution.summary": "Background work",
     "a13n.runtime-context": "Time and usage",
     "a13n.agent-context": "Agent context",
     "a13n-harness-ui.surface": "Interface context",
@@ -153,11 +156,7 @@ def _conversation_input(metadata: ContentMetadata) -> str:
     extra = metadata.model_extra or {}
     if extra.get("a13n.context") in ("compaction", "handoff"):
         return "Context summaries"
-    if metadata.source_id == "a13n.handoff" or extra.get("a13n.steering-source") in (
-        "async_subagent",
-        "background_process",
-        "envd_session",
-    ):
+    if metadata.source_id == "a13n.handoff" or input_source(metadata) is not None:
         return "Runtime notices"
     provenance = extra.get("a13n.input-provenance")
     kind = provenance.get("kind") if isinstance(provenance, dict) else None

@@ -501,3 +501,7 @@ send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_O
 权限拒绝和待审批不会读取 Store。引用可能在审批期间过期；恢复调用会报告对象不可用。Agent 必须使用当前列出的引用或明确重新导入，不能编造 base64 或自动重放生产工具。临时 TTL 和 LRU 上限由 Host 管理；显式保留后，对象不再受临时过期策略影响。`ObjectStoreConfiguration(capture_media=False)` 关闭自动捕获，`max_object_bytes` 限制导入和捕获大小。Host 上限可更小；捕获因大小被拒绝时，原生媒体仍保留，并报告没有生成可复用对象。
 
 内置 Host 配置见 [Harness UI](../a13n-harness-ui/configuration.md#object-store) 和 [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools)。
+
+## 共享执行工具面
+
+Builder 只安装一套执行控制。绑定工具 runtime 或异步 operator 后，提供 `execution_info`、`execution_wait`、`execution_cancel` 和 `execution_result`；绑定异步 operator 或 `RunBindings.message_router` 后提供 `send_message`。这些工具保持直接可见，不进入 ToolSearch 分组。`ToolExecutionCapability` 配置可保留工具的等待策略；`SubagentCapability` 仍选择内联或异步委派。能力存在本身不授予其他 Thread 的控制权。

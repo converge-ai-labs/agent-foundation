@@ -28,6 +28,7 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.context_recovery import CONTEXT_RECOVERY_CAPABILITY_ID, ContextRecoveryCapability
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID, DocumentsCapability
+from a13n_harness.capabilities.execution import EXECUTION_CAPABILITY_ID, ExecutionCapability
 from a13n_harness.capabilities.input import INPUT_CAPABILITY_ID, InputCapability
 from a13n_harness.capabilities.interaction import USER_INTERACTION_CAPABILITY_ID, UserInteractionCapability
 from a13n_harness.capabilities.lifecycle import (
@@ -41,8 +42,8 @@ from a13n_harness.capabilities.steering import STEERING_CAPABILITY_ID, SteeringC
 from a13n_harness.capabilities.subagents import (
     SUBAGENT_CAPABILITY_ID,
     SubagentCapability,
-    _AsyncSubagentCapability,
     _InlineSubagentCapability,
+    _SubagentActiveCapability,
 )
 from a13n_harness.capabilities.tool_execution import TOOL_EXECUTION_CAPABILITY_ID, ToolExecutionCapability
 from a13n_harness.capabilities.tool_search import (
@@ -103,11 +104,12 @@ _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]
     OBJECT_STORE_CAPABILITY_ID: (ObjectStoreCapability,),
     WEB_CAPABILITY_ID: (WebCapability,),
     WORKING_STATE_CAPABILITY_ID: (WorkingStateCapability, _WorkingStateRunCapability),
-    SUBAGENT_CAPABILITY_ID: (SubagentCapability, _InlineSubagentCapability, _AsyncSubagentCapability),
+    SUBAGENT_CAPABILITY_ID: (SubagentCapability, _InlineSubagentCapability, _SubagentActiveCapability),
 }
 _DEFINITION_TYPES = tuple(types[0] for types in _DEFINITION_OWNERS.values())
 
 _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
+    EXECUTION_CAPABILITY_ID: (ExecutionCapability, "execution controls"),
     TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID: (ToolExecutionBoundaryCapability, "tool execution boundary"),
     TOOL_SURFACE_CAPABILITY_ID: (ToolSurfaceCapability, "tool-surface"),
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID: (MessageIntegrityFilterCapability, "message-integrity Filter"),

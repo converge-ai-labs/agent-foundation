@@ -129,7 +129,7 @@ def test_source_details_partition_retained_inputs_without_disclosing_content():
             block("a13n.file-context", "files", "xy", "environment_context"),
             block("a13n.file-context", "project-guidance", "abc", "environment_context"),
             block("a13n.working-state.notes", None, "notes", "runtime_state"),
-            block("tool_execution.summary", None, "a list", "runtime_state"),
+            block("execution.summary", None, "a list", "runtime_state"),
             block("a13n.runtime-context", None, "time", "runtime_state"),
             block("custom.private-source", None, "?", "runtime_state"),
             text("hi", **{"a13n.input-provenance": {"kind": "task"}}),
@@ -160,7 +160,7 @@ def test_source_details_partition_retained_inputs_without_disclosing_content():
     }
     assert {k: v.characters for k, v in result.groups["runtime_state"].items.items()} == {
         "Notes": 5,
-        "Tool execution status": 6,
+        "Background work": 6,
         "Time and usage": 4,
         "Unattributed": 1,
     }

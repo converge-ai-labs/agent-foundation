@@ -659,6 +659,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             skill_selection=bindings.skill_selection,
             task_state=bindings.task_state,
             tool_execution=bindings.tool_execution,
+            message_router=bindings.message_router,
             codeact_state=bindings.codeact_state,
             working_state_observer=bindings.working_state_observer,
             client_toolsets=bindings.client_toolsets,

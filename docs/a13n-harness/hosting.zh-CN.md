@@ -150,7 +150,7 @@ async def run_host(model: Model) -> None:
 
 真正脱离前台等待，要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用或完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行。CodeAct 的嵌套调用等待实际值，顺序工具的执行屏障持续到工作结束。默认执行模式为 `inline`；`auto` 要求在 Run 准备时已绑定 runtime。
 
-绑定运行时并启用工具执行能力后，Agent 可用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查询和管理执行。每个 Run 首次列出需要关注的执行，之后只通知变化。完整执行 ID 可用于取回结果、核对命令输出。通过 `ToolExecutionStore` 管理结果留存，通过 `on_completed` 安排通知。如果 Host 负责交付后台完成通知，可设置 `reports_background_completions=True`。持久化记录本身不会将运行中的调用迁移到替代 worker。
+绑定运行时后，Agent 可用 `execution_info`、`execution_result`、`execution_wait` 和 `execution_cancel` 查询和管理执行。共享的 `Background work` 块首次列出最多 20 条工具/agent 关注项，之后只通知变化。完整执行 ID 可用于取回结果、核对命令输出。通过 `ToolExecutionStore` 管理结果留存，通过 `on_completed` 安排通知。如果 Host 负责交付后台完成通知，可设置 `reports_background_completions=True`。持久化记录本身不会将运行中的调用迁移到替代 worker。
 
 向活动流发送新输入时，按交接要求选择：
 
@@ -264,3 +264,9 @@ Harness 在首次使用时准备目标，打开新的 execution，并在结束�
 ## 可运行的示例
 
 在 [Agent 应用源码](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)中查看完整轮次锁、事件投影、状态文件原子替换和重启测试。[Provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)继续介绍已安装 Provider 的选择和 Environment Run 扩展。
+
+## 路由 Agent 消息
+
+可将 `RunBindings.message_router` 绑定到实现 `async send(ctx, to, message) -> dict[str, JsonValue]` 的 Host 对象。当前工具调用上下文传到此边界，由 Host 授权。`send_message` 将 `parent`、`bot`、`live` 和 `thread_` 身份只交给 router，拒绝 `exec-` 目标，其余目标只交给异步 subagent operator。缺少路由支持时明确失败，授权失败后不切换后端。回执表示受理，不表示已读。
+
+默认 `SubagentOperator.attention(context, limit=21)` 不返回 agent 项；Host 已有提醒查询时，可返回有限的 `ExecutionRef` 投影。没有最终回复时，将 agent 视图的可选 `output` 留为 `None`。这些协议不要求通用执行存储或 inbox。

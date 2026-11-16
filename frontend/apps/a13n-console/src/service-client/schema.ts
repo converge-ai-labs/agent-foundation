@@ -8576,6 +8576,9 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** @enum {string} */
+    ExecutionState:
+      "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
     /**
      * ExecutionView
      * @description Run identity is the Service Run; attempt and worker identify the retained owner.
@@ -8622,13 +8625,8 @@ export interface components {
       result_available?: boolean;
       /** Run Id */
       run_id: string;
-      /**
-       * Status
-       * @default queued
-       * @enum {string}
-       */
-      status?:
-        "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
+      /** @default queued */
+      status?: components["schemas"]["ExecutionState"];
       /** Thread Id */
       thread_id: string;
       /** Tool Call Id */

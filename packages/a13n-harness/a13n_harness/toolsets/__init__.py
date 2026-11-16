@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .context import HandoffToolset
     from .delegation import DelegateResult, DelegationToolset
     from .documents import DocumentsToolset
+    from .execution import ExecutionToolset
     from .file_media import (
         AUDIO_UNDERSTANDING_MODEL_ENV,
         AUDIO_UNDERSTANDING_MODEL_SETTINGS_ENV,
@@ -47,7 +48,6 @@ if TYPE_CHECKING:
         tool_output_text,
     )
     from .shell import ShellToolset
-    from .subagents import AsyncSubagentToolset
     from .web import WebToolset
     from .working_state import WorkingStateToolset
 
@@ -103,7 +103,7 @@ _EXPORTS = {
         "tool_output_text",
     ),
     "a13n_harness.toolsets.shell": ("ShellToolset",),
-    "a13n_harness.toolsets.subagents": ("AsyncSubagentToolset",),
+    "a13n_harness.toolsets.execution": ("ExecutionToolset",),
     "a13n_harness.toolsets.web": ("WebToolset",),
     "a13n_harness.toolsets.working_state": ("WorkingStateToolset",),
 }

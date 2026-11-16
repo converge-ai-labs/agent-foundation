@@ -192,6 +192,9 @@ class Host:
         features = list(self.sources(agent).values())
         features.append(Freshness())
         if retain_tools:
+            for index, tool in enumerate(agent.config.client_tools):
+                if tool.name in {"execution_info", "execution_wait", "execution_cancel", "execution_result"}:
+                    raise invalid(f"client_tools.{index}.name", "is the name of a built-in tool")
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.definition_id]

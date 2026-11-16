@@ -9303,6 +9303,17 @@
         "title": "ExecutionPage",
         "type": "object"
       },
+      "ExecutionState": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "lost"
+        ],
+        "type": "string"
+      },
       "ExecutionView": {
         "description": "Run identity is the Service Run; attempt and worker identify the retained owner.",
         "properties": {
@@ -9403,17 +9414,8 @@
             "type": "string"
           },
           "status": {
-            "default": "queued",
-            "enum": [
-              "queued",
-              "running",
-              "succeeded",
-              "failed",
-              "cancelled",
-              "lost"
-            ],
-            "title": "Status",
-            "type": "string"
+            "$ref": "#/components/schemas/ExecutionState",
+            "default": "queued"
           },
           "thread_id": {
             "title": "Thread Id",

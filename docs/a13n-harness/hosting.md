@@ -150,7 +150,7 @@ To exercise the function offline in `host_demo.py`, replace its final `asyncio.r
 
 Actual detachment requires a tool with retained execution ownership and a retainable resource scope, such as supported Environment Shell calls or whole CodeAct runners. An ordinary `async def` custom tool remains inline. CodeAct nested calls await actual values, and sequential tools keep their execution barrier until work settles. The default execution mode is `inline`; `auto` requires a runtime binding when the Run is prepared.
 
-A bound Agent with the execution Capability gets `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. Each Run initially lists executions requiring attention and then reports changes. Use the full execution ID to retrieve the result and check the command output. Supply a `ToolExecutionStore` for retention or persistence and use `on_completed` to schedule delivery without blocking execution. Set `reports_background_completions=True` when the Host delivers completion notices for foreground-released executions. Durable records alone do not transfer a running invocation to a replacement worker.
+An Agent with a bound runtime gets `execution_info`, `execution_result`, `execution_wait` and `execution_cancel`. The shared `Background work` block initially lists up to 20 tool/agent attention entries and then reports changes. Use the full execution ID to retrieve the result and check the command output. Supply a `ToolExecutionStore` for retention or persistence and use `on_completed` to schedule delivery without blocking execution. Set `reports_background_completions=True` when the Host delivers completion notices for foreground-released executions. Durable records alone do not transfer a running invocation to a replacement worker.
 
 For active-stream input, choose the required handoff behavior:
 
@@ -264,3 +264,9 @@ Add coordination to solve a concrete lifecycle need:
 ## Runnable Example
 
 Use the [Agent Application source](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) to inspect the completed-turn lock, event projection, atomic state-file replacement, and restart tests. The [Provider plugin examples](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) extend that integration with installed Provider selection and Environment Run extensions.
+
+## Route Agent Messages
+
+Optionally bind `RunBindings.message_router` to a Host object implementing `async send(ctx, to, message) -> dict[str, JsonValue]`. The current tool-call context reaches this boundary for authorization. `send_message` sends `parent`, `bot`, `live` and `thread_` identities exclusively to this router, rejects `exec-` targets, and sends every other target exclusively to the async subagent operator. Missing routing support fails clearly; there is no fallback after denial. A receipt means accepted, not read.
+
+The default `SubagentOperator.attention(context, limit=21)` returns no agent entries. Implement it with bounded `ExecutionRef` projections when your Host has a reminder query. Leave optional agent-view `output` as `None` when no final reply is available. No generic execution store or inbox is required by these protocols.

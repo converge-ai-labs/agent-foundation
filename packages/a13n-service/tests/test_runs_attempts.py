@@ -689,7 +689,7 @@ async def test_an_unavailable_dependency_ends_a_tool_calls_attempt(
     """An outage is not the tool call's failure for the model to read: the attempt ends, and a later one retries."""
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.delegating(service, scripted_model, "async")
-    scripted_model.call("subagent_info", {}, call_id="call_info", to="Role: coordinator")
+    scripted_model.call("execution_info", {}, call_id="call_info", to="Role: coordinator")
     run_id = (await runs_kit.start_thread(service, agent, "look around"))["run"]["id"]
 
     async def unavailable(*args: object, **kwargs: object) -> None:

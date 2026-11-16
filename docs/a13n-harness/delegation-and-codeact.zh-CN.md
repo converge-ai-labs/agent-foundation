@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
 ### 继续子级对话
 
-`delegate` 随子级输出返回 `execution_id`。父 Model 可调用 `resume_subagent(execution_id=..., prompt=...)` 继续该对话。再次调用 `delegate` 会开始新的对话。
+`delegate` 随子级输出返回 `execution_id`。父 Model 可调用 `resume_subagent(subagent_id=..., prompt=...)` 继续该对话。再次调用 `delegate` 会开始新的对话。
 
 保存并恢复父级完整的 `HarnessState`，即可跨 Run 保留内联子级。重建兼容定义时，保持定义 ID 稳定。持久化方式见[状态与恢复](state-and-resume.md)。
 
@@ -241,14 +241,16 @@ codeact = CodeActCapability(CodeActConfig(
 
 子任务需要在父 Run 结束后继续时，使用异步子级。Host 实现 `SubagentOperator`，负责调度子级、保留检查点并交付结果。将 operator 传给 `SubagentCapability(async_enabled=True, operator=operator)`，替换内联 Capability。
 
-| Model 工具                              | 结果                   |
-| --------------------------------------- | ---------------------- |
-| `delegate(subagent_name, prompt)`       | 受理回执，任务独立继续 |
-| `subagent_info(...)`                    | 当前执行状态           |
-| `wait_subagent(...)`                    | 有限等待一个或多个执行 |
-| `steer_subagent(execution_id, message)` | 引导请求的确认回执     |
-| `cancel_subagent(execution_id)`         | 取消请求的确认回执     |
-| `resume_subagent(execution_id, prompt)` | 关联续接的受理回执     |
+| Model 工具                                              | 结果                                             |
+| ------------------------------------------------------- | ------------------------------------------------ |
+| `delegate(subagent_name, prompt)`                       | 受理回执，任务独立继续                           |
+| `execution_info(execution_id=None, offset=0, limit=20)` | 一个视图，或每类执行各一页                       |
+| `execution_wait(execution_id, timeout_seconds=30)`      | 有限等待一个执行，超时不取消                     |
+| `execution_cancel(execution_id)`                        | 取消请求回执，不代表清理完成                     |
+| `execution_result(execution_id)`                        | 工具留存输出，或含可用最终回复的 agent 视图      |
+| `send_message(to=execution_id, message=...)`            | 引导运行中任务，或以新 ID 续接可恢复的已结束任务 |
+
+内联子级仍是同步的父状态续接，保留 `resume_subagent(subagent_id, prompt)`，不属于 Execution。异步控制是直接工具，不进入 ToolSearch 分组。Agent 最终回复可为空，最多 32 Ki 字符并带截断标记；没有输出时，`execution_result` 明确说明不可用，活动预览不能替代最终答案。
 
 等待超时不会取消任务。取消回执不代表清理已经完成。查询当前执行记录以确认结果。关闭父 Run 不会取消已受理的异步任务。
 

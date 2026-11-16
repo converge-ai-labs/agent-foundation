@@ -4,7 +4,7 @@
 
 Asynchronous subagents are complete Host-owned child execution use cases behind `SubagentOperator`. Harness owns declared-child resolution, immutable authorization plans, the standard model-facing Toolset, and bounded result validation. It owns no default async manager, execution registry, scheduler, child store, observer registry, wake mechanism, or shutdown operation.
 
-This document owns the cross-Run lifecycle consequences of accepted async child work: admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown. [Delegation and Subagents](11-delegation-and-subagents.md) owns child topology, exact operator operations, inline execution, and tool schemas. [Environment Integration](08-environment-integration.md#shell-executions-and-observations) separately owns Shell control and process observations. The two features share no Manager, store, projection, observer registry, wake ledger, or shutdown framework.
+This document owns the cross-Run lifecycle consequences of accepted async child work: admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown. [Delegation and Subagents](11-delegation-and-subagents.md) owns child topology, exact operator operations, inline execution, and tool schemas. [Environment Integration](08-environment-integration.md#shell-executions-and-observations) separately owns Shell control and process observations. The features share vocabulary, controls and the bounded background summary, but no Manager, store, observer registry, wake ledger or shutdown framework.
 
 Harness does not turn async children into a general Job, Session child, delivery ledger, or workflow engine. A Host can implement the operator with process-local tasks, durable child Threads, remote workers, or a workflow service without adapting its records to a Harness persistence protocol.
 
@@ -14,7 +14,7 @@ Harness does not turn async children into a general Job, Session child, delivery
 | --------------------------------------------------------------------------------------- | ------------------------------------- |
 | Authored immediate-child topology                                                       | Executable-owned `SubagentCollection` |
 | Declared-child resolution, identity and context ceilings, usage intersection            | Harness                               |
-| Standard async tool names, requests, and bounded results                                | `SubagentCapability`                  |
+| Standard async selection, shared controls and bounded results                           | Harness                               |
 | Host-defined definition resolution and authority                                        | Host                                  |
 | Admission, scheduling, and recursive child execution                                    | Host `SubagentOperator`               |
 | Child Thread identity, Environment association, and fresh Run authority                 | Host                                  |
@@ -63,7 +63,7 @@ Info and wait query current Host authority. Steering and cancellation return Hos
 
 ## Observation and Wake
 
-The Host operator owns canonical child status, bounded closed activity, and completion observation. It records the ordered public items from each child `HarnessRunStream`; Harness imports no AG-UI or Host display type. It decides what to retain and how to compact it, implements automatic [final-result delivery](11-delegation-and-subagents.md#design-position), and owns whether delivery enqueues input to an active parent Run or starts an eligible later Run for the parent Thread. Explicit child messages use the same parent input boundary. Standard async views contain no raw child output field; final answer text appears as closed activity.
+The Host operator owns canonical child status, bounded closed activity, and completion observation. It records the ordered public items from each child `HarnessRunStream`; Harness imports no AG-UI or Host display type. It decides what to retain and how to compact it, implements automatic [final-result delivery](11-delegation-and-subagents.md#design-position), and owns whether delivery enqueues input to an active parent Run or starts an eligible later Run for the parent Thread. Explicit child messages use the same parent input boundary. Standard async views include optional bounded final reply text in `output`; absence is explicit and activity remains separate.
 
 Harness async tools only query and validate bounded operator projections. Parent `HarnessState` contains no async execution mirror, completion receipt, observer, callback, wake fact, or delivery acknowledgement. Completion after parent closure never mutates an already exported continuation.
 
@@ -71,7 +71,7 @@ Wake is not execution authority. A durable Host persists accepted readiness thro
 
 - duplicate completion observation does not create unbounded duplicate Runs;
 - wake failure does not change child truth;
-- explicit `subagent_info` and `wait_subagent` remain reconciliation paths;
+- explicit `execution_info` and `execution_wait` remain reconciliation paths;
 - the Agent Stream Protocol transports events for a current Run but owns no child scheduling, retention, or idle wake.
 
 ## Parent Run Closure

@@ -10,13 +10,23 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness.context import AgentContext, BuiltSubagent
+from a13n_harness.envelopes import ExecutionRef, ExecutionState
 from a13n_harness.errors import DefinitionError, StateError
 from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import RunInputValue
@@ -33,7 +43,6 @@ _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
 
 
-type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
 type SubagentToolCallStatus = Literal["running", "success", "failed", "denied", "interrupted"]
 
 
@@ -158,7 +167,6 @@ class SubagentSteerRequest(BaseModel):
 
     execution_id: str = Field(min_length=1, max_length=256)
     message: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
-    immediate: bool = False
 
 
 class SubagentCancelRequest(BaseModel):
@@ -178,7 +186,7 @@ class AsyncExecutionView(BaseModel):
     subagent_name: str = Field(min_length=1, max_length=63)
     child_definition_id: str = Field(min_length=1, max_length=256)
     source: Literal["declared", "host"] = Field(default="declared", exclude_if=lambda value: value == "declared")
-    status: SubagentStatus
+    status: ExecutionState
     resumed_from: str | None = Field(default=None, min_length=1, max_length=256)
     failure: JsonValue | None = None
     resumable: bool = False
@@ -189,6 +197,17 @@ class AsyncExecutionView(BaseModel):
 
 class SubagentExecutionView(AsyncExecutionView):
     """Bounded current execution view returned by info or wait."""
+
+    output: str | None = None
+
+    @field_validator("output")
+    @classmethod
+    def _bound_output(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if info.data.get("status") in {"queued", "running"}:
+            return None
+        marker = "\n[truncated]"
+        limit = MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS
+        return value[: limit - len(marker)] + marker if value is not None and len(value) > limit else value
 
     input: str | None = Field(default=None, max_length=_MAX_PROMPT_LENGTH)
     activity: SubagentActivitySnapshot | None = None
@@ -233,7 +252,7 @@ class SubagentCancelResult(BaseModel):
 
     execution_id: str = Field(min_length=1, max_length=256)
     accepted: bool
-    status: SubagentStatus | None = None
+    status: ExecutionState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,6 +322,10 @@ class SubagentDelegationPlan:
 
 class SubagentOperator(ABC):
     """Host-owned complete asynchronous subagent use-case boundary."""
+
+    async def attention(self, context: SubagentOperatorContext, *, limit: int = 21) -> tuple[ExecutionRef, ...]:
+        """Bounded Host-selected background work, without activity or output reads."""
+        return ()
 
     @abstractmethod
     async def delegate(
@@ -423,8 +446,9 @@ class SubagentCapability(AbstractCapability[AgentContext]):
 
         if self.async_enabled:
             assert self.operator is not None
-            replacement: _SubagentActiveCapability = _AsyncSubagentCapability(
+            replacement: _SubagentActiveCapability = _SubagentActiveCapability(
                 context=ctx.deps,
+                async_enabled=True,
                 operator=self.operator,
             )
         else:
@@ -462,22 +486,6 @@ class _InlineSubagentCapability(_SubagentActiveCapability):
 
         super().__init__(context=context, async_enabled=False, operator=None)
         self._toolset = DelegationToolset(owner=self, context=context, state=state)
-
-    def get_toolset(self) -> AbstractToolset[AgentContext]:
-        return self._toolset.get_toolset()
-
-
-@dataclass(init=False)
-class _AsyncSubagentCapability(_SubagentActiveCapability):
-    def __init__(self, *, context: AgentContext, operator: SubagentOperator) -> None:
-        from a13n_harness.toolsets.subagents import AsyncSubagentToolset
-
-        super().__init__(context=context, async_enabled=True, operator=operator)
-        self._toolset = AsyncSubagentToolset(
-            owner=self,
-            context=context,
-            operator=operator,
-        )
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset.get_toolset()
@@ -546,7 +554,6 @@ __all__ = [
     "SubagentInfoResult",
     "SubagentOperator",
     "SubagentOperatorContext",
-    "SubagentStatus",
     "SubagentSteerRequest",
     "SubagentSteerResult",
     "SubagentToolCallContext",

@@ -18,6 +18,7 @@ from pydantic_ai.messages import ModelMessage
 from a13n_harness._tool_execution import RunToolExecutions
 from a13n_harness.codeact.state import CODEACT_STATE_ID, CODEACT_STATE_VERSION, CodeActStateOwner
 from a13n_harness.configuration import RunConfiguration
+from a13n_harness.envelopes import MessageRouter
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.input import ModelInputState
@@ -180,6 +181,7 @@ class RunBindings:
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     tool_execution: ToolExecutionRuntime | None = None
+    message_router: MessageRouter | None = None
     codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     producer_observer: Callable[[HarnessEvent], None] | None = None
@@ -211,6 +213,8 @@ class RunBindings:
             raise TypeError("RunBindings.codeact_state must be a CodeActStateOwner")
         if self.tool_execution is not None and not isinstance(self.tool_execution, ToolExecutionRuntime):
             raise TypeError("RunBindings.tool_execution must be a ToolExecutionRuntime")
+        if self.message_router is not None and not isinstance(self.message_router, MessageRouter):
+            raise TypeError("RunBindings.message_router must implement MessageRouter")
         if not isinstance(self.request_context, RequestContext):
             raise TypeError("RunBindings.request_context must be a RequestContext")
         if not isinstance(self.configuration, RunConfiguration):
@@ -293,6 +297,7 @@ class RunBindings:
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
         tool_execution: ToolExecutionRuntime | None = None,
+        message_router: MessageRouter | None = None,
         codeact_state: CodeActStateOwner | None = None,
         working_state_observer: WorkingStateObserver | None = None,
         producer_observer: Callable[[HarnessEvent], None] | None = None,
@@ -331,6 +336,7 @@ class RunBindings:
             skill_selection=skill_selection,
             task_state=task_state,
             tool_execution=tool_execution,
+            message_router=message_router,
             codeact_state=codeact_state,
             working_state_observer=working_state_observer,
             producer_observer=producer_observer,
@@ -485,6 +491,7 @@ class AgentContext:
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     tool_execution: ToolExecutionRuntime | None = None
+    message_router: MessageRouter | None = None
     codeact_state: CodeActStateOwner | None = None
     working_state_observer: WorkingStateObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None

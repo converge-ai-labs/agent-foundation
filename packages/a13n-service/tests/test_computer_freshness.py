@@ -326,7 +326,7 @@ async def test_owned_capture_completion_requires_result_retrieval_and_a_new_requ
             name, args = "click", {}
         elif requests == 3:
             assert outcomes == ["blocked"]
-            name, args = "tool_execution_wait", {"execution_id": receipts[0], "timeout_seconds": 2}
+            name, args = "execution_wait", {"execution_id": receipts[0], "timeout_seconds": 2}
         elif requests == 4:
             name, args = "click", {}
         else:

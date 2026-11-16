@@ -173,9 +173,11 @@ def _subagent_tool_names(config: AgentConfig, *, controls: bool = False) -> set[
     policy = config.subagents
     reserved = set()
     if policy.mode == "async" and (policy.named or policy.dynamic.enabled or controls):
-        reserved |= {"subagent_info", "wait_subagent", "steer_subagent", "cancel_subagent", "resume_subagent"}
+        reserved |= {"execution_info", "execution_wait", "execution_result", "execution_cancel", "send_message"}
     if policy.named:
-        reserved |= {"delegate", "resume_subagent"}
+        reserved.add("delegate")
+        if policy.mode == "inline":
+            reserved.add("resume_subagent")
     if policy.dynamic.enabled:
         reserved.add("spawn_subagent")
     return reserved

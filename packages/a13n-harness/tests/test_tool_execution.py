@@ -539,7 +539,7 @@ async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaus
         await runtime.close()
 
 
-@pytest.mark.parametrize("retriever", ["tool_execution_result", "tool_execution_wait"])
+@pytest.mark.parametrize("retriever", ["execution_result", "execution_wait"])
 async def test_detached_retry_returns_original_correction_without_retrying_retrieval(retriever):
     import json
 
@@ -662,7 +662,7 @@ async def test_foreground_tool_obeys_cross_run_barrier_while_controls_remain_ava
             else:
                 yield {
                     0: DeltaToolCall(
-                        name="tool_execution_cancel", json_args=json.dumps({"execution_id": slow_record.execution_id})
+                        name="execution_cancel", json_args=json.dumps({"execution_id": slow_record.execution_id})
                     )
                 }
 
@@ -739,12 +739,12 @@ async def test_retained_spill_materializes_in_later_run_after_original_cleanup(t
             part
             for message in messages
             for part in message.parts
-            if isinstance(part, ToolReturnPart) and part.tool_name == "tool_execution_result"
+            if isinstance(part, ToolReturnPart) and part.tool_name == "execution_result"
         ]
         if not returns:
             yield {
                 0: DeltaToolCall(
-                    name="tool_execution_result",
+                    name="execution_result",
                     json_args=json.dumps({"execution_id": execution_id}),
                     tool_call_id="retrieve",
                 )
@@ -1085,7 +1085,7 @@ async def test_retained_system_failure_preserves_code_and_has_no_default_hint():
         await runtime.close()
 
 
-@pytest.mark.parametrize("retriever", ["tool_execution_result", "tool_execution_wait"])
+@pytest.mark.parametrize("retriever", ["execution_result", "execution_wait"])
 async def test_tool_notification_and_retrieved_result_share_execution_identity(retriever):
     runtime = ToolExecutionRuntime()
     release = asyncio.Event()

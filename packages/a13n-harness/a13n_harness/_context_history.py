@@ -23,7 +23,7 @@ _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
 _WORKING_STATE_QUERY_HINT = (
     "When needed, use the available tools: note_get() lists note keys, task_list() lists tasks, "
-    "and tool_execution_info() lists executions."
+    "and execution_info() lists executions."
 )
 _SKILL_RELOAD_REMINDER = (
     "Before continuing work that depends on a carried-over skill, re-read its SKILL.md and the supporting files "

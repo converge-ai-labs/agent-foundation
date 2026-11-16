@@ -25,7 +25,9 @@ from a13n_harness import (
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import DeferredToolRequests as HarnessDeferredToolRequests
+from a13n_harness.content import request_input_content
 from a13n_harness.context import AgentContext
+from a13n_harness.envelopes import input_source
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
@@ -931,7 +933,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         consumer = asyncio.create_task(_consume_stream(stream))
         await started.wait()
         enqueue_id = await stream.context._steering.notify(
-            "Background subagent subagent-1 has finished. Call wait_subagent.",
+            "Background subagent subagent-1 has finished. Call execution_wait.",
             source=source,
             references=("subagent-1",),
         )
@@ -940,7 +942,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
 
     assert enqueue_id
     assert len(calls) == 2
-    assert "wait_subagent" in str(calls[1])
+    assert "execution_wait" in str(calls[1])
     from a13n_harness.content import request_input_content
     from a13n_harness.events import InputTextEvent
     from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest
@@ -956,7 +958,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
     ]
     assert content[0].metadata.display is False
     assert content[0].metadata.source_id == f"a13n.{source}"
-    assert content[0].value == "Background subagent subagent-1 has finished. Call wait_subagent."
+    assert content[0].value == "Background subagent subagent-1 has finished. Call execution_wait."
     observed = [
         item.event
         for item in items
@@ -1330,7 +1332,10 @@ async def test_session_notice_binding_is_run_local_and_reaches_model_history() -
             if isinstance(item, HarnessEvent) and isinstance(item.event, EnqueuedMessagesEvent)
             for message in item.event.messages
             if isinstance(message, ModelRequest)
-            and (message.metadata or {}).get("a13n.steering-source") == "envd_session"
+            and any(
+                input_source(item.metadata) is not None and input_source(item.metadata).sender.name == "envd_session"
+                for item in request_input_content(message)
+            )
         ]
         references = [(message.metadata or {}).get("a13n.notification-references") for message in notices]
         assert references == [[f"session-{index + 1}"]]

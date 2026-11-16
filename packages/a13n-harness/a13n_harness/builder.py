@@ -36,6 +36,7 @@ from a13n_harness.capabilities.context import (
     HandoffCapability,
 )
 from a13n_harness.capabilities.context_recovery import ContextRecoveryCapability
+from a13n_harness.capabilities.execution import ExecutionCapability
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
@@ -692,6 +693,7 @@ class HarnessBuilder:
             capabilities = (
                 *self._observation.pydantic_capabilities,
                 ToolExecutionBoundaryCapability(),
+                ExecutionCapability(),
                 ToolSurfaceCapability(),
                 ToolDiscoveryCapability(),
                 MessageIntegrityFilterCapability(),

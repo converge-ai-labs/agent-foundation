@@ -380,7 +380,7 @@ async def test_dynamic_child_enforces_parent_request_limit(service, scripted_mod
 async def test_control_names_are_reserved_only_when_tools_are_exposed(service, scripted_model, runs_kit):
     await runs_kit.pause_sweeps(service)
     key = await runs_kit.create_model(service, scripted_model)
-    client = {"name": "subagent_info", "description": "Client status", "parameters_json_schema": {"type": "object"}}
+    client = {"name": "execution_info", "description": "Client status", "parameters_json_schema": {"type": "object"}}
     ordinary = await runs_kit.add_agent(service, "ordinary", key, client_tools=[client])
     invalid = await service.client.post(
         f"{service.api}/agents",
@@ -446,3 +446,17 @@ async def test_concrete_model_thinking_is_frozen_but_unspecified_default_stays_l
     await (await runs_kit.attempt(service))
     request = await scripted_model.request()
     assert request["reasoning_effort"] == (default or "high")
+
+
+@pytest.mark.parametrize("name", ["execution_info", "execution_wait", "execution_cancel", "execution_result"])
+def test_retained_runtime_controls_reserve_client_names(name):
+    from types import SimpleNamespace
+
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.host import Host
+
+    host = SimpleNamespace(sources=lambda agent: {})
+    agent = SimpleNamespace(config=SimpleNamespace(client_tools=[SimpleNamespace(name=name)]))
+    with pytest.raises(ServiceError) as raised:
+        Host.capabilities(host, agent, retain_tools=True)
+    assert raised.value.details["field"] == "client_tools.0.name"

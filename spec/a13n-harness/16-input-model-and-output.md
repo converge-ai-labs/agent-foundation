@@ -86,6 +86,29 @@ class DeferredToolResume:
 
 `requests` is the exact terminal pending value returned by the prior Harness run or accepted by the Host, not a value reconstructed from message metadata. `run()` and `stream()` accept it through `deferred_resume=` together with prior `HarnessState` and fresh bindings. The Harness verifies request/result categories, complete coverage, pending message identity, and the current assembled surface before forwarding only `results` through Pydantic AI's native `deferred_tool_results=` parameter on the first `ModelAttempt`. A later `ModelAttempt` uses the already incorporated public message history and receives no deferred results again. Both nested values are defensively detached. The envelope carries no authority and is not stored wholesale in `HarnessState`. The Host retains accepted input until its continuation incorporates it; `recovery=True` restores only unanswered facts through the pending-call recovery policy, never old approval grants, as defined by [Snapshot and Resume](10-snapshot-and-resume.md#restored-pending-tool-calls); the full validation and Host boundary is owned by [Tool Execution](07-tool-execution.md#approval-and-deferred-calls).
 
+## Envelopes
+
+`a13n_harness.envelopes` defines shared input vocabulary without owning a queue or storage. Frozen `Sender(kind, thread_id=None, name=None)` describes a user, agent, system or connector. Frozen `ExecutionRef(execution_id, kind, name, state)` refers to agent or tool work. `ExecutionState` is `queued | running | succeeded | failed | cancelled | lost`; Hosts need not queue agents.
+
+`Envelope(id, kind, sender, text, execution=None, delivery="steer")` carries a Host-assigned idempotency identity and one text body. Kinds are `message | agent_message | result | event`; delivery is `steer | next_run`. Ordinary user input remains unmarked. `render_envelope` returns one text `ContentItem` with `ContentMetadata` carrying `a13n.input = {id, kind, sender, execution}`; optional null fields are omitted. Existing content annotations preserve independent display/visibility and source identity. The marker grants no execution authority.
+
+Agent results use `Subagent result · <name> · execution_id=<id> · <state>`, final reply or failure text, and a `send_message` reply hint; cancellation has no body. Tool results use `Tool notification` with the execution identity and an `execution_result` retrieval hint. Child messages use `Subagent message`; messages from another Thread use `Message · from thread "<name>" (<thread_id>)`. Event bodies retain their producer's existing formatting unchanged. Activity never enters a result body.
+
+`input_source(metadata)` returns `InputOrigin(id=None, kind, sender, execution=None)` or `None` for unmarked content. Construction forbids unknown fields; reading stored `a13n.input` ignores unknown fields, including nested ones. A malformed value under that key maps to an event from system sender `unknown`, never to user input. Current markers take precedence over legacy markers.
+
+The same reader recognizes stored `a13n.steering-source` values: `async_subagent` maps to agent result, `tool_execution` to system/tool result, `parent_agent` to agent message, and `background_process`/`envd_session` to system events. Nested `harness_ui.thread_message.source_thread_id` and `.source_thread_title` map to an agent message sender. Content source `a13n-harness-ui.thread-lifecycle` maps to a system event. Missing legacy IDs and execution details remain absent; text is not parsed. Writers emit only `a13n.input`.
+
+`disposition(condition, delivery)` is the pure Host-shared decision table. Hosts map their own state to these conditions, persist accepted Envelopes, enforce authority, and own retries, scheduling and consumption:
+
+| Thread condition | `steer` | `next_run` |
+| ---------------- | ------- | ---------- |
+| active           | steer   | hold       |
+| preparing        | hold    | hold       |
+| idle             | start   | start      |
+| waiting          | hold    | hold       |
+| paused           | hold    | hold       |
+| archived         | reject  | reject     |
+
 ## Model Construction and Resolution
 
 The Harness exports one optional developer-facing construction helper while retaining native Pydantic `Model` as the universal boundary:

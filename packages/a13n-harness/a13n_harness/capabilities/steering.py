@@ -13,7 +13,14 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, UserPromptPart
 
-from a13n_harness.content import ContentItem, ContentMetadata, input_request, replace_request_parts, request_parts
+from a13n_harness.content import (
+    ContentItem,
+    input_request,
+    replace_request_parts,
+    request_input_content,
+    request_parts,
+)
+from a13n_harness.envelopes import Envelope, Sender, input_source, render_envelope
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
@@ -38,7 +45,6 @@ STEERING_CAPABILITY_ID = "a13n.steering"
 _STEERING_STATE_VERSION = "1"
 _SOURCE_RUN_METADATA_KEY = "a13n.steering-run"
 _INPUT_ID_METADATA_KEY = "a13n.steering-input"
-_NOTIFICATION_SOURCE_METADATA_KEY = "a13n.steering-source"
 _NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
 _NOTIFICATION_REFERENCES_METADATA_KEY = "a13n.notification-references"
 
@@ -216,12 +222,19 @@ class SteeringBridge:
         active = self._active_context
         if active is None:
             return None
+        notice_id = uuid4().hex
+        (item,) = render_envelope(
+            Envelope(id=notice_id, kind="event", sender=Sender(kind="system", name=source), text=message)
+        )
         request = input_request(
-            [ContentItem(message, ContentMetadata(display=False, source_id=f"a13n.{source}"))],
+            [
+                ContentItem(
+                    item.value, item.metadata.model_copy(update={"display": False, "source_id": f"a13n.{source}"})
+                )
+            ],
             metadata={
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
-                _NOTIFICATION_SOURCE_METADATA_KEY: source,
-                _NOTIFICATION_ID_METADATA_KEY: uuid4().hex,
+                _NOTIFICATION_ID_METADATA_KEY: notice_id,
                 _NOTIFICATION_REFERENCES_METADATA_KEY: list(references),
             },
         )
@@ -256,7 +269,11 @@ class SteeringBridge:
                 enqueue_id
                 for enqueue_id, request in self._pending_requests.items()
                 if (metadata := request.metadata) is not None
-                and metadata.get(_NOTIFICATION_SOURCE_METADATA_KEY) == source
+                and any(
+                    (origin := input_source(item.metadata) or input_source(metadata)) is not None
+                    and origin.sender.name == source
+                    for item in request_input_content(request)
+                )
                 and metadata.get(_NOTIFICATION_REFERENCES_METADATA_KEY) == list(references)
             }
             active = self._active_context
@@ -295,7 +312,7 @@ class SteeringBridge:
                     *(
                         self._pending_requests[enqueue_id]
                         for enqueue_id in applied_enqueue_ids
-                        if _NOTIFICATION_SOURCE_METADATA_KEY not in (self._pending_requests[enqueue_id].metadata or {})
+                        if _NOTIFICATION_ID_METADATA_KEY not in (self._pending_requests[enqueue_id].metadata or {})
                     ),
                 )
                 self._retained_requests = deepcopy(retained)
@@ -313,7 +330,7 @@ class SteeringBridge:
             request = self._pending_requests.get(enqueue_id)
             if request is None:
                 return
-            if self._retain_inputs and _NOTIFICATION_SOURCE_METADATA_KEY not in (request.metadata or {}):
+            if self._retain_inputs and _NOTIFICATION_ID_METADATA_KEY not in (request.metadata or {}):
                 retained = (*self._retained_requests, request)
                 self._retained_requests = deepcopy(retained)
             self._observe_delivered(enqueue_id, self._pending_requests.pop(enqueue_id))
@@ -392,6 +409,25 @@ class SteeringBridge:
 def steering_input_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
     """Input IDs of public steering values delivered into `messages`, in history order."""
     return _input_ids(messages, _INPUT_ID_METADATA_KEY)
+
+
+def envelope_ids(state: HarnessState) -> tuple[str, ...]:
+    """Envelope IDs incorporated in history or accepted in the persisted steering replay ledger."""
+    messages = list(state.message_history)
+    entry = state.agent_context_state.get(STEERING_CAPABILITY_ID)
+    if entry is not None:
+        if entry.version != _STEERING_STATE_VERSION:
+            raise RunError("Steering state version is not supported.", code="capability_state_version_unsupported")
+        messages.extend(_SteeringState.model_validate(entry.data).pending_requests)
+    ids = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        for item in request_input_content(message):
+            origin = input_source(item.metadata) or input_source(message.metadata)
+            if origin is not None and origin.id is not None:
+                ids.append(origin.id)
+    return tuple(dict.fromkeys(ids))
 
 
 def without_input(state: HarnessState, *, input_id: str, source_id: str) -> HarnessState:

@@ -162,3 +162,19 @@ assert follow_up.output_or_raise() == result.output_or_raise()
 使用 `async with executable.stream(...)` 逐步接收公开事件，离开作用域后读取 `stream.result`。文本增量用于展示进度，最终结果用于取得应用输出。父级流中可能出现子事件；应按 Run 关联事件，不能将子执行的结束事件当成根执行完成。
 
 流的管理职责见 [Agent 与执行](agents-and-runs.md#stream-events)，AG-UI 映射见 [Stream Protocol](../a13n-stream-protocol/index.md)。
+
+## 交付带来源标记的 Host 输入
+
+自动结果、agent 消息和系统事件使用共享 Envelope；普通用户文本不加标记：
+
+```python
+from a13n_harness import Envelope, Sender, render_envelope
+
+value = render_envelope(Envelope(
+    id="inbox-event-1", kind="event", sender=Sender(kind="system", name="host"),
+    text="The authorized browser handback is ready.",
+))
+# await stream.steer(value), or pass value as the next Run's input.
+```
+
+返回的文本项带有 `a13n.input.id`、kind、sender 和可选 execution 元数据。`input_source(metadata)` 读取这些来源及已存储的旧标记，忽略新版存储字段；格式错误但带标记的内容仍视为系统事件，不会成为普通用户输入。`envelope_ids(state)` 同时包含标准历史和持久化的 pending steering replay，可在选择检查点时消费相应 inbox 行，无须解析私有 steering 状态。出现 ID 不代表 Model 已读。Host 负责持久化、授权和调度；`disposition(condition, delivery)` 只提供共享的 steer/start/hold/reject 规则。

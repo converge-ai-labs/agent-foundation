@@ -69,7 +69,7 @@ Run `uv run python delegation_demo.py`. The parent can call `delegate(subagent="
 
 ### Continue a Child Conversation
 
-`delegate` returns an `execution_id` with the child's output. The parent Model can call `resume_subagent(execution_id=..., prompt=...)` to continue that conversation. Calling `delegate` again starts a new conversation.
+`delegate` returns an `execution_id` with the child's output. The parent Model can call `resume_subagent(subagent_id=..., prompt=...)` to continue that conversation. Calling `delegate` again starts a new conversation.
 
 Save and restore the parent's complete `HarnessState` to preserve inline children across Runs. Keep definition IDs stable when rebuilding compatible definitions. See [State and resume](state-and-resume.md) for persistence.
 
@@ -241,14 +241,16 @@ The catalog lists callable names and canonical-name mappings; use the native too
 
 Use asynchronous children when work must outlive the parent Run. Your Host implements `SubagentOperator` to schedule children, retain checkpoints, and deliver results. Pass that operator to `SubagentCapability(async_enabled=True, operator=operator)` instead of the inline Capability.
 
-| Model tool                              | Result                                       |
-| --------------------------------------- | -------------------------------------------- |
-| `delegate(subagent_name, prompt)`       | Admission receipt; work continues separately |
-| `subagent_info(...)`                    | Current execution status                     |
-| `wait_subagent(...)`                    | Bounded wait for one or more executions      |
-| `steer_subagent(execution_id, message)` | Acknowledgement of a steering request        |
-| `cancel_subagent(execution_id)`         | Acknowledgement of a cancellation request    |
-| `resume_subagent(execution_id, prompt)` | Admission of a linked continuation           |
+| Model tool                                              | Result                                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------ |
+| `delegate(subagent_name, prompt)`                       | Admission receipt; work continues separately                       |
+| `execution_info(execution_id=None, offset=0, limit=20)` | One view, or one page per execution kind                           |
+| `execution_wait(execution_id, timeout_seconds=30)`      | Bounded wait for one execution; no cancellation on timeout         |
+| `execution_cancel(execution_id)`                        | Cancellation request receipt, not proof of cleanup                 |
+| `execution_result(execution_id)`                        | Retained tool output or the agent view with available final reply  |
+| `send_message(to=execution_id, message=...)`            | Steer running work or resume terminal resumable work with a new ID |
+
+Inline children remain synchronous parent-state continuations and keep `resume_subagent(subagent_id, prompt)`. They are not Executions. Async controls are direct tools, not ToolSearch group members. Agent final reply text is optional and capped at 32 Ki characters with a truncation marker; `execution_result` explicitly reports when output is unavailable. Activity is not a substitute for the final answer.
 
 A wait timeout does not cancel work. A cancellation receipt does not prove cleanup. Query the current execution record to confirm the outcome. Closing the parent Run does not cancel accepted async work.
 

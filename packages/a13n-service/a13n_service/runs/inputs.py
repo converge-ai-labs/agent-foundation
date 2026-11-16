@@ -229,7 +229,7 @@ async def content(
             ),
         )
     if entry.kind == "tool_result":
-        hint = "A retained tool execution ended. Read its result with tool_execution_result: "
+        hint = "A retained tool execution ended. Read its result with execution_result: "
         payload = dict(entry.payload)
         if payload.get("status") == "succeeded":
             payload["status"] = "finished"

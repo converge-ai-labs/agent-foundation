@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
 
 from a13n_harness._json import dump_json_bytes, redact_json
+from a13n_harness.envelopes import InputOrigin, input_source
 from a13n_harness.errors import RunError
 from a13n_harness.result import HarnessRunResult
 
@@ -91,10 +92,41 @@ def input_events(
             continue
         value, metadata = projected
         if isinstance(value, str):
-            events.append(InputTextEvent(input_id=input_id, source=source, content=value, metadata=metadata))
+            events.append(
+                InputTextEvent(
+                    input_id=input_id,
+                    source=_input_label(input_source(metadata), source),
+                    content=value,
+                    metadata=metadata,
+                )
+            )
         else:
-            events.append(InputMediaEvent(input_id=input_id, source=source, content=value, metadata=metadata))
+            events.append(
+                InputMediaEvent(
+                    input_id=input_id,
+                    source=_input_label(input_source(metadata), source),
+                    content=value,
+                    metadata=metadata,
+                )
+            )
     return events
+
+
+def _input_label(origin: InputOrigin | None, fallback: InputSource) -> InputSource:
+    if origin is None:
+        return fallback
+    name = origin.sender.name
+    if name in {"async_subagent", "background_process", "envd_session", "tool_execution", "parent_agent"}:
+        return cast(InputSource, name)
+    if origin.kind == "result":
+        return (
+            "async_subagent"
+            if origin.sender.kind == "agent" or (origin.execution is not None and origin.execution.kind == "agent")
+            else "tool_execution"
+        )
+    if origin.kind == "agent_message":
+        return "parent_agent" if name == "parent" else "steering"
+    return "context"  # Even malformed marked content is never an ordinary user observation.
 
 
 def enqueued_input_events(event: EnqueuedMessagesEvent) -> list[InputEvent]:
@@ -103,13 +135,7 @@ def enqueued_input_events(event: EnqueuedMessagesEvent) -> list[InputEvent]:
     for message in event.messages:
         if not isinstance(message, ModelRequest):
             continue
-        notification = (message.metadata or {}).get("a13n.steering-source")
-        source: InputSource = (
-            notification
-            if notification
-            in {"async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"}
-            else "steering"
-        )
+        source = _input_label(input_source(message.metadata), "steering")
         observed.extend(input_events(request_input_content(message), source=source, input_id=event.enqueue_id))
     return observed
 

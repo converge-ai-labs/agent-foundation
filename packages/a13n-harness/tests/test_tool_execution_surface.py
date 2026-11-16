@@ -20,7 +20,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
-CONTROLS = {f"tool_execution_{action}" for action in ("info", "result", "wait", "cancel")}
+CONTROLS = {f"execution_{action}" for action in ("info", "result", "wait", "cancel")}
 
 
 @pytest.mark.parametrize(
@@ -46,7 +46,7 @@ async def test_execution_surface_and_summary_require_capability_and_runtime(capa
     ]
     for owner, record in zip((state, other), records, strict=True):
         await runtime.wait(owner.thread_id, record.execution_id)
-    visible = capability and bound
+    visible = bound
     requests = 0
 
     async def model(messages, info):
@@ -56,7 +56,7 @@ async def test_execution_surface_and_summary_require_capability_and_runtime(capa
         prompts = "\n".join(
             str(part.content) for message in messages for part in message.parts if isinstance(part, UserPromptPart)
         )
-        assert ("Tool executions requiring attention (" in prompts) is visible
+        assert ("Background work (" in prompts) is visible
         assert (records[0].execution_id in prompts) is visible
         assert records[1].execution_id not in prompts
         assert "PRIVATE RESULT BODY" not in prompts
@@ -73,14 +73,14 @@ async def test_execution_surface_and_summary_require_capability_and_runtime(capa
                 )
             }
         elif requests == 2 and visible:
-            yield {0: DeltaToolCall(name="tool_execution_info", json_args="{}", tool_call_id="inspect")}
+            yield {0: DeltaToolCall(name="execution_info", json_args="{}", tool_call_id="inspect")}
         else:
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             code = next(part for part in returns if part.tool_name == "run_code")
             assert tool_execution_value(code.content, code.metadata) == 42
             if visible:
                 inspected = returns[-1].content
-                assert inspected[0]["execution_id"] == records[0].execution_id
+                assert inspected["tool_executions"][0]["execution_id"] == records[0].execution_id
             yield "done"
 
     executable = HarnessBuilder().build(
@@ -169,13 +169,14 @@ async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bo
             yield {
                 0: DeltaToolCall(
                     name="discover_tools",
-                    json_args=json.dumps({"query": "tool_execution_info"}),
+                    json_args=json.dumps({"query": "execution_info"}),
                     tool_call_id="search",
                 )
             }
         else:
             returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
-            assert ("tool_execution_info" in str(returns[-1].content)) is bound
+            assert "execution_info" not in str(returns[-1].content)
+            assert ("execution_info" in {t.name for t in info.function_tools}) is bound
             yield "done"
 
     executable = HarnessBuilder().build(

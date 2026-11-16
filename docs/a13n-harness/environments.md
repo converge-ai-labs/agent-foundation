@@ -266,11 +266,11 @@ A shell-enabled Provider exposes `shell_exec`. Process-capable mounts can additi
 
 Start a command once, then follow the result it returns:
 
-| Result                                                        | Next step                                                                                                                     |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Completed status and output                                   | Check the exit code and output coverage                                                                                       |
-| Live `exec-*` receipt from a Host-held `ToolExecutionRuntime` | On process-capable mounts, use the live ID as `process_id` for Shell controls; after settlement, read `tool_execution_result` |
-| Run-local `process-*` reference                               | Use Shell controls during this Run; the reference does not survive a new Run                                                  |
+| Result                                                        | Next step                                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Completed status and output                                   | Check the exit code and output coverage                                                                                  |
+| Live `exec-*` receipt from a Host-held `ToolExecutionRuntime` | On process-capable mounts, use the live ID as `process_id` for Shell controls; after settlement, read `execution_result` |
+| Run-local `process-*` reference                               | Use Shell controls during this Run; the reference does not survive a new Run                                             |
 
 On process-capable mounts, top-level `shell_exec` waits up to `ToolExecutionConfig.foreground_wait_seconds` (five seconds by default) in both `inline` and `auto` modes. A Host-held runtime retains a still-running command and returns its `exec-*` receipt; immediate steering can return it earlier. Foreground-only mounts use the general policy: `inline` waits for completion, while `auto` permits timed handoff. Their inline output needs no standalone retained-output permission.
 

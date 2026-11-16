@@ -18,10 +18,28 @@ if TYPE_CHECKING:
         SubagentIdentityPolicy,
         derive_child_identity,
     )
+    from a13n_harness.capabilities.steering import envelope_ids
     from a13n_harness.codeact.state import CodeActStateOwner
     from a13n_harness.configuration import RunConfiguration
     from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RequestContext, RunBindings
+    from a13n_harness.envelopes import (
+        INPUT_METADATA_KEY,
+        Disposition,
+        Envelope,
+        EnvelopeKind,
+        ExecutionKind,
+        ExecutionRef,
+        ExecutionState,
+        InputOrigin,
+        MessageRouter,
+        Sender,
+        SenderKind,
+        ThreadCondition,
+        disposition,
+        input_source,
+        render_envelope,
+    )
     from a13n_harness.environment import (
         EnvironmentConnector,
         EnvironmentEntry,
@@ -93,6 +111,24 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS = {
+    "a13n_harness.envelopes": (
+        "INPUT_METADATA_KEY",
+        "Disposition",
+        "Envelope",
+        "EnvelopeKind",
+        "ExecutionKind",
+        "ExecutionRef",
+        "ExecutionState",
+        "InputOrigin",
+        "MessageRouter",
+        "Sender",
+        "SenderKind",
+        "ThreadCondition",
+        "disposition",
+        "input_source",
+        "render_envelope",
+    ),
+    "a13n_harness.capabilities.steering": ("envelope_ids",),
     "a13n_harness.codeact.state": ("CodeActStateOwner",),
     "a13n_harness.tool_execution": (
         "MemoryToolExecutionStore",

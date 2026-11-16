@@ -288,7 +288,7 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert 'contents-loaded="false"' in joined
     assert '<runtime-context source="a13n-harness">' in joined
     assert "note_get() lists note keys" in joined
-    assert "tool_execution_info() lists executions" in joined
+    assert "execution_info() lists executions" in joined
     assert result.state is not None
     state = result.state.agent_context_state.entries["a13n.handoff"].data
     assert state["summary"] is None
@@ -1070,7 +1070,7 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
 
 
 _WORK_LIST_MARKERS = (
-    "Tool executions requiring attention (",
+    "Background work (",
     '<notes source="a13n-harness">',
     '<tasks source="a13n-harness">',
 )

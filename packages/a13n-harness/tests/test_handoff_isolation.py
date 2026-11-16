@@ -320,7 +320,7 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
                 name, args = (
                     ("summarize", {"content": "stale summary"})
                     if replacement == "summarize"
-                    else ("tool_execution_info", {})
+                    else ("execution_info", {})
                 )
         elif stage == 4:
             assert not restored
@@ -335,7 +335,7 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
             settled = await runtime.wait(original.deps.thread_id, records[0].execution_id)
             assert settled.record.status == "succeeded"
             assert not original.deps._tool_executions.history_calls
-            name, args = "tool_execution_result", {"execution_id": records[0].execution_id}
+            name, args = "execution_result", {"execution_id": records[0].execution_id}
         elif stage == 5 and replacement != "compact":
             assert "42" in ModelMessagesTypeAdapter.dump_json(messages).decode()
             name, args = "summarize", {"content": "Completed computation: 42."}

@@ -187,3 +187,7 @@ A Host rejects an incompatible revision or adapter before building process-local
 ### Host-owned Agent Reconstruction vs. Narrow Plugin Configuration
 
 Host-owned Agent schemas keep broad durable compatibility where it belongs and allow native Python composition in the worker. The Harness-owned plugin envelope removes repetitive middleware loading adapters without becoming an Agent compiler, Environment lifecycle format, or universal configuration language.
+
+## Execution Messaging Bindings
+
+A Host supplies `RunBindings.message_router` only when it authorizes non-execution message targets under the [execution messaging contract](07-tool-execution.md#host-held-tool-executions). The current tool-call context reaches the router; identifiers and message metadata confer no authority. Async operators remain independently bound by `SubagentCapability`; the tool runtime remains `RunBindings.tool_execution`. Fresh child bindings choose their own router and runtime. Hosts may leave optional agent output unavailable and `attention` empty without implementing additional storage or queries.

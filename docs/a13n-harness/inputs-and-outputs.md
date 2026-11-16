@@ -162,3 +162,19 @@ The fixed test data makes both outputs equal. A real Model can answer from the p
 Use `async with executable.stream(...)` for incremental public events, and read `stream.result` after leaving the scope. Display text deltas as progress and use the terminal result for the application output. Child events can appear in the parent stream; correlate events to their Run rather than treating a child's terminal event as root completion.
 
 See [Agents and Runs](agents-and-runs.md#stream-events) for stream ownership and [Stream Protocol](../a13n-stream-protocol/index.md) for AG-UI projection.
+
+## Deliver Marked Host Input
+
+Use shared Envelopes for automatic results, agent messages and system events; plain user text stays unmarked:
+
+```python
+from a13n_harness import Envelope, Sender, render_envelope
+
+value = render_envelope(Envelope(
+    id="inbox-event-1", kind="event", sender=Sender(kind="system", name="host"),
+    text="The authorized browser handback is ready.",
+))
+# await stream.steer(value), or pass value as the next Run's input.
+```
+
+The returned text item carries `a13n.input.id`, kind, sender and optional execution metadata. `input_source(metadata)` reads this origin and stored legacy markers. It tolerates newer stored fields; malformed marked content remains a system event, never ordinary user input. `envelope_ids(state)` includes both canonical history and persisted pending steering replay, so checkpoint selection can consume corresponding inbox rows without reading private steering state. Presence is not proof the model read the input. Hosts own durability, authority and scheduling; `disposition(condition, delivery)` supplies only the shared steer/start/hold/reject rule.

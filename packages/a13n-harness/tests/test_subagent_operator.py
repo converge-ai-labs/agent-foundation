@@ -113,7 +113,13 @@ class RecordingSubagentOperator(SubagentOperator):
         self.requests.append(request)
         self.tool_calls.append(tool_call)
         return SubagentInfoResult(
-            executions=(self._view(request.execution_id or "execution-1", status="succeeded", resumable=True),),
+            executions=(
+                self._view(
+                    request.execution_id or "execution-1",
+                    status="running" if self.calls[-2:-1] == ["wait"] else "succeeded",
+                    resumable=True,
+                ),
+            ),
             execution_offset=request.execution_offset,
             total=1,
         )
@@ -253,11 +259,11 @@ def test_subagent_capability_requires_one_coherent_mode() -> None:
             True,
             {
                 "delegate",
-                "subagent_info",
-                "wait_subagent",
-                "steer_subagent",
-                "cancel_subagent",
-                "resume_subagent",
+                "execution_info",
+                "execution_wait",
+                "send_message",
+                "execution_cancel",
+                "execution_result",
             },
         ),
     ],
@@ -273,7 +279,7 @@ async def test_subagent_modes_expose_mutually_exclusive_standard_tools(
         del messages
         observed.update(tool.name for tool in info.function_tools)
         if async_enabled:
-            wait = next(tool for tool in info.function_tools if tool.name == "wait_subagent")
+            wait = next(tool for tool in info.function_tools if tool.name == "execution_wait")
             assert wait.metadata is not None
             metadata = normalize_harness_tool_metadata(wait.metadata[HARNESS_TOOL_METADATA_KEY])
             assert metadata.output_policy.overflow == "spill"
@@ -297,11 +303,11 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     operator = RecordingSubagentOperator()
     steps = (
         ("delegate", {"subagent_name": "reviewer", "prompt": "inspect"}),
-        ("subagent_info", {"execution_id": "execution-1"}),
-        ("wait_subagent", {"execution_id": "execution-1", "timeout_seconds": 0.01}),
-        ("steer_subagent", {"execution_id": "execution-1", "message": "focus"}),
-        ("cancel_subagent", {"execution_id": "execution-1"}),
-        ("resume_subagent", {"execution_id": "execution-1", "prompt": "continue"}),
+        ("execution_info", {"execution_id": "execution-1"}),
+        ("execution_wait", {"execution_id": "execution-1", "timeout_seconds": 0.01}),
+        ("send_message", {"to": "execution-1", "message": "focus"}),
+        ("execution_cancel", {"execution_id": "execution-1"}),
+        ("send_message", {"to": "execution-1", "message": "continue"}),
     )
 
     async def parent_model(
@@ -327,9 +333,9 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
             }
             return
         for returned in returns:
-            if returned.tool_name in {"subagent_info", "wait_subagent"}:
-                assert returned.content["executions"][0]["reply_tool"] == "resume_subagent"
-                assert returned.content["executions"][0]["header"] == (
+            if returned.tool_name in {"execution_info", "execution_wait"}:
+                assert returned.content["reply_tool"] == "send_message"
+                assert returned.content["header"] == (
                     "Subagent result · reviewer · execution_id=execution-1 · succeeded"
                 )
         yield "done"
@@ -347,11 +353,12 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     )
 
     assert result.output_or_raise() == "done"
-    assert operator.calls == ["delegate", "info", "wait", "steer", "cancel", "info", "resume"]
+    assert operator.calls == ["delegate", "info", "wait", "info", "steer", "cancel", "info", "resume"]
     assert [item.tool_call_id if item is not None else None for item in operator.tool_calls] == [
         "call-1",
         "call-2",
         "call-3",
+        "call-4",
         "call-4",
         "call-5",
         "call-6",
@@ -359,12 +366,13 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
     ]
     assert [item.tool_name if item is not None else None for item in operator.tool_calls] == [
         "delegate",
-        "subagent_info",
-        "wait_subagent",
-        "steer_subagent",
-        "cancel_subagent",
-        "resume_subagent",
-        "resume_subagent",
+        "execution_info",
+        "execution_wait",
+        "send_message",
+        "send_message",
+        "execution_cancel",
+        "send_message",
+        "send_message",
     ]
     assert len(operator.plans) == 2
     first_plan, resume_plan = operator.plans
@@ -546,8 +554,8 @@ async def test_host_resume_without_roster_preserves_retained_identity(change: st
         ):
             yield {
                 0: DeltaToolCall(
-                    name="resume_subagent",
-                    json_args='{"execution_id":"execution-1","prompt":"continue"}',
+                    name="send_message",
+                    json_args='{"to":"execution-1","message":"continue"}',
                     tool_call_id="resume-1",
                 )
             }
@@ -567,7 +575,7 @@ async def test_host_resume_without_roster_preserves_retained_identity(change: st
             await executable.run("continue", bindings=_bindings())
     else:
         assert (await executable.run("continue", bindings=_bindings())).output_or_raise() == "done"
-        assert "delegate" not in observed and "resume_subagent" in observed
+        assert "delegate" not in observed and "send_message" in observed
         assert operator.calls == ["resume_host"]
         assert operator.requests == [AsyncResumeRequest(execution_id="execution-1", prompt="continue")]
         assert operator.tool_calls[0].tool_call_id == "resume-1"
@@ -610,7 +618,7 @@ async def test_async_guidance_describes_automatic_results_and_turn_end():
 @pytest.mark.parametrize("status", ["running", "succeeded", "failed", "cancelled", "lost"])
 @pytest.mark.parametrize("result_type", [SubagentInfoResult, SubagentWaitResult])
 def test_execution_page_distinguishes_notifications_from_terminal_results(status, result_type):
-    from a13n_harness.toolsets.subagents import _execution_page
+    from a13n_harness.toolsets.execution import _execution_page
 
     result = result_type(executions=(RecordingSubagentOperator._view("execution-1", status=status),), total=1)
     kind = "Subagent notification" if status == "running" else "Subagent result"

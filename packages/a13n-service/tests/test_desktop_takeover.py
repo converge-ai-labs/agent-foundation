@@ -56,7 +56,7 @@ async def test_blocked_computer_does_not_pause_model_or_other_tools(service, con
     first, environment_id, actor, *_ = connected
     gate = asyncio.Event()
     scripted_model.call("computer_observe", {}, call_id="blocked", gate=gate)
-    scripted_model.call("tool_execution_info", {}, call_id="unrelated")
+    scripted_model.call("execution_info", {}, call_id="unrelated")
     scripted_model.say("Other work completed while the human controls the desktop.")
     running = await runs_kit.attempt(service)
     try:
@@ -385,7 +385,7 @@ async def test_human_control_allows_real_files_shell_and_new_codeact_scripts(
             receipt = json.loads(receipts[0])
             if receipt.get("type") == "tool_execution_receipt":
                 scripted_model.call(
-                    "tool_execution_wait",
+                    "execution_wait",
                     {"execution_id": receipt["execution_id"], "timeout_seconds": 30},
                     call_id="process-result",
                 )
@@ -469,7 +469,7 @@ async def test_handback_reaches_live_child_without_resurrecting_settled_child(
     human = await begin(service, connected)
     gate = asyncio.Event()
     scripted_model.call("computer_observe", {}, call_id="child-blocked", to="Role: worker")
-    scripted_model.call("tool_execution_info", {}, call_id="child-info", gate=gate, to="Role: worker")
+    scripted_model.call("execution_info", {}, call_id="child-info", gate=gate, to="Role: worker")
     scripted_model.say("Other work finished", to="Role: worker")
     scripted_model.say("Handback received", to="Role: worker")
     running = await runs_kit.attempt(service)

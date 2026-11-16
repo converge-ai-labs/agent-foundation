@@ -238,7 +238,7 @@ async def start_live(runtime, root, *, environment=None):
     return first, execution_id, runtime.resource(first.thread_id, execution_id)
 
 
-@pytest.mark.parametrize("wait_tool", ["shell_wait", "tool_execution_wait"])
+@pytest.mark.parametrize("wait_tool", ["shell_wait", "execution_wait"])
 @pytest.mark.parametrize("immediate", [False, True])
 async def test_steering_releases_control_wait_without_stopping_original_shell(
     tmp_path, monkeypatch, wait_tool, immediate
@@ -290,7 +290,7 @@ async def test_steering_releases_control_wait_without_stopping_original_shell(
                     await consumer
                     if not immediate:
                         value = results[0]
-                        if wait_tool == "tool_execution_wait":
+                        if wait_tool == "execution_wait":
                             value, header = value
                             assert header == f"Tool result · shell_exec · execution_id={execution_id} · succeeded"
                         assert value["status"]["phase"] == "exited"

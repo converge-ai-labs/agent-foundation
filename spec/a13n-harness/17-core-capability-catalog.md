@@ -33,6 +33,8 @@ The current mandatory build contribution is deliberately narrow:
 | Model context coordinator | Mandatory `ModelContextCoordinatorCapability`                   | Preserve historical overlays, resolve the typed Host/Capability/terminal projection chain, and commit one validated current request overlay          | [Context and Working State](09-context-and-memory.md)      |
 | Continuation coordinator  | `AgentContextState` typed methods                               | Provide detached versioned JSON namespaces without a second Capability registry                                                                      | [Harness State and Resume](10-snapshot-and-resume.md)      |
 
+The mandatory execution surface exposes direct controls according to current runtime/operator bindings and one combined `Background work` projection. `ToolExecutionCapability` remains an optional retained-tool wait policy; `SubagentCapability` selects inline or async delegation. [Tool execution](07-tool-execution.md#host-held-tool-executions) owns control availability and messaging.
+
 Model self-healing is installed by default, with an explicit builder opt-out. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
 
 ## Optional Capability Roles

@@ -172,9 +172,9 @@ class _OwnedProcess:
         async with self._condition:
             if self._closed:
                 raise EnvironmentInvocationError(
-                    "Shell execution has settled. Use tool_execution_result for its retained result.",
+                    "Shell execution has settled. Use execution_result for its retained result.",
                     code="environment_reference_stale",
-                    details={"field": "process_id", "hint": "Read the retained result with tool_execution_result."},
+                    details={"field": "process_id", "hint": "Read the retained result with execution_result."},
                 )
             self._readers += 1
         try:

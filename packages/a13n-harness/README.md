@@ -27,7 +27,7 @@ Supply a Host-owned `EnvironmentSource` to each `run(..., environment=...)`, or 
 
 For Host-owned async execution, configure `SubagentCapability(async_enabled=True, operator=operator)`. Final results arrive automatically, including after the parent turn ends. The parent can continue other work and end its turn when only background work remains.
 
-Your Host implements delivery and wake eligibility; Harness does not schedule delivery. Retrieved results include the child's execution identity. Hosts can use `a13n_harness.execution_identity.format_execution_header` for matching delivered results and messages. See the [delegation contract](../../spec/a13n-harness/11-delegation-and-subagents.md).
+Your Host implements delivery and wake eligibility; Harness does not schedule delivery. Retrieved results include the child's execution identity. Hosts use `Envelope` and `render_envelope` for marked results/messages, `input_source` for current and stored legacy origins, and `envelope_ids(state)` for incorporated or checkpointed pending inputs. See the [delegation contract](../../spec/a13n-harness/11-delegation-and-subagents.md).
 
 ## Browser tools
 
@@ -111,3 +111,7 @@ A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `
 ## Versioning
 
 Harness and `a13n-stream-protocol` publish together at one exact version. Harness UI releases independently. The [Harness specification](../../spec/a13n-harness/README.md) owns the accepted contracts.
+
+## Execution controls and messaging
+
+Bound tool runtimes and async subagent operators share direct `execution_info`, `execution_wait`, `execution_cancel` and `execution_result` controls plus one bounded `Background work` block. `send_message` steers running agent work or resumes ended resumable work. Non-execution targets require `RunBindings.message_router`; acceptance never means read. Inline delegation is separate and retains `resume_subagent(subagent_id, prompt)`.

@@ -501,3 +501,7 @@ send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_O
 Permission denial and pending approval cause no Store read. A reference can expire while approval is pending; resume then reports an unavailable object. The Agent must use a currently listed reference or explicitly import again, not invent base64 or replay the producer automatically. Temporary TTL and LRU limits are Host policy; explicit promotion excludes an object from temporary expiry. `ObjectStoreConfiguration(capture_media=False)` disables automatic capture, and `max_object_bytes` bounds imports and capture. Host limits can be smaller; a capture size rejection preserves native media and reports that no reusable object was captured.
 
 For built-in Host configuration, see [Harness UI](../a13n-harness-ui/configuration.md#object-store) and [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools).
+
+## Shared Execution Surface
+
+The builder installs execution controls once. A tool-runtime or async-operator binding exposes `execution_info`, `execution_wait`, `execution_cancel` and `execution_result`; an async operator or `RunBindings.message_router` exposes `send_message`. These tools stay direct rather than entering ToolSearch groups. `ToolExecutionCapability` configures retained-tool wait policy; `SubagentCapability` still selects inline or async delegation. Their presence does not grant control over another Thread.

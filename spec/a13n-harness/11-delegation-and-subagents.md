@@ -72,33 +72,13 @@ A hosted source schema may support references or authoring inheritance, but trus
 Inline mode exposes exactly two standard tools:
 
 - `delegate(subagent, prompt)` creates a new inline child continuation, waits for a complete child result, and returns its bounded output plus an `execution_id` local to parent state;
-- `resume_subagent(execution_id, prompt)` advances one retained compatible inline continuation and waits for its complete result.
+- `resume_subagent(subagent_id, prompt)` advances one retained compatible inline continuation and waits for its complete result.
 
-Async mode exposes exactly six standard tools:
+Async mode exposes `delegate(subagent_name, prompt)` plus the shared [execution controls and messaging](07-tool-execution.md#host-held-tool-executions). Async `delegate` returns after Host admission. `send_message(to=execution_id, message=...)` steers running work or creates a linked continuation from terminal resumable work. Declared continuation requires the stable roster name and a freshly resolved plan; trusted Host-defined continuation uses `resume_host` with its default denial. Closing the parent never cancels accepted work.
 
-```python
-delegate(subagent_name: str, prompt: str)
-subagent_info(execution_id: str | None = None, execution_offset: int = 0, execution_limit: int = 20)
-wait_subagent(
-    execution_id: str | None = None,
-    timeout_seconds: float | None = None,
-    execution_offset: int = 0,
-    execution_limit: int = 20,
-)
-steer_subagent(execution_id: str, message: str)
-cancel_subagent(execution_id: str)
-resume_subagent(execution_id: str, prompt: str)
-```
+Inline children are synchronous parent-state continuations, not Executions. Inline mode retains `delegate(subagent, prompt)` and `resume_subagent(subagent_id, prompt)` unchanged; it does not publish async controls unless an independent Host execution backend is bound. An Agent selects inline or async delegation, never both. Tool descriptions distinguish blocking inline completion from async admission.
 
-- async `delegate` returns after Host admission rather than child completion;
-- `subagent_info` queries one execution or one bounded Host page;
-- `wait_subagent` performs one bounded wait for one execution or one bounded Host fan-in query;
-- `steer_subagent` and `cancel_subagent` return Host acknowledgements without inventing completion;
-- async `resume_subagent` first resolves the retained execution through the operator, requires resumability and the same stable child roster name in the current collection, then asks the Host to create a linked continuation under the current resolved plan.
-
-The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. `timeout_seconds` bounds one wait call and never implies cancellation.
-
-An async `execution_id` is a bounded public Host execution reference. It is not a provider resource ID, credential, Environment reference, or necessarily a Harness-generated value. Standard results never expose Host-private storage IDs, raw child state, raw business output, credentials, or native exceptions. A single-execution info and wait return the same bounded execution view; no-ID list and fan-in return bounded summaries. Harness output policy still bounds the serialized view.
+An async execution reference is a bounded Host selector, not an authority token. Info and wait expose a bounded `SubagentExecutionView`, including optional `output: str | None`: the Host's final reply, unavailable while running or when not retained. Harness caps the text at 32 Ki characters including an explicit truncation marker. There is no extra truncation field. Activity stays a separately bounded inspection projection, never a result Envelope body. No-ID info returns one bounded page per execution kind; wait always addresses one execution. Standard views expose no raw child state, credentials, native exceptions or Host-private storage identities.
 
 ## Harness-Resolved Async Authority
 
@@ -134,7 +114,7 @@ class SubagentDelegationPlan:
     parent: SubagentOperatorContext
 ```
 
-The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of parent Run limits, child definition limits, and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition.
+The plan contains the exact currently built roster child, derived child Identity, already-applied child input and context policy, intersection of child definition limits and authored edge limits, plus detached parent correlation. Initial `delegate` executes that exact child; the Host may narrow policy but cannot substitute another definition.
 
 On async resume, the current roster child can differ from the definition recorded by the prior execution. A Host that exposes a separately authorized mutable child-Thread configuration may resolve that retained Thread's current Agent definition instead of the roster child's definition. That selection comes only from Host authority, never from model arguments, and the stable roster name remains the parent-side admission gate.
 
@@ -146,7 +126,7 @@ Each standard async tool also projects its originating Pydantic tool-call correl
 
 `BuiltSubagent` is a process-local invocation reference. A durable or remote operator persists its own exact definition revision and reconstructs the authorized child rather than serializing the executable object.
 
-Trusted Host results may set `AsyncExecutionView.source="host"`; the default `declared` value is omitted from serialization. Host-defined creation is a Host tool and does not insert a fake child into the immutable roster. On resume, only this trusted discriminator selects `SubagentOperator.resume_host(context, request, tool_call=...)`. Its default implementation refuses the request. It receives detached parent context, not a fabricated `SubagentDelegationPlan`. The Host resolves retained configuration, checks ownership, authority and limits, and constructs fresh bindings. Harness requires unchanged source, label and definition identity, a new execution ID, and exact `resumed_from` linkage. A missing roster name never activates this path. Declared resume retains its existing roster and plan rules. Empty-roster async capabilities expose controls without `delegate`.
+Trusted Host results may set `AsyncExecutionView.source="host"`; the default `declared` value is omitted from serialization. Host-defined creation is a Host tool and does not insert a fake child into the immutable roster. On resume, only this trusted discriminator selects `SubagentOperator.resume_host(context, request, tool_call=...)`. Its default implementation refuses the request. It receives detached parent context, not a fabricated `SubagentDelegationPlan`. The Host resolves retained configuration, checks ownership, authority and limits, and constructs fresh bindings. Harness requires unchanged source, label and definition identity, a new execution ID, and exact `resumed_from` linkage. A missing roster name never activates this path. Declared resume retains its existing roster and plan rules. Empty-roster async capabilities enable shared execution controls without `delegate`.
 
 `project_delegation_input` shares the existing context projection with Host-defined creation. It does not authorize a child or retain its state.
 
@@ -156,6 +136,11 @@ Trusted Host results may set `AsyncExecutionView.source="host"`; the default `de
 
 ```python
 class SubagentOperator(ABC):
+    async def attention(
+        self, context: SubagentOperatorContext, *, limit: int = 21
+    ) -> tuple[ExecutionRef, ...]:
+        return ()
+
     async def delegate(
         self,
         plan: SubagentDelegationPlan,
@@ -269,7 +254,7 @@ Calls for different inline IDs may run concurrently. Competing calls for the sam
 
 `RunBindings.deferred_tools_supported` defaults to `True` and selects current Host support independently of instance lineage. A Host that cannot collect deferred feedback sets it to `False`. The tool-surface and runtime denial rules belong to [Tool Execution](07-tool-execution.md).
 
-The built-in inline executor always sets this flag to `False`, even when the parent supports deferred tools. An authored child bindings factory cannot enable it. Inline state contains child checkpoints, not pending-request envelopes or trusted result submissions. Ordinary `resume_subagent(execution_id, prompt)` remains prompt continuation, not a deferred-feedback API. Harness provides no parent-child deferred bridge or scheduler.
+The built-in inline executor always sets this flag to `False`, even when the parent supports deferred tools. An authored child bindings factory cannot enable it. Inline state contains child checkpoints, not pending-request envelopes or trusted result submissions. Ordinary `resume_subagent(subagent_id, prompt)` remains prompt continuation, not a deferred-feedback API. Harness provides no parent-child deferred bridge or scheduler.
 
 A Host-managed child can use native `ExecutableAgent.run()` or `stream()` with deferred support enabled. Harness builds every child with both its business output and native `DeferredToolRequests` support; the authored business output must not include that reserved type. A suspended `HarnessRunResult` contains the exact pending requests and complete checkpoint, not a completed business output. The Host owns their retention, feedback correlation, authorization, scheduling, and a later direct child invocation with fresh bindings, `previous_state`, and `DeferredToolResume`. It must not infer a resumable pending batch from observation events alone. Returning native requests as ordinary delegate-tool output does not suspend the parent.
 
@@ -308,7 +293,7 @@ For async work, the Host owns observation storage, subscriptions, wake policy, a
 
 ### Model-Facing Execution Identity
 
-Each `subagent_info` and `wait_subagent` execution entry includes a `header` alongside its existing bounded fields: `Subagent notification · <name> · execution_id=<id> · <state>` for non-terminal executions and `Subagent result · <name> · execution_id=<id> · <state>` for terminal executions. This is a tool-facing projection; the operator's typed views remain execution facts. Host-delivered final results use the same header and execution ID. Explicit child messages use `Subagent message · <name> · execution_id=<id> · <state>` with the current state. Execution entries and messages identify `steer_subagent` for a running child and `resume_subagent` when resumable. Hosts use the shared `a13n_harness.execution_identity.format_execution_header` formatter for delivered observations.
+Each `execution_info` and `execution_wait` execution entry includes a `header` alongside its existing bounded fields: `Subagent notification · <name> · execution_id=<id> · <state>` for non-terminal executions and `Subagent result · <name> · execution_id=<id> · <state>` for terminal executions. This is a tool-facing projection; the operator's typed views remain execution facts. Host-delivered final results use the same header and execution ID. Explicit child messages use `Subagent message · <name> · execution_id=<id> · <state>` with the current state. Execution entries and messages identify `send_message` for a running or resumable child. Hosts use the shared `a13n_harness.execution_identity.format_execution_header` formatter for delivered observations.
 
 Retrieval and automatic delivery proceed independently. Repeated results carrying the same execution ID are allowed; there is no delivered/read flag for async subagents. Execution identity grants correlation, not authority.
 

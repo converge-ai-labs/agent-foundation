@@ -508,7 +508,7 @@ async def test_service_retains_real_mcp_call_after_run_seals(
             else:
                 assert accepted["options"]["execution"]["tools"]["mode"] == "inline"
                 assert accepted["options"]["execution"]["steering"] == "boundary"
-            scripted_model.call("tool_execution_result", {"execution_id": record.execution_id}, call_id="read-result")
+            scripted_model.call("execution_result", {"execution_id": record.execution_id}, call_id="read-result")
             scripted_model.say("Read the retained result")
             await execute(second, successor, AttemptControl())
             assert (await runs_kit.get_run(service, successor.run_id))["status"] == "completed"

@@ -179,16 +179,22 @@ def test_notice_observation_only_advances_on_confirmed_delivery():
     assert source.previous == "second"
 
 
+def _tools(ctx):
+    from a13n_harness.capabilities.execution import ExecutionCapability
+    from a13n_harness.toolsets.execution import ExecutionToolset
+
+    owner = ctx.capabilities.setdefault("a13n.executions", ExecutionCapability())
+    return ExecutionToolset(owner=owner, context=ctx.deps, subagents=None)
+
+
 @pytest.mark.anyio
 async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_history(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
     from a13n_harness._tool_execution import RunToolExecutions
-    from a13n_harness.capabilities.tool_execution import (
-        ToolExecutionCapability,
-        tool_execution_info,
-        tool_execution_result,
+    from a13n_harness.capabilities.execution import (
+        ExecutionCapability,
     )
     from a13n_harness.tool_execution import (
         MemoryToolExecutionStore,
@@ -230,28 +236,31 @@ async def test_attention_summary_reads_one_priority_page_and_keeps_explicit_hist
     listed = AsyncMock(wraps=store.list)
     monkeypatch.setattr(store, "list", listed)
     ctx = SimpleNamespace(
+        capabilities={},
         deps=SimpleNamespace(
             thread_id="thread-test", tool_execution=runtime, _tool_executions=SimpleNamespace(result_origins={})
-        )
+        ),
     )
 
     async def handler(request):
         return ModelContextProjection()
 
-    projection = await ToolExecutionCapability().wrap_model_context(ctx, INPUT, handler)
+    projection = await ExecutionCapability().wrap_model_context(ctx, INPUT, handler)
     listed.assert_awaited_once_with("thread-test", offset=0, limit=21)
     text = projection.blocks[0].content
     assert "old-" not in text
-    assert f"- {unread.execution_id} | lookup | finished, result available" in text
+    assert f"- {unread.execution_id} | lookup | succeeded, result available" in text
     assert f"- {queued.execution_id} | lookup | queued" in text
     assert not (await runtime.info("thread-test", unread.execution_id)).delivery_acknowledged
-    explicit = await tool_execution_info(ctx, offset=2, limit=100)
-    assert len(explicit) == 100 and all(record["execution_id"].startswith("old-") for record in explicit)
+    explicit = await _tools(ctx).execution_info(ctx, offset=2, limit=100)
+    assert len(explicit["tool_executions"]) == 100 and all(
+        record["execution_id"].startswith("old-") for record in explicit["tool_executions"]
+    )
     ctx.tool_call_id = "retrieve-docs"
 
     ctx.deps._tool_executions = RunToolExecutions()
-    result_id = next(line.split(" | ")[0][2:] for line in text.splitlines() if "finished, result available" in line)
-    assert (await tool_execution_result(ctx, result_id)).return_value == "unread"
+    result_id = next(line.split(" | ")[0][2:] for line in text.splitlines() if "succeeded, result available" in line)
+    assert (await _tools(ctx).execution_result(ctx, result_id)).return_value == "unread"
     await runtime.close()
 
 
@@ -261,10 +270,8 @@ async def test_attention_reports_terminal_status_for_previously_active_execution
     import asyncio
     from types import SimpleNamespace
 
-    from a13n_harness.capabilities.tool_execution import (
-        ToolExecutionCapability,
-        tool_execution_info,
-        tool_execution_result,
+    from a13n_harness.capabilities.execution import (
+        ExecutionCapability,
     )
     from a13n_harness.tool_execution import ToolExecutionRuntime
 
@@ -290,15 +297,16 @@ async def test_attention_reports_terminal_status_for_previously_active_execution
         operation, thread_id="thread-test", run_id="run-test", tool_call_id="call-test", tool_name="lookup"
     )
     ctx = SimpleNamespace(
+        capabilities={},
         deps=SimpleNamespace(
             thread_id="thread-test", tool_execution=runtime, _tool_executions=SimpleNamespace(result_origins={})
-        )
+        ),
     )
 
     async def handler(request):
         return ModelContextProjection()
 
-    capability = ToolExecutionCapability()
+    capability = ExecutionCapability()
 
     def boundary():
         return ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT)
@@ -309,14 +317,14 @@ async def test_attention_reports_terminal_status_for_previously_active_execution
     for _, confirm in first._notices.confirmations:
         confirm()
     await runtime.join()
-    terminal = await tool_execution_info(ctx, record.execution_id)
+    terminal = await _tools(ctx).execution_info(ctx, record.execution_id)
     assert terminal["status"] == status
     assert not terminal["result_available"] and not terminal["delivery_acknowledged"]
-    assert (await tool_execution_result(ctx, record.execution_id))["status"] == status
+    assert (await _tools(ctx).execution_result(ctx, record.execution_id))["status"] == status
     next_request = boundary()
     delta = await capability.wrap_model_context(ctx, next_request, handler)
     assert record.execution_id in delta.blocks[0].content and status in delta.blocks[0].content
-    assert "tool_execution_info" in delta.blocks[0].content
+    assert "execution_info" in delta.blocks[0].content
     for _, confirm in next_request._notices.confirmations:
         confirm()
     assert not (await capability.wrap_model_context(ctx, boundary(), handler)).blocks
@@ -329,7 +337,7 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
-    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.capabilities.execution import ExecutionCapability
     from a13n_harness.tool_execution import ToolExecutionRuntime
 
     runtime = ToolExecutionRuntime()
@@ -345,15 +353,16 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
     listed = AsyncMock(wraps=runtime.store.list)
     monkeypatch.setattr(runtime.store, "list", listed)
     ctx = SimpleNamespace(
+        capabilities={},
         deps=SimpleNamespace(
             thread_id="thread-test", tool_execution=runtime, _tool_executions=SimpleNamespace(result_origins={})
-        )
+        ),
     )
 
     async def handler(request):
         return ModelContextProjection()
 
-    capability = ToolExecutionCapability()
+    capability = ExecutionCapability()
     request = replace(INPUT, _notices=_NoticeBoundary())
     projection = await capability.wrap_model_context(ctx, request, handler)
     projection = replace(projection, _confirmations=tuple(request._notices.confirmations))
@@ -364,7 +373,7 @@ async def test_attention_summary_bounds_results_and_signals_overflow(count, monk
     assert len(records) == min(count, 20)
     assert ("an empty list does not establish success" in text) == (count == 0)
     assert ("More executions may require attention" in text) == (count > 20)
-    assert all(line.endswith(" | lookup | finished, result available") for line in records)
+    assert all(line.endswith(" | lookup | succeeded, result available") for line in records)
     if count:
         stored = await runtime.summarize("thread-test", limit=count)
         assert len(stored) == count
@@ -383,7 +392,7 @@ async def test_run_attention_survives_replaced_history_and_does_not_echo_host_co
     from types import SimpleNamespace
 
     from a13n_harness._tool_execution import RunToolExecutions
-    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.capabilities.execution import ExecutionCapability
     from a13n_harness.tool_execution import ToolExecutionRuntime
 
     runtime = ToolExecutionRuntime(reports_background_completions=host_delivery)
@@ -395,9 +404,10 @@ async def test_run_attention_survives_replaced_history_and_does_not_echo_host_co
     for record in records:
         await runtime.release_foreground("thread", record.execution_id)
     ctx = SimpleNamespace(
-        deps=SimpleNamespace(thread_id="thread", tool_execution=runtime, _tool_executions=RunToolExecutions())
+        capabilities={},
+        deps=SimpleNamespace(thread_id="thread", tool_execution=runtime, _tool_executions=RunToolExecutions()),
     )
-    owner = ToolExecutionCapability()
+    owner = ExecutionCapability()
 
     async def handler(request):
         return ModelContextProjection()
@@ -423,11 +433,11 @@ async def test_run_attention_survives_replaced_history_and_does_not_echo_host_co
         if host_delivery:
             assert changed == ""  # normal projection before the Host's completion input
         else:
-            assert records[0].execution_id in changed and "finished, result available" in changed
+            assert records[0].execution_id in changed and "succeeded, result available" in changed
             assert await boundary() == changed  # preparation without append cannot consume it
         assert await boundary(completion=[records[0].execution_id]) == ""
         assert await boundary() == ""
-        fresh = await boundary(ToolExecutionCapability())
+        fresh = await boundary(ExecutionCapability())
         assert all(r.execution_id in fresh for r in records)
         assert (await runtime.result("thread", records[0].execution_id)).result is True
     finally:

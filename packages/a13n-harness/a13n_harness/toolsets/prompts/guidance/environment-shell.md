@@ -30,7 +30,7 @@ Without runtime ownership, including Shell calls inside CodeAct, a process-capab
 `execution_timeout_seconds` requests a provider-enforced hard deadline and can be unsupported. The Host's initial wait and bounded control waits only bound waiting. Harness adds no Agent-wide tool timeout. </shell-exec>
 
 <shell-processes>
-On process-capable mounts, pass the live execution ID as `process_id` to the available Shell controls. Live Shell controls end at execution settlement; a Host-held execution's final result is retrieved through the Host's execution-result tool.
+On process-capable mounts, pass the live execution ID as `process_id` to the available Shell controls. Live Shell controls end at execution settlement; a Host-held execution's final result is retrieved through `execution_result`. Use `execution_info`, `execution_wait` or `execution_cancel` for retained execution controls; a wait timeout never cancels work.
 
 An `exec-*` Shell reference remains controllable across Runs of the same Thread while the same Host runtime retains it and the current Environment authorizes the original target and actions. A `process-*` reference belongs to its originating Run and does not remain usable in continuation Runs. Native discovery can find commands the Provider actually retained after scope loss; a saved reference alone does not restore authority. </shell-processes>
 

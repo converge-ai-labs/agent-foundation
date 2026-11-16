@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
 from a13n_harness._retained_scope import RetainedScope as RetainedScope
+from a13n_harness.envelopes import ExecutionState
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tools.diagnostics import system_error, system_failure, tool_error_text
@@ -49,7 +50,7 @@ class ToolExecutionRecord(BaseModel):
     tool_name: str
     # Original explicit Thread-wide completion ordering, not the native per-tool batch flag.
     sequential: bool = False
-    status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"] = "queued"
+    status: ExecutionState = "queued"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     result_available: bool = False
@@ -73,7 +74,7 @@ class ToolExecutionRecord(BaseModel):
             "message": (
                 "Running in the background; do not reissue it. Its result is delivered to this conversation "
                 "automatically when it finishes, even after your turn ends. You can continue with other work "
-                "meanwhile. Call tool_execution_wait or tool_execution_result only when your next step needs "
+                "meanwhile. Call execution_wait or execution_result only when your next step needs "
                 "the result now."
             ),
         }

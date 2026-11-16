@@ -162,8 +162,8 @@ async def test_a_parent_steers_its_usage_limited_child(skill_service, scripted_m
     async with transaction(service.runtime.storage) as session:
         held = update(RunRow).where(RunRow.id == child_run_id)
         await session.execute(held.values(available_at=func.now() + timedelta(hours=1)))
-    steer = {"execution_id": child_run_id, "message": "report it in metres"}
-    scripted_model.call("steer_subagent", steer, call_id="call_s", to="Role: coordinator")
+    steer = {"to": child_run_id, "message": "report it in metres"}
+    scripted_model.call("send_message", steer, call_id="call_s", to="Role: coordinator")
     scripted_model.say("Steered", to="Role: coordinator")
     assert (await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, "steer it"))).status_code == 201
     await (await runs_kit.attempt(service))
@@ -215,15 +215,20 @@ async def test_a_failed_origin_stays_history_for_its_child_result(service, scrip
 async def test_a_refused_subagent_call_fails_only_that_tool_call(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async")
-    steer = {"execution_id": "run_missing", "message": "hi"}
-    scripted_model.call("steer_subagent", steer, call_id="call_s", to="Role: coordinator")
+    steer = {"to": "run_missing", "message": "hi"}
+    scripted_model.call("send_message", steer, call_id="call_s", to="Role: coordinator")
+    scripted_model.call(
+        "send_message", {"to": "thread_other", "message": "hi"}, call_id="no-router", to="Role: coordinator"
+    )
     scripted_model.say("Recovered", to="Role: coordinator")
     submitted = await runs_kit.start_thread(service, coordinator, "steer a missing child")
     await (await runs_kit.attempt(service))
 
     run = await runs_kit.get_run(service, submitted["run"]["id"])
     assert (run["status"], run["output"]) == ("completed", "Recovered"), run
-    assert "execution run_missing not found" in _tool_results(scripted_model)["call_s"]
+    results = _tool_results(scripted_model)
+    assert "execution run_missing not found" in results["call_s"]
+    assert "no MessageRouter" in results["no-router"]
 
 
 async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -251,9 +256,9 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     await (await runs_kit.attempt(service))
 
     # The parent's next run reads the first page, then waits on the second one's still running child.
-    scripted_model.call("subagent_info", {"execution_limit": 1}, call_id="call_info", to="Role: coordinator")
-    wait = {"execution_offset": 1, "execution_limit": 1, "timeout_seconds": 0.5}
-    scripted_model.call("wait_subagent", wait, call_id="call_wait", to="Role: coordinator")
+    scripted_model.call("execution_info", {"limit": 1}, call_id="call_info", to="Role: coordinator")
+    wait = {"execution_id": second, "timeout_seconds": 0.5}
+    scripted_model.call("execution_wait", wait, call_id="call_wait", to="Role: coordinator")
     scripted_model.say("Checked", to="Role: coordinator")
     reads: list[str] = []
     page, statuses = ChildRuns._page, ChildRuns._statuses
@@ -284,13 +289,12 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     await (await runs_kit.attempt(service))
 
     results = _tool_results(scripted_model)
-    info, waited = json.loads(results["call_info"]), json.loads(results["call_wait"])
+    info, waited = json.loads(results["call_info"])["agent_executions"], json.loads(results["call_wait"])
     assert (info["total"], info["next_offset"]) == (2, 1)
     assert [(item["execution_id"], item["status"], json.loads(item["input"])) for item in info["executions"]] == [
         (first, "succeeded", {"delegated_task": "compute"})
     ]
-    assert (waited["total"], waited["next_offset"]) == (2, None)
-    assert [(item["execution_id"], item["status"]) for item in waited["executions"]] == [(second, "running")]
+    assert (waited["execution_id"], waited["status"]) == (second, "running")
     # The info call and the wait each read their page once; the wait then polls only its runs' statuses.
     assert reads == ["page", "page", "statuses", "statuses"], reads
 
@@ -300,7 +304,6 @@ async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async")
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
-    scripted_model.call("wait_subagent", {"timeout_seconds": 300}, call_id="call_w", to="Role: coordinator")
     run_id = (await runs_kit.start_thread(service, coordinator, "delegate and wait"))["run"]["id"]
     polling = asyncio.Event()
     statuses = ChildRuns._statuses
@@ -313,6 +316,13 @@ async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted
     (lease,) = await claim(service.runtime, worker_id="worker-test", worker_build="test", limit=1)
     control = AttemptControl(deadline=asyncio.get_running_loop().time() + service.runtime.settings.worker.lease_seconds)
     running = asyncio.create_task(execute(service.runtime, lease, control))
+    await scripted_model.request()  # Initial request selects delegate.
+    body = await scripted_model.request()  # The next request contains its accepted reference.
+    reply = next(m["content"] for m in body["messages"] if m.get("tool_call_id") == "call_d")
+    child_id = json.loads(reply)["execution_id"]
+    scripted_model.call(
+        "execution_wait", {"execution_id": child_id, "timeout_seconds": 300}, call_id="call_w", to="Role: coordinator"
+    )
     async with asyncio.timeout(10):
         await polling.wait()
     # The request after the wait is cancelled as it starts; whether it reached the model does not matter.
