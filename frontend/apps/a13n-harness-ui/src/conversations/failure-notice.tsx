@@ -11,25 +11,51 @@ export function FailureNotice({
   message,
   title,
   action,
+  code,
+  threadId,
+  runId,
+  executionId,
+  details,
 }: {
   message?: string | null;
   title?: string;
   action?: ReactNode;
+  code?: string | null;
+  threadId?: string;
+  runId?: string | null;
+  executionId?: string;
+  details?: Record<string, unknown> | null;
 }) {
   const { t } = useTranslation();
   if (!message) return null;
   const first = message.split("\n")[0].trim();
   const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
+  const diagnostic = [
+    message,
+    threadId && `${t("Thread ID")}: ${threadId}`,
+    runId && `${t("Run ID")}: ${runId}`,
+    executionId && `${t("Execution ID")}: ${executionId}`,
+    details &&
+      Object.keys(details).length > 0 &&
+      JSON.stringify(details, null, 2),
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <section role="alert" className={styles.failureNotice}>
       <WarningCircle aria-hidden="true" />
       <div>
         <strong>{title ?? t("Could not finish this operation")}</strong>
         <p>{short || t("The operation failed.")}</p>
-        {message.trim() !== short && (
+        {code && (
+          <p>
+            {t("Error code")}: {code}
+          </p>
+        )}
+        {diagnostic.trim() !== short && (
           <details>
             <summary>{t("Error details")}</summary>
-            <pre>{message}</pre>
+            <pre tabIndex={0}>{diagnostic}</pre>
           </details>
         )}
         {action}
@@ -78,12 +104,15 @@ export function RootFailureNotice({
     !superseded && display.runId && current?.run_id === display.runId
       ? display.terminalFailure
       : undefined;
-  const saved =
-    !superseded && current?.status === "failed"
-      ? (current.failure?.message ??
-        current.outcome?.execution.failure?.message ??
-        current.outcome?.continuation.failure?.message ??
-        t("The operation could not finish."))
+  const settled =
+    !superseded && current?.status === "failed" ? current : undefined;
+  const savedFailure =
+    settled?.failure ??
+    settled?.outcome?.execution.failure ??
+    settled?.outcome?.continuation.failure;
+  const retainedFailure =
+    retained?.status === "failed" || retained?.status === "unknown"
+      ? retained
       : undefined;
   // A failure can leave either its own checkpoint or the previous completed
   // result selected. Neither is retry authority after context clearing.
@@ -99,12 +128,26 @@ export function RootFailureNotice({
           : undefined
       }
       message={
+        // Finalization adds Host failure classification and the diagnostic report.
+        // A generic RUN_ERROR must not hide that richer settled result.
+        savedFailure?.message ??
+        retainedFailure?.error_message ??
         live ??
-        saved ??
-        (retained?.status === "failed" || retained?.status === "unknown"
-          ? retained.error_message
-          : undefined)
+        (settled ? t("The operation could not finish.") : undefined)
       }
+      code={
+        savedFailure?.code ??
+        retainedFailure?.error_code ??
+        (live ? display.terminalFailureCode : undefined)
+      }
+      threadId={threadId}
+      runId={
+        settled?.run_id ??
+        retainedFailure?.run_id ??
+        (live ? display.runId : undefined)
+      }
+      executionId={settled?.receipt.receipt_id ?? retainedFailure?.execution_id}
+      details={savedFailure?.details}
       action={
         !superseded &&
         current?.status === "failed" &&
