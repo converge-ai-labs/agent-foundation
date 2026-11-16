@@ -24,6 +24,10 @@ from a13n_harness.providers.environment.e2b.configuration import (
     E2BCredential,
     E2BEnvironmentConfiguration,
 )
+from a13n_harness.providers.environment.kosa8.provider import (
+    Kosa8ConnectionConfiguration,
+    Kosa8EnvironmentConfiguration,
+)
 from a13n_harness.providers.environment.local_envd.configuration import (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
@@ -179,6 +183,7 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     SpritesEnvironmentConfiguration,
     RunloopEnvironmentConfiguration,
     BoxdEnvironmentConfiguration,
+    Kosa8EnvironmentConfiguration,
     RemoteEnvdEnvironmentConfiguration,
     HostLocalProviderConfiguration,
     DockerConnectionConfiguration,
@@ -191,6 +196,7 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     SpritesConnectionConfiguration,
     RunloopConnectionConfiguration,
     BoxdConnectionConfiguration,
+    Kosa8ConnectionConfiguration,
     TokenCredential,
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
@@ -224,8 +230,9 @@ Choose the execution column for a fixed-target Harness connector, or the managem
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | boxd | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration) | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration) | [BoxdConnectionConfiguration](#boxdconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| kosa8 | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration) | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration) | [Kosa8ConnectionConfiguration](#kosa8connectionconfiguration) | [TokenCredential](#tokencredential) |
 
-Runloop and boxd use the same configuration model for execution and management; they have no separate Service desktop recipe.
+Runloop, boxd and kosa8 use the same configuration model for execution and management; they have no separate Service desktop recipe.
 
 """
     emitted: set[str] = set()

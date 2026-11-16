@@ -112,6 +112,10 @@ Continue to [cloud Provider setup and limits](cloud-providers.md#runloop).
 
 Continue to [cloud Provider setup and limits](cloud-providers.md#boxd).
 
+### kosa8
+
+Continue to [cloud Provider setup and limits](cloud-providers.md#kosa8).
+
 ### Embedded configuration
 
 Continue to [cloud Provider setup and limits](cloud-providers.md#embedded-configuration).

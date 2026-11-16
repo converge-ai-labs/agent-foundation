@@ -8,7 +8,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 
 ## 云 provider
 
-创建计费目标前，准备所选账号与目标配置。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop 和 boxd 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
+创建计费目标前，准备所选账号与目标配置。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 提供 Native Files & Shell 及显式 Envd 路径。Runloop、boxd 和 kosa8 提供 Native Files & Shell，尚未集成 Envd、Computer 和人工桌面访问。
 
 | Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
 | -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -19,6 +19,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 | Fly.io Sprites | `organization`                                                                           | `api_key`（Sprites token）       | `region`                                                                                                       |
 | Runloop        | `organization`                                                                           | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                        |
 | boxd           | `region`（`fra` 或 `nyc`）、可选 `organization`                                          | `api_key`（boxd API 密钥）       | `size`, `from_snapshot`, `auto_suspend_timeout_seconds`, `auto_hibernate_timeout_seconds`                      |
+| kosa8          | 可选 `region`（`us`、`eu`、`us-ash1` 或 `eu-hel1`）                                      | `api_key`（kosa8 API 密钥）      | `size`, `image`, `disk_gb`, `docker`, `ttl_seconds`                                                            |
 
 将凭据保存在目标配置与重连状态之外。组织/团队字段描述后端命名空间，不授予权限。Modal 凭据选择工作区，可选 `workspace` 字段只是标签。Service 的 E2B 连接通过域名选择 E2B 云或兼容后端，见 [Service provider](../a13n-service/environments.md#providers)。
 
@@ -44,6 +45,7 @@ description: 准备云账号与运行时、选择原生或 Envd 执行，并管�
 | Fly.io Sprites | 无显式停止 API；空闲时休眠，exec 时唤醒 | 不承诺保留       | 持久文件系统在原生自动休眠后保留。该 provider 不支持 `stop()`，因此不要调度显式停止；销毁是独立操作。                                                                           |
 | Runloop        | 原生挂起/恢复保留磁盘                   | 不保留           | 空闲策略挂起 Devbox。保活确认新的空闲间隔，不能启动已挂起目标。                                                                                                                 |
 | boxd           | 原生休眠/唤醒保留磁盘和内存             | 休眠时保留       | 机器不会过期，也不需要保活。空闲休眠默认关闭；设置 `auto_hibernate_timeout_seconds` 后，空闲机器会休眠，并在调用 `start()` 前保持停止状态。可选的空闲待机会在下一条命令时恢复。 |
+| kosa8          | 原生休眠/唤醒保留磁盘和内存             | 休眠时保留       | 沙箱不需要保活，除非设置 `ttl_seconds` 否则不会过期。空闲休眠关闭，因此沙箱只在 `stop()` 时休眠，并在调用 `start()` 前保持停止状态。                                            |
 
 Modal 的 `start()` 恢复保存的文件系统快照，并返回新引用。`open()` 不执行恢复或快照清理。删除快照需要匹配原生所有权标签。外部注册的状态提供连接信息，不授予销毁权限。
 
@@ -266,6 +268,10 @@ Native 执行使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`�
 
 默认根目录使用 `/home/boxd`，Python 使用客体 PATH 中的 `python3`。每个 Environment 对应一台 [boxd](https://boxd.sh?ref=agent-foundation) 机器。机器以隔离模式创建，不加入组织的私有网络。`size` 选择 vCPU 和内存（`1x4`、`2x8`、`4x16` 或 `8x32`）；省略时使用组织默认值或快照的规格。`from_snapshot` 从预先准备的 boxd 快照启动机器。`stop()` 休眠机器并保留内存和进程；`start()` 唤醒机器。销毁操作删除记录中的那台机器，并等待确认其不存在。通过 `boxd` extra（`a13n-harness[boxd]`）安装 SDK。使用 `boxd auth keys create <name>` 创建 API 密钥；一个密钥只作用于一个组织。
 
+### kosa8
+
+默认根目录使用 `/workspace`，Python 使用客体 PATH 中的 `python3`；kosa8 文件 API 只能访问 `/workspace`，因此 `root` 须位于其下。每个 Environment 对应一个 [kosa8](https://kosa8.com) 沙箱，即拥有独立内核的 microVM，按 `size`（`2x4`、`4x8`、`8x16` 或 `16x32`，vCPU x GiB）从 `image`（省略时使用 kosa8 默认镜像）启动，并带有 `disk_gb` 数据盘（省略时为 32 GB）。沙箱是持久的：整个文件系统和后台进程在命令之间保留，`docker: true` 允许其运行自己的 dockerd。`stop()` 让沙箱休眠并保留内存和进程；`start()` 唤醒沙箱。空闲休眠关闭，因此沙箱不会自行停止。设置 `ttl_seconds` 后，kosa8 在创建后经过该时长删除沙箱；省略时不会过期。销毁操作删除记录中的那个沙箱，并等待确认其不存在。该 provider 通过 Harness HTTP 客户端调用 kosa8 Cloud REST API，无需安装 extra。在 kosa8 控制台创建 API 密钥；一个密钥只作用于一个组织。
+
 ### 嵌入式配置
 
 从自己的 Host 连接前，先从管理端取得 `saved_state`，从凭据存储取得 `api_key`。以下异步集成片段选择内置 Daytona 定义并读取有界目录列表：
@@ -296,6 +302,6 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
   PYTHON_TEST_DIRS=packages/a13n-service/tests/environment_providers/test_cloud_live.py
 ```
 
-Modal、Vercel、Sprites、Runloop 和 boxd 使用对应大写前缀。按需用 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 创建计费目标，即使失败也尝试删除。凭据 JSON 保持私有。未启用或缺少凭据会跳过，不是实时验证通过。
+Modal、Vercel、Sprites、Runloop、boxd 和 kosa8 使用对应大写前缀。按需用 `A13N_TEST_<PROVIDER>_RECIPE_JSON` 覆盖目标配置。fixture 创建计费目标，即使失败也尝试删除。凭据 JSON 保持私有。未启用或缺少凭据会跳过，不是实时验证通过。
 
-原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/)、[Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html) 和 [boxd Python SDK](https://docs.boxd.sh/reference/python-sdk?ref=agent-foundation)。
+原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/)、[Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)、[boxd Python SDK](https://docs.boxd.sh/reference/python-sdk?ref=agent-foundation) 和 [kosa8 Cloud](https://docs.kosa8.com/guides/cloud/)。

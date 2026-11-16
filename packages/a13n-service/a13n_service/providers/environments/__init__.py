@@ -1,9 +1,9 @@
 """The environment provider types the Service offers, each qualified individually.
 
 `docker` is the managed backend under the operator's engine and host directory choices, and `e2b` reaches the
-E2B cloud or another E2B-compatible service. `daytona`, `modal`, `vercel`, `sprites`, `runloop` and `boxd` compose
-Service management with Harness execution; their accounts name an organization, team or app at a fixed
-vendor API, never an endpoint. `local` is a development-only managed
+E2B cloud or another E2B-compatible service. `daytona`, `modal`, `vercel`, `sprites`, `runloop`, `boxd` and
+`kosa8` compose Service management with Harness execution; their accounts name an organization, team, app or
+region at a fixed vendor API, never an endpoint. `local` is a development-only managed
 directory on the worker host. External envd targets are no provider type (`providers.envd`).
 """
 
@@ -16,6 +16,7 @@ from a13n_service.providers.environments.boxd import BOXD
 from a13n_service.providers.environments.daytona import DAYTONA
 from a13n_service.providers.environments.docker import DOCKER, docker
 from a13n_service.providers.environments.e2b import E2B
+from a13n_service.providers.environments.kosa8 import KOSA8
 from a13n_service.providers.environments.kubernetes import KUBERNETES, kubernetes
 from a13n_service.providers.environments.local import LOCAL
 from a13n_service.providers.environments.modal import MODAL
@@ -24,7 +25,7 @@ from a13n_service.providers.environments.sprites import SPRITES
 from a13n_service.providers.environments.vercel import VERCEL
 from a13n_service.providers.registry import RegisteredProvider
 
-BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, BOXD, LOCAL, KUBERNETES)
+BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, BOXD, KOSA8, LOCAL, KUBERNETES)
 
 
 def offered(

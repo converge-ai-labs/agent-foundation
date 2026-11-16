@@ -8,6 +8,7 @@ from a13n_harness.providers.environment.boxd.execution import BoxdExecution
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
+from a13n_harness.providers.environment.kosa8.execution import Kosa8Execution
 from a13n_harness.providers.environment.local_envd.provider import LocalEnvdExecution
 from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 from a13n_harness.providers.environment.runloop.execution import RunloopExecution
@@ -18,6 +19,7 @@ from a13n_service.providers.environments.boxd.management import BoxdManagement
 from a13n_service.providers.environments.daytona.management import DaytonaManagement
 from a13n_service.providers.environments.docker.management import DockerManagement
 from a13n_service.providers.environments.e2b.management import E2BManagement
+from a13n_service.providers.environments.kosa8.management import Kosa8Management
 from a13n_service.providers.environments.modal.management import ModalManagement
 from a13n_service.providers.environments.runloop.management import RunloopManagement
 from a13n_service.providers.environments.sprites.management import SpritesManagement
@@ -34,6 +36,7 @@ from a13n_service.providers.environments.vercel.management import VercelManageme
         RemoteEnvdExecution,
         RunloopExecution,
         BoxdExecution,
+        Kosa8Execution,
         SpritesExecution,
         VercelExecution,
     ],
@@ -56,6 +59,7 @@ def test_execution_implementation_has_no_management_authority(implementation):
         ModalManagement,
         RunloopManagement,
         BoxdManagement,
+        Kosa8Management,
         SpritesManagement,
         VercelManagement,
     ],

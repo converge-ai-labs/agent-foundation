@@ -23,8 +23,9 @@ Choose the execution column for a fixed-target Harness connector, or the managem
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | boxd           | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdConnectionConfiguration](#boxdconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| kosa8          | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration)     | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration)     | [Kosa8ConnectionConfiguration](#kosa8connectionconfiguration)     | [TokenCredential](#tokencredential) |
 
-Runloop and boxd use the same configuration model for execution and management; they have no separate Service desktop recipe.
+Runloop, boxd and kosa8 use the same configuration model for execution and management; they have no separate Service desktop recipe.
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -610,6 +611,24 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
 | `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
 
+## `Kosa8EnvironmentConfiguration`
+
+| Field                     | Required | Type / choices                | Constraints and default                                |
+| ------------------------- | -------- | ----------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables          | —; default from model factory                          |
+| `root`                    | false    | string                        | default="/workspace"                                   |
+| `python`                  | false    | string                        | default="python3"                                      |
+| `shell`                   | false    | string                        | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                        | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                       | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `size`                    | false    | "2x4", "4x8", "8x16", "16x32" | default="2x4"                                          |
+| `image`                   | false    | string or null                | minLength=1; maxLength=256; default=null               |
+| `disk_gb`                 | false    | integer or null               | minimum=8; maximum=200; default=null                   |
+| `docker`                  | false    | boolean                       | default=false                                          |
+| `ttl_seconds`             | false    | integer or null               | minimum=60; maximum=7776000; default=null              |
+
 ## `RemoteEnvdEnvironmentConfiguration`
 
 | Field               | Required | Type / choices                  | Constraints and default                  |
@@ -701,6 +720,12 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | -------------- | -------- | -------------- | ---------------------------------------- |
 | `region`       | true     | "fra", "nyc"   | —                                        |
 | `organization` | false    | string or null | minLength=1; maxLength=128; default=null |
+
+## `Kosa8ConnectionConfiguration`
+
+| Field    | Required | Type / choices                           | Constraints and default |
+| -------- | -------- | ---------------------------------------- | ----------------------- |
+| `region` | false    | "us", "eu", "us-ash1", "eu-hel1" or null | default=null            |
 
 ## `TokenCredential`
 

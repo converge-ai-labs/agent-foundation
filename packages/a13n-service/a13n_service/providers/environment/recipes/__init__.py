@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from a13n_harness.providers.environment.boxd.shared import BoxdEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
+from a13n_harness.providers.environment.kosa8.shared import Kosa8EnvironmentConfiguration
 from a13n_harness.providers.environment.runloop.shared import RunloopEnvironmentConfiguration
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,6 +60,11 @@ class BoxdRecipeInput(_Recipe):
     configuration: BoxdEnvironmentConfiguration
 
 
+class Kosa8RecipeInput(_Recipe):
+    type: Literal["kosa8"]
+    configuration: Kosa8EnvironmentConfiguration
+
+
 class LocalRecipeInput(_Recipe):
     type: Literal["local"]
     configuration: DirectLocalEnvironmentConfiguration
@@ -73,6 +79,7 @@ TemplateRecipe = Annotated[
     | SpritesRecipeInput
     | RunloopRecipeInput
     | BoxdRecipeInput
+    | Kosa8RecipeInput
     | LocalRecipeInput,
     Field(discriminator="type"),
 ]

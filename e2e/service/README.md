@@ -20,7 +20,7 @@ Journeys use only the public HTTP API as the bootstrapped administrator or an AP
 | `test_subagents.py`    | An async subagent's child run on its own thread and its result delivered to the parent thread                                                                                                                                                                                                                     |
 | `test_contention.py`   | Concurrent submissions to one thread and to many threads across both workers: one active run per thread, FIFO consumption, every input consumed once                                                                                                                                                              |
 | `test_memory.py`       | Two conversations on different workers editing one memory file (a stale-version edit is refused without a revision, then applies after rereading; obsolete edit anchors fail) and the changes the next run receives; recovery from committed memory cursors after a worker SIGKILL; a memory deleted during a run |
-| `test_environments.py` | A shell tool writing in the run's environment, then stop, restart with the files intact, unmount and delete, for `local`, native `docker` and each hosted type (`e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`, `boxd`); an E2B sandbox renewed past its timeout                                       |
+| `test_environments.py` | A shell tool writing in the run's environment, then stop, restart with the files intact, unmount and delete, for `local`, native `docker` and each hosted type (`e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`, `boxd`, `kosa8`); an E2B sandbox renewed past its timeout                              |
 | `test_egress.py`       | Controlled HTTPS credential injection through HTTP and reverse WebSocket; rotation during a tracked background command after its Run ends, idle synchronization on reuse, and revocation                                                                                                                          |
 
 ```sh
@@ -59,6 +59,7 @@ The credential journeys are included in the `docker` selection and require the c
 | `sprites` | `SPRITES_TOKEN`, `SPRITES_ORGANIZATION`; the token must permit creation with ownership labels (restricted tokens reject labels)                         |
 | `runloop` | `RUNLOOP_API_KEY`; optional `RUNLOOP_ORGANIZATION`                                                                                                      |
 | `boxd`    | `BOXD_API_KEY`, `BOXD_REGION` (`fra` or `nyc`); optional `BOXD_ORGANIZATION`. The journey uses a 1 vCPU / 4 GiB machine                                 |
+| `kosa8`   | `KOSA8_API_KEY`; optional `KOSA8_REGION` (`us`, `eu`, `us-ash1` or `eu-hel1`). The journey uses a 2 vCPU / 4 GiB sandbox                                |
 
 ```sh
 set -a; . ~/.a13n/.env; set +a; make service-e2e SERVICE_E2E_ARGS="-k e2b"      # the E2B journeys
