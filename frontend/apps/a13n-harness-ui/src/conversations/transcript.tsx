@@ -1,7 +1,15 @@
+import {
+  ExecutionNoticeLinks,
+  useNoticeLabel,
+  splitExecutionNotices,
+  executionHeaders,
+} from "./background-links";
+import { ConnectorOffer } from "../connectors/offers";
 import { useTranslation } from "../i18n";
-import { BOT_THREAD_ID } from "../bot-identity";
+import { BOT_THREAD_ID, botInputId } from "../bot-identity";
 import {
   memo,
+  Fragment,
   createContext,
   useContext,
   useEffect,
@@ -22,13 +30,10 @@ import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
+import { QuestionInteraction, ToolActivity } from "./tool-call";
 import {
-  QuestionInteraction,
-  ToolActivity,
   toolLabel,
   toolSummary,
-} from "./tool-call";
-import {
   activityKind,
   describeTool,
   MAX_ACTIVITY_TOOLS,
@@ -63,18 +68,11 @@ import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
   const source = metadata?.["a13n.steering-source"];
-  return source === "background_process" || source === "async_subagent"
+  return source === "background_process" ||
+    source === "async_subagent" ||
+    source === "tool_execution"
     ? source
     : undefined;
-}
-
-// Known steering sources; unknown sources keep their backend value.
-function useNotificationTitle() {
-  const { t } = useTranslation();
-  return (source: string) =>
-    source === "background_process"
-      ? t("Process update")
-      : t("Subagent update");
 }
 
 // Generated run, subagent and recovery chrome is translated here; backend
@@ -124,7 +122,9 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
 type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
-  timestamp?: DisplayBlock["timestamp"];
+  publication?: boolean;
+  displayId?: string;
+  timestamp?: number;
   id: string;
   subagentRunId?: string;
   anchor?: string;
@@ -163,7 +163,12 @@ type Row = {
     }
   | {
       kind: "notifications";
-      notices: { id: string; source: string; text: string }[];
+      notices: {
+        id: string;
+        source: string;
+        text: string;
+        executionIds?: unknown;
+      }[];
     }
   | { kind: "failure"; text: string }
   | {
@@ -178,8 +183,17 @@ type Row = {
     }
 );
 
-function appendInput(rows: Row[], part: InputPart, fallback: string) {
-  const id = `input:${inputSource(part) ?? fallback}`;
+function timestampMilliseconds(value: DisplayBlock["timestamp"]) {
+  return typeof value === "string" ? Date.parse(value) : value;
+}
+
+function appendInput(
+  rows: Row[],
+  part: InputPart,
+  fallback: string,
+  identity?: string,
+) {
+  const id = `input:${identity ?? inputSource(part) ?? fallback}`;
   const previous = rows.at(-1);
   if (previous?.kind === "input" && previous.id === id)
     previous.parts.push(part);
@@ -208,6 +222,10 @@ function savedRows(
   const rows: Row[] = [];
   for (const entry of entries) {
     const identity = savedEntryIdentity(entry);
+    const botInput =
+      threadId === BOT_THREAD_ID
+        ? entry.parts.map((part) => botInputId(part.metadata)).find(Boolean)
+        : undefined;
     const start = rows.length;
     entry.parts.forEach((part, index) => {
       if (
@@ -228,19 +246,29 @@ function savedRows(
           text: part.text ?? "",
         });
       } else if (systemNotice(part.metadata)) {
-        rows.push({
-          id,
-          kind: "notifications",
-          notices: [
-            {
-              id,
-              source: systemNotice(part.metadata)!,
-              text: part.text ?? JSON.stringify(part.value, null, 2),
-            },
-          ],
+        splitExecutionNotices(
+          part.text ?? JSON.stringify(part.value, null, 2),
+        ).forEach((text, index) => {
+          rows.push({
+            id: `${id}:${index}`,
+            kind: "notifications",
+            notices: [
+              {
+                id: `${id}:${index}`,
+                source: systemNotice(part.metadata)!,
+                executionIds: part.metadata?.execution_ids,
+                text,
+              },
+            ],
+          });
         });
       } else if (part.kind === "user" || part.kind === "media") {
-        appendInput(rows, part, identity);
+        appendInput(
+          rows,
+          part,
+          identity,
+          botInput ? `bot:${botInput}` : undefined,
+        );
       } else if (groups.has(part)) {
         const tools = groups.get(part);
         if (tools)
@@ -249,6 +277,7 @@ function savedRows(
         rows.push({
           id,
           kind: "assistant",
+          displayId: part.display_id ?? undefined,
           text: part.text ?? "",
           truncated: part.text_truncated,
         });
@@ -286,7 +315,9 @@ function savedRows(
       });
     }
     for (let index = start; index < rows.length; index++) {
-      rows[index].timestamp = entry.timestamp ?? undefined;
+      rows[index].timestamp = timestampMilliseconds(
+        entry.timestamp ?? undefined,
+      );
       rows[index].position = entry.position;
       rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
     }
@@ -303,6 +334,13 @@ function liveRows(
 ): Row[] {
   const rows: Row[] = [];
   let previousChild: string | undefined;
+  const botInputs = new Map(
+    blocks.flatMap((block) => {
+      const id =
+        threadId === BOT_THREAD_ID ? botInputId(block.metadata) : undefined;
+      return id && block.inputGroup ? [[block.inputGroup, id] as const] : [];
+    }),
+  );
   for (const block of blocks) {
     if (
       block.diagnostic ||
@@ -333,16 +371,19 @@ function liveRows(
         diagnostics: block.contextDiagnostics,
       });
     } else if (systemNotice(block.metadata)) {
-      rows.push({
-        id: block.id,
-        kind: "notifications",
-        notices: [
-          {
-            id: block.id,
-            source: systemNotice(block.metadata)!,
-            text: block.text,
-          },
-        ],
+      splitExecutionNotices(block.text).forEach((text, index) => {
+        rows.push({
+          id: `${block.id}:${index}`,
+          kind: "notifications",
+          notices: [
+            {
+              id: `${block.id}:${index}`,
+              source: systemNotice(block.metadata)!,
+              executionIds: block.metadata?.execution_ids,
+              text,
+            },
+          ],
+        });
       });
     } else if (block.kind === "user" || block.kind === "media") {
       const turn = block.id.includes(":input:")
@@ -352,6 +393,9 @@ function liveRows(
         rows,
         block,
         block.inputGroup ?? (block.inputSource === "user" ? block.id : turn),
+        botInputs.has(block.inputGroup ?? "")
+          ? `bot:${botInputs.get(block.inputGroup!)}`
+          : undefined,
       );
       if (block.inputSource === "user" && !block.subagentRunId)
         rows.at(-1)!.turnId = block.inputGroup ?? block.id;
@@ -386,6 +430,7 @@ function liveRows(
       rows.push({
         id: block.id,
         kind: "assistant",
+        displayId: block.id,
         text: block.text,
         live: true,
       });
@@ -405,7 +450,7 @@ function liveRows(
     }
     for (let index = firstRow; index < rows.length; index++) {
       rows[index].subagentRunId = block.subagentRunId;
-      rows[index].timestamp = block.timestamp;
+      rows[index].timestamp = timestampMilliseconds(block.timestamp);
     }
   }
   return rows;
@@ -495,10 +540,21 @@ function groupRows(rows: Row[]) {
     const last = grouped.at(-1);
     const previous =
       last?.subagentRunId === row.subagentRunId ? last : undefined;
-    if (row.kind === "notifications" && previous?.kind === "notifications") {
-      previous.notices.push(...row.notices);
+    if (
+      row.kind === "notifications" &&
+      previous?.kind === "notifications" &&
+      executionHeaders(row.notices[0].text)[0]?.kind ===
+        executionHeaders(previous.notices[0].text)[0]?.kind
+    ) {
+      grouped[grouped.length - 1] = {
+        ...previous,
+        notices: [...previous.notices, ...row.notices],
+      };
     } else if (row.kind === "thinking" && previous?.kind === "thinking") {
-      previous.segments.push(...row.segments);
+      grouped[grouped.length - 1] = {
+        ...previous,
+        segments: [...previous.segments, ...row.segments],
+      };
     } else if (
       row.kind === "tools" &&
       previous?.kind === "tools" &&
@@ -506,17 +562,11 @@ function groupRows(rows: Row[]) {
       activityKind(row.tools[0]) &&
       activityKind(row.tools[0]) === activityKind(previous.tools[0])
     ) {
-      previous.tools.push(...row.tools);
-    } else
-      grouped.push(
-        row.kind === "thinking"
-          ? { ...row, segments: [...row.segments] }
-          : row.kind === "tools"
-            ? { ...row, tools: [...row.tools] }
-            : row.kind === "notifications"
-              ? { ...row, notices: [...row.notices] }
-              : row,
-      );
+      grouped[grouped.length - 1] = {
+        ...previous,
+        tools: [...previous.tools, ...row.tools],
+      };
+    } else grouped.push(row);
   }
   return grouped;
 }
@@ -552,7 +602,7 @@ function Reasoning({
             {t("for {{duration}}", { duration })}
           </span>
         )}
-        <CaretRight aria-hidden="true" className={styles.reasoningCaret} />
+        <CaretRight aria-hidden="true" className={styles.logCaret} />
       </summary>
       <ScrollArea
         autoHeight
@@ -595,7 +645,7 @@ function Rows({
       ? `${turn.turn_id}@${turn.timestamp}`
       : turn?.turn_id;
   const point = key && actions?.points?.[key];
-  const notificationTitle = useNotificationTitle();
+  const notificationTitle = useNoticeLabel();
   const copyText = output
     .map((row) => row.text)
     .filter(Boolean)
@@ -691,15 +741,29 @@ function Rows({
         />
       ) : row.kind === "notifications" ? (
         <details className={styles.activity}>
-          <summary>
-            {row.notices.length === 1
-              ? notificationTitle(row.notices[0].source)
-              : t("System update count", { count: row.notices.length })}
+          <summary className={styles.noticeSummary}>
+            {notificationTitle(
+              row.notices[0].text,
+              row.notices[0].source,
+              row.notices.length,
+            )}
+            {row.notices.map((notice) => (
+              <ExecutionNoticeLinks
+                key={notice.id}
+                text={notice.text}
+                executionIds={
+                  notice.source === "async_subagent"
+                    ? notice.executionIds
+                    : undefined
+                }
+              />
+            ))}
+            <CaretRight aria-hidden="true" className={styles.logCaret} />
           </summary>
           {row.notices.map((notice) => (
             <div key={notice.id}>
               {row.notices.length > 1 && (
-                <small>{notificationTitle(notice.source)}</small>
+                <small>{notificationTitle(notice.text, notice.source)}</small>
               )}
               <pre className={styles.code}>{notice.text}</pre>
             </div>
@@ -746,33 +810,100 @@ export const SavedEntry = memo(function SavedEntry({
   );
 });
 
-// Intentional publications use the same message rendering as native history.
-// Host heartbeat and working output stay in execution history rather than chat.
-export function PublishedTranscript({
-  messages,
-}: {
-  messages: { message_id: string; role: "user" | "assistant"; text: string }[];
-}) {
-  return messages.map((message) => {
-    const row: Row =
+export type PublishedMessage = Schema<"BotMessage"> & {
+  status?: string;
+  local?: boolean;
+};
+
+function publicationRow(message: PublishedMessage): Row {
+  return message.role === "user"
+    ? {
+        id: `input:bot:${message.input_id ?? message.message_id.replace(/^user-/, "")}`,
+        kind: "input",
+        publication: true,
+        status: message.status,
+        timestamp: Date.parse(message.created_at),
+        parts: message.parts?.length
+          ? message.parts.map((part) =>
+              typeof part === "string"
+                ? { kind: "text", text: part }
+                : {
+                    kind: "attachment",
+                    metadata: { harness_ui: { attachment: part } },
+                  },
+            )
+          : [{ kind: "text", text: message.text }],
+      }
+    : {
+        id: message.message_id,
+        kind: "assistant",
+        publication: true,
+        text: message.text,
+        timestamp: Date.parse(message.created_at),
+      };
+}
+
+// Publications fill gaps before native observation and carry proactive messages.
+// Correlated native output owns its ordinary timeline position and folds.
+function publishedRows(
+  native: Row[],
+  messages: PublishedMessage[],
+  hasEarlier: boolean,
+  hasLater: boolean,
+): Row[] {
+  const rows = [...native];
+  const local: Row[] = [];
+  const inputIds = new Set(
+    native.filter((row) => row.kind === "input").map((row) => row.id),
+  );
+  const displayIds = new Set(
+    native.map((row) => row.displayId).filter(Boolean),
+  );
+  const oldest = native.find((row) => row.timestamp !== undefined)?.timestamp;
+  const newest = native.findLast(
+    (row) => row.timestamp !== undefined,
+  )?.timestamp;
+  for (const message of messages) {
+    const row = publicationRow(message);
+    if (
       message.role === "user"
-        ? {
-            id: message.message_id,
-            kind: "input",
-            parts: [{ kind: "text", text: message.text }],
-          }
-        : { id: message.message_id, kind: "assistant", text: message.text };
-    return (
-      <Rows
-        key={row.id}
-        rows={[row]}
-        output={row.kind === "assistant" ? [row] : []}
-      />
+        ? inputIds.has(row.id)
+        : message.display_ids?.some((id) => displayIds.has(id))
+    )
+      continue;
+    // Publications written before display correlation existed have only their
+    // completed reply text. Limit this compatibility join to legacy final replies.
+    if (
+      message.role === "assistant" &&
+      !message.display_ids?.length &&
+      message.message_id.startsWith("reply-") &&
+      native.some(
+        (item) => item.kind === "assistant" && item.text === message.text,
+      )
+    )
+      continue;
+    // Local commands have no server timestamp yet. Keep their recovery rows
+    // after observed work rather than ordering them by a skewed browser clock.
+    if (message.local) {
+      if (!hasLater) local.push(row);
+      continue;
+    }
+    if (hasEarlier && (oldest === undefined || row.timestamp! < oldest))
+      continue;
+    if (hasLater && (newest === undefined || row.timestamp! > newest)) continue;
+    const next = rows.findIndex(
+      (item) => item.timestamp !== undefined && item.timestamp > row.timestamp!,
     );
-  });
+    rows.splice(next < 0 ? rows.length : next, 0, row);
+  }
+  return [...rows, ...local];
 }
 
 export function ConversationTranscript({
+  connectorOffers = [],
+  publications = [],
+  hasEarlier = false,
+  hasLater = false,
   entries,
   blocks,
   localInputs,
@@ -788,6 +919,10 @@ export function ConversationTranscript({
   terminalTurn,
   running = false,
 }: {
+  connectorOffers?: Schema<"SetupOffer">[];
+  publications?: PublishedMessage[];
+  hasEarlier?: boolean;
+  hasLater?: boolean;
   terminalTurn?: { id: string; time: string; notice?: ReactNode };
   running?: boolean;
   currentFailureRunId?: string | null;
@@ -850,7 +985,12 @@ export function ConversationTranscript({
     <TerminalTurn value={terminalTurn}>
       <CurrentFailureRun value={currentFailureRunId}>
         <TurnRows
-          rows={rows}
+          connectorOffers={connectorOffers}
+          rows={
+            publications.length
+              ? publishedRows(rows, publications, hasEarlier, hasLater)
+              : rows
+          }
           entries={entries}
           turns={turns}
           localInputs={localInputs}
@@ -868,6 +1008,7 @@ export function ConversationTranscript({
 }
 
 function TurnRows({
+  connectorOffers,
   rows,
   entries,
   turns,
@@ -878,6 +1019,7 @@ function TurnRows({
   continuation,
   pending,
 }: {
+  connectorOffers: Schema<"SetupOffer">[];
   pending?: PendingInteraction;
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
@@ -968,30 +1110,63 @@ function TurnRows({
       presentationKey: "turn:ungrouped",
       rows: [],
     });
-  return groups.map((group, index) =>
-    group.id === "ungrouped" && !pending ? (
-      <Rows
-        key={group.presentationKey}
-        rows={questionRows(group.rows)}
-        threadId={threadId}
-      />
-    ) : (
-      <Turn
-        key={group.presentationKey}
-        {...group}
-        pending={index === groups.length - 1 ? pending : undefined}
-        entries={group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries}
-        threadId={threadId}
-        missing={
-          !!group.turn &&
-          indexed.byTurn.get(group.turn.turn_id)!.length <
-            group.turn.end_position - group.turn.input_position
-        }
-        loadDetails={loadDetails}
-        onSavedEntries={onSavedEntries}
-        continuation={continuation}
-      />
-    ),
+  const anchors = new Map<string, string>();
+  for (const group of groups)
+    for (const row of group.rows) {
+      if (row.kind === "tools")
+        for (const tool of row.tools)
+          if (tool.toolCallId) anchors.set(tool.toolCallId, group.id);
+    }
+  return (
+    <>
+      {groups.map((group, index) => (
+        <Fragment key={group.presentationKey}>
+          {group.id === "ungrouped" &&
+          !pending &&
+          threadId !== BOT_THREAD_ID ? (
+            <Rows
+              key={group.presentationKey}
+              rows={questionRows(group.rows)}
+              threadId={threadId}
+            />
+          ) : (
+            <Turn
+              key={group.presentationKey}
+              {...group}
+              pending={index === groups.length - 1 ? pending : undefined}
+              entries={
+                group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries
+              }
+              threadId={threadId}
+              missing={
+                !!group.turn &&
+                indexed.byTurn.get(group.turn.turn_id)!.length <
+                  group.turn.end_position - group.turn.input_position
+              }
+              loadDetails={loadDetails}
+              onSavedEntries={onSavedEntries}
+              continuation={continuation}
+            />
+          )}
+          {connectorOffers
+            .filter(
+              (offer) =>
+                offer.tool_call_id &&
+                anchors.get(offer.tool_call_id) === group.id,
+            )
+            .map((offer) => (
+              <ConnectorOffer key={offer.offer_id} offer={offer} />
+            ))}
+        </Fragment>
+      ))}
+      {connectorOffers
+        .filter(
+          (offer) => !offer.tool_call_id || !anchors.has(offer.tool_call_id),
+        )
+        .map((offer) => (
+          <ConnectorOffer key={offer.offer_id} offer={offer} />
+        ))}
+    </>
   );
 }
 
@@ -1037,6 +1212,7 @@ function TurnHistory({
     continuation,
     turn,
     props.missing,
+    entries,
   );
   useEffect(() => {
     if (history.data) onSavedEntries?.(history.data);
@@ -1075,7 +1251,7 @@ function TurnHistory({
     ),
   ];
   const retry = () => {
-    if (!history.isFetching) void history.refetch();
+    if (!history.isFetching) void history.retryRead();
   };
   return (
     <TurnSegments
@@ -1197,7 +1373,7 @@ function TurnSegments({
   const mountedExecution = useRef(new Set<string>());
   const complete =
     turn?.final_position != null &&
-    rows.every((row) => row.position !== undefined);
+    rows.every((row) => row.position !== undefined || row.publication);
   const stopped = useContext(TerminalTurn);
   const stoppedAt =
     stopped && stopped.id === turn?.turn_id ? stopped.time : undefined;
@@ -1255,7 +1431,7 @@ function TurnSegments({
       !row.subagentRunId &&
       (row.kind === "input" ||
         (row.kind === "assistant" &&
-          (!complete || row.position === outputPosition)) ||
+          (!complete || row.publication || row.position === outputPosition)) ||
         row.kind === "failure" ||
         row.kind === "app" ||
         row.kind === "question")

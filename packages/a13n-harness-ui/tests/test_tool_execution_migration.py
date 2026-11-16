@@ -26,6 +26,8 @@ def test_tool_execution_migration_preserves_threads_and_roundtrips_empty_schema(
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
                 **before,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
             assert connection.execute(text("SELECT count(*) FROM tool_execution")).scalar_one() == 0
             assert "tool_completion_suppression" not in inspect(connection).get_table_names()
@@ -42,6 +44,8 @@ def test_tool_execution_migration_preserves_threads_and_roundtrips_empty_schema(
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
                 **before,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
     finally:
         engine.dispose()

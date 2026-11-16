@@ -87,7 +87,15 @@ SUBSCRIPTION_CONNECTIONS = (
         account=AccountConnection(provider="codex", label="Codex", login_methods=("device", "browser")),
         models=tuple(
             ModelChoice(value=value, label=model_name("codex", value))
-            for value in ("gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol")
+            for value in (
+                "gpt-6.1-sol",
+                "gpt-6-astra",
+                "gpt-5.6-terra",
+                "gpt-6-sol",
+                "gpt-5.6-sol",
+                "gpt-6-luna",
+                "gpt-5.6-luna",
+            )
         ),
         default_model="gpt-6.1-sol",
     ),

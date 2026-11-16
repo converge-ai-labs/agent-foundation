@@ -147,3 +147,27 @@ async def test_agent_yaml_shell_allowlist_reaches_a_real_run(tmp_path: Path, mon
     assert len(surfaces) == 1
     assert "shell_exec" in surfaces[0]
     assert not {"view", "write", "glob", "grep"} & surfaces[0]
+
+
+@pytest.mark.parametrize("selection", [None, (), ("work",)])
+@pytest.mark.parametrize("missing", ["work", "unknown"])
+async def test_skipped_mcp_inventory_preserves_callable_allowlist(selection, missing):
+    from a13n_harness.mcp import UnavailableMCPToolset
+
+    model = TestModel()
+    agent = Agent(
+        model,
+        deps_type=AgentContext,
+        toolsets=[_CopyingToolset("run", []), UnavailableMCPToolset("mcp-missing", selection)],
+        capabilities=[_ToolAllowlistCapability(frozenset({"allowed", missing}))],
+    )
+    if selection is None or missing in selection:
+        result = await agent.run("Use available tools only.")
+        assert result.output
+        assert {tool.name for tool in model.last_model_request_parameters.function_tools} == {"allowed"}
+    else:
+        with pytest.raises(CompositionError) as error:
+            await agent.run("Unknown names still fail with a bounded missing inventory.")
+        assert error.value.code == "tool_selection_missing"
+        assert error.value.details == {"tool": missing}
+        assert model.last_model_request_parameters is None

@@ -204,6 +204,52 @@ class ThreadRow(Stamped, Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ThreadObjectRow(Base):
+    """Private immutable content with Thread-scoped retention and cleanup ownership."""
+
+    __tablename__ = "thread_objects"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        CheckConstraint("retention IN ('pending', 'temporary', 'stored', 'deleted')", name="retention"),
+        CheckConstraint("size >= 0", name="size"),
+        UniqueConstraint("content_ref"),
+        Index("ix_thread_objects_lru", "thread_id", "retention", "accessed_at", "id"),
+        Index("ix_thread_objects_cleanup", "retention", "created_at"),
+        rules(
+            """
+            CREATE FUNCTION guard_thread_objects() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF ROW(NEW.id, NEW.organization_id, NEW.workspace_id, NEW.thread_id, NEW.content_ref,
+                       NEW.digest, NEW.size, NEW.content_type, NEW.name, NEW.created_at)
+                   IS DISTINCT FROM ROW(OLD.id, OLD.organization_id, OLD.workspace_id, OLD.thread_id, OLD.content_ref,
+                                        OLD.digest, OLD.size, OLD.content_type, OLD.name, OLD.created_at)
+                THEN RAISE EXCEPTION 'thread object identity and content are immutable'; END IF;
+                IF NOT (NEW.retention = OLD.retention
+                    OR (OLD.retention = 'pending' AND NEW.retention IN ('temporary', 'deleted'))
+                    OR (OLD.retention = 'temporary' AND NEW.retention IN ('stored', 'deleted'))
+                    OR (OLD.retention = 'stored' AND NEW.retention = 'deleted'))
+                THEN RAISE EXCEPTION 'invalid thread object retention transition'; END IF;
+                RETURN NEW;
+            END $$
+            """,
+            trigger("thread_objects", "guard_thread_objects"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str]
+    workspace_id: Mapped[str]
+    thread_id: Mapped[str]
+    content_ref: Mapped[str]
+    digest: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(BigInteger)
+    content_type: Mapped[str]
+    name: Mapped[str | None]
+    retention: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CompactionRow(Base):
     """One detached generation and its independent checkpoint settlement."""
 

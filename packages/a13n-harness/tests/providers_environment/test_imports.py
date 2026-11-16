@@ -10,7 +10,7 @@ def test_public_contracts_and_builtins_do_not_import_service_databases_or_vendor
         import importlib.abc
         import sys
 
-        forbidden = {"a13n_service", "a13n_harness_ui", "sqlalchemy", "psycopg", "docker", "e2b", "modal"}
+        forbidden = {"a13n_service", "a13n_harness_ui", "sqlalchemy", "psycopg", "docker", "e2b", "modal", "boxd"}
         class BlockImports(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname.split(".")[0] in forbidden:
@@ -18,7 +18,7 @@ def test_public_contracts_and_builtins_do_not_import_service_databases_or_vendor
         sys.meta_path.insert(0, BlockImports())
         from a13n_harness.environment import EnvironmentConnector, EnvironmentExecution
         from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
-        assert len(BUILT_IN_ENVIRONMENT_PROVIDERS) == 11
+        assert len(BUILT_IN_ENVIRONMENT_PROVIDERS) == 12
         for definition in BUILT_IN_ENVIRONMENT_PROVIDERS:
             assert not hasattr(definition, "open_provider")
             assert not hasattr(definition, "provider_factory")

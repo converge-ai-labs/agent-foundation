@@ -5377,7 +5377,11 @@ export interface components {
        * @default false
        */
       summarize?: boolean;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5460,7 +5464,11 @@ export interface components {
        * @default false
        */
       summarize?: boolean;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5566,7 +5574,11 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       subagents?: components["schemas"]["Subagents-Input"] | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5615,7 +5627,11 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       subagents?: components["schemas"]["Subagents-Output"] | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
+      /** Tool Search */
+      tool_search?:
+        | components["schemas"]["ToolSearch"]
+        | components["schemas"]["NativeToolSearch"]
+        | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -6211,7 +6227,7 @@ export interface components {
     };
     /**
      * AutomaticToolSearch
-     * @description Group Service-owned sources individually, following the agent's selections.
+     * @description Select Service-owned sources for on-demand discovery.
      */
     AutomaticToolSearch: {
       /**
@@ -6436,7 +6452,14 @@ export interface components {
     BuiltinSkillName: "platform-operations";
     /** @enum {string} */
     BuiltinToolsetKey:
-      "files" | "shell" | "computer" | "browser" | "web" | "memory" | "assets";
+      | "files"
+      | "shell"
+      | "computer"
+      | "browser"
+      | "web"
+      | "memory"
+      | "assets"
+      | "object_store";
     /** BusyOccurrence */
     BusyOccurrence: {
       /** Entry Id */
@@ -9740,6 +9763,15 @@ export interface components {
        */
       headers?: string[];
       oauth?: components["schemas"]["OAuthSettings"] | null;
+      /**
+       * Object Ref Tools
+       * @description Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.
+       */
+      object_ref_tools?: {
+        [key: string]: boolean;
+      };
+      /** @default raise */
+      on_error?: components["schemas"]["StartupErrorPolicy"];
       /** Tools */
       tools?: string[] | null;
       /** Url */
@@ -10944,6 +10976,18 @@ export interface components {
        * @enum {string}
        */
       mode: "native";
+    };
+    /**
+     * NativeToolSearch
+     * @description Ungrouped native discovery of selected Service tools; plugins keep their own settings.
+     */
+    NativeToolSearch: {
+      /**
+       * Mode
+       * @constant
+       */
+      mode: "native";
+      sources?: components["schemas"]["AutomaticToolSearch"];
     };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
@@ -13948,6 +13992,8 @@ export interface components {
        */
       view?: "compact";
     };
+    /** @enum {string} */
+    StartupErrorPolicy: "skip" | "raise";
     /** @enum {string} */
     State:
       | "reload_requested"

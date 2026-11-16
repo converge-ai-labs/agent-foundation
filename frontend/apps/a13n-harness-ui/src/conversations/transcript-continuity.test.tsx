@@ -28,11 +28,13 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+// WebUI submissions carry canonical `input_` + 32 hex source IDs.
+const submission = `input_${"1".repeat(32)}`;
 const local: LocalInput = {
-  id: "round",
+  id: submission,
   action: "send",
   state: "accepted",
-  parts: previewInput("round", ["Prompt"]),
+  parts: previewInput(submission, ["Prompt"]),
 };
 const input: Schema<"TranscriptEntry"> = {
   position: 0,

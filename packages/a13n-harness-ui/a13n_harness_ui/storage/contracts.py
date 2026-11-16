@@ -42,6 +42,13 @@ class MarkdownSubagentSource(StoredContract):
     id: str = Field(min_length=1, max_length=128)
 
 
+class DynamicAgentSource(StoredContract):
+    """Host-defined child; its complete definition is retained in its Run composition."""
+
+    kind: Literal["dynamic"] = "dynamic"
+    id: str = Field(min_length=1, max_length=128)
+
+
 class MemoryAgentSource(StoredContract):
     """Application-owned organizer; not a selectable Agent resource."""
 
@@ -63,7 +70,14 @@ class BotAgentSource(StoredContract):
     id: Literal["bot"] = "bot"
 
 
-type AgentSource = AgentResourceSource | MarkdownSubagentSource | MemoryAgentSource | LiveAgentSource | BotAgentSource
+type AgentSource = (
+    AgentResourceSource
+    | MarkdownSubagentSource
+    | MemoryAgentSource
+    | LiveAgentSource
+    | BotAgentSource
+    | DynamicAgentSource
+)
 
 
 class ThreadConfiguration(StoredContract):
@@ -138,6 +152,12 @@ class ThreadConfigurationMutation(StoredContract):
         return self
 
 
+class ThreadReadReceipt(StoredContract):
+    thread_id: str = Field(min_length=1, max_length=80)
+    read_state_version: int = Field(ge=0)
+    completion_version: int = Field(ge=0)
+
+
 class ThreadCompletion(StoredContract):
     """Latest successfully selected root result; independent of current operation state."""
 
@@ -189,6 +209,8 @@ class Thread(StoredContract):
     touched_at: datetime | None = None
     archived: bool = False
     starred: bool = False
+    unread: bool = False
+    read_state_version: int = Field(default=0, ge=0)
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ObjectRef | None = None
@@ -485,6 +507,7 @@ __all__ = [
     "ChildExecutionHead",
     "CompactChildActivity",
     "CompactChildDisplay",
+    "DynamicAgentSource",
     "EnvironmentBindingHead",
     "EnvironmentBindingKey",
     "ExecutionStatus",

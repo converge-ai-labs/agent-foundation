@@ -12,6 +12,11 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 TEST_INPUTS: dict[str, tuple[str, ...]] = {
+    "test_migration_heads.py": (
+        ".pre-commit-config.yaml",
+        "packages/a13n-harness-ui/a13n_harness_ui/storage/migrations/*",
+        "packages/a13n-service/a13n_service/migrations/*",
+    ),
     "packages/a13n-service/tests/test_documentation.py": (
         "docs/a13n-service/*",
         "packages/a13n-service/build_docs.py",

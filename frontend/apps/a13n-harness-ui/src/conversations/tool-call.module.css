@@ -15,7 +15,7 @@
 .tool [data-slot="disclosure-surface"] {
   background: transparent;
 }
-.tool [data-slot="disclosure-surface"] > button {
+.tool [data-slot="disclosure-surface"] [data-slot="collapsible-trigger"] {
   min-height: var(--tool-row);
   width: fit-content;
   max-width: 100%;
@@ -34,14 +34,21 @@
     background-color 120ms ease,
     color 120ms ease;
 }
-.tool [data-slot="disclosure-surface"] > button:is(:hover, :focus-visible) {
+.tool
+  [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"]:is(:hover, :focus-visible) {
   color: var(--foreground);
   background: transparent;
 }
-.tool [data-slot="disclosure-surface"] > button:active {
+.tool
+  [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"]:active {
   background: transparent;
 }
-.tool [data-slot="disclosure-surface"] > button > svg:first-child {
+.tool
+  [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"]
+  > svg:first-child {
   order: 1;
   flex: none;
   width: 12px;
@@ -52,14 +59,17 @@
     transform 150ms ease-out,
     opacity 120ms ease;
 }
-.tool [data-slot="disclosure-surface"] > button:hover > svg:first-child,
 .tool
   [data-slot="disclosure-surface"]
-  > button:focus-visible
+  [data-slot="collapsible-trigger"]:hover
+  > svg:first-child,
+.tool
+  [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"]:focus-visible
   > svg:first-child {
   opacity: 1;
 }
-.tool > * > [data-slot="disclosure-surface"] > :not(button) {
+.tool > * > [data-slot="disclosure-surface"] > [data-slot="collapsible-panel"] {
   padding-left: var(--tool-inset);
 }
 .tool [data-slot="collapsible-panel"] > div {
@@ -101,8 +111,11 @@
   font-variant-numeric: tabular-nums;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tool [data-slot="disclosure-surface"] > button,
-  .tool [data-slot="disclosure-surface"] > button > svg:first-child {
+  .tool [data-slot="disclosure-surface"] [data-slot="collapsible-trigger"],
+  .tool
+    [data-slot="disclosure-surface"]
+    [data-slot="collapsible-trigger"]
+    > svg:first-child {
     transition: none;
   }
 }
@@ -277,7 +290,10 @@
   font-size: var(--a13n-text-body);
 }
 @media (max-width: 600px) {
-  .tool > [data-slot] [data-slot="disclosure-surface"] > button {
+  .tool
+    > [data-slot]
+    [data-slot="disclosure-surface"]
+    [data-slot="collapsible-trigger"] {
     flex-wrap: wrap;
   }
   .phase {
@@ -292,7 +308,10 @@
   }
 }
 @media (hover: none), (pointer: coarse) {
-  .tool [data-slot="disclosure-surface"] > button > svg:first-child {
+  .tool
+    [data-slot="disclosure-surface"]
+    [data-slot="collapsible-trigger"]
+    > svg:first-child {
     opacity: 1;
   }
 }
@@ -382,7 +401,9 @@
 .operation[data-state="failed"] .phase {
   color: var(--destructive);
 }
-.recordedDisclosure > [data-slot="disclosure-surface"] > button {
+.recordedDisclosure
+  > [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"] {
   padding-inline: 0;
 }
 .recordedDisclosure [data-slot="collapsible-panel"] > div {
@@ -486,7 +507,9 @@
 .questionReceipt [data-slot="disclosure-surface"] {
   background: transparent;
 }
-.questionReceipt [data-slot="disclosure-surface"] > button {
+.questionReceipt
+  [data-slot="disclosure-surface"]
+  [data-slot="collapsible-trigger"] {
   min-height: 32px;
   width: calc(100% - 8px);
   margin-inline: 4px;
@@ -533,4 +556,12 @@
   height: auto;
   object-fit: contain;
   border-radius: 8px;
+}
+
+.tool [data-slot="disclosure-heading"] {
+  justify-content: flex-start;
+  gap: 0;
+}
+.tool [data-slot="disclosure-heading"] > [data-slot="collapsible-trigger"] {
+  flex: none;
 }

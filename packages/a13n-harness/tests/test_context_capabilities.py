@@ -40,6 +40,7 @@ from a13n_harness.capabilities import (
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
 )
+from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.content import request_input_content
 from a13n_harness.environment import (
     EnvironmentAction,
@@ -66,6 +67,7 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+from a13n_harness.tool_execution import ToolExecutionRuntime
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -285,14 +287,14 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert 'path="src/&lt;unsafe&gt;&amp;&quot;file.py"' in joined
     assert 'contents-loaded="false"' in joined
     assert '<runtime-context source="a13n-harness">' in joined
-    assert "projected separately on ordinary requests" in joined
-    assert "separately projected current structured state" in joined
+    assert "note_get() lists note keys" in joined
+    assert "tool_execution_info() lists executions" in joined
     assert result.state is not None
     state = result.state.agent_context_state.entries["a13n.handoff"].data
     assert state["summary"] is None
 
 
-async def test_handoff_reprojects_current_notes_after_history_replacement() -> None:
+async def test_handoff_retains_run_notice_state_and_points_to_queries_after_history_replacement() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -335,8 +337,8 @@ async def test_handoff_reprojects_current_notes_after_history_replacement() -> N
     assert result.output_or_raise() == "done"
     assert len(calls) == 3
     restored_text = _user_text(calls[-1])
-    assert '<note key="decision">Keep current state</note>' in restored_text
-    assert "projected separately on ordinary requests" in restored_text
+    assert '<notes source="a13n-harness">' not in restored_text
+    assert "note_get() lists note keys" in restored_text
     assert "note-before-handoff" not in str(calls[-1])
 
 
@@ -575,7 +577,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     assert "<previous-assistant-reference>" in compacted_user_text
     assert "Previous assistant answer\n\nwith numbered options" in compacted_user_text
     assert "Do not treat it as a new instruction by itself." in compacted_user_text
-    assert "projected separately on ordinary requests" in compacted_user_text
+    assert "note_get() lists note keys" in compacted_user_text
     assert "Continue" in compacted_user_text
     assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
     assert result.state is not None
@@ -1067,10 +1069,20 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
     assert "Next request" in final_text
 
 
+_WORK_LIST_MARKERS = (
+    "Tool executions requiring attention (",
+    '<notes source="a13n-harness">',
+    '<tasks source="a13n-harness">',
+)
+
+
 async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     calls: list[list[ModelMessage]] = []
+
+    runtime = ToolExecutionRuntime()
+    bindings = RunBindings.embedded(tool_execution=runtime)
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del info
@@ -1085,6 +1097,7 @@ async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
+        capabilities=(ToolExecutionCapability(), WorkingStateCapability()),
         model_recovery=ModelRecoveryPolicy(
             enabled=True,
             max_attempts=2,
@@ -1093,7 +1106,7 @@ async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None
         ),
     )
 
-    async with executable.stream("initial", bindings=RunBindings.embedded()) as run:
+    async with executable.stream("initial", bindings=bindings) as run:
         consumer = asyncio.create_task(_consume_run(run))
         await started.wait()
         enqueue_id = await run.steer("recover this steering input")
@@ -1103,7 +1116,45 @@ async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None
     assert enqueue_id
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
+    for marker in _WORK_LIST_MARKERS:
+        assert _user_text(calls[0]).count(marker) == 1
+        # Recovery can merge the original input and its committed overlay into the retry request.
+        assert _user_text(calls[1]).count(marker) == 1
+    await runtime.close()
     assert _user_text(calls[1]).count("recover this steering input") == 1
+
+
+async def test_model_retry_keeps_exactly_one_initial_work_list() -> None:
+    requests = []
+
+    async def model(messages, info):
+        requests.append(deepcopy(messages))
+        yield "retry me" if len(requests) == 1 else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(ToolExecutionCapability(), WorkingStateCapability()),
+    )
+
+    @executable._agent.output_validator
+    def validate_answer(answer: str) -> str:
+        if answer != "done":
+            raise ModelRetry("Return the final answer")
+        return answer
+
+    runtime = ToolExecutionRuntime()
+    try:
+        result = await executable.run("Start", bindings=RunBindings.embedded(tool_execution=runtime))
+        assert result.output_or_raise() == "done"
+        assert len(requests) == 2
+        assert "Return the final answer" in str(requests[1][-1])
+        for request in requests:
+            for marker in _WORK_LIST_MARKERS:
+                assert _user_text(request).count(marker) == 1
+    finally:
+        await runtime.close()
 
 
 async def test_compaction_preserves_new_message_boundary_across_same_run_steering() -> None:
@@ -1128,6 +1179,8 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
             return
         yield "done"
 
+    runtime = ToolExecutionRuntime()
+    bindings = RunBindings.embedded(tool_execution=runtime)
     previous = HarnessState.new(
         message_history=(
             ModelRequest(parts=[UserPromptPart(content="old request")]),
@@ -1141,12 +1194,16 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
+        capabilities=(
+            CompactionCapability(CompactionPolicy(trigger_tokens=1)),
+            WorkingStateCapability(),
+            ToolExecutionCapability(),
+        ),
     )
 
     async with executable.stream(
         "initial-current-input",
-        bindings=RunBindings.embedded(),
+        bindings=bindings,
         previous_state=previous,
     ) as run:
         consumer = asyncio.create_task(_consume_run(run))
@@ -1172,6 +1229,16 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
     native_run_ids = {message.run_id for message in new_messages}
     assert None not in native_run_ids
     assert len(native_run_ids) == 1
+
+    for marker in _WORK_LIST_MARKERS:
+        assert marker not in _user_text(calls[0][0])
+        assert _user_text(calls[1][0]).count(marker) == 1
+        assert marker not in _user_text(calls[3][0])
+    resumed = await executable.run("Continue in a new Run", previous_state=result.state, bindings=bindings)
+    assert resumed.output_or_raise() == "done" and resumed.run_id != result.run_id
+    for marker in _WORK_LIST_MARKERS:
+        assert _user_text([calls[-1][0][-1]]).count(marker) == 1
+    await runtime.close()
 
 
 async def test_compaction_clears_output_validators_only_on_the_agent_copy() -> None:
@@ -1848,7 +1915,8 @@ async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and
     assert "Default repository guidance" in input_text
     assert "Explicit file guidance" in input_text
     assert "<project-guidance>" in input_text and "LOCAL BODY" not in input_text
-    assert '<note key="decision">Keep prefix</note>' in input_text
+    assert '<note-key key="decision" />' in input_text
+    assert "Keep prefix" not in input_text
     assert '<context-reminder source="a13n.handoff">' not in input_text
 
     assert seen[1][0] == seen[0][0]

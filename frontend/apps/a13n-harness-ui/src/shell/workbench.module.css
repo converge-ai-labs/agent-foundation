@@ -823,14 +823,6 @@
 }
 .backToChats {
   composes: row from "./navigation-row.module.css";
-  margin-bottom: 16px;
-  color: var(--a13n-secondary);
-}
-.settingsNavigationTitle {
-  padding: 0 8px;
-  margin: 0 0 8px;
-  font-size: var(--a13n-text-body);
-  font-weight: 500;
   color: var(--a13n-secondary);
 }
 .settingsNav {
@@ -875,6 +867,28 @@
   overflow: auto;
   padding: 24px clamp(24px, 5vw, 64px) 48px;
   scrollbar-gutter: stable both-edges;
+}
+.settingsContent :is([data-slot="select-trigger"], button[role="combobox"]) {
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: start;
+}
+.settingsContent
+  [data-slot="settings-row"]
+  :is([data-slot="select-trigger"], button[role="combobox"]) {
+  margin-inline-start: auto;
+  justify-self: end;
+}
+/* Select and search menus render outside the settings panel in a portal. */
+body:has(.settingsContent)
+  :is([data-slot="select-popup"], [data-slot="combobox-popup"]) {
+  width: max-content;
+  min-width: min(200px, calc(100vw - 24px));
+  max-width: min(360px, calc(100vw - 24px));
+}
+body:has(.settingsContent) [data-slot="select-list"] {
+  width: auto;
 }
 .settingsContent > * {
   flex-shrink: 0;
@@ -1059,6 +1073,13 @@
 }
 .selectionOption > span {
   min-width: 0;
+}
+.modelSelection {
+  padding-bottom: 8px;
+}
+/* Options keep their hover padding while checkboxes align with row text. */
+.modelSelectionList {
+  margin-inline: -8px;
 }
 /* Unknown route: a centered state, like other empty states. */
 .notFound {

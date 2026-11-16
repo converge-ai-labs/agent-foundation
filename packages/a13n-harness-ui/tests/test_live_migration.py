@@ -36,6 +36,8 @@ def test_live_upgrade_preserves_existing_configuration_and_state(tmp_path):
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
                 **before_thread,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
             assert (
                 dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()) == before_config

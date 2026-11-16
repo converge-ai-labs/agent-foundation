@@ -22,6 +22,7 @@ from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
 from a13n_harness._retained_scope import RetainedScope as RetainedScope
 from a13n_harness.environment.process_recovery import ShellExecutionState
+from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.tools.diagnostics import system_error, system_failure, tool_error_text
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
@@ -46,6 +47,8 @@ class ToolExecutionRecord(BaseModel):
     run_id: str
     tool_call_id: str
     tool_name: str
+    # Original explicit Thread-wide completion ordering, not the native per-tool batch flag.
+    sequential: bool = False
     status: Literal["queued", "running", "succeeded", "failed", "cancelled", "lost"] = "queued"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
@@ -62,11 +65,17 @@ class ToolExecutionRecord(BaseModel):
     def receipt(self) -> dict[str, str]:
         """Close a foreground call without delivering or reissuing its owned invocation."""
         return {
+            "header": format_execution_header("Tool notification", self.tool_name, self.execution_id, self.status),
             "type": "tool_execution_receipt",
             "execution_id": self.execution_id,
             "tool_name": self.tool_name,
             "status": self.status,
-            "message": "The original invocation is owned by the runtime. Use tool_execution_result or tool_execution_wait; do not reissue it.",
+            "message": (
+                "Running in the background; do not reissue it. Its result is delivered to this conversation "
+                "automatically when it finishes, even after your turn ends. You can continue with other work "
+                "meanwhile. Call tool_execution_wait or tool_execution_result only when your next step needs "
+                "the result now."
+            ),
         }
 
 
@@ -293,12 +302,14 @@ class ToolExecutionRuntime:
         store: ToolExecutionStore | None = None,
         max_active: int = 64,
         on_completed: Callable[[ToolExecutionRecord], None] | None = None,
+        reports_background_completions: bool = False,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be positive")
         self.store = store if store is not None else MemoryToolExecutionStore()
         self._max_active = max_active
         self._on_completed = on_completed
+        self.reports_background_completions = reports_background_completions
         self._live: dict[str, _LiveExecution] = {}
         self._rejected = MemoryToolExecutionStore()
         self._closing = False
@@ -363,6 +374,7 @@ class ToolExecutionRuntime:
             run_id=run_id,
             tool_call_id=tool_call_id,
             tool_name=tool_name,
+            sequential=sequential,
         )
         live = _LiveExecution(record)
         self._live[record.execution_id] = live
@@ -642,7 +654,7 @@ class ToolExecutionRuntime:
         self._live[record.execution_id] = live
         # This operation already started before any newly queued invocation.
         # Track its completion for future calls without waiting on later barriers.
-        slot = _ExecutionSlot(asyncio.get_running_loop().create_future(), (), False)
+        slot = _ExecutionSlot(asyncio.get_running_loop().create_future(), (), record.sequential)
         self._order.setdefault(record.thread_id, []).append(slot)
         live.task = asyncio.create_task(
             self._execute(live, operation, None, slot, release_ownership), name=record.execution_id

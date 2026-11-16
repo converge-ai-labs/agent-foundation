@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
 import {
   ChatCircle,
+  EnvelopeSimple,
   CaretRight,
   Question,
   CircleNotch,
@@ -101,7 +102,14 @@ export function ThreadRow({
   const [deleting, setDeleting] = useState(false);
   const { tracker: results } = useResults();
   const unsent = useUnsent().inputs.has(row.thread.thread_id);
-  const unread = results?.isUnread(row.thread.thread_id);
+  const reading = results
+    ?.getSnapshot()
+    .threads.get(row.thread.thread_id)?.thread;
+  const unread =
+    reading &&
+    (reading.read_state_version ?? 0) >= (row.thread.read_state_version ?? 0)
+      ? reading.unread
+      : row.thread.unread;
   const navigate = useNavigate();
   const location = useLocation();
   const transport = useTransport();
@@ -145,6 +153,23 @@ export function ThreadRow({
     if (star.isPending) return;
     star.mutate();
   };
+  const markUnread = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.POST("/api/threads/{thread_id}/unread", {
+          params: { path: { thread_id: row.thread.thread_id } },
+        }),
+      ),
+    onSuccess: (updated) => {
+      results?.observe(updated);
+      applyThreadMutation(queries, updated);
+      refreshThread(queries, updated.thread_id, "metadata");
+    },
+    onSettled: () => {
+      if (document.activeElement === document.body)
+        actionsButton.current?.focus();
+    },
+  });
   const fork = useMutation({
     mutationFn: () =>
       result(
@@ -332,7 +357,7 @@ export function ThreadRow({
               <Button ref={actionsButton} variant="ghost" size="icon-sm" />
             }
             className={styles.threadActions}
-            aria-busy={star.isPending || fork.isPending}
+            aria-busy={star.isPending || fork.isPending || markUnread.isPending}
             aria-label={t("Actions for {{name}}", { name: title })}
           >
             <DotsThree />
@@ -373,6 +398,17 @@ export function ThreadRow({
                   {t("Move down")}
                 </MenuItem>
               </>
+            )}
+            {!row.thread.parent_thread_id && !row.thread.memory_scope && (
+              <MenuItem
+                disabled={markUnread.isPending}
+                onClick={() => {
+                  if (!markUnread.isPending) markUnread.mutate();
+                }}
+              >
+                <EnvelopeSimple />
+                {t("Mark unread")}
+              </MenuItem>
             )}
             {canStar && (
               <MenuItem disabled={star.isPending} onClick={toggleStar}>
@@ -461,7 +497,13 @@ export function ThreadRow({
         </Menu>
       </div>
       <ErrorNotice
-        error={star.error || archive.error || fork.error || coordinator.error}
+        error={
+          markUnread.error ||
+          star.error ||
+          archive.error ||
+          fork.error ||
+          coordinator.error
+        }
       />
       {deleting && (
         <DeleteThread thread={row.thread} close={() => setDeleting(false)} />

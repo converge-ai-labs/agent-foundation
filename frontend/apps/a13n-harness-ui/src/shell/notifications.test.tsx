@@ -284,8 +284,8 @@ it("explains denied and unavailable permission instead of repeatedly requesting 
   fireEvent(document, new Event("visibilitychange"));
   expect(screen.getByText("Unavailable here")).toBeTruthy();
 });
-it("keeps attention notices without permission or when desktop reminders are disabled", async () => {
-  mount();
+it("keeps other-thread attention notices without permission or when desktop reminders are disabled", async () => {
+  mount("/threads/thread-other");
   permission = "default";
   fireEvent(document, new Event("visibilitychange"));
   event = notice("receipt-2", "suspended");
@@ -489,27 +489,26 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   ).toBeNull();
 });
 
-it.each(["completed", "failed", "suspended"] as const)(
-  "suppresses only current-thread completion, retaining %s notices for other threads regardless of opt-in",
+it.each([
+  "completed",
+  "failed",
+  "suspended",
+  "goal_verified",
+  "goal_incomplete",
+] as const)(
+  "suppresses current-thread %s notices but retains other-thread notices regardless of opt-in",
   async (status) => {
     writePreference("notifications.enabled", "false");
     vi.mocked(document.hasFocus).mockReturnValue(true);
     event = notice("current", status);
     mount();
     fireEvent.click(screen.getByText("Emit"));
-    const currentCount = status === "completed" ? 0 : 1;
-    expect(screen.queryAllByText(event.notice!.brief)).toHaveLength(
-      currentCount,
-    );
+    expect(screen.queryByText(event.notice!.brief)).toBeNull();
     fireEvent.click(screen.getByText("Emit"));
-    expect(screen.queryAllByText(event.notice!.brief)).toHaveLength(
-      currentCount,
-    );
+    expect(screen.queryByText(event.notice!.brief)).toBeNull();
     event = { ...notice("unvisited", status), root_thread_id: "never-visited" };
     fireEvent.click(screen.getByText("Emit"));
-    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(
-      currentCount + 1,
-    );
+    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
     fireEvent.click(screen.getAllByRole("button", { name: "Open chat" })[0]);
     expect(await screen.findByText("/threads/never-visited")).toBeTruthy();
     expect(native).not.toHaveBeenCalled();
@@ -617,18 +616,6 @@ it.each([
     expect(screen.queryByText("Task completed - UI polish")).toBeNull();
   },
 );
-
-it("suppresses a viewed Goal success but keeps incomplete Goal warnings", async () => {
-  mount();
-  event = notice("verified", "goal_verified");
-  fireEvent.click(screen.getByText("Emit"));
-  expect(
-    screen.queryByText("Goal verified by the Agent - UI polish"),
-  ).toBeNull();
-  event = notice("incomplete", "goal_incomplete");
-  fireEvent.click(screen.getByText("Emit"));
-  expect(await screen.findByText("Goal not verified - UI polish")).toBeTruthy();
-});
 
 it("retranslates local push failures without retrying and preserves browser details", async () => {
   permission = "granted";
@@ -740,15 +727,40 @@ it("presents distinct Bot messages from one run and opens the Bot conversation",
   await act(() => i18n.changeLanguage("en"));
 });
 
-it("suppresses viewed Bot messages and does not replay them after navigation", () => {
-  mount("/bot");
-  event = botMessage("viewed");
-  fireEvent.click(screen.getByText("Emit"));
-  expect(screen.queryByText("New message from Bot")).toBeNull();
-  fireEvent.click(screen.getByText("Other thread"));
-  fireEvent.click(screen.getByText("Emit"));
-  expect(screen.queryByText("New message from Bot")).toBeNull();
-});
+it.each(["/bot", "/threads/thread_bot"])(
+  "suppresses viewed Bot messages on %s without hiding other-thread completion or replaying after navigation",
+  async (path) => {
+    mount(path);
+    const viewed = botMessage("viewed");
+    event = viewed;
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.queryByText("New message from Bot")).toBeNull();
+    event = notice("other-thread-completion");
+    fireEvent.click(screen.getByText("Emit"));
+    expect(await screen.findByText("Task completed - UI polish")).toBeTruthy();
+    fireEvent.click(screen.getByText("Other thread"));
+    event = viewed;
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.queryByText("New message from Bot")).toBeNull();
+    event = botMessage("after-navigation");
+    fireEvent.click(screen.getByText("Emit"));
+    expect(await screen.findAllByText("New message from Bot")).toHaveLength(1);
+  },
+);
+
+it.each(["completed", "failed", "suspended"] as const)(
+  "suppresses a viewed Bot %s operation notice",
+  (status) => {
+    mount("/bot");
+    event = {
+      ...notice(`bot-${status}`, status),
+      root_thread_id: "thread_bot",
+      thread_id: "thread_bot",
+    };
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.queryByText(event.notice!.brief)).toBeNull();
+  },
+);
 
 it("persists Bot-only scope, filters ordinary notices and keeps Bot attention", async () => {
   mount("/settings/notifications");

@@ -20,7 +20,7 @@ Journeys use only the public HTTP API as the bootstrapped administrator or an AP
 | `test_subagents.py`    | An async subagent's child run on its own thread and its result delivered to the parent thread                                                                                                                                                                                                                     |
 | `test_contention.py`   | Concurrent submissions to one thread and to many threads across both workers: one active run per thread, FIFO consumption, every input consumed once                                                                                                                                                              |
 | `test_memory.py`       | Two conversations on different workers editing one memory file (a stale-version edit is refused without a revision, then applies after rereading; obsolete edit anchors fail) and the changes the next run receives; recovery from committed memory cursors after a worker SIGKILL; a memory deleted during a run |
-| `test_environments.py` | A shell tool writing in the run's environment, then stop, restart with the files intact, unmount and delete, for `local`, native `docker` and each hosted type (`e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`); an E2B sandbox renewed past its timeout                                               |
+| `test_environments.py` | A shell tool writing in the run's environment, then stop, restart with the files intact, unmount and delete, for `local`, native `docker` and each hosted type (`e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`, `boxd`); an E2B sandbox renewed past its timeout                                       |
 | `test_egress.py`       | Controlled HTTPS credential injection through HTTP and reverse WebSocket; rotation during a tracked background command after its Run ends, idle synchronization on reuse, and revocation                                                                                                                          |
 
 ```sh
@@ -29,6 +29,20 @@ make service-e2e SERVICE_E2E_ARGS="-k recovery"   # a selection; any pytest argu
 make service-e2e-docker                # build the native Docker image, then run its environment journey
 make service-e2e-check                          # code, fixture, configuration and selection checks without Docker
 ```
+
+## Slow reverse-link file import
+
+`test_client_transfer_backpressure.py` runs a native reverse-WebSocket Envd with one isolated Control/Worker stack and real PostgreSQL/Redis. A transparent TCP relay limits actual TLS carrier bytes to 20,000 bytes/s upstream and 200,000 bytes/s downstream, with a 35 ms initial delay in each direction. A Run imports a random 1 MiB file with `asset_ref` while three sibling Runs read a control file on independent Sessions over the same connection. The assertions cover completed sibling Runs before the upload drains, object publication, size, SHA-256, exact stored bytes, and no carrier reconnect. Both default chunks and an 8192-byte frame diagnostic run.
+
+Build this checkout's daemon before selecting the journey:
+
+```sh
+cargo build --locked --package a13n-envd --no-default-features
+A13N_ENVD_TEST_BINARY="$PWD/target/debug/a13n-envd" \
+  make service-e2e SERVICE_E2E_ARGS="--require-all -k client_transfer_backpressure"
+```
+
+The ordinary CI `other` shard builds and supplies this binary. Without it, local collection still works and execution skips; `--require-all` fails instead. The journey owns its daemon, relay, workspace and credentials, and the shared fixture owns its disposable stores and Service processes. Its observation deadlines allow the approximately 53 seconds of payload transmission plus protocol/control overhead; product heartbeat, Session cleanup, transfer and lease budgets remain unchanged. The WebSocket data-delivery fence trades one Ping/Pong round trip per bounded data batch for a bounded bulk backlog; this test establishes liveness at the stated rates, not at arbitrary slower links.
 
 The environment journey also reads recipe defaults and Agent/Thread/Run overrides inside Agent commands and their child processes, verifies that clearing the Thread map restores Agent defaults, exercises explicit and empty command overrides without leaking them to later commands, and checks that editing a template does not change a retained instance after stop/resume. The same assertions run for every selected provider.
 
@@ -44,6 +58,7 @@ The credential journeys are included in the `docker` selection and require the c
 | `vercel`  | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`                                                                                                   |
 | `sprites` | `SPRITES_TOKEN`, `SPRITES_ORGANIZATION`; the token must permit creation with ownership labels (restricted tokens reject labels)                         |
 | `runloop` | `RUNLOOP_API_KEY`; optional `RUNLOOP_ORGANIZATION`                                                                                                      |
+| `boxd`    | `BOXD_API_KEY`, `BOXD_REGION` (`fra` or `nyc`); optional `BOXD_ORGANIZATION`. The journey uses a 1 vCPU / 4 GiB machine                                 |
 
 ```sh
 set -a; . ~/.a13n/.env; set +a; make service-e2e SERVICE_E2E_ARGS="-k e2b"      # the E2B journeys

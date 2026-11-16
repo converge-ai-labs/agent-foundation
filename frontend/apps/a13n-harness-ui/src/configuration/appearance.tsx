@@ -14,7 +14,6 @@ import {
   type Theme,
 } from "../appearance/model";
 import { useTranslation } from "../i18n";
-import { PageHeader } from "../shell/ui";
 import {
   SettingsChoice,
   SettingsRow,
@@ -103,10 +102,6 @@ export function AppearanceSettings() {
   const { appearance, store, saveFailed } = useAppearance();
   return (
     <div className={styles.page}>
-      <PageHeader
-        title={t("Appearance")}
-        description={t("Your theme and text sizes, saved in this browser.")}
-      />
       <SettingsSection title={t("Theme")}>
         <SettingsChoice
           label={t("Color theme")}

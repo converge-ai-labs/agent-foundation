@@ -28,6 +28,7 @@ import { NewDraftStore } from "./new-draft";
 import { i18n } from "../i18n";
 import { ConversationPage } from "./conversation";
 import { ConversationNavigation } from "./navigation";
+import { ChatSearchProvider } from "./chat-search";
 import { LiveThreadsProvider } from "./live-threads";
 import type { Schema } from "../transport/client";
 
@@ -142,7 +143,7 @@ beforeEach(() => {
   drafts.set(id, initial.composer);
   queries = new QueryClient({
     defaultOptions: {
-      queries: { retry: false, staleTime: Infinity },
+      queries: { retry: false, retryDelay: 0, staleTime: Infinity },
       mutations: { retry: false },
     },
   });
@@ -429,7 +430,11 @@ function mount(initial = path, sidebar = false) {
           <NewConversationDrafts value={creations}>
             <MemoryRouter initialEntries={[initial]}>
               <LiveThreadsProvider>
-                {sidebar && <ConversationNavigation />}
+                {sidebar && (
+                  <ChatSearchProvider>
+                    <ConversationNavigation />
+                  </ChatSearchProvider>
+                )}
                 <Link to="/settings">Settings</Link>
                 <Link to={initial}>Return to draft</Link>
                 <Link to="/">Home</Link>
@@ -1760,15 +1765,6 @@ it.each([
       reader.scrollTop = 40;
       fireEvent.scroll(reader);
     }
-    if (retry) {
-      const retryButton = await screen.findByRole("button", {
-        name: "Retry loading",
-      });
-      fireEvent.scroll(reader);
-      await act(async () => {});
-      expect(requests).toEqual(["latest", "previous-turn"]);
-      fireEvent.click(retryButton);
-    }
     await screen.findByText("Previous answer");
     const expectedRequests = retry
       ? ["latest", "previous-turn", "previous-turn"]
@@ -2004,7 +2000,9 @@ it.each(["desktop", "mobile"])(
         removeEventListener: vi.fn(),
       }));
     const requests: string[] = [];
-    const steeringParts = previewInput("steer-one", ["Please use plan B"]);
+    // WebUI submissions carry canonical `input_` + 32 hex source IDs.
+    const steeringId = `input_${"5".repeat(32)}`;
+    const steeringParts = previewInput(steeringId, ["Please use plan B"]);
     let failSteps = true;
     const original = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (request) => {
@@ -2018,7 +2016,6 @@ it.each(["desktop", "mobile"])(
           : `chat:${cursor ?? "latest"}`,
       );
       if (execution && cursor === "steps" && failSteps) {
-        failSteps = false;
         return json(
           { error: { message: "Execution temporarily unavailable" } },
           503,
@@ -2130,6 +2127,8 @@ it.each(["desktop", "mobile"])(
       "chat:latest",
       "execution:latest",
       "execution:steps",
+      "execution:latest",
+      "execution:steps",
     ]);
     expect(
       screen.getByText("Current answer").closest("[data-execution-reader]"),
@@ -2140,7 +2139,7 @@ it.each(["desktop", "mobile"])(
       const draft = drafts.get(id)!;
       draft.localInputs = [
         {
-          id: "steer-one",
+          id: steeringId,
           action: "steer",
           state: "accepted",
           parts: steeringParts,
@@ -2156,7 +2155,8 @@ it.each(["desktop", "mobile"])(
     await screen.findByText("Previous answer");
     expect(requests.at(-1)).toBe("chat:previous-turn");
     expect(screen.queryByText("Earlier execution work")).toBeNull();
-    // One retry completes the turn without exposing transport-page controls.
+    // A manual retry can complete the turn once the service recovers.
+    failSteps = false;
     fireEvent.click(retry);
     await waitFor(() => expect(drafts.get(id)!.localInputs).toHaveLength(0));
     // Completed progress stays folded until the user opens its segment.
@@ -2182,10 +2182,13 @@ it.each(["desktop", "mobile"])(
       "chat:latest",
       "execution:latest",
       "execution:steps",
+      "execution:latest",
+      "execution:steps",
       "chat:previous-turn",
       "execution:latest",
       "execution:steps",
     ]);
+    const readsBeforeOpeningWorkLog = requests.length;
     const segments = screen.getAllByRole("button", {
       name: /Work log/,
     });
@@ -2228,7 +2231,7 @@ it.each(["desktop", "mobile"])(
     expect(await screen.findByRole("region", { name: "Work log" })).toBe(
       execution,
     );
-    expect(requests).toHaveLength(6);
+    expect(requests).toHaveLength(readsBeforeOpeningWorkLog);
   },
 );
 
@@ -2429,6 +2432,29 @@ it("keeps shared Model selection responsive during a background detail read", as
   }
 });
 
+it("generates an editable title suggestion and discards it on cancel", async () => {
+  const fetcher = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) =>
+      request.url.endsWith("/title-suggestion")
+        ? json("Checkout totals")
+        : fetcher(request),
+    ),
+  );
+  const user = userEvent.setup();
+  mount(`/threads/${id}?dialog=rename`);
+  await user.click(
+    await screen.findByRole("button", { name: "Generate title" }),
+  );
+  const title = await screen.findByDisplayValue("Checkout totals");
+  await user.type(title, " review");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(writes.filter((request) => request.method === "PATCH")).toHaveLength(
+    0,
+  );
+});
+
 it("publishes a saved title before a follow-up read and leaves history untouched", async () => {
   const fetcher = globalThis.fetch;
   vi.stubGlobal(
@@ -2450,7 +2476,7 @@ it("publishes a saved title before a follow-up read and leaves history untouched
   const title = await screen.findByRole("textbox", { name: "Title" });
   await user.type(title, "Renamed immediately");
   const before = reads.filter((path) => path.endsWith("/transcript")).length;
-  await user.click(screen.getByRole("button", { name: "Save title" }));
+  await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Title" })).toBeNull(),
   );

@@ -13,7 +13,7 @@ from a13n_harness.model_context import ModelContextCoordinatorCapability
 from anyio import CancelScope
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import CapabilityEvent
+from pydantic_ai.messages import CapabilityEvent, ModelResponse
 from pydantic_ai.models import ModelRequestContext
 
 
@@ -28,8 +28,14 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
 
     id = "a13n.harness-ui.root-checkpoint"
 
-    def __init__(self, save: Callable[[HarnessState], Awaitable[str | tuple[str, str]]]) -> None:
+    def __init__(
+        self,
+        save: Callable[[HarnessState], Awaitable[str | tuple[str, str]]],
+        *,
+        before_response: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self._save = save
+        self._before_response = before_response
         self._active_run_id: str | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
@@ -69,6 +75,19 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
                 if cancelled is not None:
                     raise cancelled
         return request_context
+
+    async def after_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        response: ModelResponse,
+    ) -> ModelResponse:
+        if ctx.run_id == self._active_run_id and self._before_response is not None:
+            # Withdraw recovery authority before any returned tool/output is
+            # processed. A previous request boundary cannot prove its effects.
+            await self._before_response()
+        return response
 
     async def _checkpoint(self, ctx: RunContext[AgentContext], state: HarnessState) -> None:
         saved = await self._save(state)

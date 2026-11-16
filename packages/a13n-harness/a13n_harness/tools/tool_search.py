@@ -18,6 +18,7 @@ from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_error, tool_
 
 PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
 PROXY_CONTROL_KEY = "a13n.tool_search.control"
+PROXY_GROUPS_KEY = "a13n.tool_search.groups"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +117,16 @@ def proxy_control(definition: ToolDefinition) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def proxy_control_groups(definition: ToolDefinition) -> frozenset[str] | None:
+    """Return the control's declared scope; legacy controls have no group filter."""
+    value = (definition.metadata or {}).get(PROXY_GROUPS_KEY)
+    if value is None:
+        return None
+    if not isinstance(value, frozenset) or not all(valid_group_name(name) for name in value):
+        raise TypeError(f"Invalid ToolSearch group scope on {definition.name!r}")
+    return value
+
+
 def grouped_tool_name(group: str, name: str) -> str:
     """Keep the group delimiter unambiguous even at underscore boundaries."""
     return f"{group.replace('_', '_u')}__{name}"
@@ -145,13 +156,15 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
 
 def proxy_directory(
     tools: Mapping[str, ToolsetTool[AgentContext]],
+    *,
+    groups: frozenset[str] | None = None,
 ) -> dict[tuple[str, str], str]:
     """Index only current prepared entries; never own an independent tool registry."""
     directory: dict[tuple[str, str], str] = {}
     descriptions: dict[str, str] = {}
     for name, prepared in tools.items():
         member = proxy_membership(prepared.tool_def)
-        if member is None:
+        if member is None or (groups is not None and member.group not in groups):
             continue
         validate_proxy_target(prepared.tool_def)
         key = (member.group, member.tool)
@@ -171,6 +184,8 @@ def proxy_directory(
 def resolve_proxy_call(
     tools: Mapping[str, ToolsetTool[AgentContext]],
     arguments: Mapping[str, Any],
+    *,
+    groups: frozenset[str] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Resolve a call envelope, leaving target validation/execution to ToolManager."""
     group, tool, values = arguments.get("group"), arguments.get("tool"), arguments.get("arguments")
@@ -188,23 +203,29 @@ def resolve_proxy_call(
         raise ModelRetry(
             tool_error_text(system_error(INVALID_ARGUMENT, "Tool calls accept only group, tool, and arguments."))
         )
-    return resolve_proxy_tool(tools, group, tool), values
+    return resolve_proxy_tool(tools, group, tool, groups=groups), values
 
 
-def resolve_proxy_tool(tools: Mapping[str, ToolsetTool[AgentContext]], group: str, tool: str) -> str:
+def resolve_proxy_tool(
+    tools: Mapping[str, ToolsetTool[AgentContext]],
+    group: str,
+    tool: str,
+    *,
+    groups: frozenset[str] | None = None,
+) -> str:
     """Resolve an exact current identity for either description or execution."""
-    directory = proxy_directory(tools)
+    directory = proxy_directory(tools, groups=groups)
     name = directory.get((group, tool))
     if name is None:
-        groups = sorted({key[0] for key in directory})
-        if group not in groups:
+        available_groups = sorted({key[0] for key in directory})
+        if group not in available_groups:
             raise ModelRetry(
                 tool_error_text(
                     system_error(
                         "tool_unavailable",
                         "The requested group is unavailable in this step.",
                         field="group",
-                        hint=f"Choose a current group. Available groups: {', '.join(groups) or '(none)'}.",
+                        hint=f"Choose a current group. Available groups: {', '.join(available_groups) or '(none)'}.",
                     )
                 )
             )

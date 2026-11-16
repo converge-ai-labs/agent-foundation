@@ -36,6 +36,8 @@ Use the selected worktree explicitly for file paths, command working directories
 
 Implement the requested task and validate according to [Local Validation](../../../CONTRIBUTING.md#local-validation). Prepare only the dependencies needed for the work; do not automatically copy private `.env` files or link another checkout's `.venv` or `node_modules`. Service work follows [its development guide](../../../dev/service/README.md), including `make dev-status` for checkout-specific URLs and ports.
 
+After synchronizing an existing task branch with `main`, run `uv run --locked python scripts/check_migration_heads.py` before committing. Concurrent migration files can merge without textual conflicts while leaving multiple Alembic heads; follow [Database Changes](../../../CONTRIBUTING.md#database-changes) to reconcile them.
+
 ## Frontend Screenshot Evidence
 
 For frontend changes, include screenshots of the affected rendered UI in the PR body. Capture representative states and relevant viewport sizes from the task worktree after the final UI changes; inspect the images for correctness and sensitive data. Keep capture files outside the repository and reuse valid screenshots when their visible inputs have not changed.

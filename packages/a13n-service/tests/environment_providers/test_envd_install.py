@@ -20,22 +20,30 @@ async def run(script, expected, attempt, root):
 
 async def test_frozen_install_rejoins_across_deployments_and_explicit_retry(tmp_path):
     root = tmp_path / "job"
-    script = "sleep .1; printf original >> evidence; exit 1"
+    script = "while [ ! -f finish ]; do sleep .01; done; printf original >> evidence; exit 1"
     expected = hashlib.sha256(script.encode()).hexdigest()
     assert await run(script, expected, "first", root) == "running"
-    assert await run("exit 0", expected, "first", root) == "running"
-    async with asyncio.timeout(5):
-        while (root / "status").read_text() != "failed":
-            await asyncio.sleep(0.01)
-    assert await run("exit 0", expected, "first", root) == "failed"
-    assert await run("exit 0", expected, "retry", root) == "running"
-    async with asyncio.timeout(5):
-        while (root / "status").read_text() != "failed":
-            await asyncio.sleep(0.01)
-    assert (root / "evidence").read_text() == "originaloriginal"
-    assert (root / "install.sh").read_text() == script
-    assert await run("exit 0", "b" * 64, "different", root) == "conflict"
-    assert root.stat().st_mode & 0o777 == 0o700
+    try:
+        assert await run("exit 0", expected, "first", root) == "running"
+        (root / "finish").touch()
+        # The runner writes status before releasing its lock; observe completion through dispatch.
+        async with asyncio.timeout(5):
+            while (state := await run("exit 0", expected, "first", root)) == "running":
+                await asyncio.sleep(0.01)
+        assert state == "failed"
+        (root / "finish").unlink()
+        assert await run("exit 0", expected, "retry", root) == "running"
+        (root / "finish").touch()
+        async with asyncio.timeout(5):
+            while (state := await run("exit 0", expected, "retry", root)) == "running":
+                await asyncio.sleep(0.01)
+        assert state == "failed"
+        assert (root / "evidence").read_text() == "originaloriginal"
+        assert (root / "install.sh").read_text() == script
+        assert await run("exit 0", "b" * 64, "different", root) == "conflict"
+        assert root.stat().st_mode & 0o777 == 0o700
+    finally:
+        (root / "finish").touch()
 
 
 async def test_unstarted_old_revision_cannot_install_new_deployment_script(tmp_path):

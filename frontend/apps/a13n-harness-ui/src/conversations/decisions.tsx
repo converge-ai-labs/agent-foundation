@@ -14,7 +14,6 @@ import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { DebugId } from "../shell/debug";
 import styles from "./conversation.module.css";
-import { useResults } from "./results";
 
 import {
   DecisionInput,
@@ -82,7 +81,6 @@ export function DecisionForm({
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
-  const { tracker: results } = useResults();
   const [responses, setResponses] = useState<Partial<Record<string, Response>>>(
     {},
   );
@@ -98,7 +96,6 @@ export function DecisionForm({
   }, [expired, reconcile]);
   const send = useMutation({
     mutationFn: async (submitted: Response[]) => {
-      await results?.beforeRun(threadId);
       return result(
         client.POST("/api/threads/{thread_id}/decisions", {
           params: { path: { thread_id: threadId } },

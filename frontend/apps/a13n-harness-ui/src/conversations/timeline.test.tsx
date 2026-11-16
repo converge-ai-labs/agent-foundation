@@ -34,7 +34,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-const local = (id = "input-one", text = "Hello"): LocalInput => ({
+// WebUI submissions carry canonical `input_` + 32 hex source IDs.
+const submission = (digit: string) => `input_${digit.repeat(32)}`;
+const local = (id = submission("1"), text = "Hello"): LocalInput => ({
   id,
   action: "send",
   state: "accepted",
@@ -411,7 +413,9 @@ it("keeps inputs and final text visible while folding completed progress into ex
       1,
     ),
     saved(
-      previewInput("steer", ["Change direction"]) as Schema<"TranscriptPart">[],
+      previewInput(submission("2"), [
+        "Change direction",
+      ]) as Schema<"TranscriptPart">[],
       2,
     ),
     saved(
@@ -777,6 +781,61 @@ it("leaves applied live steering and agent text outside folded execution", () =>
   ).toEqual(["false", "false"]);
 });
 
+it("keeps turns separate when their inputs share a provenance source", () => {
+  // Background deliveries label provenance, not identity: every one of them
+  // carries the same source ID.
+  const delivery = (position: number, text: string) =>
+    saved(
+      [
+        {
+          kind: "user",
+          text,
+          metadata: { display: true, source_id: "a13n.async_subagent" },
+        },
+      ],
+      position,
+    );
+  const turn = (id: string, input: number) => ({
+    turn_id: id,
+    input_position: input,
+    end_position: input + 3,
+    final_position: input + 2,
+    preview: id,
+  });
+  const view = render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[
+        delivery(0, "First result"),
+        saved([{ kind: "thinking", text: "First plan" }], 1),
+        saved([{ kind: "assistant", text: "First answer" }], 2),
+        delivery(3, "Second result"),
+        saved([{ kind: "thinking", text: "Second plan" }], 4),
+        saved([{ kind: "assistant", text: "Second answer" }], 5),
+      ]}
+      turns={[turn("first", 0), turn("second", 3)]}
+      localInputs={[]}
+      blocks={[]}
+    />,
+  );
+  expect(
+    [...view.container.querySelectorAll("[data-turn-id]")].map((element) =>
+      element.getAttribute("data-turn-id"),
+    ),
+  ).toEqual(["first", "second"]);
+  const anchors = [
+    ...view.container.querySelectorAll<HTMLElement>("[data-reading-anchor]"),
+  ].map((element) => element.dataset.readingAnchor);
+  expect(new Set(anchors).size).toBe(anchors.length);
+  const [first, second] = screen.getAllByRole("button", { name: /Work log/ });
+  fireEvent.click(first);
+  expect(first.getAttribute("aria-expanded")).toBe("true");
+  expect(second.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    screen.getByRole("region", { name: "Work log" }).textContent,
+  ).toContain("First plan");
+});
+
 it("preserves an open execution reader when live rows become saved history", () => {
   const input = saved(
     previewInput("round", ["Prompt"]) as Schema<"TranscriptPart">[],
@@ -840,7 +899,9 @@ it.each(["desktop", "mobile"])(
       0,
     );
     const steering = saved(
-      previewInput("steer", ["Change direction"]) as Schema<"TranscriptPart">[],
+      previewInput(submission("2"), [
+        "Change direction",
+      ]) as Schema<"TranscriptPart">[],
       100,
     );
     const activity = saved([{ kind: "thinking", text: "Latest plan" }], 101);

@@ -429,6 +429,26 @@ async def test_desktop_creation_uses_image_startup_and_private_eip(native, monke
     ready.assert_awaited_once()
 
 
+@pytest.mark.parametrize("overrides", [{}, {"limits": {"max_concurrent_file_transfers": 32}}])
+def test_outbound_launch_serializes_effective_limits(native, overrides):
+    import json
+
+    from a13n_service.providers.environment.websocket import WebSocketBootstrap
+    from pydantic import SecretStr
+
+    original, engine, _container = native
+    config = DockerRecipe(execution="envd_ws", envd=overrides)
+    manager = DockerManagement(config, "env_outbound", None, original.runtime)
+    manager.websocket = WebSocketBootstrap(
+        "env_outbound", "wss://control.example.test/connect", SecretStr("test-token"), AsyncMock()
+    )
+    manager._create()
+    values = engine.client.containers.create.call_args.kwargs["environment"]
+    assert values["A13N_ENVD_TRANSPORT"] == "reverse_websocket"
+    assert not any(key.startswith("A13N_ENVD_HTTP_") for key in values)
+    assert json.loads(values["A13N_ENVD_CONFIG_JSON"])["limits"] == config.launch_limits()
+
+
 @pytest.mark.parametrize("exporter", [True, False])
 async def test_metrics_launch_stays_outside_recipe_fingerprint_and_restart(native, monkeypatch, exporter):
     import json
@@ -436,7 +456,9 @@ async def test_metrics_launch_stays_outside_recipe_fingerprint_and_restart(nativ
     from a13n_service.providers.environment.metrics import MetricsLaunch
 
     _old, engine, container = native
-    config = DockerRecipe(image="sandbox:envd", execution="envd_http")
+    config = DockerRecipe(
+        image="sandbox:envd", execution="envd_http", envd={"limits": {"max_concurrent_file_transfers": 32}}
+    )
     runtime = DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
     monkeypatch.setattr(DockerManagement, "_wait_envd", AsyncMock())
     async with await DOCKER.open_provider(runtime=runtime) as provider:
@@ -451,6 +473,7 @@ async def test_metrics_launch_stays_outside_recipe_fingerprint_and_restart(nativ
         )
         daemon_config = json.loads(options["environment"]["A13N_ENVD_CONFIG_JSON"])
         assert daemon_config["monitoring"] == {"sample_interval_ms": 10_000}
+        assert daemon_config["limits"]["max_concurrent_file_transfers"] == 32
         assert daemon_config["limits"]["max_file_bytes"] == config.max_file_bytes
         if not exporter:
             assert not any(key.startswith("OTEL_") for key in options["environment"])

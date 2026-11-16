@@ -28,7 +28,7 @@ from a13n_harness.providers.environment.remote_envd.pairing import (
     credential_digest,
 )
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, create_task_group, fail_after, move_on_after, run_process, sleep
+from anyio import CancelScope, Event, create_task_group, current_time, fail_after, move_on_after, run_process, sleep
 from anyio.abc import TaskStatus
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
@@ -41,7 +41,7 @@ from starlette.websockets import WebSocketDisconnect
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
-from a13n_harness_ui.bot_models import BotInput, BotPause, BotSubmit
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotNote, BotNotesPage, BotPause, BotSubmit
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -68,6 +68,7 @@ from a13n_harness_ui.configuration.views import (
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
+from a13n_harness_ui.dictation import DictationInput, DictationResult
 from a13n_harness_ui.envd_runtime import EnvdStatus
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_monitoring import MonitoringCatalog, MonitoringDetail
@@ -121,6 +122,8 @@ from a13n_harness_ui.mcp_apps.operations import AppDecision, AppOperation, AppTo
 from a13n_harness_ui.mcp_apps.origins import origin
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.sandbox import serve_sandbox
+from a13n_harness_ui.mcp_oauth.login import CALLBACK_PATH
+from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationTarget, OAuthLoginStatus
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
@@ -202,9 +205,11 @@ from a13n_harness_ui.surfaces import (
     ThreadLookup,
     ThreadMetadataMutation,
     ThreadPage,
+    ThreadReadAcknowledgement,
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionOutputView,
     ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
@@ -214,6 +219,7 @@ from a13n_harness_ui.thread_files import (
     AttachmentUpload,
     ComposerAttachmentReference,
     ComposerInput,
+    InputAttachmentReference,
     ThreadAttachment,
 )
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
@@ -259,10 +265,6 @@ class CreateThreadRequest(SurfaceModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-class InputAttachmentReference(SurfaceModel):
-    attachment_id: str = Field(min_length=1, max_length=100)
-
-
 class PromptRequest(SurfaceModel):
     parts: tuple[str | InputAttachmentReference, ...] = Field(max_length=1024)
     skill_references: tuple[SkillReference, ...] = Field(default=(), max_length=512)
@@ -287,6 +289,10 @@ class PromptRequest(SurfaceModel):
 
 class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
+
+
+class BotSubmitRequest(BotSubmit):
+    draft: DraftCapture | None = None
 
 
 class SubmitRequest(PromptRequest, ModelControlSelection):
@@ -608,14 +614,30 @@ def create_webui(
     )
     server.add_middleware(RequestLog)
     register_voice_routes(server, lambda: app().voice(), api_key)
+    from a13n_harness_ui.connectors.api import register_connector_routes
+
+    register_connector_routes(server, app)
 
     @server.get("/api/bot", response_model=BotSnapshot)
     async def bot_status() -> BotSnapshot:
         return await app().bot().snapshot()
 
-    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmit))
+    @server.get("/api/bot/notes", response_model=BotNotesPage)
+    async def bot_notes(
+        limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)
+    ) -> BotNotesPage:
+        return await app().bot().list_notes(limit=limit, offset=offset)
+
+    @server.get("/api/bot/notes/{thread_id}", response_model=BotNote)
+    async def bot_note(thread_id: str) -> BotNote:
+        return await app().bot().notes.read(caller=BOT_THREAD_ID, thread_id=thread_id)
+
+    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmitRequest))
     async def bot_submit(request: Request) -> BotInput:
-        return await app().bot().submit(await _document(request, BotSubmit))
+        document = await _document(request, BotSubmitRequest)
+        return await app().submit_bot_input(
+            BotSubmit(input_id=document.input_id, text=document.text, parts=document.parts), draft=document.draft
+        )
 
     @server.post("/api/bot/pause", response_model=BotSnapshot, openapi_extra=_body(BotPause))
     async def bot_pause(request: Request) -> BotSnapshot:
@@ -658,7 +680,7 @@ def create_webui(
             "browser_access_expired",
         }:
             status = 409
-        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready"}:
+        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready", "connector_runtime_unavailable"}:
             status = 503
         elif code == "browser_limit":
             status = 429
@@ -676,7 +698,7 @@ def create_webui(
             status = 503
         elif code == "host_git_timeout":
             status = 504
-        elif code.endswith("not_found"):
+        elif code in {"connector_missing", "connector_setup_missing"} or code.endswith("not_found"):
             status = 404
         return _error(code, str(exc), status)
 
@@ -1588,6 +1610,14 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
+    @server.post("/api/dictation", response_model=DictationResult, openapi_extra=_body(DictationInput))
+    async def dictate(request: Request) -> DictationResult:
+        return await app().transcribe(await _document(request, DictationInput, max_bytes=16 * _MAX_BODY))
+
+    @server.post("/api/threads/{thread_id}/title-suggestion", response_model=str)
+    async def suggest_chat_title(thread_id: str, model_id: str | None = None) -> str:
+        return await app().suggest_chat_title(thread_id, model_id=model_id)
+
     @server.get("/api/models/choices", response_model=ModelChoices)
     async def model_choices() -> ModelChoices:
         return await app().model_choices()
@@ -1783,6 +1813,85 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    def mcp_logins():
+        logins = app().mcp_logins
+        if logins is None:
+            raise HarnessUiError("MCP login is unavailable.", code="mcp_oauth_unavailable")
+        return logins
+
+    @server.get(CALLBACK_PATH, include_in_schema=False)
+    async def mcp_oauth_callback(request: Request) -> Response:
+        query = dict(request.query_params)
+        # Authorization codes and state must not enter the HTTP access log.
+        request.scope["query_string"] = b""
+        state = query.get("state", "")
+        logins = mcp_logins()
+        name = logins.cookie_name(state)
+        logins.receive(
+            state=state,
+            cookie=request.cookies.get(name),
+            origin=f"{request.url.scheme}://{request.url.netloc}",
+            code=query.get("code", ""),
+            issuer=query.get("iss"),
+            error=query.get("error"),
+        )
+        response = Response(
+            "Authorization received. Return to Harness UI to finish connecting.",
+            media_type="text/plain",
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
+        response.delete_cookie(name, path=CALLBACK_PATH)
+        return response
+
+    @server.get("/api/mcp-authorization/status/{kind}/{target_id}", response_model=AuthorizationStatus)
+    async def mcp_oauth_status(kind: Literal["mcp", "connector"], target_id: str) -> AuthorizationStatus:
+        target = AuthorizationTarget.model_validate({"kind": kind, "id": target_id})
+        return await app().mcp_authorization_status(target)
+
+    @server.post(
+        "/api/mcp-authorization/start", response_model=OAuthLoginStatus, openapi_extra=_body(AuthorizationTarget)
+    )
+    async def mcp_oauth_start(request: Request) -> Response:
+        target = await _document(request, AuthorizationTarget)
+        source = await app().current_configuration()
+        oauth_origins = frozenset(source.document.webui.allowed_origins) if source is not None else frozenset()
+        incoming = f"{request.url.scheme}://{request.url.netloc}"
+        parsed = urlsplit(incoming)
+        listener = request.scope.get("server")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        local = parsed.hostname in {"localhost", "127.0.0.1", "::1"} and listener is not None and port == listener[1]
+        if not local and not (parsed.scheme == "https" and incoming in oauth_origins):
+            raise HarnessUiError(
+                "MCP OAuth requires the loopback listener or an explicit HTTPS webui.allowed_origins entry.",
+                code="mcp_oauth_origin_required",
+            )
+        status, cookie = await app().start_mcp_authorization(target, incoming)
+        response = JSONResponse(status.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
+        response.set_cookie(
+            f"mcpa_{status.attempt_id}",
+            cookie,
+            max_age=600,
+            httponly=True,
+            secure=parsed.scheme == "https",
+            samesite="lax",
+            path=CALLBACK_PATH,
+        )
+        return response
+
+    @server.get("/api/mcp-authorization/attempts/{attempt_id}", response_model=OAuthLoginStatus)
+    async def mcp_oauth_login_status(attempt_id: str) -> OAuthLoginStatus:
+        return mcp_logins().status(attempt_id)
+
+    @server.delete("/api/mcp-authorization/attempts/{attempt_id}")
+    async def mcp_oauth_cancel(attempt_id: str) -> Response:
+        await mcp_logins().cancel(attempt_id)
+        return Response(status_code=204)
+
+    @server.post("/api/mcp-authorization/disconnect", openapi_extra=_body(AuthorizationTarget))
+    async def mcp_oauth_disconnect(request: Request) -> Response:
+        await app().disconnect_mcp_authorization(await _document(request, AuthorizationTarget))
+        return Response(status_code=204)
 
     @server.get("/api/mcp/{server_id}/tools", response_model=McpToolSettings)
     async def mcp_tools_settings(server_id: str) -> McpToolSettings:
@@ -2041,9 +2150,13 @@ def create_webui(
         execution_id: Annotated[str | None, Query(max_length=80)] = None,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        latest: Annotated[
+            bool,
+            Query(description="List each child conversation's latest execution, running first, then newest first."),
+        ] = False,
     ) -> ChildExecutionPage:
         return await app().query_child_executions(
-            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
+            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit, latest=latest
         )
 
     @server.post(
@@ -2062,6 +2175,12 @@ def create_webui(
         thread_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
     ) -> tuple[ToolExecutionView, ...]:
         return await app().tool_executions(thread_id, offset=offset, limit=limit)
+
+    @server.get(
+        "/api/threads/{thread_id}/tool-executions/{execution_id}/output", response_model=ToolExecutionOutputView
+    )
+    async def tool_execution_output(thread_id: str, execution_id: str) -> ToolExecutionOutputView:
+        return await app().tool_execution_output(thread_id, execution_id)
 
     @server.post("/api/threads/{thread_id}/tool-executions/{execution_id}/cancel", response_model=ToolExecutionView)
     async def cancel_tool_execution(thread_id: str, execution_id: str) -> ToolExecutionView:
@@ -2086,6 +2205,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        unread: bool | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -2096,10 +2216,19 @@ def create_webui(
             query=query,
             project_id=project_id,
             include_archived=include_archived,
+            unread=unread,
             sort=sort,
             cursor=cursor,
             limit=limit,
         )
+
+    @server.post("/api/threads/read", response_model=ThreadPage, openapi_extra=_body(ThreadReadAcknowledgement))
+    async def acknowledge_threads_read(request: Request) -> ThreadPage:
+        return await app().acknowledge_threads_read(await _document(request, ThreadReadAcknowledgement))
+
+    @server.post("/api/threads/{thread_id}/unread", response_model=ThreadSummary)
+    async def mark_thread_unread(thread_id: str) -> ThreadSummary:
+        return await app().mark_thread_unread(thread_id)
 
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
     async def create(request: Request) -> ThreadSummary:
@@ -2301,6 +2430,7 @@ def create_webui(
                             event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
                         )
         except HarnessUiError as exc:
+            get_logger(__name__).info("Reset focused live channel", extra={"thread_id": thread_id, "reason": exc.code})
             yield ResetFrame(reason=exc.code)
 
     async def summary_frames(after: str | None) -> AsyncGenerator[SummaryOpenFrame | SummaryEventFrame | ResetFrame]:
@@ -2319,6 +2449,7 @@ def create_webui(
                         event=event, resume_cursor=_cursor("summary", None, event.epoch, event.sequence)
                     )
         except HarnessUiError as exc:
+            get_logger(__name__).info("Reset summary live channel", extra={"reason": exc.code})
             yield ResetFrame(reason=exc.code)
 
     @server.websocket("/api/shared/{share_id}/realtime/connect")
@@ -2399,8 +2530,14 @@ def create_webui(
                     while not stopping.is_set():
                         await trim_idle_channels()
                         await send(RealtimePing())
+                        deadline = current_time() + 20
                         with move_on_after(20):
                             await stopping.wait()
+                        lag = current_time() - deadline
+                        if lag > 1:
+                            get_logger(__name__).warning(
+                                "Realtime heartbeat delayed", extra={"lag_ms": round(lag * 1000)}
+                            )
                     await close(code=1001)
                     group.cancel_scope.cancel()
 
@@ -2615,6 +2752,7 @@ def create_webui(
         recognized = path in {
             "",
             "new",
+            "bot",
             "live",
             "setup",
             "settings",

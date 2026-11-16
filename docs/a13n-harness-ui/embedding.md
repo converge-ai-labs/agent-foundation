@@ -8,6 +8,8 @@ Use `HarnessUiApp` when your Python application needs Harness UI's configuration
 
 Choose [Harness directly](../a13n-harness/hosting.md) if your application will own configuration and persistence. Choose [Service](../a13n-service/index.md) for managed execution that can recover on another worker.
 
+Trusted WebUI integrations can register Connector definitions through `HarnessUiIntegrations(connectors=(definition,))`, passed to `open_harness_ui_app(..., integrations=...)`. [Connectors](connectors.md#develop-a-trusted-connector) explains the SDK, setup lifecycle and event ingress. Connector ownership starts with the WebUI lifecycle; embedding an App alone does not activate its background runtime.
+
 ## Open, submit, and wait
 
 Before running the script:

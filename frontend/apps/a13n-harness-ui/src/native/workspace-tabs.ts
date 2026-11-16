@@ -1,3 +1,4 @@
+import type { BackgroundTarget } from "../conversations/background-work";
 import type { DiffSelection } from "./changes";
 
 export type FileListPosition = {
@@ -10,6 +11,7 @@ export type FileListPosition = {
 };
 
 export type TabContent =
+  | { kind: "background"; target: BackgroundTarget }
   | { kind: "new" }
   | {
       kind: "files";
@@ -24,6 +26,7 @@ export type TabContent =
       selection: DiffSelection | null;
       choices: DiffSelection[];
     }
+  | { kind: "work-notes" }
   | { kind: "browser" }
   | { kind: "terminal" };
 
@@ -44,12 +47,20 @@ export function emptyTabs(id: string): WorkspaceTabs {
 function sameTarget(a: WorkspaceTab, b: WorkspaceTab) {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
+    case "background":
+      return (
+        b.kind === "background" &&
+        a.target.kind === b.target.kind &&
+        a.target.id === b.target.id &&
+        a.target.threadId === b.target.threadId
+      );
     case "file":
       return b.kind === "file" && a.path === b.path;
     case "files":
       return b.kind === "files" && a.directory === b.directory;
     case "changes":
       return b.kind === "changes" && a.root === b.root;
+    case "work-notes":
     case "browser":
     case "terminal":
       return true;
@@ -82,8 +93,24 @@ export function workspaceTabs(
     case "open": {
       const existing = state.items.find((tab) => sameTarget(tab, action.tab));
       if (
+        existing?.kind === "background" &&
+        action.tab.kind === "background" &&
+        (action.tab.target.kind === "tasks" ||
+          action.tab.target.kind === "notes")
+      ) {
+        return {
+          items: state.items.map((tab) =>
+            tab.id === existing.id ? { ...action.tab, id: existing.id } : tab,
+          ),
+          active: existing.id,
+        };
+      }
+      if (
         existing &&
-        (action.tab.kind === "browser" || action.tab.kind === "terminal")
+        (action.tab.kind === "background" ||
+          action.tab.kind === "browser" ||
+          action.tab.kind === "terminal" ||
+          action.tab.kind === "work-notes")
       )
         return { ...state, active: existing.id };
       const id =

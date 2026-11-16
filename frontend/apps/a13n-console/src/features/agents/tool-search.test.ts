@@ -100,7 +100,8 @@ it("round-trips automatic mode and follows source changes without opting exclude
     { connection_id: "con_excluded" },
     { connection_id: "con_new" },
   ]);
-  expect(saved?.automatic).toEqual({ exclude_connections: ["con_excluded"] });
+  if (!saved || "mode" in saved) throw new Error("Expected proxy discovery");
+  expect(saved.automatic).toEqual({ exclude_connections: ["con_excluded"] });
   expect(saved?.config?.max_results).toBe(3);
   const reopened = toolSearchDraft(saved);
   expect(usesToolDiscovery(reopened, connection("con_new"))).toBe(true);
@@ -127,9 +128,10 @@ it("keeps explicitly empty group plans custom", () => {
   for (const plan of plans) {
     const draft = toolSearchDraft(plan);
     expect(draft.automatic).toBeNull();
-    expect(
-      toolSearchConfig(draft, [{ connection_id: "con_saved" }])?.groups,
-    ).toEqual(plan?.groups);
+    const saved = toolSearchConfig(draft, [{ connection_id: "con_saved" }]);
+    if (!saved || "mode" in saved || (plan && "mode" in plan))
+      throw new Error("Expected proxy discovery");
+    expect(saved.groups).toEqual(plan?.groups);
   }
   expect(toolSearchDraft(undefined).automatic).toEqual({});
 });
@@ -163,11 +165,9 @@ it("keeps common tools direct until added and follows the catalog defaults", () 
     expect(usesToolDiscovery(draft, findSource(id))).toBe(true);
   const files = findSource("files");
   draft = toggleDiscoverySource(draft, files, true, sources);
-  expect(toolSearchConfig(draft, [])?.automatic?.capabilities).toEqual([
-    "computer",
-    "browser",
-    "files",
-  ]);
+  expect(toolSearchConfig(draft, [])).toMatchObject({
+    automatic: { capabilities: ["computer", "browser", "files"] },
+  });
   const mcp = automaticSources(sources, catalog).find(
     (source) => source.id === "all",
   )!;
@@ -190,4 +190,44 @@ it("keeps common tools direct until added and follows the catalog defaults", () 
       )
       .map((source) => source.id),
   ).toEqual(["files"]);
+});
+
+it("round-trips native sources without groups and keeps proxy settings separate", () => {
+  let draft = toolSearchDraft({
+    mode: "native",
+    sources: { exclude_connections: ["con_excluded", "con_removed"] },
+  });
+  expect(draft.mode).toBe("native");
+  expect(usesToolDiscovery(draft, connection("con_new"))).toBe(true);
+  expect(usesToolDiscovery(draft, connection("con_excluded"))).toBe(false);
+  draft = toggleDiscoverySource(draft, findSource("files"), true, sources);
+  const saved = toolSearchConfig(draft, [{ connection_id: "con_excluded" }]);
+  expect(saved).toEqual({
+    mode: "native",
+    sources: {
+      capabilities: ["computer", "browser", "files"],
+      exclude_connections: ["con_excluded"],
+    },
+  });
+  expect(
+    toolSearchConfig(toolSearchDraft(saved), [
+      { connection_id: "con_excluded" },
+    ]),
+  ).toEqual(saved);
+  const proxy = {
+    ...draft,
+    mode: "proxy" as const,
+    automatic: {},
+    config: { max_results: 3 },
+    groups: [],
+  };
+  expect(toolSearchConfig(proxy, [])).toEqual({
+    config: { mode: "proxy", max_results: 3 },
+    automatic: {},
+  });
+  expect(
+    toolSearchConfig({ ...proxy, mode: "native" }, [
+      { connection_id: "con_excluded" },
+    ]),
+  ).toEqual(saved);
 });

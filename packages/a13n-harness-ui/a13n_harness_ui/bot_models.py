@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.thread_files import InputAttachmentReference, ThreadAttachment
+
 
 class BotModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -17,6 +20,7 @@ class BotInput(BotModel):
     input_id: str = Field(min_length=1, max_length=128)
     source: Literal["user", "heartbeat", "connector", "automatic"]
     text: str = Field(max_length=64 * 1024)
+    parts: tuple[str | ThreadAttachment, ...] = ()
     created_at: datetime
     state: Literal["queued", "dispatching", "admitted", "completed", "interrupted", "discarded"] = "queued"
     receipt_id: str | None = None
@@ -36,16 +40,50 @@ class BotState(BotModel):
 
 
 class BotMessage(BotModel):
+    connector_setups: tuple[SetupOffer, ...] = ()
     message_id: str
     role: Literal["user", "assistant"]
     text: str
+    parts: tuple[str | ThreadAttachment, ...] = ()
     created_at: datetime
     input_id: str | None = None
+    display_ids: tuple[str, ...] = ()
+
+
+class BotProse(BotModel):
+    item_id: str
+    text: str
+    created_at: datetime
+    final: bool = False
+
+
+class BotNoteSummary(BotModel):
+    thread_id: str
+    title: str | None = None
+    project_id: str | None = None
+    archived: bool
+    summary: str
+    updated_at: datetime
+    last_writer_thread_id: str
+
+
+class BotNotesPage(BotModel):
+    notes: tuple[BotNoteSummary, ...]
+    next_offset: int | None = None
 
 
 class BotSubmit(BotModel):
     input_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-    text: str = Field(min_length=1, max_length=64 * 1024)
+    text: str = Field(default="", max_length=64 * 1024)
+    parts: tuple[str | InputAttachmentReference, ...] = Field(default=(), max_length=1024)
+
+    @model_validator(mode="after")
+    def valid_content(self) -> "BotSubmit":
+        if self.parts and self.text != "".join(part for part in self.parts if isinstance(part, str)):
+            raise ValueError("Bot text must match the ordered input text")
+        if not self.text.strip() and not any(isinstance(part, InputAttachmentReference) for part in self.parts):
+            raise ValueError("A non-empty message or attachment is required")
+        return self
 
 
 class BotPause(BotModel):
@@ -54,8 +92,10 @@ class BotPause(BotModel):
 
 class BotInboxInput(BotModel):
     input_id: str
-    source: Literal["connector", "heartbeat"]
+    source: Literal["connector", "heartbeat", "thread"]
     connector_id: str | None = None
+    source_thread_id: str | None = None
+    source_thread_title: str | None = None
     source_event_id: str
     event_type: str
     text: str
@@ -65,6 +105,8 @@ class BotInboxInput(BotModel):
     def consistent_source(self) -> "BotInboxInput":
         if (self.source == "connector") != (self.connector_id is not None):
             raise ValueError("Connector identity must match the input source")
+        if (self.source == "thread") != (self.source_thread_id is not None):
+            raise ValueError("Thread identity must match the input source")
         return self
 
 

@@ -64,6 +64,8 @@ flowchart TB
 
 ### Project 与已保存的对话
 
+新聊天在发送第一条消息后会在后台生成简短标题。打开 **重命名聊天 → 生成标题** 可以根据已有的用户消息重新拟定标题。建议可以编辑，点击 **保存标题** 生效。在 **设置 → 聊天 → 新聊天** 中可以选择模型，默认使用当前聊天模型。
+
 展开 Project 可查看最近更新的五个根对话。**Show more** 加载该 Project 的下一页，折叠后保留已加载页面。搜索覆盖全部保存的根对话，包括未加载页面。**Without a project**、**Unavailable projects** 和 **Archived** 分别保留无 Project、Project 已移除和已归档对话的入口。
 
 使用对话 **…** 菜单改名、加星、分享、检查、归档或删除。在 **Archived** 恢复归档对话。**Project settings** 则修改 Project。对话不能拖到其他 Project。
@@ -107,15 +109,15 @@ flowchart TB
 
 ### Skill 与工作检查
 
-输入 `$` 和 Skill 名称查找可用 Skill。上下箭头选择，Enter 或 Tab 插入，Escape 关闭。插入不会发送。`$name` 保持为可编辑文字，可用于新对话、保存对话和 steering。已识别名称按对应目录校验；未知名称仍是普通文字。安装或编写方法见 [Skills](skills-and-content-plugins.md)。
+在输入框中键入 `$` 或 `/`，再输入名称即可查找 Skill。上下箭头选择，Enter 或 Tab 插入，按 Esc 或点关闭按钮即可收起当前词的建议，继续编辑原文。插入不会发送。已识别的 Skill 显示为拼图图标和名称，退格可整体删除。底层保留原文 `$name`，可用于新对话、保存对话和 steering。已识别名称按对应目录校验；未知名称仍是普通文字。安装或编写方法见 [Skills](skills-and-content-plugins.md)。
 
-输入框上方的 **Tasks**、**Notes**、**Subagents**、**Processes** 和 **Tools** 可直接打开对应的活动视图，不替换草稿。计数分别显示已完成/总任务数、笔记数、活跃子代理执行数和观测到的运行中进程数。聊天栏较窄时，Notes、Processes 和 Tools 收入 **More** 菜单。关闭检查面板后，焦点回到打开它的入口。进程视图显示观测到的后台 handle、Run ID 和退出码；输出留在工具详情中。它是观测面板，不是进程控制台。
+输入框上方保留 **Tasks** 和 **Notes**。仅图标的**分享**右侧是**后台工作**入口：卡片按**子智能体**和**工具调用**分组，每组最多三条。悬停条目可查看任务或参数。每组的**查看全部**在辅助标签栏打开该组自己的历史标签页，**显示更多**加载更早的记录。选择条目打开对应标签页；窄屏会先关闭卡片。
 
-进程数量只统计观测到的运行中 handle，不含前台调用。面板从 128 条保留观测中最多展示 16 条。Run 完成或观测中断时，未完成 handle 标为不可用，不认定已退出。重载不会从保存消息重建它们。
+子智能体标签页显示已保存的对话和实时输出，没有输入框。标题栏的**停止**操作在接受后显示**正在停止…**，直到工作结束。工具标签页保留输入、受支持的实时输出和最终输出。已观察到的 Shell 进程只供查看；刷新不会重建观察。关闭标签页不会停止工作。
 
 ### 查看 token 用量和估算费用
 
-点击输入框上方的上下文用量圆环，可查看最近一次主 Agent 请求。横条显示输入、本轮输出和剩余窗口。展开技能可查看实际注入的技能名称和用量。展开工具调用可分别查看参数和返回内容的估算 token 数。各项按本次输入的字符占比分摊 token，包括未单独计量的媒体用量。百分比表示各项占整个上下文窗口的比例。
+点击输入框上方的上下文用量圆环，可查看最近一次主 Agent 请求。横条显示输入、本轮输出和剩余窗口。展开技能可查看实际注入的技能名称和用量。展开工具调用可分别查看参数和返回内容的估算 token 数。如果请求记录了来源明细，展开环境上下文可查看挂载清单和项目指引，展开工作状态可查看笔记和工具执行状态，展开对话可比较用户输入、Agent 输出和摘要。挂载清单还显示它在本次请求中出现了几次、有几种不同的内容。各项按本次输入的字符占比分摊 token，包括未单独计量的媒体用量。百分比表示各项占整个上下文窗口的比例。
 
 1. 点击侧栏折叠按钮旁的图表图标打开 **Usage**。**Project → View usage** 或 **Details → Usage → Open analytics** 会预选对应范围。
 2. 选择 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或请求选用的模型配置筛选。
@@ -126,13 +128,19 @@ flowchart TB
 
 新 Run 按所选模型配置的 route 查价。聊天用量中的**按模型**显示配置路由对应的供应商和模型（例如 `anthropic/claude-opus-5-5`）。展开模型可以查看供应商返回的名称。费用是记录的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 标记只含已知部分的小计。缓存 token 属于输入/输出的子集，不额外计数。未记录的历史消耗无法补回。访客链接不授予用量分析访问权限。
 
+## 语音输入
+
+在**设置 → 聊天 → 听写**中选择 **Codex 订阅**，再选择已登录的 Codex 账号或订阅组。语音识别和 Luna 文本校正均有预设，无需 API 密钥或 Model 资源。两步从所选订阅组中独立选择账号；选择单个账号时，两步都固定使用该账号。仅登录账号不会启用听写。展开**高级语音转写设置**，可以从受支持的 Codex 模型中更换校正 LLM，并调整上下文预算（默认前后各 2,000 词）。也可以选择已有的音频输入 Model，使用单次请求完成转写。
+
+在聊天输入框或「添加到聊天」批注中点击麦克风，再点击停止。后端结合草稿、聊天标题及附近对话正文生成最终文本。Codex 订阅听写先执行 ASR，再进行文本校正，中间文本不显示。最终片段会一次性插入输入框当前选区，无需预览或确认，也不会自动发送消息。文本校正失败时，插入原始转写并显示提示。语音识别失败后，重试会使用同一段录音和已捕获的上下文；取消则丢弃结果。浏览器录音需要 localhost 或 HTTPS。
+
 ## Agent 与 Model 设置
 
 点击输入框底部当前 Model，选择 Agent、Model、Reasoning mode、Thinking 等级或 Speed。每项在同一弹层内展开，Default 恢复继承设置。桌面和手机均通过 Chat options 使用 Goal、Coordinate agents、Environment 和 Clear context。
 
 需要修改 Thread 默认 Model（包括终端 UI 使用的默认值）时，打开对话配置并设置 **Default model**。**Follow Agent model** 清除它。跟随该保存值时输入框显示 **Thread default**；改选输入框 Model 则改变 Run 草稿。配置检查会区分下次 Run 选择与当前或已保存工作的捕获选择。
 
-新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。
+新聊天从创建时的默认设置开始。未完成的新对话草稿在当前浏览器保留选择；已有聊天从服务器恢复共享输入框设置。同一 Agent 下，手动选择的 Model 优先于对话默认模型，即使之后修改了对话默认模型也是如此。清除输入框里的模型选择后，会跟随当前对话默认模型；如果对话没有指定模型，则跟随 Agent 的模型。不是由你发消息启动的 Run（例如后台结果、审批或其他聊天发来的消息）沿用上一个 Run 的模型和设置。
 
 **Chat options → Clear context** 让下一条消息不带先前模型消息、笔记、任务或保存的 Agent 工作状态开始，同时丢弃待处理问题和审批。聊天历史、文件、设置和未发送输入保留。
 
@@ -173,7 +181,7 @@ Agent 工作时，用 **Steer** 修正方向。默认即时 steering 会中断�
 
 接受成功表示指引已入队。不支持的工具会在正常执行边界尽力交付。启动或恢复期间可能等待最多五秒以准备原生 steering；超时或 Run 已完成时拒绝请求。根和子 steering 共用 `input.steering_mode`；在[配置](configuration.md#built-in-tools-and-subagents)中选择 `queued`，即可等到下一个安全边界。
 
-打开 **Work → Tools** 检查执行来源 Run/调用、状态和记录，或取消活动的保留执行。读取状态不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果。
+打开**后台工作**，点击**工具调用**一组的**查看全部**，检查执行来源 Run/调用、状态和记录，或取消活动的保留执行。读取状态不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果。
 
 通用工具的[自动后台执行](configuration.md#built-in-tools-and-subagents)需显式开启。支持进程的 Shell 在两种模式下都会在前台等待到期后让出；即时 steering 可以提前释放等待。Shell handle 也有独立进程视图。
 
@@ -350,9 +358,9 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 限制应用于模型工具，不限制人类 WebUI 访问。Worker 不能创建根、控制 owner 或访问兄弟 worker。
 
-普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 只覆盖首个 Run，`run_thread` 可覆盖后续 Run。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
+普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择首个 Run 的模型，`run_thread` 可以为后续 Run 另选模型。没有选择模型就启动的 Run（例如消息或后台结果触发的 Run）沿用上一个 Run 的模型。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
 
-在 **设置 → 常规 → 子 Agent 默认值** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
+在 **设置 → 智能体 → Sidekick** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 
 ## 创建对话副本
 
@@ -385,7 +393,7 @@ Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork�
 
 右侧显示作用域当前文件，即使还没有整理 Run。打开不开始工作。查看器只读且独立于计算机共享。编辑时通过服务器 Host 访问修改所选根配置旁的 `memory/`。
 
-在 **Settings → General** 关闭自动整理保留查看器，关闭 Memory 隐藏它。两者都不删除文件或历史。
+在 **Settings → Memory** 关闭自动整理保留查看器，关闭 Memory 隐藏它。两者都不删除文件或历史。
 
 ## 配置工作台
 
@@ -436,7 +444,7 @@ Project 可混用本地/远程目录，也可只有远程目录；始终至少�
 
 Bot 发布的消息显示**Bot 给你发了消息**和实际消息预览。选择**查看消息**或点击系统通知即可打开 Bot。同一轮运行中的不同消息会分别通知。需要输入时显示 **Bot 需要你的回应**，点击后在 Activity 中处理。系统通知标题使用当前浏览器最近同步的显示语言，消息正文保持原文。
 
-1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → General → Notifications**。
+1. 在接收设备上，通过稳定 HTTPS 地址打开 **Settings → Preferences → Notifications**。
 2. 选择 **Allow notifications** 或 **Enable background notifications**，接受浏览器提示。
 3. 确认 **Enabled on this device**，再点击 **Send test notification**。
 4. 保持 WebUI 页面可见以更新设备活动，发送任务，并在离开 WebUI 后检查系统提醒。
@@ -445,7 +453,7 @@ Bot 发布的消息显示**Bot 给你发了消息**和实际消息预览。选�
 
 系统通知覆盖全部根对话的完成、失败和输入请求，包括未访问对话，但不含归档根。真实回答/问题/错误预览可能出现在锁屏。主动启用的设备在活动后六小时内有接收资格；任意可见 WebUI 页面大约每分钟续期，不要求聚焦或输入。
 
-打开的页面还显示应用内通知，不受六小时或访问历史限制。Web Push 是唯一系统通知路径；不支持或推送不可达时仍有应用内通知。推送尽力交付，丢失横幅不重放。重新打开对话查看权威结果。
+打开的页面还显示应用内通知，不受六小时或访问历史限制。当前正在查看的会话保持安静，包括 Bot：该会话的完成、消息、失败和输入请求不会弹出应用内提示，其他会话仍会通知。这不改变未读标记或系统 Push 投递；已抑制的通知不会在切换页面后补弹。Web Push 是唯一系统通知路径；不支持或推送不可达时仍有应用内通知。推送尽力交付，丢失横幅不重放。重新打开对话查看权威结果。
 
 Android Chrome 需检查站点和系统权限、省电/勿扰限制以及推送服务连通性。iPhone/iPad 使用受支持的主屏幕 Web App，并在其中启用通知；普通浏览器标签页不够。远程普通 HTTP 不受支持，本地回环可用于开发。安装和菜单细节取决于设备。
 
@@ -463,7 +471,7 @@ Android Chrome 需检查站点和系统权限、省电/勿扰限制以及推送�
 
 ## 安装为应用
 
-打开 **Settings → General → Install Harness UI**，使用提供的 **Install app** 或浏览器安装/添加到主屏幕操作。支持时，Safari 在 iPhone/iPad 提供 **Share → Add to Home Screen**，在 Mac 提供 **File → Add to Dock**。
+打开 **Settings → Diagnostics → About**，使用提供的 **Install app** 或浏览器安装/添加到主屏幕操作。支持时，Safari 在 iPhone/iPad 提供 **Share → Add to Home Screen**，在 Mac 提供 **File → Add to Dock**。
 
 使用 HTTPS 或回环，并保持协议、主机名、端口稳定。手机通过局域网普通 HTTP 访问不具有相同安装支持。更改 origin 可能需要重新安装和登录。安装窗口仍需要服务器，不增加离线执行或未保存编辑器恢复。后台通知需另行开启。
 

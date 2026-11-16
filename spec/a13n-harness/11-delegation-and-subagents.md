@@ -23,6 +23,12 @@ Construction rejects async mode without an operator and rejects an operator in i
 
 The Capability owns standard tool names, schemas, guidance, authored child resolution, context and identity ceilings, usage-limit intersection, and bounded model-facing projections. The Host operator owns every complete asynchronous use case and every lifecycle fact behind it. This boundary is part of the [Hosting Contract](13-hosting-contract.md); cross-Run consequences follow [Async Subagent Lifecycle](20-async-components-and-lifecycle.md).
 
+Final async subagent results are delivered automatically, including after the parent turn ends. Harness guidance lets the parent continue other work and end its turn when only background work remains; the Host owns delivery and wake eligibility.
+
+The Host delivers final results and explicit child messages through the parent's input boundary. It owns active-parent routing, idle wake eligibility, admission, and restart suppression; automatic delivery does not authorize waking a stopped, failed, suspended, interrupted, or otherwise ineligible parent.
+
+Standard async guidance reserves waiting for a result the next step needs now. When only background work remains, it lets the parent end its turn with a short response describing outstanding work, continuation on completion, and the user's ability to keep talking meanwhile. Toolset-instruction enablement still governs whether this guidance is included.
+
 ## Child Definitions and Built Collection
 
 ```python
@@ -209,7 +215,7 @@ The operator owns:
 - Environment association selection, current state loading, and fresh adapter construction;
 - child `RunBindings`, Host credentials, provider runtimes, and Host metadata within the plan ceilings, including replacement Identity and usage-limit derivation;
 - execution storage, checkpoint acknowledgement, and bounded activity projection;
-- wait and wake behavior, steering, cancellation, linked resume, loss, cleanup, and retention;
+- wait and wake behavior, automatic final-result delivery, steering, cancellation, linked resume, loss, cleanup, and retention;
 - Host shutdown policy and any background task or worker lifecycle.
 
 Harness does not require a storage interface. An operator can use memory, files, SQLite, PostgreSQL, a workflow engine, or remote workers without adapting its persistence to a Harness-owned begin/append/commit protocol.
@@ -299,6 +305,12 @@ Parent `AgentContextState` is authoritative only for inline continuation. Async 
 Inline execution forwards child Harness events with their original child Run and Thread provenance into the parent stream, then emits parent-scoped delegation completion or failure. Each Run reports its own usage, excluding child usage. Hosts may aggregate the attributed parent and child usage records for display without applying a shared tree-wide enforcement budget.
 
 For async work, the Host owns observation storage, subscriptions, wake policy, and activity compaction. The operator consumes each child `HarnessRunStream` as the narrow ordered public-recording boundary; Harness emits only public `HarnessStreamEvent` values and imports no AG-UI or Host presentation type. Standard result models provide bounded status and closed activity projections when the operator returns them. Activity contains no separate raw `output`; a final answer is represented by closed text activity. Harness does not retain a weak observer, enqueue completion into a later parent Run, or infer current status from an old parent projection. Host wake and protocol delivery are separate from execution authority as defined by [Observation](19-observation-model.md) and the [Agent Stream Protocol](../a13n-stream-protocol/README.md).
+
+### Model-Facing Execution Identity
+
+Each `subagent_info` and `wait_subagent` execution entry includes a `header` alongside its existing bounded fields: `Subagent notification · <name> · execution_id=<id> · <state>` for non-terminal executions and `Subagent result · <name> · execution_id=<id> · <state>` for terminal executions. This is a tool-facing projection; the operator's typed views remain execution facts. Host-delivered final results use the same header and execution ID. Explicit child messages use `Subagent message · <name> · execution_id=<id> · <state>` with the current state. Execution entries and messages identify `steer_subagent` for a running child and `resume_subagent` when resumable. Hosts use the shared `a13n_harness.execution_identity.format_execution_header` formatter for delivered observations.
+
+Retrieval and automatic delivery proceed independently. Repeated results carrying the same execution ID are allowed; there is no delivered/read flag for async subagents. Execution identity grants correlation, not authority.
 
 ## Failure and Cancellation Semantics
 

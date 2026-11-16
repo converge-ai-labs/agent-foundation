@@ -40,13 +40,15 @@ Device pairing returns root-relative paths resolved against the paired Host URL,
 3. For an update, install the new package after exit using the [installation workflow](installation.md).
 4. Start the replacement with the same data directory. Inspect interrupted conversations and any recovery errors.
 
-Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff. The next start consumes it once and continues compatible interrupted work in new Runs, without resending prompts or replaying the saved tool batch.
+Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff for each complete task family. One slow family does not block unrelated saved work. The next start consumes the handoff once and continues compatible work in new Runs, retaining completed tool results without resending prompts.
 
 `shutdown_timeout_seconds` (default 60 seconds) is one shared App grace budget for admission, restart boundaries, and active work. Each phase uses the remaining time rather than starting another timeout. Press Ctrl+C again to end the remaining grace period and request cancellation sooner. This does not skip task cleanup or storage finalization.
 
-The grace budget does not bound total process exit. If a batch cannot finish, or checkpoint/finalization fails, that batch is not armed for automatic recovery. Cancellation and cleanup still take time; trusted Python code that ignores cancellation can delay exit. Use an external process supervisor if you need a hard termination deadline. Let the old process finish before starting its replacement.
+The grace budget does not bound total process exit. A root still waiting for its model response can retain its last saved request checkpoint after cancellation joins. Unfinished tools or failed checkpoint/Environment finalization exclude that task family. Cancellation and cleanup still take time; trusted Python code that ignores cancellation can delay exit. Use an external process supervisor if you need a hard termination deadline. Let the old process finish before starting its replacement.
 
-After forced termination or failed reconstruction, inspect saved history/logs before retrying uncertain work. Pending decisions remain unanswered. Saved shared composers restore under their retention limits. Native terminals, old Shell handles, and unsaved editors are not restored.
+After a force kill or process crash, the next same-data WebUI start automatically continues root work only when it was waiting for a model response at an armed, durable checkpoint. The Model may receive that request again; previously saved tool results stay in history. Active asynchronous children do not block a safe root checkpoint, but those children are not restarted. Their saved status remains available, and child inspection identifies missing local ownership. A root interrupted during tool handling, including a child wait, stays outside automatic process-loss recovery. Explicit Stop, archived Threads and pending human decisions stay stopped or waiting. Live, Bot and Memory keep their separate lifecycle policies.
+
+Inspect saved history/logs before retrying uncertain effects or failed reconstruction. Recovery validates the original execution, selected checkpoint and captured configuration before model dispatch; a consumed failed attempt does not retry on every startup. Saved shared composers restore under their retention limits. Native terminals, old Shell handles, and unsaved editors are not restored. Use compatible releases for sequential replacement; a release that cannot read the new recovery record is not a rollback reader.
 
 ## Server logs and shutdown
 

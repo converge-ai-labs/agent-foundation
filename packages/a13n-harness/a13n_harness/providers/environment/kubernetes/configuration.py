@@ -9,6 +9,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
 
+from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.models import EnvironmentState, EnvironmentTargetState, decode_target_state
 from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -68,6 +69,7 @@ class KubernetesEnvironmentConfiguration(BaseModel):
     envd_port: int = Field(default=8888, ge=1, le=65535)
     request_timeout_seconds: float = Field(default=30, gt=0, le=120, allow_inf_nan=False)
     environment: EnvironmentVariables = Field(default_factory=dict)
+    envd: EnvdSettings = Field(default_factory=EnvdSettings, exclude_if=lambda value: not value.overrides())
 
     @field_validator("working_directory")
     @classmethod
@@ -81,7 +83,12 @@ class KubernetesEnvironmentConfiguration(BaseModel):
 def fingerprint(configuration: KubernetesEnvironmentConfiguration) -> str:
     # Management-only native manifests stay frozen in the Host's recipe. Execution
     # validates its shared binding without importing the allocation recipe.
-    values = {key: getattr(configuration, key) for key in KubernetesEnvironmentConfiguration.model_fields}
+    # Preserve legacy scalar encoding, including integer-valued float defaults.
+    values = {
+        key: getattr(configuration, key) for key in KubernetesEnvironmentConfiguration.model_fields if key != "envd"
+    }
+    if overrides := configuration.envd.overrides():
+        values["envd"] = overrides
     return hashlib.sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 

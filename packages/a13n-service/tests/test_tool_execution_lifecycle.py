@@ -414,3 +414,95 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
     finally:
         finish.set()
         await service.runtime.executions.close()
+
+
+@pytest.mark.parametrize("older_attempt", [False, True])
+@pytest.mark.parametrize("prior_sequential,global_sequential", [(False, False), (True, False), (False, True)])
+async def test_native_batch_flag_is_not_a_same_or_older_attempt_join(
+    service, scripted_model, runs_kit, predecessor_wait, older_attempt, prior_sequential, global_sequential
+):
+    from a13n_harness import HarnessBuilder, HarnessState, RunBindings
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from pydantic_ai import Tool
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+    from pydantic_ai.tool_manager import ToolManager
+
+    started, origin = await _origin(service, scripted_model, runs_kit)
+    entered, finish, next_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def background():
+        entered.set()
+        await finish.wait()
+
+    await _admit(service.runtime, origin, background, sequential=prior_sequential)
+    await asyncio.wait_for(entered.wait(), 5)
+    target, lease = service.runtime, origin
+    if older_attempt:
+        scripted_model.say("origin completes while its tool remains live")
+        await execute(service.runtime, origin, AttemptControl())
+        submitted = await runs_kit.submit(
+            service, origin.thread_id, runs_kit.message({"id": started["run"]["agent_id"]}, "next")
+        )
+        assert submitted.status_code == 201, submitted.text
+        target = replace(service.runtime)
+        (lease,) = await claim(target, worker_id="worker-b", worker_build="test", limit=1)
+
+    async def check():
+        next_entered.set()
+        return "checked"
+
+    async def model(messages, info):
+        if any(
+            isinstance(message, ModelRequest) and any(isinstance(part, ToolReturnPart) for part in message.parts)
+            for message in messages
+        ):
+            yield "done"
+        else:
+            yield {0: DeltaToolCall(name="check", tool_call_id="check", json_args="{}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(ToolExecutionCapability(), Capability(tools=[Tool(check, sequential=True)])),
+    )
+    token = ORIGIN.set(lease)
+    try:
+        with ToolManager.parallel_execution_mode("sequential" if global_sequential else "parallel"):
+            pending = asyncio.create_task(
+                executable.run(
+                    "check",
+                    previous_state=HarnessState.new(thread_id=origin.thread_id),
+                    bindings=RunBindings.embedded(tool_execution=target.executions),
+                )
+            )
+    finally:
+        ORIGIN.reset(token)
+    try:
+        if prior_sequential or global_sequential:
+            if older_attempt:
+                await asyncio.wait_for(predecessor_wait[0].wait(), 5)
+            else:
+                # The native batch reached admission; its Thread slot is still waiting.
+                async with asyncio.timeout(5):
+                    while len(target.executions._order.get(origin.thread_id, ())) < 2:
+                        await asyncio.sleep(0)
+            assert not next_entered.is_set()
+        else:
+            await asyncio.wait_for(next_entered.wait(), 5)
+        finish.set()
+        await service.runtime.executions.join()
+        predecessor_wait[1].set()
+        result = await asyncio.wait_for(pending, 5)
+        assert result.output_or_raise() == "done"
+        assert next_entered.is_set()
+    finally:
+        finish.set()
+        predecessor_wait[1].set()
+        await asyncio.gather(pending, return_exceptions=True)
+        await service.runtime.executions.close()
+        if target is not service.runtime:
+            await target.executions.close()

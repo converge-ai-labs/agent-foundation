@@ -19,6 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
+import { historySignal, retryHistoryRead, useHistoryRecovery } from "./queries";
 import { inputAttachment } from "./input-content";
 import type { LocalInput } from "./local-input";
 import styles from "./input-navigation.module.css";
@@ -49,6 +50,7 @@ export function InputNavigation({
     queryKey: ["thread", threadId, "inputs", continuation],
     enabled: !!continuation,
     staleTime: Infinity,
+    retry: retryHistoryRead,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -60,11 +62,18 @@ export function InputNavigation({
               cursor: pageParam,
             },
           },
-          signal,
+          signal: historySignal(signal),
         }),
       ),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
+  const retryRead = useHistoryRecovery(
+    threadId,
+    continuation,
+    query.error,
+    query.refetch,
+    query.isSuccess,
+  );
   const items: Pick<
     Schema<"TranscriptTurn">,
     "turn_id" | "preview" | "output_preview"
@@ -128,7 +137,8 @@ export function InputNavigation({
       ? t("Retry input navigation")
       : t("Load more inputs");
   const loadMore = () => {
-    if (query.hasNextPage) void query.fetchNextPage();
+    if (query.isError) void retryRead();
+    else if (query.hasNextPage) void query.fetchNextPage();
     else void query.refetch();
   };
   const canLoad = query.hasNextPage || query.isError;

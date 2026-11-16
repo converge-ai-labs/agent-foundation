@@ -1,7 +1,8 @@
 """One automatic inbox and atomic Heartbeat clock; no execution waits."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Literal, cast
 from uuid import uuid4
 
 from sqlalchemy import delete, select
@@ -9,6 +10,7 @@ from sqlalchemy.dialects.sqlite import insert
 
 from a13n_harness_ui.bot_models import BotInboxInput, BotState
 from a13n_harness_ui.configuration.models import BotConfiguration
+from a13n_harness_ui.errors import ThreadError
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import BotInboxRecord, BotStateRecord, ConnectorConfigurationRecord
@@ -57,6 +59,28 @@ class BotInboxRepository:
                 else:
                     row.payload = updated.model_dump_json()
 
+    async def thread_message(
+        self, *, source_thread_id: str, source_thread_title: str | None, text: str, kind: Literal["task", "report"]
+    ) -> str:
+        input_id = f"thread-{uuid4().hex}"
+        envelope = BotInboxInput(
+            input_id=input_id,
+            source="thread",
+            source_thread_id=source_thread_id,
+            source_thread_title=source_thread_title,
+            source_event_id=input_id,
+            event_type=kind,
+            text=text,
+            created_at=datetime.now(UTC),
+        )
+        if len(serialize_batch((envelope,)).encode("utf-8")) > 60 * 1024:
+            raise ThreadError(
+                "Thread message envelope exceeds the automatic batch limit.", code="thread_message_too_large"
+            )
+        async with transaction(self._sessions) as session:
+            session.add(BotInboxRecord(**envelope.model_dump()))
+        return input_id
+
     async def pending(self) -> tuple[BotInboxInput, ...]:
         """Fair Heartbeat selection followed by oldest eligible Connector events."""
         async with short_session(self._sessions) as session:
@@ -65,7 +89,7 @@ class BotInboxRepository:
                     select(BotInboxRecord)
                     .outerjoin(ConnectorConfigurationRecord)
                     .where(
-                        (BotInboxRecord.source == "heartbeat")
+                        BotInboxRecord.source.in_(("heartbeat", "thread"))
                         | (
                             ConnectorConfigurationRecord.enabled.is_(True)
                             & ConnectorConfigurationRecord.deliver_to_bot.is_(True)
@@ -83,8 +107,10 @@ class BotInboxRepository:
             for row in rows:
                 item = BotInboxInput(
                     input_id=row.input_id,
-                    source="heartbeat" if row.source == "heartbeat" else "connector",
+                    source=cast(Literal["connector", "heartbeat", "thread"], row.source),
                     connector_id=row.connector_id,
+                    source_thread_id=row.source_thread_id,
+                    source_thread_title=row.source_thread_title,
                     source_event_id=row.source_event_id,
                     event_type=row.event_type,
                     text=row.text,

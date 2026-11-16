@@ -70,6 +70,25 @@ class LiveThread {
 }
 
 class LiveThreads {
+  private readonly pins = new Map<string, number>();
+  private readonly pinListeners = new Set<() => void>();
+  subscribePins = (listener: () => void) => {
+    this.pinListeners.add(listener);
+    return () => {
+      this.pinListeners.delete(listener);
+    };
+  };
+  pinnedSnapshot = () => [...this.pins.keys()].sort().join("\0");
+  pin(id: string) {
+    this.pins.set(id, (this.pins.get(id) ?? 0) + 1);
+    this.pinListeners.forEach((listener) => listener());
+    return () => {
+      const count = this.pins.get(id) ?? 0;
+      if (count > 1) this.pins.set(id, count - 1);
+      else this.pins.delete(id);
+      this.pinListeners.forEach((listener) => listener());
+    };
+  }
   readonly entries = new Map<string, LiveThread>();
   get(id: string) {
     let entry = this.entries.get(id);
@@ -81,7 +100,7 @@ class LiveThreads {
   }
   retain(ids: string[]) {
     for (const [id, entry] of this.entries) {
-      if (!ids.includes(id)) {
+      if (!ids.includes(id) && !this.pins.has(id)) {
         entry.dispose();
         this.entries.delete(id);
       }
@@ -157,7 +176,12 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   const active = (activity.data?.pages[0]?.active_rows ?? []).map(
     (row) => row.thread.thread_id,
   );
-  const live = [...new Set([...(current ? [current] : []), ...active])];
+  const pinned = useSyncExternalStore(store.subscribePins, store.pinnedSnapshot)
+    .split("\0")
+    .filter(Boolean);
+  const live = [
+    ...new Set([...(current ? [current] : []), ...active, ...pinned]),
+  ];
   const warm = [
     ...new Set([...(current ? [current] : []), ...recent, ...active]),
   ].slice(0, RETAINED_LIMIT);
@@ -202,9 +226,12 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useLiveThread(id: string) {
+export function useLiveThread(id: string, observe = false) {
   const store = useContext(LiveContext);
   if (!store) throw new Error("Live updates for this chat are unavailable.");
+  useEffect(() => {
+    if (observe && id) return store.pin(id);
+  }, [store, id, observe]);
   const entry = store.get(id);
   return useSyncExternalStore(entry.subscribe, entry.getSnapshot);
 }

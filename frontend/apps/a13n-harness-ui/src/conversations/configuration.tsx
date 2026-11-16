@@ -199,7 +199,7 @@ export function ConversationConfiguration({
             <section>
               <h3>{t("Bot")}</h3>
               <p>
-                <Link to="/settings#bot">{t("Bot settings")}</Link>
+                <Link to="/settings/bot">{t("Bot settings")}</Link>
               </p>
               <p>
                 {t("Next model: {{model}}", {

@@ -1,0 +1,18 @@
+.authorization {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}

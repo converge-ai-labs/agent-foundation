@@ -71,3 +71,32 @@ fn update_help_and_check_do_not_start_daemon() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("pinned"));
 }
+
+#[test]
+fn build_variant_is_exact_and_side_effect_free() {
+    let expected = if cfg!(all(
+        target_os = "linux",
+        any(feature = "vm-boxlite", feature = "vm-microsandbox")
+    )) {
+        "vm"
+    } else if cfg!(feature = "desktop") {
+        "default"
+    } else {
+        "slim"
+    };
+    let output = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+        .arg("--build-variant")
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
+    assert!(output.stderr.is_empty());
+    let invalid = Command::new(env!("CARGO_BIN_EXE_a13n-envd"))
+        .args(["--build-variant", "--version"])
+        .env_clear()
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    assert!(invalid.stdout.is_empty());
+}

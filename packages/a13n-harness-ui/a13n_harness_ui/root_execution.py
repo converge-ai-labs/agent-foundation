@@ -24,7 +24,7 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness import __version__ as harness_version
-from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
+from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
 from a13n_harness.context import AgentContext
@@ -41,6 +41,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.browser_context import BrowserContextCapability
@@ -162,7 +163,7 @@ class RootRunExecutor:
         compositions: RunCompositionService,
         agent_reconstructor: AgentReconstructor,
         environment_service: EnvironmentRunService,
-        subagent_operator: SubagentOperator | None = None,
+        subagent_operator: HarnessUiSubagentOperator | None = None,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: HarnessUiLiveHub | None = None,
         summary_hub: HarnessUiSummaryHub | None = None,
@@ -193,6 +194,7 @@ class RootRunExecutor:
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
         self._work = work
+        self._bot_display_publisher: Callable[[DisplayPublication, bool], Awaitable[None]] | None = None
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
             None
         )
@@ -208,6 +210,9 @@ class RootRunExecutor:
         if self._root_capability_factory is not None:
             raise RuntimeError("Root Thread Capability factory is already configured")
         self._root_capability_factory = factory
+
+    def set_bot_display_publisher(self, publisher: Callable[[DisplayPublication, bool], Awaitable[None]]) -> None:
+        self._bot_display_publisher = publisher
 
     async def capture(
         self,
@@ -256,9 +261,15 @@ class RootRunExecutor:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
+        if restart is not None and restart.cause == "process_loss":
+            execution = thread.last_execution
+            if execution is None or execution.status != "running" or execution.run_id != restart.run_id:
+                raise RunCoordinationError("The interrupted execution is no longer selected.", code="restart_conflict")
         previous_state, deferred, previous_composition, accepted, positions, archive = await self._load_run_state(
             thread
         )
+        if restart is not None and previous_composition != restart.composition:
+            raise RunCoordinationError("The saved restart composition changed.", code="restart_conflict")
         if prompt is not None and deferred is not None:
             assert thread.continuation is not None
             response = ThreadDeferredResponse(
@@ -278,10 +289,15 @@ class RootRunExecutor:
             else "ordinary",
             coordinator_thread_id=owner,
         )
+        previous = (
+            None
+            if previous_composition is None
+            else await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+        )
         captured_environment = None
         if response is not None:
-            assert previous_composition is not None
-            captured_environment = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+            assert previous is not None
+            captured_environment = previous
         selection = selection.with_environment(
             environment,
             captured=captured_environment,
@@ -289,6 +305,9 @@ class RootRunExecutor:
         )
         if restart is None:
             source = await self._required_configuration()
+            if model_overrides is None and previous is not None:
+                # Nobody selected a Model for this admission; keep the previous Run's selection.
+                model_overrides = previous.model_overrides
             published = await self._compositions.publish(source, selection, model_overrides=model_overrides)
         else:
             captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)
@@ -402,7 +421,7 @@ class RootRunExecutor:
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
-                history = state.message_history
+                history = await to_thread.run_sync(lambda: state.message_history)
                 frozen = display.capture(history)
                 excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
                 del history
@@ -426,6 +445,21 @@ class RootRunExecutor:
                     raise selected.error
                 run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
+                if (
+                    self._restart is not None
+                    and admission.organization is None
+                    and published.value.root.source_kind not in {"live", "bot"}
+                ):
+                    await self._restart.boundary(
+                        RestartItem(
+                            thread_id=thread_id,
+                            root_thread_id=thread_id,
+                            run_id=stream.run_id,
+                            cause="process_loss",
+                            composition=published.reference,
+                            checkpoint=selected.reference,
+                        )
+                    )
                 if self._summary_hub is not None:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
                 return selected.reference.logical_digest, str(frozen.position)
@@ -451,6 +485,12 @@ class RootRunExecutor:
                 )
                 display.supplement((*image_events, *app_events))
 
+            is_bot = published.value.root.source_kind == "bot"
+            environment = None
+            if is_bot and admission.organization is None:
+                # Only Bot needs its runtime while constructing lazy target tools.
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                environment = await self._environments.prepare(published.value)
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
@@ -462,8 +502,22 @@ class RootRunExecutor:
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
                     MainAccountCapability(published.value.root.model.model_id, on_main_account),
+                    *(
+                        (
+                            BotEnvironmentsCapability(
+                                service=self._environments, composition=published.value, runtime=environment.runtime
+                            ),
+                        )
+                        if is_bot and environment is not None
+                        else ()
+                    ),
                     goal_capability,
-                    RootCheckpointCapability(save_checkpoint),
+                    RootCheckpointCapability(
+                        save_checkpoint,
+                        before_response=partial(self._restart.invalidate, thread_id)
+                        if self._restart is not None
+                        else None,
+                    ),
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
@@ -527,16 +581,17 @@ class RootRunExecutor:
 
                 input_factory = prepare_input
                 prompt = None
-            preparation_span.set_attribute("a13n.phase.step", "environment")
-            live_without_files = published.value.root.source_kind == "live" and not any(
-                item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
-                for item in published.value.root.capabilities
-            )
-            environment = (
-                None
-                if admission.organization is not None or live_without_files
-                else await self._environments.prepare(published.value)
-            )
+            if not is_bot:
+                preparation_span.set_attribute("a13n.phase.step", "environment")
+                live_without_files = published.value.root.source_kind == "live" and not any(
+                    item.capability == "dynamic_environment" and item.configuration.get("files_enabled")
+                    for item in published.value.root.capabilities
+                )
+                environment = (
+                    None
+                    if admission.organization is not None or live_without_files
+                    else await self._environments.prepare(published.value)
+                )
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
                 agent_instance_id=f"agent-{uuid4().hex[:20]}",
@@ -578,6 +633,7 @@ class RootRunExecutor:
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
+                instruction_reference_root=None if environment is None else environment.instruction_reference_root,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 retained_history_directory=None if environment is None else environment.retained_history_directory,
                 model_resolver=reconstructed.model_resolver,
@@ -594,6 +650,9 @@ class RootRunExecutor:
             bindings = production_run_bindings(
                 bindings,
                 reconstructed.definition_capability_ids,
+                data_root=self._store.settings.data_root,
+                thread_id=thread_id,
+                object_store_policy=self._store.settings.object_store,
             )
             record_phase_result(
                 preparation_span,
@@ -644,6 +703,8 @@ class RootRunExecutor:
                         publication = display.drain()
                         if publication is not None:
                             try:
+                                if thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
+                                    await self._bot_display_publisher(publication, False)
                                 await self._publish_live(
                                     thread_id=thread.thread_id,
                                     run_id=stream.run_id,
@@ -669,6 +730,17 @@ class RootRunExecutor:
         continuation = RootContinuationSelection(status="not_available")
         with phase("finalize") as finalization_span:
             with CancelScope(shield=True):
+                if run_error is not None and thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
+                    # Cancellation can stop consumption before TEXT_MESSAGE_END.
+                    # Retry the complete live suffix, including visible partial text.
+                    display.publication_failed()
+                    if (publication := display.drain()) is not None:
+                        try:
+                            await self._bot_display_publisher(publication, True)
+                        except Exception:
+                            get_logger(__name__).exception(
+                                "Bot terminal text publication failed: thread_id=%s", thread_id
+                            )
                 finalization_span.set_attribute("a13n.phase.step", "environment")
                 try:
                     finalization = (
@@ -719,6 +791,13 @@ class RootRunExecutor:
                     )
                 finalization_span.set_attribute("a13n.phase.step", "continuation")
                 paused_state = self._restart.saved_state(thread_id) if self._restart is not None else None
+                interrupted = (
+                    self._restart.interrupted_boundary(thread_id)
+                    if self._restart is not None
+                    and paused_state is None
+                    and isinstance(run_error, get_cancelled_exc_class())
+                    else None
+                )
                 if paused_state is not None:
                     continuation = await self._select_state(
                         thread=thread,
@@ -732,6 +811,13 @@ class RootRunExecutor:
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
+                elif interrupted is not None:
+                    # The old model request joined without a response. Reuse its
+                    # exact selected checkpoint, including saved display and
+                    # metadata, rather than persisting partial streamed output.
+                    await self._store.read_continuation(thread_id, interrupted.checkpoint, include_display=True)
+                    continuation = RootContinuationSelection(status="selected", reference=interrupted.checkpoint)
+                if paused_state is not None or interrupted is not None:
                     if (
                         continuation.reference is not None
                         and continuation.status == "selected"
@@ -864,6 +950,22 @@ class RootRunExecutor:
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
+            if continuation.status == "failed" and not isinstance(run_error, get_cancelled_exc_class()):
+                # Keep unknown settlement distinguishable from an ordinary startup
+                # failure even when there is no terminal Harness result to project.
+                feedback = await to_thread.run_sync(
+                    partial(
+                        exception_feedback,
+                        run_error,
+                        thread_id=thread_id,
+                        run_id=None if stream is None else stream.run_id,
+                        phase="root_finalization",
+                    )
+                )
+                raise RunCoordinationError(
+                    f"Could not save the execution continuation. Inspect the saved conversation before retrying.\n{feedback}",
+                    code="continuation_selection_failed",
+                ) from run_error
             raise run_error
         if result is None:
             raise RuntimeError("Harness execution did not produce a terminal result")
@@ -894,7 +996,7 @@ class RootRunExecutor:
     ) -> AsyncGenerator[None]:
         with execution_composition(composition_ref):
             operator = self._subagent_operator
-            if isinstance(operator, HarnessUiSubagentOperator):
+            if operator is not None:
                 async with operator.bind_parent_run(
                     thread_id=thread_id,
                     run_id=run_id,
@@ -1024,10 +1126,10 @@ class RootRunExecutor:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
-        # execution checkpoint. Missing indexes rebuild on the next inspection.
+        # execution checkpoint. A later checkpoint or history read can catch up.
         try:
             inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
-            await self._store.inspections.publish(
+            indexed = await self._store.inspections.publish(
                 thread.thread_id,
                 published_ref.logical_digest,
                 inspection,
@@ -1035,6 +1137,8 @@ class RootRunExecutor:
                 if thread.continuation is not None
                 else f"initial:{thread.initial_state.logical_digest}",
             )
+            if not indexed:
+                get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread.thread_id})
         except Exception as exc:
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",

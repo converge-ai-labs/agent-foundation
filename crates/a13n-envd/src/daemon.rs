@@ -204,7 +204,8 @@ fn session_methods(config: &Config) -> Vec<String> {
             (!execution || config.command.is_some())
                 && (method.name != "process.signal" || cfg!(unix))
                 && (!method.name.starts_with("computer.")
-                    || (config.computer_use
+                    || (cfg!(feature = "desktop")
+                        && config.computer_use
                         && cfg!(any(
                             target_os = "macos",
                             target_os = "linux",
@@ -6289,25 +6290,27 @@ mod tests {
         let methods = super::session_methods(&config);
         assert_eq!(
             methods.iter().any(|m| m == "computer.observe"),
-            cfg!(any(
-                target_os = "macos",
-                target_os = "linux",
-                target_os = "windows"
-            ))
-        );
-        for method in ["computer.read_clipboard", "computer.write_clipboard"] {
-            assert_eq!(
-                methods.iter().any(|m| m == method),
-                cfg!(any(
+            cfg!(feature = "desktop")
+                && cfg!(any(
                     target_os = "macos",
                     target_os = "linux",
                     target_os = "windows"
                 ))
+        );
+        for method in ["computer.read_clipboard", "computer.write_clipboard"] {
+            assert_eq!(
+                methods.iter().any(|m| m == method),
+                cfg!(feature = "desktop")
+                    && cfg!(any(
+                        target_os = "macos",
+                        target_os = "linux",
+                        target_os = "windows"
+                    ))
             );
         }
         assert_eq!(
             methods.iter().any(|m| m == "computer.type_text"),
-            cfg!(any(target_os = "macos", target_os = "windows"))
+            cfg!(feature = "desktop") && cfg!(any(target_os = "macos", target_os = "windows"))
         );
     }
 

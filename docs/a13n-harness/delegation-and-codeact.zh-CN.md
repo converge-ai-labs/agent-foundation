@@ -151,6 +151,8 @@ sum(values)
 
 一个 Model 响应中只放一个 runner 工具调用。在代码内部组合所需调用，并只返回 Agent 需要的数据。
 
+使用 Host 持有的执行 runtime 时，收到后台回执后，Agent 可以选择独立工作，或显式等待结果。后续 runner 不会隐式等待无关的后台 Shell 命令退出；使用服务器前仍需单独检查就绪状态。不同 Model 响应中的独立 `run_program` 调用可以重叠执行。`run_code` 在一个逻辑 Run 中保留同一份内联会话，因此再次提交内联代码或 `restart=True` 前，要先等待正在使用该会话的执行完成。显式全局串行模式仍等待实际完成。
+
 对于设置了 `defer_loading=True` 的工具，先发现工具或加载其 Capability，再调用 runner。大型工具集合可使用 [ToolSearch 分组](tool-search.md#use-with-codeact)，在 runner 内发现工具。ToolSearch 代理调用始终顺序执行，包括放在 `asyncio.gather` 中时。
 
 ### 组合浏览器工具
@@ -232,6 +234,8 @@ codeact = CodeActCapability(CodeActConfig(
 ```
 
 在 builder 中用此实例替换 `CodeActCapability()`。默认每次 runner 允许 128 次嵌套工具尝试、16 路并发和 300 秒执行时间。存储默认最多 256 项、10 MiB。父级工具调用限制和提供方上限仍然生效。
+
+目录列出可调用名称及其规范名称映射；参数以原生工具定义为准。在 `CodeActConfig` 中设置 `catalog_argument_schemas=True`，可在目录中额外包含精确的参数 JSON Schema。该字段必须是布尔值，默认为 `False`；两种模式均不包含描述、Python 声明或返回值 Schema。如果程序在看到工具结果前就需要使用其中的字段，工具可以设置 Pydantic AI 的 `include_return_schema=True`，让原生工具定义包含返回值 Schema。
 
 ## 异步子级
 

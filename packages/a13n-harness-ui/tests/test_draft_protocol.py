@@ -46,6 +46,111 @@ async def containing(connection: ClientConnection, text: str) -> dict[str, Any]:
     return await frame_until(connection, lambda f: f.get("kind") == "draft" and text in str(document(f)["text"]))
 
 
+async def test_bot_draft_authentication_precedes_lazy_room_and_rejects_scoped_guests(tmp_path: Path) -> None:
+    from a13n_harness_ui.share_models import ShareCreate
+    from websockets.exceptions import ConnectionClosed
+
+    async with listener_with_app(tmp_path, configuration_path=_write_configuration(tmp_path)) as (http, ws, app):
+        async with connect(ws + "/api/threads/thread_bot/draft/connect", proxy=None, origin=http) as connection:
+            await connection.send('{"api_key":"wrong"}')
+            with pytest.raises(ConnectionClosed) as failure:
+                await connection.recv()
+            assert failure.value.rcvd.code == 4401
+        assert "thread_bot" not in app._shared_drafts
+        thread = await app.create_thread()
+        created = await app.sharing.create(ShareCreate(scope="thread", target_id=thread.thread_id, permission="prompt"))
+        path = f"/api/shared/{created.grant.share_id}/threads/thread_bot/draft/connect"
+        async with connect(ws + path, proxy=None, origin=http) as connection:
+            await connection.send(json.dumps({"api_key": created.key}))
+            denied = await frame_until(connection, lambda frame: "error" in frame)
+            assert denied["error"]["code"] == "share_unavailable"
+        assert "thread_bot" not in app._shared_drafts
+
+
+async def test_bot_shared_composer_capture_steer_rejection_and_peer_edits(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness_ui.surfaces import RootControlResult
+
+    from .test_app import _SlowReconstructor
+    from .test_bot import _write_configuration as bot_configuration
+    from .test_bot import ready
+
+    async with listener_with_app(tmp_path, configuration_path=bot_configuration(tmp_path)) as (http, ws, app):
+        await ready(app)
+        started = Event()
+        app._root_runs._executor._agents = _SlowReconstructor(started)
+        path = ws + "/api/threads/thread_bot/draft/connect"
+        async with (
+            httpx.AsyncClient(base_url=http, headers={"Authorization": "Bearer test-only-key"}) as api,
+            connect(path, proxy=None, origin=http) as first,
+            connect(path, proxy=None, origin=http) as second,
+        ):
+            a, b = await join(first), await join(second)
+            assert a["draft_id"] == b["draft_id"]
+            assert (await app.get_thread("thread_bot")).thread.last_execution is None
+            authored = document(a)
+            authored.get("text", type=Text).insert(0, "Keep working")
+            await send(first, a["draft_id"], authored)
+            captured = await containing(second, "Keep working")
+            peer = document(captured)
+            peer.get("text", type=Text).insert(0, "NEXT ")
+            await send(second, a["draft_id"], peer)
+            await containing(first, "NEXT ")
+            command = {
+                "input_id": "shared-first",
+                "text": "Keep working",
+                "draft": {
+                    "draft_id": a["draft_id"],
+                    "update_base64": captured["update_base64"],
+                },
+            }
+            response = await api.post("/api/bot/inputs", json=command)
+            assert response.status_code == 200, response.text
+            receipt = response.json()["receipt_id"]
+            with fail_after(5):
+                await started.wait()
+            cleared = await frame_until(
+                first, lambda f: f.get("kind") == "draft" and str(document(f)["text"]) == "NEXT "
+            )
+            # Exact retry consumes the same old identities, never the peer's next input.
+            assert (await api.post("/api/bot/inputs", json=command)).status_code == 200
+            steered = await api.post(
+                "/api/bot/inputs",
+                json={
+                    "input_id": "shared-steer",
+                    "text": "NEXT ",
+                    "draft": {"draft_id": a["draft_id"], "update_base64": cleared["update_base64"]},
+                },
+            )
+            assert steered.status_code == 200, steered.text
+            assert steered.json()["receipt_id"] == receipt
+            empty = await frame_until(second, lambda f: f.get("kind") == "draft" and not str(document(f)["text"]))
+            rejected_doc = document(empty)
+            rejected_doc.get("text", type=Text).insert(0, "Retain rejected input")
+            await send(second, a["draft_id"], rejected_doc)
+            retained = await containing(first, "Retain rejected input")
+
+            async def reject(**kwargs):
+                return RootControlResult(receipt_id=receipt, accepted=False)
+
+            monkeypatch.setattr(app._root_runs, "steer", reject)
+            rejected = await api.post(
+                "/api/bot/inputs",
+                json={
+                    "input_id": "shared-rejected",
+                    "text": "Retain rejected input",
+                    "draft": {"draft_id": a["draft_id"], "update_base64": retained["update_base64"]},
+                },
+            )
+            assert rejected.status_code == 400, rejected.text
+            assert rejected.json()["error"]["code"] == "bot_input_rejected"
+            assert str(app._shared_drafts["thread_bot"].document["text"]) == "Retain rejected input"
+            await app.cancel_root_operation(receipt)
+        async with connect(path, proxy=None, origin=http) as rejoined:
+            restored = await join(rejoined)
+            assert restored["draft_id"] == a["draft_id"]
+            assert str(document(restored)["text"]) == "Retain rejected input"
+
+
 async def test_corrupt_saved_composer_reports_a_sanitized_protocol_error(tmp_path: Path) -> None:
     from dataclasses import replace
 

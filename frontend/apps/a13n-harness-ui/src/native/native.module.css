@@ -1,4 +1,5 @@
 .workarea {
+  --work-header-height: 36px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -11,13 +12,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
-  min-height: 40px;
+  padding: 1px 8px;
+  min-height: var(--work-header-height);
   flex-shrink: 0;
   border-bottom: 0;
-}
-.splitLayout > .workToolbar {
-  border-bottom: 1px solid var(--a13n-border);
 }
 /* Toolbar controls share one 32px height; touch devices keep
    a centered 44px hit area from Button. */
@@ -31,8 +29,9 @@
   background: var(--a13n-surface);
 }
 .workToolbar .workspaceTitle {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 56ch;
   margin: 0;
   font-size: var(--a13n-text-body);
   font-weight: 500;
@@ -63,17 +62,23 @@
   }
 }
 .projectBreadcrumb {
-  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
   max-width: 180px;
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
   white-space: nowrap;
+}
+.projectBreadcrumb > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .projectBreadcrumb::after {
   content: "/";
+  flex-shrink: 0;
   margin-left: 12px;
   color: var(--a13n-tertiary);
 }
@@ -83,6 +88,7 @@
   }
 }
 .layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -130,6 +136,7 @@
   scrollbar-gutter: stable both-edges;
 }
 .center > .page.chatPage {
+  padding-top: 0;
   overflow: hidden;
   scrollbar-gutter: auto;
 }
@@ -250,8 +257,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 40px;
-  padding-inline: 6px;
+  min-height: var(--work-header-height);
+  padding-inline: 4px;
   background: var(--a13n-surface);
 }
 .splitLayout .workspaceTabs {
@@ -305,6 +312,7 @@
   );
 }
 .workspaceTab > [role="tab"] {
+  flex: 1 1 auto;
   min-width: 0;
   color: inherit;
   padding-inline: 8px 4px;
@@ -338,7 +346,7 @@
   height: 12px;
 }
 .workspaceTabs > .panelTools {
-  padding: 7px 6px 0;
+  padding: 2px 4px 0;
   gap: 2px;
   align-self: stretch;
   flex: 0 1 auto;
@@ -1209,4 +1217,11 @@
   .loadingTrack::after {
     animation: none;
   }
+}
+
+.backgroundOverlay {
+  position: absolute;
+  inset: var(--work-header-height) 0 0;
+  pointer-events: none;
+  z-index: 20;
 }

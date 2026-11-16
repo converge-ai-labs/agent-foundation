@@ -20,6 +20,7 @@ from referencing import Registry
 from a13n_harness_ui.configuration import canonical_digest
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connection, Operation
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.surfaces import RootRunReceipt
@@ -95,10 +96,13 @@ class AppOperations:
         snapshots: AppSnapshots,
         owners: CurrentOwners,
         configuration_root: Path,
+        *,
+        oauth: McpOAuth | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.owners = owners
         self.configuration_root = configuration_root
+        self.oauth = oauth
         self._views: dict[str, _View] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._closed = False
@@ -116,13 +120,17 @@ class AppOperations:
         owner = await self.owners.resolve(reference.thread_id)
         owner.require_tool(reference.tool_name, reference.server_id)
         recipe = owner.recipe(reference.server_id)
-        transport, effective, init_timeout = await prepare_mcp_transport(recipe, self.configuration_root)
+        if self.oauth is not None:
+            recipe = await self.oauth.bind(recipe)
+        transport, effective, init_timeout = await prepare_mcp_transport(
+            recipe, self.configuration_root, oauth=self.oauth
+        )
         connection = await self.snapshots.connections.acquire(
             reference.thread_id,
             reference.server_id,
             effective,
             transport,
-            binding=repr((recipe.transport.model_dump_json(), recipe.protocol, True)),
+            binding=recipe.binding_key(apps=True),
             activate=True,
             protocol=recipe.protocol,
             init_timeout=init_timeout,
@@ -174,7 +182,8 @@ class AppOperations:
         connection = view.connection
         connection.require_admission()
         tools = await connection.client.list_tools()
-        _, effective, _ = await prepare_mcp_transport(recipe, self.configuration_root)
+        transport_recipe = await self.oauth.bind(recipe) if self.oauth is not None else recipe
+        _, effective, _ = await prepare_mcp_transport(transport_recipe, self.configuration_root, oauth=self.oauth)
         # Directory/credential I/O can outlive a View or a policy change. Resolve
         # mutable Host authority last; no further await occurs before admission.
         owner = await self.owners.resolve(view.value.reference.thread_id)

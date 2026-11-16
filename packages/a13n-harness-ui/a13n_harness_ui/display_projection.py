@@ -41,11 +41,13 @@ def _parts(item: Item) -> list[dict[str, Any]]:
                 else "assistant",
                 "text": json.dumps(media, ensure_ascii=False) if media is not None else str(content.get("text", "")),
                 "metadata": metadata,
+                "display_id": item.id,
                 "duration_ms": duration,
             }
         ]
     if item.kind == "tool_call":
         common = {
+            "metadata": metadata,
             "tool_name": content.get("toolCallName"),
             "tool_call_id": content.get("toolCallId"),
             "provider": content.get("provider"),
@@ -154,8 +156,18 @@ def _timestamp(row: _Row) -> datetime | None:
 
 
 def original_text(display: DisplayHistory, message: int, part: int) -> str | None:
-    rows = _rows(display)
-    if message >= len(rows) or part >= len(rows[message].parts):
+    return original_window_text([display], message, part)
+
+
+def original_window_text(windows: list[DisplayHistory], message: int, part: int) -> str | None:
+    for window in windows:
+        rows = _rows(window)
+        if message < len(rows):
+            break
+        message -= len(rows)
+    else:
+        return None
+    if part >= len(rows[message].parts):
         return None
     source = rows[message].parts[part]
     metadata = source.get("metadata") or {}

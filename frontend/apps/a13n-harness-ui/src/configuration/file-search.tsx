@@ -27,6 +27,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
+import { isFindShortcut } from "../platform/find-shortcut";
 import styles from "./file-search.module.css";
 
 export function FileSearch({
@@ -100,7 +101,17 @@ export function FileSearch({
           !e.currentTarget.contains(e.target as Node)
         )
           return;
-        if (e.key === "Enter" && e.target === field.current) {
+        if (isFindShortcut(e.nativeEvent)) {
+          e.preventDefault();
+          e.stopPropagation();
+          field.current?.focus();
+          field.current?.select();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          closeSearchPanel(view);
+          view.focus();
+        } else if (e.key === "Enter" && e.target === field.current) {
           e.preventDefault();
           e.stopPropagation();
           (e.shiftKey ? findPrevious : findNext)(view);

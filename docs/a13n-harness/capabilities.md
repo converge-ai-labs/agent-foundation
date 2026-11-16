@@ -444,3 +444,60 @@ A stateful Capability owns one stable namespace in `AgentContext.state` and one 
 Capability IDs, tool IDs, binding IDs, and other compact selectors are correlation and composition identities. They do not grant permissions or restore provider authority.
 
 Successful compaction emits `CompactionSummaryEvent` from `a13n_harness.capabilities` through the native Capability event channel. Its `operation_id` matches the compaction lifecycle events and `summary` contains the generated replacement text. Treat it as content-bearing output, not the Agent's answer or proof of a saved checkpoint. The lifecycle extensions themselves remain metadata-only. When a Host passes a ready `compaction_result` alongside `previous_state` to `run` or `stream`, Harness applies it before recovery and emits restoration and summary events before projecting fresh context. That restoration requires no Compaction Capability or operator; see [Background compaction](context.md#background-compaction).
+
+## Reuse original media with Object Store
+
+Select `ObjectStoreCapability` and bind a Host implementation of `a13n_harness.objects.ObjectStore` through `RunBindings.object_store`. The Host owns scoped bytes, authorization and retention. Harness owns media capture, management tools and argument transport.
+
+```python
+from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+# `send_image` accepts base64; `host_store` implements ObjectStore.
+features = [
+    ObjectStoreCapability(),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]), object_ref_tools={"send_*": True})]),
+]
+bindings = RunBindings.embedded(object_store=host_store)
+```
+
+Captured native user media and tool/MCP media keep their original Model-visible content and gain metadata such as `a13n-object://obj_...`. Pass that exact reference as the whole string argument of an opted-in target. Harness reads each distinct object once at target dispatch and supplies base64 encoding the original bytes. Nested argument values work through direct calls, ToolSearch and CodeAct. Program source, dictionary keys, substrings, approval requests and tool-call history keep references rather than expanded payloads.
+
+Use `asset_ref(path)` to import an authorized regular Environment file. `asset_store(ref=...)` promotes an available object without changing its ID; `asset_store(path=...)` imports and promotes a file. `asset_list`, `asset_info` and `asset_delete` manage the current Host scope without exposing bytes to the Model.
+
+### Object Reference Transport
+
+Object Reference Transport is the Harness tool extension that replaces exact references with base64 in the final authorized arguments. Targets default to unsupported. A tool opts in with boolean metadata `{"a13n.harness.supports_object_refs": True}`. For a native toolset, use `ObjectRefToolset(toolset, object_ref_tools={"*_upload": True})`; MCP configurations in both Hosts expose the same `object_ref_tools` map. An empty map preserves native declarations. To opt in an entire toolset explicitly, use `{"*": True}`. Opt in tools whose string arguments accept base64. Custom toolsets require native Pydantic Core argument validators.
+
+Rules match original, case-sensitive tool names before prefixes. `*` matches zero or more characters anywhere: `send_*`, `*_upload` and `image_*_upload` are all supported; every other character is literal. Exact names win over patterns; patterns with more non-`*` characters win over broader ones. Equally specific patterns prefer false, independently of mapping order. A matching rule overrides native metadata; an unmatched tool retains its declaration, defaulting to false. For example, `{"*": False, "*_upload": True, "text_upload": False}` enables upload tools except `text_upload`. Selection is shared across direct calls, ToolSearch and CodeAct; it does not alter their permission rules.
+
+Nested reference values are supported in dictionaries, lists, tuples (including `NamedTuple`) and Pydantic models. Use these containers for reference-bearing arguments; dataclasses and sets are outside the transport traversal contract.
+
+Native argument validation and before/after-validation hooks run once. Declarative string constraints admit exact reference tokens; field/model validators and custom `args_validator` callbacks run normally on reference-valued arguments before any Store read. Callbacks must accept and preserve those tokens. Dispatch copies the final arguments, preserving typed models and normalized values, and replaces only remaining references. It does not rerun validation or default factories. Put checks that require decoded bytes in the consuming function or remote MCP server.
+
+For example, a custom argument callback can authorize `data_base64` while it still holds a reference; the implementation receives actual base64:
+
+```python
+import base64
+
+from a13n_harness.objects import SUPPORTS_OBJECT_REFS
+from pydantic_ai.tools import Tool
+
+
+def authorize_send(ctx, data_base64: str):
+    # Apply business authorization here; accept reference transport values.
+    assert ctx.deps.object_store is not None
+
+
+def send_image(data_base64: str):
+    image = base64.b64decode(data_base64, validate=True)
+    return upload_image(image)  # Your consumer validates and uploads the bytes.
+
+
+send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_OBJECT_REFS: True})
+```
+
+Permission denial and pending approval cause no Store read. A reference can expire while approval is pending; resume then reports an unavailable object. The Agent must use a currently listed reference or explicitly import again, not invent base64 or replay the producer automatically. Temporary TTL and LRU limits are Host policy; explicit promotion excludes an object from temporary expiry. `ObjectStoreConfiguration(capture_media=False)` disables automatic capture, and `max_object_bytes` bounds imports and capture. Host limits can be smaller; a capture size rejection preserves native media and reports that no reusable object was captured.
+
+For built-in Host configuration, see [Harness UI](../a13n-harness-ui/configuration.md#object-store) and [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools).

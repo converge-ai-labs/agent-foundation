@@ -852,12 +852,12 @@ async def test_state_restoration_uses_current_discovery_and_codeact_tools():
     assert second.output_or_raise()
     assert effects == [20, 21]
     assert "double" in snapshots[0][1].model_request_parameters.revealed_tool_names
-    assert snapshots[0][1].instructions.count("async def double") == 1
-    assert "async def triple" not in snapshots[0][1].instructions
+    assert snapshots[0][1].instructions.count("`double`") == 1
+    assert "`triple`" not in snapshots[0][1].instructions
 
     _, snapshots = await _run_calls((CodeActCapability(),), [], previous_state=compacted)
     assert not snapshots[0][1].model_request_parameters.revealed_tool_names
-    assert "async def double" not in snapshots[0][1].instructions
+    assert "`double`" not in snapshots[0][1].instructions
 
 
 async def test_state_restoration_dispatches_current_projection_and_media_without_counting():

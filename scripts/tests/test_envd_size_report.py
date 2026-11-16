@@ -104,7 +104,9 @@ post({github, context, core: {info() {}}, directory: process.cwd()})
         else:
             assert "**1 build within budget.**" in args["body"]
         assert "<summary>Budgets and build details</summary>" in args["body"]
-        assert "1/6 build reports available for this attempt" in args["body"]
+        producer = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-envd.yml").read_text())
+        expected_builds = len(producer["jobs"]["size"]["strategy"]["matrix"]["include"])
+        assert f"1/{expected_builds} build reports available for this attempt" in args["body"]
         if scenario == "rerun":
             assert "(attempt 2)" in args["body"]
             assert "earlier attempts are not remeasured" in args["body"]
@@ -123,3 +125,13 @@ def test_report_render_shows_vm_duplication_failure(copies):
     )
     assert ("**FAIL**" in result.stdout) is (copies != 1)
     assert (f"{copies} runtime copies (expected 1)" in result.stdout) is (copies != 1)
+
+
+def test_report_render_distinguishes_slim_from_ordinary():
+    reports = [REPORT, REPORT | {"variant": "slim"}]
+    program = "console.log(require(process.argv[1]).render(JSON.parse(process.argv[2]), {id: 1, head_sha: 'abc', run_attempt: 1}, {owner: 'o', repo: 'r'}))"
+    result = subprocess.run(
+        ["node", "-e", program, str(REPORTER), json.dumps(reports)], capture_output=True, text=True, check=True
+    )
+    assert "| Default |" in result.stdout
+    assert "| Slim |" in result.stdout

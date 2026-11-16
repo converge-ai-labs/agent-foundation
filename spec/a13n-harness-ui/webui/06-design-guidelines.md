@@ -43,6 +43,8 @@ Floating menus, popovers and dialogs retain shared overlay shadows. When the flo
 
 Titles, text starts and trailing controls follow a few shared axes. Same-row text, icons and controls are optically centered. Short values stay compact; long paths wrap or move below labels before columns become unusable.
 
+The workbench header keeps Project and chat titles on one line. Chat titles have a bounded reading width even on wide screens and ellipsize further as space narrows; actions retain their space. A truncated Project name keeps its separator visible, and narrow layouts omit the Project breadcrumb. Hover exposes the complete names; chat actions retain the full-title Rename field for keyboard and touch. The browser document title uses a bounded preview. These display limits never rewrite saved titles.
+
 Navigation icons are 16px; disclosure carets are 12px. Model logo and name remain adjacent everywhere, including selectors, settings and usage attribution, using the shared brand registry and fallback. Transcript preparing/working uses the animated a13n logo with reduced-motion support.
 
 Reserve space for appearing actions and carets. Hover, loading and expansion never shift labels or resize targets. Keyboard focus stays visible; touch retains usable affordances without hover.
@@ -73,7 +75,7 @@ Keep the editor above a single row of attachment, options, Model and Send contro
 
 The Thinking picker uses the current level as its visible heading. A stepped slider runs from a light tint of the a13n mark to its shadow color. The heading previews the level during dragging, and a reset action restores Default.
 
-One compact row immediately above the composer holds Activity at the left and context/cost at the right. Sustained live connection status uses quiet, unboxed text between them, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. There is no second routine footer row. Context shows a compact token count preceded by a brand-purple occupancy ring, or the context icon when occupancy is unknown; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
+For ordinary chats, one compact row immediately above the composer holds Activity at the left and context/cost at the right. Bot keeps context/cost visible on the right and shows only the left-side Activity controls in Debug mode; attachment and microphone controls stay in the composer. Sustained live connection status uses quiet, unboxed text between them, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. There is no second routine footer row. Context shows a compact token count preceded by a brand-purple occupancy ring, or the context icon when occupancy is unknown; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
 
@@ -81,7 +83,15 @@ Usage popovers lead with the requested figure and unit, then aligned supporting 
 
 Content fades continuously toward the header and composer. No hard seam, ghosted text, text-shadow halo or blurred strip crosses a readable line. Apply the effect at the reading boundary; keep controls crisp and content fully readable away from it. Prose, tables and code retain their geometry through scrolling.
 
-The header divider appears only with the supporting right pane open. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
+Chat headers use the same compact height without a bottom divider in single-column and split layouts. Saved ordinary empty chats have no central instructional hero; the New draft retains its entry heading and Project selector. Coordinator introductions follow their behavior contract.
+
+## Background Work
+
+The floating card sits 8px below the chat header and clears the chat page padding and transcript scrollbar gutter (48px from the chat area's right edge; 36px on narrow layouts). It is about 320px wide on desktop, using the elevated surface, overlay shadow and 16px radius. Subagents and Tool calls each show at most three single-line rows and a quiet View all action. Names ellipsize with full names and previews in tooltips. A 16px character/icon, text start, compact state/duration and reserved Stop slot share axes. Commands use the shared code size; metadata uses secondary text and tabular figures. Touch rows retain 44px targets. Use one flat hover fill.
+
+The Subagents and Tool calls history tabs reuse those rows with scrolling and Show more; the tab header names the section, so rows start without a section heading. Item tabs reuse the resource strip's truncation and close controls. Child tabs have no composer; their Stop action sits beside state in the header, matching tool tabs. Accepted Stop shows the shared loading indicator in the same slot until terminal state arrives. Saved/live readers reuse transcript components and checkpoint cut-over; notices remain quiet execution links. Tasks and Notes remain the composer's only work shortcuts.
+
+Child identity is a small generated SVG glyph: a candy-colored rounded polygon with legible eyes. The Thread ID seeds its palette entry, shape, rotation, corner rounding, eye style, gaze and tilt. State uses text or gentle reduced-motion-aware motion, never identity hue. The shared identity role owns the palette and contrast rules. Empty, loading, error and narrow states preserve alignment.
 
 ## Settings, Dialogs and Popovers
 
@@ -91,6 +101,16 @@ The header divider appears only with the supporting right pane open. Saved ordin
 - Menus use one 4px outer inset, aligned icon/text columns and trailing states. Separate functional groups only. Small menus need no page-style title or close button; nested choices retain one Back header. Optional explanations use help; consequences stay visible.
 - Popups fit the viewport independently of trigger width. Opening a dialog hides its originating menu through entry and exit; closing restores focus without reopening the menu. Form footers pair Cancel and the primary action; information-only dialogs use Close.
 - Tabs retain recognizable selected, hover and focus states with aligned content edges. Reuse the accepted treatment for each role; do not interchange navigation tabs and mode selectors.
+
+## Connectors
+
+Every Connector follows the same account-first presentation in Settings and conversation setup. Use the backend's optional brand and logo hints through the shared brand renderer; keep the mark adjacent to the service or account name in the chooser, account list, setup header and chat offer. Missing, unknown or failed images use a generic mark. Do not introduce provider-specific page components or infer branding from action IDs.
+
+Account rows lead with the account name, then service name and a compact textual status. Keep one Add connection action. The account menu uses aligned semantic icons with visible labels. Supporting service descriptions belong in the chooser; avoid repeating them on every saved account.
+
+Setup has one primary action with a visible label. Known `edit` and `test` submit actions may use secondary icon-only buttons with translated tooltips and matching accessible names when they are not primary. Confirmation actions and unknown icon tokens retain visible labels. Open-URL and copy controls keep their descriptive labels beside their glyphs. The Host maps semantic tokens uniformly; a plugin supplies no CSS, arbitrary SVG markup, glyph-library names or icon-only override.
+
+Keep names, field labels, permissions, saved-versus-tested distinctions, destructive consequences, conflicts and recovery visible. Remove repeated instructions before shrinking text or replacing meaningful status with color alone. Icon-only targets retain focus and touch geometry under the shared accessibility rules. Presentation changes never dispatch actions or alter setup ordering and confirmation.
 
 ## Copy and States
 

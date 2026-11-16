@@ -8,7 +8,7 @@ from a13n_harness.tool_execution import ToolExecutionRecord
 from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 from a13n_harness.toolsets.shell_observation import ShellStream
 from a13n_harness.toolsets.shell_results import ProcessStatusProjection, ShellExecSuccess
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,8 @@ from a13n_service.tenancy.authorize import Principal
 class ExecutionView(ToolExecutionRecord):
     """Run identity is the Service Run; attempt and worker identify the retained owner."""
 
+    # Ordering intent is persisted for supervision, not exposed by the inspection API.
+    sequential: bool = Field(default=False, exclude=True)
     attempt_id: str
     worker_id: str
     cancel_requested_at: datetime | None

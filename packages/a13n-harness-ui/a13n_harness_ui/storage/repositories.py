@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
+from sqlalchemy import ColumnElement, Select, and_, case, delete, exists, func, or_, select, true, update
+from sqlalchemy.orm import aliased
 
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
@@ -32,6 +34,7 @@ from .contracts import (
     ThreadConfiguration,
     ThreadExecution,
     ThreadReadModel,
+    ThreadReadReceipt,
 )
 from .database import DatabaseSessions, short_session, transaction
 from .models import (
@@ -174,6 +177,16 @@ class ConfigurationRepository:
         async with short_session(self._sessions) as session:
             record = await session.get(AcceptedConfigurationRecord, generation_digest)
             return None if record is None else _configuration_reference(record)
+
+    async def resource_name(self, generation_digest: str, kind: str, resource_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            return await session.scalar(
+                select(ResourceIndexRecord.name).where(
+                    ResourceIndexRecord.generation_digest == generation_digest,
+                    ResourceIndexRecord.resource_kind == kind,
+                    ResourceIndexRecord.resource_id == resource_id,
+                )
+            )
 
     async def resources(self, generation_digest: str) -> tuple[ResourceIndexEntry, ...]:
         async with short_session(self._sessions) as session:
@@ -575,6 +588,7 @@ class ThreadRepository:
         include_archived: bool = False,
         archived_only: bool = False,
         starred: bool | None = None,
+        unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         thread_ids: tuple[str, ...] | None = None,
@@ -637,6 +651,8 @@ class ThreadRepository:
                 predicates.append(ThreadRecord.archived.is_(False))
             if starred is not None:
                 predicates.append(ThreadRecord.starred.is_(starred))
+            if unread is not None:
+                predicates.append(ThreadRecord.unread == unread)
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
@@ -747,6 +763,54 @@ class ThreadRepository:
             record.updated_at = now
             await session.flush()
             return _thread_value(record, _configuration_value(configuration))
+
+    async def mark_unread(self, thread_id: str) -> None:
+        # A new manual intent fences acknowledgements already in flight, even
+        # when the previous generation was also unread. No history is appended.
+        async with transaction(self._sessions) as session:
+            await session.execute(
+                update(ThreadRecord)
+                .where(
+                    ThreadRecord.thread_id == thread_id,
+                    ThreadRecord.parent_thread_id.is_(None),
+                    ThreadRecord.memory_scope.is_(None),
+                )
+                .values(unread=True, read_state_version=ThreadRecord.read_state_version + 1)
+            )
+
+    async def acknowledge_read(self, receipts: tuple[ThreadReadReceipt, ...]) -> tuple[str, ...]:
+        if not 1 <= len(receipts) <= 100:
+            raise ValueError("Read acknowledgement is outside supported bounds")
+        predicate = and_(
+            ThreadRecord.unread == True,  # noqa: E712 - literal matches the partial index
+            ThreadRecord.parent_thread_id.is_(None),
+            ThreadRecord.memory_scope.is_(None),
+            or_(
+                *(
+                    and_(
+                        ThreadRecord.thread_id == receipt.thread_id,
+                        ThreadRecord.read_state_version == receipt.read_state_version,
+                        ThreadRecord.completion_version == receipt.completion_version,
+                    )
+                    for receipt in receipts
+                )
+            ),
+        )
+        # Most visibility reports are duplicates. Avoid writer admission and
+        # BEGIN IMMEDIATE entirely when no observed generation can change.
+        async with short_session(self._sessions) as session:
+            eligible = await session.scalar(select(ThreadRecord.thread_id).where(predicate).limit(1))
+        if eligible is None:
+            return ()
+        async with transaction(self._sessions) as session:
+            return tuple(
+                await session.scalars(
+                    update(ThreadRecord)
+                    .where(predicate)
+                    .values(unread=False, read_state_version=ThreadRecord.read_state_version + 1)
+                    .returning(ThreadRecord.thread_id)
+                )
+            )
 
     async def continuation_references(self, thread_ids: tuple[str, ...]) -> dict[str, ObjectRef]:
         if not thread_ids:
@@ -871,6 +935,11 @@ class ThreadRepository:
                     raise ValueError("Only root Threads have completion markers")
                 if record.completion_run_id != completed_run_id:
                     record.completion_version += 1
+                    # Bot publications own its unread revision independently of
+                    # execution completion, including messages sent before failure.
+                    if record.memory_scope is None and record.thread_id != BOT_THREAD_ID:
+                        record.unread = True
+                        record.read_state_version += 1
                     record.completion_run_id = completed_run_id
                     record.completion_digest = replacement.logical_digest
                     record.completed_at = now
@@ -1029,6 +1098,22 @@ class ChildExecutionRepository:
             record = await session.get(ChildExecutionRecord, execution_id)
             return None if record is None else _child_value(record)
 
+    async def attention_for_parent(self, parent_thread_id: str, *, limit: int = 21) -> tuple[ChildExecutionHead, ...]:
+        async with short_session(self._sessions) as session:
+            rows = (
+                await session.execute(
+                    select(ChildExecutionRecord)
+                    .where(ChildExecutionRecord.parent_thread_id == parent_thread_id)
+                    .order_by(
+                        (ChildExecutionRecord.status == "running").desc(),
+                        ChildExecutionRecord.created_at.desc(),
+                        ChildExecutionRecord.execution_id.desc(),
+                    )
+                    .limit(limit)
+                )
+            ).scalars()
+            return tuple(_child_value(row) for row in rows)
+
     async def list_for_parent(
         self,
         parent_thread_id: str,
@@ -1087,6 +1172,62 @@ class ChildExecutionRepository:
                         statement.order_by(
                             ChildExecutionRecord.created_at,
                             ChildExecutionRecord.execution_id,
+                        ).limit(limit)
+                    )
+                ).scalars()
+            )
+            total = int(
+                (
+                    await session.execute(select(func.count()).select_from(ChildExecutionRecord).where(predicate))
+                ).scalar_one()
+            )
+            return tuple(_child_value(row) for row in rows), total
+
+    async def latest_page_for_parent(
+        self,
+        parent_thread_id: str,
+        *,
+        after: tuple[bool, datetime, str] | None = None,
+        limit: int = 20,
+    ) -> tuple[tuple[ChildExecutionHead, ...], int]:
+        """Page each child conversation's latest segment: running first, then newest first."""
+        if not 1 <= limit <= 101:
+            raise ValueError("child execution page is outside supported bounds")
+        newer = aliased(ChildExecutionRecord)
+        predicate = and_(
+            ChildExecutionRecord.parent_thread_id == parent_thread_id,
+            ~exists().where(newer.resumed_from == ChildExecutionRecord.execution_id),
+        )
+        running = case((ChildExecutionRecord.status == "running", 1), else_=0)
+        statement = select(ChildExecutionRecord).where(predicate)
+        if after is not None:
+            after_running, after_created_at, after_execution_id = after
+            if not after_execution_id or after_created_at.tzinfo is None or after_created_at.utcoffset() is None:
+                raise ValueError("child execution cursor is invalid")
+            rank = int(after_running)
+            statement = statement.where(
+                or_(
+                    running < rank,
+                    and_(
+                        running == rank,
+                        or_(
+                            ChildExecutionRecord.created_at < after_created_at,
+                            and_(
+                                ChildExecutionRecord.created_at == after_created_at,
+                                ChildExecutionRecord.execution_id < after_execution_id,
+                            ),
+                        ),
+                    ),
+                )
+            )
+        async with short_session(self._sessions) as session:
+            rows = tuple(
+                (
+                    await session.execute(
+                        statement.order_by(
+                            running.desc(),
+                            ChildExecutionRecord.created_at.desc(),
+                            ChildExecutionRecord.execution_id.desc(),
                         ).limit(limit)
                     )
                 ).scalars()
@@ -1160,6 +1301,12 @@ class ChildExecutionRepository:
                 .order_by(ChildExecutionRecord.segment_index.desc())
                 .limit(1)
             )
+            return None if record is None else _child_value(record)
+
+    async def latest_checkpoint_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
+        """The newest segment with a selected checkpoint, including progress checkpoints."""
+        async with short_session(self._sessions) as session:
+            record = await session.scalar(latest_child_checkpoint_query(child_thread_id))
             return None if record is None else _child_value(record)
 
     async def first_for_child(self, child_thread_id: str) -> ChildExecutionHead | None:
@@ -1292,6 +1439,18 @@ class EnvironmentStateRepository:
             return _binding_value(record)
 
 
+def latest_child_checkpoint_query(child_thread_id: str) -> Select[tuple[ChildExecutionRecord]]:
+    return (
+        select(ChildExecutionRecord)
+        .where(
+            ChildExecutionRecord.child_thread_id == child_thread_id,
+            ChildExecutionRecord.selected_checkpoint_digest.is_not(None),
+        )
+        .order_by(ChildExecutionRecord.segment_index.desc())
+        .limit(1)
+    )
+
+
 def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadConfigurationRecord:
     return ThreadConfigurationRecord(
         thread_id=thread_id,
@@ -1326,7 +1485,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
@@ -1335,6 +1494,8 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         if record.agent_source_kind == "live"
         else BotAgentSource()
         if record.agent_source_kind == "bot"
+        else DynamicAgentSource(id=record.agent_source_id)
+        if record.agent_source_kind == "dynamic"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
         else MarkdownSubagentSource(id=record.agent_source_id)
@@ -1401,6 +1562,8 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         touched_at=record.touched_at,
         archived=record.archived,
         starred=record.starred,
+        unread=record.unread,
+        read_state_version=record.read_state_version,
         configuration=configuration,
         initial_state=ObjectRef(
             object_kind=ObjectKind.thread_initial_state,

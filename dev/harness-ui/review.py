@@ -8,27 +8,41 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import a13n_harness_ui.app as app_module
 import uvicorn
 import yaml
 from a13n_harness.content import project_input_content, request_input_content
+from a13n_harness.execution_identity import format_execution_header
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui import model_catalog
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition.reconstruction import AgentReconstructor
+from a13n_harness_ui.connector_models import ConnectorConfiguration
+from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.dictation import DictationResult
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from a13n_harness_ui.surfaces import NewThreadDefaults
+from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
 from a13n_harness_ui.webui import create_webui
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaThinkingPart, DeltaToolCall, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
 ANSWER = r"""The checkout flow has a small but important gap: a slow request can submit the same order twice.
+
+### Checkout status
+
+- **提交状态：**请求处理中时禁用提交按钮；
+- **重试策略：**沿用同一订单标识再次提交。
+
+**支付失败后应保留表单内容。**用户可以检查信息后重试，避免重复填写。
 
 ### What I found
 
@@ -94,7 +108,7 @@ f(x_1,\ldots,x_{12}) = x_1+x_2+x_3+x_4+x_5+x_6+x_7+x_8+x_9+x_{10}+x_{11}+x_{12}
 $$
 
 The changes are ready to review. I would keep the retry behavior explicit so a failed payment never looks like a successful order.
-"""
+"""  # noqa: RUF001 - Fullwidth punctuation exercises CJK emphasis boundaries.
 
 
 def seed_workspace(workspace: Path) -> None:
@@ -140,12 +154,35 @@ def seed_workspace(workspace: Path) -> None:
 def configuration(root: Path) -> Path:
     workspace = root / "workspace"
     seed_workspace(workspace)
+    for source, name, description in (
+        (root, "codex-delegate", "Hand off a focused coding task and review the result."),
+        (root, "design-review", "Review a screen for hierarchy, spacing, and interaction details."),
+        (root, "release-notes", "Turn merged changes into concise release notes."),
+        (workspace, "checkout-audit", "Review the checkout flow for duplicate submissions."),
+        (workspace, "test-plan", "Build a focused set of tests for a proposed change."),
+    ):
+        skill = source / ".agents/skills" / name / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_text(f"---\nname: {name}\ndescription: {description}\n---\n\n{description}\n")
     docs = {
         "a13n-harness-ui.yaml": {
             "schema_version": "1",
             "defaults": {"agent": "agent-review"},
+            "dictation": {"backend": "codex", "model": "model-review", "codex": {"group": "codex-review"}},
             "browser": {"mode": "disabled"},
+            "subagents": {
+                "dynamic": {"enabled": True, "allowed_models": ["model-review"], "default_model": "model-review"}
+            },
+            "tools": {"execution": {"mode": "auto", "foreground_wait_seconds": 0.1}},
             "memory": {"auto_organize": {"enabled": False}},
+        },
+        "subscription_groups/review.yaml": {
+            "schema_version": "1",
+            "kind": "subscription_group",
+            "id": "codex-review",
+            "name": "Codex · Design review",
+            "provider": "codex",
+            "accounts": [],
         },
         "models/review.yaml": {
             "schema_version": "1",
@@ -153,6 +190,7 @@ def configuration(root: Path) -> Path:
             "id": "model-review",
             "name": "GPT-5",
             "route": "openai-responses:gpt-5",
+            "model_characteristics": {"capabilities": ["audio_understanding"]},
             "model_configuration": {"base_url": "https://api.openai.com/v1"},
             "authentication": {"kind": "api_key", "env": "REVIEW_MODEL_KEY"},
         },
@@ -161,6 +199,7 @@ def configuration(root: Path) -> Path:
             "kind": "agent",
             "id": "agent-review",
             "name": "Builder",
+            "capabilities": [{"capability": "skills"}],
             "model": "model-review",
         },
         "mcp/tinyfish.yaml": {
@@ -224,16 +263,19 @@ def seed_memory(configuration_root: Path) -> None:
         target.write_text(text)
 
 
-async def model(messages, info):
+async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
     authored = [
         text
         for message in messages
         if isinstance(message, ModelRequest)
         for item in request_input_content(message)
-        if item.metadata.display
+        if item.metadata.display and not (item.metadata.model_extra or {}).get("a13n.steering-source")
         if (part := project_input_content(item)) and isinstance(text := part[0], str)
     ]
     separator = "："  # noqa: RUF001 -- Chinese review conversation.
+    if any("$codex-delegate" in text for text in authored):
+        yield "The checkout form keeps the first request pending. A second click should reuse the same order identifier."
+        return
     if any("店名" + separator in text for text in authored):
         if "慢速" in authored[-1]:
             yield "正在整理当前方案…\n\n"
@@ -246,6 +288,166 @@ async def model(messages, info):
         yield (
             "目前确定的方案是" + separator + "、".join(f"{label}「{value}」" for label, value in choices.items()) + "。"
         )
+        return
+    role = (info.instructions or "").partition("Fixture role: ")[2].split(".")[0]
+    if role:
+        prompt = role
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if "failed" in prompt:
+            yield "The migration check found an incompatible constraint."
+            raise UsageLimitExceeded("Scripted review failed: constraint mismatch in the migration plan.")
+        if "running" not in prompt:
+            yield "The focused check is complete. The existing idempotency key handles repeated requests safely."
+            return
+        if "message" in prompt and not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="send_parent_message",
+                    json_args=json.dumps(
+                        {
+                            "message": "The duplicate-submit guard is in place. I am checking the slow-response cases next."
+                        }
+                    ),
+                )
+            }
+            return
+        if not any(part.tool_name == "review_pause" for part in returns):
+            yield "Checking the checkout edge cases and collecting the results.\n\n"
+        yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+        return
+    if authored and authored[-1] == "Summarize the background review handoff.":
+        start = max(
+            index
+            for index, message in enumerate(messages)
+            if isinstance(message, ModelRequest)
+            and any(
+                item.metadata.display and (projected := project_input_content(item)) and projected[0] == authored[-1]
+                for item in request_input_content(message)
+            )
+        )
+        returns = [
+            part
+            for message in messages[start:]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not any(part.tool_name == "shell_exec" for part in returns):
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": "pnpm --filter atlas-storefront test checkout --reporter=dot"}),
+                )
+            }
+            return
+        if not any(part.tool_name == "review_pause" for part in returns):
+            yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+            return
+        yield "The focused checks passed. The two specialists and the watch command are still running; their records remain available in Background work."
+        return
+    if authored and "Review checkout reliability with the specialist team" in authored[0]:
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        spawns = [part for part in returns if part.tool_name == "spawn_subagent"]
+        if len(spawns) < 24:
+            index = len(spawns)
+            name = (
+                [
+                    "Checkout safety reviewer",
+                    "Release checklist",
+                    "Accessibility and keyboard navigation specialist",
+                    "Slow-response and retry investigator",
+                ][index]
+                if index < 4
+                else "Migration compatibility auditor"
+                if index == 23
+                else f"Completed check {index - 3:02d}"
+            )
+            state = (
+                "running-message"
+                if index == 2
+                else "running-steer"
+                if index == 3
+                else "failed"
+                if index == 23
+                else "succeeded"
+            )
+            yield {
+                0: DeltaToolCall(
+                    name="spawn_subagent",
+                    json_args=json.dumps(
+                        {
+                            "name": name,
+                            "thinking": "high",
+                            "instructions": f"Review only the assigned fixture task. Fixture role: {state}.",
+                            "prompt": (
+                                [
+                                    "Check that repeated clicks reuse the order identifier and create only one order.",
+                                    "Summarize the release checklist for checkout retry behavior.",
+                                    "Review keyboard-only checkout, field focus after errors, and screen-reader feedback.",
+                                    "Test delayed provider acknowledgements without losing the customer's address or cart.",
+                                ][index]
+                                if index < 4
+                                else "Audit the migration constraints that protect order idempotency."
+                                if index == 23
+                                else f"Verify checkout edge case {index - 3}: preserve the cart and prevent duplicate requests."
+                            ),
+                        }
+                    ),
+                )
+            }
+            return
+        if not any(part.tool_name == "steer_subagent" for part in returns):
+            receipt = spawns[3].content
+            if isinstance(receipt, str):
+                receipt = json.loads(receipt)
+            if not isinstance(receipt, dict):
+                raise RuntimeError("The scripted child did not return an execution receipt")
+            yield {
+                0: DeltaToolCall(
+                    name="steer_subagent",
+                    json_args=json.dumps(
+                        {
+                            "execution_id": receipt["execution_id"],
+                            "message": "Prioritize slow provider acknowledgement and preserve the original order identifier.",
+                        }
+                    ),
+                )
+            }
+            return
+        shells = [part for part in returns if part.tool_name == "shell_exec"]
+        if not shells:
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps(
+                        {
+                            "command": "pnpm --filter atlas-storefront test checkout --watch --reporter=verbose --include=src/components/checkout/duplicate-submit-and-retry.spec.ts"
+                        }
+                    ),
+                )
+            }
+            return
+        reports = [part for part in returns if part.tool_name == "review_report"]
+        if len(reports) < 2:
+            yield {
+                0: DeltaToolCall(
+                    name="review_report", json_args=json.dumps({"name": "expired" if reports else "truncated"})
+                )
+            }
+            return
+        yield "The checkout review is underway. Two specialists are still checking edge cases, and the watch command is running in the background. Open Background work to inspect their records."
         return
     last_input = max(
         (
@@ -367,6 +569,7 @@ async def model(messages, info):
 
 async def serve(root: Path, port: int):
     path = configuration(root)
+    fixture_runtime = {}
     original = AgentReconstructor.reconstruct
 
     def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
@@ -378,9 +581,22 @@ async def serve(root: Path, port: int):
             await asyncio.sleep(0.25)
             return "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
 
-        @tools.tool_plain
+        @tools.tool_plain(metadata={"a13n.tool-execution": "owned"})
         async def shell_exec(command: str) -> dict[str, object]:
             """Return scripted check results; never execute a shell command."""
+            if "--watch" in command:
+
+                class ScriptedShell:
+                    async def call(self, request):
+                        assert request == {"operation": "wait", "timeout_seconds": 0}
+                        return {
+                            "stdout": "Watching checkout reliability tests…\n✓ duplicate submission blocked\n✓ form input retained\nWaiting for file changes.\n",
+                            "stderr": "",
+                            "status": {"phase": "running"},
+                        }
+
+                fixture_runtime["runtime"].attach_resource(ScriptedShell())
+                await asyncio.sleep(3600)
             await asyncio.sleep(1.2)
             if "--offline" in command:
                 return {
@@ -393,22 +609,68 @@ async def serve(root: Path, port: int):
                 "exit_code": 0,
             }
 
+        @tools.tool_plain
+        async def review_pause() -> str:
+            """Wait briefly for the next scripted review batch."""
+            await asyncio.sleep(15)
+            return "Next batch ready."
+
+        @tools.tool_plain(metadata={"a13n.tool-execution": "owned"})
+        async def review_report(name: str) -> str:
+            """Produce a scripted retained report."""
+            await asyncio.sleep(1)
+            return (
+                ("Checkout regression report: all retained cases were inspected.\n" * 1800)
+                if name == "truncated"
+                else "This report's retention window has expired."
+            )
+
         return original(
             self,
             composition,
-            root_capabilities=(*root_capabilities, Capability(id="design-review", toolsets=(tools,))),
+            root_capabilities=(
+                *root_capabilities,
+                Capability(
+                    id="design-review",
+                    toolsets=(
+                        CodeActPolicyToolset(
+                            wrapped=tools,
+                            policy=CodeActToolPolicy(
+                                tools={"view": True, "shell_exec": True, "review_pause": True, "review_report": True}
+                            ),
+                        ),
+                    ),
+                ),
+            ),
             **kwargs,
         )
 
-    async def resolve(self, context, model_id):
-        return FunctionModel(stream_function=model)
+    def dictation(messages, info):
+        return ModelResponse(
+            parts=[
+                TextPart(
+                    "Please review how the checkout form handles a second click while the first request is pending. "
+                    "Keep the user's input if the request fails, and explain when it is safe to retry."
+                )
+            ]
+        )
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(function=dictation, stream_function=model)
 
     async def directory():
         return model_catalog.bundled_models()
 
     AgentReconstructor.reconstruct = reconstruct
-    HarnessUiModelResolver.__call__ = resolve
+    HarnessUiModelResolver.resolve = resolve
     model_catalog.fetch_directory = directory
+
+    async def subscription_dictation(self, request, source):
+        # Exercise real recording and one final insertion without provider I/O.
+        await asyncio.sleep(3)
+        return DictationResult(text="Add a regression test for dictation.")
+
+    app_module.HarnessUiApp._transcribe_subscription = subscription_dictation
     settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
 
     @asynccontextmanager
@@ -416,9 +678,81 @@ async def serve(root: Path, port: int):
         async with open_harness_ui_app(
             settings, configuration_path=path, host_mode="webui", share_computer=True
         ) as app:
+            fixture_runtime["runtime"] = app._tool_executions.runtime
             status = await app.status()
             if status.candidate_error_message:
                 raise RuntimeError(status.candidate_error_message)
+            background = await app.create_thread(
+                title="Background work · Checkout reliability", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            receipt = await app.submit_thread(
+                thread_id=background.thread_id,
+                prompt="Review checkout reliability with the specialist team and keep the long-running checks in the background.",
+            )
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=30)
+            children = await app.query_child_executions(parent_thread_id=background.thread_id, limit=100)
+            if len(children.executions) != 24:
+                raise RuntimeError("The background fixture must retain all 24 child conversations")
+            guided = next(
+                child for child in children.executions if child.subagent_name == "Slow-response and retry investigator"
+            )
+            await app.steer_child_execution(
+                parent_thread_id=background.thread_id,
+                execution_id=guided.execution_id,
+                message="Please prioritize keyboard-only retry flows and keep the form values intact.",
+            )
+            await asyncio.sleep(2)
+            from datetime import UTC, datetime, timedelta
+
+            from a13n_harness_ui.storage.database import transaction
+            from a13n_harness_ui.storage.models import ToolExecutionHeadRecord
+            from sqlalchemy import update
+
+            records = await app.tool_executions(background.thread_id, limit=100)
+            reports = [record for record in records if record.tool_name == "review_report"]
+            if reports:
+                async with transaction(app._store.tool_executions.sessions) as session:
+                    await session.execute(
+                        update(ToolExecutionHeadRecord)
+                        .where(ToolExecutionHeadRecord.execution_id == reports[0].execution_id)
+                        .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+                    )
+            packet = await app.submit_thread(
+                thread_id=background.thread_id, prompt="Summarize the background review handoff."
+            )
+            await asyncio.sleep(0.4)
+            await app._deliver_subagent_input(
+                background.thread_id,
+                format_execution_header("Subagent message", guided.subagent_name, guided.execution_id, "running")
+                + "\nThe slow-response checks are still running; no customer input has been lost.",
+                (guided.execution_id,),
+            )
+            completed = next(
+                child for child in children.executions if child.subagent_name == "Checkout safety reviewer"
+            )
+            await app._deliver_subagent_input(
+                background.thread_id,
+                format_execution_header("Subagent result", completed.subagent_name, completed.execution_id, "succeeded")
+                + "\n"
+                + "The duplicate-submit check passed; the order identifier is reused safely.\n" * 180,
+                (completed.execution_id,),
+            )
+            await app.wait_root_operation(packet.receipt_id, timeout_seconds=30)
+            print(f"  Background work: /threads/{background.thread_id}", flush=True)
+            picker = await app.create_thread(
+                title="Skills playground", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            catalog = await app.skill_catalog(thread_id=picker.thread_id)
+            skill = next(item for item in catalog.items if item.name == "codex-delegate")
+            receipt = await app.submit_thread(
+                thread_id=picker.thread_id,
+                prompt="Use $codex-delegate to review the checkout flow.",
+                skill_references=(
+                    SkillReference(catalog_id=catalog.catalog_id, item_id=skill.item_id, name=skill.name),
+                ),
+            )
+            await app.wait_root_operation(receipt.receipt_id)
+            print(f"  Skills playground: /threads/{picker.thread_id}", flush=True)
             demo = await app.create_thread(
                 title="白昼咖啡 · 品牌方案", defaults=NewThreadDefaults(project_id="project-research")
             )
@@ -448,6 +782,13 @@ async def serve(root: Path, port: int):
                 ),
                 ("A quick answer", "project-research", "[answer] Summarize the retry rule."),
                 ("A fresh idea", "project-research", None),
+                (
+                    "排查长标题显示问题 / Investigate the latest startup failure: "
+                    '{"version": "0.34.3", "platform": "Darwin", "phase": "root_operation", '
+                    '"diagnostics": "Keep the full title available without filling the toolbar"}',
+                    "project-atlas",
+                    None,
+                ),
             ):
                 thread = await app.create_thread(title=title, defaults=NewThreadDefaults(project_id=project))
                 if prompt:
@@ -464,6 +805,51 @@ async def serve(root: Path, port: int):
                     if operation.status != "completed":
                         raise RuntimeError("The follow-up fixture did not finish")
                 print(f"  {title}: /threads/{thread.thread_id}", flush=True)
+            await app.configure_connector(
+                ConnectorConfiguration(
+                    connector_id="connector-github-review",
+                    kind="github",
+                    name="GitHub · Personal",
+                    group_name="github-personal",
+                ),
+                expected_version=None,
+            )
+            # Fictional saved account for list/management review. Seeding and
+            # saving never contact GitHub; do not test this illustrative token.
+            from a13n_harness_ui.connectors.models import SetupCommand
+
+            await app.configure_connector(
+                ConnectorConfiguration(
+                    connector_id="connector-github-work", kind="github", name="GitHub · Work", group_name="github-work"
+                ),
+                expected_version=None,
+            )
+            setup = await app.begin_connector_setup("connector-github-work")
+            await app.act_connector_setup(
+                setup.session_id,
+                SetupCommand(
+                    operation_id="fixture-save",
+                    version=setup.version,
+                    action="save",
+                    values={"token": "fictional-review-token"},
+                ),
+            )
+            connection_chat = await app.create_thread(
+                title="Connect a GitHub account", defaults=NewThreadDefaults(project_id="project-atlas")
+            )
+            from datetime import UTC, datetime
+
+            await app._store.connectors.offer(
+                SetupOffer(
+                    offer_id="offer-github-review",
+                    thread_id=connection_chat.thread_id,
+                    connector_key="github",
+                    connector_id="connector-github-review",
+                    text="Connect GitHub to inspect repository issues with your own permissions.",
+                    created_at=datetime.now(UTC),
+                )
+            )
+            print(f"  Connector setup: /threads/{connection_chat.thread_id}", flush=True)
             question = await app.create_thread(
                 title="Choose the review scope", defaults=NewThreadDefaults(project_id="project-research")
             )

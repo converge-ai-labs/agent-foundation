@@ -41,7 +41,7 @@ from a13n_harness_ui.environment_bindings import (
 )
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.mcp_apps.origins import origin
-from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
+from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit, ObjectStoreSettings
 from a13n_harness_ui.subagents import BuiltinSubagentName
 
 MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
@@ -109,6 +109,7 @@ class BackgroundCompactionConfiguration(BackgroundCompactionPolicy, Configuratio
 
 
 class ProcessConfiguration(ConfigurationModel):
+    object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
     terminal_update_check: bool = True
@@ -173,10 +174,37 @@ class ToolsConfiguration(ConfigurationModel):
         return value
 
 
+class DynamicSubagentsConfiguration(ConfigurationModel):
+    enabled: bool = False
+    allowed_models: tuple[ResourceId, ...] = ()
+    default_model: ResourceId | None = None
+
+    @field_validator("allowed_models")
+    @classmethod
+    def _unique_models(cls, value: tuple[ResourceId, ...]) -> tuple[ResourceId, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("subagents.dynamic.allowed_models must contain unique configured Model IDs")
+        return value
+
+    @model_validator(mode="after")
+    def _default_is_allowed(self) -> Self:
+        if self.default_model is None:
+            if self.enabled:
+                raise ValueError(
+                    "Enabled dynamic subagents require subagents.dynamic.default_model "
+                    "and subagents.dynamic.allowed_models that include it"
+                )
+        elif self.default_model not in self.allowed_models:
+            raise ValueError("subagents.dynamic.default_model must be one of subagents.dynamic.allowed_models")
+        return self
+
+
 class SubagentsConfiguration(ConfigurationModel):
     """Named release-owned children automatically included in the root roster."""
 
     include: tuple[BuiltinSubagentName, ...] = ()
+    max_concurrent: int = Field(default=8, ge=1, strict=True)
+    dynamic: DynamicSubagentsConfiguration = Field(default_factory=DynamicSubagentsConfiguration)
 
     @field_validator("include")
     @classmethod
@@ -247,10 +275,14 @@ class McpAppsConfiguration(ConfigurationModel):
 
 
 class BotConfiguration(ConfigurationModel):
-    """Built-in Bot Model, optional instructions and Host scheduling policy."""
+    """Built-in Bot Agent/Model selections, instructions and Host scheduling policy."""
 
     enabled: bool = False
+    agent: ResourceId | None = None
     model: ResourceId | None = None
+    files_enabled: bool | None = None
+    shell_enabled: bool | None = None
+    computer_enabled: bool | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     heartbeat_enabled: bool = True
     interval_seconds: int = Field(default=3600, ge=60, le=86400)
@@ -273,6 +305,28 @@ class WebUiConfiguration(ConfigurationModel):
     @classmethod
     def _allowed_origins(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(value if value == "*" else origin(value) for value in values)
+
+
+DEFAULT_CODEX_DICTATION_MODEL = "gpt-6-luna"
+
+
+class CodexDictationConfiguration(ConfigurationModel):
+    group: ResourceId | None = None
+    account: str | None = Field(default=None, pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
+    model: str = Field(default=DEFAULT_CODEX_DICTATION_MODEL, pattern=r"^[^\s:]+$", max_length=480)
+
+    @model_validator(mode="after")
+    def _one_source(self) -> Self:
+        if self.group and self.account:
+            raise ValueError("Codex dictation selects either an account or a subscription group")
+        return self
+
+
+class DictationConfiguration(ConfigurationModel):
+    backend: Literal["model", "codex"] = "model"
+    model: ResourceId | None = None
+    codex: CodexDictationConfiguration = Field(default_factory=CodexDictationConfiguration)
+    context_words: int = Field(default=2000, ge=0, le=10000)
 
 
 class MediaUnderstandingConfiguration(ConfigurationModel):
@@ -410,6 +464,10 @@ class HarnessUiDocument(ConfigurationModel):
     mcp: McpConfiguration = Field(
         default_factory=McpConfiguration,
         exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
+    )
+    chat_title_model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    dictation: DictationConfiguration = Field(
+        default_factory=DictationConfiguration, exclude_if=lambda v: v == DictationConfiguration()
     )
     media_understanding: MediaUnderstandingConfiguration = Field(
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
@@ -649,7 +707,15 @@ class McpFileValueSource(StrictModel):
     path: tuple[str, ...] = Field(min_length=1, max_length=8)
 
 
-type McpValueSource = EnvironmentVariableSource | McpFileValueSource
+class McpPrivateValueSource(StrictModel):
+    """Opaque Connector credential locator, resolved only at the transport boundary."""
+
+    connector_id: str = Field(min_length=1, max_length=128)
+    configuration_version: int = Field(ge=1)
+    key: str = Field(min_length=1, max_length=256)
+
+
+type McpValueSource = EnvironmentVariableSource | McpFileValueSource | McpPrivateValueSource
 
 
 class McpCommandTransport(StrictModel):
@@ -672,10 +738,16 @@ class McpCommandTransport(StrictModel):
         return value
 
 
+class McpOAuthConfiguration(StrictModel):
+    registration: Literal["dcr"] = "dcr"
+    scope: str | None = Field(default=None, max_length=4096)
+
+
 class McpRemoteTransport(StrictModel):
     url: str = Field(min_length=1, max_length=2048)
     init_timeout_seconds: float | None = Field(default=None, gt=0, exclude_if=lambda value: value is None)
     headers: dict[str, McpValueSource] = Field(default_factory=dict)
+    oauth: McpOAuthConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _safe_remote(self) -> Self:
@@ -686,7 +758,9 @@ class McpRemoteTransport(StrictModel):
         if query_names & _SECRET_FIELD_NAMES:
             raise ValueError("MCP URL query parameters must not contain credentials")
         loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
-        if parsed.scheme == "http" and (not loopback or self.headers):
+        if self.oauth is not None and any(name.lower() == "authorization" for name in self.headers):
+            raise ValueError("managed MCP OAuth cannot be combined with an Authorization header")
+        if parsed.scheme == "http" and (not loopback or self.headers or self.oauth is not None):
             raise ValueError("plain HTTP MCP is limited to header-free loopback URLs")
         return self
 
@@ -700,6 +774,14 @@ class McpServerResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    object_ref_tools: dict[McpToolName, bool] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Object Reference Transport rules by original tool name; '*' matches any characters. "
+        "Exact names win, then more literal characters, with false winning equally specific patterns. "
+        "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+    )
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
@@ -958,6 +1040,16 @@ class SourceDocument(ConfigurationModel):
 class LoadedHarnessUiConfiguration(ConfigurationModel):
     """One complete graph-valid configuration-tree generation."""
 
+    def subscription_group_providers(self) -> frozenset[str]:
+        providers = frozenset(
+            model.authentication.kind.removesuffix("_subscription")
+            for model in self.models.values()
+            if model.authentication.kind in {"codex_subscription", "grok_subscription"}
+        )
+        if self.document.dictation.backend == "codex" and not self.document.dictation.codex.account:
+            providers |= {"codex"}
+        return providers
+
     document: HarnessUiDocument
     root_digest: SourceDigest
     source_digest: SourceDigest
@@ -980,6 +1072,11 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        for model_id in self.document.subagents.dynamic.allowed_models:
+            if model_id not in self.models:
+                raise _MissingModelReferenceError(
+                    path=self.sources[0].relative_path, field="subagents.dynamic.allowed_models", model_id=model_id
+                )
         for model in self.models.values():
             auth = model.authentication
             if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
@@ -994,6 +1091,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
+        _require_reference(self.document.webui.bot.agent, self.agents, "webui.bot.agent")
         _require_reference(self.document.webui.bot.model, self.models, "webui.bot.model")
         live = self.document.live
         if live is not None and live.model is not None:
@@ -1007,6 +1105,16 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             _require_reference(model_id, self.models, field)
             if kind not in self.models[model_id].media_capabilities():
                 raise ValueError(f"{field} requires a Model declaring {kind}_understanding: {model_id}")
+        _require_reference(self.document.chat_title_model, self.models, "chat_title_model")
+        dictation = self.document.dictation
+        if dictation.model:
+            _require_reference(dictation.model, self.models, "dictation.model")
+            if dictation.backend == "model" and "audio" not in self.models[dictation.model].media_capabilities():
+                raise ValueError("dictation.model requires a Model declaring audio_understanding")
+        if dictation.codex.group:
+            _require_reference(dictation.codex.group, self.subscription_groups, "dictation.codex.group")
+            if self.subscription_groups[dictation.codex.group].provider != "codex":
+                raise ValueError("dictation.codex.group requires a Codex subscription group")
         sidekick = self.document.webui.sidekick
         _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
         _require_reference(sidekick.model, self.models, "webui.sidekick.model")
@@ -1107,11 +1215,16 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         return self.subagents[resource_id]
 
     @property
+    def bot_agent_id(self) -> ResourceId | None:
+        """Resolve Bot's execution-policy base within this accepted generation."""
+        return self.document.webui.bot.agent or self.document.defaults.agent
+
+    @property
     def bot_model_id(self) -> ResourceId | None:
-        """Use Bot's Model selection, otherwise the global default Agent's Model only."""
+        """Use Bot's Model override, otherwise the selected Agent's Model."""
         if self.document.webui.bot.model is not None:
             return self.document.webui.bot.model
-        agent_id = self.document.defaults.agent
+        agent_id = self.bot_agent_id
         return None if agent_id is None else self.agents[agent_id].model
 
     @property

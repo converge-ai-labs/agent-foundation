@@ -67,6 +67,18 @@ def no_automatic_host_browser(request: pytest.FixtureRequest, monkeypatch: pytes
     )
 
 
+@pytest.fixture(autouse=True)
+def no_automatic_bot_introduction(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Startup scenarios use scripted Models; ordinary App tests control their own first input."""
+    if request.node.path.stem == "test_bot_onboarding":
+        return
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui.bot import BotController
+
+    monkeypatch.setattr(BotController, "introduce_workspace", AsyncMock())
+
+
 @pytest.fixture(scope="session")
 def migrated_database_template(tmp_path_factory: pytest.TempPathFactory) -> bytes:
     """Migrate one empty database per worker; snapshots contain no application data."""

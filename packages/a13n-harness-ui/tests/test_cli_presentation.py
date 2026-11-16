@@ -112,7 +112,8 @@ def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> N
     ("mode", "child", "visible"),
     [("concise", False, True), ("detailed", False, True), ("concise", True, False), ("detailed", True, True)],
 )
-def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible: bool) -> None:
+@pytest.mark.parametrize("reason", [None, "output_token_limit"])
+def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible: bool, reason: str | None) -> None:
     renderer = StreamRenderer(Status(mode=mode))
     renderer.ingest(
         "CUSTOM",
@@ -126,6 +127,7 @@ def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible:
                         "attempt": 2,
                         "max_attempts": 5,
                         "delay_seconds": 0.5,
+                        **({"reason": reason} if reason else {}),
                     },
                 }
             },
@@ -135,7 +137,8 @@ def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible:
         execution_id="reviewer" if child else None,
     )
     text = "".join(block.source for block in renderer.transcript.blocks.values())
-    assert ("Retrying model request" in text) is visible
+    notice = "Output token limit reached; continuing" if reason else "Retrying model request"
+    assert (notice in text) is visible
     assert ("reviewer" in text) is (child and visible)
     assert "delay_seconds" not in text
     assert "max_attempts" not in text

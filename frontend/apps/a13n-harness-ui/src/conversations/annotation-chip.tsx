@@ -4,6 +4,7 @@ import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { useTranslation } from "../i18n";
 import { AnnotationContext } from "./annotation-context";
 import styles from "./reply-annotations.module.css";
+import chipRemove from "./chip-remove.module.css";
 
 export function AnnotationChip() {
   const ctx = useContext(AnnotationContext);
@@ -22,17 +23,31 @@ export function AnnotationChip() {
           setOpen(next);
         }}
       >
-        <PopoverTrigger
-          render={<Button variant="outline" size="xs" />}
-          ref={trigger}
-          openOnHover
-          delay={120}
-          closeDelay={220}
-          className={styles.chip}
-        >
-          <ChatTeardropText aria-hidden />
-          {t("Annotation count", { count: notes.length })}
-        </PopoverTrigger>
+        <span className={styles.chipGroup}>
+          <PopoverTrigger
+            render={<Button variant="ghost" size="xs" />}
+            ref={trigger}
+            openOnHover
+            delay={120}
+            closeDelay={220}
+            className={styles.chip}
+          >
+            <ChatTeardropText aria-hidden />
+            {t("Annotation count", { count: notes.length })}
+          </PopoverTrigger>
+          <button
+            type="button"
+            className={styles.clearChip}
+            title={t("Clear annotations")}
+            aria-label={t("Clear annotations")}
+            onClick={() => {
+              setOpen(false);
+              ctx.clear();
+            }}
+          >
+            <span className={chipRemove.face} aria-hidden />
+          </button>
+        </span>
         <PopoverPopup
           side="top"
           align="start"

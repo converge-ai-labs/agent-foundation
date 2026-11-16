@@ -224,3 +224,39 @@ it("remeasures font changes without replacing source state, saving or losing und
   expect(view.state.doc.toString()).toBe("hello");
   localStorage.clear();
 });
+
+it("keeps Find inside the file editor and refocuses its existing search field", () => {
+  const fallback = vi.fn();
+  window.addEventListener("keydown", fallback);
+  const change = vi.fn();
+  try {
+    render(
+      <SourceEditor
+        value="first match\nsecond match\n"
+        onChange={change}
+        filename="example.txt"
+        label="File source"
+      />,
+    );
+    const source = screen.getByRole("textbox", { name: "File source" });
+    source.focus();
+    expect(fireEvent.keyDown(source, { key: "f", ctrlKey: true })).toBe(false);
+    const field = screen.getByRole("textbox", {
+      name: "Find",
+    }) as HTMLInputElement;
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: "match" } });
+    fireEvent.keyDown(field, { key: "f", ctrlKey: true });
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toBe("match");
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe(5);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Find" })).toBeNull();
+    expect(document.activeElement).toBe(source);
+    expect(change).not.toHaveBeenCalled();
+    expect(fallback).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener("keydown", fallback);
+  }
+});

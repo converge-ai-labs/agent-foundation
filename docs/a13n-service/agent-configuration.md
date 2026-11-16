@@ -142,3 +142,28 @@ Dynamic children inherit the parent Run's request limit, if set, as a per-Run ca
 Multiple instances can use the same plugin. Renaming or removing one updates tool-discovery references. Presets are read-only. If a plugin becomes unavailable, its saved JSON stays visible; restore the plugin or remove the instance before saving.
 
 Administrators install packages and configure `plugins.keys` consistently on Control and workers. The Control catalog at `GET /plugins` lists enabled plugins; worker installation must match it.
+
+## Reuse media between tools
+
+Enable the private object library in the agent revision:
+
+```json
+{"toolsets": {"object_store": {"enabled": true}}}
+```
+
+A screenshot or other native MCP media result keeps its original media and gains an `a13n-object://obj_...` reference. The agent can pass that exact string to an opted-in base64 consumer. Runtime supplies the original bytes without asking the model to generate base64. The object library belongs to the thread; automatically captured media does not become a workspace Asset. Forks and independent child threads do not inherit another thread's library.
+
+To opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation, select tools through the MCP connection's `config.object_ref_tools` rules:
+
+```json
+{
+  "url": "https://example.com/mcp",
+  "object_ref_tools": {"*": false, "*_upload": true, "send_image": true, "text_upload": false}
+}
+```
+
+Rules match original, case-sensitive server tool names. `*` matches zero or more characters anywhere; other characters are literal. Exact names win, then patterns with more literal characters; equally specific patterns prefer false, independently of entry order. `"*"` sets the default; unmatched tools retain native declarations, defaulting to unsupported. These are the same [selection rules used by native toolsets](../a13n-harness/capabilities.md#object-reference-transport) and Harness UI. Use this opt-in only for string arguments accepting base64. Connection permissions and approvals still apply. Approval requests and history keep references; the actual target resolves them after permission checks. Expiry during an approval wait produces an unavailable-reference error, not automatic producer replay.
+
+The tools `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete` import authorized Environment files and manage the private catalog. `asset_store(ref=...)` promotes an available object without changing its ID. Stored objects survive temporary expiry and LRU eviction until explicitly deleted.
+
+Operators configure temporary retention with `A13N_OBJECT_STORE__TEMPORARY_TTL_SECONDS` (86400), `A13N_OBJECT_STORE__MAX_TEMPORARY_OBJECTS` (32) and `A13N_OBJECT_STORE__MAX_TEMPORARY_BYTES` (67108864), per thread. Reads refresh idle TTL; list/info do not. Background sweeps reclaim expired objects even in inactive threads. The existing object backend per-object byte limit also applies. The toolset's `config.capture_media` and `config.max_object_bytes` configure Harness capture/import behavior independently of Host retention. See [Object Store](../a13n-harness/capabilities.md#reuse-original-media-with-object-store) for the shared transport contract.

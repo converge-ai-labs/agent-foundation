@@ -705,3 +705,35 @@ def test_recorded_execution_timing_excludes_human_pauses_and_preserves_part_time
     )
     assert display_turns(legacy)[0].duration_ms is None
     assert all(part.duration_ms is None for entry in display_entries(legacy) for part in entry.parts)
+
+
+def test_saved_tool_parts_preserve_native_display_metadata() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_stream_protocol.display import Item
+
+    at = datetime.now(UTC)
+    history = DisplayHistory(
+        items=(
+            Item(
+                id="hidden-tool",
+                ordinal=1,
+                first_stream_id="0-1",
+                last_stream_id="0-1",
+                kind="tool_call",
+                state="completed",
+                started_at=at,
+                ended_at=at,
+                content={
+                    "toolCallName": "inspect",
+                    "toolCallId": "call",
+                    "arguments": "{}",
+                    "value": "private result",
+                    "metadata": {"display": False},
+                },
+            ),
+        ),
+    )
+    parts = display_entries(history)[0].parts
+    assert [part.kind for part in parts] == ["tool_call", "tool_result"]
+    assert all(part.metadata.display is False for part in parts)

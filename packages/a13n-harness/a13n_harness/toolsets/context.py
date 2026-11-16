@@ -31,10 +31,10 @@ from a13n_harness.events import (
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from .events import HandoffSummaryEvent
 
-_HANDOFF_INSTRUCTION = tool_instruction("summarize")
+_HANDOFF_INSTRUCTION = tool_guidance("summarize")
 
 
 class HandoffToolset:
@@ -81,7 +81,7 @@ class HandoffToolset:
                 min_length=1,
                 description=(
                     "Narrative continuation summary preserving intent, outcomes, decisions, relevant past "
-                    "interactions, and next step without duplicating separately projected notes and tasks."
+                    "interactions, and next step without copying task lists or note bodies."
                 ),
             ),
         ],

@@ -37,34 +37,38 @@ pub(crate) mod budget;
 /// Exact platform inventory, separate from the canonical protocol inventory.
 /// Platform implementations extend this only alongside their native dispatcher.
 pub(crate) fn supports(method: &str) -> bool {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(feature = "desktop", target_os = "linux"))]
     {
         linux::METHODS.contains(&method)
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "desktop", target_os = "windows"))]
     {
         windows::METHODS.contains(&method)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(all(feature = "desktop", target_os = "macos"))]
     {
         macos::METHODS.contains(&method)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    #[cfg(not(any(
+        all(feature = "desktop", target_os = "linux"),
+        all(feature = "desktop", target_os = "windows"),
+        all(feature = "desktop", target_os = "macos")
+    )))]
     {
         let _ = method;
         false
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "desktop", target_os = "linux"))]
 #[path = "accessibility_linux.rs"]
 mod linux;
 
-#[cfg(target_os = "windows")]
+#[cfg(all(feature = "desktop", target_os = "windows"))]
 #[path = "accessibility_windows.rs"]
 mod windows;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 #[path = "accessibility_macos.rs"]
 mod macos;
 
@@ -485,19 +489,23 @@ trait Backend {
 }
 
 fn native_backend(epoch: &str) -> Result<Box<dyn Backend>, EIPError> {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(feature = "desktop", target_os = "linux"))]
     {
         linux::new(epoch)
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "desktop", target_os = "windows"))]
     {
         windows::new(epoch)
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(all(feature = "desktop", target_os = "macos"))]
     {
         macos::new(epoch)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    #[cfg(not(any(
+        all(feature = "desktop", target_os = "linux"),
+        all(feature = "desktop", target_os = "windows"),
+        all(feature = "desktop", target_os = "macos")
+    )))]
     {
         let _ = epoch;
         Err(error(

@@ -141,12 +141,15 @@ class SpritesManagement(SpritesReference, NativeManagement[SpritesEnvironmentCon
                 "",
             ]
         )
-        if self.config.execution == "envd_ws":
-            values = self.bootstrap_environment({})
+        values = self.bootstrap_environment({}, self.config.envd)
+        if values:
             lines = [
                 line
                 for line in script.splitlines()
-                if not line.startswith("export A13N_ENVD_HTTP_") and not line.startswith("export A13N_ENVD_TRANSPORT=")
+                if self.config.execution != "envd_ws"
+                or (
+                    not line.startswith("export A13N_ENVD_HTTP_") and not line.startswith("export A13N_ENVD_TRANSPORT=")
+                )
             ]
             lines[2:2] = ["export " + key + "=" + shlex.quote(value) for key, value in values.items()]
             script = "\n".join(lines)

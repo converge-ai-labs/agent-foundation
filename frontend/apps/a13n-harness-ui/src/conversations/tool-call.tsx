@@ -1,3 +1,5 @@
+import { useBackground } from "./background-context";
+import { BackgroundLink, useBackgroundHandoff } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
@@ -8,6 +10,8 @@ import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
   describeTool,
+  toolLabel,
+  toolSummary,
   questionReceipt,
   activityKind,
   activitySummary,
@@ -25,21 +29,6 @@ import { RetainedImagePreview } from "./image-preview";
 import { copyText } from "../platform";
 import { DebugData, DebugId } from "../shell/debug";
 import { ToolWorkingState } from "./tool-working-state";
-
-// Translate only labels produced by the presentation layer, never tool names or payloads.
-export function toolLabel(
-  info: ReturnType<typeof describeTool>,
-  t: (key: string, options?: Record<string, unknown>) => string,
-) {
-  return info.generatedLabel ? t(info.label) : info.label;
-}
-
-export function toolSummary(
-  info: ReturnType<typeof describeTool>,
-  t: (key: string) => string,
-) {
-  return info.generatedSummary ? t(info.summary) : info.summary;
-}
 
 export function toolPhase(
   phase: string,
@@ -384,6 +373,70 @@ function ToolData({ tool }: { tool: ToolView }) {
   );
 }
 
+export function ShellOutput({ tool }: { tool: ToolView }) {
+  const { t } = useTranslation();
+  const info = describeTool(tool);
+  const textResult = parsed(tool.result);
+  return (
+    <section className={styles.shellResult} aria-label={t("Command result")}>
+      {info.command && (
+        <CodeContent
+          title={t("Command")}
+          value={info.command}
+          language="bash"
+        />
+      )}
+      {!tool.resultParts &&
+        typeof textResult === "string" &&
+        textResult &&
+        !info.errorText && (
+          <CodeContent title={t("Output")} value={textResult} />
+        )}
+      {["stdout", "stderr"].map((name) => {
+        const stream = info.result[name];
+        const value =
+          typeof stream === "string"
+            ? stream
+            : record(stream)
+              ? stream.text
+              : undefined;
+        return typeof value === "string" && value ? (
+          <CodeContent key={name} title={name} value={value} />
+        ) : null;
+      })}
+      {(record(info.result.status) || info.exitCode !== undefined) && (
+        <small className={styles.processStatus}>
+          {[
+            record(info.result.status) &&
+            typeof info.result.status.phase === "string"
+              ? ((
+                  {
+                    running: t("Running"),
+                    exited: t("Exited"),
+                    signaled: t("Signaled"),
+                    timed_out: t("Timed out"),
+                    failed: t("Failed"),
+                    cancelled: t("Cancelled"),
+                  } as Record<string, string>
+                )[info.result.status.phase] ?? info.result.status.phase)
+              : "",
+            info.exitCode !== undefined
+              ? t("Exit {{code}}", { code: info.exitCode })
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" - ")}
+        </small>
+      )}
+      {info.outputIncomplete && (
+        <p role="status">
+          {t("Partial process output. Earlier or omitted bytes are not shown.")}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ToolDetails({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
@@ -481,69 +534,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             )}
           </section>
         )}
-      {info.shell && (
-        <section
-          className={styles.shellResult}
-          aria-label={t("Command result")}
-        >
-          {info.command && (
-            <CodeContent
-              title={t("Command")}
-              value={info.command}
-              language="bash"
-            />
-          )}
-          {!tool.resultParts &&
-            typeof textResult === "string" &&
-            textResult &&
-            !info.errorText && (
-              <CodeContent title={t("Output")} value={textResult} />
-            )}
-          {["stdout", "stderr"].map((name) => {
-            const stream = info.result[name];
-            const value =
-              typeof stream === "string"
-                ? stream
-                : record(stream)
-                  ? stream.text
-                  : undefined;
-            return typeof value === "string" && value ? (
-              <CodeContent key={name} title={name} value={value} />
-            ) : null;
-          })}
-          {(record(info.result.status) || info.exitCode !== undefined) && (
-            <small className={styles.processStatus}>
-              {[
-                record(info.result.status) &&
-                typeof info.result.status.phase === "string"
-                  ? ((
-                      {
-                        running: t("Running"),
-                        exited: t("Exited"),
-                        signaled: t("Signaled"),
-                        timed_out: t("Timed out"),
-                        failed: t("Failed"),
-                        cancelled: t("Cancelled"),
-                      } as Record<string, string>
-                    )[info.result.status.phase] ?? info.result.status.phase)
-                  : "",
-                info.exitCode !== undefined
-                  ? t("Exit {{code}}", { code: info.exitCode })
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" - ")}
-            </small>
-          )}
-          {info.outputIncomplete && (
-            <p role="status">
-              {t(
-                "Partial process output. Earlier or omitted bytes are not shown.",
-              )}
-            </p>
-          )}
-        </section>
-      )}
+      {info.shell && <ShellOutput tool={tool} />}
       {tool.name === "view" && typeof info.result.content === "string" && (
         <CodeContent
           title={t("Read content")}
@@ -585,6 +576,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
 function ToolOperation({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const detail = describeTool(tool);
+  const handoff = useBackgroundHandoff(tool);
   return (
     <section
       className={styles.operation}
@@ -601,9 +593,10 @@ function ToolOperation({ tool }: { tool: ToolView }) {
         <span className={styles.operationSummary} title={detail.summary}>
           {toolSummary(detail, t)}
         </span>
-        {detail.showPhase && (
+        {!handoff && detail.showPhase && (
           <small className={styles.phase}>{toolPhase(detail.phase, t)}</small>
         )}
+        {handoff}
         <ToolActions tool={tool} />
       </header>
       <ToolDetails tool={tool} />
@@ -783,6 +776,19 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
 export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const { t } = useTranslation();
   const info = describeTool(tool);
+  const bg = useBackground();
+  const handoff = useBackgroundHandoff(tool);
+  const child = tool.name === "spawn_subagent" &&
+    bg.threadId &&
+    typeof info.result.thread_id === "string" &&
+    typeof info.result.execution_id === "string" &&
+    typeof info.result.subagent_name === "string" && {
+      kind: "child" as const,
+      id: info.result.thread_id,
+      threadId: bg.threadId,
+      executionId: info.result.execution_id,
+      title: info.result.subagent_name,
+    };
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
@@ -797,13 +803,14 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
             <strong data-running-label={info.running || undefined}>
               {toolLabel(info, t)}
             </strong>{" "}
-            {info.summary && (
+            {!child && info.summary && (
               <span title={info.summary}>{toolSummary(info, t)}</span>
             )}
           </span>
         }
+        actions={child ? <BackgroundLink target={child} /> : handoff}
         summary={
-          info.showPhase ? (
+          !handoff && info.showPhase ? (
             <span className={styles.phase}>{toolPhase(info.phase, t)}</span>
           ) : undefined
         }
@@ -926,6 +933,9 @@ export const ToolActivity = memo(function ToolActivity({
 }) {
   const { t } = useTranslation();
   const kind = activityKind(tools[0]);
+  const handoff = useBackgroundHandoff(
+    kind && tools.length === 1 ? tools[0] : undefined,
+  );
   if (!kind)
     return (
       <>
@@ -959,8 +969,9 @@ export const ToolActivity = memo(function ToolActivity({
             {target && <span title={target}>{target}</span>}
           </span>
         }
+        actions={handoff}
         summary={
-          info.status ? (
+          !handoff && info.status && info.status !== "Moved to background" ? (
             <span className={styles.phase}>{activityText(info.status, t)}</span>
           ) : undefined
         }

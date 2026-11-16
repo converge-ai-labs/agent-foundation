@@ -55,8 +55,7 @@ export function ShareButton() {
   return (
     <Button
       variant="ghost"
-      size="sm"
-      className={styles.shareButton}
+      size="icon-sm"
       aria-label={t("Share")}
       title={t("Share")}
       onClick={() =>
@@ -66,7 +65,6 @@ export function ShareButton() {
       }
     >
       <ShareNetwork aria-hidden size={16} />
-      <span className={styles.shareLabel}>{t("Share")}</span>
     </Button>
   );
 }

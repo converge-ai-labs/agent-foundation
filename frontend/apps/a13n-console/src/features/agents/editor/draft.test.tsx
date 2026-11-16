@@ -474,9 +474,9 @@ it("toggles discovery while preserving proxy settings", () => {
   });
   act(() => draft.current.setConnections([]));
   const removed = buildDraftConfig(draft.current, undefined, asIs);
-  expect(
-    removed.ok && removed.config.tool_search?.groups?.knowledge.connections,
-  ).toEqual([]);
+  expect(removed.ok && removed.config.tool_search).toMatchObject({
+    groups: { knowledge: { connections: [] } },
+  });
   act(() =>
     draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
   );

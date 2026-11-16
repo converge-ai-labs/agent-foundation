@@ -8,6 +8,7 @@ import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { SettingsChoice, SettingsSection } from "../shell/settings";
 import { DraftContext } from "./drafts";
+import { McpAuthorization } from "./mcp-authorization";
 import styles from "./mcp-tools.module.css";
 
 type ToolDraft = { tools: string[] | null; digest: string };
@@ -106,6 +107,11 @@ export function McpTools({ serverId }: { serverId: string }) {
   );
   return (
     <div className={styles.editor}>
+      {settings.data?.oauth && (
+        <SettingsSection title={t("Authorization")}>
+          <McpAuthorization target={{ kind: "mcp", id: serverId }} />
+        </SettingsSection>
+      )}
       <SettingsSection title={t("Tool access")}>
         <ErrorNotice error={settings.error} />
         {settings.isPending ? (

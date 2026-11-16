@@ -41,12 +41,14 @@ function useBotSetup() {
   const source = applyEdits(root.data?.content ?? "");
   const document = readDocument(source)?.toJS();
   const agent = selectors.data?.agents.find(
-    (agent) => agent.agent_id === document?.defaults?.agent,
+    (agent) =>
+      agent.agent_id ===
+      (document?.webui?.bot?.agent ?? document?.defaults?.agent),
   );
   const modelId = document?.webui?.bot?.model ?? agent?.model_id;
-  const canEnable = selectors.data?.models?.some(
-    (model) => model.model_id === modelId,
-  );
+  const canEnable =
+    (!document?.webui?.bot?.agent || !!agent) &&
+    selectors.data?.models?.some((model) => model.model_id === modelId);
   const heartbeat = document?.webui?.bot?.heartbeat_enabled !== false;
   const enable = useMutation({
     retry: false,
@@ -195,10 +197,10 @@ export function BotSetup() {
         <p>
           {heartbeat
             ? t(
-                "Turning on saves these settings without starting a run. The first Heartbeat is scheduled automatically; you can also message Bot anytime.",
+                "Turning on sends one visible first message to introduce your workspace using the selected model. Heartbeat checks follow the schedule; you can chat anytime.",
               )
             : t(
-                "Turning on saves these settings without starting a run. Heartbeat is off; you can message Bot anytime.",
+                "Turning on sends one visible first message to introduce your workspace using the selected model. Heartbeat is off; you can chat anytime.",
               )}
         </p>
         {uncertain ? (

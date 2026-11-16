@@ -63,7 +63,7 @@ Info and wait query current Host authority. Steering and cancellation return Hos
 
 ## Observation and Wake
 
-The Host operator owns canonical child status, bounded closed activity, and completion observation. It records the ordered public items from each child `HarnessRunStream`; Harness imports no AG-UI or Host display type. It decides what to retain, how to compact it, and whether completion updates a product, enqueues input to an active parent Run, or starts a later Run for the parent Thread. Standard async views contain no raw child output field; final answer text appears as closed activity.
+The Host operator owns canonical child status, bounded closed activity, and completion observation. It records the ordered public items from each child `HarnessRunStream`; Harness imports no AG-UI or Host display type. It decides what to retain and how to compact it, implements automatic [final-result delivery](11-delegation-and-subagents.md#design-position), and owns whether delivery enqueues input to an active parent Run or starts an eligible later Run for the parent Thread. Explicit child messages use the same parent input boundary. Standard async views contain no raw child output field; final answer text appears as closed activity.
 
 Harness async tools only query and validate bounded operator projections. Parent `HarnessState` contains no async execution mirror, completion receipt, observer, callback, wake fact, or delivery acknowledgement. Completion after parent closure never mutates an already exported continuation.
 

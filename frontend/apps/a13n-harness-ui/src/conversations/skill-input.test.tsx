@@ -36,7 +36,7 @@ it("renders identical preview and historical references while copying only autho
     expect(
       view.container.querySelectorAll('[data-skill="review"]'),
     ).toHaveLength(2);
-    expect(view.container.textContent).not.toContain("Read Skills");
+    expect(view.container.textContent).toBe("中文😀 Review $unknown Review");
     expect(inputCopyText(parts)).toBe(authored);
     view.unmount();
   }

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import os
 import shutil
 import subprocess
@@ -13,7 +12,7 @@ from pathlib import Path
 import pytest
 
 INSTALLER = Path(__file__).parents[1] / "install-a13n-envd.sh"
-pytestmark = pytest.mark.skipif(os.name == "nt" or shutil.which("jq") is None, reason="POSIX shell and jq required")
+pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX shell required")
 BINARY = b"#!/bin/sh\nprintf 'a13n-envd 0.0.6\\n'\n"
 
 
@@ -41,7 +40,7 @@ def installer(tmp_path: Path):
     )
     curl = f"""#!{sys.executable}
 import os, pathlib, shutil, sys
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, unquote
 args = sys.argv[1:]
 url = next(a for a in args if a.startswith('https://'))
 root = pathlib.Path(os.environ['FIXTURES'])
@@ -49,9 +48,8 @@ with (root / 'requests').open('a') as log:
     log.write(url + '\\n')
 parsed = urlparse(url)
 if parsed.hostname == 'api.github.com':
-    source = root / ('page-' + parse_qs(parsed.query)['page'][0] + '.json')
-else:
-    source = root / unquote(parsed.path).rsplit('/', 1)[-1]
+    raise SystemExit('Unexpected GitHub API request')
+source = root / unquote(parsed.path).rsplit('/', 1)[-1]
 shutil.copyfile(source, args[args.index('-o') + 1])
 """
     for name, content in {
@@ -84,7 +82,7 @@ def release(
     bad: str = "",
     variant: str = "default",
 ) -> Path:
-    suffix = "-vm" if variant == "vm" else ""
+    suffix = "" if variant == "default" else f"-{variant}"
     archive = fixtures / f"a13n-envd-{version}-{target}{suffix}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         names = ["a13n-envd", "LICENSE"]
@@ -112,19 +110,37 @@ def release(
 
 
 @pytest.mark.parametrize("downloader", ["curl", "wget"])
-@pytest.mark.parametrize("variant", ["default", "vm"])
-def test_pinned_install_without_python_jq_or_other_downloader(installer, downloader, variant):
+@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
+@pytest.mark.parametrize("pinned", [False, True])
+def test_install_without_python_jq_or_other_downloader(installer, downloader, variant, pinned):
     run, fixtures, destination, _, commands = installer
     release(fixtures, variant=variant)
+    (fixtures / "stable.txt").write_text("0.0.6\n")
     remote = (commands / "curl").read_text()
     if downloader == "wget":
         (commands / "curl").unlink()
         remote = remote.replace("args.index('-o')", "args.index('-O')")
         (commands / "wget").write_text(remote)
         (commands / "wget").chmod(0o755)
-    for name in ("sh", "tar", "gzip", "sha256sum", "awk", "grep", "mkdir", "mktemp", "chmod", "mv", "rm", "wc", "tr"):
+    for name in (
+        "sh",
+        "cat",
+        "tar",
+        "gzip",
+        "sha256sum",
+        "awk",
+        "grep",
+        "mkdir",
+        "mktemp",
+        "chmod",
+        "mv",
+        "rm",
+        "wc",
+        "tr",
+    ):
         (commands / name).symlink_to(shutil.which(name))
-    result = run("--version", "0.0.6", "--variant", variant, PATH=str(commands))
+    args = ("--version", "0.0.6") if pinned else ()
+    result = run(*args, "--variant", variant, PATH=str(commands))
     assert result.returncode == 0, result.stderr
     assert (destination / "a13n-envd").read_bytes() == BINARY
     assert not (commands / "python3").exists()
@@ -174,15 +190,16 @@ def test_install_and_replace_without_path_mutation(installer, system, machine, t
     assert "release/a13n-envd-v0.0.6/" in (fixtures / "requests").read_text()
 
 
+@pytest.mark.parametrize("variant", ["slim", "vm"])
 @pytest.mark.parametrize("use_flag", [True, False])
-def test_vm_variant_selects_separate_asset(installer, use_flag):
+def test_variant_selects_separate_asset(installer, use_flag, variant):
     run, fixtures, destination, _, _ = installer
-    release(fixtures, variant="vm")
-    args = ("--variant", "vm") if use_flag else ()
-    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else "vm")
+    release(fixtures, variant=variant)
+    args = ("--variant", variant) if use_flag else ()
+    result = run("--version", "0.0.6", *args, A13N_ENVD_VARIANT="default" if use_flag else variant)
     assert result.returncode == 0, result.stderr
     assert (destination / "a13n-envd").read_bytes() == BINARY
-    assert "x86_64-unknown-linux-gnu-vm.tar.gz" in (fixtures / "requests").read_text()
+    assert f"x86_64-unknown-linux-gnu-{variant}.tar.gz" in (fixtures / "requests").read_text()
 
 
 @pytest.mark.parametrize("variant,system", [("unknown", "Linux"), ("vm", "Darwin")])
@@ -192,31 +209,38 @@ def test_invalid_variant_fails_before_download(installer, variant, system):
     assert not (fixtures / "requests").exists()
 
 
-def test_default_version_paginates_and_excludes_other_components_and_prereleases(installer):
+@pytest.mark.parametrize("response", ["0.0.6", "0.0.6\n"])
+def test_default_version_reads_only_the_component_stable_pointer(installer, response):
     run, fixtures, destination, _, _ = installer
     release(fixtures)
-    rows = [
-        {"tag_name": "release/a13n-harness-v9.0.0", "draft": False, "prerelease": False},
-        {"tag_name": "release/a13n-envd-v0.0.7-rc.1", "draft": False, "prerelease": False},
-        {"tag_name": "release/a13n-envd-v0.0.8", "draft": False, "prerelease": True},
-        {"tag_name": "release/a13n-envd-v0.0.9", "draft": True, "prerelease": False},
-    ]
-    (fixtures / "page-1.json").write_text(json.dumps(rows))
-    (fixtures / "page-2.json").write_text(
-        json.dumps([{"tag_name": "release/a13n-envd-v0.0.6", "draft": False, "prerelease": False}])
-    )
+    (fixtures / "stable.txt").write_text(response)
     result = run()
     assert result.returncode == 0, result.stderr
     assert (destination / "a13n-envd").read_bytes() == BINARY
-    assert "page=2" in (fixtures / "requests").read_text()
+    requests = (fixtures / "requests").read_text().splitlines()
+    assert requests[0] == (
+        "https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/release-metadata/a13n-envd/stable.txt"
+    )
+    assert len(requests) == 3
+    assert "api.github.com" not in "\n".join(requests)
 
 
-@pytest.mark.parametrize("response", ["[]", "{}", "not json"])
-def test_no_stable_release_or_invalid_response(installer, response):
+@pytest.mark.parametrize("response", ["", "invalid", "01.2.3", "1.2.3-rc.1", "1.2.3\n2.0.0", " 1.2.3", "1.2.3\r\n"])
+def test_invalid_stable_pointer_preserves_existing_binary_without_api_fallback(installer, response):
     run, fixtures, destination, _, _ = installer
-    (fixtures / "page-1.json").write_text(response)
+    (fixtures / "stable.txt").write_bytes(response.encode())
+    destination.mkdir()
+    (destination / "a13n-envd").write_bytes(b"previous")
+    assert_failed(run(), destination)
+    assert (destination / "a13n-envd").read_bytes() == b"previous"
+    assert len((fixtures / "requests").read_text().splitlines()) == 1
+
+
+def test_missing_stable_pointer_does_not_fall_back_to_the_api(installer):
+    run, fixtures, destination, _, _ = installer
     assert_failed(run(), destination)
     assert not (destination / "a13n-envd").exists()
+    assert len((fixtures / "requests").read_text().splitlines()) == 1
 
 
 def test_explicit_rc_and_flags_override_environment(installer):
@@ -233,7 +257,9 @@ def test_explicit_rc_and_flags_override_environment(installer):
         A13N_ENVD_ADD_TO_PATH="bad",
     )
     assert result.returncode == 0, result.stderr
-    assert "api.github.com" not in (fixtures / "requests").read_text()
+    requests = (fixtures / "requests").read_text()
+    assert "api.github.com" not in requests
+    assert "raw.githubusercontent.com" not in requests
     assert not list(home.iterdir())
 
 
@@ -375,3 +401,17 @@ def test_unsupported_target_and_help_have_no_side_effects(installer):
     assert run("--help", MOCK_OS="Unknown").returncode == 0
     assert not (fixtures / "requests").exists()
     assert not destination.exists()
+
+
+@pytest.mark.parametrize("variant", ["slim", "vm"])
+def test_missing_flavor_never_falls_back_to_ordinary(installer, variant):
+    run, fixtures, destination, _, _ = installer
+    release(fixtures)
+    destination.mkdir()
+    (destination / "a13n-envd").write_bytes(b"existing")
+    result = run("--version", "0.0.6", "--variant", variant)
+    assert_failed(result, destination)
+    assert (destination / "a13n-envd").read_bytes() == b"existing"
+    requests = (fixtures / "requests").read_text()
+    assert f"-{variant}.tar.gz" in requests
+    assert "x86_64-unknown-linux-gnu.tar.gz" not in requests

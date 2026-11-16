@@ -83,6 +83,8 @@ async def test_live_thread_uses_restricted_executor_and_retains_history(tmp_path
         assert {"note_write", "task_create", "send_thread_message", "list_projects"} <= tools
         assert not tools & {"shell_exec", "run_code", "delegate", "web_search"}
         assert ("view" in tools) is files_enabled
+        assert "/harness-ui-operations/" not in info.instructions
+        assert "configuration inspection exposes" in info.instructions
         observed.append(messages)
         yield "Completed the delegated task."
 

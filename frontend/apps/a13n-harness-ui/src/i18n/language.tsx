@@ -7,6 +7,7 @@ import {
 } from "react";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { ChoiceField } from "a13n-ui";
+import { SettingsChoice } from "../shell/settings";
 import styles from "./language.module.css";
 import { i18n } from "./index";
 import {
@@ -55,26 +56,30 @@ function DocumentLanguage() {
   return null;
 }
 
-export function LanguageChoice() {
+export function LanguageChoice({
+  settingsRow = false,
+}: {
+  settingsRow?: boolean;
+}) {
   const { t } = useTranslation();
   const context = useContext(PreferenceContext);
   if (!context) throw new Error("LanguageChoice requires LanguageProvider");
   const { preference, select } = context;
-  return (
-    <div className={styles.choice}>
-      <ChoiceField
-        label={t("Display language")}
-        value={preference}
-        onValueChange={(value) => {
-          if (value !== "system" && value !== "en" && value !== "zh-CN") return;
-          select(value);
-        }}
-        options={[
-          { value: "system", label: t("System") },
-          { value: "en", label: "English" },
-          { value: "zh-CN", label: "简体中文" },
-        ]}
-      />
-    </div>
+  const Field = settingsRow ? SettingsChoice : ChoiceField;
+  const field = (
+    <Field
+      label={t("Display language")}
+      value={preference}
+      onValueChange={(value) => {
+        if (value !== "system" && value !== "en" && value !== "zh-CN") return;
+        select(value);
+      }}
+      options={[
+        { value: "system", label: t("System") },
+        { value: "en", label: "English" },
+        { value: "zh-CN", label: "简体中文" },
+      ]}
+    />
   );
+  return settingsRow ? field : <div className={styles.choice}>{field}</div>;
 }

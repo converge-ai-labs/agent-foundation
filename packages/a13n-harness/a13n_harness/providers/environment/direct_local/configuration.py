@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.variables import EnvironmentVariables
 
 _MIB = 1024 * 1024
@@ -76,6 +77,7 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
     environment: EnvironmentVariables = Field(default_factory=dict)
+    envd: EnvdSettings = Field(default_factory=EnvdSettings, exclude_if=lambda value: not value.overrides())
     inherit_environment: bool = False
     allowed_environment_keys: frozenset[Annotated[str, Field(min_length=1, max_length=128)]] | None = frozenset()
     allowed_ports: frozenset[Annotated[int, Field(ge=1, le=65535)]] = frozenset()

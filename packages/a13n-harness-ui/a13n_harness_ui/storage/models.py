@@ -132,6 +132,9 @@ class ConnectorConfigurationRecord(Base):
     """Host-private Connector instance configuration, including plaintext credentials."""
 
     __tablename__ = "connector_configuration"
+    __table_args__ = (
+        Index("uq_connector_configuration_group_name", "group_name", unique=True, sqlite_where=text("deleted = 0")),
+    )
 
     connector_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -140,14 +143,44 @@ class ConnectorConfigurationRecord(Base):
     selected_events: Mapped[str] = mapped_column(Text, nullable=False)
     settings: Mapped[str] = mapped_column(Text, nullable=False)
     credentials: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, server_default=text("''"))
+    group_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    rules: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+
+
+class ConnectorStateRecord(Base):
+    __tablename__ = "connector_state"
+
+    connector_id: Mapped[str] = mapped_column(
+        String(_ID), ForeignKey("connector_configuration.connector_id", ondelete="CASCADE"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+
+
+class ConnectorSetupOfferRecord(Base):
+    __tablename__ = "connector_setup_offer"
+
+    offer_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class BotInboxRecord(Base):
     __tablename__ = "bot_inbox"
     __table_args__ = (
         CheckConstraint(
-            "(source = 'connector' AND connector_id IS NOT NULL) OR "
-            "(source = 'heartbeat' AND connector_id IS NULL AND event_type = 'heartbeat')",
+            "(source = 'connector' AND connector_id IS NOT NULL AND source_thread_id IS NULL) OR "
+            "(source = 'heartbeat' AND connector_id IS NULL AND source_thread_id IS NULL AND event_type = 'heartbeat') OR "
+            "(source = 'thread' AND connector_id IS NULL AND source_thread_id IS NOT NULL)",
             name="source",
         ),
         UniqueConstraint("connector_id", "source_event_id", name="connector_source_event"),
@@ -160,6 +193,8 @@ class BotInboxRecord(Base):
     connector_id: Mapped[str | None] = mapped_column(
         String(_ID), ForeignKey("connector_configuration.connector_id", ondelete="CASCADE"), nullable=True
     )
+    source_thread_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_thread_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     source_event_id: Mapped[str] = mapped_column(String(512), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -313,10 +348,24 @@ class ThreadRecord(Base):
     read_model_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_execution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    read_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_run_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     completion_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
+Index(
+    "ix_thread_unread",
+    ThreadRecord.memory_scope,
+    ThreadRecord.unread,
+    ThreadRecord.parent_thread_id,
+    ThreadRecord.archived,
+    ThreadRecord.updated_at,
+    ThreadRecord.thread_id,
+    sqlite_where=text("unread = 1 AND memory_scope IS NULL AND parent_thread_id IS NULL AND archived IS 0"),
+)
 
 
 class LiveTranscriptHeadRecord(Base):
@@ -357,6 +406,7 @@ class ThreadInspectionRecord(Base):
     )
     source_id: Mapped[str] = mapped_column(String(80), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    sealed_prefix_digest: Mapped[str | None] = mapped_column(String(64))
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -408,7 +458,7 @@ class ThreadConfigurationRecord(Base):
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
-            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot')", name="agent_source_kind"
+            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot', 'dynamic')", name="agent_source_kind"
         ),
     )
 
@@ -462,6 +512,24 @@ class ChildExecutionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
+class McpOAuthRecord(Base):
+    """App-private registration and grant; references alone enter captured recipes."""
+
+    __tablename__ = "mcp_oauth"
+    __table_args__ = (
+        UniqueConstraint("owner", name="owner"),
+        CheckConstraint("credential_version >= 0", name="credential_version"),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    generation: Mapped[str] = mapped_column(String(80), nullable=False)
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    refresh_pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    bundle_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class UsageModelRecord(Base):

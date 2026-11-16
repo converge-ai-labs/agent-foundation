@@ -43,7 +43,7 @@ The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its 
 
 [MCP Apps Host](09-mcp-apps.md#opt-in-and-compatibility) owns the default-disabled `webui.mcp_apps` mapping and the separate-origin sandbox configuration. Its server selection is automatically unioned with each root and child Agent's generic MCP selection in WebUI, without rewriting Agent resources or sticky Thread selections or overriding tool permissions.
 
-[Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Model, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
+[Bot and Connector Ingress](12-bot-and-connector-ingress.md#configuration-and-scheduling) owns `webui.bot` Agent and Model selections, optional instructions, and scheduling settings. Its `bot/` workspace is runtime content beside the selected root YAML, not a resource source. Private Connector settings and credentials use the instance database under that contract, not this file-resource catalog.
 
 [Live Mode](10-live-mode.md#configuration-and-executor) owns the optional root `live` mapping and existing Codex Model selection. Loading configuration never enables Live or starts microphone capture.
 
@@ -69,6 +69,10 @@ tools:
 
 subagents:
   include: [code-reviewer, executor, explorer]
+  max_concurrent: 8
+  dynamic:
+    enabled: false
+    allowed_models: []
 
 webui:
   allowed_origins: []
@@ -92,6 +96,10 @@ defaults:
 `security.shell_review` is an optional application-owned shortcut with `enable` (boolean, default `false`), `guardian_credits` (boolean, default `false`; opt-in provider credit request linking when shell review is effective), `risk_threshold` (`low`, `medium`, `high`, `extra_high`, or null/omitted), `model` (Model resource ID or null/omitted), `on_flagged` (`deny`, `approval_required`, or null/omitted), and `on_error` (`deny`, `approval_required`, `allow`, or null/omitted). Disabled or omitted means no injection, not a prohibition: explicit Agent permission/review policy remains effective. Enabled merges the shortcut into one `ToolPermissionsCapability` before Run capture, with explicitly supplied shortcut fields taking precedence. Omitted/null fields inherit the Agent review configuration; without one, the threshold is `extra_high`, the Model is the effective Agent Model, `on_flagged` is `approval_required`, and `on_error` is `allow`. Setup materializes its reviewed selections in this root mapping. [Shell review composition](02-agent-composition-and-snapshots.md#shell-review-auxiliary-model) owns exact-rule merging, failure behavior, and frozen auxiliary Models.
 
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
+
+`subagents.max_concurrent` is a positive integer, default `8`, limiting locally running children in one root conversation across configured, built-in and dynamic children, including resumed segments. Admission through delegate, spawn and resume shares one serialized limit. `subagents.dynamic.enabled` defaults to `false`; only enabled root Runs expose `spawn_subagent`. `subagents.dynamic.allowed_models` is an ordered unique list of configured Model IDs, default `[]`; unknown references reject the generation. `subagents.dynamic.default_model` is a Model ID that must occur in the allowlist; enabling dynamic creation requires it, so an enabled allowlist is never empty. An omitted spawn Model uses that default; children never inherit the parent's Model. Explicit Model choices must occur in the allowlist. The `spawn_subagent` tool description lists the allowlist and the Model used on omission. Thinking choices use the selected Model's existing validated thinking controls.
+
+Terminal subagent results are delivered automatically. The Run capture freezes subagent settings; later configuration edits affect later Runs. Results and explicit messages can start eligible parent Runs and incur Model use. [Runtime](05-runtime-subagents-and-surfaces.md#observation-and-checkpointing) owns delivery and wake eligibility.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
 
@@ -235,6 +243,22 @@ Creation inspection reports the winning source per axis from this same resolver,
 The Agent selection is resolved before axes that can use that Agent's defaults. A Project cannot recursively select another Project, and Agent-owned Model/Capability behavior remains in the selected Agent resource. A projectless Thread skips the Project layer.
 
 Collection defaults are ordered exact resource IDs. The first explicitly supplied collection wins as a whole; collections are not concatenated or unioned across layers. Omission continues fallback and an explicitly empty collection selects none. A missing referenced resource, wrong-kind reference, or duplicate default rejects the candidate generation.
+
+## Chat titles
+
+The optional root field `chat_title_model` references a configured Model for automatic and manual WebUI chat titles. When omitted, title generation uses the current chat Model.
+
+## Dictation
+
+Root `dictation` configures private WebUI draft transcription independently of the conversation Model. `backend` is `model` by default: a non-null `model` selects an audio-input Model resource; null disables dictation. Existing `dictation.model` configurations retain this behavior. Native subscription login alone never selects or enables the Codex backend.
+
+`backend: codex` uses `codex.account` (a native Codex account ID) or `codex.group` (a Codex subscription group resource ID), never both. With neither field, it uses `codex-default` under the existing one-time default-group publication policy. An explicitly deleted default group is not recreated. Explicit group references must resolve to Codex groups; native account availability is checked at use. A missing or unusable selected source fails rather than switching backends. Codex dictation needs no Model resource or API key. ASR is selected by the Codex transcription service. `codex.model` names the correction LLM directly, defaults to `gpt-6-luna`, and is editable from the release-owned supported Codex model catalog. General settings shows the backend and subscription source; preset and context controls remain in a collapsed advanced disclosure.
+
+ASR and correction independently select eligible accounts from the same configured group using its selection and cached allowance policy for the correction model. An explicit account forms a single-member group. Native refresh and persistence remain provider-owned. The upload is file-only WAV with no HTTP transport retry or redirect following. After a definite HTTP 401 or 429 rejection, ASR records the account rejection and tries another eligible member, at most once per account after native authentication handling. Timeouts, network failures, transport challenges, and other responses do not replay the upload. An unavailable or exhausted source returns a structured `subscription_group_unavailable` error.
+
+Correction is a text-only, no-tools, low-reasoning utility call using normal subscription-group account failover, without conversation model history. Empty ASR skips correction; correction failure returns the raw transcript with `warning: cleanup_failed` and never repeats ASR; cancellation discards delivery. `POST /api/dictation` returns `{text, warning}`. These utility calls do not append conversation messages or trigger a Run.
+
+`context_words` defaults to 2,000, bounded to 0–10,000 on each side. The browser freezes draft text before, inside, and after the selection, the title, and nearby authored conversation prose before recording. Draft surroundings consume the word budget first. Each draft field is capped at 100,000 characters; nearby prose is capped at 500,000 characters. Reference text helps correct plausible recognition errors; output contains only the dictated fragment, preserves spoken language and meaning, and treats neither speech nor reference text as executable instructions. [Workbench interaction](webui/04-workbench-interaction.md#conversation-and-shared-composer) owns insertion and recovery.
 
 ## Media Understanding Defaults
 

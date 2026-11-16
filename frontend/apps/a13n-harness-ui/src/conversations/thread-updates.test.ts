@@ -169,3 +169,25 @@ it.each([false, true])(
     client.clear();
   },
 );
+
+it("keeps shared reading revisions independent of metadata and response order", () => {
+  const read = { ...thread, unread: false, read_state_version: 4 };
+  const stale = {
+    ...thread,
+    unread: true,
+    read_state_version: 3,
+    metadata_version: 2,
+    title: "New title",
+  };
+  const merged = mergeThreadSelections(stale, read);
+  expect(merged.unread).toBe(false);
+  expect(merged.read_state_version).toBe(4);
+  expect(merged.title).toBe("New title");
+  expect(merged.metadata_version).toBe(2);
+  const marked = mergeThreadSelections(read, {
+    ...stale,
+    read_state_version: 5,
+  });
+  expect(marked.unread).toBe(true);
+  expect(marked.read_state_version).toBe(5);
+});

@@ -85,3 +85,9 @@ it("recognizes only same-instance Host file views as in-page file links", () => 
     ),
   ).toBeNull();
 });
+
+it("recognizes the background section resource links", () => {
+  expect(nativeLink("?native=subagents").background).toBe("subagents");
+  expect(nativeLink("?native=tools").background).toBe("tools");
+  expect(nativeLink("?native=files").background).toBeNull();
+});

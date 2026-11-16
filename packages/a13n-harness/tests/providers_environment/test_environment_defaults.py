@@ -10,6 +10,7 @@ import pytest
 from a13n_harness.environment.commands import ArgvCommand, CommandEnvironment, CommandRequest
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.environment.variables import with_defaults
+from a13n_harness.providers.environment.boxd.shared import BoxdEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.native.commands import NativeCommands
@@ -66,7 +67,13 @@ async def test_local_defaults_override_unset_children_and_host_isolation(tmp_pat
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
 @pytest.mark.parametrize(
-    "model", [SpritesEnvironmentConfiguration, RunloopEnvironmentConfiguration, VercelEnvironmentConfiguration]
+    "model",
+    [
+        SpritesEnvironmentConfiguration,
+        RunloopEnvironmentConfiguration,
+        VercelEnvironmentConfiguration,
+        BoxdEnvironmentConfiguration,
+    ],
 )
 async def test_native_guest_defaults_are_literal_and_command_scoped(tmp_path, model):
     async def execute(argv, timeout):

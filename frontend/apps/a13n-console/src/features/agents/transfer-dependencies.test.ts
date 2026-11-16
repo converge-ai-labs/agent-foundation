@@ -472,10 +472,14 @@ it("remaps grouped membership together with its selected connection", () => {
   )!;
   const replaced = dependency.replace("con_target");
   expect(replaced.connection_tools).toEqual([{ connection_id: "con_target" }]);
-  expect(replaced.tool_search?.groups?.knowledge).toEqual({
-    description: "Lookup",
-    connections: ["con_target"],
-    plugins: ["audit"],
+  expect(replaced.tool_search).toMatchObject({
+    groups: {
+      knowledge: {
+        description: "Lookup",
+        connections: ["con_target"],
+        plugins: ["audit"],
+      },
+    },
   });
   expect(config.tool_search.groups.knowledge.connections).toEqual([
     "con_source",
@@ -496,9 +500,11 @@ it("remaps automatic discovery exclusions on connection replacement", () => {
   const dependency = agentDependencies(config).find(
     (item) => item.kind === "connection",
   )!;
-  expect(dependency.replace("con_target").tool_search?.automatic).toEqual({
-    exclude_connections: ["con_target"],
-    exclude_platform: true,
+  expect(dependency.replace("con_target").tool_search).toMatchObject({
+    automatic: {
+      exclude_connections: ["con_target"],
+      exclude_platform: true,
+    },
   });
   expect(config.tool_search.automatic.exclude_connections).toEqual([
     "con_source",
@@ -515,4 +521,25 @@ it("keeps an existing environment as a remappable dependency", () => {
     ...config,
     default_environment_id: "env_target",
   });
+});
+
+it("remaps native source exclusions without creating proxy fields", () => {
+  const config = {
+    model: "test",
+    connection_tools: [{ connection_id: "con_source" }],
+    tool_search: {
+      mode: "native" as const,
+      sources: { exclude_connections: ["con_source"], exclude_platform: true },
+    },
+  };
+  const dependency = agentDependencies(config).find(
+    (item) => item.kind === "connection",
+  )!;
+  expect(dependency.replace("con_target").tool_search).toEqual({
+    mode: "native",
+    sources: { exclude_connections: ["con_target"], exclude_platform: true },
+  });
+  expect(config.tool_search.sources.exclude_connections).toEqual([
+    "con_source",
+  ]);
 });

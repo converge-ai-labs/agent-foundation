@@ -12,6 +12,12 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
+import { EditorView } from "@codemirror/view";
+import { recordAudio } from "./dictation-audio";
+vi.mock("./dictation-audio", () => ({
+  recordAudio: vi.fn(),
+  encodeAudio: async () => "recorded-audio",
+}));
 import {
   Composer,
   ComposerDrafts,
@@ -1766,3 +1772,78 @@ it("keeps private quotations on rejection and clears only their accepted version
   expect(values(draft.doc).prompt).toBe("");
   draft.doc.destroy();
 });
+
+it.each([false, true])(
+  "dictation inserts the final text at the current selection without confirmation (%s)",
+  async (changed) => {
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({
+      presence: () => {},
+      close: () => {},
+    });
+    vi.mocked(recordAudio).mockResolvedValue(async () => new Blob(["audio"]));
+    let resolve!: (response: unknown) => void;
+    const post = vi.fn(
+      (_path: string, _options: { body: Schema<"DictationInput"> }) =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const transport = {
+      client: { POST: post, GET: vi.fn().mockResolvedValue({ data: [] }) },
+    } as unknown as Transport;
+    const rendered = render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" } as Schema<"RootActivityView">}
+              canRun
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+              dictation={{ words: 4 }}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    const editor = EditorView.findFromDOM(
+      rendered.container.querySelector(".cm-editor")!,
+    )!;
+    act(() =>
+      editor.dispatch({
+        changes: { from: 0, insert: "Use Mypy now" },
+        selection: { anchor: 4, head: 8 },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Voice input" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Stop recording" }),
+    );
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(post.mock.calls[0][1].body.draft).toEqual({
+      before: "Use ",
+      selected: "Mypy",
+      after: " now",
+    });
+    act(() =>
+      editor.dispatch(
+        changed
+          ? { changes: { from: 12, insert: "!" }, selection: { anchor: 0 } }
+          : { selection: { anchor: 0 } },
+      ),
+    );
+    await act(async () => resolve({ data: { text: "Pyright" } }));
+    expect(editor.state.doc.toString()).toBe(
+      changed ? "PyrightUse Mypy now!" : "PyrightUse Mypy now",
+    );
+    expect(screen.getByRole("button", { name: "Voice input" })).toBeTruthy();
+    expect(post).toHaveBeenCalledTimes(1);
+  },
+);

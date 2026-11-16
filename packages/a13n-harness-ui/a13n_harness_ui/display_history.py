@@ -35,7 +35,7 @@ def _message_digest(encoded: bytes) -> str:
     return sha256(json.dumps(json.loads(encoded), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
+def import_display_history(messages: Sequence[ModelMessage], *, position_offset: int = 0) -> DisplayHistory:
     """One ingress for native initial state and version-1 display envelopes.
 
     Imported rows retain their original message/part coordinates. They contain
@@ -48,7 +48,10 @@ def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
         for position, message in enumerate(messages)
         if isinstance(message, ModelResponse) and (message.metadata or {}).get(_COMPLETED_KEY) is True
     )
-    turns = {turn.input_position: turn for turn in _transcript_turns(tuple(messages), completed)}
+    turns = {
+        turn.input_position: turn
+        for turn in _transcript_turns(tuple(messages), completed, position_offset=position_offset)
+    }
     items: list[Item] = []
     for position, message in enumerate(messages):
         entry = _message_entry(position, message).model_dump(mode="json")
@@ -66,7 +69,7 @@ def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
             content["turn"] = turns[position].model_dump(mode="json")
         items.append(
             Item(
-                id=f"import:{position}",
+                id=f"import:{position_offset + position}",
                 ordinal=position + 1,
                 kind="observation",
                 state="completed",
@@ -78,7 +81,7 @@ def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
         )
     return DisplayHistory(
         items=tuple(items),
-        completed=tuple(f"import:{position}" for position in completed),
+        completed=tuple(f"import:{position_offset + position}" for position in completed),
         pending_response=items[-1].id
         if messages and isinstance(messages[-1], ModelResponse) and messages[-1].state == "suspended"
         else None,

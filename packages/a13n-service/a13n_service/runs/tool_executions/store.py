@@ -25,7 +25,6 @@ from a13n_service.runs.tables import ToolExecutionRow
 
 # Set by the worker's resource scope. The original Harness task inherits it; later readers need no origin.
 ORIGIN: contextvars.ContextVar[Lease] = contextvars.ContextVar("service_tool_origin")
-SEQUENTIAL: contextvars.ContextVar[bool] = contextvars.ContextVar("service_tool_sequential", default=False)
 
 
 def available():
@@ -35,6 +34,8 @@ def available():
 def observation(row: ToolExecutionRow) -> ToolExecutionRecord:
     return ToolExecutionRecord.model_validate(row.record).model_copy(
         update={
+            # The durable column also preserves ordering intent for records written before the JSON field existed.
+            "sequential": row.sequential,
             "delivery_acknowledged": row.first_delivered_at is not None,
             "cancel_requested": row.cancel_requested_at is not None,
         }
@@ -158,7 +159,7 @@ class Store:
                     lease_token_hash=secret_hash(lease.token),
                     lease_expires_at=current + timedelta(seconds=self.runtime.settings.worker.lease_seconds),
                     status=record.status,
-                    sequential=SEQUENTIAL.get(),
+                    sequential=record.sequential,
                     created_at=record.created_at,
                     record=record.model_dump(mode="json"),
                     environment_mounts=run.environment_mounts,

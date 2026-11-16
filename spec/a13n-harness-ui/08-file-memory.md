@@ -21,12 +21,13 @@ Both switches default to true, including when absent from existing configuration
 
 The selected root YAML's parent owns `memory/`, independent of the data root:
 
-| Scope   | Directory                       | Sharing                                         |
-| ------- | ------------------------------- | ----------------------------------------------- |
-| Global  | `memory/global/`                | All conversations using this configuration root |
-| Project | `memory/projects/<project-id>/` | Conversations capturing that Project identity   |
+| Scope   | Directory                       | Sharing                                               |
+| ------- | ------------------------------- | ----------------------------------------------------- |
+| Global  | `memory/global/`                | All conversations using this configuration root       |
+| Project | `memory/projects/<project-id>/` | Conversations capturing that Project identity         |
+| Bot     | `memory/bot/`                   | Built-in Bot only; persistent workspace understanding |
 
-Projectless Runs receive global memory only. A Project's name, directory order, and Thread identity do not change its memory identity. Ordinary Runs do not bind another Project's memory or scan all Projects. [Bot](12-bot-and-connector-ingress.md#identity-composition-and-workspace) can explicitly list/read any currently configured Project's memory through a bounded read-only tool; those scopes are not bound or automatically injected. Scope selection is not a multi-tenant security boundary: Full Control, trusted extensions, and human Host Files retain their existing Host authority. Memory does not add an Environment mount or grant shell access; existing broader filesystem access is not revoked.
+Ordinary projectless Runs receive global memory only. The built-in Bot additionally receives writable `bot` memory through the same native file-memory Capability, tools, version checks and continuation cursors. This scope keeps a concise workspace map and durable project understanding separate from global preferences and source Project memories. Bot maintains it during ordinary input and bounded Heartbeat checks; it does not add an automatic organizer scope or a separate profile database. A Project's name, directory order, and Thread identity do not change its memory identity. Ordinary Runs do not bind another Project's memory or scan all Projects. [Bot](12-bot-and-connector-ingress.md#identity-composition-and-workspace) can explicitly list/read any currently configured Project's memory through a bounded read-only tool; those scopes are not bound or automatically injected. Scope selection is not a multi-tenant security boundary: Full Control, trusted extensions, and human Host Files retain their existing Host authority. Memory does not add an Environment mount or grant shell access; existing broader filesystem access is not revoked.
 
 Each bound scope exposes writable memory tools and always loads `MEMORY.md` when present. The index and other context follow Harness budgets and untrusted-data semantics. Guidance distinguishes cross-project preferences from Project decisions and asks Agents to keep the index concise. Runtime files and `.a13n-memory` bookkeeping are not configuration resources and do not change accepted-generation digests.
 
@@ -42,7 +43,7 @@ The organizer is guided to respect edits and deletions, keep supported claims wh
 
 Every independently reconstructed root or delegated child receives fresh Capability, store, and cursor collaborators. The captured Run composition freezes whether memory is enabled and its optional Project; changes apply to later admissions, not active Runs. CLI and WebUI both support foreground memory.
 
-Root continuations and child checkpoints store cursor positions separately from `HarnessState`, keyed by global or Project identity. Resume and graceful restart restore positions only for the captured scopes. These cursors suppress redundant context, not file access or dirty detection. Missing cursor fields in older checkpoints mean an empty position map. Old captured compositions without the enabled field remain memory-disabled when reconstructed; new admissions use current configuration. Empty legacy fields remain omitted during serialization.
+Root continuations and child checkpoints store cursor positions separately from `HarnessState`, keyed by global, Project or Bot scope identity. Resume and graceful restart restore positions only for the captured scopes. These cursors suppress redundant context, not file access or dirty detection. Missing cursor fields in older checkpoints mean an empty position map. Old captured compositions without the enabled field remain memory-disabled when reconstructed; new admissions use current configuration. Empty legacy fields remain omitted during serialization.
 
 Memory file edits are immediately persistent independently of checkpoint success. A failed or cancelled Run does not roll them back, and a saved cursor does not claim a whole-memory transaction.
 

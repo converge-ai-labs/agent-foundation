@@ -23,6 +23,7 @@ from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
@@ -123,7 +124,7 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
         assert "enum" not in definitions["call_tool"].parameters_json_schema["properties"]["group"]
         assert "crm operations" not in definitions["discover_tools"].description
         assert "Double a customer" not in definitions["discover_tools"].description
-        assert "Grouped tool discovery" in info.instructions
+        assert "<tool-name>tool_search</tool-name>" in info.instructions
         assert "Use exact customer IDs." not in info.instructions
 
     result, returns = await _run(
@@ -189,11 +190,11 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
     def inspect(_step: int, info: AgentInfo) -> None:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
         catalog = info.instructions or ""
-        assert "async def discover_tools" in catalog
-        assert "async def call_tool" in catalog
+        assert "`discover_tools`" in catalog
+        assert "`call_tool`" in catalog
         assert "crm__double" not in catalog
-        assert "async def double" not in catalog
-        assert "async def discover_tools" not in runner.description
+        assert "`double`" not in catalog
+        assert "`discover_tools`" not in runner.description
 
     source = """found = await discover_tools(query='double', group='crm')
 match = found['tools'][0]
@@ -548,7 +549,9 @@ async def test_final_directory_rejects_deferral_added_by_outer_capability() -> N
         id="late-source",
         defer_loading=True,
     )
-    result, returns = await _run((_ToolSearchSurfaceCapability(), source), [])
+    result, returns = await _run(
+        (_ToolSearchSurfaceCapability(ProxyToolSearchConfig(), frozenset({"late"})), source), []
+    )
     assert result.status == "failed"
     assert returns == []
 
@@ -691,27 +694,38 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
     assert result.usage.tool_calls == 3
 
 
-async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> None:
+@pytest.mark.parametrize("reference_root", [None, "/release-guidance"])
+async def test_proxy_instruction_switch_and_custom_names_are_consistent(reference_root) -> None:
     def value() -> int:
         return 1
 
-    config = ProxyToolSearchConfig(search_name="find_ops", call_name="invoke_op")
+    config = ProxyToolSearchConfig(
+        search_name="find_ops",
+        describe_name="describe_op",
+        call_name="invoke_op",
+        groups_name="domains",
+        list_name="list_ops",
+    )
     for enabled in (True, False):
 
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
             instructions = info.instructions or ""
-            assert ("Grouped tool discovery" in instructions) is enabled
+            assert ("<tool-name>tool_search</tool-name>" in instructions) is enabled
             assert "discover_tools" not in instructions
             assert "call_tool" not in instructions
             if enabled:
                 assert "find_ops" in instructions
                 assert "invoke_op" in instructions
+                assert "describe_op" in instructions and "domains" in instructions and "list_ops" in instructions
+                assert ("/release-guidance/harness/tool_search.md" in instructions) is (reference_root is not None)
+                assert ("Exact local or" in instructions) is (reference_root is None)
 
         result, returns = await _run(
             (_group(value, config=config),),
             [("find_ops", {"query": "", "detail": "full"})],
             inspect=inspect,
             toolset_instructions=enabled,
+            bindings=RunBindings.embedded(instruction_reference_root=reference_root),
         )
         assert result.output_or_raise() == "done"
         assert returns[0].content["tools"][0]["instructions"] == (["Use exact customer IDs."] if enabled else [])
@@ -802,7 +816,7 @@ async def test_empty_groups_leave_direct_tools_unchanged() -> None:
 
     def inspect(_step: int, info: AgentInfo) -> None:
         assert [tool.name for tool in info.function_tools] == ["status"]
-        assert "Grouped tool discovery" not in (info.instructions or "")
+        assert "<tool-name>tool_search</tool-name>" not in (info.instructions or "")
 
     result, returns = await _run(
         (ToolSearchCapability(groups={}), Capability(toolsets=[FunctionToolset([status])])),
@@ -930,10 +944,10 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
         if codeact:
             runner = next(tool for tool in info.function_tools if tool.name == "run_code")
             catalog = info.instructions or ""
-            assert ("async def call_tool" in catalog) is grouped
-            assert ("async def identify" in catalog) is not grouped
-            assert "async def call_tool" not in runner.description
-            assert "async def identify" not in runner.description
+            assert ("`call_tool`" in catalog) is grouped
+            assert ("`identify`" in catalog) is not grouped
+            assert "`call_tool`" not in runner.description
+            assert "`identify`" not in runner.description
         else:
             assert ("identify" in names) is not grouped
             assert ("call_tool" in names) is grouped
@@ -1459,7 +1473,8 @@ async def test_list_pages_enumerate_every_tool_without_expanding_model_schema(de
     definitions = []
 
     def inspect(step: int, info: AgentInfo) -> None:
-        definitions.append(info.function_tools)
+        # Compare model-facing definitions, excluding private dispatch bindings.
+        definitions.append([replace(tool, metadata=None) for tool in info.function_tools])
         assert {tool.name for tool in info.function_tools} == {
             "discover_tools",
             "describe_tool",
@@ -1492,7 +1507,8 @@ async def test_proxy_schemas_stay_identical_across_different_group_inventories()
     definitions = []
 
     def inspect(step: int, info: AgentInfo) -> None:
-        definitions.append(info.function_tools)
+        # Compare model-facing definitions, excluding private dispatch bindings.
+        definitions.append([replace(tool, metadata=None) for tool in info.function_tools])
 
     for group, count in (("alpha", 1), ("beta", 12)):
         result, returns = await _run(
@@ -1626,9 +1642,11 @@ async def test_grouped_names_cannot_shadow_direct_tools_from_the_same_source(nam
         await agent.run("test")
 
 
-@pytest.mark.parametrize(("prior_sequential", "target_sequential"), [(True, False), (False, True), (False, False)])
-async def test_proxy_target_keeps_its_runtime_execution_policy(
-    monkeypatch, prior_sequential, target_sequential
+@pytest.mark.parametrize("prior_sequential", [False, True])
+@pytest.mark.parametrize("target_sequential", [False, True])
+@pytest.mark.parametrize("global_sequential", [False, True])
+async def test_proxy_target_separates_batch_ordering_from_thread_completion_policy(
+    monkeypatch, prior_sequential, target_sequential, global_sequential
 ) -> None:
     from a13n_harness import HarnessState
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
@@ -1652,9 +1670,10 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         sequential=prior_sequential,
     )
     original_inline = runtime.inline
+    runtime_policies = []
 
     async def inline(operation, *, thread_id, sequential):
-        assert sequential == target_sequential
+        runtime_policies.append(sequential)
         queued.set()
         return await original_inline(operation, thread_id=thread_id, sequential=sequential)
 
@@ -1682,12 +1701,14 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         capabilities=(ToolExecutionCapability(), _group(Tool(lookup, sequential=target_sequential))),
     )
     await entered.wait()
-    pending = asyncio.create_task(
-        executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
-    )
+    with ToolManager.parallel_execution_mode("sequential" if global_sequential else "parallel"):
+        pending = asyncio.create_task(
+            executable.run("lookup", previous_state=state, bindings=RunBindings.embedded(tool_execution=runtime))
+        )
     try:
         await asyncio.wait_for(queued.wait(), 2)
-        if prior_sequential or target_sequential:
+        assert runtime_policies == [global_sequential]
+        if prior_sequential or global_sequential:
             assert not invoked and not pending.done()
             finish.set()
         result = await asyncio.wait_for(pending, 2)
@@ -1699,3 +1720,253 @@ async def test_proxy_target_keeps_its_runtime_execution_policy(
         pending.cancel()
         await asyncio.gather(pending, return_exceptions=True)
         await runtime.close()
+
+
+def _connector_surface(*tools: Any, group: str = "github") -> ToolSearchCapability:
+    return ToolSearchCapability(
+        groups={
+            group: ToolSearchGroup(
+                CodeActPolicyToolset(
+                    FunctionToolset(list(tools), id="connector-source"), CodeActToolPolicy(default=True)
+                ),
+                "GitHub operations",
+            )
+        },
+        config=ProxyToolSearchConfig(
+            search_name="search_connector_tools",
+            describe_name="describe_connector_tool",
+            call_name="call_connector_tool",
+            list_name="list_connector_tools",
+            groups_name="list_connector_groups",
+        ),
+        surface_id="test.connector-tools",
+    )
+
+
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_disjoint_proxy_surfaces_keep_all_controls_and_guidance_scoped(use_plan: bool) -> None:
+    effects = []
+
+    def customer() -> str:
+        effects.append("crm")
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("github")
+        return "pull request"
+
+    capabilities = [_connector_surface(pull_request)]
+    plan = None
+    if use_plan:
+        source = Capability(tools=[customer], id="crm-source")
+        capabilities.append(source)
+        plan = ToolSearchPlan(groups={"crm": ToolSearchSelection("Customer operations", capabilities=(source,))})
+    else:
+        capabilities.append(_group(customer))
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+            "search_connector_tools",
+            "describe_connector_tool",
+            "call_connector_tool",
+            "list_connector_tools",
+            "list_connector_groups",
+        }
+        assert "search_connector_tools" in info.instructions
+        assert "discover_tools" in info.instructions
+
+    result, returns = await _run(
+        tuple(capabilities),
+        [
+            ("discover_tools", {"query": ""}),
+            ("search_connector_tools", {"query": ""}),
+            ("list_tool_groups", {}),
+            ("list_connector_groups", {}),
+            ("list_tools", {}),
+            ("list_connector_tools", {}),
+            ("describe_tool", {"group": "crm", "tool": "customer"}),
+            ("describe_connector_tool", {"group": "github", "tool": "pull_request"}),
+            ("call_tool", {"group": "crm", "tool": "customer", "arguments": {}}),
+            ("call_connector_tool", {"group": "github", "tool": "pull_request", "arguments": {}}),
+        ],
+        inspect=inspect,
+        tool_search=plan,
+    )
+    assert result.output_or_raise() == "done"
+    assert [entry["group"] for entry in returns[0].content["tools"]] == ["crm"]
+    assert [entry["group"] for entry in returns[1].content["tools"]] == ["github"]
+    assert [entry["group"] for entry in returns[2].content["groups"]] == ["crm"]
+    assert [entry["group"] for entry in returns[3].content["groups"]] == ["github"]
+    assert [entry["group"] for entry in returns[4].content["tools"]] == ["crm"]
+    assert [entry["group"] for entry in returns[5].content["tools"]] == ["github"]
+    assert returns[6].content["tool"]["tool"] == "customer"
+    assert returns[7].content["tool"]["tool"] == "pull_request"
+    assert [part.content for part in returns[-2:]] == ["customer", "pull request"]
+    assert effects == ["crm", "github"]
+
+
+@pytest.mark.parametrize("control", ["discover_tools", "list_tools", "describe_tool", "call_tool"])
+async def test_proxy_controls_cannot_target_another_surface_group(control: str) -> None:
+    effects = []
+
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("write")
+        return "pull request"
+
+    arguments: dict[str, Any] = {"group": "github"}
+    if control == "discover_tools":
+        arguments["query"] = ""
+    if control in {"describe_tool", "call_tool"}:
+        arguments["tool"] = "pull_request"
+    if control == "call_tool":
+        arguments["arguments"] = {}
+    result, returns = await _run((_group(customer), _connector_surface(pull_request)), [(control, arguments)])
+    assert result.output_or_raise() == "done"
+    assert not effects
+    assert len(returns) == 1
+    retry = returns[0]
+    assert retry.outcome == "retried"
+    assert retry.tool_name == control
+    assert "pull_request" not in str(retry.content)
+    assert "GitHub operations" not in str(retry.content)
+
+
+async def test_codeact_uses_the_selected_proxy_controls_native_forwarder() -> None:
+    effects = []
+
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        effects.append("github")
+        return "pull request"
+
+    result, returns = await _run(
+        (_group(customer), _connector_surface(pull_request), CodeActCapability()),
+        [
+            ("run_code", {"code": "await call_tool(group='github', tool='pull_request', arguments={})"}),
+            ("run_code", {"code": "await call_connector_tool(group='github', tool='pull_request', arguments={})"}),
+        ],
+    )
+    assert result.output_or_raise() == "done"
+    assert effects == ["github"]
+    failure = json.loads(returns[0].content)
+    assert failure["codeact"]["status"] == "failed"
+    assert failure["error"]["nested_errors"][0]["type"] == "ModelRetry"
+    assert "pull request" in str(returns[-1].content)
+
+
+async def test_empty_proxy_surface_does_not_claim_another_surfaces_members() -> None:
+    def customer() -> str:
+        return "customer"
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
+
+    result, _ = await _run(
+        (_group(customer), ToolSearchCapability(groups={}, surface_id="test.empty-surface")),
+        [],
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+
+
+async def test_overlapping_surface_groups_fail_instead_of_sharing_members() -> None:
+    def customer() -> str:
+        return "customer"
+
+    def pull_request() -> str:
+        return "pull request"
+
+    result, returns = await _run(
+        (_group(customer), _connector_surface(pull_request, group="crm")), [("list_tool_groups", {})]
+    )
+    assert result.status == "failed"
+    assert returns == []
+
+
+@pytest.mark.parametrize("binding_change", ["drop", "rename"])
+async def test_scoped_proxy_surface_cannot_disappear_or_change_identity_during_run_binding(
+    monkeypatch, binding_change: str
+) -> None:
+    from a13n_harness.capabilities.tool_search import _ToolSearchSurfaceCapability
+    from a13n_harness.errors import DefinitionError
+
+    async def bind(self, ctx):
+        if self.id != "test.connector-tools":
+            return self
+        return Capability() if binding_change == "drop" else replace(self, id="test.unrecorded-surface")
+
+    monkeypatch.setattr(_ToolSearchSurfaceCapability, "for_run", bind)
+
+    def pull_request() -> str:
+        return "pull request"
+
+    with pytest.raises(DefinitionError) as error:
+        await _run((_connector_surface(pull_request),), [("list_connector_groups", {})])
+    assert error.value.code == "capability_scope_invalid"
+
+
+@pytest.mark.parametrize("stage", ["validator", "execution"])
+@pytest.mark.parametrize("page", [None, "files"])
+async def test_proxy_retry_guidance_names_target_page_exactly_once(stage, page) -> None:
+    from pydantic_ai import ModelRetry
+
+    def validate(ctx, value: int):
+        if stage == "validator":
+            raise ModelRetry("Use another value")
+
+    def lookup(value: int):
+        raise ModelRetry("Use another value")
+
+    result, returns = await _run(
+        (
+            _group(
+                Tool(lookup, args_validator=validate, max_retries=1, metadata={"a13n.guidance": page} if page else {})
+            ),
+        ),
+        [("call_tool", {"group": "crm", "tool": "lookup", "arguments": {"value": 1}})],
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    part = returns[0]
+    assert part.outcome == "retried"
+    assert part.tool_name == "call_tool" and part.tool_call_id == "call-0"
+    expected = "Use another value"
+    if page:
+        expected += "\nGuidance: `/release-guidance/harness/files.md`. Read with view before deciding whether to retry."
+    assert part.content == expected
+    assert part.retry.attempt == 1 and part.retry.max_retries == 1
+
+
+async def test_real_search_control_retry_points_to_its_own_guidance() -> None:
+    def lookup() -> int:
+        return 42
+
+    result, returns = await _run(
+        (_group(lookup),),
+        [("discover_tools", {"query": "!!!"})],
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert result.output_or_raise() == "done"
+    part = returns[0]
+    assert part.outcome == "retried" and part.tool_name == "discover_tools"
+    assert part.content == (
+        "Supply operation keywords or an exact tool name; use an empty query to browse.\n"
+        "Guidance: `/release-guidance/harness/tool_search.md`. Read with view before deciding whether to retry."
+    )
+    assert part.retry.attempt == 1 and part.retry.max_retries == 5

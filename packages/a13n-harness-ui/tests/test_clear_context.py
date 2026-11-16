@@ -28,10 +28,14 @@ def transcript_content(entries):
 async def test_clear_context_retains_history_but_restarts_model_and_working_state(tmp_path: Path, monkeypatch) -> None:
     path = _write_configuration(tmp_path)
     calls: list[str] = []
+    fresh_started, fresh_release = Event(), Event()
 
     async def resolve(self, context, model_id):
         async def model(messages, info):
             calls.append(ModelMessagesTypeAdapter.dump_json(messages).decode())
+            if len(calls) == 3:
+                fresh_started.set()
+                await fresh_release.wait()
             if len(calls) == 1:
                 yield {
                     0: DeltaToolCall(
@@ -107,6 +111,12 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
             patch.setattr(app._store.usage, "latest_root_request", unexpected_usage_read)
             assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fresh prompt")
+        try:
+            with fail_after(10):
+                await fresh_started.wait()
+            assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
+        finally:
+            fresh_release.set()
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         assert len(calls) == 3
         assert "Fresh prompt" in calls[-1]

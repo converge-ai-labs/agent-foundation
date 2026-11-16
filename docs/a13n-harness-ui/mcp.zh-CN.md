@@ -36,9 +36,31 @@ description: 连接外部工具服务器，为 Agent 选择它，并验证一次
 
 4. [启用服务器](#enable-a-server)，测试其文档列出的一个只读工具。
 
-使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE；此配置不提供 OAuth 登录流程。
+使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE。支持 DCR 的服务可以使用 [OAuth](#oauth-authorization) 代替 Authorization header。
 
 如果服务器握手较慢，可将 `transport.init_timeout_seconds` 设为大于零的秒数。例如，`20` 表示整个协议协商（包括回退）最多等待 20 秒。Run 内的连接和设置页的工具发现默认等待 5 秒，Host 跨 Run 保留的连接和 MCP Apps 默认等待 30 秒。工具调用有单独的超时。
+
+## OAuth 授权
+
+对于支持 OAuth 动态客户端注册（DCR）的服务，移除 Authorization header，并在远程传输中添加 `oauth`：
+
+```yaml title="mcp/docs.yaml — replace transport"
+transport:
+  url: https://mcp.example.com/mcp
+  oauth:
+    registration: dcr
+    scope: read
+```
+
+`registration` 默认为 `dcr`，也是唯一支持的模式。省略 `scope` 时使用服务发现的权限；显式 scope 限制请求和接受的权限。在 `mcpServers` 条目中，将 `oauth` 放在 `url` 同级。OAuth 始终要求 HTTPS，包括回环服务。
+
+打开**设置 → 连接**，选择服务，在**授权**下点击**连接**。Harness UI 发现授权服务器，并自动注册本实例的客户端。在浏览器中完成同意；弹窗受阻时使用**继续授权**。无需项目统一维护 OAuth 应用，也无需手动提供客户端密钥。成功授权会保存凭据；**加载工具**单独验证 MCP 连接。
+
+登录复用现有 WebUI listener。本地访问使用 listener 的实际回环端口；远程访问需在 `webui.allowed_origins` 配置精确的公开 HTTPS origin，并将 `/oauth/mcp/callback` 路由到同一 listener。通配符不赋予 OAuth 回调权限。回调必须来自发起登录的浏览器。待完成尝试十分钟后过期，App 重启会丢失；已完成授权会保留。重新开始前可**取消授权**。
+
+令牌、注册信息和绝对过期时间保存在此实例的私有数据库中。运行时自动刷新过期访问令牌，不打开浏览器；使用相同配置和数据根目录的 TUI 也可使用和刷新授权。刷新结果不确定或被拒绝时需**重新连接**；普通工具调用收到 401 后不会自动重放。**断开连接**清除本地授权。修改传输或重新连接会使旧运行捕获的账户绑定失效，之后请启动新 Run。
+
+OAuth 发现、DCR 和令牌请求使用 Host 网络，不受 Run `allowed_hosts` 限制；MCP 业务请求保留现有网络策略。不支持要求手动注册应用或 CIMD 的服务。
 
 ## 选择工具
 
@@ -108,10 +130,10 @@ Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外
 
 一个包装对象可包含多个服务器。名称会规范化为 `mcp-` ID：`My_Server` 变成 `mcp-my-server`。不同文件中的重复 ID 会导致配置被拒绝。
 
-| 包装对象中的条目 | 字段                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                     |
-| 远程             | `url`，可选 `headers`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
+| 包装对象中的条目 | 字段                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                              |
+| 远程             | `url`，可选 `headers`、`oauth`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
 
 `.yaml` 和 `.json` 都接受包装对象或单资源格式。使用严格 JSON：注释和末尾逗号无效。移除 `disabled` 等不支持的客户端专用字段。
 
@@ -176,9 +198,29 @@ mcp:
 
 保留前文的普通 Agent/Thread 选择。`host_owned_servers` 默认 `[]`；`protocol_overrides` 默认 `{}`。列出的 ID 必须指向已配置服务器。
 
-每个 Thread，包括子 Thread，都有自己的保留客户端。Run 完成和浏览器断开不会关闭它。Host 关闭、显式关闭、Thread 释放或绑定更改会结束连接。连接只属于当前进程；续接不会序列化客户端状态或待处理的服务器输入。断开后不会自动重放调用。启用的 [MCP Apps](mcp-apps.md) 自动保留客户端，激活 App 可建立替代连接。
+每个 Thread，包括子 Thread，都有自己的保留客户端。Run 完成和浏览器断开不会关闭它。Host 关闭、显式关闭、Thread 释放或绑定更改会结束连接。连接只属于当前进程；续接不会序列化客户端状态或待处理的服务器输入。显式关闭结束当前连接，但不更改 Thread 已选择的服务器。后续仍选择该服务器的新 Run 可以建立替代连接，包括在显式关闭之后。旧 Run 的工具投影和 App View 仍绑定已关闭的连接。要阻止后续 Run 激活该服务器，需将它从适用的服务器选择中移除。断开后不会自动重放调用。启用的 [MCP Apps](mcp-apps.md) 自动保留客户端，激活 App 可建立替代连接。
+
+连接初始化遇到暂时超时、传输中断或临时 HTTP 故障时，最多尝试三次，重试前依次等待一秒、两秒。每次尝试使用配置的初始化超时。因此，无响应的服务器可能耗费三次初始化超时和三秒退避，另加 SDK 清理时间。认证和协议错误不会重试。启动失败时按服务器的[启动失败策略](#startup-failure-policy)处理。
 
 每个协议覆盖接受 `auto`、`legacy` 或 `2026-07-28`；省略时使用 `auto`。除非服务器要求特定模式，否则使用 `auto`。该设置控制 Core 协议协商，与连接生命周期和 MCP Apps UI 协议分开。
+
+Harness UI 在每次 Run 中仅获取一次各 MCP 服务器的工具列表，并在该 Run 的模型步骤中复用。服务器在 Run 期间更改的工具列表会在下次 Run 中生效。
+
+## 启动失败策略
+
+每个 MCP 服务器默认使用 `on_error: skip`，对 Bot、普通 Thread 和子 Thread 都相同。连接初始化失败并用尽适用的重试后，当前 Run 使用其余能力继续执行。该服务器的工具在本次 Run 内保持不可用，模型会收到不可用提示，Host 日志会标明被跳过的服务器。后续 Run 会重新尝试连接；Bot 保持正常 Heartbeat 调度。
+
+若某个服务器必须可用，在资源文件中与 `transport` 同级添加：
+
+```yaml title="mcp/docs.yaml — 合并片段"
+on_error: raise
+```
+
+对于 `mcpServers` 包装格式，将 `on_error` 放在对应服务器条目内，与 `url` 或 `command` 同级。仅接受 `skip` 和 `raise`。省略时使用 `skip`，旧资源和已捕获的旧 recipe 也相同。
+
+Agent 的显式工具白名单仍限制实际可调用的工具。若被跳过的服务器配置了工具选择，其中的名称视为暂时不可用；若允许全部工具，由于无法读取工具目录，未知名称校验延后到服务器正常的 Run。
+
+`raise` 让启动失败中断当前 Run。取消、传输授权、凭据来源校验和已捕获 OAuth 账户检查保持原有错误行为。连接成功后的工具列表和业务调用错误正常返回；两种策略都不会重放工具调用。
 
 ## MCP 服务器请求的人工输入
 
@@ -196,10 +238,10 @@ mcp:
 
 MCP 资源和包装对象使用 `schema_version: "2"`。单资源文件还需要 `kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
 
-| 传输 | 必需      | 可选                                  |
-| ---- | --------- | ------------------------------------- |
-| 命令 | `command` | `arguments: []`、`environment: {}`    |
-| 远程 | `url`     | `headers: {}`、`init_timeout_seconds` |
+| 传输 | 必需      | 可选                                           |
+| ---- | --------- | ---------------------------------------------- |
+| 命令 | `command` | `arguments: []`、`environment: {}`             |
+| 远程 | `url`     | `headers: {}`、`oauth`、`init_timeout_seconds` |
 
 Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。可选的 `tools` 遵循[工具选择规则](#choose-tools)。
 

@@ -7,10 +7,9 @@ from datetime import timedelta
 from typing import Any
 
 from a13n_harness import AgentContext
+from a13n_harness.mcp import InitializationRetryClient
 from a13n_logging import get_logger
-from fastmcp import Client
 from fastmcp.client.progress import ProgressHandler
-from fastmcp.client.transports import ClientTransport
 from mcp.types import CallToolResult, Tool
 from pydantic import TypeAdapter
 from pydantic_ai import RunContext, ToolDefinition, ToolReturn
@@ -43,7 +42,7 @@ _error_capture: ContextVar[Callable[[str, CallToolResult], None] | None] = Conte
 _boundary: ContextVar[tuple[str, str] | None] = ContextVar("mcp_app_return_boundary", default=None)
 
 
-class AppClient(Client[ClientTransport]):
+class AppClient(InitializationRetryClient):
     """Successful Apps use upstream metadata; only errors need the raw client boundary."""
 
     async def call_tool_mcp(

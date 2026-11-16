@@ -23,6 +23,8 @@ uv run agent-app-example "first turn" "second turn"
 uv run pytest
 ```
 
+The [Harness UI Connector source example](harness-ui-connectors/README.md) uses the root development environment to demonstrate trusted Connector setup, plugin-owned rule matching and atomic Bot ingress. Its README includes a separate offline test command.
+
 ## How to Use These Examples
 
 Run the example, then read its source and tests for the integration boundary. Copy the smallest part that matches your application and replace demo policy and persistence with your own. Accepted contracts live in [`spec/`](../spec/README.md); task-oriented guides live in [`docs/`](../docs/).

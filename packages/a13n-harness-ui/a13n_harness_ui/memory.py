@@ -85,11 +85,16 @@ class MemoryScope:
     root: Path
 
     def mount(self) -> FileMount:
-        guide = (
-            "Shared by every conversation using this configuration. Keep only cross-project preferences and facts."
-            if self.name == "global"
-            else "Shared by conversations in this Project. Keep project decisions, conventions and stable facts here."
-        )
+        guides = {
+            "global": "Shared by every conversation using this configuration. Keep only cross-project preferences and facts.",
+            "project": "Shared by conversations in this Project. Keep project decisions, conventions and stable facts here.",
+            "bot": (
+                "Private to Bot. Keep a concise workspace map and durable Project understanding. "
+                "Record Project IDs, source references and uncertainty; verify current resources before acting. "
+                "Keep short-lived work in Bot Notes, not memory."
+            ),
+        }
+        guide = guides[self.name]
         return FileMount(
             name=self.name,
             cursor_key=self.key,
@@ -120,8 +125,12 @@ def bind_memory(
     enabled: bool,
     project_id: str | None,
     positions: Mapping[str, str | None] | None = None,
+    bot: bool = False,
 ) -> tuple[FileMemoryCapability | None, MemoryCursors]:
     scopes = memory_scopes(configuration_root, project_id) if enabled and configuration_root is not None else ()
+    if scopes and bot:
+        assert configuration_root is not None
+        scopes += (MemoryScope("bot", "bot", configuration_root / "memory" / "bot"),)
     previous = positions or {}
     cursors = MemoryCursors({scope.key: previous[scope.key] for scope in scopes if scope.key in previous})
     capability = FileMemoryCapability(tuple(scope.mount() for scope in scopes), cursors=cursors) if scopes else None

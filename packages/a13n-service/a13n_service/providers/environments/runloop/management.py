@@ -11,6 +11,7 @@ from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import decode_response
 from a13n_harness.providers.environment.runloop.shared import Devbox, RunloopEnvironmentConfiguration, RunloopReference
 
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.native import NativeManagement
 
 
@@ -43,6 +44,7 @@ class RunloopManagement(RunloopReference, NativeManagement[RunloopEnvironmentCon
         if target is None:
             if self.target is not None:
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
+            environment = envd_environment(dict(self.config.environment), self.config.envd)
             raw = await self.transport().request(
                 "POST",
                 "/v1/devboxes",
@@ -50,7 +52,7 @@ class RunloopManagement(RunloopReference, NativeManagement[RunloopEnvironmentCon
                     "name": self.name,
                     "metadata": self.labels,
                     "blueprint_id": self.config.blueprint_id,
-                    **({"environment_variables": self.config.environment} if self.config.environment else {}),
+                    **({"environment_variables": environment} if environment else {}),
                     "launch_parameters": {
                         "resource_size_request": self.config.resource_size,
                         "after_idle": {"idle_time_seconds": self.config.idle_timeout_seconds, "on_idle": "suspend"},

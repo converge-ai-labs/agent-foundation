@@ -17,6 +17,7 @@ from a13n_harness_ui.storage.metadata import harness_ui_metadata
 from a13n_harness_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
 from a13n_harness_ui.surfaces import RootOperationStatus
 from alembic import command
+from alembic.script import ScriptDirectory
 from anyio import Event, fail_after
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import MetaData, create_engine, inspect, text
@@ -33,37 +34,11 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     the navigation migration itself has separate real old-schema coverage.
     """
     newer = tmp_path / "comment-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
-    (newer / "versions/20261111_f196302d868f_retain_latest_thread_external_context.py").unlink()
-    (newer / "versions/20261111_2e9f82450690_add_notification_scope_and_language.py").unlink()
-    (newer / "versions/20261111_2444030a5191_retain_configured_routes_for_chat_usage.py").unlink()
-    (newer / "versions/20261110_7147a04d1d58_add_bot_notes_and_unified_automatic_.py").unlink()
-    (newer / "versions/20261111_63bab3fe8f7b_index_configured_usage_models.py").unlink()
-    (newer / "versions/20261110_e94e15093b5d_persist_shared_webui_composer_drafts.py").unlink()
-    (newer / "versions/20261106_d9e633ce9a00_separate_thread_device_session_bindings.py").unlink()
-    (newer / "versions/20261105_dd0077431d5b_retain_tool_executions_and_completion_.py").unlink()
-    (newer / "versions/20261029_1f69a2ed231f_record_deleted_threads_for_checkpoint_.py").unlink()
-    (newer / "versions/20261026_62534972e2d6_retain_background_compaction_operations.py").unlink()
-    (newer / "versions/20261019_f3d4ba03d1cc_add_scoped_sharing_grants.py").unlink()
-    (newer / "versions/20261012_cb56f9a0a4df_add_live_voice_transcript_head_and_.py").unlink()
-    (newer / "versions/20261010_3cf95de9550a_retire_saved_output_comments.py").unlink()
-    (newer / "versions/20261010_4bd3d3ab1b82_retain_latest_root_execution_summary.py").unlink()
-    (newer / "versions/20261001_c82e5ae6ef80_add_small_thread_work_projections.py").unlink()
-    (newer / "versions/20260926_1da116a90fda_add_memory_scope_to_observable_threads.py").unlink()
-    (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
-    (newer / "versions/20260924_0a7582171995_replace_project_leads_with_thread_.py").unlink()
-    (newer / "versions/20260923_78e4e7206898_add_project_lead_worker_ownership.py").unlink()
-    (newer / "versions/20260923_027c7c879425_add_canonical_project_lead.py").unlink()
-    (newer / "versions/20260918_ba240ec65035_add_planned_update_handoff.py").unlink()
-    (newer / "versions/20260918_63e8be47c2e2_replace_push_thread_interest_with_.py").unlink()
-    (newer / "versions/20260919_3a52b4914bbb_add_thread_owned_local_roots.py").unlink()
-    (newer / "versions/20260919_0c38589db1f4_add_device_environment_bindings_and_.py").unlink()
-    (newer / "versions/20260918_e416fbd4674c_add_thread_default_model.py").unlink()
-    (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
-    (newer / "versions/20260917_acd7efeb9fd8_add_continuation_read_models.py").unlink()
-    (newer / "versions/20260917_9aeed42d15b3_add_browser_push_subscriptions.py").unlink()
-    (newer / "versions/20260916_57b54299e47e_add_durable_thread_completion_markers.py").unlink()
-    (newer / "versions/20260916_122039abf689_add_thread_navigation_touch_time.py").unlink()
+    shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("versions", "__pycache__"))
+    versions = newer / "versions"
+    versions.mkdir()
+    for revision in ScriptDirectory(str(migration.MIGRATIONS_PATH)).walk_revisions(head="20e4b84abfd1"):
+        shutil.copy2(revision.path, versions)
     older = tmp_path / "older-migrations"
     shutil.copytree(newer, older)
     monkeypatch.setattr(migration, "MIGRATIONS_PATH", newer)
@@ -106,6 +81,8 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN last_execution_json TEXT"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN external_context_json TEXT"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN unread BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN read_state_version INTEGER NOT NULL DEFAULT 0"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
@@ -113,6 +90,9 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "bot_input",
                 "bot_message",
                 "connector_configuration",
+                "mcp_oauth",
+                "connector_state",
+                "connector_setup_offer",
                 "bot_inbox",
                 "bot_note",
                 "deleted_thread",
@@ -267,6 +247,8 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
             assert dict(connection.execute(text("SELECT * FROM thread")).mappings().one()) == {
                 **before,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
             assert "output_comment" not in inspect(connection).get_table_names()
             assert "output_comment_tombstone" not in inspect(connection).get_table_names()
@@ -317,6 +299,8 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
                 "memory_scope": None,
                 "last_execution_json": None,
                 "external_context_json": None,
+                "unread": 0,
+                "read_state_version": 0,
             }
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:

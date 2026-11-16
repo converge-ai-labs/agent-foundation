@@ -1,15 +1,26 @@
 import type { AgentConfig } from "./configuration";
 import type { Schema } from "../../shared/api";
 
-type ToolSearch = NonNullable<AgentConfig["tool_search"]>;
+type ToolSearch = Exclude<
+  NonNullable<AgentConfig["tool_search"]>,
+  { mode: "native" }
+>;
+type DiscoverySources = NonNullable<ToolSearch["automatic"]>;
 export type SearchGroup = NonNullable<ToolSearch["groups"]>[string] & {
   name: string;
 };
 export interface ToolSearchDraft {
-  mode: "direct" | "proxy";
+  mode: "direct" | "proxy" | "native";
   groups: SearchGroup[];
   config?: ToolSearch["config"];
   automatic?: ToolSearch["automatic"];
+  nativeSources?: DiscoverySources;
+}
+
+export function discoveryPolicy(search: ToolSearchDraft) {
+  return search.mode === "native"
+    ? (search.nativeSources ?? {})
+    : search.automatic;
 }
 
 type Capability = NonNullable<
@@ -126,21 +137,21 @@ export function usesToolDiscovery(
   source: Pick<SearchSource, "kind" | "id" | "defaultDiscovery">,
 ): boolean {
   if (search.mode === "direct") return false;
-  if (search.automatic == null)
+  const policy = discoveryPolicy(search);
+  if (policy == null)
     return search.groups.some((group) => groupHasSource(group, source));
   if (source.kind === "plugins") return false;
   if (source.kind === "platform")
-    return search.automatic.exclude_platform == null
+    return policy.exclude_platform == null
       ? source.defaultDiscovery
-      : !search.automatic.exclude_platform;
+      : !policy.exclude_platform;
   if (source.kind === "connections")
     return (
-      (search.automatic.connections ?? source.defaultDiscovery) &&
-      (source.id === "all" ||
-        !search.automatic.exclude_connections?.includes(source.id))
+      (policy.connections ?? source.defaultDiscovery) &&
+      (source.id === "all" || !policy.exclude_connections?.includes(source.id))
     );
   return (
-    search.automatic.capabilities?.includes(source.id as Capability) ??
+    policy.capabilities?.includes(source.id as Capability) ??
     source.defaultDiscovery
   );
 }
@@ -200,20 +211,21 @@ export function toggleDiscoverySource(
   checked: boolean,
   sources: SearchSource[],
 ): ToolSearchDraft {
-  if (search.automatic != null) {
-    const policy = search.automatic;
+  const policy = discoveryPolicy(search);
+  if (policy != null) {
+    const field = search.mode === "native" ? "nativeSources" : "automatic";
     if (source.kind === "platform")
       return {
         ...search,
-        automatic: { ...policy, exclude_platform: !checked },
+        [field]: { ...policy, exclude_platform: !checked },
       };
     if (source.kind === "connections") {
       if (source.id === "all")
-        return { ...search, automatic: { ...policy, connections: checked } };
+        return { ...search, [field]: { ...policy, connections: checked } };
       const excluded = policy.exclude_connections ?? [];
       return {
         ...search,
-        automatic: {
+        [field]: {
           ...policy,
           exclude_connections: checked
             ? excluded.filter((id) => id !== source.id)
@@ -229,7 +241,7 @@ export function toggleDiscoverySource(
         .map((item) => item.id as Capability);
     return {
       ...search,
-      automatic: {
+      [field]: {
         ...policy,
         capabilities: checked
           ? [...selected, source.id as Capability]
@@ -265,6 +277,13 @@ export function toggleDiscoverySource(
 export function toolSearchDraft(
   value: AgentConfig["tool_search"],
 ): ToolSearchDraft {
+  if (value && "mode" in value)
+    return {
+      mode: "native",
+      groups: [],
+      automatic: {},
+      nativeSources: value.sources ?? {},
+    };
   return {
     mode: value == null ? "direct" : "proxy",
     groups: Object.entries(value?.groups ?? {}).map(([name, group]) => ({
@@ -282,6 +301,21 @@ export function toolSearchConfig(
 ): AgentConfig["tool_search"] {
   if (draft.mode === "direct") return undefined;
   const selected = new Set(connections.map((item) => item.connection_id));
+  if (draft.mode === "native")
+    return {
+      mode: "native",
+      sources: {
+        ...draft.nativeSources,
+        ...(draft.nativeSources?.exclude_connections
+          ? {
+              exclude_connections:
+                draft.nativeSources.exclude_connections.filter((id) =>
+                  selected.has(id),
+                ),
+            }
+          : {}),
+      },
+    };
   if (draft.automatic != null)
     return {
       config: { ...draft.config, mode: "proxy" },
@@ -327,5 +361,51 @@ export function toolSearchConfig(
         },
       ]),
     ),
+  };
+}
+
+/** Keep discovery exclusions and proxy membership aligned with an imported connection. */
+export function remapToolSearchConnection(
+  search: NonNullable<AgentConfig["tool_search"]>,
+  from: string,
+  to: string,
+): NonNullable<AgentConfig["tool_search"]> {
+  const remap = (ids: string[] | undefined) =>
+    ids?.map((id) => (id === from ? to : id));
+  if ("mode" in search)
+    return {
+      ...search,
+      ...(search.sources
+        ? {
+            sources: {
+              ...search.sources,
+              exclude_connections: remap(search.sources.exclude_connections),
+            },
+          }
+        : {}),
+    };
+  return {
+    ...search,
+    ...(search.automatic
+      ? {
+          automatic: {
+            ...search.automatic,
+            exclude_connections: remap(search.automatic.exclude_connections),
+          },
+        }
+      : {}),
+    ...(search.groups
+      ? {
+          groups: Object.fromEntries(
+            Object.entries(search.groups).map(([name, group]) => [
+              name,
+              {
+                ...group,
+                connections: remap(group.connections),
+              },
+            ]),
+          ),
+        }
+      : {}),
   };
 }

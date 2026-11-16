@@ -90,8 +90,8 @@ async def test_selection_conflict_does_not_publish_completion_and_history_uses_i
         ref = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="a" * 64)
         original = app._projections._inspection_header
 
-        async def inspection_header(snapshot):
-            result = await original(snapshot)
+        async def inspection_header(snapshot, *sources):
+            result = await original(snapshot, *sources)
             # A new completion is published after history chose the initial snapshot.
             await app._store.threads.select_continuation(
                 thread_id=thread.thread_id,

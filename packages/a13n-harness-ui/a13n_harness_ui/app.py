@@ -19,8 +19,10 @@ import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
+from a13n_harness._json import dump_json_bytes
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.errors import ModelResolutionError
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_catalog_updates import run_official_model_updates
@@ -34,10 +36,11 @@ from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from pydantic_ai import BinaryContent, prices
+from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
+from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
@@ -50,6 +53,7 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
+from a13n_harness_ui.chat_titles import generate_title
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
@@ -57,7 +61,9 @@ from a13n_harness_ui.composition import (
     CompositionAcceptanceService,
     ResolvedRunComposition,
     RunCompositionService,
+    ThreadCompositionSelection,
 )
+from a13n_harness_ui.composition.models import ResolvedMcpRecipe, ResolvedModelRecipe
 from a13n_harness_ui.configuration import (
     ConfigurationMutationResult,
     ExternalSubagentImportCandidate,
@@ -85,6 +91,7 @@ from a13n_harness_ui.configuration.mcp_tools import (
 from a13n_harness_ui.configuration.models import (
     BrowserConfiguration,
     DeviceResource,
+    McpRemoteTransport,
     PairedDeviceAuthentication,
     ProjectResource,
 )
@@ -186,6 +193,9 @@ from a13n_harness_ui.mcp_apps.operations import AppOperation, AppOperations, App
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_oauth.login import Logins as McpLogins
+from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationTarget, OAuthError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
@@ -203,12 +213,19 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, A
 from a13n_harness_ui.shutdown import Shutdown
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
 from a13n_harness_ui.bot import BotController
-from a13n_harness_ui.bot_models import BOT_THREAD_ID
+from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotSubmit
+from a13n_harness_ui.connector_models import ConnectorConfiguration
+from a13n_harness_ui.connectors.models import Instance, SetupCommand, SetupSnapshot
+from a13n_harness_ui.connectors.runtime import Connectors
+from a13n_harness_ui.connectors.sdk import Definition as ConnectorDefinition
+from a13n_harness_ui.dictation import DictationInput, DictationResult, transcribe_audio, transcribe_subscription
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -237,8 +254,10 @@ from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import (
     ChatGPTSubscriptionSource,
     CopilotSubscriptionSource,
+    HarnessUiModelResolver,
     ManagedSubscriptionSource,
     SubscriptionSource,
+    model_recipe_id,
 )
 from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.page_presence import (
@@ -257,8 +276,8 @@ from a13n_harness_ui.page_presence import (
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
-from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
+from a13n_harness_ui.root_input import authored_text, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -326,10 +345,13 @@ from a13n_harness_ui.surfaces import (
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
+    ThreadMetadataPatch,
     ThreadPage,
+    ThreadReadAcknowledgement,
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionOutputView,
     ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
@@ -363,6 +385,7 @@ class HarnessUiIntegrations:
     harness_plugin_factories: tuple[HarnessPluginFactory, ...] = ()
     environment_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = ()
     provider_runtime_factories: Mapping[str, ProviderRuntimeFactory] = field(default_factory=dict)
+    connectors: tuple[ConnectorDefinition, ...] = ()
 
 
 class AppState(StrEnum):
@@ -444,6 +467,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         copilot_login: CopilotLoginCallback | None,
+        subscription_sources: dict[str, SubscriptionSource] | None = None,
         candidate_error: HarnessUiError | None = None,
         browsers: HostBrowsers | None = None,
         share_computer: bool = False,
@@ -454,6 +478,8 @@ class HarnessUiApp:
         mcp_operations: AppOperations | None = None,
         mcp_connections: HostConnections | None = None,
         mcp_inputs: Inputs | None = None,
+        mcp_oauth: McpOAuth | None = None,
+        mcp_logins: McpLogins | None = None,
         compaction: BackgroundCompaction | None = None,
     ) -> None:
         self._browsers = browsers
@@ -463,6 +489,8 @@ class HarnessUiApp:
         self._settings = settings
         self.shutdown = Shutdown()
         self._mcp_apps = mcp_apps
+        self._mcp_oauth = mcp_oauth
+        self.mcp_logins = mcp_logins
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
         self._mcp_operations = mcp_operations
@@ -477,6 +505,7 @@ class HarnessUiApp:
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
         self._bot: BotController | None = None
+        self._connectors: Connectors | None = None
         self._web_push = web_push
         self._store = store
         self.sharing = Sharing(self, ShareRepository(store.database.sessions))
@@ -486,6 +515,7 @@ class HarnessUiApp:
         self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
+        self._subscription_sources = subscription_sources
         self._catalog = catalog
         self._configurations = configurations
         self._threads = threads
@@ -502,6 +532,8 @@ class HarnessUiApp:
         self._root_runs = root_runs
         self._tool_executions = tool_executions
         tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.deliver_subagent = self._deliver_subagent_input
+        tool_executions.runtime.reports_background_completions = True
         tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -536,6 +568,30 @@ class HarnessUiApp:
         self._operations_idle = Event()
         self._operations_idle.set()
 
+    def connectors(self) -> Connectors:
+        if self._connectors is None:
+            raise HarnessUiError("Connectors are available only in WebUI.", code="connector_runtime_unavailable")
+        return self._connectors
+
+    async def configure_connector(
+        self, configuration: ConnectorConfiguration, *, expected_version: int | None
+    ) -> Instance:
+        async with self._operation():
+            await self.connectors().save(configuration, expected_version=expected_version)
+            return await self.connectors().instance(configuration.connector_id)
+
+    async def begin_connector_setup(self, connector_id: str, *, intent: str = "configure") -> SetupSnapshot:
+        async with self._operation():
+            return await self.connectors().begin_setup(connector_id, intent=intent)
+
+    async def act_connector_setup(self, session_id: str, command: SetupCommand) -> SetupSnapshot:
+        async with self._operation():
+            return await self.connectors().act(session_id, command)
+
+    async def delete_connector(self, connector_id: str, *, expected_version: int) -> None:
+        async with self._operation():
+            await self.connectors().delete(connector_id, expected_version=expected_version)
+
     def bot(self) -> BotController:
         if self._bot is None:
             raise HarnessUiError("Bot is available only in WebUI.", code="bot_unavailable")
@@ -545,6 +601,143 @@ class HarnessUiApp:
         if self._voice is None:
             raise HarnessUiError("Live is available in WebUI with a configuration directory.", code="live_unavailable")
         return self._voice
+
+    async def transcribe(self, request: DictationInput) -> DictationResult:
+        async with self._operation():
+            source = await self._configurations.current()
+            if source and source.document.dictation.backend == "codex":
+                return await self._transcribe_subscription(request, source)
+            if not source or not (model_id := source.document.dictation.model):
+                raise HarnessUiError("Select a dictation source in settings.", code="dictation_unconfigured")
+            model, recipe = await self._utility_model(source, model_id, request.thread_id or "dictation")
+            return DictationResult(text=await transcribe_audio(request, model, recipe.settings))
+
+    async def _utility_model(
+        self, source: LoadedHarnessUiConfiguration, model_id: str, thread_id: str
+    ) -> tuple[Model, ResolvedModelRecipe]:
+        recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
+        key = model_recipe_id(recipe)
+        resolver = HarnessUiModelResolver(
+            {key: recipe},
+            api_keys=self._api_keys,
+            subscription_sources=self._subscription_sources,
+            configuration=source.document.run_configuration,
+        )
+        return await resolver.resolve(key, thread_id=thread_id), recipe
+
+    async def suggest_chat_title(self, thread_id: str, *, model_id: str | None = None) -> str:
+        async with self._operation():
+            messages = []
+            for entry in await self._projections.title_entries(thread_id):
+                pieces = []
+                for part in entry.parts:
+                    meta = part.metadata.model_extra or {}
+                    if (
+                        part.kind != "user"
+                        or not part.metadata.display
+                        or meta.get("a13n.steering-source", "user") != "user"
+                    ):
+                        continue
+                    ui = meta.get("harness_ui", {})
+                    if ui.get("long_text"):
+                        _, data = await self._thread_files.read(thread_id, ui["attachment"]["attachment_id"])
+                        pieces.append(data.decode("utf-8"))
+                    elif (
+                        not (ui.get("attachment") or ui.get("long_text_skipped") or ui.get("mcp_app_context"))
+                        and part.text
+                    ):
+                        pieces.append(part.text)
+                if pieces:
+                    messages.append(" ".join(pieces))
+            source = await self._configurations.current()
+            if source is None:
+                raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
+            model_id = source.document.chat_title_model or model_id
+            if not model_id:
+                config = await self.inspect_thread_configuration(thread_id)
+                model_id = config.next_model_id
+            if not model_id or model_id not in source.models:
+                raise ThreadError("Select a chat title model in Settings.", code="chat_title_model_unavailable")
+            return await self._generate_chat_title(thread_id, messages, source, model_id)
+
+    async def _generate_chat_title(
+        self, thread_id: str, messages: list[str], source: LoadedHarnessUiConfiguration, model_id: str
+    ) -> str:
+        try:
+            model, recipe = await self._utility_model(source, model_id, thread_id)
+        except ModelResolutionError as exc:
+            raise HarnessUiError(str(exc), code=exc.code) from None
+        return await generate_title(messages, model, recipe.settings)
+
+    async def _title_new_chat(self, admission: RootRunAdmission) -> None:
+        thread = admission.thread
+        if thread.thread_id == BOT_THREAD_ID or thread.title or thread.continuation or thread.last_execution:
+            return
+        prompt = admission.prompt
+        if prompt is None:
+            return
+        text = (
+            prompt if isinstance(prompt, str) else " ".join(value for part in prompt if (value := authored_text(part)))
+        )
+        if not text.strip():
+            return
+        async with self._operation():
+            try:
+                title = await self._generate_chat_title(
+                    thread.thread_id,
+                    [text],
+                    admission.source,
+                    admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+                )
+            except HarnessUiError as exc:
+                get_logger(__name__).info(
+                    "Automatic chat title unavailable", extra={"thread_id": thread.thread_id, "code": exc.code}
+                )
+                return
+            await self.update_thread_metadata(
+                thread_id=thread.thread_id,
+                mutation=ThreadMetadataMutation(
+                    expected_version=thread.metadata_version,
+                    patch=ThreadMetadataPatch(title=title),
+                ),
+            )
+
+    async def _transcribe_subscription(
+        self, request: DictationInput, source: LoadedHarnessUiConfiguration
+    ) -> DictationResult:
+        from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
+
+        options = source.document.dictation.codex
+        group = source.subscription_groups.get(options.group or "codex-default")
+        if options.account:
+            group = SubscriptionGroupResource(
+                schema_version="1",
+                kind="subscription_group",
+                id="dictation-account",
+                name="Dictation account",
+                provider="codex",
+                accounts=(SubscriptionGroupMember(account=options.account),),
+            )
+        if group is None or group.provider != "codex":
+            raise HarnessUiError(
+                "Select a Codex account or subscription group in Dictation settings.", code="dictation_unconfigured"
+            )
+        configuration = source.document.run_configuration
+        if configuration.allowed_hosts is not None:
+            raise HarnessUiError(
+                "Codex subscription Models cannot enforce Run allowed hosts.", code="model_configuration_unsupported"
+            )
+        try:
+            return await transcribe_subscription(
+                request,
+                group,
+                self.subscription_accounts,
+                self.subscription_usage,
+                options.model,
+                configuration=configuration,
+            )
+        except ModelResolutionError as error:
+            raise HarnessUiError(str(error), code=error.code) from None
 
     async def _voice_model(self, source: LoadedHarnessUiConfiguration) -> tuple[CodexLiveModel, str]:
         from a13n_harness_ui.model_accounts.routing import account_order, choose_account
@@ -710,11 +903,7 @@ class HarnessUiApp:
             )
             published = await self.subscription_accounts.publish_default_groups(
                 path.parent,
-                frozenset(
-                    model.authentication.kind.removesuffix("_subscription")
-                    for model in candidate.models.values()
-                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-                ),
+                candidate.subscription_group_providers(),
                 existing_groups=frozenset(candidate.subscription_groups),
             )
             if published:
@@ -776,7 +965,9 @@ class HarnessUiApp:
     async def discover_mcp_tools(self, server_id: str) -> tuple[McpToolDescriptor, ...]:
         async with self._operation():
             source = await self._configurations.current()
-            return await discover_tools(source, server_id, self._require_configuration_path().parent)
+            return await discover_tools(
+                source, server_id, self._require_configuration_path().parent, oauth=self._mcp_oauth
+            )
 
     async def select_mcp_tools(self, server_id: str, request: McpToolSelection) -> ConfigurationMutationResult:
         async with self._operation(), self._configuration_lock:
@@ -1063,7 +1254,16 @@ class HarnessUiApp:
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
         async with self._operation():
-            return await self._projections.context_usage(thread_id)
+            active = await self._root_runs.active(thread_id)
+            if active is None:
+                return await self._projections.context_usage(thread_id)
+            reference = await self._root_runs.composition_reference(active.receipt.receipt_id)
+            if reference is None:
+                return await self._projections.context_usage(thread_id)
+            composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
+            return await self._projections.context_usage(
+                thread_id, active_composition=composition, active_run_id=active.run_id
+            )
 
     async def resolve_launch_project(
         self,
@@ -1406,6 +1606,11 @@ class HarnessUiApp:
                 if source is not None and selected.agent_source.kind == "agent"
                 else None
             )
+            bot = (
+                self._mcp_app_owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
+                if source is not None and selected.agent_source.kind == "bot" and source.bot_model_id is not None
+                else None
+            )
             active = await self._root_runs.active(thread_id)
             captured = None
             origin: Literal["active_operation", "selected_continuation", "none"] = "none"
@@ -1447,11 +1652,15 @@ class HarnessUiApp:
                     if selected.agent_source.kind == "live" and source is not None and source.document.live is not None
                     else source.memory_organization_model_id
                     if thread.memory_scope is not None and source is not None
+                    else source.bot_model_id
+                    if selected.agent_source.kind == "bot" and source is not None
                     else selected.default_model_id or (None if agent is None else agent.model)
                 ),
                 next_capability_ids=(
                     ("working_state", "runtime_context", "user_interaction", "dynamic_environment")
                     if selected.agent_source.kind == "live"
+                    else tuple(item.capability for item in bot.capabilities)
+                    if bot is not None
                     else ()
                     if agent is None
                     else tuple(item.capability for item in agent.capabilities)
@@ -1636,6 +1845,7 @@ class HarnessUiApp:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        unread: bool | None = None,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
@@ -1648,6 +1858,7 @@ class HarnessUiApp:
                 query=query,
                 project_id=project_id,
                 include_archived=include_archived,
+                unread=unread,
                 project_ids=project_ids,
                 sort=sort,
                 cursor=cursor,
@@ -1673,6 +1884,19 @@ class HarnessUiApp:
     async def lookup_threads(self, *, thread_ids: tuple[str, ...], memory: bool = False) -> ThreadPage:
         async with self._operation():
             return await self._projections.lookup_threads(thread_ids, memory=memory)
+
+    async def mark_thread_unread(self, thread_id: str) -> ThreadSummary:
+        async with self._operation():
+            await self._threads.mark_unread(thread_id)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
+
+    async def acknowledge_threads_read(self, request: ThreadReadAcknowledgement) -> ThreadPage:
+        async with self._operation():
+            changed = await self._store.threads.acknowledge_read(request.threads)
+            for thread_id in changed:
+                await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.lookup_threads(tuple(item.thread_id for item in request.threads))
 
     async def memory_files(self, *, project_id: str | None = None) -> tuple[MemoryFileEntry, ...]:
         async with self._operation():
@@ -1800,6 +2024,8 @@ class HarnessUiApp:
 
     async def delete_thread(self, *, thread_id: str, expected_version: int) -> tuple[str, ...]:
         """Permanently remove an idle conversation and its subagent history."""
+        from a13n_harness_ui.object_store import ThreadObjectStore
+
         deleted: tuple[str, ...] | None = None
         async with self._operation():
             async with self._root_runs.require_inactive(thread_id):
@@ -1819,6 +2045,7 @@ class HarnessUiApp:
                         if self._browsers is not None:
                             self._browsers.handback.suppress(removed)
                         await self._thread_files.remove(removed)
+                        await ThreadObjectStore(self._store.layout.root, removed).clear()
                     await self._retire_mcp_owners()
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
                 assert deleted is not None
@@ -1941,7 +2168,11 @@ class HarnessUiApp:
 
     async def _load_shared_draft(self, thread_id: str) -> SharedDraft:
         """Load under the draft lock; editor registration shares its prune boundary."""
-        thread = await self._threads.require_interactive(thread_id)
+        if thread_id == BOT_THREAD_ID:
+            self.bot()
+            thread = await self._threads.bot_thread()
+        else:
+            thread = await self._threads.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
         await self._thread_files.touch(thread_id)
@@ -1977,6 +2208,15 @@ class HarnessUiApp:
 
             if await draft.command(participant, command, validate, edit_options=edit_options):
                 await self._summary_hub.publish(kind="draft", thread_id=thread_id)
+
+    async def submit_bot_input(self, command: BotSubmit, *, draft: DraftCapture | None = None) -> BotInput:
+        """Admit Bot input and consume only its synchronized shared-draft capture."""
+        async with self._operation():
+            bot = self.bot()
+            prepared = self._prepare_draft_clear(BOT_THREAD_ID, draft)
+            accepted = await bot.submit(command)
+            await self._clear_submitted_draft(BOT_THREAD_ID, prepared)
+            return accepted
 
     def _prepare_draft_clear(
         self, thread_id: str, capture: DraftCapture | None, *, reset_mode: bool = False
@@ -2232,6 +2472,8 @@ class HarnessUiApp:
 
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
+            if thread_id == BOT_THREAD_ID:
+                await self._threads.bot_thread()
             await self._threads.require_interactive(thread_id)
             return await self._thread_files.stage(thread_id, upload)
 
@@ -2286,6 +2528,7 @@ class HarnessUiApp:
         for kind, prune in (
             ("draft", self._prune_drafts),
             ("scratch", self._prune_scratch),
+            ("object_library", self._prune_object_library),
             ("compaction", self._prune_compactions),
             ("checkpoint", self._store.checkpoints.prune),
             ("tool_execution", self._store.tool_executions.prune),
@@ -2296,6 +2539,14 @@ class HarnessUiApp:
                 get_logger(__name__).warning(
                     "Storage pruning failed", extra={"kind": kind, "error_type": type(exc).__name__}
                 )
+
+    async def _prune_object_library(self) -> None:
+        from a13n_harness_ui.object_store import prune
+
+        async def exists(thread_id: str) -> bool:
+            return await self._store.threads.get(thread_id) is not None
+
+        await prune(self._store.layout.root, self._settings.storage.object_store, exists=exists)
 
     async def _prune_compactions(self) -> None:
         if self._compaction is not None:
@@ -2594,6 +2845,54 @@ class HarnessUiApp:
             records = await self._tool_executions.runtime.summarize(thread_id, offset=offset, limit=limit)
             return tuple(execution_view(record) for record in records)
 
+    async def tool_execution_output(self, thread_id: str, execution_id: str) -> ToolExecutionOutputView:
+        """Read the original result/tail without consuming model delivery or changing execution."""
+        async with self._operation():
+            await self._threads.get(thread_id)
+            runtime = self._tool_executions.runtime
+            saved = await runtime.result(thread_id, execution_id)
+            if saved is None:
+                raise ThreadError(
+                    "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
+                )
+            record = saved.record
+            input_text, input_truncated = await self._projections.tool_execution_input(thread_id, record.tool_call_id)
+            value = saved.result
+            live = False
+            if not record.terminal and record.tool_name == "shell_exec":
+                value = await runtime.call_resource(
+                    thread_id, execution_id, {"operation": "wait", "timeout_seconds": 0}
+                )
+                live = value is not None
+            if value is None and not (record.terminal and record.result_available):
+                expired = await self._store.tool_executions.output_expired(thread_id, execution_id)
+                return ToolExecutionOutputView(
+                    execution=execution_view(record),
+                    input=input_text,
+                    input_truncated=input_truncated,
+                    state="expired" if expired else "unavailable" if record.terminal else "pending",
+                )
+            if isinstance(value, ToolReturn):
+                value = value.return_value
+            truncated = isinstance(value, dict) and value.get("truncated") is True
+            if (
+                isinstance(value, dict)
+                and truncated
+                and isinstance(value.get("result"), str)
+                and "output_chars" in value
+            ):
+                value = value["result"]
+            text = value if isinstance(value, str) else dump_json_bytes(value).decode()
+            return ToolExecutionOutputView(
+                execution=execution_view(record),
+                input=input_text,
+                input_truncated=input_truncated,
+                text=text[:65536],
+                truncated=truncated or len(text) > 65536,
+                state="available",
+                live=live,
+            )
+
     async def cancel_tool_execution(self, thread_id: str, execution_id: str) -> ToolExecutionView:
         async with self._operation():
             await self._threads.require_interactive(thread_id)
@@ -2613,11 +2912,25 @@ class HarnessUiApp:
             )
 
     async def _deliver_tool_completion(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
-        if thread_id == BOT_THREAD_ID:
-            # Results stay available for inspection on the next permitted input.
-            return True
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="tool_execution")
+
+    async def _deliver_subagent_input(self, thread_id: str, prompt: str, execution_ids: tuple[str, ...]) -> bool:
+        return await self._deliver_background_input(thread_id, prompt, execution_ids, source="async_subagent")
+
+    async def _deliver_background_input(
+        self,
+        thread_id: str,
+        prompt: str,
+        execution_ids: tuple[str, ...],
+        *,
+        source: Literal["async_subagent", "tool_execution"],
+    ) -> bool:
         if self._state is not AppState.ready:
             return False
+        operation = await self._root_runs.active(thread_id)
+        if thread_id == BOT_THREAD_ID and operation is None:
+            # An idle Bot lists retained work on its next permitted Run; completion never starts one.
+            return True
         detail = await self._projections.detail(thread_id)
         if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
             return False
@@ -2643,19 +2956,11 @@ class HarnessUiApp:
 
         # Lifecycle hints are model context, not human-authored messages. Keep
         # the annotation through active steering and idle continuation alike.
-        content = (
-            ContentItem(
-                prompt,
-                ContentMetadata.model_validate(
-                    {"display": False, "source_id": "tool_execution.completion", "execution_ids": list(execution_ids)}
-                ),
-            ),
-        )
+        content = background_input(prompt, execution_ids, source=source)
         if detail.thread.parent_thread_id is not None:
             return await self._subagent_operator.deliver_tool_completion(
                 thread_id, content, before_accept=before_accept
             )
-        operation = await self._root_runs.active(thread_id)
         if operation is not None:
             result = await self._root_runs.steer(
                 receipt_id=operation.receipt.receipt_id, message=content, immediate=False, before_accept=before_accept
@@ -2791,6 +3096,7 @@ class HarnessUiApp:
         execution_id: str | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        latest: bool = False,
     ) -> ChildExecutionPage:
         async with self._operation():
             return await self._subagent_operator.query_child_executions(
@@ -2798,6 +3104,7 @@ class HarnessUiApp:
                 execution_id=execution_id,
                 cursor=cursor,
                 limit=limit,
+                latest=latest,
             )
 
     async def wait_child_executions(
@@ -3278,12 +3585,12 @@ class HarnessUiApp:
     ) -> ThreadWatch:
         async with self._operation():
             thread = await self._projections.detail(root_thread_id)
+            if thread.thread.parent_thread_id is not None:
+                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             if thread.continuation_id != base_continuation_id:
                 raise LivePresentationError(
                     "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
                 )
-            if thread.thread.parent_thread_id is not None:
-                raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
             root_operation = await self._root_runs.active(root_thread_id)
             selected = await self._threads.get(root_thread_id)
             selected_id = selected.continuation.logical_digest if selected.continuation is not None else None
@@ -3328,11 +3635,7 @@ class HarnessUiApp:
         path = self._require_configuration_path()
         if await self.subscription_accounts.publish_default_groups(
             path.parent,
-            frozenset(
-                model.authentication.kind.removesuffix("_subscription")
-                for model in candidate.models.values()
-                if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-            ),
+            candidate.subscription_group_providers(),
             existing_groups=frozenset(candidate.subscription_groups),
         ):
             result = replace(
@@ -3356,30 +3659,98 @@ class HarnessUiApp:
         self._memory_organizer.configuration_changed(result.configuration)
         if self._bot is not None:
             await self._bot.reconcile_policy()
+            self._bot.signal_inputs()
         await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
         await self._summary_hub.publish(kind="project")
         return result
 
+    async def mcp_authorization_recipe(self, target: AuthorizationTarget) -> ResolvedMcpRecipe:
+        async with self._operation():
+            if self._mcp_oauth is None:
+                raise OAuthError("MCP OAuth is unavailable.", code="mcp_oauth_unavailable")
+            if target.kind == "connector":
+                recipe = await self.connectors().oauth_recipe(target.id)
+            else:
+                source = await self._configurations.current()
+                resource = source.mcp_servers.get(target.id) if source else None
+                recipe = ResolvedMcpRecipe(server_id=target.id, transport=resource.transport) if resource else None
+                if recipe is not None:
+                    recipe = await self._mcp_oauth.bind(recipe)
+            if (
+                recipe is None
+                or not isinstance(recipe.transport, McpRemoteTransport)
+                or recipe.transport.oauth is None
+                or recipe.oauth_binding is None
+            ):
+                raise OAuthError("This server is not configured for MCP OAuth.", code="mcp_oauth_not_configured")
+            return recipe
+
+    async def mcp_authorization_status(self, target: AuthorizationTarget) -> AuthorizationStatus:
+        import time
+
+        recipe = await self.mcp_authorization_recipe(target)
+        assert self._mcp_oauth is not None and recipe.oauth_binding is not None
+        account = await self._mcp_oauth.repository.get(recipe.oauth_binding)
+        login = self.mcp_logins.current(account.owner) if self.mcp_logins is not None else None
+        if account.refresh_pending:
+            return AuthorizationStatus(state="reconnect_required", login=login)
+        bundle = account.bundle
+        if bundle is None or bundle.tokens is None:
+            return AuthorizationStatus(state="disconnected", login=login)
+        expired = bundle.expires_at is not None and bundle.expires_at <= time.time()
+        state = "expired" if expired and not bundle.tokens.refresh_token else "connected"
+        return AuthorizationStatus(
+            state=state, login=login, scopes=tuple((bundle.tokens.scope or "").split()), expires_at=bundle.expires_at
+        )
+
+    async def start_mcp_authorization(self, target: AuthorizationTarget, origin: str):
+        if self.mcp_logins is None:
+            raise OAuthError("Start MCP authorization in WebUI.", code="mcp_oauth_webui_required")
+        recipe = await self.mcp_authorization_recipe(target)
+        result = await self.mcp_logins.start(recipe, origin)
+        async with self._configuration_lock:
+            source = await self._configurations.current()
+            if source is not None:
+                await self._retire_mcp_bindings(source)
+        return result
+
+    async def disconnect_mcp_authorization(self, target: AuthorizationTarget) -> None:
+        recipe = await self.mcp_authorization_recipe(target)
+        assert self._mcp_oauth is not None and recipe.oauth_binding is not None
+        account = await self._mcp_oauth.repository.get(recipe.oauth_binding)
+        if self._mcp_oauth.cancel_logins is not None:
+            await self._mcp_oauth.cancel_logins(account.owner)
+        current = await self._mcp_oauth.bind(recipe.model_copy(update={"oauth_binding": None}), owner=account.owner)
+        assert current.oauth_binding is not None
+        await self._mcp_oauth.repository.replace(current.oauth_binding)
+        async with self._configuration_lock:
+            source = await self._configurations.current()
+            if source is not None:
+                await self._retire_mcp_bindings(source)
+        await self._summary_hub.publish(kind="configuration")
+
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
+        if self._mcp_oauth is not None:
+            await self._mcp_oauth.reconcile(source)
         if self._mcp_connections is not None:
             settings = source.document.webui.mcp_apps
             app_servers = set(settings.servers) if self._mcp_apps is not None and settings.enabled else set()
             retained = set(source.document.mcp.host_owned_servers) | app_servers
-            self._mcp_connections.retain_bindings(
-                {
-                    identity: repr(
-                        (
-                            server.transport.model_dump_json(),
-                            source.document.mcp.protocol_overrides.get(identity, "auto"),
-                            identity in app_servers,
-                        )
-                    )
-                    for identity, server in source.mcp_servers.items()
-                    if identity in retained
-                }
-            )
+            bindings = {}
+            for identity, server in source.mcp_servers.items():
+                if identity not in retained:
+                    continue
+                recipe = ResolvedMcpRecipe(
+                    server_id=identity,
+                    transport=server.transport,
+                    protocol=source.document.mcp.protocol_overrides.get(identity, "auto"),
+                )
+                if self._mcp_oauth is not None:
+                    recipe = await self._mcp_oauth.bind(recipe)
+                bindings[identity] = recipe.binding_key(apps=identity in app_servers)
+            self._mcp_connections.retain_bindings(bindings)
 
         await self._retire_mcp_owners()
 
@@ -3562,6 +3933,8 @@ class HarnessUiApp:
                 return
             self._state = AppState.stopping
         self._tool_executions.stop()
+        if self._connectors is not None:
+            await self._connectors.stop()
         if self._browsers is not None:
             self._browsers.handback.stop()
         self._memory_organizer.stop()
@@ -3686,6 +4059,11 @@ async def open_harness_ui_app(
             open_local_store(settings.storage) as store,
             AsyncExitStack() as resources,
         ):
+            automation_owned = False
+            if host_mode == "webui":
+                from a13n_harness_ui.connectors.ownership import automation_owner
+
+                automation_owned = await resources.enter_async_context(automation_owner(store.layout.root))
             if settings.pricing_auto_update:
                 resources.enter_context(prices.update_in_background())
             subscription_accounts = SubscriptionAccounts(store.layout.root)
@@ -3700,7 +4078,15 @@ async def open_harness_ui_app(
             )
             resolver = AgentCompositionResolver(catalog, host_mode=host_mode)
             configurations = CompositionAcceptanceService(store, resolver)
-            compositions = RunCompositionService(store, resolver)
+            mcp_oauth = McpOAuth(
+                store.mcp_oauth,
+                store.layout.root,
+                configuration_path.expanduser().resolve().parent if configuration_path else store.layout.root,
+            )
+            mcp_logins = McpLogins(mcp_oauth) if host_mode == "webui" else None
+            if mcp_logins is not None:
+                resources.push_async_callback(mcp_logins.close)
+            compositions = RunCompositionService(store, resolver, oauth=mcp_oauth)
             candidate_error: HarnessUiError | None = configuration_error
             candidate: LoadedHarnessUiConfiguration | None = None
             if configuration_path is not None and configuration_path.exists():
@@ -3716,13 +4102,7 @@ async def open_harness_ui_app(
                 configuration_path.expanduser().resolve().parent if configuration_path is not None else None,
                 grok_scope=grok_scope,
                 existing_groups=frozenset(candidate.subscription_groups) if candidate else frozenset(),
-                group_providers=frozenset(
-                    model.authentication.kind.removesuffix("_subscription")
-                    for model in candidate.models.values()
-                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
-                )
-                if candidate is not None
-                else frozenset(),
+                group_providers=candidate.subscription_group_providers() if candidate is not None else frozenset(),
             )
             if candidate is not None and configuration_path is not None:
                 candidate = await load_harness_ui_configuration(
@@ -3816,6 +4196,7 @@ async def open_harness_ui_app(
                 catalog,
                 mcp_apps=app_connections,
                 mcp_connections=mcp_connections,
+                mcp_oauth=mcp_oauth,
                 instrumentation=observation.instrumentation,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
                 configuration_root=configuration_path.expanduser().resolve().parent
@@ -3861,11 +4242,12 @@ async def open_harness_ui_app(
                     mcp_apps,
                     CurrentOwners(store, configurations, resolver),
                     configuration_path.expanduser().resolve().parent,
+                    oauth=mcp_oauth,
                 )
                 # Drain admitted operations while their MCP transports and store still exist.
                 resources.push_async_callback(mcp_operations.close)
 
-            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
+            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui" and automation_owned)
             tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
             operator = HarnessUiSubagentOperator(
                 tool_executions=tool_executions,
@@ -3971,6 +4353,11 @@ async def open_harness_ui_app(
                 if app is not None and app._voice is not None:
                     await app._voice.executor_settled(operation)
 
+            async def human_admitted(admission: RootRunAdmission, operation: RootOperationView) -> None:
+                await thread_tools.notify_worker_admitted(admission, operation)
+                if app is not None:
+                    await app._title_new_chat(admission)
+
             root_runs = RootRunCoordinator(
                 root_executor,
                 tool_executions=tool_executions,
@@ -3978,11 +4365,7 @@ async def open_harness_ui_app(
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
-                on_human_admitted=(
-                    lambda admission, operation: thread_tools.notify_worker_admitted(admission, operation)
-                )
-                if host_mode == "webui"
-                else None,
+                on_human_admitted=human_admitted if host_mode == "webui" else None,
                 on_settled=notify_settled if host_mode == "webui" else None,
                 summary_hub=summary_hub,
                 observation=observation,
@@ -4044,6 +4427,8 @@ async def open_harness_ui_app(
                 mcp_operations=mcp_operations,
                 mcp_connections=mcp_connections,
                 mcp_inputs=mcp_inputs,
+                mcp_oauth=mcp_oauth,
+                mcp_logins=mcp_logins,
                 configuration_path=configuration_path,
                 catalog=catalog,
                 configurations=configurations,
@@ -4070,6 +4455,7 @@ async def open_harness_ui_app(
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,
                 grok_login=grok_login,
+                subscription_sources=subscription_sources,
                 candidate_error=candidate_error,
                 browsers=browsers,
                 share_computer=share_computer,
@@ -4078,6 +4464,9 @@ async def open_harness_ui_app(
                 memory_organizer=memory_organizer,
                 restart_coordinator=restart_coordinator,
             )
+            accepted_source = await configurations.current()
+            if accepted_source is not None:
+                await mcp_oauth.reconcile(accepted_source)
             if host_mode == "webui":
                 app._bot = BotController(
                     store=store,
@@ -4086,8 +4475,28 @@ async def open_harness_ui_app(
                     runs=root_runs,
                     projections=projections,
                     summaries=summary_hub,
+                    files=thread_files,
+                    prepare_input=lambda prompt: app._prepare_input(BOT_THREAD_ID, prompt, ()),
                     notify=web_push.enqueue if web_push is not None else None,
                 )
+                root_executor.set_bot_display_publisher(app._bot.publish_display)
+                from pydantic_ai.capabilities import CombinedCapability
+
+                from a13n_harness_ui.connectors.capability import connector_capability
+                from a13n_harness_ui.connectors.catalog import Catalog as ConnectorCatalog
+
+                async def connector_changed() -> None:
+                    await summary_hub.publish(kind="configuration")
+
+                app._connectors = Connectors(
+                    store,
+                    ConnectorCatalog(selected_integrations.connectors),
+                    owned=automation_owned,
+                    signal=app._bot.signal_inputs,
+                    changed=connector_changed,
+                    oauth=mcp_oauth,
+                )
+                compositions.connector_capture = app._connectors.capture
                 if configuration_path is not None:
                     app._voice = VoiceController(
                         configuration_root=configuration_path.expanduser().resolve().parent,
@@ -4111,12 +4520,33 @@ async def open_harness_ui_app(
                     read_project_memory=app.read_project_memory,
                 )
                 root_executor.set_root_capability_factory(
-                    lambda composition: ThreadCollaborationCapability(
-                        controller=thread_tools,
-                        source_thread_id=composition.thread_id,
-                        composition=composition,
+                    lambda composition: CombinedCapability(
+                        [
+                            ThreadCollaborationCapability(
+                                controller=thread_tools, source_thread_id=composition.thread_id, composition=composition
+                            ),
+                            *(
+                                [
+                                    connector_capability(
+                                        app.connectors(),
+                                        thread_id=composition.thread_id,
+                                        captures=composition.connectors,
+                                        bot=app.bot(),
+                                    )
+                                ]
+                                if composition.root.source_kind != "live"
+                                else []
+                            ),
+                        ]
                     )
                 )
+            connector_resources = create_task_group()
+            await connector_resources.__aenter__()
+            # Join owned controller tasks without feeding an unrelated surface
+            # failure through a second TaskGroup exception boundary.
+            resources.push_async_callback(connector_resources.__aexit__, None, None, None)
+            if app._connectors is not None:
+                resources.push_async_callback(app._connectors.close)
             try:
                 await operator.start()
                 await root_runs.start()
@@ -4125,8 +4555,10 @@ async def open_harness_ui_app(
                     background.start_soon(browsers.prepare)
                     background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
+                    if app._connectors is not None:
+                        await app._connectors.start(background, resources=connector_resources)
                     if app._bot is not None:
-                        background.start_soon(app._bot.run)
+                        background.start_soon(app._bot.run, automation_owned)
                     if app._voice is not None:
                         app._voice.start(background)
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)
@@ -4152,7 +4584,12 @@ async def open_harness_ui_app(
                             await app._stop(graceful=graceful)
                         background.cancel_scope.cancel()
             finally:
-                await app._close_collaborators()
+                try:
+                    await app._close_collaborators()
+                finally:
+                    if app._connectors is not None:
+                        with CancelScope(shield=True):
+                            await app._connectors.close()
                 with CancelScope(shield=True):
                     app.shutdown.enter("committing restart handoff")
                     await restart_coordinator.commit()

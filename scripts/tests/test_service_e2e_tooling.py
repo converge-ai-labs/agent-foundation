@@ -128,6 +128,27 @@ def test_daytona_journey_uses_the_operator_envd_snapshot(monkeypatch, pytestconf
     asyncio.run(check())
 
 
+@pytest.mark.parametrize("organization", [None, "fixture-org"])
+def test_boxd_journey_uses_its_explicit_account(monkeypatch, pytestconfig, environment_journeys, organization):
+    from a13n_harness.providers.environment.boxd.shared import BoxdConnectionConfiguration, BoxdEnvironmentConfiguration
+
+    monkeypatch.setenv("BOXD_API_KEY", "fixture-key")
+    monkeypatch.setenv("BOXD_REGION", "nyc")
+    if organization is None:
+        monkeypatch.delenv("BOXD_ORGANIZATION", raising=False)
+    else:
+        monkeypatch.setenv("BOXD_ORGANIZATION", organization)
+
+    async def check():
+        async with environment_journeys.hosted_account("boxd", pytestconfig) as (config, credential, recipe):
+            account = BoxdConnectionConfiguration.model_validate(config)
+            assert (account.region, account.organization) == ("nyc", organization)
+            assert credential == {"api_key": "fixture-key"}
+            assert BoxdEnvironmentConfiguration.model_validate(recipe).size == "1x4"
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize("structured", [False, True])
 def test_user_texts_excludes_runtime_context_without_losing_conversation_order(structured):
     contents = [
@@ -145,8 +166,12 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
         for content in contents
     ]
     messages.insert(4, {"role": "assistant", "content": "First answer"})
-    for snapshot in ("[]", '[{"status":"running"}]'):
-        text = f"Tool executions requiring attention (status only; results are not consumed): {snapshot}"
+    for text in (
+        "Tool executions requiring attention (0)",
+        "Tool executions requiring attention (1)\n- exec-1 | shell_exec | running",
+        "Tool execution changes (1)\n- exec-1 | shell_exec | finished, result available",
+        "Tool executions requiring attention (status only; results are not consumed): []",
+    ):
         messages.append({"role": "user", "content": [{"type": "text", "text": text}] if structured else text})
     assert user_texts({"body": {"messages": messages}}) == [contents[0], contents[4]]
 
@@ -196,12 +221,20 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert selected_kubernetes == kubernetes
     assert deployment["jobs"]["kind"]["needs"] == ["chart", "helm", "journeys"]
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
-    shards = workflow["jobs"]["scenarios"]["strategy"]["matrix"]["include"]
+    scenarios = workflow["jobs"]["scenarios"]
+    shards = scenarios["strategy"]["matrix"]["include"]
+    [native_build] = [step for step in scenarios["steps"] if "cargo build" in step.get("run", "")]
+    assert native_build["if"] == "matrix.name == 'other'"
+    assert "--locked --package a13n-envd" in native_build["run"]
+    [journey] = [step for step in scenarios["steps"] if step.get("run", "").startswith("make service-e2e ")]
+    assert journey["env"]["A13N_ENVD_TEST_BINARY"] == "${{ github.workspace }}/target/debug/a13n-envd"
     selected: set[str] = set()
     for shard in shards:
         nodes = collect_scenarios("--require-all", "-k", shard["selection"])
         assert nodes and not selected.intersection(nodes)
         assert f"{lifecycle}[docker]" not in nodes
+        slow_link = {node for node in nodes if "test_client_transfer_backpressure.py::" in node}
+        assert len(slow_link) == (2 if shard["name"] == "other" else 0)
         selected.update(nodes)
     docker = collect_scenarios("--require-all", "-k", "docker")
     assert docker and not selected.intersection(docker)
@@ -209,6 +242,10 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert not {node for node in default if "e2b" in node or "modal" in node}
     assert f"{lifecycle}[modal]" in collect_scenarios("--hosted")
     assert f"{lifecycle}[modal]" in collect_scenarios("-m", "hosted")
+    assert f"{lifecycle}[boxd]" not in default
+    assert f"{lifecycle}[boxd]" in collect_scenarios("--hosted")
+    assert f"{lifecycle}[boxd]" in collect_scenarios("-m", "hosted")
+    assert collect_scenarios("-k", "boxd") == {f"{lifecycle}[boxd]"}
     assert collect_scenarios("-k", "e2b") == {
         f"{lifecycle}[e2b]",
         f"{environments}::test_a_ready_e2b_sandbox_is_renewed_past_its_timeout",

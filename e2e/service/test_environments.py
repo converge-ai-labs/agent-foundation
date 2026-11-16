@@ -39,7 +39,7 @@ from .stack import docker_host, unavailable
 pytestmark = pytest.mark.anyio
 
 DOCKER_IMAGE = os.environ.get("SANDBOX_IMAGE", "a13n-sandbox:local")
-HOSTED = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop")
+HOSTED = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop", "boxd")
 
 
 def engine() -> closing[docker.DockerClient]:
@@ -178,6 +178,12 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncGenerator
     elif provider == "sprites":
         token, organization = variables(config, provider, "SPRITES_TOKEN", "SPRITES_ORGANIZATION")
         yield {"organization": organization}, {"api_key": token}, {}
+    elif provider == "boxd":
+        key, region = variables(config, provider, "BOXD_API_KEY", "BOXD_REGION")
+        account = {"region": region}
+        if organization := os.environ.get("BOXD_ORGANIZATION"):
+            account["organization"] = organization
+        yield account, {"api_key": key}, {"size": "1x4"}
     else:
         [key] = variables(config, provider, "RUNLOOP_API_KEY")
         yield {"organization": os.environ.get("RUNLOOP_ORGANIZATION", "service-e2e")}, {"api_key": key}, {}

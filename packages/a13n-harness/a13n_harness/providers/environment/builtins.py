@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 
+from a13n_harness.providers.environment.boxd.provider import BOXD
 from a13n_harness.providers.environment.daytona.provider import DAYTONA
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
@@ -25,6 +26,7 @@ BUILT_IN_ENVIRONMENT_PROVIDERS: tuple[EnvironmentProviderDefinition, ...] = (
     VERCEL,
     SPRITES,
     RUNLOOP,
+    BOXD,
     HTTP_ENVD,
     WEBSOCKET_ENVD,
 )

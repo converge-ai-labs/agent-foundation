@@ -1,5 +1,6 @@
 import {
   useContext,
+  createContext,
   useEffect,
   useId,
   useRef,
@@ -12,7 +13,7 @@ import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { MessageActionButton, MessageBranches } from "./message-branch";
 import { CopyMessage } from "./copy-message";
-import { retainedSkillSpans } from "./skill-references";
+import { retainedSkillSpans, skillDisplayName } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
 import type { Schema } from "../transport/client";
 import { useGuestAccess, useTransport } from "../transport/context";
@@ -20,6 +21,8 @@ import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { RetainedImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
+
+export const ChildInputLabels = createContext(false);
 
 export type InputPart = {
   kind: string;
@@ -166,11 +169,10 @@ function Attachment({
     </Popover>
   );
   return (
-    <span className={styles.inlineAttachment}>
+    <span className={image ? styles.sentImage : styles.inlineAttachment}>
       {image ? (
         <button
           type="button"
-          className={styles.inlineAttachmentOpen}
           onClick={() => setPreview(true)}
           aria-label={t("Preview {{name}}", { name: attachment.name })}
           title={attachment.name}
@@ -296,6 +298,10 @@ export function InputContent({
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
   const guest = useGuestAccess();
+  const childLabels = useContext(ChildInputLabels);
+  const parentInput = parts.some(
+    (part) => part.metadata?.["a13n.steering-source"] === "parent_agent",
+  );
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
   const copyText = inputCopyText(parts);
@@ -344,7 +350,7 @@ export function InputContent({
             title={t("Skill: {{name}}", { name: span.name })}
             data-skill={span.name}
           >
-            {points.slice(span.start, span.end).join("")}
+            {skillDisplayName(span.name)}
           </span>,
         );
         end = span.end;
@@ -352,14 +358,20 @@ export function InputContent({
       marked.push(points.slice(end).join(""));
       if ((composerIdentity(part) || spans.length) && part.kind !== "media")
         return (
-          <span key={index} className={styles.inputText}>
+          <span
+            key={index}
+            className={styles.inputText}
+            data-dictation-human={source ? undefined : ""}
+          >
             {marked}
           </span>
         );
       return part.kind === "media" ? (
         <Media key={index} part={part} />
       ) : (
-        <div key={index}>{renderText(part.text || "")}</div>
+        <div key={index} data-dictation-human={source ? undefined : ""}>
+          {renderText(part.text || "")}
+        </div>
       );
     });
   if (edit !== null && actions)
@@ -408,8 +420,13 @@ export function InputContent({
         <div
           className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
         >
-          {(source || status) && (
+          {(source || status || childLabels || parentInput) && (
             <header>
+              {(childLabels || parentInput) && (
+                <span className={styles.inputAuthor}>
+                  {parentInput ? t("Main agent") : t("User")}
+                </span>
+              )}
               {source && guest ? (
                 <span className={styles.threadSource}>
                   {t("From thread")} - {source.title || source.id}

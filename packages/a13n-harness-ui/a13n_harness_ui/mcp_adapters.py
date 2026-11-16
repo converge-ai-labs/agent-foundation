@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import httpx2
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.errors import RunError
 from a13n_harness.http import outbound_tls_verify
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, ToolsetFactory, raise_initialization_status
 from anyio import to_thread
-from fastmcp import Client
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import MCP, AbstractCapability
+from pydantic_ai.capabilities import MCP
 from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.loader import read_mcp_file_values
@@ -25,17 +29,20 @@ from a13n_harness_ui.configuration.models import (
     EnvironmentVariableSource,
     McpCommandTransport,
     McpFileValueSource,
+    McpPrivateValueSource,
     McpRemoteTransport,
     McpValueSource,
 )
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
+from a13n_harness_ui.mcp_oauth.models import OAuthError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
-class HarnessUiMCP(MCP[AgentContext]):
+class HarnessUiMCP(MCPServer):
     """Inert definition capability that creates one MCP client per logical Run."""
 
     def __init__(
@@ -45,40 +52,65 @@ class HarnessUiMCP(MCP[AgentContext]):
         configuration_root: Path | None = None,
         apps: Connections | None = None,
         connections: HostConnections | None = None,
+        private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
+        operation_guard: Callable[[], Awaitable[None]] | None = None,
+        oauth: McpOAuth | None = None,
     ) -> None:
         if not isinstance(recipe, ResolvedMcpRecipe):
             raise TypeError("recipe must be a ResolvedMcpRecipe")
         self._recipe = recipe.model_copy(deep=True)
+        self._oauth = oauth
         self._configuration_root = configuration_root
+        self._private_values = private_values
+        self._operation_guard = operation_guard
         self._apps = apps
         self._connections = apps or connections
-        transport = recipe.transport
-        self.url = transport.url if isinstance(transport, McpRemoteTransport) else None
-        self.id = recipe.server_id
-        self.native = False
-        self.local = None
-        self.authorization_token = None
-        self.headers = None
-        self.allowed_tools = None
-        self.description = None
-        self.defer_loading = False
+        super().__init__(
+            id=recipe.server_id,
+            prepare=self._prepare_toolset,
+            project=self._project_toolset,
+            on_error=recipe.on_error,
+            tools=recipe.tools,
+        )
 
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        cache_id = f"a13n.ui.mcp.{self._recipe.server_id}"
-        existing = ctx.deps._run_capability(cache_id)
-        if existing is not None:
-            if not isinstance(existing, MCP):
-                raise DefinitionError(
-                    "Harness UI MCP has an incompatible logical-Run replacement.",
-                    code="capability_type_mismatch",
-                )
-            return existing
-
+    async def _prepare_toolset(self, ctx: RunContext[AgentContext]) -> ToolsetFactory:
         client_transport, effective_recipe, init_timeout = await prepare_mcp_transport(
             self._recipe,
             self._configuration_root,
             configuration=ctx.deps.configuration,
+            private_values=self._private_values,
+            oauth=self._oauth,
         )
+        return partial(
+            self._start_toolset,
+            ctx,
+            f"a13n.ui.mcp.{self._recipe.server_id}",
+            client_transport,
+            effective_recipe,
+            init_timeout,
+        )
+
+    def _project_toolset(self, toolset: MCPToolset[AgentContext]) -> MCP[AgentContext]:
+        from a13n_harness.capabilities.object_store import ObjectRefToolset
+
+        references = ObjectRefToolset(toolset, object_ref_tools=dict(self._recipe.object_ref_tools))
+        local = _GuardedToolset(references, self._operation_guard) if self._operation_guard is not None else references
+        capability = AppMCP if self._apps is not None else MCP[AgentContext]
+        return capability(
+            id=self._recipe.server_id,
+            native=False,
+            local=local,
+            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
+        )
+
+    async def _start_toolset(
+        self,
+        ctx: RunContext[AgentContext],
+        cache_id: str,
+        client_transport: ClientTransport,
+        effective_recipe: str,
+        init_timeout: float,
+    ) -> MCPToolset[AgentContext]:
         if self._connections is not None and (self._recipe.host_owned or self._apps is not None):
             connection = await self._connections.acquire(
                 ctx.deps.thread_id,
@@ -86,13 +118,16 @@ class HarnessUiMCP(MCP[AgentContext]):
                 # Effective credentials are compared only in process memory, never persisted.
                 effective_recipe,
                 client_transport,
-                binding=repr((self._recipe.transport.model_dump_json(), self._recipe.protocol, self._apps is not None)),
+                binding=self._recipe.binding_key(apps=self._apps is not None),
+                # New logical Runs can replace closed generations; existing Run
+                # projections and App Views keep their original connection.
+                activate=True,
                 protocol=self._recipe.protocol,
                 init_timeout=init_timeout,
                 client_factory=None if self._apps is not None else HostClient,
                 extensions=None if self._apps is not None else (),
             )
-            toolset = AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
+            return AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
         elif self._connections is not None and self._connections.input_handler is not None:
             connection = Connection(
                 ctx.deps.thread_id,
@@ -108,19 +143,24 @@ class HarnessUiMCP(MCP[AgentContext]):
             # a default Run-local client beyond the enclosing Harness Run.
             ctx.deps._register_run_cleanup(cache_id, connection.close)
             await connection.start()
-            toolset = HostToolset(connection)
-        else:
-            client = Client(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
-            toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
-        capability = AppMCP if self._apps is not None else MCP[AgentContext]
-        replacement = capability(
-            id=self._recipe.server_id,
-            native=False,
-            local=toolset,
-            allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
-        )
-        ctx.deps._record_run_capability(cache_id, replacement)
-        return replacement
+            return HostToolset(connection)
+        client = InitializationRetryClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+        return MCPToolset[AgentContext](client, id=self._recipe.server_id)
+
+
+@dataclass
+class _GuardedToolset(WrapperToolset[AgentContext]):
+    guard: Callable[[], Awaitable[None]]
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        await self.guard()
+        return await self.wrapped.get_tools(ctx)
+
+    async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        await self.guard()
+        return await self.wrapped.call_tool(name, tool_args, ctx, tool)
 
 
 async def prepare_mcp_transport(
@@ -128,21 +168,34 @@ async def prepare_mcp_transport(
     configuration_root: Path | None,
     *,
     configuration: RunConfiguration | None = None,
+    private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
+    oauth: McpOAuth | None = None,
 ) -> tuple[ClientTransport, str, float]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
     transport = recipe.transport
     configuration = configuration or RunConfiguration()
     if isinstance(transport, McpRemoteTransport):
         configuration.authorize_url(transport.url)
-        values = await resolve_mcp_values(transport.headers, configuration_root)
+        values = await resolve_mcp_values(transport.headers, configuration_root, private_values=private_values)
+        auth = None
+        if transport.oauth is not None:
+            if oauth is None or recipe.oauth_binding is None:
+                raise OAuthError(
+                    "The captured MCP OAuth account is unavailable; start a new Run.", code="mcp_oauth_login_required"
+                )
+            # Resolve the initial account/token before entering startup isolation.
+            # Later requests keep the ordinary live refresh and origin checks.
+            await oauth.access_token(recipe.oauth_binding)
+            auth = oauth.auth(recipe.oauth_binding, transport.url)
         client_transport = StreamableHttpTransport(
             transport.url,
+            auth=auth,
             headers=values or None,
             httpx_client_factory=partial(_no_redirect_client, configuration=configuration),
         )
         init_timeout = transport.init_timeout_seconds or (30 if recipe.host_owned or recipe.apps_enabled else 5)
     elif isinstance(transport, McpCommandTransport):
-        values = await resolve_mcp_values(transport.environment, configuration_root)
+        values = await resolve_mcp_values(transport.environment, configuration_root, private_values=private_values)
         client_transport = StdioTransport(
             command=transport.command, args=list(transport.arguments), env=values or None, keep_alive=False
         )
@@ -155,6 +208,7 @@ async def prepare_mcp_transport(
         repr(
             (
                 transport.model_dump(),
+                recipe.oauth_binding.model_dump() if recipe.oauth_binding else None,
                 values,
                 configuration.model_dump(mode="json"),
                 recipe.protocol,
@@ -168,6 +222,8 @@ async def prepare_mcp_transport(
 async def resolve_mcp_values(
     values: dict[str, McpValueSource],
     configuration_root: Path | None,
+    *,
+    private_values: Callable[[McpPrivateValueSource], Awaitable[str]] | None = None,
 ) -> dict[str, str]:
     """Resolve values once per Run, without adding secret bytes to its recipe."""
     files: dict[tuple[str, str], list[McpFileValueSource]] = {}
@@ -196,6 +252,12 @@ async def resolve_mcp_values(
     for name, source in values.items():
         if isinstance(source, EnvironmentVariableSource):
             result[name] = _required_environment(source.env, purpose="MCP value")
+        elif isinstance(source, McpPrivateValueSource):
+            if private_values is None:
+                raise RunError(
+                    "Private MCP credentials are unavailable in this execution.", code="runtime_credential_missing"
+                )
+            result[name] = await private_values(source)
         else:
             template = literals[(source.file, source.source_digest, source.path)]
             result[name] = re.sub(
@@ -227,7 +289,7 @@ def _no_redirect_client(
         timeout=timeout,
         auth=auth,
         follow_redirects=False,
-        event_hooks={"request": [authorize]},
+        event_hooks={"request": [authorize], "response": [raise_initialization_status]},
         # Configuration allows plaintext only to literal loopback. Keep that
         # request local even when the process has an HTTP/ALL proxy configured.
         mounts={"http://": httpx2.AsyncHTTPTransport(trust_env=False)},

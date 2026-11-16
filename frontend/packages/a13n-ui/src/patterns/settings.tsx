@@ -66,7 +66,7 @@ export function SettingsRow({
   className,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   description?: ReactNode;
   controlId?: string;
   stackOnNarrow?: boolean;

@@ -355,7 +355,7 @@ fn computer_use_fails_closed_on_unsupported_platforms() {
     );
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "desktop", target_os = "linux"))]
 #[test]
 fn x11_requires_a_display_and_rejects_wayland_before_transport() {
     for wayland in [false, true] {
@@ -376,4 +376,15 @@ fn x11_requires_a_display_and_rejects_wayland_before_transport() {
             "{message}"
         );
     }
+}
+
+#[cfg(not(feature = "desktop"))]
+#[test]
+fn slim_rejects_computer_use_before_transport() {
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command.args(["--computer-use", "true"]);
+    let result = fixture.reject(command);
+    assert!(String::from_utf8_lossy(&result.stderr).contains("unavailable in the slim build"));
+    assert!(result.stdout.is_empty());
 }

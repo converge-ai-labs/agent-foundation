@@ -18,6 +18,7 @@ const ownInfrastructure = new Set([
   "kubernetes",
 ]);
 const cloudServices = new Set([
+  "boxd",
   "e2b",
   "daytona",
   "modal",

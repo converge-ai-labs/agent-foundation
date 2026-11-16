@@ -35,17 +35,11 @@ from a13n_harness.model_context import (
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextProjectionRequest,
-    ModelContextRequestKind,
+    _RunNoticeState,
 )
 
 WORKING_STATE_CAPABILITY_ID = "a13n.working-state"
 _WORKING_STATE_VERSION = "1"
-_NOTES_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.notes"
-_TASKS_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.tasks"
-_NOTES_OPEN = '<notes source="a13n-harness">'
-_NOTES_CLOSE = "</notes>"
-_TASKS_OPEN = '<tasks source="a13n-harness">'
-_TASKS_CLOSE = "</tasks>"
 _TASK_ID_PATTERN = re.compile(r"^task-([1-9][0-9]*)$")
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _EMPTY_JSON_OBJECT = _JSON_OBJECT_ADAPTER.dump_json({})
@@ -616,6 +610,8 @@ class _WorkingStateRunCapability(WorkingStateCapability):
         from a13n_harness.toolsets.working_state import WorkingStateToolset
 
         self._context = context
+        self._note_notices = _RunNoticeState[dict[str, int]]()
+        self._task_notices = _RunNoticeState[dict[str, int]]()
         self._toolset = WorkingStateToolset(
             owner=self,
             context=context,
@@ -653,158 +649,130 @@ class _WorkingStateRunCapability(WorkingStateCapability):
         request: ModelContextProjectionRequest,
         handler: ModelContextNext,
     ) -> ModelContextProjection:
-        await self._toolset.ensure_bound(ctx)
         projection = await handler(request)
         snapshot = await self._toolset.context_snapshot(ctx)
-        all_tasks = snapshot.tasks if snapshot is not None else {}
-        tasks = sorted(
-            (task for task in all_tasks.values() if task.status != "completed"),
-            key=lambda item: _task_sequence(item.id),
+        blocks = list(projection.blocks)
+        budget = self.configuration.max_context_bytes
+        if self.configuration.notes_enabled:
+            notes = self._notes_notice(request, budget // 2 if self.configuration.tasks_enabled else budget)
+            if notes is not None:
+                blocks.append(notes)
+                budget -= len(notes.content.encode())
+        if snapshot is not None:
+            tasks = self._tasks_notice(request, snapshot.tasks, budget)
+            if tasks is not None:
+                blocks.append(tasks)
+        return ModelContextProjection(blocks=tuple(blocks))
+
+    def _notes_notice(self, request: ModelContextProjectionRequest, budget: int) -> ModelContextBlock | None:
+        notes = self._toolset.note_revisions
+        previous = self._note_notices.previous
+        if notes == previous:
+            return None
+        if previous is None:
+            rows = [f'  <note-key key="{escape(key)}" />' for key in sorted(notes)]
+        else:
+            reported = set()
+            for part in request._notices.results:
+                result = part.content
+                if (
+                    part.tool_name not in ("note_write", "note_delete")
+                    or not isinstance(result, dict)
+                    or result.get("ok") is not True
+                ):
+                    continue
+                key = result.get("key")
+                if isinstance(key, str) and (
+                    (key in notes and result.get("action") in ("created", "updated"))
+                    or (key not in notes and result.get("action") in ("deleted", "already_absent"))
+                ):
+                    reported.add(key)
+            rows = []
+            for key in sorted((notes.keys() | previous.keys()) - reported):
+                if notes.get(key) != previous.get(key):
+                    action = "deleted" if key not in notes else "updated" if key in previous else "created"
+                    rows.append(f'  <note key="{escape(key)}" action="{action}" />')
+        block = _working_notice(
+            "notes", rows, initial=previous is None, limit=self.configuration.max_context_notes, budget=budget
         )
-        notes = (
-            self._toolset.notes_snapshot()
-            if self.configuration.notes_enabled and request.kind is ModelContextRequestKind.INPUT
-            else {}
-        )
-        blocks = _render_working_state_blocks(
-            tasks,
-            all_tasks,
-            notes,
-            self.configuration,
-            project_notes=request.kind is ModelContextRequestKind.INPUT,
-        )
-        return ModelContextProjection(
-            blocks=(
-                *projection.blocks,
-                *(block for block in blocks if not request.history.matches_latest(block)),
+        self._note_notices.observe(request, notes.copy(), block)
+        return block
+
+    def _tasks_notice(
+        self, request: ModelContextProjectionRequest, tasks: Mapping[str, Task], budget: int
+    ) -> ModelContextBlock | None:
+        from a13n_harness.toolsets.working_state import _project_task
+
+        versions = {key: task.version for key, task in tasks.items()}
+        previous = self._task_notices.previous
+        if versions == previous:
+            return None
+        reported = set()
+        for part in request._notices.results:
+            result = part.content
+            if (
+                part.tool_name not in ("task_create", "task_update")
+                or not isinstance(result, dict)
+                or result.get("ok") is not True
+            ):
+                continue
+            value = result.get("task")
+            key = value.get("id") if isinstance(value, dict) else None
+            if isinstance(key, str) and key in tasks and value == _project_task(tasks[key]):
+                reported.add(key)
+
+        rows = []
+        for key in sorted(tasks, key=_task_sequence):
+            task = tasks[key]
+            if previous is None and task.status != "completed":
+                owner = f' owner="{escape(task.owner)}"' if task.owner is not None else ""
+                blockers = ",".join(k for k in task.blocked_by if tasks[k].status != "completed")
+                blocked = f' blocked-by="{blockers}"' if blockers else ""
+                rows.append(f'  <task id="{key}" status="{task.status}"{owner}{blocked}>{escape(task.subject)}</task>')
+            elif previous is not None and previous.get(key) != task.version and key not in reported:
+                rows.append(f'  <task id="{key}" status="{task.status}" />')
+        if previous is not None:
+            rows.extend(
+                f'  <task id="{key}" status="removed" />'
+                for key in sorted(previous.keys() - tasks.keys(), key=_task_sequence)
             )
+        block = _working_notice(
+            "tasks", rows, initial=previous is None, limit=self.configuration.max_context_tasks, budget=budget
         )
+        self._task_notices.observe(request, versions, block)
+        return block
 
 
-def _render_working_state_blocks(
-    tasks: Sequence[Task],
-    all_tasks: Mapping[str, Task],
-    notes: Mapping[str, str],
-    configuration: WorkingStateConfiguration,
-    *,
-    project_notes: bool = True,
-) -> tuple[ModelContextBlock, ...]:
-    """Render separate Notes and Tasks overlays within one aggregate UTF-8 budget."""
-    blocks: list[ModelContextBlock] = []
-    notes_budget = (
-        configuration.max_context_bytes // 2 if configuration.tasks_enabled else configuration.max_context_bytes
-    )
-    rendered_notes = (
-        _render_notes(notes, configuration.max_context_notes, notes_budget)
-        if configuration.notes_enabled and project_notes
-        else None
-    )
-    used_bytes = 0
-    if rendered_notes is not None:
-        used_bytes = len(rendered_notes.encode("utf-8"))
-        blocks.append(
-            ModelContextBlock(
-                source_id=_NOTES_CONTEXT_SOURCE_ID,
-                context_group="runtime_state",
-                placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                content=rendered_notes,
-            )
-        )
-
-    tasks_budget = configuration.max_context_bytes - used_bytes
-    rendered_tasks = (
-        _render_tasks(tasks, all_tasks, configuration.max_context_tasks, tasks_budget)
-        if configuration.tasks_enabled
-        else None
-    )
-    if rendered_tasks is not None:
-        blocks.append(
-            ModelContextBlock(
-                source_id=_TASKS_CONTEXT_SOURCE_ID,
-                context_group="runtime_state",
-                placement=ModelContextPlacement.REQUEST_EPILOGUE,
-                content=rendered_tasks,
-            )
-        )
-
-    if sum(len(block.content.encode("utf-8")) for block in blocks) > configuration.max_context_bytes:
-        raise AssertionError("working-state context budget invariant violated")
-    return tuple(blocks)
-
-
-def _render_notes(notes: Mapping[str, str], limit: int, budget: int) -> str | None:
-    if not notes:
-        return f"{_NOTES_OPEN}\n  No working notes.\n{_NOTES_CLOSE}"
-    lines = [_NOTES_OPEN]
-    ordered_notes = sorted(notes.items())
+def _working_notice(
+    kind: Literal["notes", "tasks"], rows: list[str], *, initial: bool, limit: int, budget: int
+) -> ModelContextBlock | None:
+    if not rows and not initial:
+        return None
+    lines = [f'<{kind} source="a13n-harness">']
+    if kind == "notes" and initial:
+        lines.append("Use note_get(key) to read a note; note_get() lists all keys.")
+    if not rows:
+        lines.append("  No working notes." if kind == "notes" else "  No unfinished tasks.")
+    closing = f"</{kind}>"
+    remaining = budget - len(("\n".join([*lines, closing])).encode())
     shown = 0
-
-    def append(line: str, *, omitted: int) -> bool:
-        suffix = [f'  <notes-omitted count="{omitted}" />'] if omitted else []
-        candidate = "\n".join((*lines, line, *suffix, _NOTES_CLOSE)).encode("utf-8")
-        if len(candidate) > budget:
-            return False
-        lines.append(line)
-        return True
-
-    for key, value in ordered_notes[:limit]:
-        remaining = len(ordered_notes) - shown - 1
-        full = f'  <note key="{escape(key, quote=True)}">{escape(value)}</note>'
-        if append(full, omitted=remaining):
-            shown += 1
-            continue
-        reference = f'  <note-ref key="{escape(key, quote=True)}" />'
-        if not append(reference, omitted=remaining):
+    for row in rows[:limit]:
+        omitted = len(rows) - shown - 1
+        reserve = len(f'\n  <{kind}-omitted count="{omitted}" />') if omitted else 0
+        cost = 1 + len(row.encode())
+        if cost + reserve > remaining:
             break
+        lines.append(row)
+        remaining -= cost
         shown += 1
-
-    omitted = len(ordered_notes) - shown
-    if omitted:
-        lines.append(f'  <notes-omitted count="{omitted}" />')
-    lines.append(_NOTES_CLOSE)
-    rendered = "\n".join(lines)
-    if len(rendered.encode("utf-8")) > budget:
-        raise AssertionError("notes context budget invariant violated")
-    return rendered
-
-
-def _render_tasks(
-    tasks: Sequence[Task],
-    all_tasks: Mapping[str, Task],
-    limit: int,
-    budget: int,
-) -> str | None:
-    if not tasks:
-        return f"{_TASKS_OPEN}\n  No unfinished tasks.\n{_TASKS_CLOSE}"
-    lines = [_TASKS_OPEN]
-    shown = 0
-
-    def append(line: str, *, omitted: int) -> bool:
-        suffix = [f'  <tasks-omitted count="{omitted}" />'] if omitted else []
-        candidate = "\n".join((*lines, line, *suffix, _TASKS_CLOSE)).encode("utf-8")
-        if len(candidate) > budget:
-            return False
-        lines.append(line)
-        return True
-
-    for task in tasks[:limit]:
-        owner = f' owner="{escape(task.owner, quote=True)}"' if task.owner is not None else ""
-        active_blockers = tuple(task_id for task_id in task.blocked_by if all_tasks[task_id].status != "completed")
-        blocked = f' blocked-by="{escape(",".join(active_blockers), quote=True)}"' if active_blockers else ""
-        line = f'  <task id="{task.id}" status="{task.status}"{owner}{blocked}>{escape(task.subject)}</task>'
-        remaining = len(tasks) - shown - 1
-        if not append(line, omitted=remaining):
-            break
-        shown += 1
-
-    omitted = len(tasks) - shown
-    if omitted:
-        lines.append(f'  <tasks-omitted count="{omitted}" />')
-    lines.append(_TASKS_CLOSE)
-    rendered = "\n".join(lines)
-    if len(rendered.encode("utf-8")) > budget:
-        raise AssertionError("tasks context budget invariant violated")
-    return rendered
+    if shown < len(rows):
+        lines.append(f'  <{kind}-omitted count="{len(rows) - shown}" />')
+    return ModelContextBlock(
+        source_id=f"{WORKING_STATE_CAPABILITY_ID}.{kind}",
+        placement=ModelContextPlacement.REQUEST_EPILOGUE,
+        content="\n".join([*lines, closing]),
+        context_group="runtime_state",
+    )
 
 
 def _mutation_is_empty(mutation: TaskMutation) -> bool:

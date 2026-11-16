@@ -67,6 +67,7 @@ from .models import (
     ResolvedContentPlugin,
     ResolvedEnvironmentBinding,
     ResolvedEnvironmentProfile,
+    ResolvedEnvironmentTarget,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
     ResolvedPluginRecipe,
@@ -96,7 +97,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown", "live", "bot"]
+    agent_source_kind: Literal["agent", "markdown", "live", "bot", "dynamic"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -207,7 +208,9 @@ class AgentCompositionResolver:
             ResolvedMcpRecipe(
                 server_id=item,
                 transport=source.mcp_servers[item].transport,
+                on_error=source.mcp_servers[item].on_error,
                 tools=source.mcp_servers[item].tools,
+                object_ref_tools=source.mcp_servers[item].object_ref_tools,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,
                 host_owned=item in source.document.mcp.host_owned_servers,
@@ -265,10 +268,33 @@ class AgentCompositionResolver:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
     ) -> ResolvedAgentNode:
         """Resolve current Agent policy without publishing a Run or preparing an Environment."""
 
+        if selection.agent_source_kind == "dynamic":
+            if dynamic_node is None:
+                raise CompositionError(
+                    "Dynamic children resume through their retained execution.", code="subagent_resume_required"
+                )
+            self._validate_selection(source, selection)
+            model = dynamic_node.model
+            if selection.default_model_id is not None:
+                model = self.model_recipe(source.models[selection.default_model_id], source)
+            return dynamic_node.model_copy(
+                update={
+                    "model": model,
+                    "global_guidance": source.global_guidance,
+                    "children": (),
+                    "harness_plugins": self._plugins(
+                        source,
+                        selection.harness_plugin_ids,
+                        self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values())),
+                    ),
+                    "mcp_servers": self._mcp_recipes(source, selection.mcp_server_ids),
+                }
+            )
         if selection.agent_source_kind == "live":
             return self._live_node(source)
         self._validate_selection(source, selection)
@@ -316,6 +342,7 @@ class AgentCompositionResolver:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
@@ -332,10 +359,13 @@ class AgentCompositionResolver:
                 memory_enabled=source.document.memory.enabled,
                 run_configuration=source.document.run_configuration,
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+                subagents=source.document.subagents,
                 root=self._live_node(source),
                 environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
-        root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
+        root = self.resolve_agent(
+            source, selection, parent_node=parent_node, dynamic_node=dynamic_node, model_overrides=model_overrides
+        )
         environment = self._environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
         dependencies = [
@@ -343,6 +373,9 @@ class AgentCompositionResolver:
             *self._environment_dependencies(source, environment),
             *extension_dependencies,
         ]
+        targets = self._bot_environment_targets(source, selection) if root.source_kind == "bot" else ()
+        for target in targets:
+            dependencies.extend(self._environment_dependencies(source, target.environment_profile))
         unique = {
             (
                 item.kind,
@@ -366,8 +399,10 @@ class AgentCompositionResolver:
             background_compaction=source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+            subagents=source.document.subagents,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
+            model_overrides=model_overrides,
             project_roots=selection.local_roots,
             media_understanding={
                 kind: self.model_recipe(source.models[model_id], source)
@@ -393,9 +428,45 @@ class AgentCompositionResolver:
                 for item in selection.environment_bindings
             ),
             default_environment=selection.default_environment,
+            environment_targets=targets,
             environment_run_extensions=run_extensions,
             dependencies=tuple(sorted(unique.values(), key=lambda item: (item.kind, item.key))),
         )
+
+    def _bot_environment_targets(
+        self, source: LoadedHarnessUiConfiguration, selection: ThreadCompositionSelection
+    ) -> tuple[ResolvedEnvironmentTarget, ...]:
+        targets = [
+            ResolvedEnvironmentTarget(
+                target_id=project.id,
+                name=project.name,
+                project_id=project.id,
+                project_roots=tuple(root.path for root in project.roots),
+                environment_profile=self._environment_profile(
+                    source,
+                    project.defaults.environment_profile
+                    or source.document.defaults.environment_profile
+                    or FULL_CONTROL_PROFILE_ID,
+                ),
+                environment_bindings=tuple(
+                    ResolvedEnvironmentBinding(
+                        selection=item, device=source.devices[item.device_id].model_copy(deep=True)
+                    )
+                    for item in project.defaults.environment_bindings or ()
+                ),
+                default_environment=project.defaults.default_environment,
+            )
+            for project in sorted(source.projects.values(), key=lambda item: item.id)
+        ]
+        targets.append(
+            ResolvedEnvironmentTarget(
+                target_id="host-desktop",
+                name="Host desktop",
+                project_roots=selection.local_roots,
+                environment_profile=self._environment_profile(source, "environment-desktop"),
+            )
+        )
+        return tuple(targets)
 
     def _validate_selection(
         self,
@@ -404,10 +475,10 @@ class AgentCompositionResolver:
     ) -> None:
         if selection.project_id is not None and selection.project_id not in source.projects:
             raise CompositionError("The Thread Project is unavailable.", code="project_missing")
-        if selection.default_model_id is not None and selection.agent_source_kind != "agent":
+        if selection.default_model_id is not None and selection.agent_source_kind not in {"agent", "dynamic"}:
             raise CompositionError("A Markdown child follows its parent Model.", code="thread_model_invalid")
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
-        if selection.agent_source_kind != "bot" and selection.agent_source_id not in sources:
+        if selection.agent_source_kind not in {"bot", "dynamic"} and selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
         if (
             built_in_environment_profile(selection.environment_profile_id) is None
@@ -617,37 +688,71 @@ class AgentCompositionResolver:
         model_id = source.bot_model_id
         if model_id is None:
             raise CompositionError("Select a Model in Bot settings.", code="bot_model_required")
-        # Reuse ordinary Model controls and built-in Capability composition, without
-        # selecting or inheriting a user Agent's instructions, tools or children.
-        node = self._agent_node(
-            source,
-            AgentResource(
-                schema_version="1",
-                kind="agent",
-                id="agent-bot",
-                name="Bot",
-                model=model_id,
-                instructions=source.document.webui.bot.instructions,
-                capabilities=(
+        # Reuse the selected Agent's execution policy, not its conversational role.
+        # A standalone Bot Model remains usable without a configured Agent.
+        agent_id = source.bot_agent_id
+        agent = (
+            source.agents[agent_id]
+            if agent_id is not None
+            else AgentResource(schema_version="1", kind="agent", id="agent-bot", name="Bot")
+        )
+        environment = next(
+            (item.configuration for item in agent.capabilities if item.capability == "dynamic_environment"), {}
+        )
+        agent = agent.model_copy(
+            update={
+                "model": model_id,
+                "instructions": source.document.webui.bot.instructions,
+                "capabilities": (
+                    *(item for item in agent.capabilities if item.capability != "dynamic_environment"),
                     CapabilitySelection(
                         capability="dynamic_environment",
-                        configuration={"files_enabled": True, "shell_enabled": False, "computer_enabled": False},
+                        configuration={
+                            **environment,
+                            **source.document.webui.bot.model_dump(
+                                include={"files_enabled", "shell_enabled", "computer_enabled"}, exclude_none=True
+                            ),
+                        },
                     ),
                 ),
+            }
+        )
+        node = self._agent_node(
+            source,
+            agent,
+            plugin_catalog=self.catalog.plugin_catalog(
+                tuple(item.plugin_key for item in source.harness_plugins.values())
             ),
-            plugin_catalog=self.catalog.plugin_catalog(()),
-            root_plugins=(),
-            root_mcp=(),
+            root_plugins=None,
+            root_mcp=None,
             budget=[_MAX_RESOLVED_NODES],
             depth=1,
+            included_subagents=source.document.subagents.include,
             model_overrides=model_overrides,
         )
+        capabilities = tuple(item for item in node.capabilities if item.capability != "user_interaction")
+        # Bot asks for clarification in chat rather than suspending its Run.
+        disabled = {"ask_user_question"}
         return node.model_copy(
             update={
                 "source_kind": "bot",
                 "source_id": "bot",
                 "roster_name": "bot",
+                "base_agent_id": agent_id,
                 "system_prompt": (PACKAGE_SYSTEM_PROMPT, BOT_INSTRUCTIONS),
+                # Bot keeps clarification in ordinary chat rather than suspending
+                # its coordination Run for structured user questions.
+                "capabilities": capabilities,
+                "tools": (None if node.tools is None else tuple(name for name in node.tools if name not in disabled)),
+                "tool_search": (
+                    node.tool_search.selected(
+                        mcp_servers=tuple(item.server_id for item in node.mcp_servers),
+                        harness_plugins=tuple(item.plugin_id for item in node.harness_plugins),
+                        capabilities=tuple(item.capability for item in capabilities),
+                    )
+                    if node.tool_search is not None
+                    else None
+                ),
             }
         )
 

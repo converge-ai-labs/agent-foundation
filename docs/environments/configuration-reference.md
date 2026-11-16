@@ -22,8 +22,9 @@ Choose the execution column for a fixed-target Harness connector, or the managem
 | Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelRecipe](#vercelrecipe)                                       | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| boxd           | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdConnectionConfiguration](#boxdconnectionconfiguration)       | [TokenCredential](#tokencredential) |
 
-Runloop uses the same configuration model for execution and management; it has no separate Service desktop recipe.
+Runloop and boxd use the same configuration model for execution and management; they have no separate Service desktop recipe.
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -528,6 +529,23 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `resource_size`           | false    | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                        |
 | `idle_timeout_seconds`    | false    | integer                                          | minimum=300; maximum=172800; default=3600              |
 
+## `BoxdEnvironmentConfiguration`
+
+| Field                            | Required | Type / choices                       | Constraints and default                                |
+| -------------------------------- | -------- | ------------------------------------ | ------------------------------------------------------ |
+| `environment`                    | false    | EnvironmentVariables                 | —; default from model factory                          |
+| `root`                           | false    | string                               | default="/home/boxd"                                   |
+| `python`                         | false    | string                               | default="python3"                                      |
+| `shell`                          | false    | string                               | default="/bin/bash"                                    |
+| `request_timeout_seconds`        | false    | number                               | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`                 | false    | integer                              | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`              | false    | integer                              | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`               | false    | integer                              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `size`                           | false    | "1x4", "2x8", "4x16", "8x32" or null | default=null                                           |
+| `from_snapshot`                  | false    | string or null                       | minLength=1; maxLength=128; default=null               |
+| `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
+| `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
+
 ## `RemoteEnvdEnvironmentConfiguration`
 
 | Field               | Required | Type / choices                  | Constraints and default                  |
@@ -612,6 +630,13 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | Field          | Required | Type / choices | Constraints and default    |
 | -------------- | -------- | -------------- | -------------------------- |
 | `organization` | true     | string         | minLength=1; maxLength=128 |
+
+## `BoxdConnectionConfiguration`
+
+| Field          | Required | Type / choices | Constraints and default                  |
+| -------------- | -------- | -------------- | ---------------------------------------- |
+| `region`       | true     | "fra", "nyc"   | —                                        |
+| `organization` | false    | string or null | minLength=1; maxLength=128; default=null |
 
 ## `TokenCredential`
 

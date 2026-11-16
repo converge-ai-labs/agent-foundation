@@ -51,6 +51,9 @@ const config = () =>
 it("edits defaults in built-in presets, retains empty values, and removes variables", async () => {
   render(<Editor />);
   const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Environment variables" }),
+  );
   expect(
     (
       screen.getByRole("textbox", {
@@ -79,12 +82,27 @@ it("edits defaults in built-in presets, retains empty values, and removes variab
 it("keeps duplicate names visible and blocks invalid form submission", async () => {
   render(<Editor />);
   const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Environment variables" }),
+  );
   await user.click(screen.getByRole("button", { name: "Add variable" }));
   await user.type(
     screen.getByRole("textbox", { name: "Variable name 2" }),
     "APP_MODE",
   );
   expect(screen.getAllByRole("alert")).toHaveLength(2);
+  await user.click(
+    screen.getByRole("button", { name: "Environment variables" }),
+  );
+  const form = screen.getByRole("form", {
+    name: "Template",
+  }) as HTMLFormElement;
+  expect(form.checkValidity()).toBe(false);
+  // Validation reveals the editor without dropping either duplicate draft row.
+  expect(
+    await screen.findByRole("textbox", { name: "Variable name 2" }),
+  ).toBeTruthy();
+
   expect(
     (
       screen.getByRole("form", { name: "Template" }) as HTMLFormElement
@@ -107,8 +125,11 @@ it("preserves defaults when applying a Docker preset without forcing custom mode
     environment,
   });
 });
-it("presents static values without editing controls for readers", () => {
+it("presents static values without editing controls for readers", async () => {
   render(<Editor readOnly />);
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Environment variables" }));
   expect(screen.getByText("APP_MODE")).toBeTruthy();
   expect(screen.getByText("agent")).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Variable name 1" })).toBeNull();

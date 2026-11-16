@@ -965,3 +965,62 @@ async def test_grouped_question_preserves_request_and_answer_validation():
         ),
     )
     assert resumed.output_or_raise() == "done"
+
+
+@pytest.mark.parametrize("swap_surface", [False, True])
+async def test_scoped_proxy_approval_revalidates_its_own_surface_before_resuming(swap_surface):
+    effects = []
+
+    def change(value: int) -> int:
+        effects.append(value)
+        return value * 2
+
+    def other() -> str:
+        return "other"
+
+    def build(swapped=False):
+        target = ToolSearchGroup(
+            FunctionToolset([Tool(change, requires_approval=True)], id="github-operations"), "GitHub operations"
+        )
+        unrelated = ToolSearchGroup(FunctionToolset([other], id="other-operations"), "Other operations")
+        legacy = ToolSearchCapability(groups={"github": target} if swapped else {"other": unrelated})
+        connector = ToolSearchCapability(
+            groups={"other": unrelated} if swapped else {"github": target},
+            surface_id="test.connector-tools",
+            config=ProxyToolSearchConfig(
+                search_name="search_connector_tools",
+                describe_name="describe_connector_tool",
+                call_name="call_connector_tool",
+                list_name="list_connector_tools",
+                groups_name="list_connector_groups",
+            ),
+        )
+        return _build(
+            FunctionToolset([]),
+            proxy=False,
+            extra=(legacy, connector),
+            calls=[("call_connector_tool", {"group": "github", "tool": "change", "arguments": {"value": 3}})],
+        )
+
+    first = await build().run("go")
+    assert first.status == "suspended"
+    assert first.state is not None and first.deferred is not None
+    requests = _roundtrip(first.deferred)
+    item = requests.approvals[0]
+    assert item.model_call.tool_name == "call_connector_tool"
+    assert item.target_call.tool_name == "github__change"
+    assert item.target_identity == "tool/github-operations/change"
+    assert not effects
+    resume = DeferredToolResume(requests, requests.build_results(approve_all=True))
+    if swap_surface:
+        # The same canonical target and source identity remain available, but
+        # the approved envelope no longer owns that target's discovery group.
+        with pytest.raises(DefinitionError) as error:
+            await build(swapped=True).run(previous_state=first.state, deferred_resume=resume)
+        assert error.value.code == "deferred_surface_mismatch"
+        assert not effects
+    else:
+        resumed = await build().run(previous_state=first.state, deferred_resume=resume)
+        assert resumed.output_or_raise() == "done"
+        assert effects == [3]
+        assert resumed.usage.tool_calls == 2

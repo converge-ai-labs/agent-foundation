@@ -11,7 +11,7 @@ from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from a13n_harness_ui.configuration.models import ProjectDefaults
+from a13n_harness_ui.configuration.models import DictationConfiguration, ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
@@ -25,7 +25,7 @@ from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
 from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
-from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution
+from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution, ThreadReadReceipt
 from a13n_harness_ui.thread_files import ThreadAttachment
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
@@ -66,7 +66,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory", "live", "bot"]
+    kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -162,6 +162,8 @@ class ThreadSummary(SurfaceModel):
     touched_at: datetime | None = None
     archived: bool
     starred: bool = False
+    unread: bool = False
+    read_state_version: int = Field(default=0, ge=0)
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
@@ -199,6 +201,10 @@ class ThreadPage(SurfaceModel):
     threads: tuple[ThreadSummary, ...]
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
+class ThreadReadAcknowledgement(SurfaceModel):
+    threads: tuple[ThreadReadReceipt, ...] = Field(min_length=1, max_length=100)
 
 
 class ThreadMetadataPatch(SurfaceModel):
@@ -258,6 +264,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    display_id: str | None = Field(default=None, description="Native display item identity, when available.")
     duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
@@ -562,7 +569,14 @@ class ChildActivityView(SurfaceModel):
     dropped_tool_calls: int = Field(default=0, ge=0)
 
 
+class ChildExecutionModel(SurfaceModel):
+    name: str
+    identity: str
+    thinking: str
+
+
 class ChildExecutionView(SurfaceModel):
+    model: ChildExecutionModel | None = None
     execution_id: str = Field(min_length=1, max_length=80)
     root_thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str = Field(min_length=1, max_length=80)
@@ -676,7 +690,7 @@ class ThreadWork(SurfaceModel):
 
 
 class ToolExecutionView(SurfaceModel):
-    """Detached status only; native results stay behind Harness result tools."""
+    """Detached execution status; output is read separately without acknowledgement."""
 
     execution_id: str
     thread_id: str
@@ -689,7 +703,18 @@ class ToolExecutionView(SurfaceModel):
     result_available: bool = False
     foreground_released: bool = False
     delivery_acknowledged: bool = False
+    cancel_requested: bool = False
     available_actions: tuple[Literal["cancel"], ...] = ()
+
+
+class ToolExecutionOutputView(SurfaceModel):
+    execution: ToolExecutionView
+    input: str | None = None
+    input_truncated: bool = False
+    text: str | None = None
+    state: Literal["available", "pending", "expired", "unavailable"]
+    truncated: bool = False
+    live: bool = False
 
 
 class ThreadFocusSnapshot(SurfaceModel):
@@ -819,6 +844,7 @@ class ModelSummary(SurfaceModel):
 
 
 class ThreadSelectorCatalog(SurfaceModel):
+    dictation: DictationConfiguration | None = None
     sidekick_enabled: bool = False
     media_understanding: dict[NativeInputMediaKind, str] = Field(default_factory=dict)
     media_understanding_environment: tuple[NativeInputMediaKind, ...] = ()

@@ -550,6 +550,12 @@ class ThreadService:
                 busy_thread_ids=busy_thread_ids,
             )
 
+    async def mark_unread(self, thread_id: str) -> None:
+        thread = await self.require_interactive(thread_id)
+        if thread.parent_thread_id is not None:
+            raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
+        await self._store.threads.mark_unread(thread_id)
+
     async def update_metadata(
         self,
         *,

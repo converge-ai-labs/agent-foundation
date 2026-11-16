@@ -32,6 +32,7 @@ export function ModalFrame({
   children,
   footer,
   placement = "center",
+  bottomStickOnMobile = false,
   open: controlledOpen,
   defaultOpen = false,
   onOpenChange,
@@ -47,6 +48,7 @@ export function ModalFrame({
   closeLabel: string;
   size?: "md" | "lg" | "xl";
   placement?: "center" | "top";
+  bottomStickOnMobile?: boolean;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
@@ -90,6 +92,7 @@ export function ModalFrame({
         keepVisibleWhenNested={keepVisibleWhenNested}
         size={size}
         placement={placement}
+        bottomStickOnMobile={bottomStickOnMobile}
         footer={footer}
       >
         {children}
@@ -112,6 +115,7 @@ const ModalSurface = memo(
     children,
     footer,
     placement,
+    bottomStickOnMobile,
   }: {
     open: boolean;
     title: ReactNode;
@@ -122,6 +126,7 @@ const ModalSurface = memo(
     keepVisibleWhenNested: boolean;
     size: "md" | "lg" | "xl";
     placement: "center" | "top";
+    bottomStickOnMobile: boolean;
     children?: ReactNode;
     footer?: ReactNode;
   }) {
@@ -141,6 +146,7 @@ const ModalSurface = memo(
         initialFocus={initialFocus}
         finalFocus={finalFocus}
         placement={placement}
+        bottomStickOnMobile={bottomStickOnMobile}
         closeProps={{ "aria-label": closeLabel }}
       >
         <DialogHeader>

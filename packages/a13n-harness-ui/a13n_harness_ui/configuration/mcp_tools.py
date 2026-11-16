@@ -16,6 +16,8 @@ from ruamel.yaml import YAML
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
+from a13n_harness_ui.mcp_oauth.models import OAuthError
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 
 from .loader import _parse_mcp_resources, _read_bounded_stable
 from .models import LoadedHarnessUiConfiguration, McpRemoteTransport, McpServerResource, McpToolName, SourceDocument
@@ -33,6 +35,7 @@ class McpToolSelection(BaseModel):
 class McpToolSettings(McpToolSelection):
     server_id: str
     name: str
+    oauth: bool = False
 
 
 class McpToolDescriptor(BaseModel):
@@ -92,6 +95,7 @@ def tool_settings(
     return McpToolSettings(
         server_id=server_id,
         name=resource.name,
+        oauth=isinstance(resource.transport, McpRemoteTransport) and resource.transport.oauth is not None,
         resource_digest=_resource_digest(raw, key),
         tools=list(resource.tools) if resource.tools is not None else None,
     )
@@ -130,7 +134,11 @@ def selection_mutation(
 
 
 async def discover_tools(
-    source: LoadedHarnessUiConfiguration | None, server_id: str, configuration_root: Path
+    source: LoadedHarnessUiConfiguration | None,
+    server_id: str,
+    configuration_root: Path,
+    *,
+    oauth: McpOAuth | None = None,
 ) -> tuple[McpToolDescriptor, ...]:
     source, resource = _server_resource(source, server_id)
     recipe = ResolvedMcpRecipe(
@@ -138,6 +146,8 @@ async def discover_tools(
         transport=resource.transport,
         protocol=source.document.mcp.protocol_overrides.get(server_id, "auto"),
     )
+    if oauth is not None:
+        recipe = await oauth.bind(recipe)
     # Keep the existing discovery deadline unless the server requests a handshake budget of its own.
     handshake_budget = (
         resource.transport.init_timeout_seconds if isinstance(resource.transport, McpRemoteTransport) else None
@@ -145,7 +155,7 @@ async def discover_tools(
     try:
         with fail_after(_DISCOVERY_TIMEOUT_SECONDS + (handshake_budget or 0)):
             transport, _, timeout = await prepare_mcp_transport(
-                recipe, configuration_root, configuration=source.document.run_configuration
+                recipe, configuration_root, configuration=source.document.run_configuration, oauth=oauth
             )
             async with Client(transport, mode=recipe.protocol, init_timeout=timeout) as client:
                 with fail_after(_DISCOVERY_TIMEOUT_SECONDS):
@@ -154,6 +164,8 @@ async def discover_tools(
             McpToolDescriptor(name=tool.name, description=tool.description or "", input_schema=tool.input_schema)
             for tool in discovered
         )
+    except OAuthError:
+        raise
     except Exception:
         # MCP/transport errors may contain headers, URLs or server-controlled text.
         raise ConfigurationError(

@@ -57,6 +57,7 @@ class ToolSearchCapability(CombinedCapability[AgentContext]):
         *,
         groups: Mapping[str, ToolSearchGroup],
         config: ProxyToolSearchConfig | None = None,
+        surface_id: str = TOOL_SEARCH_CAPABILITY_ID,
     ) -> None:
         config = config or ProxyToolSearchConfig()
         sources: list[AbstractCapability[AgentContext]] = []
@@ -69,7 +70,7 @@ class ToolSearchCapability(CombinedCapability[AgentContext]):
             if isinstance(source, AbstractToolset):
                 source = Capability(toolsets=[source])
             sources.append(_group_source(source, {None: _ToolGroup(name, group.description)}))
-        surface = _ToolSearchSurfaceCapability(config)
+        surface = _ToolSearchSurfaceCapability(config, frozenset(groups), id=surface_id)
         super().__init__([surface, *sources])
 
 
@@ -150,6 +151,7 @@ class ToolSearchPlan:
 
     groups: Mapping[str, ToolSearchSelection]
     config: ProxyToolSearchConfig = field(default_factory=ProxyToolSearchConfig)
+    surface_id: str = field(default=TOOL_SEARCH_CAPABILITY_ID, kw_only=True)
 
     def __post_init__(self) -> None:
         groups = dict(self.groups)
@@ -196,7 +198,7 @@ class ToolSearchPlan:
             return tuple(capabilities)
 
         return (
-            _ToolSearchSurfaceCapability(self.config),
+            _ToolSearchSurfaceCapability(self.config, frozenset(self.groups), id=self.surface_id),
             *(
                 _group_source(source, memberships[id(source)], labels.get(id(source)))
                 if id(source) in memberships
@@ -210,14 +212,15 @@ class ToolSearchPlan:
 class _ToolSearchSurfaceCapability(AbstractCapability[AgentContext]):
     """Expose one grouped search/call surface without replacing ToolManager."""
 
-    config: ProxyToolSearchConfig = field(default_factory=ProxyToolSearchConfig)
+    config: ProxyToolSearchConfig
+    groups: frozenset[str]
     id: str | None = field(default=TOOL_SEARCH_CAPABILITY_ID, kw_only=True)
 
     def __post_init__(self) -> None:
         if not isinstance(self.config, ProxyToolSearchConfig):
             raise TypeError("ToolSearchCapability config must be ProxyToolSearchConfig")
-        if self.id != TOOL_SEARCH_CAPABILITY_ID:
-            raise ValueError(f"ToolSearchCapability.id must be {TOOL_SEARCH_CAPABILITY_ID!r}")
+        if not isinstance(self.id, str) or not self.id.strip():
+            raise ValueError("ToolSearch surface_id must be a nonblank Capability ID")
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.capabilities.codeact import CodeActCapability
@@ -229,7 +232,7 @@ class _ToolSearchSurfaceCapability(AbstractCapability[AgentContext]):
         )
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
-        return ToolSearchSurfaceToolset(toolset, self.config)
+        return ToolSearchSurfaceToolset(toolset, self.config, self.groups)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext

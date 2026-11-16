@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
@@ -11,14 +12,17 @@ from a13n_harness import (
     AgentContext,
     HarnessBuilder,
     HarnessEvent,
+    HarnessExtensionEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessState,
     ModelRecoveryPolicy,
     PluginError,
+    RunBindings,
     RunCleanupError,
     SemanticRunInput,
 )
+from a13n_harness.environment.advanced import create_empty_environment_runtime
 from a13n_harness.plugins import PluginRunExchange, PluginRunNext
 from a13n_harness.usage import UsageSnapshot
 from pydantic import BaseModel
@@ -202,3 +206,149 @@ async def test_live_checkpoints_remain_detached_from_plugin_result_and_cleanup(c
         assert stream.outcome.state == transferred
         assert isinstance(items[-1], HarnessRunResultEvent)
         assert stream.result == items[-1].result
+
+
+@pytest.mark.parametrize("next_error", [None, RuntimeError("new failure"), asyncio.CancelledError("cancelled")])
+async def test_handled_terminal_cleanup_failure_is_not_raised_again_on_context_exit(next_error) -> None:
+    cleanup_failure = RuntimeError("terminal cleanup failed")
+
+    class CleanupPlugin(AbstractHarnessPlugin):
+        plugin_id = "cleanup"
+
+        async def for_run(self, context: AgentContext) -> CleanupPlugin:
+            async def close() -> None:
+                raise cleanup_failure
+
+            context._register_run_cleanup("test.cleanup", close)
+            return self
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), plugins=(CleanupPlugin(),)
+    )
+    events = []
+    with pytest.raises(type(next_error)) if next_error is not None else nullcontext() as raised:
+        async with executable.stream("start") as stream:
+            with pytest.raises(RunCleanupError) as caught:
+                async for event in stream:
+                    events.append(event)
+            assert stream.outcome is not None
+            assert stream.outcome.output == "done"
+            assert caught.value.outcome is stream.outcome
+            assert caught.value.causes == (cleanup_failure,)
+            assert stream.result is None
+            assert not any(isinstance(event, HarnessRunResultEvent) for event in events)
+            if next_error is not None:
+                raise next_error
+    if next_error is not None:
+        assert raised.value is next_error
+    assert await stream.export_state() == stream.outcome.state
+
+
+@pytest.mark.parametrize("phase", ["prepare", "execute", "body"])
+@pytest.mark.parametrize("chain", ["explicit", "implicit", "suppressed"])
+async def test_original_failure_survives_secondary_cleanup_failure(phase: str, chain: str) -> None:
+    primary = ValueError("execution failed")
+    root_cause = LookupError("original root cause")
+    cleanup_failure = RuntimeError("cleanup failed")
+
+    def fail() -> None:
+        try:
+            raise root_cause
+        except LookupError:
+            if chain == "explicit":
+                raise primary from root_cause
+            if chain == "suppressed":
+                raise primary from None
+            raise primary  # noqa: B904 - Exercise implicit exception chaining.
+
+    class FailingPlugin(AbstractHarnessPlugin):
+        plugin_id = "failure"
+
+        async def for_run(self, context: AgentContext) -> FailingPlugin:
+            async def close() -> None:
+                raise cleanup_failure
+
+            context._register_run_cleanup("test.failure", close)
+            if phase == "prepare":
+                fail()
+            return self
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            fail()
+            raise AssertionError("unreachable")
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, plugins=(FailingPlugin(),))
+    stream = executable.stream("start")
+    with pytest.raises(ValueError) as caught:
+        async with stream:
+            if phase == "body":
+                fail()
+            async for _event in stream:
+                pass
+    assert caught.value is primary
+    assert stream.diagnostic_error is primary
+    assert stream.outcome is None and stream.result is None
+    secondary = primary.__cause__
+    assert isinstance(secondary, RunCleanupError)
+    assert secondary.outcome is None
+    assert secondary.causes == (cleanup_failure,)
+    assert secondary.__context__ is root_cause
+    assert secondary.__suppress_context__ == (chain != "implicit")
+    assert secondary.__cause__ is (root_cause if chain == "explicit" else None)
+    assert await stream.export_state() is not None
+
+
+async def test_environment_observer_failure_is_not_a_new_cleanup_failure() -> None:
+    runtime = create_empty_environment_runtime()
+    failure = OSError("environment observer failed")
+
+    def observe(item: HarnessEvent) -> None:
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "environment_changed":
+            raise failure
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        await runtime.set_default(None)
+        await asyncio.Event().wait()
+        yield "unreachable"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+    stream = executable.stream("start", bindings=RunBindings.embedded(environment=runtime, producer_observer=observe))
+    with pytest.raises(OSError) as caught:
+        async with stream:
+            async for _event in stream:
+                pass
+    assert caught.value is failure
+    assert caught.value.__cause__ is None
+    assert stream.diagnostic_error is failure
+    assert stream.outcome is None and stream.result is None
+
+
+async def test_primary_cleanup_error_retains_identity_and_original_causes() -> None:
+    original_cause = OSError("original cleanup error")
+    primary = RunCleanupError("original primary", outcome=None, causes=(original_cause,))
+    secondary = ValueError("secondary cleanup error")
+
+    class FailingPlugin(AbstractHarnessPlugin):
+        plugin_id = "cleanup-error"
+
+        async def for_run(self, context: AgentContext) -> FailingPlugin:
+            async def close() -> None:
+                raise secondary
+
+            context._register_run_cleanup("test.cleanup-error", close)
+            return self
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            raise primary
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, plugins=(FailingPlugin(),))
+    with pytest.raises(RunCleanupError) as caught:
+        await executable.run("start")
+    assert caught.value is primary
+    assert primary.causes == (original_cause,)
+    assert primary.__cause__ is not primary
+    assert isinstance(primary.__cause__, RunCleanupError)
+    assert primary.__cause__.causes == (secondary,)

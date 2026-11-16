@@ -21,6 +21,10 @@ from a13n_harness.errors import DefinitionError
 _HANDOFF_METADATA_KEY = "a13n.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
+_WORKING_STATE_QUERY_HINT = (
+    "When needed, use the available tools: note_get() lists note keys, task_list() lists tasks, "
+    "and tool_execution_info() lists executions."
+)
 _SKILL_RELOAD_REMINDER = (
     "Before continuing work that depends on a carried-over skill, re-read its SKILL.md and the supporting files "
     "needed for the next step, unless those contents are already available in full in the restored context. "
@@ -61,8 +65,7 @@ def _build_compacted_history(
                 *system_parts,
                 _context_protocol_part(
                     "The previous conversation is being compacted. "
-                    "Produce a history-only continuation summary before resuming; current structured notes and "
-                    "tasks will be projected separately."
+                    "Produce a history-only continuation summary before resuming."
                 ),
             ]
         ),
@@ -72,8 +75,8 @@ def _build_compacted_history(
     restored_parts = [
         _context_protocol_part(
             "<context-restored>Context was compacted into the preceding assistant summary. Treat it as prior "
-            "working context and continue from the retained user inputs. Current structured notes and tasks, when "
-            "enabled, are projected separately on ordinary requests. "
+            "working context and continue from the retained user inputs. "
+            f"{_WORKING_STATE_QUERY_HINT} "
             f"{_SKILL_RELOAD_REMINDER}</context-restored>"
         )
     ]

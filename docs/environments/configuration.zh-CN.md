@@ -79,6 +79,10 @@ Docker 目标配置、镜像要求和共享 Engine 客户端集中在 [Docker �
 
 设置步骤和后端限制见[Runloop](cloud-providers.md#runloop)。
 
+### boxd
+
+设置步骤和后端限制见[boxd](cloud-providers.md#boxd)。
+
 ## 远程 HTTP / WebSocket Envd
 
 1. 注册或选择由外部管理的 Device。`RemoteEnvdStateData.device_id` 标识该设备。

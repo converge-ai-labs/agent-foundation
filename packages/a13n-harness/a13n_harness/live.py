@@ -52,6 +52,7 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
+    _NoticeBoundary,
     _project_model_context,
 )
 from a13n_harness.plugins import PluginRunExchange
@@ -80,6 +81,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
     def __init__(self, stream: HarnessLiveStream) -> None:
         self.stream = stream
         self.initial = ModelContextProjection()
+        self._initial_instructions: str | None = None
         self.delivered = ModelContextProjection()
         self.pending: dict[str, ModelContextProjection] = {}
         self.ambiguous: set[tuple[str, str | None]] = set()
@@ -88,7 +90,9 @@ class _LiveCapability(AbstractCapability[AgentContext]):
     def connected(self) -> None:
         # Connection instructions are not canonical user input. Keep only this
         # connection's confirmed baseline; never export it as a watermark.
-        self.delivered = self.initial
+        self.initial._confirm(self.initial.blocks)
+        self.delivered = ModelContextProjection(self.initial.blocks)
+        self.initial = self.delivered
 
     def reconnected(self) -> None:
         self.delivered = ModelContextProjection()
@@ -107,7 +111,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         for pending in self.pending.values():
             self.ambiguous.update(identities & {(block.source_id, block.key) for block in pending.blocks})
         self.unordered.update(self.ambiguous)
-        if projection.blocks:
+        if projection.blocks or projection._confirmations:
             self.pending[call_id] = projection
 
     def settled(self, event: FunctionToolResultEvent) -> None:
@@ -124,6 +128,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
                     for item in content
                 )
             )
+            projection._confirm(confirmed)
             self.delivered = ModelContextProjection(blocks=(*self.delivered.blocks, *confirmed))
             for block in confirmed:
                 identity = (block.source_id, block.key)
@@ -137,6 +142,12 @@ class _LiveCapability(AbstractCapability[AgentContext]):
 
     async def instructions(self, ctx: RunContext[AgentContext]) -> str:
         self.stream._native_context = ctx
+        if self.stream._cancel_event.is_set():
+            ctx.cancel()
+        # Native realtime re-resolves instructions before tool results. Keep the
+        # connection baseline and its dispatcher adapter stable across refreshes.
+        if self._initial_instructions is not None:
+            return self._initial_instructions
         manager = ctx.tool_manager
         assert manager is not None and manager.root_capability is not None
         # Decorate only the prepared native tool dispatcher, not the Agent's
@@ -144,8 +155,6 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         # tools, or ordering requirements; run-step managers retain the wrapper.
         if not isinstance(manager.root_capability, _LiveDeferredResults):
             manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
-        if self.stream._cancel_event.is_set():
-            ctx.cancel()
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
@@ -154,7 +163,8 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ),
         )
         self.initial = projection
-        return "\n\n".join(block.content for block in projection.blocks)
+        self._initial_instructions = "\n\n".join(block.content for block in projection.blocks)
+        return self._initial_instructions
 
     async def wrap_tool_execute(
         self,
@@ -168,18 +178,27 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         result = await handler(args)
         if ctx.run_id != self.stream.run_id:
             return result
-        return await self._with_context(ctx, call.tool_call_id, result)
+        return await self._with_context(ctx, call, result)
 
-    async def _with_context(self, ctx: RunContext[AgentContext], call_id: str, result: Any) -> Any:
+    async def _with_context(self, ctx: RunContext[AgentContext], call: ToolCallPart, result: Any) -> Any:
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.TOOL_RESULTS,
-                tool_call_ids=(call_id,),
+                tool_call_ids=(call.tool_call_id,),
+                _notices=_NoticeBoundary.from_results(
+                    (
+                        ToolReturnPart(
+                            call.tool_name,
+                            result.return_value if isinstance(result, ToolReturn) else result,
+                            call.tool_call_id,
+                        ),
+                    )
+                ),
                 history=self.history,
             ),
         )
-        self.record_pending(call_id, projection)
+        self.record_pending(call.tool_call_id, projection)
         if not projection.blocks:
             return result
         extra = [
@@ -219,7 +238,7 @@ class _LiveDeferredResults(WrapperCapability[AgentContext]):
                     continue
                 if isinstance(result, ToolReturn):
                     result = _render_tool_return(result)
-                results.calls[call.tool_call_id] = await self.bridge._with_context(ctx, call.tool_call_id, result)
+                results.calls[call.tool_call_id] = await self.bridge._with_context(ctx, call, result)
         return results
 
 

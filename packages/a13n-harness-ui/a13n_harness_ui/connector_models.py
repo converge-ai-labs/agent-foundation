@@ -1,13 +1,36 @@
 """Connector instance configuration and selected, model-visible input envelopes."""
 
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+ConnectorGroupName = Annotated[str, Field(pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", max_length=32)]
+
 
 class ConnectorModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+
+class ConnectorRule(ConnectorModel):
+    id: str = Field(min_length=1, max_length=128)
+    enabled: bool = True
+    event: str = Field(min_length=1, max_length=128)
+    conditions: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ConnectorState(ConnectorModel):
+    key: str = Field(min_length=1, max_length=128)
+    version: int = Field(ge=1)
+    value: JsonValue
+
+
+class StateChange(ConnectorModel):
+    key: str = Field(min_length=1, max_length=128)
+    expected_version: int | None = Field(default=None, ge=1)
+    value: JsonValue = None
+    delete: bool = False
 
 
 class ConnectorConfiguration(ConnectorModel):
@@ -15,6 +38,11 @@ class ConnectorConfiguration(ConnectorModel):
 
     connector_id: str = Field(min_length=1, max_length=128)
     kind: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="", max_length=128)
+    group_name: ConnectorGroupName
+    version: int = Field(default=1, ge=1)
+    credential_version: int = Field(default=1, ge=1)
+    rules: tuple["ConnectorRule", ...] = ()
     enabled: bool = True
     deliver_to_bot: bool = False
     selected_events: tuple[str, ...] = Field(default=(), max_length=128)

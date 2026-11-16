@@ -70,6 +70,8 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         for path in ("/api/status", "/api/shares", "/api/configuration/sources", "/api/host/files", "/api/presence"):
             assert (await client.get(path, headers=headers)).status_code == 401
         for method, path in (
+            ("POST", "/api/threads/read"),
+            ("POST", f"/api/threads/{thread.thread_id}/unread"),
             ("GET", "/api/browser"),
             ("POST", "/api/browser/prepare"),
             ("POST", "/api/browser/scan"),
@@ -93,6 +95,8 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         ):
             response = await client.get(prefix + path, headers=headers)
             assert response.status_code == 404
+        for path in ("/threads/read", f"/threads/{thread.thread_id}/unread"):
+            assert (await client.post(prefix + path, headers=headers, json={})).status_code in {404, 405}
         response = await client.post(
             prefix + f"/threads/{thread.thread_id}/submit", headers=headers, json={"parts": ["Hello"]}
         )
