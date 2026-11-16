@@ -154,6 +154,8 @@ subagents:
 
 全局关闭的工具开关覆盖显式 Agent Capability 选择；工具允许列表仍生效。设置向导补齐省略的工具字段，保留已有值。旧键 `tools.ask_user_question_timeout_seconds` 仍可输入，保存使用 `interaction_timeout_seconds`。超时不会编造答案或批准命令；编辑答案不会重新计时。见 [TUI 决策](everyday-use.md#approvals-and-questions)和 [WebUI 决策](webui.md#questions-and-approval-timeouts)。
 
+在 WebUI 中，打开 **设置 → 智能体 → 工具执行** 即可调整执行模式和前台等待时间。
+
 要缩短前台等待，合并：
 
 ```yaml title="a13n-harness-ui.yaml — tool execution"

@@ -1,4 +1,10 @@
 {
+  "Tool execution": "Tool execution",
+  "Automatic background execution": "Automatic background execution",
+  "All eligible tools": "All eligible tools",
+  "Shell only": "Shell only",
+  "Foreground wait (seconds)": "Foreground wait (seconds)",
+  "Tools still running after this wait continue in the background if eligible.": "Tools still running after this wait continue in the background if eligible.",
   "Files access": "Files access",
   "Shell access": "Shell access",
   "Computer access": "Computer access",
