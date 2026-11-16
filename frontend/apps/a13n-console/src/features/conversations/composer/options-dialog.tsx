@@ -65,6 +65,7 @@ const dedicatedOverrides = ["model", "instructions", "media_understanding"];
 
 /** The next run's overrides, held beside the message they will be sent with. */
 export function useRunOptions() {
+  const { t } = useTranslation();
   const [agent, setAgent] = useState(""),
     [revision, setRevision] = useState(""),
     [model, setModel] = useState("");
@@ -113,7 +114,7 @@ export function useRunOptions() {
       environment !== "inherit" ||
       runEnvironment !== "inherit" ||
       mediaSelected(mediaUnderstanding).length ||
-      executionOverride(execution) ||
+      executionOverride(execution, t) ||
       Object.keys(jsonObject(advanced)).length
     );
   } catch {
@@ -194,7 +195,10 @@ export function useRunOptions() {
       for (const key of dedicatedOverrides)
         if (key in extra)
           throw new Error(
-            `The ${key} field cannot be edited in advanced run configuration.`,
+            t(
+              "The {{field}} field cannot be edited in advanced run configuration.",
+              { field: key },
+            ),
           );
       const override = runOverride({
         ...extra,
@@ -204,7 +208,7 @@ export function useRunOptions() {
           : {}),
         ...(overrideInstructions ? { instructions } : {}),
       });
-      const policy = executionOverride(execution);
+      const policy = executionOverride(execution, t);
       const runOptions: NonNullable<Schema["NewThread"]["options"]> = {
         ...(runEnvironment === "inherit"
           ? {}

@@ -16,9 +16,12 @@ export function initialHeaders(provider?: Schema["Provider"]): HeaderDraft[] {
 }
 
 /** A new provider's headers: it has none saved, so every row sets a value. */
-export function newHeaders(rows: HeaderDraft[]): Record<string, string> {
+export function newHeaders(
+  rows: HeaderDraft[],
+  t: (key: string) => string,
+): Record<string, string> {
   const headers: Record<string, string> = {};
-  for (const [name, value] of Object.entries(serializeHeaders(rows, [])))
+  for (const [name, value] of Object.entries(serializeHeaders(rows, [], t)))
     if (value !== null) headers[name] = value;
   return headers;
 }

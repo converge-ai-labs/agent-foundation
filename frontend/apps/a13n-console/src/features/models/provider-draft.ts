@@ -91,7 +91,7 @@ export function useProviderDraft({
         return api.createProvider({
           ...body,
           type,
-          extra_headers: newHeaders(headers),
+          extra_headers: newHeaders(headers, t),
         });
       if (!original.etag)
         throw new Error(
@@ -99,7 +99,11 @@ export function useProviderDraft({
         );
       return api.updateProvider(original.value.id, original.etag, {
         ...body,
-        extra_headers: serializeHeaders(headers, original.value.header_names),
+        extra_headers: serializeHeaders(
+          headers,
+          original.value.header_names,
+          t,
+        ),
       });
     },
     onError: () => setAdvancedOpen(true),

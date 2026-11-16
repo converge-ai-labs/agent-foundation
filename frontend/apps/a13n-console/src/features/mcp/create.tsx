@@ -65,7 +65,7 @@ export function CreateMCP({
       const headers = Object.fromEntries(
         Object.entries(
           mode === "headers" && !created.current?.credential_configured
-            ? serializeHeaders(headerRows, [])
+            ? serializeHeaders(headerRows, [], t)
             : {},
         ).filter((entry): entry is [string, string] => entry[1] !== null),
       );

@@ -9,17 +9,21 @@ export type HeaderDraft = {
   savedName?: string;
 };
 
-export function serializeHeaders(rows: HeaderDraft[], savedNames: string[]) {
+export function serializeHeaders(
+  rows: HeaderDraft[],
+  savedNames: string[],
+  t: (key: string) => string,
+) {
   const updates: Record<string, string | null> = {};
   const names = new Set<string>();
   for (const row of rows) {
     const name = row.name.trim().toLowerCase();
     if (!name || names.has(name))
-      throw new Error("Header names must be nonempty and unique.");
+      throw new Error(t("Header names must be nonempty and unique."));
     names.add(name);
     if (row.value) updates[name] = row.value;
     else if (row.savedName !== name)
-      throw new Error("Enter a value for each new header.");
+      throw new Error(t("Enter a value for each new header."));
   }
   for (const name of savedNames) {
     if (!names.has(name)) updates[name] = null;
