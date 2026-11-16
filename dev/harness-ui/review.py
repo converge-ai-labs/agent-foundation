@@ -37,6 +37,13 @@ from pydantic_ai.toolsets import FunctionToolset
 
 ANSWER = r"""The checkout flow has a small but important gap: a slow request can submit the same order twice.
 
+### CJK emphasis
+
+- **积分：**从局部量计算累积总量；
+- **导数：**从累积总量计算局部变化率。
+
+**微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。**我们前面选择了几何入口，但应该把概念的定义和看图产生的直觉分开。
+
 ### What I found
 
 The form validates the address correctly, but the **Place order** button stays enabled while payment is pending. A second click creates another request with a new identifier.
@@ -101,7 +108,7 @@ f(x_1,\ldots,x_{12}) = x_1+x_2+x_3+x_4+x_5+x_6+x_7+x_8+x_9+x_{10}+x_{11}+x_{12}
 $$
 
 The changes are ready to review. I would keep the retry behavior explicit so a failed payment never looks like a successful order.
-"""
+"""  # noqa: RUF001 - Fullwidth punctuation exercises CJK emphasis boundaries.
 
 
 def seed_workspace(workspace: Path) -> None:

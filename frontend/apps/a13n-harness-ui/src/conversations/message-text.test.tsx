@@ -39,6 +39,101 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
+it("renders punctuation-ending Chinese bold labels and sentences beside prose", () => {
+  const view = render(
+    <MessageText
+      text={`- **积分：**从局部量计算累积总量；
+- **导数：**从累积总量计算局部变化率。
+
+**微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。**我们前面选择了几何入口。`}
+    />,
+  );
+  expect(
+    Array.from(
+      view.container.querySelectorAll("strong"),
+      (node) => node.textContent,
+    ),
+  ).toEqual([
+    "积分：",
+    "导数：",
+    "微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。",
+  ]);
+  expect(view.container.textContent).not.toContain("**");
+});
+
+it("supports CJK emphasis beside punctuation while retaining English and nested formatting", () => {
+  const view = render(
+    <MessageText
+      text={
+        "中文**“重点”**后文，*强调。*继续。\n\n日本語**強調。**続き\n\n한국어**강조(괄호)**뒤\n\n**English.** Text with ***nested emphasis*** and ~~deleted~~."
+      }
+    />,
+  );
+  expect(
+    Array.from(
+      view.container.querySelectorAll("strong"),
+      (node) => node.textContent,
+    ),
+  ).toEqual(["“重点”", "強調。", "강조(괄호)", "English.", "nested emphasis"]);
+  expect(view.container.querySelector("em")?.textContent).toBe("强调。");
+  expect(
+    view.container.querySelector("em strong, strong em")?.textContent,
+  ).toBe("nested emphasis");
+  expect(view.container.querySelector("del")?.textContent).toBe("deleted");
+});
+
+it("leaves escaped CJK emphasis, code, link destinations and formula source intact", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  const view = render(
+    <MessageText
+      text={
+        String.raw`**重点。**后文。
+
+\*\*转义。\*\*后文` +
+        " and `**代码。**后文`\n\n" +
+        String.raw`[**链接。**后文](https://example.com/**路径。**后文)
+
+$\text{**公式。**后文}$
+
+~~~text
+**代码块。**后文
+~~~`
+      }
+    />,
+  );
+  expect(
+    Array.from(
+      view.container.querySelectorAll("strong"),
+      (node) => node.textContent,
+    ),
+  ).toEqual(["重点。", "链接。"]);
+  expect(view.container.textContent).toContain("**转义。**后文");
+  expect(view.container.querySelector("p code")?.textContent).toBe(
+    "**代码。**后文",
+  );
+  expect(
+    screen.getByRole("link", { name: "链接。后文" }).getAttribute("href"),
+  ).toBe(encodeURI("https://example.com/**路径。**后文"));
+  expect(view.container.querySelector("annotation")?.textContent).toBe(
+    String.raw`\text{**公式。**后文}`,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+  await screen.findByText("Copied");
+  expect(writeText).toHaveBeenCalledWith("**代码块。**后文\n");
+});
+
+it("completes streamed CJK bold without swallowing following prose", () => {
+  const view = render(<MessageText text="**重点。" />);
+  expect(view.container.querySelector("strong")).toBeNull();
+  view.rerender(<MessageText text="**重点。**后文。" />);
+  expect(view.container.querySelector("strong")?.textContent).toBe("重点。");
+  expect(view.container.textContent).toBe("重点。后文。");
+});
+
 it("renders inline and display math with accessible source and scrollable display regions", () => {
   const view = render(
     <MessageText
