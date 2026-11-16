@@ -1,7 +1,7 @@
 """Installed App registration, organization admission and accepted Run activation."""
 
 import asyncio
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
 import pytest
@@ -25,7 +25,7 @@ from a13n_service.runs.tables import RunRow
 from a13n_service.tenancy.app_plugins import app_router
 from a13n_service.tenancy.tables import OrganizationRow
 from fastapi import Depends
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
 
 from .conftest import if_match
@@ -286,13 +286,28 @@ def test_root_and_inline_nodes_share_snapshot_but_keep_local_declarations(enable
     assert AppActivation().factory_enabled("standalone", installed)
 
 
-async def test_background_adapter_selects_only_enabled_tenants_outside_sql(apps_service):
+@pytest.fixture
+def app_sessions(monkeypatch):
+    # Background services share the pool; inspect only this adapter's SQL scopes.
+    sessions = []
+
+    @asynccontextmanager
+    async def tracked(storage):
+        async with short_session(storage) as session:
+            sessions.append(session)
+            yield session
+
+    monkeypatch.setattr("a13n_service.app_plugin_runtime.short_session", tracked)
+    return sessions
+
+
+async def test_background_adapter_selects_only_enabled_tenants_outside_sql(apps_service, app_sessions):
     service = apps_service
     calls = []
 
     async def sweep(runtime, organization_id):
         assert runtime is scoped
-        assert runtime.storage.engine.pool.checkedout() == 0
+        assert app_sessions and all(not session.in_transaction() for session in app_sessions)
         calls.append(organization_id)
 
     apps = installed_apps(sweeps=(OrganizationSweep("reports", 1, 10, sweep),))
@@ -309,7 +324,9 @@ async def test_background_adapter_selects_only_enabled_tenants_outside_sql(apps_
 
 
 @pytest.mark.parametrize("failure", ["error", "timeout", "cancel"])
-async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancellation(apps_service, failure):
+async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancellation(
+    apps_service, app_sessions, failure
+):
     service = apps_service
     organizations = ["org_app_first", "org_app_second"]
     async with transaction(service.runtime.storage) as session:
@@ -324,7 +341,7 @@ async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancell
     calls = []
 
     async def sweep(runtime, organization_id):
-        assert runtime.storage.engine.pool.checkedout() == 0
+        assert app_sessions and all(not session.in_transaction() for session in app_sessions)
         calls.append(organization_id)
         if organization_id == organizations[0]:
             if failure == "error":
@@ -357,6 +374,34 @@ async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancell
     with pytest.raises(ExceptionGroup):
         await job.run()
     assert calls == organizations * 2
+
+
+@pytest.mark.parametrize("failure", ["policy", "deleted"])
+async def test_background_admission_failure_does_not_skip_later_healthy_tenants(apps_service, app_sessions, failure):
+    service = apps_service
+    organizations = ["org_app_first", "org_app_second", "org_app_third"]
+    async with transaction(service.runtime.storage) as session:
+        for organization_id in organizations:
+            selection = {"enabled": [APP_ID]}
+            if organization_id == organizations[1] and failure == "policy":
+                selection["unsupported"] = True
+            session.add(OrganizationRow(id=organization_id, name=organization_id, settings={"app_plugins": selection}))
+    calls = []
+
+    async def sweep(runtime, organization_id):
+        assert app_sessions and all(not session.in_transaction() for session in app_sessions)
+        calls.append(organization_id)
+        if organization_id == organizations[0] and failure == "deleted":
+            async with transaction(runtime.storage) as session:
+                await session.execute(delete(OrganizationRow).where(OrganizationRow.id == organizations[1]))
+
+    apps = installed_apps(sweeps=(OrganizationSweep("reports", 1, 10, sweep),))
+    [job] = app_sweeps(service.runtime, apps)
+    with pytest.raises(ExceptionGroup) as error:
+        await job.run()
+    assert len(error.value.exceptions) == 1
+    assert organizations[1] in error.value.exceptions[0].__notes__[0]
+    assert calls == [organizations[0], organizations[2]]
 
 
 def test_catalog_rejects_duplicate_identity_ownership_and_unguarded_routes():

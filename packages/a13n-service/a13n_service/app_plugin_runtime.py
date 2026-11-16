@@ -108,19 +108,19 @@ class _Organizations:
         failures: list[Exception] = []
         for organization_id in ids:
             self.cursor = organization_id
-            # Each organization is a new admission, including after a previous callback awaited I/O.
-            async with short_session(self.runtime.storage) as session:
-                organization = await session.get_one(OrganizationRow, organization_id)
-                enabled = self.app_id in policy(organization.settings).enabled
-            if enabled:
-                try:
+            try:
+                # Each organization is a new admission, including after a previous callback awaited I/O.
+                async with short_session(self.runtime.storage) as session:
+                    organization = await session.get_one(OrganizationRow, organization_id)
+                    enabled = self.app_id in policy(organization.settings).enabled
+                if enabled:
                     async with asyncio.timeout(self.sweep.timeout):
                         await self.sweep.run(self.runtime, organization_id)
-                except Exception as error:
-                    error.add_note(f"App {self.app_id} sweep {self.sweep.name}, organization {organization_id}")
-                    failures.append(error)
+            except Exception as error:
+                error.add_note(f"App {self.app_id} sweep {self.sweep.name}, organization {organization_id}")
+                failures.append(error)
         if failures:
-            raise ExceptionGroup("App organization sweep callbacks failed", failures)
+            raise ExceptionGroup("App organization sweep failed", failures)
 
 
 def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
