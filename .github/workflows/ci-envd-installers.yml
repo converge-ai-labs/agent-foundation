@@ -43,7 +43,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Check prerequisites and syntax
         run: |
-          command -v jq
           sh -n scripts/install-a13n-envd.sh
       - name: Test isolated installs with fixture releases
         run: uv run --locked python -m pytest scripts/tests/test_install_envd.py

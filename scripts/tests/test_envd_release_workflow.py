@@ -274,3 +274,19 @@ def test_release_publishes_three_flavors_without_a_cartesian_vm_matrix(jobs):
     assert windows["env"]["ENVD_VARIANT"] == "${{ matrix.envd-variant }}"
     assert "--no-default-features" in windows["run"]
     assert "$env:TARGET$suffix.zip" in windows["run"]
+
+
+def test_stable_metadata_is_published_only_after_all_release_channels_succeed(jobs: dict) -> None:
+    job = jobs["update-release-metadata"]
+    assert set(job["needs"]) == {"prepare", "create-release", "publish-crate", "publish-client", "publish-image"}
+    assert job["if"] == "${{ !contains(needs.prepare.outputs.version, '-rc.') }}"
+    assert job["permissions"] == {"contents": "write"}
+    assert "continue-on-error" not in job
+    checkout = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["persist-credentials"] is False
+    step = job["steps"][-1]
+    assert step["env"] == {
+        "GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+        "VERSION": "${{ needs.prepare.outputs.version }}",
+    }
+    assert step["run"] == 'python3 scripts/envd_release_metadata.py "$VERSION"'

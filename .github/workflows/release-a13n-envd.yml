@@ -528,3 +528,27 @@ jobs:
               "a13n-envd $VERSION" dist/*
           fi
           # An existing release version is not overwritten or compared with a rebuild.
+
+  update-release-metadata:
+    name: Advance Envd stable version
+    needs: [prepare, create-release, publish-crate, publish-client, publish-image]
+    if: ${{ !contains(needs.prepare.outputs.version, '-rc.') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release automation
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Commit stable version metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: python3 scripts/envd_release_metadata.py "$VERSION"

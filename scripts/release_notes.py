@@ -67,6 +67,7 @@ COMPONENT_PATHS = {
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "scripts/install-a13n-envd.sh",
         "scripts/install-a13n-envd.ps1",
+        "scripts/envd_release_metadata.py",
     ),
 }
 # Order resolves PRs carrying more than one category label.

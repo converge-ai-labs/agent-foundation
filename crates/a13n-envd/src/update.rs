@@ -11,10 +11,9 @@ use std::{
 use crate::variant::Variant;
 use reqwest::blocking::Client;
 use semver::Version;
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-const REPOSITORY: &str = "https://api.github.com/repos/converge-ai-labs/agent-foundation";
+const STABLE: &str = "https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/release-metadata/a13n-envd/stable.txt";
 const DOWNLOAD: &str = "https://github.com/converge-ai-labs/agent-foundation/releases/download";
 const PREFIX: &str = "release/a13n-envd-v";
 const MAX_ARCHIVE: u64 = 256 * 1024 * 1024;
@@ -168,16 +167,9 @@ fn binary_name() -> &'static str {
     }
 }
 
-#[derive(Deserialize)]
-struct Release {
-    tag_name: String,
-    draft: bool,
-    prerelease: bool,
-}
-
 struct Releases {
     client: Client,
-    api: String,
+    stable: String,
     download: String,
 }
 
@@ -191,7 +183,7 @@ impl Releases {
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(120))
                 .build()?,
-            api: REPOSITORY.into(),
+            stable: STABLE.into(),
             download: DOWNLOAD.into(),
         })
     }
@@ -209,31 +201,14 @@ impl Releases {
     }
 
     fn latest(&self) -> Result<Version> {
-        // GitHub lists releases newest first. Never use the monorepo-wide /latest.
-        for page in 1..=100 {
-            let mut bytes = Vec::new();
-            self.get(
-                &format!("{}/releases?per_page=100&page={page}", self.api),
-                &mut bytes,
-                MAX_METADATA,
-            )?;
-            let releases: Vec<Release> = serde_json::from_slice(&bytes)?;
-            if releases.is_empty() {
-                break;
-            }
-            for release in releases {
-                if release.draft || release.prerelease {
-                    continue;
-                }
-                if let Some(value) = release.tag_name.strip_prefix(PREFIX)
-                    && let Ok(version) = parse_version(value)
-                    && version.pre.is_empty()
-                {
-                    return Ok(version);
-                }
-            }
+        let mut bytes = Vec::new();
+        self.get(&self.stable, &mut bytes, MAX_METADATA)?;
+        let text = std::str::from_utf8(&bytes)?;
+        let version = parse_version(text.trim_end_matches('\n'))?;
+        if !version.pre.is_empty() {
+            return Err("Envd stable metadata must not contain a prerelease; use --version".into());
         }
-        Err("no stable Envd release found in the release search limit; use --version".into())
+        Ok(version)
     }
 }
 
@@ -693,7 +668,7 @@ mod tests {
         (
             Releases {
                 client: Client::builder().no_proxy().build().unwrap(),
-                api: url.clone(),
+                stable: format!("{url}/a13n-envd/stable.txt"),
                 download: url,
             },
             task,
@@ -757,39 +732,28 @@ mod tests {
     }
 
     #[test]
-    fn latest_filters_components_and_prereleases_and_paginates() {
-        let (source, task) = server(vec![
-            (
-                "/releases?per_page=100&page=1".into(),
-                200,
-                br#"[
-                {"tag_name":"release/a13n-harness-ui-v99.0.0","draft":false,"prerelease":false},
-                {"tag_name":"release/a13n-envd-v4.0.0","draft":true,"prerelease":false},
-                {"tag_name":"release/a13n-envd-v3.0.0","draft":false,"prerelease":true},
-                {"tag_name":"release/a13n-envd-v2.0.0-rc.1","draft":false,"prerelease":false}
-            ]"#
-                .to_vec(),
-            ),
-            (
-                "/releases?per_page=100&page=2".into(),
-                200,
-                br#"[{"tag_name":"release/a13n-envd-v1.2.3","draft":false,"prerelease":false}]"#
-                    .to_vec(),
-            ),
-        ]);
-        assert_eq!(source.latest().unwrap(), parse_version("1.2.3").unwrap());
-        task.join().unwrap();
+    fn latest_reads_component_stable_pointer() {
+        for body in [b"1.2.3\n".to_vec(), b"1.2.3".to_vec()] {
+            let (source, task) = server(vec![("/a13n-envd/stable.txt".into(), 200, body)]);
+            assert_eq!(source.latest().unwrap(), parse_version("1.2.3").unwrap());
+            task.join().unwrap();
+        }
     }
 
     #[test]
-    fn metadata_errors_are_not_retried() {
+    fn metadata_errors_do_not_fall_back_to_the_api() {
         for (status, body) in [
-            (403, b"rate limit".to_vec()),
+            (404, b"not found".to_vec()),
+            (503, b"unavailable".to_vec()),
             (200, b"invalid".to_vec()),
-            (200, b"[]".to_vec()),
+            (200, b"".to_vec()),
+            (200, b"1.2.3-rc.1\n".to_vec()),
+            (200, b"01.2.3\n".to_vec()),
+            (200, b"1.2.3\n2.0.0\n".to_vec()),
+            (200, b" 1.2.3\n".to_vec()),
+            (200, vec![0xff]),
         ] {
-            let (source, task) =
-                server(vec![("/releases?per_page=100&page=1".into(), status, body)]);
+            let (source, task) = server(vec![("/a13n-envd/stable.txt".into(), status, body)]);
             assert!(source.latest().is_err());
             task.join().unwrap();
         }

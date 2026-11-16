@@ -112,12 +112,12 @@ Run scripts according to your organization's PowerShell execution policy; the in
 
 Choose an exact version and destination with these options. Both installers use the same names:
 
-| Option                               | Environment default             | Behavior                                                                                                                                                                                                                 |
-| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | Exact native version; canonical RCs such as `0.0.6-rc.1` require explicit selection. Omit both to select the first stable Envd release in GitHub's newest-first release list, skipping other components and prereleases. |
-| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | Absolute destination directory. Defaults to `~/.local/bin` for POSIX users, `/usr/local/bin` for POSIX root, or `%LOCALAPPDATA%\A13N\bin` on Windows.                                                                    |
-| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | Mutually exclusive. Default is no PATH modification. Explicit flags override environment values.                                                                                                                         |
-| `--help`                             | —                               | Show usage without installing.                                                                                                                                                                                           |
+| Option                               | Environment default             | Behavior                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | Exact native version; canonical RCs such as `0.0.6-rc.1` require explicit selection. Omit both to read Envd's published stable version pointer, without calling the GitHub Releases API. |
+| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | Absolute destination directory. Defaults to `~/.local/bin` for POSIX users, `/usr/local/bin` for POSIX root, or `%LOCALAPPDATA%\A13N\bin` on Windows.                                    |
+| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | Mutually exclusive. Default is no PATH modification. Explicit flags override environment values.                                                                                         |
+| `--help`                             | —                               | Show usage without installing.                                                                                                                                                           |
 
 PATH opt-in updates only the current user's configuration: Bash `.bashrc` (`.bash_profile` on macOS), Zsh `${ZDOTDIR:-$HOME}/.zshrc`, POSIX shell `.profile`, Fish `${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish`, or Windows user `Path`. Re-running does not append the same entry again. Open a new terminal afterward. Unsupported shells can use `--no-add-to-path` and configure PATH manually.
 
@@ -137,7 +137,9 @@ a13n-envd update --check
 a13n-envd update
 ```
 
-The default selects the newest stable **Envd** release, skipping other repository components and prereleases. To match a client, install an RC, or explicitly downgrade, select an exact published version:
+The default reads the **Envd** stable pointer at `release-metadata/a13n-envd/stable.txt` through `raw.githubusercontent.com`, then downloads the selected version's immutable release assets. Release CI advances this pointer only after all Envd publication channels succeed; RCs and older release retries do not advance it. Neither installer nor updater needs a GitHub API token, and the POSIX installer does not require jq.
+
+If the pointer is unavailable or invalid, discovery fails without falling back to the GitHub API or changing your executable. Before the first stable release using this automation, the pointer does not exist; select an exact version. To match a client, install an RC, explicitly downgrade, or bypass stable discovery, select an exact published version:
 
 ```console
 a13n-envd update --version 1.2.3

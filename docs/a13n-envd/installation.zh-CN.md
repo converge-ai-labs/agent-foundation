@@ -112,12 +112,12 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 用下列选项选择精确版本和目标目录。两个安装脚本使用相同的选项名：
 
-| 选项                                 | 环境变量默认值                  | 行为                                                                                                                                                              |
-| ------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 精确的原生版本；`0.0.6-rc.1` 等规范 RC 版本需要显式选择。两者都省略时，从 GitHub 按最新优先排列的发布列表中选择第一个稳定的 Envd 版本，跳过其他组件和预发布版本。 |
-| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | 绝对目标目录。POSIX 普通用户默认为 `~/.local/bin`，POSIX root 默认为 `/usr/local/bin`，Windows 默认为 `%LOCALAPPDATA%\A13N\bin`。                                 |
-| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | 两个选项互斥。默认不修改 PATH。显式选项覆盖环境变量值。                                                                                                           |
-| `--help`                             | —                               | 显示用法，不执行安装。                                                                                                                                            |
+| 选项                                 | 环境变量默认值                  | 行为                                                                                                                              |
+| ------------------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 精确的原生版本；`0.0.6-rc.1` 等规范 RC 版本需要显式选择。两者都省略时，读取 Envd 发布的稳定版指针，不调用 GitHub Releases API。   |
+| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | 绝对目标目录。POSIX 普通用户默认为 `~/.local/bin`，POSIX root 默认为 `/usr/local/bin`，Windows 默认为 `%LOCALAPPDATA%\A13N\bin`。 |
+| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | 两个选项互斥。默认不修改 PATH。显式选项覆盖环境变量值。                                                                           |
+| `--help`                             | —                               | 显示用法，不执行安装。                                                                                                            |
 
 选择修改 PATH 时，只更新当前用户的配置：Bash 的 `.bashrc`（macOS 上为 `.bash_profile`）、Zsh 的 `${ZDOTDIR:-$HOME}/.zshrc`、POSIX shell 的 `.profile`、Fish 的 `${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish`，或 Windows 用户 `Path`。重复运行不会重复追加相同条目。完成后打开新的终端。不支持的 shell 可以使用 `--no-add-to-path`，再手动配置 PATH。
 
@@ -137,7 +137,9 @@ a13n-envd update --check
 a13n-envd update
 ```
 
-默认选择最新的 **Envd** 稳定版，跳过仓库中的其他组件和预发布版本。要匹配客户端、安装 RC 或显式降级，请指定精确的已发布版本：
+默认通过 `raw.githubusercontent.com` 读取 `release-metadata/a13n-envd/stable.txt` 中的 **Envd** 稳定版指针，再下载所选版本的不可变发布资源。发布 CI 仅在 Envd 所有发布渠道都成功后推进该指针；RC 和旧版本重跑不会推进。安装脚本和更新器均不需要 GitHub API token，POSIX 安装脚本也不再需要 jq。
+
+指针不可用或内容无效时，版本发现直接失败，不会回退到 GitHub API 或改动已有可执行文件。首次使用这套自动化完成稳定版发布之前，指针尚不存在，请指定精确版本。要匹配客户端、安装 RC、显式降级或跳过稳定版发现，请指定精确的已发布版本：
 
 ```console
 a13n-envd update --version 1.2.3
