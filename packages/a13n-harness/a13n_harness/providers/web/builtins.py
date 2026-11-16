@@ -14,6 +14,7 @@ from .vendors import (
     parallel,
     perplexity,
     serpapi,
+    specstream,
     tavily,
     tinyfish,
 )
@@ -49,6 +50,13 @@ def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
         ("jina", "Jina", "https://jina.ai/reader/", jina.search, jina.scrape),
         ("perplexity", "Perplexity", "https://www.perplexity.ai/settings/api", perplexity.search, None),
         ("serpapi", "SerpApi", "https://serpapi.com/manage-api-key", serpapi.search, None),
+        (
+            "specstream",
+            "SpecStream",
+            "https://specstream.ai/workspace",
+            specstream.search,
+            specstream.scrape,
+        ),
         (
             "tinyfish",
             "TinyFish",
