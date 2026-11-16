@@ -22,6 +22,32 @@ Agents with a default revision expose **Connect to app** in the list menu and de
 
 Every API-key form requires exactly one Workspace, with no global or Organization option. User keys belong to their signed-in owner; administrators may inspect authorized metadata and revoke them but cannot recover bearer values or create another user's personal key. Service-account keys use the account's home Workspace. Plaintext appears once and is never saved in browser persistence. Expiry choices include 1 day, 7 days, 30 days, 3 months, 1 year and no expiry; day presets are elapsed days, month/year presets use UTC calendar arithmetic with month-end clamping at submission. Organization administration uses a login session. Revoking a credential does not retract already accepted delegation; explicit interruption or changed principal/grant authority follows the Service contract.
 
+## App plugins
+
+Console reads the organization's installed [App catalog](../a13n-service/15-app-plugins.md#organization-policy-and-management) through its authenticated client. Enabled entries with frontend metadata supply a prebuilt ESM default export, `AppContribution`, using bridge version `1`. The registry loads each entry and its declared styles independently. A failed import, incompatible bridge or invalid contribution leaves core routes and other Apps available. Disabling removes the App's mounted contributions; refreshing reads current policy. Imports are trusted application code and CSS shares the document.
+
+### Host bridge
+
+The production HTML import map resolves `@a13n/console` to that build's content-hashed ESM bridge entry under `/assets/`. The bridge and main application share one module graph, and an already open page retains its build's bridge identity across Service upgrades. Development maps the specifier to the corresponding Vite source. App bundles externalize that specifier and use its exported React with classic JSX. The host owns the single React root, authentication client, query client, router, appearance and translation providers. App components use the bridge's hooks and UI components within that tree.
+
+`useApp()` identifies the mounted App and current organization/workspace. Its `queryKey(...parts)` includes App ID, organization ID and workspace ID. Its `request(path, init)` prefixes a relative path with `/api/v1/apps/{app_id}` and adds the selected workspace header. The request uses the existing Service Transport, including session authentication, CSRF, read retries, error handling, caller cancellation and logout shutdown. Business requests require a selected workspace. Plugin APIs require no additions to the core generated OpenAPI client.
+
+### Contributions and ownership
+
+| Contribution    | Address and behavior                                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pages`         | Workspace routes `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`, listed under Apps in the primary navigation                             |
+| `settings`      | Workspace or Organization sections keyed `app.{appId}.{sectionId}`, with both metadata and component content in the existing settings layout |
+| `workspaceHome` | Replaces only `/workspace/{workspaceId}`; the root workspace selection reaches that index, and Agents remains at its original route          |
+
+A page declares a local `id`, `label`, optional `description` and `permission`, and a React component. A settings section adds `scope: "workspace" | "organization"`. Local IDs start with a lowercase letter and contain lowercase letters, digits and hyphens; duplicate IDs within a contribution kind and settings scope fail loading. Service catalog metadata supplies App ownership. Labels and descriptions accept literal strings or English text with an optional Simplified Chinese translation. Page labels name browser tabs; settings metadata supplies headings and navigation.
+
+Visibility and route access respect the declared permission in the contribution's scope. Server handlers remain authoritative for business actions. Organization settings retain their existing administrator boundary. Unknown or disabled App pages/settings show not found with a path back into Console. Module and render failures have local recovery views. An App render failure cannot take down the primary shell. Multiple enabled `workspaceHome` owners produce a local conflict view with a link to Agents; no ordering silently chooses one.
+
+### Organization management
+
+Organization settings exposes App plugins with installed identity/version and enablement. Changes use the existing organization ETag and Service policy endpoint. The UI waits for the committed response before updating its registry. A failed or uncertain change leaves the last confirmed state visible and requires a current read before resubmission. Installation and upgrades remain operator actions followed by Service restart. New Runs use the changed selection; active Runs retain their accepted activation.
+
 ## Egress Credentials
 
 Capabilities → Credentials manages workspace [egress credentials](../a13n-service/04-resources.md#egress-credentials). The searchable, paginated collection shows name, allowed domains, state, credential version and update time. Search and state filters cover the complete collection. Detail pages separate Session application from configuration. Workspace `read` permits metadata and application-state inspection; `write` permits creation, metadata editing, rotation, revocation and an explicit active-Session synchronization request.

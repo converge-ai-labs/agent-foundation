@@ -24,6 +24,7 @@ import {
 import {
   CaretDownIcon,
   KeyIcon,
+  PuzzlePieceIcon,
   type Icon as PhosphorIcon,
   ListIcon,
   SidebarSimpleIcon,
@@ -33,6 +34,8 @@ import { Suspense, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { Loading } from "../shared/feedback";
+import { useAppPlugins } from "../app-plugins/registry";
+import { appText } from "../app-plugins/types";
 import { SessionRouteLoading } from "../features/conversations/session-feedback";
 import { routeSkeleton } from "./navigation";
 import { AccountMenu } from "./account-menu";
@@ -121,8 +124,15 @@ function WorkspaceNavigation({
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
 }) {
-  const { t } = useTranslation();
-  const { basePath } = useWorkspace();
+  const { t, i18n } = useTranslation();
+  const { basePath, can } = useWorkspace();
+  const { apps } = useAppPlugins();
+  const pages = apps.flatMap(({ app, contribution }) =>
+    (contribution?.pages ?? [])
+      .filter((page) => !page.permission || can(page.permission))
+      .map((page) => ({ app, page })),
+  );
+
   const { pathname } = useLocation();
   const { setOpenMobile, isMobile } = useSidebar();
   const rail = collapsed && !isMobile;
@@ -248,6 +258,30 @@ function WorkspaceNavigation({
                 </SidebarMenu>
               </SidebarGroup>
             ))}
+            {pages.length > 0 && (
+              <SidebarGroup>
+                {!rail && <SidebarGroupLabel>{t("Apps")}</SidebarGroupLabel>}
+                <SidebarMenu>
+                  {pages.map(({ app, page }) => {
+                    const to = `${base}/apps/${app.app_id}/${page.id}`;
+                    return (
+                      <SidebarMenuItem key={to}>
+                        <NavigationRow
+                          to={to}
+                          label={appText(page.label, i18n.language)}
+                          icon={PuzzlePieceIcon}
+                          active={
+                            pathname === to || pathname.startsWith(`${to}/`)
+                          }
+                          rail={rail}
+                          onNavigate={close}
+                        />
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroup>
+            )}
           </nav>
         </SidebarContent>
         <SidebarFooter>

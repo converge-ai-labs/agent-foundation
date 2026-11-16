@@ -436,3 +436,43 @@ test("Session streams use the original URL and parse Schedule frames", async () 
   assert.equal(requests[0].url, `${baseUrl}/api/v1/sessions/ses_one/stream`);
   client.close();
 });
+
+test("runtime App requests share workspace, CSRF, cancellation and logout shutdown with typed requests", async () => {
+  const requests = [];
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    maxReadRetries: 0,
+    fetch: async (request) => {
+      requests.push(request);
+      return json({ ok: true });
+    },
+  });
+  await assert.rejects(
+    client.request("/api/v1/apps/acme.reports/preview", { method: "POST" }),
+    /CSRF/,
+  );
+  client.setCsrfToken("csrf-proof");
+  const controller = new AbortController();
+  await client.request("/api/v1/apps/acme.reports/preview", {
+    method: "POST",
+    headers: {
+      "X-Workspace-ID": "ws_reports",
+      "Content-Type": "application/json",
+    },
+    body: '{"title":"Report"}',
+    signal: controller.signal,
+  });
+  assert.equal(requests[0].headers.get("X-CSRF-Token"), "csrf-proof");
+  assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_reports");
+  assert.equal(requests[0].credentials, "same-origin");
+  assert.equal(requests[0].redirect, "error");
+  controller.abort();
+  assert.equal(requests[0].signal.aborted, true);
+  await assert.rejects(client.request("/elsewhere"), /configured Service API/);
+  client.close();
+  await assert.rejects(client.request("/api/v1/apps/acme.reports/summary"), {
+    name: "AbortError",
+  });
+  assert.equal(requests.length, 1);
+});

@@ -5,13 +5,11 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { PageActionsTarget, PageEmptyAction } from "../../shared/page";
+import { useAppPlugins } from "../../app-plugins/registry";
+import { Loading, ErrorPage, NotFoundPage } from "../../shared/feedback";
 
 import { useTranslation } from "react-i18next";
-import {
-  resolveSection,
-  useSettingsNavigation,
-  type SettingsScope,
-} from "./navigation";
+import { useSettingsNavigation, type SettingsScope } from "./navigation";
 import { providerCategory } from "../providers/categories";
 import styles from "./settings.module.css";
 
@@ -45,14 +43,13 @@ export function SettingsLayout({
   const [offeredBelow, setOfferedBelow] = useState(false);
   const [filter, setFilter] = useState("");
   const groups = useSettingsNavigation();
+  const registry = useAppPlugins();
   const current = groups.find((group) => group.scope === scope)!;
   const search = new URLSearchParams(location.search);
   const requested = section ?? params.section;
   const selected =
     current.sections.find(
-      (item) =>
-        item.value === resolveSection(scope, requested) &&
-        item.value in content,
+      (item) => item.value === requested && item.value in content,
     ) ??
     current.sections.find((item) => item.value in content) ??
     current.sections[0];
@@ -67,6 +64,26 @@ export function SettingsLayout({
       ),
     }))
     .filter((group) => group.sections.length);
+  if (
+    requested?.startsWith("app.") &&
+    !current.sections.some((item) => item.value === requested)
+  ) {
+    if (registry.pending) return <Loading page />;
+    const actions = (
+      <Button render={<Link to="/" />}>{t("Back to workspace")}</Button>
+    );
+    return registry.error ? (
+      <ErrorPage error={registry.error} actions={actions} />
+    ) : (
+      <NotFoundPage
+        title={t("App settings not found")}
+        description={t(
+          "Enable the App in organization settings, or choose another page.",
+        )}
+        actions={actions}
+      />
+    );
+  }
   return (
     <PageEmptyAction value={setOfferedBelow}>
       <PageActionsTarget value={actionsTarget}>

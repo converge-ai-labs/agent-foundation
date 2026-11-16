@@ -122,7 +122,7 @@ it("redirects the entry page using the current workspace ID", async () => {
   mount("/");
   expect(
     await screen.findByText(
-      /^\/workspace\/(ws_first|ws_second)\/agents\|\1\|\/workspace\/\1$/,
+      /^\/workspace\/(ws_first|ws_second)\|\1\|\/workspace\/\1$/,
     ),
   ).toBeTruthy();
 });
@@ -134,7 +134,7 @@ it("enters a workspace that still runs rather than an archived one", async () =>
     mount("/", { firstArchived: true });
     expect(
       await screen.findByText(
-        "/workspace/ws_second/agents|ws_second|/workspace/ws_second",
+        "/workspace/ws_second|ws_second|/workspace/ws_second",
       ),
     ).toBeTruthy();
   } finally {

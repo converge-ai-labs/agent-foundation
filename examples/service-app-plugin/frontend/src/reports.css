@@ -1,0 +1,108 @@
+@font-face {
+  font-family: AcmeReports;
+  src: url("./SpaceGrotesk-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+.acme-reports {
+  display: grid;
+  gap: 28px;
+  padding-top: 8px;
+}
+.acme-reports-intro {
+  padding: 28px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.acme-reports-eyebrow {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.acme-reports-intro h2 {
+  font-family: AcmeReports, system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  margin: 12px 0 8px;
+  line-height: 1.2;
+}
+.acme-reports-intro p,
+.acme-reports-context p {
+  color: var(--a13n-secondary);
+  margin: 0;
+}
+.acme-reports-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0;
+}
+.acme-reports-metrics > div {
+  padding: 0 4px;
+}
+.acme-reports dt {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.acme-reports-metrics dd {
+  font-size: 30px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0 0;
+  font-weight: 500;
+}
+.acme-reports-context h3 {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+.acme-reports-context dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 28px;
+  padding-top: 16px;
+  margin: 0;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.acme-reports-context dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.acme-reports-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+.acme-reports-actions a {
+  color: var(--a13n-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.acme-reports-detail {
+  background: var(--a13n-surface);
+  padding: 16px;
+  border-radius: 8px;
+}
+.acme-reports-scope {
+  display: block;
+  color: var(--a13n-secondary);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .acme-reports-intro {
+    padding: 20px;
+  }
+  .acme-reports-intro h2 {
+    font-size: 24px;
+  }
+  .acme-reports-metrics {
+    gap: 12px;
+  }
+  .acme-reports-metrics dd {
+    font-size: 26px;
+  }
+  .acme-reports-context dl {
+    grid-template-columns: 1fr;
+  }
+}

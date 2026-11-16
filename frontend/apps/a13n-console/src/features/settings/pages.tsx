@@ -2,6 +2,9 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccess, useWorkspace } from "../../layout/workspace";
+import { AppManagement } from "../../app-plugins/management";
+import { AppSurface, useAppSettings } from "../../app-plugins/views";
+import { settingsKey } from "../../app-plugins/types";
 import { Empty } from "../../shared/collection";
 import { Page } from "../../shared/page";
 import { ProvidersPage } from "../providers/page";
@@ -23,6 +26,7 @@ export function WorkspaceSettings() {
   const navigate = useNavigate();
   const cache = useQueryClient();
   const scope = { kind: "workspace", id: workspace.id } as const;
+  const appSections = useAppSettings("workspace");
   if ((subscriptionId || section === "webhooks") && !can("admin"))
     return (
       <Page title={t("Webhooks")}>
@@ -42,6 +46,16 @@ export function WorkspaceSettings() {
       }
       heading={!accountId && !subscriptionId}
       content={{
+        ...Object.fromEntries(
+          appSections.map((section) => [
+            settingsKey(section.appId, section.id),
+            <AppSurface
+              key={`${section.appId}:${section.id}`}
+              appId={section.appId}
+              component={section.component}
+            />,
+          ]),
+        ),
         general: (
           <Profile
             target={scope}
@@ -88,6 +102,7 @@ export function OrganizationSettings() {
   const { t } = useTranslation(),
     { organization, organizationCan } = useAccess();
   const scope = { kind: "organization", id: organization.id } as const;
+  const appSections = useAppSettings("organization");
   if (!organizationCan("admin"))
     return (
       <Page title={t("Organization settings")}>
@@ -103,6 +118,17 @@ export function OrganizationSettings() {
     <SettingsLayout
       scope="organization"
       content={{
+        ...Object.fromEntries(
+          appSections.map((section) => [
+            settingsKey(section.appId, section.id),
+            <AppSurface
+              key={`${section.appId}:${section.id}`}
+              appId={section.appId}
+              component={section.component}
+            />,
+          ]),
+        ),
+        "app-plugins": <AppManagement />,
         general: <Profile target={scope} />,
         members: <MemberSettings scope={scope} />,
         workspaces: <Workspaces />,
