@@ -34,8 +34,12 @@ class BoxdExecution(BoxdReference, NativeExecution[BoxdEnvironmentConfiguration,
         # One deadline bounds the whole download, across every wait for content.
         deadline = asyncio.get_running_loop().time() + self.config.request_timeout_seconds
         with sdk_errors(mutation=False):
-            # Close the download stream as soon as a bounded range read stops consuming it.
-            async with closing_stream(self.client().machines.fs.read_stream(self.target.target_id, path)) as stream:
+            # SDK 0.3.1 does not cancel FsRead when its generator closes early.
+            # A read-owned client closes that RPC without interrupting concurrent operations.
+            async with (
+                self.create_client() as client,
+                closing_stream(client.machines.fs.read_stream(self.target.target_id, path)) as stream,
+            ):
                 chunks = aiter(stream)
                 while True:
                     try:

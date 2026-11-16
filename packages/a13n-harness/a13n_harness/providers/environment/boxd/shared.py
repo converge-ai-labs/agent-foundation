@@ -106,19 +106,22 @@ class BoxdReference(NativeReference[BoxdEnvironmentConfiguration, TargetState]):
         self.token = runtime.credential.api_key
         self._client: AsyncBoxd | None = None
 
+    def create_client(self) -> AsyncBoxd:
+        from boxd import AsyncBoxd
+
+        # No SDK request retries: a mutation is never replayed after an uncertain dispatch.
+        # The SDK reruns a command only when the machine never received it.
+        return AsyncBoxd(
+            api_key=self.token.get_secret_value(),
+            base_url=API_URL,
+            region=self.backend.region,
+            timeout=self.config.request_timeout_seconds + 10,
+            max_retries=0,
+        )
+
     def client(self) -> AsyncBoxd:
         if self._client is None:
-            from boxd import AsyncBoxd
-
-            # No SDK request retries: a mutation is never replayed after an uncertain dispatch.
-            # The SDK reruns a command only when the machine never received it.
-            self._client = AsyncBoxd(
-                api_key=self.token.get_secret_value(),
-                base_url=API_URL,
-                region=self.backend.region,
-                timeout=self.config.request_timeout_seconds + 10,
-                max_retries=0,
-            )
+            self._client = self.create_client()
         return self._client
 
     async def get(self, reference: str) -> Machine | None:

@@ -1,9 +1,11 @@
 """boxd execution attaches to a recorded running machine and bounds SDK errors."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import boxd
+import grpc
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
@@ -48,6 +50,13 @@ def execution(machine, *, exec_result=None, exec_error=None, labels=None, seen=N
     target._client = SimpleNamespace(
         machines=SimpleNamespace(get=get, exec=run, fs=SimpleNamespace(read_stream=read_stream)), close=close
     )
+    if read_stream is not None:
+
+        @asynccontextmanager
+        async def read_client():
+            yield SimpleNamespace(machines=SimpleNamespace(fs=SimpleNamespace(read_stream=read_stream)))
+
+        target.create_client = read_client
     return target
 
 
@@ -151,6 +160,59 @@ def test_download_chunks_pass_through_and_a_stalled_download_ends_at_the_request
     error = code(asyncio.wait_for(read(target), timeout=10))
     assert (error.code, error.certainty) == ("provider_unavailable", "known")
     assert seen == {"closed": True}
+
+
+@pytest.mark.parametrize("early_close", [True, False])
+def test_download_releases_the_real_sdk_rpc_without_closing_command_access(monkeypatch, early_close):
+    from a13n_harness.environment._streams import closing_stream
+    from boxd._generated import api_pb2, api_pb2_grpc
+
+    async def scenario():
+        stopped = asyncio.Event()
+
+        class Server(api_pb2_grpc.BoxdApiServicer):
+            async def FsRead(self, request, context):
+                try:
+                    yield api_pb2.FsReadChunk(data=b"prefix")
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+
+        server = grpc.aio.server()
+        api_pb2_grpc.add_BoxdApiServicer_to_server(Server(), server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        sdk_client = boxd.AsyncBoxd
+        clients = []
+
+        def client(**options):
+            value = sdk_client(token="local-fixture", base_url=f"http://127.0.0.1:{port}", timeout=0.2, max_retries=0)
+            clients.append(value)
+            return value
+
+        monkeypatch.delenv("BOXD_REGION", raising=False)
+        monkeypatch.setattr(boxd, "AsyncBoxd", client)
+        target = execution("running", timeout=0.2, exec_result=SimpleNamespace(exit_code=0, stdout="{}"))
+        command_client = target._client
+        try:
+            async with closing_stream(target.read_stream("/large-file")) as reader:
+                assert await anext(reader) == b"prefix"
+                if not early_close:
+                    with pytest.raises(EnvironmentProviderError) as error:
+                        await anext(reader)
+                    assert error.value.code == "provider_unavailable"
+            # This confirms RPC cancellation, not only the outer generator's finally.
+            await asyncio.wait_for(stopped.wait(), timeout=2)
+            assert len(clients) == 1
+            assert target._client is command_client
+            assert await target.execute(["true"], 0.1) == "{}"
+        finally:
+            await target.close()
+            for value in clients:
+                await value.close()
+            await server.stop(0)
+
+    asyncio.run(scenario())
 
 
 def test_file_path_errors_are_not_reported_as_a_missing_target():

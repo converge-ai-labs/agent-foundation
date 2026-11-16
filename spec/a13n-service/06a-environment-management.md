@@ -48,7 +48,7 @@ Management providers hold account-scoped clients and close them independently fr
 
 ### Default Command Environment
 
-All eight built-in managed providers accept `recipe.environment`, a string-to-string map defaulting to empty. These are ordinary readable template values, not secret storage. Names use `[A-Za-z_][A-Za-z0-9_]*`; values must not contain NUL. Recipe validation rejects platform-owned `A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY` and `XAUTHORITY` variables before allocation.
+All built-in managed providers accept `recipe.environment`, a string-to-string map defaulting to empty. These are ordinary readable template values, not secret storage. Names use `[A-Za-z_][A-Za-z0-9_]*`; values must not contain NUL. Recipe validation rejects platform-owned `A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY` and `XAUTHORITY` variables before allocation.
 
 The first create claim freezes these defaults with the rest of the recipe. Retries, execution attachment, stop/start and snapshot resume retain them; later template edits apply only to instances whose recipe has not yet been frozen. Providers with a native creation environment receive the defaults during allocation. All managed execution paths also apply them when dispatching Agent shell/process requests, including EIP paths where the daemon need not inherit its launch environment. This does not mutate the Service process environment or a shared sandbox's global environment during a Run.
 

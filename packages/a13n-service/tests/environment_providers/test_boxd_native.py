@@ -1,6 +1,7 @@
 """Real public operations over a fixture-owned boxd SDK client that runs guest helpers locally."""
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -132,6 +133,12 @@ class Fake:
 
         class Client:
             machines = Machines()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                await self.close()
 
             async def close(self):
                 fake.calls.append(("close",))
@@ -406,6 +413,25 @@ def test_boxd_create_result_without_labels_keeps_the_machine_and_stays_retryable
         await provider.close()
 
     asyncio.run(scenario())
+
+
+def test_boxd_live_check_cleans_up_when_creation_readiness_fails(tmp_path, fake, monkeypatch):
+    from .test_cloud_live import test_cloud_files_execution_and_resume
+
+    monkeypatch.setenv("A13N_TEST_CLOUD_PROVIDERS", "boxd")
+    monkeypatch.setenv("A13N_TEST_BOXD_BACKEND_JSON", json.dumps(ACCOUNT))
+    monkeypatch.setenv("A13N_TEST_BOXD_CREDENTIAL_JSON", json.dumps(CREDENTIAL))
+    monkeypatch.setenv(
+        "A13N_TEST_BOXD_RECIPE_JSON",
+        json.dumps({"root": str(tmp_path), "python": sys.executable, "request_timeout_seconds": 0.2}),
+    )
+    fake.stalled_readiness = True
+    with pytest.raises(EnvironmentProviderError) as error:
+        asyncio.run(test_cloud_files_execution_and_resume("boxd", tmp_path))
+    assert error.value.code == "provider_unavailable"
+    assert len(fake.created) == 1
+    assert not fake.machines
+    assert any(call[0] == "delete" for call in fake.calls)
 
 
 def test_boxd_create_result_without_labels_still_rejects_a_foreign_machine(tmp_path, fake):

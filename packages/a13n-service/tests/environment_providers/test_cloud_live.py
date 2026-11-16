@@ -6,6 +6,7 @@ import secrets
 
 import pytest
 from a13n_harness.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -38,7 +39,7 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
     configuration = definition.validate_environment(json.loads(os.environ.get(prefix + "RECIPE_JSON", "{}")))
     environment_id = "env-live-" + secrets.token_hex(12)
     async with await definition.open_provider(configuration=backend, credential=credential) as provider:
-        state = await provider.create(configuration, environment_id=environment_id, operation_id="op-create")
+        state = None
 
         def connector():
             return definition.execution.execution_connector(
@@ -47,6 +48,7 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
 
         filename = ("/workspace/" if key in {"daytona", "modal"} else "/") + "a13n-test-" + secrets.token_hex(8)
         try:
+            state = await provider.create(configuration, environment_id=environment_id, operation_id="op-create")
             async with await connector().open() as env:
                 await env.operations.files.write_text(filename, "native persistence", mode="create")
                 result = await env.operations.shell.exec(
@@ -75,5 +77,10 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
                 )
                 async with await connector().open() as env:
                     assert (await env.operations.files.read_text(filename)).text == "native persistence"
+        except EnvironmentProviderError as error:
+            # An allocation may exist even when create or readiness failed.
+            if error.state is not None:
+                state = error.state
+            raise
         finally:
             await provider.destroy(configuration, environment_id=environment_id, state=state, operation_id="op-delete")
