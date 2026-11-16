@@ -42,10 +42,10 @@ afterEach(() => {
 it("renders punctuation-ending Chinese bold labels and sentences beside prose", () => {
   const view = render(
     <MessageText
-      text={`- **积分：**从局部量计算累积总量；
-- **导数：**从累积总量计算局部变化率。
+      text={`- **提交状态：**请求处理中时禁用提交按钮；
+- **重试策略：**沿用同一订单标识再次提交。
 
-**微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。**我们前面选择了几何入口。`}
+**支付失败后应保留表单内容。**用户可以检查信息后重试。`}
     />,
   );
   expect(
@@ -53,11 +53,7 @@ it("renders punctuation-ending Chinese bold labels and sentences beside prose", 
       view.container.querySelectorAll("strong"),
       (node) => node.textContent,
     ),
-  ).toEqual([
-    "积分：",
-    "导数：",
-    "微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。",
-  ]);
+  ).toEqual(["提交状态：", "重试策略：", "支付失败后应保留表单内容。"]);
   expect(view.container.textContent).not.toContain("**");
 });
 

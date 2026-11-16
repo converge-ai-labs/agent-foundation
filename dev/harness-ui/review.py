@@ -37,12 +37,12 @@ from pydantic_ai.toolsets import FunctionToolset
 
 ANSWER = r"""The checkout flow has a small but important gap: a slow request can submit the same order twice.
 
-### CJK emphasis
+### Checkout status
 
-- **积分：**从局部量计算累积总量；
-- **导数：**从累积总量计算局部变化率。
+- **提交状态：**请求处理中时禁用提交按钮；
+- **重试策略：**沿用同一订单标识再次提交。
 
-**微积分不以图形为必要前提；数形结合也不是一种错误的理解方式。**我们前面选择了几何入口，但应该把概念的定义和看图产生的直觉分开。
+**支付失败后应保留表单内容。**用户可以检查信息后重试，避免重复填写。
 
 ### What I found
 
