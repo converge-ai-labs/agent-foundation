@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import threading
@@ -1579,9 +1580,9 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
 @pytest.mark.parametrize(
     "failed_kind", [ObjectKind.continuation_state, ObjectKind.continuation_display, ObjectKind.continuation]
 )
-@pytest.mark.parametrize("error_type", [OSError, PermissionError])
+@pytest.mark.parametrize("error_number", [None, errno.EACCES, errno.ENOSPC])
 async def test_checkpoint_save_failure_preserves_prior_selection(
-    tmp_path: Path, monkeypatch, failed_kind, error_type
+    tmp_path: Path, monkeypatch, failed_kind, error_number
 ) -> None:
     root = _write_configuration(tmp_path)
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
@@ -1604,7 +1605,7 @@ async def test_checkpoint_save_failure_preserves_prior_selection(
 
         async def fail_continuation(**kwargs):
             if kwargs["object_kind"] == failed_kind:
-                raise error_type("private checkpoint path")
+                raise OSError(error_number, "private checkpoint path")
             return await publish(**kwargs)
 
         monkeypatch.setattr(app._store.objects, "publish_model", fail_continuation)
@@ -1620,12 +1621,16 @@ async def test_checkpoint_save_failure_preserves_prior_selection(
         assert failure.retry_hint == "dependency_change"
         assert "private checkpoint path" not in failure.message
         assert "Diagnostic report:" in failure.message
-        assert ("Permission denied" in failure.message) is (error_type is PermissionError)
+        assert ("Permission denied" in failure.message) is (error_number == errno.EACCES)
+        assert ("ENOSPC, errno 28" in failure.message) is (error_number == errno.ENOSPC)
         report = next(tmp_path.glob("a13n-harness-ui-error-*.json"))
         assert "private checkpoint path" in report.read_text()
         assert len(calls) == 1
         assert failed.outcome.continuation.status == "failed"
         retained = await app.get_thread(thread.thread_id)
+        assert retained.thread.last_execution is not None
+        assert retained.thread.last_execution.error_code == "checkpoint_save_failed"
+        assert retained.thread.last_execution.error_message == failure.message
         assert retained.continuation_id == prior
         assert retained.thread.excerpt.first_input == "first"
         assert retained.thread.excerpt.latest_input == "first"

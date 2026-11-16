@@ -1,4 +1,8 @@
 {
+  "Error code": "Error code",
+  "Thread ID": "Thread ID",
+  "Run ID": "Run ID",
+  "Execution ID": "Execution ID",
   "Tool execution": "Tool execution",
   "Automatic background execution": "Automatic background execution",
   "All eligible tools": "All eligible tools",

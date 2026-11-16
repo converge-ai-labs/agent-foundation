@@ -379,9 +379,12 @@ it("dispatches native custom payloads and folds task/context operations without 
   });
   expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
   expect(display.terminalFailure).toBe("Provider disconnected");
+  expect(display.terminalFailureCode).toBe("failed");
   expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
     { execution: "failed", text: "Provider disconnected" },
   );
+  display.reset();
+  expect(display.terminalFailureCode).toBeUndefined();
 });
 it("reassembles custom fragments before applying hidden metadata and rejects missing fragments", () => {
   const display = new FocusDisplay();
