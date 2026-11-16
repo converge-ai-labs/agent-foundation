@@ -1,8 +1,14 @@
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 import pytest
-from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.app import AppState, open_harness_ui_app
 from a13n_harness_ui.chat_titles import title_context
+from a13n_harness_ui.storage.runtime import open_local_store
 from a13n_harness_ui.surfaces import RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
-from anyio import Event, fail_after, sleep
+from anyio import CancelScope, Event, create_task_group, fail_after, get_cancelled_exc_class, move_on_after, sleep
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 
 from .test_app import _CompletedReconstructor, _settings, _write_configuration
 
@@ -61,3 +67,103 @@ async def test_async_first_title_and_explicit_regeneration(tmp_path, monkeypatch
         assert await app.suggest_chat_title(thread_id) == "Suggested title"
         assert calls == [(["First topic"], model_id), (["First topic", "Second topic"], model_id)]
         assert (await app.get_thread(thread_id)).thread.title == ("My title" if rename else "Suggested title")
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("migrated_databases")
+@pytest.mark.parametrize("cancel_lifetime", [False, True])
+@pytest.mark.parametrize("stage", ["model", "publication"])
+async def test_pending_automatic_title_joins_app_shutdown_after_root_completion(
+    tmp_path, monkeypatch, cancel_lifetime, stage
+):
+    root = _write_configuration(tmp_path)
+    held, release, cancelled, ready, stop, closed = (Event() for _ in range(6))
+    owners, scopes = [], []
+    metadata_writes = []
+    cancelled_before_storage_close = []
+    storage_closing = Event()
+
+    @asynccontextmanager
+    async def tracked_store(settings):
+        async with open_local_store(settings) as store:
+            try:
+                yield store
+            finally:
+                storage_closing.set()
+
+    monkeypatch.setattr("a13n_harness_ui.app.open_local_store", tracked_store)
+
+    async def lifetime():
+        with CancelScope() as scope:
+            scopes.append(scope)
+            async with open_harness_ui_app(
+                _settings(tmp_path / "state", shutdown_timeout_seconds=0.02),
+                configuration_path=root,
+                host_mode="webui",
+            ) as app:
+                owners.append(app)
+
+                async def wait_for_title():
+                    held.set()
+                    try:
+                        await release.wait()
+                    except get_cancelled_exc_class():
+                        cancelled.set()
+                        cancelled_before_storage_close.append(not storage_closing.is_set())
+                        raise
+
+                async def model(messages, info):
+                    if stage == "model":
+                        await wait_for_title()
+                    return ModelResponse(parts=[TextPart("Generated title")])
+
+                async def utility_model(source, model_id, thread_id):
+                    return FunctionModel(model), SimpleNamespace(settings={})
+
+                update = app.update_thread_metadata
+
+                async def publish(**kwargs):
+                    if stage == "publication":
+                        await wait_for_title()
+                    metadata_writes.append(kwargs)
+                    return await update(**kwargs)
+
+                monkeypatch.setattr(app, "_utility_model", utility_model)
+                monkeypatch.setattr(app, "update_thread_metadata", publish)
+                app._root_runs._executor._agents = _CompletedReconstructor()
+                thread_id = (await app.create_thread()).thread_id
+                receipt = await app.submit_thread(thread_id=thread_id, prompt="First topic")
+                with fail_after(5):
+                    await held.wait()
+                    result = await app.wait_root_operation(receipt.receipt_id)
+                assert result.status is RootOperationStatus.completed
+                assert await app._root_runs.active_count() == 0
+                assert (await app.get_thread(thread_id)).thread.title is None
+                ready.set()
+                await stop.wait()
+        closed.set()
+
+    with fail_after(10):
+        async with create_task_group() as group:
+            group.start_soon(lifetime)
+            await ready.wait()
+            if cancel_lifetime:
+                scopes[0].cancel()
+            else:
+                stop.set()
+            # Rescue the old implementation's shielded task-group join so a
+            # failed regression exits cleanly instead of hanging the test suite.
+            with move_on_after(2) as shutdown_wait:
+                await closed.wait()
+            release.set()
+            await closed.wait()
+    assert not shutdown_wait.cancel_called
+    assert cancelled.is_set()
+    assert cancelled_before_storage_close == [True]
+    assert metadata_writes == []
+    app = owners[0]
+    assert app.state is AppState.closed
+    assert storage_closing.is_set()
+    assert app._operations_idle.is_set()
+    assert not app._operation_scopes
+    assert app._root_runs._task_group is None
