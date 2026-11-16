@@ -190,7 +190,10 @@ async def test_bot_deferred_computer_allowlist_still_rejects_unknown_names(tmp_p
         await bot.submit(BotSubmit(input_id="unknown-tool", text="Coordinate"))
         assert (await consumed(app, "unknown-tool")).state == "interrupted"
         assert requested is False
-        assert (await bot.snapshot()).state.last_error is not None
+        # Input settlement and the Bot error summary are persisted separately.
+        with fail_after(5):
+            while (await bot.snapshot()).state.last_error is None:
+                await sleep(0.01)
 
 
 async def test_bot_compacts_automatically_with_selected_agent_and_model_override(tmp_path: Path, monkeypatch):
