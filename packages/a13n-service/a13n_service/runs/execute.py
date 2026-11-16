@@ -52,6 +52,7 @@ from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_plugins import AppActivation
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
@@ -118,6 +119,7 @@ class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
     session_id: str
+    app_activation: AppActivation
     retain_tools: bool
     subagent_controls: bool
     background_compaction: bool
@@ -255,6 +257,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         authority = ExecutionAuthority.model_validate(run.authority)
         options = stored.require(RunOptions, run.options, kind="run", id=run.id)
+        app_activation = stored.require(AppActivation, run.app_activation, kind="run", id=run.id)
         revision = await definitions.resolve(
             session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
         )
@@ -328,6 +331,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         retain_tools = thread.purpose == "conversation"
         root_compaction = thread.origin != "child" and thread.agent_snapshot is None and retain_tools
         background_compaction = root_compaction and resolved.config.background_compaction.enabled
+    app_activation.require_installed(runtime.apps)
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
@@ -357,6 +361,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     compaction = await runtime.compactions.inspect(lease.thread_id) if root_compaction else None
     return _Plan(
         session_id=session_id,
+        app_activation=app_activation,
         background_compaction=background_compaction,
         compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
@@ -626,6 +631,8 @@ class _Attempt:
                 child_bindings=host.bindings,
                 operators=self._operator,
                 plugins=runtime.plugins,
+                app_activation=self.plan.app_activation,
+                apps=runtime.apps,
                 instrumentation=runtime.instrumentation,
                 compaction=self.compaction,
                 subagent_controls=self.plan.subagent_controls,

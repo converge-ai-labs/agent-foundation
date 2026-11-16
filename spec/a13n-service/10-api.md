@@ -214,34 +214,38 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Organizations, workspaces and members
 
-| Path                                                   | Methods            | Owner                                            |
-| ------------------------------------------------------ | ------------------ | ------------------------------------------------ |
-| `/organizations`                                       | GET                | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/organizations/{org}`                                 | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/organizations/{org}/icon`                            | GET, PUT, DELETE   | [03](03-tenancy.md#images)                       |
-| `/organizations/{org}/workspaces`                      | GET, POST          | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/organizations/{org}/members`                         | GET                | [03](03-tenancy.md#grants)                       |
-| `/organizations/{org}/grants`                          | GET, POST          | [03](03-tenancy.md#grants)                       |
-| `/organizations/{org}/grants/{grant}`                  | PATCH, DELETE      | [03](03-tenancy.md#grants)                       |
-| `/organizations/{org}/invitations`                     | GET, POST          | [03](03-tenancy.md#invitations)                  |
-| `/organizations/{org}/invitations/{invitation}/resend` | POST               | [03](03-tenancy.md#invitations)                  |
-| `/organizations/{org}/invitations/{invitation}/revoke` | POST               | [03](03-tenancy.md#invitations)                  |
-| `/organizations/{org}/audit-events`                    | GET                | [03](03-tenancy.md#audit)                        |
-| `/workspaces`                                          | GET                | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/workspaces/{ws}`                                     | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/workspaces/{ws}/archive`                             | POST               | [03](03-tenancy.md#organizations-and-workspaces) |
-| `/workspaces/{ws}/icon`                                | GET, PUT, DELETE   | [03](03-tenancy.md#images)                       |
-| `/workspaces/{ws}/grants`                              | GET, POST          | [03](03-tenancy.md#grants)                       |
-| `/workspaces/{ws}/grants/{grant}`                      | PATCH, DELETE      | [03](03-tenancy.md#grants)                       |
-| `/workspaces/{ws}/invitations`                         | GET, POST          | [03](03-tenancy.md#invitations)                  |
-| `/workspaces/{ws}/invitations/{invitation}/resend`     | POST               | [03](03-tenancy.md#invitations)                  |
-| `/workspaces/{ws}/invitations/{invitation}/revoke`     | POST               | [03](03-tenancy.md#invitations)                  |
-| `/workspaces/{ws}/service-accounts`                    | GET, POST          | [03](03-tenancy.md#service-accounts)             |
-| `/workspaces/{ws}/service-accounts/{account}`          | GET, PATCH, DELETE | [03](03-tenancy.md#service-accounts)             |
-| `/workspaces/{ws}/service-accounts/{account}/keys`     | GET, POST          | [03](03-tenancy.md#api-keys)                     |
-| `/workspaces/{ws}/keys`                                | GET                | [03](03-tenancy.md#api-keys)                     |
-| `/workspaces/{ws}/keys/{key}`                          | DELETE             | [03](03-tenancy.md#api-keys)                     |
-| `/workspaces/{ws}/audit-events`                        | GET                | [03](03-tenancy.md#audit)                        |
+| Path                                                   | Methods            | Owner                                                      |
+| ------------------------------------------------------ | ------------------ | ---------------------------------------------------------- |
+| `/organizations`                                       | GET                | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/organizations/{org}`                                 | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/organizations/{org}/app-plugins`                     | GET                | [15](15-app-plugins.md#organization-policy-and-management) |
+| `/organizations/{org}/app-plugins/{app_id}`            | PUT                | [15](15-app-plugins.md#organization-policy-and-management) |
+| `/apps/{app_id}/...`                                   | App-declared       | [15](15-app-plugins.md#dispatch-boundary)                  |
+| `/app-plugins/{app_id}/assets/{version}/{path}`        | GET                | [15](15-app-plugins.md#packaged-browser-assets)            |
+| `/organizations/{org}/icon`                            | GET, PUT, DELETE   | [03](03-tenancy.md#images)                                 |
+| `/organizations/{org}/workspaces`                      | GET, POST          | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/organizations/{org}/members`                         | GET                | [03](03-tenancy.md#grants)                                 |
+| `/organizations/{org}/grants`                          | GET, POST          | [03](03-tenancy.md#grants)                                 |
+| `/organizations/{org}/grants/{grant}`                  | PATCH, DELETE      | [03](03-tenancy.md#grants)                                 |
+| `/organizations/{org}/invitations`                     | GET, POST          | [03](03-tenancy.md#invitations)                            |
+| `/organizations/{org}/invitations/{invitation}/resend` | POST               | [03](03-tenancy.md#invitations)                            |
+| `/organizations/{org}/invitations/{invitation}/revoke` | POST               | [03](03-tenancy.md#invitations)                            |
+| `/organizations/{org}/audit-events`                    | GET                | [03](03-tenancy.md#audit)                                  |
+| `/workspaces`                                          | GET                | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/workspaces/{ws}`                                     | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/workspaces/{ws}/archive`                             | POST               | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/workspaces/{ws}/icon`                                | GET, PUT, DELETE   | [03](03-tenancy.md#images)                                 |
+| `/workspaces/{ws}/grants`                              | GET, POST          | [03](03-tenancy.md#grants)                                 |
+| `/workspaces/{ws}/grants/{grant}`                      | PATCH, DELETE      | [03](03-tenancy.md#grants)                                 |
+| `/workspaces/{ws}/invitations`                         | GET, POST          | [03](03-tenancy.md#invitations)                            |
+| `/workspaces/{ws}/invitations/{invitation}/resend`     | POST               | [03](03-tenancy.md#invitations)                            |
+| `/workspaces/{ws}/invitations/{invitation}/revoke`     | POST               | [03](03-tenancy.md#invitations)                            |
+| `/workspaces/{ws}/service-accounts`                    | GET, POST          | [03](03-tenancy.md#service-accounts)                       |
+| `/workspaces/{ws}/service-accounts/{account}`          | GET, PATCH, DELETE | [03](03-tenancy.md#service-accounts)                       |
+| `/workspaces/{ws}/service-accounts/{account}/keys`     | GET, POST          | [03](03-tenancy.md#api-keys)                               |
+| `/workspaces/{ws}/keys`                                | GET                | [03](03-tenancy.md#api-keys)                               |
+| `/workspaces/{ws}/keys/{key}`                          | DELETE             | [03](03-tenancy.md#api-keys)                               |
+| `/workspaces/{ws}/audit-events`                        | GET                | [03](03-tenancy.md#audit)                                  |
 
 ### Providers and models
 

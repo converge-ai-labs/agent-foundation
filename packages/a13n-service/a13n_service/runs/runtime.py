@@ -14,6 +14,7 @@ from a13n_harness.providers.environment.modal.pool import TransportPool
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_plugins import AppCatalog
 from a13n_service.infra.crypto import KeyRing
 from a13n_service.infra.db import Storage, after_commit
 from a13n_service.infra.objects.interface import ObjectStore
@@ -64,6 +65,7 @@ class Runtime:
     instrumentation: HarnessInstrumentation | None = None
     # The Harness plugin factories the deployment installed; agent configurations select instances of them.
     plugins: HarnessPluginFactoryCatalog = field(default_factory=lambda: HarnessPluginFactoryCatalog(()))
+    apps: AppCatalog = field(default_factory=AppCatalog)
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
 

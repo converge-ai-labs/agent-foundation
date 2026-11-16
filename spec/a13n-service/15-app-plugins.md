@@ -1,0 +1,65 @@
+# App plugins: installation, policy and execution
+
+## Design position
+
+An App plugin is trusted installed Python code that extends the Service with organization-scoped business APIs, bounded background work, owned Harness factories and a packaged Console frontend. Installation is deployment-wide; desired enablement belongs to an organization. The Service owns admission before entering tenant business code. [Harness plugins](../a13n-harness/05-plugin-system.md) own execution middleware and Capabilities inside the accepted graph.
+
+| Fact                                                         | Owner                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Installed package identity, registrations, process resources | Service assembly, stable until restart                                 |
+| Desired enablement                                           | `Organization.settings.app_plugins`, under organization administration |
+| Accepted activation                                          | Immutable `Run.app_activation`                                         |
+| Agent-local instances and effective graph                    | Harness source selection and binding                                   |
+| Business database preparation                                | Application/operator procedure                                         |
+| Browser contribution identity and composition                | [Console](../frontend/console.md)                                      |
+
+## Installation and registration
+
+Assembly explicitly discovers `a13n_service.app_plugins` entry points once per application build, before loading extension settings. Each entry is a zero-argument function returning an `AppDefinition` with an `app_id` equal to its entry-point name. Package distribution and version come from installed metadata. IDs consist of lowercase alphanumeric segments separated by `.`, `_` or `-`, beginning with a letter.
+
+An App definition declares its name, owned Harness factory keys, business routers, settings sections, organization sweeps, optional process startup callback and optional frontend. It exposes no tables, migration directories, ORM metadata registration, business DDL or database-version readiness. Service migrations continue to own Service's internal records. Installation and upgrade require a coordinated restart of serving and executing processes; there is no runtime installer or historical package archive.
+
+Duplicate App IDs, factory ownership, settings sections and HTTP operations fail startup. Each business route uses the host's `app_router(app_id)` and remains under the literal `/api/v1/apps/{app_id}/` namespace. A route cannot impersonate another App or replace a core endpoint. Replacements require a concrete subsystem-owned seam.
+
+The detached installed catalog contains metadata only. Tenancy and execution consume that catalog without importing registration callbacks. Assembly alone opens callbacks and registrations over the existing real Runtime, `Tasks`, `Sweep` scheduler and `AsyncExitStack`. Process startup and imports may execute installed code while its tenant policy is disabled; organization business callbacks require host admission. Startup resources register shutdown on the host exit stack.
+
+## Organization policy and management
+
+The settings namespace is a typed JSON object `{"enabled": ["acme.reports"]}`. Missing entries default to disabled, including newly installed Apps. Unknown retained policy IDs confer no authority and remain available for explicit operator reconciliation. Unrelated organization settings survive policy updates.
+
+`GET /api/v1/organizations/{organization_id}/app-plugins` requires ordinary organization read access. Its uncached response contains organization `id`, `version`, `permissions` and installed `items`. Each item exposes App ID/name, distribution/version, owned factory keys, desired `enabled`, and compatible frontend entry/style URLs only when enabled. It contains no configuration values, credentials or import paths. This is the serving process's inventory, not a fleet-health assertion.
+
+`PUT /api/v1/organizations/{organization_id}/app-plugins/{app_id}` accepts `{"enabled": true|false}`. It requires organization `admin` and the ordinary strong organization ETag in `If-Match`. Existing organization locking and in-transaction authority rechecks serialize administrative changes. A real change increments the organization version and records `app_plugin.update` with App ID and enabled flag in the same transaction; a no-op leaves version and audit unchanged. Missing/stale preconditions use the existing 428/412 responses. Both endpoints are tenant administration and intentionally excluded from MCP admission.
+
+## Dispatch boundary
+
+A business HTTP route authenticates with the existing authenticator and CSRF/Origin rules, resolves the selected workspace and checks read authority, then reads its organization's policy. Only after admission does FastAPI resolve App dependencies and invoke its handler. App handlers retain responsibility for the business action's additional verbs and resource checks. Disabled work receives 422 `disabled` with `app_id` and executes no App dependency or handler.
+
+Organization sweeps use a host-owned bounded keyset scan of enabled organizations, with a cursor per sweep for fairness. Each callback is a separate admission with a fresh committed-policy read. SQL sessions close before invoking the callback, which receives the real Runtime and organization ID. The callback owns any durable claims/fencing needed across replicas. Existing scheduler deadlines, cancellation, logging and shutdown apply. App sweeps run only on API/control-owning roles.
+
+A request/job already admitted can finish and clean up. Disabling changes subsequent admissions; emergency revocation remains with existing credential and authority owners.
+
+## Accepted Run activation
+
+Every new durable Run captures one detached schema-versioned snapshot in `Run.app_activation` during [acceptance](05-runs.md). It records the organization version observed with policy in one ordinary committed row read, and each installed App's ID, distribution, package version, sorted owned factory keys and enabled flag. Acceptance projects already loaded metadata and performs no App callback or external I/O for this capture. This observation does not serialize acceptance commit order with a concurrent administrative change.
+
+The snapshot is an immutable accepted field protected by the existing Run guard. Public Run options, steering digests and Harness checkpoint compatibility stay independent. Older rows default to an empty snapshot and never hydrate from current policy.
+
+| Boundary                                                            | Activation                                                            |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Turns, retry, checkpoint restore or worker takeover of the same Run | Original accepted snapshot                                            |
+| Inline child                                                        | Same accepted availability ceiling, child's own instance declarations |
+| New durable child, fork, resume or result/handback successor        | Current policy captured at its own acceptance                         |
+| Restored plugin state and historical tool results                   | Continuation data, never enablement authority                         |
+
+Before opening execution resources, after closing its planning SQL session, a worker verifies every enabled App's exact installed distribution/version and factory ownership against the snapshot. Mismatch fails deterministically with `conflict`, reason `app_inventory_mismatch`, before factory construction/model execution. Disabled ownership remains authoritative even if the worker no longer advertises that App. A newly installed App-owned key absent from the accepted snapshot stays disabled. Unowned standalone Harness factories retain their existing authored behavior.
+
+Composition passes enabled flags into Harness sources before construction, binding and contributions. Each inline node retains local instance IDs and selections. A required dependency on an unavailable contribution fails through the Harness graph contract; no automatic activation occurs.
+
+A new resume successor can encounter an unfinished target from an App now disabled. Harness validates the restored exact deferred target against its current dispatcher before effects and reports `deferred_surface_mismatch`; Service preserves that failure code. Disabling never re-enables a historical target or erases recorded results.
+
+## Packaged browser assets
+
+An App frontend names an importable Python package, package-relative asset directory, ESM entry, style paths and supported bridge version (currently `1`). Assembly resolves the complete resource directory with `importlib.resources` and keeps any extracted directory alive on the host exit stack. Missing declared entry/styles or unsupported bridge versions fail startup.
+
+API-serving roles serve files at `/api/v1/app-plugins/{app_id}/assets/{package_version}/{path}` with `public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. Package versions identify immutable asset trees; publishers must change the version when bytes change. Relative chunks, CSS and fonts resolve within that tree. Unknown versions, missing files and paths escaping the root return real 404 responses, never Console SPA HTML. Packaged code follows core Console public asset policy; its business APIs remain authorized separately. The organization catalog is `no-store`, so refresh obtains current enablement and entry URLs.

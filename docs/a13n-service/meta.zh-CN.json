@@ -26,6 +26,7 @@
     "files-and-webhooks",
     "webhooks",
     "mcp-apps",
+    "app-plugins",
     "---运行与检查---",
     "agents-and-runs",
     "schedules",

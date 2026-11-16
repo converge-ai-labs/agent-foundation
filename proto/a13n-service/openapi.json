@@ -1991,6 +1991,40 @@
         "title": "ApiKeyPage",
         "type": "object"
       },
+      "AppPlugins": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "permissions",
+          "items"
+        ],
+        "title": "AppPlugins",
+        "type": "object"
+      },
       "AppReference": {
         "properties": {
           "agent_definition_id": {
@@ -2123,6 +2157,72 @@
           "result"
         ],
         "title": "AppToolResult",
+        "type": "object"
+      },
+      "AppUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AppUpdate",
+        "type": "object"
+      },
+      "AppView": {
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "factory_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Factory Keys",
+            "type": "array"
+          },
+          "frontend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FrontendView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "name",
+          "distribution",
+          "version",
+          "enabled",
+          "factory_keys",
+          "frontend"
+        ],
+        "title": "AppView",
         "type": "object"
       },
       "ApplicationStatus": {
@@ -10544,6 +10644,32 @@
           "template_id"
         ],
         "title": "FreshRunEnvironment",
+        "type": "object"
+      },
+      "FrontendView": {
+        "properties": {
+          "bridge": {
+            "title": "Bridge",
+            "type": "integer"
+          },
+          "entry": {
+            "title": "Entry",
+            "type": "string"
+          },
+          "styles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Styles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bridge",
+          "entry",
+          "styles"
+        ],
+        "title": "FrontendView",
         "type": "object"
       },
       "GitHubSource": {
@@ -47333,6 +47459,139 @@
         "summary": "Update Organization",
         "tags": [
           "tenancy"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/app-plugins": {
+      "get": {
+        "description": "Organization administration is intentionally outside the MCP management surface.",
+        "operationId": "list_app_plugins",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPlugins"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List App Plugins",
+        "tags": [
+          "app-plugins"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/app-plugins/{app_id}": {
+      "put": {
+        "operationId": "update_app_plugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match",
+              "x-a13n-mcp-entity-tag": "expected_version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppPlugins"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update App Plugin",
+        "tags": [
+          "app-plugins"
         ]
       }
     },
