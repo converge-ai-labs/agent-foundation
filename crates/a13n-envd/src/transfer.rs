@@ -111,6 +111,8 @@ enum ReaderPhase {
     Open,
     Streaming,
     AwaitingAck,
+    // Expiry stops native work but has not claimed a terminal RESET publication.
+    Expired,
     Reset,
     Closed,
 }
@@ -388,7 +390,9 @@ impl TransferRegistry {
         }
         if expired(reader.expires_at, reader.last_progress, self.inner.idle_ttl) {
             reader.cancellation.send_replace(true);
-            reader.phase = ReaderPhase::Reset;
+            if !matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
+                reader.phase = ReaderPhase::Expired;
+            }
             let handle = reader.handle.clone();
             drop(reader);
             self.mark_terminal(&handle);
@@ -732,6 +736,9 @@ impl TransferRegistry {
         match frame.kind {
             DataFrameKind::Attach => {
                 let mut reader = record.lock().await;
+                if reader.phase == ReaderPhase::Expired {
+                    return Err(TransferError::Expired);
+                }
                 if reader.phase != ReaderPhase::Open || frame.offset != 0 {
                     return Err(TransferError::Protocol);
                 }
@@ -772,7 +779,10 @@ impl TransferRegistry {
                 let mut reader = record.lock().await;
                 // Credit already in flight when RESET/close wins cannot revive
                 // the transfer and must not produce a second terminal frame.
-                if matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
+                if matches!(
+                    reader.phase,
+                    ReaderPhase::Expired | ReaderPhase::Reset | ReaderPhase::Closed
+                ) {
                     return Ok(());
                 }
                 if reader.phase != ReaderPhase::Streaming
@@ -984,13 +994,18 @@ impl TransferRegistry {
         handle: &str,
         status: DataResetStatus,
     ) {
-        let offset = {
+        let (offset, status) = {
             let mut reader = record.lock().await;
             if matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
                 return;
             }
+            let status = if reader.phase == ReaderPhase::Expired {
+                DataResetStatus::Expired
+            } else {
+                status
+            };
             reader.phase = ReaderPhase::Reset;
-            reader.produced
+            (reader.produced, status)
         };
         self.finalize_reader(record).await;
         if self.session_closed() {
@@ -1273,7 +1288,9 @@ impl TransferRegistry {
                             None
                         } else {
                             reader.cancellation.send_replace(true);
-                            reader.phase = ReaderPhase::Reset;
+                            // The producer or a later peer RESET still owns terminal publication.
+                            // Marking Reset here would silently suppress both paths.
+                            reader.phase = ReaderPhase::Expired;
                             Some(reader.handle.clone())
                         }
                     };
@@ -1461,8 +1478,10 @@ impl TransferRegistry {
                 terminal
             }),
             Some(TransferRecord::Reader(reader)) => reader.try_lock().is_ok_and(|mut reader| {
-                let terminal = matches!(reader.phase, ReaderPhase::Closed | ReaderPhase::Reset)
-                    && !reader.producing.load(Ordering::Acquire);
+                let terminal = matches!(
+                    reader.phase,
+                    ReaderPhase::Closed | ReaderPhase::Reset | ReaderPhase::Expired
+                ) && !reader.producing.load(Ordering::Acquire);
                 if terminal {
                     // Expired, never-attached readers still own their source.
                     // Terminal history retains evidence, not buffers or files.
@@ -2515,6 +2534,151 @@ mod tests {
             .unwrap();
         assert!(outbound.try_recv().is_err());
         transfers.close_session().await;
+    }
+
+    #[tokio::test]
+    async fn maintenance_expiry_preserves_one_reader_reset_and_next_transfer() {
+        for peer_first in [false, true] {
+            let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+            fs::write(tree.child("native/window.bin"), vec![b'x'; 1024 * 1024]).unwrap();
+            let params = FileReaderOpenParams {
+                context: context("maintenance-reader"),
+                path: path(&tree, "/window.bin"),
+                byte_range: None,
+                transfer_timeout_ms: None,
+            };
+            let opened = transfers.open_reader(&filesystem, &params).await.unwrap();
+            let mut frame = DataFrame {
+                session_id: "session-test".into(),
+                kind: DataFrameKind::Attach,
+                handle: opened.reader.0.clone(),
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            };
+            transfers.handle_frame(frame.clone()).await.unwrap();
+            assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+            for _ in 0..crate::eip::EIP_TRANSFER_WINDOW_CHUNKS {
+                assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Chunk);
+            }
+            let super::TransferRecord::Reader(reader) = transfers.record(&opened.reader.0).unwrap()
+            else {
+                panic!("reader");
+            };
+            // The producer is asleep on CREDIT. Set the absolute expiry under its lock and let
+            // maintenance win before that producer gets another turn; no wall-clock race.
+            reader.lock().await.expires_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+            transfers.expire().await;
+            if peer_first {
+                frame.kind = DataFrameKind::Reset;
+                frame.reset_status = Some(DataResetStatus::Cancelled);
+                transfers.handle_frame(frame.clone()).await.unwrap();
+            }
+            let reset = tokio::time::timeout(Duration::from_secs(1), outbound.recv())
+                .await
+                .expect("maintenance must not swallow the producer's RESET")
+                .unwrap();
+            assert_eq!(reset.kind, DataFrameKind::Reset);
+            assert_eq!(
+                reset.reset_status,
+                Some(if peer_first {
+                    DataResetStatus::Cancelled
+                } else {
+                    DataResetStatus::Expired
+                })
+            );
+            assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 0);
+            frame.kind = DataFrameKind::Reset;
+            frame.reset_status = Some(DataResetStatus::Cancelled);
+            transfers.handle_frame(frame.clone()).await.unwrap();
+            frame.kind = DataFrameKind::Credit;
+            frame.reset_status = None;
+            transfers.handle_frame(frame).await.unwrap();
+            assert!(
+                outbound.try_recv().is_err(),
+                "one terminal notification per reader"
+            );
+            let next = transfers.open_reader(&filesystem, &params).await.unwrap();
+            assert_ne!(next.reader.0, opened.reader.0);
+            transfers.close_session().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn inactive_expired_readers_acknowledge_abandonment_once() {
+        for attached in [false, true] {
+            for close_first in [false, true] {
+                let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+                fs::write(tree.child("native/empty.bin"), []).unwrap();
+                let opened = transfers
+                    .open_reader(
+                        &filesystem,
+                        &FileReaderOpenParams {
+                            context: context("inactive-reader"),
+                            path: path(&tree, "/empty.bin"),
+                            byte_range: None,
+                            transfer_timeout_ms: None,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                let mut frame = DataFrame {
+                    session_id: "session-test".into(),
+                    kind: DataFrameKind::Attach,
+                    handle: opened.reader.0.clone(),
+                    offset: 0,
+                    payload: Vec::new(),
+                    reset_status: None,
+                };
+                if attached {
+                    transfers.handle_frame(frame.clone()).await.unwrap();
+                    assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+                    assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::End);
+                    transfers.wait_for_producers().await;
+                }
+                let super::TransferRecord::Reader(reader) =
+                    transfers.record(&opened.reader.0).unwrap()
+                else {
+                    panic!("reader");
+                };
+                reader.lock().await.expires_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+                if close_first {
+                    assert!(matches!(
+                        transfers.close_reader(&opened.reader).await,
+                        Err(TransferError::Expired)
+                    ));
+                } else {
+                    transfers.expire().await;
+                }
+                assert!(
+                    outbound.try_recv().is_err(),
+                    "no unsolicited RESET before ATTACH or after END"
+                );
+                assert!(reader.lock().await.file.is_none());
+                assert!(
+                    reader
+                        .lock()
+                        .await
+                        .capacity
+                        .as_ref()
+                        .unwrap()
+                        .active
+                        .is_none()
+                );
+                frame.kind = DataFrameKind::Reset;
+                frame.reset_status = Some(DataResetStatus::Cancelled);
+                transfers.handle_frame(frame.clone()).await.unwrap();
+                assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Reset);
+                // A later expired close must not unclaim that already acknowledged RESET.
+                assert!(matches!(
+                    transfers.close_reader(&opened.reader).await,
+                    Err(TransferError::Expired)
+                ));
+                transfers.handle_frame(frame).await.unwrap();
+                assert!(outbound.try_recv().is_err());
+                transfers.close_session().await;
+            }
+        }
     }
 
     #[tokio::test]

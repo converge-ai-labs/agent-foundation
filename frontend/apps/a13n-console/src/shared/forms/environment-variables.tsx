@@ -10,10 +10,12 @@ export function EnvironmentVariables({
   value,
   onChange,
   readOnly = false,
+  hideLabel = false,
 }: {
   value: Record<string, string>;
   onChange: (value: Record<string, string>) => void;
   readOnly?: boolean;
+  hideLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -32,7 +34,7 @@ export function EnvironmentVariables({
   }
   if (readOnly) {
     return (
-      <ReadOnlyField label={t("Environment variables")}>
+      <ReadOnlyField label={t("Environment variables")} hideLabel={hideLabel}>
         {Object.keys(value).length ? (
           <dl className={styles.readOnlyVariables}>
             {Object.entries(value).map(([name, value]) => (
@@ -61,7 +63,9 @@ export function EnvironmentVariables({
       className={styles.environmentVariables}
       aria-describedby={`${id}-help`}
     >
-      <legend>{t("Environment variables")}</legend>
+      <legend className={hideLabel ? "sr-only" : undefined}>
+        {t("Environment variables")}
+      </legend>
       <p id={`${id}-help`}>
         {t(
           "Defaults for commands and child processes. Values are stored as ordinary configuration, not secrets.",

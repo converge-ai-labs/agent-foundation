@@ -17,7 +17,7 @@ function render(reports, run, repo) {
   const budgets = new Set();
   let failed = 0;
   for (const report of reports) {
-    if (!targets.has(report.target) || !['default', 'vm'].includes(report.variant)) throw new Error('Invalid build identity');
+    if (!targets.has(report.target) || !['default', 'slim', 'vm'].includes(report.variant)) throw new Error('Invalid build identity');
     for (const field of ['binary_bytes', 'archive_bytes', 'binary_budget', 'archive_budget']) {
       if (!Number.isSafeInteger(report[field]) || report[field] <= 0) throw new Error('Invalid size');
     }
@@ -30,7 +30,7 @@ function render(reports, run, repo) {
     if (!passed) failed++;
     const runtime = report.variant === 'vm' && report.microsandbox_copies !== 1
       ? ` — ${Number(report.microsandbox_copies)} runtime copies (expected 1)` : '';
-    const build = report.variant === 'vm' ? 'VM' : 'Default';
+    const build = ({default: 'Default', slim: 'Slim', vm: 'VM'})[report.variant];
     budgets.add(`${build}: ${mib(report.binary_budget)} / ${mib(report.archive_budget)} MiB`);
     rows.push(`| ${targets.get(report.target)} | ${build} | ${mib(report.binary_bytes)} | ${mib(report.archive_bytes)} | ${passed ? 'Pass' : '**FAIL**'}${runtime} |`);
   }
@@ -41,10 +41,10 @@ function render(reports, run, repo) {
   return [marker, '## Envd release size', '', summary, '',
     '| Platform | Build | Binary (MiB) | Archive (MiB) | Result |',
     '| --- | --- | ---: | ---: | --- |', ...rows, '',
-    ...(rows.length < 6 ? [`${rows.length}/6 build reports available for this attempt; see CI for missing measurements. Successful jobs from earlier attempts are not remeasured by a failed-jobs-only rerun.`, ''] : []),
+    ...(rows.length < 9 ? [`${rows.length}/9 build reports available for this attempt; see CI for missing measurements. Successful jobs from earlier attempts are not remeasured by a failed-jobs-only rerun.`, ''] : []),
     '<details>', '<summary>Budgets and build details</summary>', '',
     `Limits (binary / archive): ${[...budgets].sort().join('; ')}.`, '',
-    'Measured from the release binaries used by native tests. VM builds must contain exactly one embedded Microsandbox runtime archive.', '',
+    'Measured from production release binaries, built independently of unoptimized behavior tests. VM builds must contain exactly one embedded Microsandbox runtime archive.', '',
     '</details>', '',
     `\`${run.head_sha.slice(0, 7)}\` · [CI run](https://github.com/${repo.owner}/${repo.repo}/actions/runs/${run.id}) (attempt ${run.run_attempt}).`,
   ].join('\n');

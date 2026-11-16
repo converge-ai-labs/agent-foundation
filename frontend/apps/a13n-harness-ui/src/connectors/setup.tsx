@@ -13,6 +13,7 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SchemaForm } from "./form";
+import { McpAuthorization } from "../configuration/mcp-authorization";
 import {
   ConnectorIcon,
   compactSetupAction,
@@ -42,12 +43,14 @@ export function ConnectorSetup({
   declaration,
   intent = "configure",
   onClose,
+  onComplete = onClose,
 }: {
   connectorId: string;
   name?: string;
   declaration?: Schema<"Declaration"> | null;
   intent?: string;
   onClose: () => void;
+  onComplete?: () => void;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -121,6 +124,10 @@ export function ConnectorSetup({
     else heading.current?.focus();
   }, [snapshot?.step.key]);
 
+  useEffect(() => {
+    if (snapshot?.step.state === "completed" && !busy) onComplete();
+  }, [snapshot?.step.state, busy, onComplete]);
+
   async function read() {
     if (!snapshot || reading.current || actionPending.current) return;
     reading.current = true;
@@ -132,6 +139,8 @@ export function ConnectorSetup({
         }),
       );
       if (!mounted.current || current !== generation.current) return;
+      await cache.invalidateQueries({ queryKey: ["connectors"] });
+      if (!mounted.current || current !== generation.current) return;
       setSnapshot(next);
       setUncertain(false);
       setError(null);
@@ -139,7 +148,6 @@ export function ConnectorSetup({
         setValues(stepValues(next.step));
         setDirty(false);
       }
-      void cache.invalidateQueries({ queryKey: ["connectors"] });
     } catch (failure) {
       if (mounted.current && current === generation.current) setError(failure);
     } finally {
@@ -373,6 +381,17 @@ export function ConnectorSetup({
                   </span>
                 </p>
               )}
+              {!terminal &&
+                snapshot.step.actions?.some(
+                  (action) => action.kind === "oauth",
+                ) && (
+                  <McpAuthorization
+                    target={{ kind: "connector", id: connectorId }}
+                    onConnected={() => {
+                      void read();
+                    }}
+                  />
+                )}
               <form
                 id={formId}
                 ref={formElement}

@@ -23,9 +23,16 @@ from pydantic_ai.capabilities import (
     ValidatedToolArgs,
     WrapToolExecuteHandler,
 )
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
+from pydantic_ai.exceptions import (
+    ApprovalRequired,
+    CallDeferred,
+    ModelRetry,
+    OutputTokenLimitExceeded,
+    ToolFailed,
+    ToolRetryError,
+)
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
+from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -42,6 +49,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.session_recovery import envd_session_notifications
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY, hinted_retry_text
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
@@ -230,7 +238,39 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         capture_tool_call(ctx, call, tool_def)
         if permission_mode(ctx, tool_def) == "deny":
             raise system_failure("tool_denied", "Tool invocation is denied by its permission configuration.")
+        from a13n_harness.capabilities.object_store import check_object_ref_support
+
+        values = args
+        if isinstance(args, str):
+            try:
+                values = _JSON_OBJECT_ADAPTER.validate_json(args)
+            except ValueError:
+                return args  # Native validation owns malformed JSON diagnostics.
+        check_object_ref_support(ctx, tool_def, values)
         return args
+
+    async def on_tool_validate_error(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: str | dict[str, Any],
+        error: ValidationError | ModelRetry,
+    ) -> dict[str, Any]:
+        if (
+            isinstance(error, ModelRetry)
+            and (
+                text := hinted_retry_text(
+                    error.message,
+                    reference_root=ctx.deps.instruction_reference_root,
+                    page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                )
+            )
+            is not None
+        ):
+            raise ModelRetry(text) from error
+        raise error
 
     async def after_tool_validate(
         self,
@@ -270,7 +310,38 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         args: ValidatedToolArgs,
         handler: WrapToolExecuteHandler,
     ) -> Any:
-        result = await handler(args)
+        try:
+            result = await handler(args)
+        except ToolRetryError as error:
+            # The target boundary already decided whether a forwarded retry gets guidance.
+            if isinstance(error.__cause__, ToolRetryError):
+                raise
+            part = error.tool_retry
+            if (
+                isinstance(part, ToolReturnPart)
+                and part.retry is not None
+                and part.retry.cause == "model_retry"
+                and (
+                    text := hinted_retry_text(
+                        part.content,
+                        reference_root=ctx.deps.instruction_reference_root,
+                        page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                    )
+                )
+                is not None
+            ):
+                raise ToolRetryError(replace(part, content=text)) from error
+            raise
+        except ModelRetry as error:
+            if (
+                text := hinted_retry_text(
+                    error.message,
+                    reference_root=ctx.deps.instruction_reference_root,
+                    page=(tool_def.metadata or {}).get(TOOL_GUIDANCE_KEY),
+                )
+            ) is not None:
+                raise ModelRetry(text) from error
+            raise
         # Retire provenance only after the complete execution chain returns:
         # inner wrappers can still defer after after_tool_execute has run.
         # External completion bypasses execution and retains its marker.
@@ -330,8 +401,17 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         from a13n_harness._capability_contract import _validate_finalized_capability_provenance
 
         _validate_finalized_capability_provenance(ctx)
-        async for event in stream:
-            yield event
+        try:
+            async for event in stream:
+                yield event
+        except OutputTokenLimitExceeded as error:
+            # Native stream failures surface here; auxiliary requests in model
+            # hooks are outside this producer boundary. The lifecycle observer
+            # separately fences recovery to failed primary model-request nodes.
+            recovery = ctx.deps._model_recovery
+            if ctx.run_id == recovery.attempt_id:
+                recovery.output_limit_error = error
+            raise
 
 
 @dataclass
@@ -669,9 +749,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             mode = mode(tool_args)
         if mode in {"control", "process"}:
             state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
-        sequential = tool.tool_def.sequential or (
-            ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
-        )
+        # A tool's native sequential declaration orders its model-response batch.
+        # Only explicit global mode extends completion ordering across retained calls and Runs.
+        sequential = ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
         from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
         if (

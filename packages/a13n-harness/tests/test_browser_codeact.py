@@ -83,7 +83,7 @@ await browser_cdp(method='Accessibility.getFullAXTree', params={})
         capabilities=(BrowserUseCapability(backend if embedded else None), Hooks()),
         bindings=RunBindings.embedded(browser_backend=None if embedded else backend),
     )
-    assert all(f"### `browser_{key}`" in contexts[0] for key in BROWSER_KEYS)
+    assert all(f"`browser_{key}`" in contexts[0] for key in BROWSER_KEYS)
     assert value(seen[0]) == {"count": 2, "shot": "s1"}
     assert executions == [
         "run_code",
@@ -130,8 +130,8 @@ async def test_catalog_does_not_grant_missing_or_disabled_browser_tools(backend,
         capabilities=() if enabled is None else (BrowserUseCapability(enabled_tools=enabled),),
         bindings=RunBindings.embedded(browser_backend=backend) if enabled is not None else None,
     )
-    assert ("### `browser_read`" in contexts[0]) is (enabled is not None)
-    assert "### `browser_act`" not in contexts[0]
+    assert ("`browser_read`" in contexts[0]) is (enabled is not None)
+    assert "`browser_act`" not in contexts[0]
     assert seen[0].outcome == "failed"
     backend.interact.assert_not_awaited()
 
@@ -187,7 +187,7 @@ async def test_takeover_keeps_host_handback_policy_without_replaying_action(back
     _, seen, _ = await _run(
         [_code("await browser_read()")],
         capabilities=(BrowserUseCapability(on_human_control=(lambda: guidance) if immediate else None),),
-        bindings=RunBindings.embedded(browser_backend=backend),
+        bindings=RunBindings.embedded(browser_backend=backend, instruction_reference_root="/release-guidance"),
     )
     if immediate:
         assert value(seen[0]) == guidance
@@ -195,6 +195,7 @@ async def test_takeover_keeps_host_handback_policy_without_replaying_action(back
     else:
         assert "pending action was not executed" in value(seen[0])
         backend.wait_for_handback.assert_awaited_once()
+    assert "Guidance:" not in str(seen[0].content)
     backend.read.assert_awaited_once()
 
 
@@ -211,11 +212,12 @@ async def test_runner_timeout_cancels_nested_browser_work_without_replay(backend
     _, seen, _ = await _run(
         [_code("await browser_read()")],
         capabilities=(BrowserUseCapability(),),
-        bindings=RunBindings.embedded(browser_backend=backend),
+        bindings=RunBindings.embedded(browser_backend=backend, instruction_reference_root="/release-guidance"),
         config=CodeActConfig(timeout_seconds=0.1),
     )
     assert seen[0].outcome == "failed"
     assert cancelled == [True]
+    assert "Guidance:" not in str(seen[0].content)
     backend.read.assert_awaited_once()
 
 
@@ -233,8 +235,8 @@ async def test_grouped_browser_tools_remain_callable_through_existing_proxy(back
         nonlocal calls
         calls += 1
         if calls == 1:
-            assert "### `call_tool`" in info.instructions
-            assert "### `browser_read`" not in info.instructions
+            assert "`call_tool`" in info.instructions
+            assert "`browser_read`" not in info.instructions
             yield {
                 0: DeltaToolCall(
                     name="run_code",
@@ -286,7 +288,7 @@ async def test_programming_tools_keep_selection_and_permissions_in_codeact(backe
         capabilities=(BrowserUseCapability(enabled_tools=frozenset({"read"})),),
         bindings=RunBindings.embedded(browser_backend=backend),
     )
-    assert f"### `browser_{tool}`" not in contexts[0]
+    assert f"`browser_{tool}`" not in contexts[0]
     assert seen[0].outcome == "failed"
     getattr(backend, tool).assert_not_awaited()
     _, seen, _ = await _run(

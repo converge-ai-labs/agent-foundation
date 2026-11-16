@@ -1,22 +1,22 @@
 //! Local permission readiness precedes every EIP transport, not Session admission.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 use std::future::Future;
 use std::{io, time::Duration};
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 const GUIDANCE: &str = "Open System Settings > Privacy & Security and enable Screen Recording and Accessibility for the process or launcher macOS identifies for envd. Restart that launcher and envd if macOS requires it, then run the same command again. No EIP transport has started.";
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 const RECOVERY: &str = "If permissions already appear enabled, remove and re-add the affected entry, then restart Envd and its launcher. Recovery: https://a13n.dev/docs/a13n-envd/computer-use#restore-macos-permissions-after-an-upgrade";
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct Permissions {
     pub(super) capture: bool,
     pub(super) input: bool,
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 impl Permissions {
     fn ready(self) -> bool {
         self.capture && self.input
@@ -33,7 +33,7 @@ impl Permissions {
 }
 
 pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(feature = "desktop", target_os = "macos"))]
     {
         tokio::select! {
             result = wait(
@@ -51,7 +51,7 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
             }
         }
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(all(feature = "desktop", target_os = "linux"))]
     {
         tokio::time::timeout(
             timeout,
@@ -71,7 +71,7 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
         })?
         .map_err(io::Error::other)?
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(feature = "desktop", target_os = "windows"))]
     {
         tokio::time::timeout(timeout, tokio::task::spawn_blocking(|| {
             super::windows::Backend::default().describe().map(|_| ()).map_err(|e| {
@@ -81,7 +81,11 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
             "Windows desktop readiness timed out; no EIP transport has started"))?
             .map_err(io::Error::other)?
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(
+        all(feature = "desktop", target_os = "macos"),
+        all(feature = "desktop", target_os = "linux"),
+        all(feature = "desktop", target_os = "windows")
+    )))]
     {
         let _ = timeout;
         Err(io::Error::new(
@@ -91,7 +95,7 @@ pub(crate) async fn prepare(timeout: Duration) -> io::Result<()> {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(all(feature = "desktop", target_os = "macos"), test))]
 async fn wait<P, F>(
     timeout: Duration,
     mut probe: P,

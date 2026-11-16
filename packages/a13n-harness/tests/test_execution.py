@@ -908,7 +908,9 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         assert terminal_error.value.code == "run_not_active"
 
 
-@pytest.mark.parametrize("source", ["async_subagent", "envd_session"])
+@pytest.mark.parametrize(
+    "source", ["async_subagent", "background_process", "envd_session", "parent_agent", "tool_execution"]
+)
 async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event(source) -> None:
     started = asyncio.Event()
     release = asyncio.Event()

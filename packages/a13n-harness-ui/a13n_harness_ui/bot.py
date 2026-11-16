@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Literal
 from uuid import uuid4
 
+from a13n_harness.input import RunInputValue
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep
 from filelock import AsyncFileLock, Timeout
@@ -17,7 +19,7 @@ from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotN
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration.models import BotConfiguration
 from a13n_harness_ui.connectors.models import SetupOffer
-from a13n_harness_ui.display_history import assistant_text
+from a13n_harness_ui.display_history import DisplayPublication, assistant_text
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.notifications import reply_brief
@@ -33,6 +35,7 @@ from a13n_harness_ui.surfaces import (
     ThreadDeferredResponse,
     ThreadSummary,
 )
+from a13n_harness_ui.thread_files import ComposerAttachmentReference, ComposerInput, ThreadAttachment, ThreadFiles
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import ThreadService
 
@@ -43,6 +46,7 @@ class BotSnapshot(SurfaceModel):
     thread: ThreadSummary | None = None
     available: bool
     enabled: bool
+    agent_id: str | None = None
     model_id: str | None = None
     heartbeat_enabled: bool
     interval_seconds: int
@@ -75,8 +79,9 @@ Check known working Threads before creating anything. Follow up through existing
 Create or update any working Thread slot as appropriate; clear handled follow-ups, or retain concise next steps.
 Notes and Thread completion do not wake you. Explicit Thread messages are separate inputs.
 Coordinate automatic reports through tools; do not acknowledge them to the human.
-Give an ordinary final response for a useful verified result, blocker or human decision.
-Use publish_bot_message for separate progress during work.
+Work through tools without a preamble or routine progress narration. Keep check details in notes and tasks.
+Output only a concise important verified result, actionable blocker or human decision.
+Every visible text segment marks unread and notifies the human; do not announce routine checks or acknowledgements.
 When nothing useful is due or you already published the complete response, call finish_silently with no arguments.
 For a silent exit, do not add explanatory text or rely on an empty response.
 This opportunity is not a human approval, a task completion report, or permission to repeat uncertain effects.
@@ -93,10 +98,13 @@ class BotController:
         runs: RootRunCoordinator,
         projections: ThreadProjectionService,
         summaries: HarnessUiSummaryHub,
+        files: ThreadFiles,
+        prepare_input: Callable[[ComposerInput], Awaitable[RunInputValue]],
         notify: Callable[[str, RootOperationNotice], None] | None = None,
     ) -> None:
         self._store, self._threads, self._configurations = store, threads, configurations
         self._runs, self._projections, self._summaries, self._notify = runs, projections, summaries, notify
+        self._files, self._prepare_input = files, prepare_input
         self._lock = Lock()
         self._settlement_lock = Lock()
         self._inbox_changed = Event()
@@ -142,6 +150,7 @@ class BotController:
             thread=detail.thread if detail is not None else None,
             available=self._owned and model_id is not None,
             enabled=policy.enabled,
+            agent_id=source.bot_agent_id if source is not None else None,
             model_id=model_id,
             heartbeat_enabled=policy.heartbeat_enabled,
             interval_seconds=policy.interval_seconds,
@@ -152,7 +161,7 @@ class BotController:
             prose=await self._saved_prose(),
         )
 
-    async def _saved_prose(self) -> tuple[BotProse, ...]:
+    async def _saved_prose(self, *, current_run_only: bool = False) -> tuple[BotProse, ...]:
         from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
         from a13n_harness_ui.storage.continuations import read_continuation
         from a13n_harness_ui.storage.display import read_display
@@ -174,6 +183,13 @@ class BotController:
             )
             for item in display.items
             if assistant_text(item)
+            and (
+                not current_run_only
+                or (
+                    display.continuation is not None
+                    and item.content.get("responseGroup") == display.continuation.response_groups.get("root")
+                )
+            )
             and isinstance(text := item.content.get("text"), str)
             and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
             and text.strip()
@@ -181,8 +197,6 @@ class BotController:
 
     async def submit(self, command: BotSubmit) -> BotInput:
         await self._require_enabled()
-        if not command.text.strip():
-            raise ThreadError("A non-empty message is required.", code="thread_message_empty")
         retained: BotInput | None = None
         with CancelScope(shield=True):
             async with self._lock:
@@ -194,10 +208,21 @@ class BotController:
         """Ordinary user admission, shared by assisted introduction and direct chat."""
         await self._require_enabled()
         await self._threads.bot_thread()
+        parts: list[str | ThreadAttachment] = []
+        for part in command.parts:
+            parts.append(
+                part if isinstance(part, str) else (await self._files.read(BOT_THREAD_ID, part.attachment_id))[0]
+            )
         previous = await self._store.bot.get_input(command.input_id)
         if previous is not None:
             item = await self._store.bot.retain(
-                BotInput(input_id=command.input_id, source="user", text=command.text, created_at=datetime.now(UTC))
+                BotInput(
+                    input_id=command.input_id,
+                    source="user",
+                    text=command.text,
+                    parts=tuple(parts),
+                    created_at=datetime.now(UTC),
+                )
             )
             if item.state == "discarded":
                 raise ThreadError(item.error or "Bot input was rejected.", code="bot_input_rejected")
@@ -209,10 +234,21 @@ class BotController:
                 "Resolve Bot's pending decision in the conversation first.", code="thread_deferred_pending"
             )
         thread = await self._threads.get(BOT_THREAD_ID)
+        authored = await self._prepare_input(
+            ComposerInput(
+                parts=tuple(
+                    part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
+                    for part in command.parts
+                )
+                if command.parts
+                else (command.text,),
+            )
+        )
         proposed = BotInput(
             input_id=command.input_id,
             source="user",
             text=command.text,
+            parts=tuple(parts),
             created_at=datetime.now(UTC),
             state="dispatching",
             continuation_id=thread.continuation.logical_digest if thread.continuation else None,
@@ -223,7 +259,7 @@ class BotController:
                 f"Bot input {item.input_id} ({item.source})",
                 metadata={"display": False, "harness_ui": {"bot_input_id": item.input_id}},
             ),
-            TextContent(item.text, metadata={"display": True}),
+            *([authored] if isinstance(authored, str) else authored),
         ]
         active = await self._runs.active(BOT_THREAD_ID)
         if active is None:
@@ -277,15 +313,18 @@ class BotController:
                         await self._publish_user(item)
 
     async def _publish_user(self, item: BotInput) -> None:
-        await self._store.bot.publish(
+        published = await self._store.bot.publish(
             BotMessage(
                 message_id=f"user-{item.input_id}",
                 role="user",
                 text=item.text,
+                parts=item.parts,
                 input_id=item.input_id,
                 created_at=item.created_at,
             )
         )
+        if published:
+            await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)
 
     async def respond(
         self,
@@ -367,6 +406,24 @@ class BotController:
             connector_setups=connector_setups,
             display_ids=display_ids,
         )
+
+    async def publish_display(self, publication: DisplayPublication, stopped: bool = False) -> None:
+        """Notify once per ended segment, including partial text when execution stops."""
+        for item in publication.items:
+            if (
+                assistant_text(item)
+                and (stopped or item.state != "in_progress")
+                and isinstance(text := item.content.get("text"), str)
+                and text.strip()
+                and not (
+                    isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False
+                )
+            ):
+                await self.publish(
+                    message_id=_prose_message_id(item.id),
+                    text=text,
+                    display_ids=(item.id,),
+                )
 
     async def _publish(
         self,
@@ -501,6 +558,12 @@ class BotController:
                 "Automatic inputs (Thread messages, external content and Host ticks, never human approval). Use tools for internal coordination; do not acknowledge reports. Human messages received during this Run still deserve a timely response:\n"
                 + serialize_batch(batch)
             )
+            if state.last_error:
+                text += (
+                    "\nA previous Bot input failed. Inspect the saved Bot Thread execution failure and working Thread outcomes before "
+                    "continuing. This is a fresh opportunity, not a replay of that input or permission to repeat "
+                    "uncertain tool effects.\n" + state.last_error
+                )
             prompt = [TextContent(text, metadata={"display": False})]
             active = await self._runs.active(BOT_THREAD_ID)
             if active is not None:
@@ -536,7 +599,7 @@ class BotController:
         """Produce Heartbeats independently of direct human input and Run settlement."""
         await self.reconcile_policy(now=now)
 
-    async def _admit(self, item: BotInput, prompt: list[TextContent]) -> bool:
+    async def _admit(self, item: BotInput, prompt: RunInputValue) -> bool:
         try:
             receipt = await self._runs.submit_prompt(
                 thread_id=BOT_THREAD_ID,
@@ -617,28 +680,49 @@ class BotController:
             ):
                 output = operation.outcome.execution.output
                 if isinstance(output, str) and output.strip():
-                    published_ids = {
-                        identity for message in await self._store.bot.messages() for identity in message.display_ids
-                    }
-                    display_ids = tuple(
-                        row.item_id
-                        for row in await self._saved_prose()
-                        if row.final and row.item_id not in published_ids
-                    )
-                    await self.publish(
-                        message_id=f"reply-{item.receipt_id}",
-                        text=output,
-                        receipt_id=item.receipt_id,
-                        display_ids=display_ids,
-                    )
+                    final = tuple(row for row in await self._saved_prose(current_run_only=True) if row.final)
+                    if final:
+                        for row in final:
+                            # Live publication and settlement share the same durable
+                            # identity, so final text never creates a second notice.
+                            await self.publish(
+                                message_id=f"{item.receipt_id}-{_prose_message_id(row.item_id)}",
+                                text=row.text,
+                                receipt_id=item.receipt_id,
+                                display_ids=(row.item_id,),
+                            )
+                    else:
+                        # Hosts/models without native display items retain the ordinary fallback.
+                        await self.publish(
+                            message_id=f"reply-{item.receipt_id}",
+                            text=output,
+                            receipt_id=item.receipt_id,
+                        )
                 for value in related:
                     await self._store.bot.save_input(value.model_copy(update={"state": "completed"}))
+                state = await self._store.bot.state()
+                if state.last_error is not None:
+                    await self._store.bot.save_state(state.model_copy(update={"last_error": None}))
             else:
+                # Ordinary startup/execution exceptions may have no outcome. Failed
+                # summary persistence or continuation selection leaves settlement unknown.
+                settled_failure = (
+                    operation.status is RootOperationStatus.failed
+                    and (
+                        operation.failure is None
+                        or operation.failure.code
+                        not in {"execution_status_save_failed", "continuation_selection_failed"}
+                    )
+                    and (operation.outcome is None or operation.outcome.continuation.status == "selected")
+                )
                 for value in related:
                     await self._save_interrupted(
                         value,
                         "Bot did not complete this input. Review the reported error and working Thread results before continuing.",
+                        pause=not settled_failure,
                     )
+            if related:
+                await self._summaries.publish(kind="thread", root_thread_id=BOT_THREAD_ID, thread_id=BOT_THREAD_ID)
 
     async def _receipt_inputs(self, item: BotInput) -> tuple[BotInput, ...]:
         return tuple(
@@ -653,7 +737,13 @@ class BotController:
                 for value in await self._receipt_inputs(item):
                     await self._save_interrupted(value, message)
 
-    async def _save_interrupted(self, item: BotInput, message: str) -> None:
+    async def _save_interrupted(self, item: BotInput, message: str, *, pause: bool = True) -> None:
         await self._store.bot.save_input(item.model_copy(update={"state": "interrupted", "error": message}))
         state = await self._store.bot.state()
-        await self._store.bot.save_state(state.model_copy(update={"paused": True, "last_error": message}))
+        await self._store.bot.save_state(
+            state.model_copy(update={"paused": state.paused or pause, "last_error": message})
+        )
+
+
+def _prose_message_id(item_id: str) -> str:
+    return f"prose-{sha256(item_id.encode()).hexdigest()}"

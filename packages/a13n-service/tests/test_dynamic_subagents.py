@@ -33,6 +33,7 @@ async def test_dynamic_snapshot_archive_replay_execution_resume_and_fork(service
         service,
         scripted_model,
         instructions="Authored scope.",
+        tool_search={"mode": "native"},
         subagents={"dynamic": {"enabled": True, "default_thinking": False}},
     )
     submitted = await runs_kit.start_thread(service, parent, "Parent task")
@@ -53,6 +54,7 @@ async def test_dynamic_snapshot_archive_replay_execution_resume_and_fork(service
         snapshot = thread.agent_snapshot
     assert snapshot["definition_id"] == child["thread_id"]
     config = AgentConfig.model_validate(snapshot["config"])
+    assert config.tool_search.model_dump()["mode"] == "native"
     assert not any(item.enabled for item in config.toolsets.values())
     assert not config.subagents.named and not config.subagents.dynamic.enabled
     assert config.instructions == "Authored scope.\n\nTask role."

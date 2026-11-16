@@ -1,5 +1,15 @@
-.utilityLink {
+.navGroup {
+  display: grid;
+  gap: 2px;
+}
+.navGroup > p {
+  margin: 12px 8px 4px;
+  font-size: var(--harness-nav-font, 13px);
+  font-weight: 500;
   color: var(--a13n-secondary);
+}
+.navGroup:first-child > p {
+  margin-top: 4px;
 }
 .formWidth {
   width: 100%;

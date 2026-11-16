@@ -3,6 +3,9 @@ name: Sandbox binary
 on:
   workflow_call:
     inputs:
+      variant:
+        type: string
+        default: default
       arch:
         required: true
         type: string
@@ -34,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tmp/sandbox-binaries/${{ inputs.arch }}/a13n-envd
-          key: sandbox-binary-${{ runner.os }}-${{ inputs.arch }}-${{ hashFiles('.github/workflows/sandbox-binary.yml', 'Cargo.toml', 'Cargo.lock', 'crates/a13n-envd/**') }}
+          key: sandbox-binary-${{ runner.os }}-${{ inputs.arch }}-${{ inputs.variant }}-${{ hashFiles('.github/workflows/sandbox-binary.yml', 'Cargo.toml', 'Cargo.lock', 'crates/a13n-envd/**') }}
       - name: Set up Rust
         if: steps.binary.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@1.96.0
@@ -42,21 +45,23 @@ jobs:
         if: steps.binary.outputs.cache-hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: sandbox-release-${{ inputs.arch }}
+          shared-key: sandbox-release-${{ inputs.arch }}-${{ inputs.variant }}
       - name: Install SDK build dependencies
-        if: steps.binary.outputs.cache-hit != 'true'
+        if: steps.binary.outputs.cache-hit != 'true' && inputs.variant == 'vm'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Build default checkout binary
+      - name: Build checkout binary
         if: steps.binary.outputs.cache-hit != 'true'
         env:
           ARCH: ${{ inputs.arch }}
+          ENVD_VARIANT: ${{ inputs.variant }}
         run: |
-          cargo build --release --locked --package a13n-envd
+          case "$ENVD_VARIANT" in default) features=desktop ;; slim) features="" ;; vm) features=vm ;; *) exit 1 ;; esac
+          cargo build --release --locked --package a13n-envd --no-default-features --features "$features"
           install -D target/release/a13n-envd "tmp/sandbox-binaries/$ARCH/a13n-envd"
       - name: Upload checkout binary
         uses: actions/upload-artifact@v4
         with:
-          name: sandbox-binary-${{ inputs.arch }}
+          name: sandbox-binary-${{ inputs.arch }}-${{ inputs.variant }}
           path: tmp/sandbox-binaries/${{ inputs.arch }}/a13n-envd
           if-no-files-found: error
           retention-days: 1

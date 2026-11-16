@@ -160,7 +160,7 @@ class GitHubSetup(SetupFlow):
                 raise HarnessUiError("Enter a GitHub personal access token.", code="connector_input_invalid")
             saved = await context.configure(current, expected_version=current.version, credentials=credentials)
             self._configuration_version = saved.version
-            self._step = await self._saved_step()
+            self._step = Step(key="completed", title="Connection saved", state="completed")
         else:
             raise ValueError("Unknown setup action")
         return self._step

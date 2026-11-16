@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useImperativeHandle, useLayoutEffect, type Ref } from "react";
+import type {
+  EditorCursor,
+  SourceEditorHandle,
+} from "../configuration/editor-view";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -8,10 +13,30 @@ import type { Schema, Transport } from "../transport/client";
 import { FileBuffer, FileBuffers } from "./buffer";
 import { FileView } from "./file-view";
 
+const find = vi.hoisted(() => vi.fn());
 vi.mock("../configuration/editor", () => ({
-  SourceEditor: ({ value, label }: { value: string; label: string }) => (
-    <textarea aria-label={label} value={value} readOnly />
-  ),
+  SourceEditor: ({
+    value,
+    label,
+    ref,
+    onCursor,
+  }: {
+    value: string;
+    label: string;
+    ref?: Ref<SourceEditorHandle>;
+    onCursor?: (cursor: EditorCursor) => void;
+  }) => {
+    useImperativeHandle(ref, () => ({
+      find,
+      focus: vi.fn(),
+      goToLine: vi.fn(),
+    }));
+    useLayoutEffect(
+      () => onCursor?.({ line: 1, column: 1, selected: 0 }),
+      [onCursor],
+    );
+    return <textarea aria-label={label} value={value} readOnly />;
+  },
 }));
 vi.mock("./capture", () => ({
   CaptureContext: () => null,
@@ -20,7 +45,10 @@ vi.mock("./capture", () => ({
 vi.mock("./file-media", () => ({
   FileMedia: () => <div data-testid="media-preview" />,
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function file(
   text: string,
@@ -129,3 +157,46 @@ it("opens Markdown in Preview and switches between rendered and Text buttons", a
     screen.queryByRole("heading", { name: "Rendered heading" }),
   ).toBeNull();
 });
+
+it.each([false, true])(
+  "keeps Find with the opened file without stealing another editor's focus (%s)",
+  async (movedFocus) => {
+    const path = "/code/file.txt";
+    const value = file("Find this text", "one", path);
+    const composer = document.createElement("textarea");
+    document.body.append(composer);
+    if (movedFocus) composer.focus();
+    const queries = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const GET = vi.fn(async () => ({ data: value }));
+    try {
+      render(
+        <QueryClientProvider client={queries}>
+          <TransportContext value={{ client: { GET } } as unknown as Transport}>
+            <FileBuffers value={new Map([[path, new FileBuffer(value)]])}>
+              <FileView path={path} open={vi.fn()} />
+            </FileBuffers>
+          </TransportContext>
+        </QueryClientProvider>,
+      );
+      await screen.findByLabelText(`File text: ${path}`);
+      const preview = screen.getByRole("region", { name: "File content" });
+      expect(document.activeElement).toBe(movedFocus ? composer : preview);
+      preview.focus();
+      expect(fireEvent.keyDown(preview, { key: "f", ctrlKey: true })).toBe(
+        false,
+      );
+      expect(find).toHaveBeenCalledTimes(1);
+      const refresh = screen.getByRole("button", { name: "Refresh" });
+      refresh.focus();
+      expect(fireEvent.keyDown(refresh, { key: "f", ctrlKey: true })).toBe(
+        false,
+      );
+      expect(find).toHaveBeenCalledTimes(2);
+    } finally {
+      composer.remove();
+      queries.clear();
+    }
+  },
+);

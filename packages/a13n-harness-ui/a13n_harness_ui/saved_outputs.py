@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from anyio import to_thread
 from pydantic_ai.messages import ModelResponse, TextPart
 
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
@@ -56,11 +57,16 @@ class SavedOutputs:
         if not 1 <= limit <= 20:
             raise ThreadError("Child output page is outside supported bounds.", code="saved_output_output_page_invalid")
         head = await self._store.child_executions.get(execution_id)
-        if head is None or head.parent_thread_id != parent_thread_id or head.selected_checkpoint is None:
+        if (
+            head is None
+            or head.parent_thread_id != parent_thread_id
+            or head.selected_checkpoint is None
+            or head.status == "running"
+        ):
             raise ThreadError(
                 "Saved child output is unavailable in this parent scope.", code="saved_output_source_unavailable"
             )
-        checkpoint = await self._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)
+        checkpoint = await self._store.read_child_checkpoint(head)
         if checkpoint.execution_id != execution_id or checkpoint.child_thread_id != head.child_thread_id:
             raise ThreadError("Saved child output identity is invalid.", code="saved_output_source_unavailable")
         position = 0
@@ -143,6 +149,10 @@ class SavedOutputs:
                 thread = await self._store.threads.get(thread.parent_thread_id)
             if thread is None or thread.thread_id != root_thread_id:
                 raise ThreadError("Child output belongs to another Thread family.", code="saved_output_target_invalid")
+            if head.status == "running":
+                raise ThreadError(
+                    "Saved child output requires a terminal execution.", code="saved_output_source_unavailable"
+                )
             source = head.selected_checkpoint
         if source is None or source.logical_digest != target.source_id:
             raise StoreConflictError(
@@ -154,19 +164,15 @@ class SavedOutputs:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.read_continuation(target.producing_thread_id, source, include_display=True)
-            from a13n_harness_ui.display_projection import original_text
+            from a13n_harness_ui.display_projection import original_window_text
 
             if continuation.harness_state.thread_id != target.producing_thread_id:
                 raise ThreadError("Root output belongs to another Thread.", code="saved_output_target_invalid")
-            from a13n_harness_ui.storage.display import read_display
+            from a13n_harness_ui.storage.display import read_display_windows
 
-            display = (
-                await read_display(self._store.objects, continuation.display)
-                if continuation.display is not None
-                else continuation.display_history
-            )
-            if display is not None:
-                text = original_text(display, location.message, location.part)
+            if continuation.display is not None:
+                windows = await read_display_windows(self._store.objects, continuation.display)
+                text = await to_thread.run_sync(original_window_text, windows, location.message, location.part)
                 if text is not None:
                     return text
                 raise ThreadError("Target is not saved visible assistant text.", code="saved_output_target_invalid")

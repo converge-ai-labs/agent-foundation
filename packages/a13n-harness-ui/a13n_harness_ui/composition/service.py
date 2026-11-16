@@ -12,10 +12,11 @@ from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
-from .models import ResolvedAgentNode, ResolvedRunComposition
+from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
 from .resolver import AgentCompositionResolver, ThreadCompositionSelection
 
 _LOGGER = get_logger(__name__)
@@ -115,13 +116,19 @@ class CompositionAcceptanceService:
 class RunCompositionService:
     """Resolve and publish the exact immutable composition for one admitted Run."""
 
-    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver) -> None:
+    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver, *, oauth: McpOAuth | None = None) -> None:
         self._store = store
         self._resolver = resolver
+        self._oauth = oauth
         self.connector_capture: Callable[[], Awaitable[tuple[ConnectorCapture, ...]]] | None = None
+
+    def resolve_model(self, source: LoadedHarnessUiConfiguration, model_id: str) -> ResolvedModelRecipe:
+        return self._resolver.model_recipe(source.models[model_id], source)
 
     async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:
         value = self._resolver.resolve_memory(source, thread)
+        if self._oauth is not None:
+            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
         envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=value)
         return PublishedRunComposition(value=value, reference=envelope.ref)
 
@@ -131,6 +138,7 @@ class RunCompositionService:
         selection: ThreadCompositionSelection,
         *,
         parent_node: ResolvedAgentNode | None = None,
+        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
         run_configuration: RunConfiguration | None = None,
     ) -> PublishedRunComposition:
@@ -138,6 +146,7 @@ class RunCompositionService:
             source,
             selection,
             parent_node=parent_node,
+            dynamic_node=dynamic_node,
             model_overrides=model_overrides,
             run_configuration=run_configuration,
         )
@@ -147,6 +156,8 @@ class RunCompositionService:
             and value.root.source_kind not in {"live", "memory"}
         ):
             value = value.model_copy(update={"connectors": await self.connector_capture()})
+        if self._oauth is not None and parent_node is None:
+            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
         envelope = await self._store.objects.publish_model(
             object_kind=ObjectKind.run_composition,
             value=value,

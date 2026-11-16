@@ -83,6 +83,21 @@ function executionPhase(name: string, output: unknown): string | undefined {
   return `${status[0].toUpperCase()}${status.slice(1)} at last check`;
 }
 
+// Translate only labels produced by the presentation layer, never tool names or payloads.
+export function toolLabel(
+  info: ReturnType<typeof describeTool>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  return info.generatedLabel ? t(info.label) : info.label;
+}
+
+export function toolSummary(
+  info: ReturnType<typeof describeTool>,
+  t: (key: string) => string,
+) {
+  return info.generatedSummary ? t(info.summary) : info.summary;
+}
+
 export function describeTool(tool: ToolView) {
   const input = parsed(tool.input);
   const args = record(input) ? input : {};
@@ -358,6 +373,10 @@ export function describeTool(tool: ToolView) {
             : "Read notes";
       summary = text(args.key);
       break;
+    case "spawn_subagent":
+      label = "Start subagent";
+      summary = text(args.name);
+      break;
     case "delegate":
       label = "Delegate";
       summary = text(args.subagent_name);
@@ -406,7 +425,7 @@ export function describeTool(tool: ToolView) {
     !tool.failure &&
     !["failed", "denied", "interrupted", "retried"].includes(tool.outcome ?? "")
   ) {
-    if (executionReceipt) phase = "Execution handed off";
+    if (executionReceipt) phase = "Moved to background";
     else if (result.accepted === false) phase = "Not accepted";
     else if (
       !failed &&
@@ -737,7 +756,7 @@ function shellGroupStatus(
     latest.set(key, info.phase);
   });
   const phases = [...latest.values()];
-  if (phases.includes("Execution handed off")) return "Execution handed off";
+  if (phases.includes("Moved to background")) return "Moved to background";
   if (phases.includes("Running at last check")) return "Running at last check";
   return "";
 }

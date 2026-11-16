@@ -50,7 +50,7 @@ async def main() -> None:
     executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
     async with Client(server, mode="auto") as client:
         for prompt in ("Add 3 and 5", "Add them again"):
-            projection = MCPToolset(client, id="calculator", cache_tools=False)
+            projection = MCPToolset(client, id="calculator")
             bindings = RunBindings.embedded(capabilities=(MCP(id="calculator", local=projection),))
             result = await executable.run(prompt, bindings=bindings)
             assert result.output_or_raise() == "Result: 8"
@@ -113,6 +113,34 @@ agent_spec = AgentSpec.from_dict(
 Replace the example URL with a reachable MCP server that provides `search`. Build this `agent_spec` with your configured model, then call the executable as in the first example. Configure the server's authentication before running; the URL declaration itself supplies no credentials.
 
 The base installation includes local URL and stdio MCP support. Use Python construction for in-process servers, transport objects, script paths, or an existing `MCPToolset`. For on-demand Capability loading, set `defer_loading=True` and use `load_capability`. For a compatible provider to execute a URL server itself, select `native=True, local=False`; the execution choices are compared below.
+
+## Isolate local startup failures
+
+Native `MCP` keeps its upstream failure behavior. To add bounded initialization retry and optional per-Run omission, construct Harness's `MCPServer` in Python. Its default is `on_error="raise"`; choose `skip` only when the agent can continue without that server.
+
+This construction fragment uses the in-process `server` from the first example:
+
+```python
+from a13n_harness.mcp import InitializationRetryClient, MCPServer
+from pydantic_ai.mcp import MCPToolset
+
+
+async def prepare(ctx):
+    # Resolve Host authority and credentials here, before startup isolation.
+    async def create_toolset():
+        return MCPToolset(InitializationRetryClient(server), id="calculator")
+
+    return create_toolset
+
+
+optional_calculator = MCPServer(
+    id="calculator", prepare=prepare, on_error="skip"
+)
+```
+
+Pass `optional_calculator` through builder `capabilities=` or `RunBindings.embedded(capabilities=(optional_calculator,))`. `prepare` runs once per logical Run and returns the async Toolset factory; preparation errors propagate even with `skip`. `InitializationRetryClient` retries transient initialization failures at most three times, with cancellable 1s/2s backoff. For remote HTTP transports, install the shared `raise_initialization_status` response hook so transient initialization status codes survive SDK conversion.
+
+With `skip`, failed startup contributes no tools and a safe model-visible notice for that Run, including deferred ToolSearch. The decision survives internal model-recovery attempts; a later Run can try again. The successful Toolset is entered until Run cleanup. An optional `project` callback can wrap it in a native `MCP` with Host filtering or Apps hooks without changing ownership. Tool discovery and business errors after successful entry are not skipped or retried by this mechanism. Provider-native MCP is unaffected.
 
 ## Host-owned clients
 

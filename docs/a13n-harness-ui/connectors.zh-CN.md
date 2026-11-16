@@ -21,11 +21,29 @@ description: 为 WebUI 对话和 Bot 统一连接服务账户。
 
 GitHub 连接器提供 MCP 工具，不轮询通知、不自动向 Bot 提交输入，也不实现单独的 GitHub OAuth 应用。
 
+## 连接 Linear 或 Notion
+
+1. 在**设置 → 连接 → 连接器**选择**添加连接 → Linear** 或 **Notion**，命名账户并继续。
+2. 选择**连接**，在浏览器完成授权。弹窗受阻时使用**继续授权**。凭据私密保存在本实例中，令牌会自动刷新。
+3. 选择**测试连接**单独检查 MCP 连接，然后**完成**。发送新消息以捕获连接的工具。
+
+Linear 默认允许读写。要切换模式，打开账户设置，将 **Access** 设为 `read_only` 或 `read_write`，选择**保存设置**，再打开**编辑连接**重新授权。只读模式使用只读端点和精确的 `read` scope；读写模式使用标准端点和发现的 scope。向任一方向切换都会清除旧的本地授权。授权后发送新消息，以捕获所选模式的工具。Notion 请求发现的 scope，没有本地只读开关；请检查同意页面和工作区权限。两种集成都不声明自动事件或 Bot 唤醒。GitHub 继续使用 PAT 配置。
+
+授权过期或刷新无法安全完成时使用**重新连接**。**断开连接**清除本地授权。关闭未完成的配置流程会取消待完成登录，已完成授权仍会保留。初次登录和重新授权需要 WebUI。这些具体 provider 复用普通 MCP 资源的 [DCR OAuth 服务](mcp.md#oauth-authorization)，不维护独立 OAuth 应用或令牌存储。
+
 ## 连接器与 MCP 服务
 
 连接器展示 GitHub 等具体服务，账户配置由该服务的 provider 定义。添加连接菜单列出已安装的具体服务集成。
 
 任意 MCP 服务仍通过独立的 [MCP 服务](mcp.md)设置配置，是由 Agent 选择的资源，也可在 TUI 中使用。连接器 SDK 的 Remote MCP 能力是供开发者实现具体服务集成的代码库，不是另一套通用 MCP 配置界面。
+
+## Agent 工具访问
+
+连接器工具通过 `list_connectors`、`list_connector_tools`、`discover_connector_tools` 和 `describe_connector_tool` 查询，再通过 `call_connector_tool` 执行。每个账户使用保存的**分组名称**，例如 `github` 或 `work-github`；分组说明会显示账户名称。创建时会默认生成规范化名称，可在继续前修改，也可稍后通过**管理 → 账户设置**编辑。分组名称在所有连接之间必须唯一，最多 32 个字符，使用小写字母、数字和单个连字符，以字母开头。修改显示名称不会自动改变已保存的分组。修改分组后，需开启新一轮运行才能使用其工具。
+
+升级时会自动为已有账户生成可读的分组名称，重名时加数字后缀。账户 ID、凭据和已保存配置保持不变。引入显式分组名称之前的旧 capture 不再支持，请开启新一轮运行。
+
+启用 CodeAct 后，agent 可以在 `run_code` 或 `run_program` 中 await 这些相同的入口。GitHub 和其他基于 Remote MCP 库实现的 provider 支持这条路径。上游方法仍通过 `call_connector_tool` 调用，不会变成独立的 Python 函数。其他插件自行声明 CodeAct 策略，查询结果中的 `codeact_eligible` 会反映实际支持情况。工具权限和已捕获账户的检查仍然生效。如果审批不能在当前调用内完成，应使用普通工具调用路径；CodeAct 不保存挂起的 Python 执行点，也不自动重放先前调用。
 
 ## 从对话中配置
 

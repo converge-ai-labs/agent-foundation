@@ -29,7 +29,7 @@ from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, ToolInstruction, tool_guidance
 from ._results import environment_failure
 from .accessibility import AccessibilityToolset
 
@@ -50,6 +50,21 @@ _ObservationReference = Annotated[
 ]
 
 
+_COMPUTER_TOOLS = {
+    "computer_describe": (EnvironmentAction.COMPUTER_DESCRIBE, True),
+    "computer_observe": (EnvironmentAction.COMPUTER_OBSERVE, True),
+    "computer_zoom": (EnvironmentAction.COMPUTER_ZOOM, True),
+    "computer_click": (EnvironmentAction.COMPUTER_CLICK, False),
+    "computer_move": (EnvironmentAction.COMPUTER_MOVE, False),
+    "computer_drag": (EnvironmentAction.COMPUTER_DRAG, False),
+    "computer_scroll": (EnvironmentAction.COMPUTER_SCROLL, False),
+    "computer_type_text": (EnvironmentAction.COMPUTER_TYPE_TEXT, False),
+    "computer_press_keys": (EnvironmentAction.COMPUTER_PRESS_KEYS, False),
+    "computer_read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
+    "computer_write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
+}
+
+
 class ComputerToolset:
     """Run-local observation references; never acquire or reserve a desktop."""
 
@@ -64,26 +79,18 @@ class ComputerToolset:
             observation_reference=self._observation_reference,
         )
 
+    @staticmethod
+    def available_names() -> frozenset[str]:
+        """Canonical selectors, including tools whose mounts are opened later in a Run."""
+        return frozenset(_COMPUTER_TOOLS) | AccessibilityToolset.available_names()
+
     def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         actions = frozenset(
             action for mount in self._environment.snapshot.mounts for action in mount.permission_ceiling.operations
         )
-        methods = (
-            (self.computer_describe, EnvironmentAction.COMPUTER_DESCRIBE, True),
-            (self.computer_observe, EnvironmentAction.COMPUTER_OBSERVE, True),
-            (self.computer_zoom, EnvironmentAction.COMPUTER_ZOOM, True),
-            (self.computer_click, EnvironmentAction.COMPUTER_CLICK, False),
-            (self.computer_move, EnvironmentAction.COMPUTER_MOVE, False),
-            (self.computer_drag, EnvironmentAction.COMPUTER_DRAG, False),
-            (self.computer_scroll, EnvironmentAction.COMPUTER_SCROLL, False),
-            (self.computer_type_text, EnvironmentAction.COMPUTER_TYPE_TEXT, False),
-            (self.computer_press_keys, EnvironmentAction.COMPUTER_PRESS_KEYS, False),
-            (self.computer_read_clipboard, EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
-            (self.computer_write_clipboard, EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
-        )
         tools: list[Tool[AgentContext]] = [
             HarnessTool(
-                method,
+                getattr(self, name),
                 harness_metadata=HarnessToolMetadata(
                     tool_id=action.value,
                     effects=frozenset({"read"})
@@ -96,51 +103,12 @@ class ComputerToolset:
                     ),
                 ),
             )
-            for method, action, read_only in methods
-            if action in actions and (allowed_names is None or method.__name__ in allowed_names)
+            for name, (action, read_only) in _COMPUTER_TOOLS.items()
+            if action in actions and (allowed_names is None or name in allowed_names)
         ]
         tools.extend(self._accessibility.tools(allowed_names=allowed_names))
         names = {tool.name for tool in tools}
-        sections = [
-            section
-            for section, selected in (
-                ("computer_describe", {"computer_describe"}),
-                (
-                    "computer_observe",
-                    {
-                        "computer_observe",
-                        "computer_zoom",
-                        "computer_click",
-                        "computer_move",
-                        "computer_drag",
-                        "computer_scroll",
-                    },
-                ),
-                ("computer_zoom", {"computer_zoom"}),
-                ("computer_clipboard", {"computer_read_clipboard", "computer_write_clipboard"}),
-                (
-                    "computer_input",
-                    {method.__name__ for method, _, read_only in methods if not read_only}
-                    - {"computer_write_clipboard"},
-                ),
-                (
-                    "computer_accessibility",
-                    {name for name in names if name.startswith("computer_accessibility_")}
-                    | {"computer_ax", "computer_uia", "computer_atspi"},
-                ),
-                ("computer_accessibility_mutation", {"computer_ax", "computer_uia", "computer_atspi"}),
-                (
-                    "computer_uia",
-                    {"computer_uia"} if EnvironmentAction.COMPUTER_UIA_SELECTION_SELECT in actions else set(),
-                ),
-                (
-                    "computer_atspi",
-                    {"computer_atspi"} if EnvironmentAction.COMPUTER_ATSPI_SELECTION_ADD_CHILD in actions else set(),
-                ),
-            )
-            if names & selected
-        ]
-        instructions = [tool_instruction("environment-computer", *sections)] if tools else []
+        instructions: list[ToolInstruction] = [tool_guidance("environment-computer")] if tools else []
         if names & {
             "computer_observe",
             "computer_zoom",

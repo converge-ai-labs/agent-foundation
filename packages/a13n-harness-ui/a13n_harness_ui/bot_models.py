@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_harness_ui.connectors.models import SetupOffer
+from a13n_harness_ui.thread_files import InputAttachmentReference, ThreadAttachment
 
 
 class BotModel(BaseModel):
@@ -19,6 +20,7 @@ class BotInput(BotModel):
     input_id: str = Field(min_length=1, max_length=128)
     source: Literal["user", "heartbeat", "connector", "automatic"]
     text: str = Field(max_length=64 * 1024)
+    parts: tuple[str | ThreadAttachment, ...] = ()
     created_at: datetime
     state: Literal["queued", "dispatching", "admitted", "completed", "interrupted", "discarded"] = "queued"
     receipt_id: str | None = None
@@ -42,6 +44,7 @@ class BotMessage(BotModel):
     message_id: str
     role: Literal["user", "assistant"]
     text: str
+    parts: tuple[str | ThreadAttachment, ...] = ()
     created_at: datetime
     input_id: str | None = None
     display_ids: tuple[str, ...] = ()
@@ -71,7 +74,16 @@ class BotNotesPage(BotModel):
 
 class BotSubmit(BotModel):
     input_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
-    text: str = Field(min_length=1, max_length=64 * 1024)
+    text: str = Field(default="", max_length=64 * 1024)
+    parts: tuple[str | InputAttachmentReference, ...] = Field(default=(), max_length=1024)
+
+    @model_validator(mode="after")
+    def valid_content(self) -> "BotSubmit":
+        if self.parts and self.text != "".join(part for part in self.parts if isinstance(part, str)):
+            raise ValueError("Bot text must match the ordered input text")
+        if not self.text.strip() and not any(isinstance(part, InputAttachmentReference) for part in self.parts):
+            raise ValueError("A non-empty message or attachment is required")
+        return self
 
 
 class BotPause(BotModel):

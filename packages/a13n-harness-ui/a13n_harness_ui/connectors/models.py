@@ -1,11 +1,12 @@
 """Safe Connector declarations, setup interactions and immutable Run bindings."""
 
+import hashlib
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from a13n_harness_ui.connector_models import ConnectorRule
+from a13n_harness_ui.connector_models import ConnectorGroupName, ConnectorRule
 
 
 class Value(BaseModel):
@@ -49,6 +50,7 @@ class Instance(Value):
     connector_id: str
     kind: str
     name: str
+    group_name: ConnectorGroupName
     version: int
     enabled: bool
     deliver_to_bot: bool
@@ -62,7 +64,7 @@ class SetupAction(Value):
     id: str
     label: str
     icon: str | None = None
-    kind: Literal["submit", "open_url", "copy", "confirm"] = "submit"
+    kind: Literal["submit", "open_url", "copy", "confirm", "oauth"] = "submit"
     url: str | None = None
     value: str | None = None
 
@@ -116,5 +118,23 @@ class Capture(Value):
     connector_key: str
     configuration_version: int
     implementation: str
+    connector_name: str = ""
+    group_name: ConnectorGroupName | Annotated[str, Field(pattern=r"^connector_[0-9a-f]{16}$")]
     # Plugin-authored safe recipe. Private credentials and state are never copied here.
     binding: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _decode_legacy_group(cls, value: object) -> object:
+        # Before editable groups, the namespace was derived exclusively from
+        # the captured ID. Never substitute today's account name or group.
+        # New captures always carry connector_name, even when it is empty.
+        if (
+            isinstance(value, dict)
+            and "group_name" not in value
+            and "connector_name" not in value
+            and isinstance(value.get("connector_id"), str)
+        ):
+            group = "connector_" + hashlib.sha256(value["connector_id"].encode()).hexdigest()[:16]
+            return {**value, "group_name": group}
+        return value

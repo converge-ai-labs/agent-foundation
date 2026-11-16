@@ -4,6 +4,8 @@
 
 Computer use is an optional Session operation family for observing and controlling a shared native desktop. It does not allocate a desktop, acquire ownership, reserve foreground focus, or lock out humans or other agents. The Session owns observation references, temporary image readers and operation evidence, not GUI applications or their state.
 
+The ordinary and VM [binary flavors](08-protocol-source-client-and-generation.md#executable-distribution-and-installation) include native desktop backends. Slim excludes those dependencies, rejects `computer_use` before carrier startup and advertises no computer methods.
+
 Trusted startup must explicitly enable `computer_use` (default `false`). The native implementation supports macOS, Linux X11 and Windows interactive user desktops with disabled Sandbox and inherited egress only. Wayland and XWayland are unsupported; Linux rejects a Wayland launch environment and servers advertising the XWAYLAND extension. Other platforms, restricted Sandbox and denied or controlled egress reject the opt-in; a worker cannot reach outside its boundary to operate the launcher's desktop. Full Control alone does not enable computer methods. Missing macOS Screen Recording or Accessibility permission is reported, never bypassed or implicitly granted.
 
 [EIP](02-eip-protocol.md) owns method negotiation, Session selectors, operation admission and receipts. [Transfers](04-resource-operations.md) owns raw byte integrity and resource accounting. The [Harness Environment contract](../a13n-harness/08-environment-integration.md#computer-operations) owns model-facing references and exact action permissions.

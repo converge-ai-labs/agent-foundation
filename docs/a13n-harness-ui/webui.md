@@ -64,6 +64,8 @@ Open the three-dot menu immediately left of the sidebar heading’s plus button 
 
 ### Projects and saved conversations
 
+New chats get a short title in the background after the first message. To suggest a fresh title, open **Rename chat → Generate title**. Edit the suggestion and choose **Save title** to apply it. **Settings → Chats → New chats** selects the model. The current chat model is the default.
+
 Expand a Project for its five most recently updated root conversations. **Show more** loads another page for that Project; collapsing it preserves loaded pages. Search covers all saved roots, including unloaded pages. **Without a project**, **Unavailable projects**, and **Archived** keep unassigned, removed-Project, and archived conversations reachable.
 
 Use a conversation's **…** menu to rename, star, share, inspect, archive, or delete it. Restore archived conversations from **Archived**. **Project settings** edits the Project instead. Conversations cannot be dragged between Projects.
@@ -73,6 +75,8 @@ Use a conversation's **…** menu to rename, star, share, inspect, archive, or d
 Drag a Project's handle to reorder it, or use the menu's Move and Reset actions. With the keyboard, focus the handle, press Space, use Up/Down, and press Enter to save or Escape to cancel. Project order and expansion are browser-local; renaming changes only the display name. Active work appears first, and completion updates navigation time.
 
 **Home** and Project **+** buttons share one browser-local new-conversation draft. Changing Project preserves its text and explicit selections. Reload preserves text and settings, but local file bytes must be reattached. **Send** creates the Thread and clears the draft after acceptance. An uncertain submission retains recovery information and locks Project selection until reviewed.
+
+Use **Search** or Command+F on Apple platforms (Ctrl+F elsewhere) to search saved chats, even with the sidebar collapsed. Repeating the shortcut selects the current query; Escape closes search and restores focus to where you opened it. Focused file editors and terminal output keep their own Find controls. Files, Changes, Browser, and other open dialogs keep local or browser-native search rather than opening chat search.
 
 ### Send, steer and inspect
 
@@ -107,15 +111,15 @@ Unsynchronized edits can be lost on reload or browser crash. Undo belongs to the
 
 ### Skills and work inspection
 
-Type `$` and a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape dismisses. Insertion does not send. `$name` remains editable text and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
+Type `$` or `/` followed by a Skill name to find available Skills. Up/Down selects; Enter or Tab inserts; Escape or the close button dismisses suggestions for the current word and leaves the typed text in place. Insertion does not send. A recognized Skill shows a puzzle icon and name; Backspace removes it as one item. The underlying `$name` text is preserved and works for new conversations, saved conversations, and steering. Recognized names are checked against the relevant catalog; unknown names remain text. See [Skills](skills-and-content-plugins.md) to install or author one.
 
-Use **Tasks**, **Notes**, **Subagents**, **Processes**, and **Tools** above the composer to open the corresponding activity view without replacing your draft. Counts show completed/total tasks, notes, active subagent executions, and observed running processes. In narrow chat columns, **More** contains Notes, Processes, and Tools. Closing the inspector returns focus to the entry that opened it. The process view shows observed background handles, Run IDs, and exit codes; output stays in tool details. It is an observation panel, not a process-control console.
+**Tasks** and **Notes** stay above the composer. The **Background work** icon immediately after the icon-only **Share** button opens a compact card: **Subagents** and **Tool calls** each show up to three rows. Task and argument previews are in row tooltips. Each section's **View all** opens its own history tab in the supporting strip, with **Show more** for older pages. Selecting a row opens its resource tab; narrow layouts close the card first.
 
-Process counts cover observed running handles, excluding foreground calls. The panel shows up to 16 entries from 128 retained observations. Run completion or lost observation marks unfinished handles unavailable, not exited. Reload does not reconstruct them from saved messages.
+Child tabs show the saved/live conversation without a composer. The header's **Stop** action becomes **Stopping…** until the item ends. Tool tabs retain input, supported live output and completion output. Observed Shell processes stay read-only; reloading does not reconstruct observations. Closing a tab does not stop work.
 
 ### Review token usage and estimated cost
 
-Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the injected Skill names and their usage. Expand Tool calls to inspect argument and result sizes. Category token counts use the character proportions of this input. Media tokens without a separate count are distributed using the same proportions. Each percentage uses the full context window as its denominator.
+Select the context ring above the composer to inspect the latest main Agent request. The bar shows input, output and remaining capacity. Expand Skills to see the injected Skill names and their usage. Expand Tool calls to inspect argument and result sizes. On requests with source details, expand Environment context to see mount lists and project guidance, Working state to see notes and tool execution status, or Conversation to compare user input, Agent output and summaries. The mount-list row shows how many copies and distinct versions this request contains. Category token counts use the character proportions of this input. Media tokens without a separate count are distributed using the same proportions. Each percentage uses the full context window as its denominator.
 
 1. Open **Usage** using the chart icon beside the sidebar collapse button. **Project → View usage** or **Details → Usage → Open analytics** opens a preselected scope.
 2. Choose 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or the configured Model used for the request.
@@ -128,7 +132,9 @@ New Runs look up prices using the selected Model’s configured route. In chat u
 
 ## Voice input
 
-In **Settings → General → Dictation**, choose a configured Model that accepts audio. Set the number of context words on either side of the reading position (default 2,000). Click the microphone in the composer or an **Add to chat** comment, then click Stop. The selected Model receives the recording, chat title and nearby human and assistant text. It transcribes in the language you spoke. Review the inserted text and submit it when ready. After a transcription error, Retry sends the same recording again. Cancel discards it. Microphone capture requires localhost or HTTPS.
+In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
+
+Click the microphone in the composer or an **Add to chat** comment, then click Stop. The backend generates the final text, using the draft, chat title and nearby authored conversation as context. Codex subscription dictation runs ASR followed by text correction; intermediate text is not shown. The final fragment is inserted once at the current input selection without a preview or confirmation step. Nothing is sent automatically. If correction fails, the original transcript is inserted with a warning. After a recognition error, Retry uses the same recording and captured context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
 ## Agent and Model settings
 
@@ -136,7 +142,7 @@ Open the current Model in the composer footer to choose an Agent, Model, Reasoni
 
 To change the Thread's default Model, including for the terminal UI, open conversation configuration and set **Default model**. **Follow Agent model** clears it. The composer shows **Thread default** when following that saved value; a different composer Model changes the Run draft. Configuration inspection distinguishes next-Run selections from the captured selections of active or saved work.
 
-A fresh chat starts with its creation defaults. The unfinished New draft remembers choices in this browser; existing chats restore their shared composer choices from the server. For the same Agent, an explicit composer Model takes precedence even if the conversation’s default model changes. Clear the composer Model override to follow the current conversation default, falling back to the Agent’s Model.
+A fresh chat starts with its creation defaults. The unfinished New draft remembers choices in this browser; existing chats restore their shared composer choices from the server. For the same Agent, an explicit composer Model takes precedence even if the conversation’s default model changes. Clear the composer Model override to follow the current conversation default, falling back to the Agent’s Model. Runs that start without your message, such as background results, approvals, or messages from other chats, keep the Model and settings of the previous Run.
 
 Use **Chat options → Clear context** to start the next message without prior model messages, notes, tasks, or saved Agent working state. It also discards pending questions and approvals. Chat history, files, settings, and unsent input remain.
 
@@ -177,7 +183,7 @@ Use **Steer** to correct direction while the Agent is working. By default, immed
 
 Acceptance means the guidance was queued. Unsupported tools use best-effort delivery at a normal execution boundary. Startup or recovery can wait up to five seconds for native steering readiness; a timeout or completed Run rejects the request. Root and child steering share `input.steering_mode`; choose `queued` in [configuration](configuration.md#built-in-tools-and-subagents) to wait for the next safe boundary.
 
-Open **Work → Tools** to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
+Open **Background work**, then **View all** under **Tool calls**, to inspect an execution's originating Run/call, status, or records, and cancel active retained work. Reading status does not consume results. The Agent retrieves results with `tool_execution_result` or `tool_execution_wait`.
 
 Generic [automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in. Process-backed Shell yields after its configured foreground wait in either mode; immediate steering can release that wait sooner. Shell handles also have their own process view.
 
@@ -354,9 +360,9 @@ Use inline conversation links from collaboration tools to inspect other root wor
 
 These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
 
-An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` overrides the first Run only; `run_thread` can override a later Run. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
 
-Configure **Settings → General → Subagent defaults** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 
 ## Fork a conversation
 
@@ -389,7 +395,7 @@ Open **Memory** in the bottom-left navigation to inspect enabled Global or Proje
 
 The right panel displays current scope files, including before any organization Run. Opening it starts no work. The viewer is read-only and independent of computer sharing. To edit, use server Host access to `memory/` beside the selected root configuration.
 
-In **Settings → General**, disabling automatic organization retains the viewer; disabling Memory hides it. Neither deletes files or history.
+In **Settings → Memory**, disabling automatic organization retains the viewer; disabling Memory hides it. Neither deletes files or history.
 
 ## Configure the workbench
 
@@ -440,7 +446,7 @@ Choose **All** or **Bot only** under **Notify me about** in Notifications settin
 
 Bot publications show **New message from Bot** and a preview of the actual message. Choose **View message**, or click the system notification, to open Bot. Different messages from the same Run remain distinct. Bot input requests use **Bot needs your response** and open the decision in Activity. System notification titles follow the display language last synchronized by that browser; authored message text stays unchanged.
 
-1. On the receiving device, open **Settings → General → Notifications** at a stable HTTPS address.
+1. On the receiving device, open **Settings → Preferences → Notifications** at a stable HTTPS address.
 2. Choose **Allow notifications** or **Enable background notifications** and accept the browser prompt.
 3. Check **Enabled on this device**, then choose **Send test notification**.
 4. Keep a WebUI page visible to renew device activity, send a task, and check the system alert after leaving WebUI.
@@ -449,7 +455,7 @@ The server must stay running and reach the browser's push service. No separate p
 
 System notices cover completion, failure, and requests for input across all root conversations, including unvisited ones; archived roots are excluded. Actual answer/question/error previews can appear on the lock screen. Opted-in devices are eligible for six hours after activity; any visible WebUI page renews this about every minute without requiring focus or typing.
 
-Open pages also show in-app notices without that six-hour or visit-history limit. Web Push is the sole system-notification path; unsupported or unreachable push leaves in-app notices. Push delivery is best effort and missed banners are not replayed. Reopen the conversation for authoritative results.
+Open pages also show in-app notices without that six-hour or visit-history limit. A conversation you are currently viewing stays quiet, including Bot: its completion, message, failure and input-needed notices do not create in-app popups. Other conversations still notify. This does not change unread markers or system Push delivery, and suppressed notices do not replay after navigation. Web Push is the sole system-notification path; unsupported or unreachable push leaves in-app notices. Push delivery is best effort and missed banners are not replayed. Reopen the conversation for authoritative results.
 
 For Android Chrome, check both site and system permissions, battery/Do Not Disturb restrictions, and push-service connectivity. On iPhone/iPad, use a supported Home Screen web app and enable notifications inside it; an ordinary browser tab is insufficient. Remote plain HTTP is unsupported; local loopback works for development. Browser installation/menu details depend on the device.
 
@@ -467,7 +473,7 @@ Turn off **Enable browser notifications** before clearing site data when possibl
 
 ## Install as an app
 
-Open **Settings → General → Install Harness UI**, then use the offered **Install app** prompt or your browser's installation/Add to Home Screen action. Safari also provides **Share → Add to Home Screen** on iPhone/iPad and **File → Add to Dock** on Mac where supported.
+Open **Settings → Diagnostics → About**, then use the offered **Install app** prompt or your browser's installation/Add to Home Screen action. Safari also provides **Share → Add to Home Screen** on iPhone/iPad and **File → Add to Dock** on Mac where supported.
 
 Use HTTPS or loopback and keep scheme, hostname, and port stable. A phone's plain-HTTP LAN connection does not have the same installation support. Changing origin can require installation and login again. The installed window still needs the server; it adds no offline execution or unsaved-editor recovery. Enable background notifications separately.
 

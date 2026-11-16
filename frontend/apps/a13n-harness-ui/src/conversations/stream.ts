@@ -8,6 +8,7 @@ import {
   type DisplayItem,
 } from "a13n-ui/display";
 import type { Schema, Transport } from "../transport/client";
+import { botInputId } from "../bot-identity";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
 import {
@@ -145,9 +146,11 @@ export class FocusDisplay {
   replayCount = 0;
   sequence = 0;
   gap = false;
+  recoveryCheckpoint?: string;
   recovery?: {
     id: string;
     state: "retrying" | "resumed" | "ended";
+    reason?: "output_token_limit";
     retries: number;
   };
   terminalFailure?: string;
@@ -206,6 +209,7 @@ export class FocusDisplay {
     this.recovery = undefined;
     this.terminalFailure = undefined;
     this.checkpoints.clear();
+    this.recoveryCheckpoint = undefined;
     this.savedBlocks.clear();
   }
   accept(frame: FocusFrame) {
@@ -356,18 +360,24 @@ export class FocusDisplay {
     child.display.trimChildOutput();
   }
   private trimChildOutput() {
+    const retainSaved = (id: string) => {
+      if (this.savedBlocks.has(id))
+        this.recoveryCheckpoint = [...this.checkpoints.keys()].at(-1);
+      else this.gap = true;
+    };
     // Bound both long deltas and event cardinality; saved output is fetched
     // independently and never synthesized from this lossy display window.
     while (this.blocks.size > 128) {
-      this.blocks.delete(this.blocks.keys().next().value!);
-      this.gap = true;
+      const id = this.blocks.keys().next().value!;
+      this.blocks.delete(id);
+      retainSaved(id);
     }
     let remaining = 128 * 1024;
     for (const [key, block] of [...this.blocks].reverse()) {
       const size = JSON.stringify(block).length;
       if (remaining <= 0) {
         this.blocks.delete(key);
-        this.gap = true;
+        retainSaved(key);
       } else if (
         size > remaining &&
         (block.kind === "assistant" || block.kind === "thinking")
@@ -381,10 +391,10 @@ export class FocusDisplay {
           done: block.done,
         });
         remaining = 0;
-        this.gap = true;
+        retainSaved(key);
       } else if (size > remaining) {
         this.blocks.delete(key);
-        this.gap = true;
+        retainSaved(key);
       } else remaining -= size;
     }
   }
@@ -457,7 +467,19 @@ export class FocusDisplay {
       this.gap = true;
       return;
     }
-    if (object(payload.metadata) && payload.metadata.display === false) return;
+    if (
+      object(payload.metadata) &&
+      payload.metadata.display === false &&
+      !(
+        type === "CUSTOM" &&
+        !payload.subagentRunId &&
+        ["a13n.input.user", "a13n.input.steering"].includes(
+          string(payload.name),
+        ) &&
+        botInputId(payload.metadata)
+      )
+    )
+      return;
     const subagentRunId = string(payload.subagentRunId) || undefined;
     if (
       !subagentRunId &&
@@ -624,7 +646,15 @@ export class FocusDisplay {
       const event = this.custom(payload);
       if (
         !event ||
-        (object(event.metadata) && event.metadata.display === false)
+        (object(event.metadata) &&
+          event.metadata.display === false &&
+          !(
+            !event.subagentRunId &&
+            ["a13n.input.user", "a13n.input.steering"].includes(
+              string(event.name),
+            ) &&
+            botInputId(event.metadata)
+          ))
       )
         return;
       this.foldCustom(event);
@@ -649,7 +679,18 @@ export class FocusDisplay {
   private displayItem(item: DisplayItem) {
     const content = item.content;
     const metadata = object(content.metadata) ? content.metadata : undefined;
-    if (metadata?.display === false) return;
+    // Bot's hidden input marker joins its publication to native input. Retain
+    // the marker for transcript correlation; the transcript still hides it.
+    if (
+      metadata?.display === false &&
+      !(
+        item.kind === "text_message" &&
+        content.role === "user" &&
+        !content.subagentRunId &&
+        botInputId(metadata)
+      )
+    )
+      return;
     const sequence = Number(item.last_stream_id.split("-")[1]);
     if (item.kind === "observation") {
       const previous = new Map(this.blocks);
@@ -833,7 +874,9 @@ export class FocusDisplay {
       this.recovery = {
         id: `${this.runId}:retry:${payload.attempt}`,
         state: "retrying",
-        // Attempt 1 is the original model request, not a reconnection.
+        reason:
+          payload.reason === "output_token_limit" ? payload.reason : undefined,
+        // Attempt 1 is the original model request, not a retry.
         retries: typeof payload.attempt === "number" ? payload.attempt - 1 : 1,
       };
       return;
@@ -844,7 +887,9 @@ export class FocusDisplay {
       typeof source.continuation_id === "string"
     ) {
       const ordinal = this.checkpoints.size + 1;
+      if (this.gap) this.recoveryCheckpoint = source.continuation_id;
       this.checkpoints.set(source.continuation_id, ordinal);
+      this.gap = false;
       for (const id of this.blocks.keys()) {
         if (!this.savedBlocks.has(id)) this.savedBlocks.set(id, ordinal);
       }

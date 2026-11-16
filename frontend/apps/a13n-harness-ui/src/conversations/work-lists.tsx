@@ -26,7 +26,13 @@ export function TaskIcon({ status }: { status: Task["status"] }) {
         : Circle;
   return <Icon aria-label={labels[status]} className={styles[status]} />;
 }
-export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
+export function TaskList({
+  page,
+  selection,
+}: {
+  page?: Schema<"TaskPage">;
+  selection?: string;
+}) {
   const { t } = useTranslation();
   if (!page) return null;
   if (page.available === false)
@@ -50,7 +56,11 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
         {orderedTasks(page.tasks ?? []).map((task) => (
           <li key={task.task_id}>
             <TaskIcon status={task.status} />
-            <details className={layout.details}>
+            <details
+              key={selection}
+              open={selection === task.task_id || undefined}
+              className={layout.details}
+            >
               <summary>
                 {task.status === "in_progress"
                   ? task.active_form || task.subject
@@ -112,13 +122,23 @@ export function TaskList({ page }: { page?: Schema<"TaskPage"> }) {
     </>
   );
 }
-export function NoteList({ page }: { page?: Schema<"NotePage"> | null }) {
+export function NoteList({
+  page,
+  selection,
+}: {
+  page?: Schema<"NotePage"> | null;
+  selection?: string;
+}) {
   const { t } = useTranslation();
   if (!page) return null;
   return (
     <div className={styles.notes}>
       {page.notes?.map((note) => (
-        <details key={note.key} className={layout.details}>
+        <details
+          key={note.key}
+          open={selection === note.key || undefined}
+          className={layout.details}
+        >
           <summary>{note.key}</summary>
           <MessageText text={note.value} />
         </details>

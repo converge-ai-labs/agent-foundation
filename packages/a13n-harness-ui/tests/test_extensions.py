@@ -268,3 +268,27 @@ def test_all_nine_native_specifications_use_upstream_deserialization(tool):
     assert isinstance(selected, NativeTool)
     assert selected.tool.kind == tool["kind"]
     assert not isinstance(selected.tool, dict)
+
+
+@pytest.mark.parametrize("key", ["native_image_generation", "NativeTool"])
+def test_nested_native_image_provider_settings_are_preserved(key: str) -> None:
+    configuration = {
+        "output_format": "png",
+        "provider_settings": {"openai": {"quality": "high", "background": "transparent"}},
+    }
+    if key == "NativeTool":
+        configuration = {"kind": "image_generation", **configuration}
+    capability = HarnessUiExtensionCatalog().capabilities(((key, configuration),))[0].capability
+    assert capability.tool.provider_settings == {"openai": {"quality": "high", "background": "transparent"}}
+    assert capability.tool.output_format == "png"
+
+
+def test_web_catalog_preserves_native_provider_settings() -> None:
+    settings = {"openrouter": {"engine": "exa", "max_results": 5}}
+    capability = (
+        HarnessUiExtensionCatalog()
+        .capabilities((("web", {"search": {"mode": "auto", "provider_settings": settings}}),))[0]
+        .capability
+    )
+    assert isinstance(capability, WebCapability)
+    assert capability.get_native_tools()[0].provider_settings == settings

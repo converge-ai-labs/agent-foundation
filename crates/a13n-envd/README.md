@@ -70,6 +70,12 @@ Process cleanup owns the initial Unix process group or a non-breakaway Windows J
 
 Complete-candidate writes publish via a same-filesystem rename after verification. They do not promise exclusive filesystem access or compare-and-swap: commands and external writers may race. The [operations guide](../../docs/a13n-envd/operations.md) explains capacity, output evidence, cleanup, and uncertain outcomes.
 
+## Binary flavors
+
+Ordinary builds enable the default `desktop` feature without VM backends. Build the headless slim daemon with `cargo build --locked -p a13n-envd --no-default-features`; it retains native isolation/egress, transports/TLS, monitoring/export, enrollment, supervision and update while excluding native desktop dependencies. Slim rejects computer-use opt-in before transport startup. Linux VM builds include desktop support and both VM backends. `--build-variant` reports `default`, `slim` or `vm` independently of `--version`.
+
+Release archives add `-slim` or `-vm` before the extension; ordinary names stay unchanged. Installers default to ordinary, while `update` preserves its compiled flavor unless `--variant` explicitly switches it, including at the same version. Standard/slim sandbox images copy slim, desktop copies ordinary, and existing VM image tags copy VM. [Installation](../../docs/a13n-envd/installation.md) covers migration from older updaters.
+
 ## VM workers (Linux)
 
 Default binaries and sandbox images use native execution without VM SDKs or runtime assets. Linux `-vm` archives and `vm`, `slim-vm`, and `desktop-vm` image tags opt into both embedded Rust SDK backends and their runtime assets. Release and development-image builds run natively on Linux x86_64 and ARM64. VM execution requires accessible Linux KVM and image-registry access. macOS and Windows binaries retain native execution; these Envd VM backends currently target Linux.

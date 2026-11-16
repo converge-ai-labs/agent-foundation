@@ -357,9 +357,13 @@
                 "$ref": "#/components/schemas/ToolSearch"
               },
               {
+                "$ref": "#/components/schemas/NativeToolSearch"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Tool Search"
           },
           "toolsets": {
             "additionalProperties": {
@@ -583,9 +587,13 @@
                 "$ref": "#/components/schemas/ToolSearch"
               },
               {
+                "$ref": "#/components/schemas/NativeToolSearch"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Tool Search"
           },
           "toolsets": {
             "additionalProperties": {
@@ -957,9 +965,13 @@
                 "$ref": "#/components/schemas/ToolSearch"
               },
               {
+                "$ref": "#/components/schemas/NativeToolSearch"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Tool Search"
           },
           "toolsets": {
             "anyOf": [
@@ -1201,9 +1213,13 @@
                 "$ref": "#/components/schemas/ToolSearch"
               },
               {
+                "$ref": "#/components/schemas/NativeToolSearch"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Tool Search"
           },
           "toolsets": {
             "anyOf": [
@@ -2932,7 +2948,7 @@
       },
       "AutomaticToolSearch": {
         "additionalProperties": false,
-        "description": "Group Service-owned sources individually, following the agent's selections.",
+        "description": "Select Service-owned sources for on-demand discovery.",
         "properties": {
           "capabilities": {
             "default": [
@@ -3479,7 +3495,8 @@
           "browser",
           "web",
           "memory",
-          "assets"
+          "assets",
+          "object_store"
         ],
         "type": "string"
       },
@@ -12081,6 +12098,23 @@
               }
             ]
           },
+          "object_ref_tools": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
+            "maxProperties": 128,
+            "propertyNames": {
+              "maxLength": 128,
+              "minLength": 1
+            },
+            "title": "Object Ref Tools",
+            "type": "object"
+          },
+          "on_error": {
+            "$ref": "#/components/schemas/StartupErrorPolicy",
+            "default": "raise"
+          },
           "tools": {
             "anyOf": [
               {
@@ -15895,6 +15929,25 @@
           "mode"
         ],
         "title": "NativeIsolation",
+        "type": "object"
+      },
+      "NativeToolSearch": {
+        "additionalProperties": false,
+        "description": "Ungrouped native discovery of selected Service tools; plugins keep their own settings.",
+        "properties": {
+          "mode": {
+            "const": "native",
+            "title": "Mode",
+            "type": "string"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/AutomaticToolSearch"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NativeToolSearch",
         "type": "object"
       },
       "NetworkInterfaceMetrics": {
@@ -24890,6 +24943,13 @@
         ],
         "title": "SpanSummary",
         "type": "object"
+      },
+      "StartupErrorPolicy": {
+        "enum": [
+          "skip",
+          "raise"
+        ],
+        "type": "string"
       },
       "State": {
         "enum": [

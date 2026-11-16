@@ -23,8 +23,8 @@ import {
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { ArrowDown } from "@phosphor-icons/react";
+import { Button, Input, ModalFrame } from "a13n-ui";
+import { ArrowDown, Sparkle } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
@@ -33,10 +33,12 @@ import {
 } from "../transport/context";
 import { SharePanel } from "../sharing";
 import coordinatorStyles from "./coordinator.module.css";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
+import type { DictationTarget } from "./dictation-context";
+import { useDebug } from "../shell/debug";
 import {
   AppContextProvider,
   useAppContextSelection,
@@ -54,7 +56,12 @@ import {
 } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
-import { useHistory, useOperation, useThread } from "./queries";
+import {
+  transcriptHistory,
+  useHistory,
+  useOperation,
+  useThread,
+} from "./queries";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
 import { applyThreadMutation } from "./thread-updates";
@@ -66,7 +73,7 @@ import {
   isUnavailableChat,
 } from "./conversation-unavailable";
 import { LiveConnectionStatus } from "./live-connection";
-import { ConversationTranscript } from "./transcript";
+import { ConversationTranscript, type PublishedMessage } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { inputSource, conversationTitle } from "./local-input";
 import { InputNavigation } from "./input-navigation";
@@ -121,13 +128,16 @@ function ConversationContent({
     ready: boolean;
     revision: string;
     completionVersion: number;
-    messages: ReactNode;
-    composer: ReactNode;
+    messages: PublishedMessage[];
+    activity?: ReactNode;
+    composer:
+      ReactNode | ((dictation: DictationTarget | undefined) => ReactNode);
     status: ReactNode;
   };
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
+  const debug = useDebug();
   const disconnected = useContext(ConnectionNoticeContext);
   const appContexts = useAppContextSelection();
   const queries = useQueryClient();
@@ -201,7 +211,7 @@ function ConversationContent({
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
-    !!detail.data && !publication,
+    !!detail.data,
     selectedTurn,
   );
   const { display, connection, reconnections, revision } =
@@ -220,10 +230,10 @@ function ConversationContent({
     // The composer retains its own connection/control guards before sending.
   );
   const rename = !isBot && !guest && !readOnly && dialog === "rename";
+  const renameInput = useRef<HTMLInputElement>(null);
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
   };
-  const [title, setTitle] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [inspectionActions, setInspectionActions] =
     useState<HTMLDivElement | null>(null);
@@ -231,9 +241,6 @@ function ConversationContent({
   const setInspection = (open: boolean) => {
     if (!open) closeDialog();
   };
-  useEffect(() => {
-    if (rename) setTitle(detail.data?.thread.title ?? "");
-  }, [rename, detail.data?.thread.title]);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -322,27 +329,14 @@ function ConversationContent({
       )
     ) : null,
   );
-  const entries = useMemo(() => {
-    const byPosition = new Map<number, Schema<"TranscriptEntry">>();
-    for (const page of history.data?.pages ?? [])
-      for (const entry of [...(page.boundary_entries ?? []), ...page.entries])
-        byPosition.set(entry.position, entry);
-    return [...byPosition.values()].sort((a, b) => a.position - b.position);
-  }, [history.data]);
-  const turns = useMemo(() => {
-    const byId = new Map<string, Schema<"TranscriptTurn">>();
-    for (const page of history.data?.pages ?? [])
-      for (const turn of page.turns ?? []) byId.set(turn.turn_id, turn);
-    return [...byId.values()].sort(
-      (a, b) => a.input_position - b.input_position,
-    );
-  }, [history.data]);
+  const { entries, turns } = useMemo(
+    () => transcriptHistory(history.data?.pages),
+    [history.data],
+  );
   const latestPage = history.data?.pages[0];
-  const hasLater =
-    !publication &&
-    !!(latestPage?.later_turns_cursor === undefined
-      ? latestPage?.newer_cursor
-      : latestPage.later_turns_cursor);
+  const hasLater = !!(latestPage?.later_turns_cursor === undefined
+    ? latestPage?.newer_cursor
+    : latestPage.later_turns_cursor);
   const findTurn = useCallback(
     (id: string) =>
       [
@@ -503,7 +497,6 @@ function ConversationContent({
   // is not evidence that continuation was saved.
   const presentation = display.presentationFor(continuation);
   const showLive =
-    !publication &&
     !hasLater &&
     showFocusedOutput(
       presentation,
@@ -512,19 +505,19 @@ function ConversationContent({
       history.isPreviousHistory,
     );
   const liveBlocks = presentation.blocksAfter(continuation);
-  const visibleContent =
-    publication?.revision ??
-    `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
-      showLive
-        ? liveBlocks
-            .filter((block) => !block.diagnostic)
-            .map(
-              (block) =>
-                `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
-            )
-            .join("|")
-        : ""
-    }`;
+  const visibleContent = `${publication?.revision ?? ""}:${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
+    showLive
+      ? liveBlocks
+          .filter(
+            (block) => !block.diagnostic && block.metadata?.display !== false,
+          )
+          .map(
+            (block) =>
+              `${block.id}:${block.text.length}:${block.result?.length ?? 0}`,
+          )
+          .join("|")
+      : ""
+  }`;
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
@@ -705,7 +698,7 @@ function ConversationContent({
       (!detail.data && !draft.localInputs.length && !showLive));
   const pageError =
     detail.error ||
-    (!publication && !history.isFetchNextPageError ? history.error : null) ||
+    (!history.isFetchNextPageError ? history.error : null) ||
     agentSelection.error ||
     selectors.error ||
     mcpInputs.error ||
@@ -715,7 +708,8 @@ function ConversationContent({
       inline
       error={pageError}
       retry={() => {
-        reconcile();
+        if (history.error) void history.retryRead();
+        else reconcile();
         if (selectors.error) void selectors.refetch();
         if (agentSelection.error || (!rename && metadata.error))
           void detail.refetch().then((updated) => {
@@ -726,7 +720,7 @@ function ConversationContent({
           });
       }}
     />
-  ) : !publication &&
+  ) : !!detail.data &&
     !disconnected &&
     history.isPending &&
     !history.data &&
@@ -819,7 +813,7 @@ function ConversationContent({
         }
       : undefined;
   const dictation =
-    !guest && selectors.data?.dictation?.model
+    !guest && selectors.data?.dictation
       ? {
           words: selectors.data.dictation.context_words ?? 2000,
           reader,
@@ -919,155 +913,151 @@ function ConversationContent({
                   {t("Retry loading")}
                 </Button>
               )}
-              {publication ? (
-                <>
-                  {publication.messages}
-                  {decisions.slot}
-                  {decisions.portal}
-                </>
-              ) : (
-                <>
-                  <PauseConversationFollowing value={interruptScroll}>
-                    <MessageBranchProvider
-                      receipt={thread?.root_activity.receipt_id}
-                      thread={threadId}
-                      draft={draft}
+              <>
+                <PauseConversationFollowing value={interruptScroll}>
+                  <MessageBranchProvider
+                    receipt={thread?.root_activity.receipt_id}
+                    thread={threadId}
+                    draft={draft}
+                    continuation={continuation}
+                    enabled={
+                      !!thread &&
+                      !isBot &&
+                      !guest &&
+                      thread.role === "ordinary" &&
+                      !thread.parent_thread_id &&
+                      !thread.memory_scope &&
+                      thread.configuration.agent_source.kind === "agent" &&
+                      !thread.archived
+                    }
+                    active={
+                      thread?.root_activity.state !== "inactive" ||
+                      draft.submission.kind === "pending"
+                    }
+                  >
+                    <ConversationTranscript
+                      publications={publication?.messages}
+                      hasEarlier={history.hasNextPage}
+                      hasLater={hasLater}
+                      connectorOffers={
+                        !guest ? connectorOffers.data : undefined
+                      }
+                      terminalTurn={terminalTurn}
+                      currentFailureRunId={
+                        thread?.last_execution?.status === "failed"
+                          ? thread.last_execution.run_id
+                          : undefined
+                      }
+                      entries={entries}
+                      running={
+                        operation?.state === "running" &&
+                        presentation === display &&
+                        operation.run_id === presentation.runId
+                      }
+                      blocks={showLive ? liveBlocks : []}
+                      localInputs={hasLater ? [] : draft.localInputs}
+                      turns={turns}
+                      loadDetails
+                      onSavedEntries={reconcileSavedInputs}
                       continuation={continuation}
-                      enabled={
-                        !!thread &&
-                        !isBot &&
-                        !guest &&
-                        thread.role === "ordinary" &&
-                        !thread.parent_thread_id &&
-                        !thread.memory_scope &&
-                        thread.configuration.agent_source.kind === "agent" &&
-                        !thread.archived
+                      gap={showLive && display.gap}
+                      threadId={threadId}
+                      activity={
+                        publication?.activity ??
+                        (!readOnly &&
+                        !showGoal &&
+                        !hasLater &&
+                        !thread?.archived &&
+                        !detail.data?.deferred_requests?.length ? (
+                          <RunActivity
+                            recovery={display.recovery}
+                            activity={operation}
+                            submission={draft.submission}
+                            operation={observedOperation.data}
+                          />
+                        ) : undefined)
                       }
-                      active={
-                        thread?.root_activity.state !== "inactive" ||
-                        draft.submission.kind === "pending"
+                      pending={
+                        !hasLater && detail.data?.deferred_requests?.length
+                          ? {
+                              requestIds: detail.data.deferred_requests
+                                .filter(
+                                  (request) =>
+                                    request.tool_name === "ask_user_question",
+                                )
+                                .map((request) => request.request_id),
+                              content: decisions.slot,
+                            }
+                          : undefined
                       }
-                    >
-                      <ConversationTranscript
-                        connectorOffers={
-                          !guest ? connectorOffers.data : undefined
-                        }
-                        terminalTurn={terminalTurn}
-                        currentFailureRunId={
-                          thread?.last_execution?.status === "failed"
-                            ? thread.last_execution.run_id
-                            : undefined
-                        }
-                        entries={entries}
-                        running={
-                          operation?.state === "running" &&
-                          presentation === display &&
-                          operation.run_id === presentation.runId
-                        }
-                        blocks={showLive ? liveBlocks : []}
-                        localInputs={hasLater ? [] : draft.localInputs}
-                        turns={turns}
-                        loadDetails
-                        onSavedEntries={reconcileSavedInputs}
-                        continuation={continuation}
-                        gap={showLive && display.gap}
+                    />
+                    {decisions.portal}
+                    {!guest && (
+                      <McpInputs
                         threadId={threadId}
-                        activity={
-                          !readOnly &&
-                          !showGoal &&
-                          !hasLater &&
-                          !thread?.archived &&
-                          !detail.data?.deferred_requests?.length ? (
-                            <RunActivity
-                              recovery={display.recovery}
-                              activity={operation}
-                              submission={draft.submission}
-                              operation={observedOperation.data}
-                            />
-                          ) : undefined
-                        }
-                        pending={
-                          !hasLater && detail.data?.deferred_requests?.length
-                            ? {
-                                requestIds: detail.data.deferred_requests
-                                  .filter(
-                                    (request) =>
-                                      request.tool_name === "ask_user_question",
-                                  )
-                                  .map((request) => request.request_id),
-                                content: decisions.slot,
-                              }
-                            : undefined
-                        }
+                        requests={mcpInputs.data}
+                        reconcile={() => void mcpInputs.refetch()}
                       />
-                      {decisions.portal}
-                      {!guest && (
-                        <McpInputs
-                          threadId={threadId}
-                          requests={mcpInputs.data}
-                          reconcile={() => void mcpInputs.refetch()}
-                        />
-                      )}
-                    </MessageBranchProvider>
-                  </PauseConversationFollowing>
-                  {hasLater && (
-                    <div className={styles.historyActions}>
-                      <Button
-                        variant="ghost"
-                        loading={history.isFetchingPreviousPage}
-                        onClick={() => void history.fetchPreviousPage()}
-                      >
-                        {t("Load newer")}
-                      </Button>
-                      <Button variant="ghost" onClick={backToLatest}>
-                        {t("Back to latest")}
-                      </Button>
+                    )}
+                  </MessageBranchProvider>
+                </PauseConversationFollowing>
+                {hasLater && (
+                  <div className={styles.historyActions}>
+                    <Button
+                      variant="ghost"
+                      loading={history.isFetchingPreviousPage}
+                      onClick={() => void history.fetchPreviousPage()}
+                    >
+                      {t("Load newer")}
+                    </Button>
+                    <Button variant="ghost" onClick={backToLatest}>
+                      {t("Back to latest")}
+                    </Button>
+                  </div>
+                )}
+                {!terminalTurn && failureNotice}
+
+                {((guest && !canCompose) || readOnly || isCoordinator) &&
+                  !entries.length &&
+                  !draft.localInputs.length &&
+                  thread?.root_activity.state === "inactive" &&
+                  !showLive &&
+                  !history.isPending &&
+                  !history.error && (
+                    <div
+                      className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
+                    >
+                      {guest && !canCompose ? (
+                        <>
+                          <h2>{t("No messages yet")}</h2>
+                          <p>
+                            {t(
+                              "Messages will appear here when this chat gets started.",
+                            )}
+                          </p>
+                        </>
+                      ) : readOnly ? (
+                        <>
+                          <h2>{t("No organization history yet")}</h2>
+                          <p>
+                            {t(
+                              "Automatic memory updates appear here. Viewing this page won't start a run.",
+                            )}
+                          </p>
+                        </>
+                      ) : isCoordinator ? (
+                        <>
+                          <h2>{t("What are we working on?")}</h2>
+                          <p>
+                            {t(
+                              "Share a goal. I’ll help plan the work and bring results back here.",
+                            )}
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                   )}
-                  {!terminalTurn && failureNotice}
-
-                  {((guest && !canCompose) || readOnly || isCoordinator) &&
-                    !entries.length &&
-                    !draft.localInputs.length &&
-                    thread?.root_activity.state === "inactive" &&
-                    !showLive &&
-                    !history.isPending &&
-                    !history.error && (
-                      <div
-                        className={`${styles.empty} ${isCoordinator ? coordinatorStyles.intro : ""}`}
-                      >
-                        {guest && !canCompose ? (
-                          <>
-                            <h2>{t("No messages yet")}</h2>
-                            <p>
-                              {t(
-                                "Messages will appear here when this chat gets started.",
-                              )}
-                            </p>
-                          </>
-                        ) : readOnly ? (
-                          <>
-                            <h2>{t("No organization history yet")}</h2>
-                            <p>
-                              {t(
-                                "Automatic memory updates appear here. Viewing this page won't start a run.",
-                              )}
-                            </p>
-                          </>
-                        ) : isCoordinator ? (
-                          <>
-                            <h2>{t("What are we working on?")}</h2>
-                            <p>
-                              {t(
-                                "Share a goal. I’ll help plan the work and bring results back here.",
-                              )}
-                            </p>
-                          </>
-                        ) : null}
-                      </div>
-                    )}
-                </>
-              )}
+              </>
             </div>
           </div>
         </div>
@@ -1086,10 +1076,9 @@ function ConversationContent({
         )}
         {!readOnly && detail.data && (
           <WorkInspector
+            showDetails={!isBot || debug.enabled}
             threadId={threadId}
-            connectionStatus={
-              publication ? publication.status : connectionStatus
-            }
+            connectionStatus={publication?.status ?? connectionStatus}
             status={
               !guest && thread && !thread.archived ? (
                 <ComposerStatus
@@ -1105,9 +1094,7 @@ function ConversationContent({
                 />
               ) : undefined
             }
-            display={display}
             connected={connection === "Live"}
-            reconcile={reconcile}
             goal={showGoal ? goal : null}
             activity={thread?.root_activity}
             onUseGoal={
@@ -1140,7 +1127,9 @@ function ConversationContent({
             {publication.status}
           </div>
         )}
-        {publication?.composer}
+        {typeof publication?.composer === "function"
+          ? publication.composer(dictation)
+          : publication?.composer}
         {canCompose && !thread?.archived && (
           <Composer
             dictation={dictation}
@@ -1254,41 +1243,24 @@ function ConversationContent({
         )}
         <ModalFrame
           open={rename}
+          initialFocus={renameInput}
           onOpenChange={setRename}
           title={t("Rename chat")}
           closeLabel={t("Close")}
         >
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              metadata.mutate({ title: title || null });
-            }}
-          >
-            <TextField
-              label={t("Title")}
-              value={title}
-              onChange={(value) => setTitle(value.slice(0, 512))}
+          {rename && thread && (
+            <RenameChatForm
+              key={threadId}
+              threadId={threadId}
+              inputRef={renameInput}
+              initialTitle={thread.title ?? ""}
+              modelId={draft.modelId}
+              saving={metadata.isPending}
+              error={metadata.error}
+              onCancel={() => setRename(false)}
+              onSave={(title) => metadata.mutate({ title: title || null })}
             />
-            <ErrorNotice error={metadata.error} />
-            <div className={layout.dialogActions} data-a13n-form-actions>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={metadata.isPending}
-                onClick={() => setRename(false)}
-              >
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="submit"
-                loading={metadata.isPending}
-                disabled={!thread}
-              >
-                {t("Save title")}
-              </Button>
-            </div>
-          </form>
+          )}
         </ModalFrame>
         <ModalFrame
           open={inspection}
@@ -1370,5 +1342,88 @@ function ConversationContent({
         {content}
       </ReplyAnnotations>
     </ConversationOpening>
+  );
+}
+
+function RenameChatForm({
+  threadId,
+  inputRef,
+  initialTitle,
+  modelId,
+  saving,
+  error,
+  onCancel,
+  onSave,
+}: {
+  threadId: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  initialTitle: string;
+  modelId?: string;
+  saving: boolean;
+  error: unknown;
+  onCancel: () => void;
+  onSave: (title: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { client } = useTransport();
+  const [title, setTitle] = useState(initialTitle);
+  const suggestion = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/threads/{thread_id}/title-suggestion", {
+          params: {
+            path: { thread_id: threadId },
+            query: { model_id: modelId },
+          },
+        }),
+      ),
+    onSuccess: setTitle,
+  });
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(title);
+      }}
+    >
+      <div className={styles.renameField}>
+        <Input
+          ref={inputRef}
+          aria-label={t("Title")}
+          placeholder={t("Title")}
+          value={title}
+          maxLength={512}
+          disabled={suggestion.isPending || saving}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+        <Button
+          type="button"
+          className={styles.generateTitle}
+          variant="ghost"
+          size="icon-sm"
+          loading={suggestion.isPending}
+          disabled={saving}
+          aria-label={t("Generate title")}
+          onClick={() => suggestion.mutate()}
+        >
+          {!suggestion.isPending && <Sparkle aria-hidden="true" />}
+        </Button>
+      </div>
+      <ErrorNotice error={suggestion.error || error} />
+      <div className={layout.dialogActions}>
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={saving}
+          onClick={onCancel}
+        >
+          {t("Cancel")}
+        </Button>
+        <Button type="submit" loading={saving} disabled={suggestion.isPending}>
+          {t("Save")}
+        </Button>
+      </div>
+    </form>
   );
 }

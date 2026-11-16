@@ -1,4 +1,4 @@
-import { Checkbox, ChoiceField, DisclosureSection } from "a13n-ui";
+import { ChoiceField, DisclosureSection } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
@@ -9,14 +9,15 @@ import {
   automaticSearchGroups,
   automaticPolicy,
   searchSources,
-  toggleDiscoverySource,
-  usesToolDiscovery,
   type ToolSearchDraft,
 } from "../tool-search";
 import type { AgentDraft } from "./draft";
 import agentStyles from "../agents.module.css";
 import { ToolSearchGroups } from "./tool-search-groups";
-import { ToolSearchSources } from "./tool-search-sources";
+import {
+  ToolSearchSources,
+  ToolSearchConnections,
+} from "./tool-search-sources";
 import styles from "./editor.module.css";
 
 export function ToolSearchSection({
@@ -79,11 +80,17 @@ export function ToolSearchSection({
                   "Discover tools on demand: the model looks up tools and reads their parameters when needed, then calls them through a shared entry point.",
                 )}
               </p>
+              <p className="mt-2">
+                {t(
+                  "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed.",
+                )}
+              </p>
             </FieldHelp>
           }
           options={[
             { value: "direct", label: t("Provide tools directly") },
             { value: "proxy", label: t("Discover tools on demand") },
+            { value: "native", label: t("Native tool discovery") },
           ]}
           onValueChange={(mode) =>
             draft.setToolSearch((current) => ({
@@ -98,7 +105,7 @@ export function ToolSearchSection({
             }))
           }
         />
-        {value.mode === "proxy" && (
+        {value.mode !== "direct" && (
           <>
             <ToolSearchSources
               draft={draft}
@@ -106,122 +113,93 @@ export function ToolSearchSection({
               catalog={catalog.data}
               readOnly={readOnly}
             />
-            <DisclosureSection
-              className={`${agentStyles.outlinedDisclosure} ${styles.searchAdvanced}`}
-              title={t("Advanced grouping")}
-              summary={
-                expanded || error
-                  ? undefined
-                  : automatic
-                    ? t("Grouped by source")
-                    : t("Custom groups")
-              }
-              open={expanded || !!error}
-              onOpenChange={setExpanded}
-            >
-              <ChoiceField
-                label={t("Grouping")}
-                className={styles.searchMode}
-                value={automatic ? "automatic" : "custom"}
+            {value.mode === "native" && (
+              <ToolSearchConnections
+                draft={draft}
+                sources={sources}
+                catalog={catalog.data}
                 readOnly={readOnly}
-                labelAction={
-                  <FieldHelp label={t("About grouping")}>
-                    <p>
-                      {t(
-                        "Group by source creates one discovery group for each selected source.",
-                      )}
-                    </p>
-                    <p className="mt-2">
-                      {t(
-                        "Custom groups let you organize related sources yourself, with a name and description for each group.",
-                      )}
-                    </p>
-                  </FieldHelp>
-                }
-                options={[
-                  { value: "automatic", label: t("Group by source") },
-                  { value: "custom", label: t("Custom groups") },
-                ]}
-                onValueChange={(grouping) =>
-                  draft.setToolSearch((current) => ({
-                    ...current,
-                    automatic:
-                      grouping === "automatic"
-                        ? automaticPolicy(current, sources)
-                        : null,
-                    groups:
-                      grouping === "custom" && current.automatic != null
-                        ? automaticSearchGroups(current, sources)
-                        : current.groups,
-                  }))
-                }
               />
-              {automatic &&
-                sources.some((source) => source.kind === "connections") && (
-                  <fieldset
-                    className={styles.searchSourceList}
-                    disabled={
-                      readOnly ||
-                      !(
-                        value.automatic?.connections ??
-                        catalog.data.discovery_defaults.connections
-                      )
-                    }
-                  >
-                    <legend className={styles.searchLabel}>
-                      {t("MCP connections")}
-                      <FieldHelp label={t("About connection discovery")}>
-                        {t(
-                          "Choose which connections use on-demand discovery. Unchecked connections provide tools directly. New connections follow the MCP tools setting.",
-                        )}
-                      </FieldHelp>
-                    </legend>
-                    {sources
-                      .filter((source) => source.kind === "connections")
-                      .map((source) => (
-                        <label key={source.id} className={styles.searchSource}>
-                          <Checkbox
-                            checked={usesToolDiscovery(value, source)}
-                            onCheckedChange={(checked) =>
-                              draft.setToolSearch((current) =>
-                                toggleDiscoverySource(
-                                  current,
-                                  source,
-                                  checked === true,
-                                  sources,
-                                ),
-                              )
-                            }
-                          />
-                          <span className={styles.searchSourceLabel}>
-                            {source.label}
-                          </span>
-                          {!source.available && (
-                            <small>{t("No enabled tools")}</small>
-                          )}
-                        </label>
-                      ))}
-                  </fieldset>
-                )}
-              {!automatic && (
-                <ToolSearchGroups
-                  draft={draft}
-                  sources={sources}
+            )}
+            {value.mode === "proxy" && (
+              <DisclosureSection
+                className={`${agentStyles.outlinedDisclosure} ${styles.searchAdvanced}`}
+                title={t("Advanced grouping")}
+                summary={
+                  expanded || error
+                    ? undefined
+                    : automatic
+                      ? t("Grouped by source")
+                      : t("Custom groups")
+                }
+                open={expanded || !!error}
+                onOpenChange={setExpanded}
+              >
+                <ChoiceField
+                  label={t("Grouping")}
+                  className={styles.searchMode}
+                  value={automatic ? "automatic" : "custom"}
                   readOnly={readOnly}
-                  error={error}
+                  labelAction={
+                    <FieldHelp label={t("About grouping")}>
+                      <p>
+                        {t(
+                          "Group by source creates one discovery group for each selected source.",
+                        )}
+                      </p>
+                      <p className="mt-2">
+                        {t(
+                          "Custom groups let you organize related sources yourself, with a name and description for each group.",
+                        )}
+                      </p>
+                    </FieldHelp>
+                  }
+                  options={[
+                    { value: "automatic", label: t("Group by source") },
+                    { value: "custom", label: t("Custom groups") },
+                  ]}
+                  onValueChange={(grouping) =>
+                    draft.setToolSearch((current) => ({
+                      ...current,
+                      automatic:
+                        grouping === "automatic"
+                          ? automaticPolicy(current, sources)
+                          : null,
+                      groups:
+                        grouping === "custom" && current.automatic != null
+                          ? automaticSearchGroups(current, sources)
+                          : current.groups,
+                    }))
+                  }
                 />
-              )}
-              {!!draft.plugins.length && (
-                <div className={styles.searchPluginNote}>
-                  <span>{t("Plugins use their own settings")}</span>
-                  <FieldHelp label={t("About plugin discovery")}>
-                    {t(
-                      "Plugins keep their own discovery settings. Use custom groups to include compatible plugins.",
-                    )}
-                  </FieldHelp>
-                </div>
-              )}
-            </DisclosureSection>
+                {automatic && (
+                  <ToolSearchConnections
+                    draft={draft}
+                    sources={sources}
+                    catalog={catalog.data}
+                    readOnly={readOnly}
+                  />
+                )}
+                {!automatic && (
+                  <ToolSearchGroups
+                    draft={draft}
+                    sources={sources}
+                    readOnly={readOnly}
+                    error={error}
+                  />
+                )}
+                {!!draft.plugins.length && (
+                  <div className={styles.searchPluginNote}>
+                    <span>{t("Plugins use their own settings")}</span>
+                    <FieldHelp label={t("About plugin discovery")}>
+                      {t(
+                        "Plugins keep their own discovery settings. Use custom groups to include compatible plugins.",
+                      )}
+                    </FieldHelp>
+                  </div>
+                )}
+              </DisclosureSection>
+            )}
           </>
         )}
         <ErrorNotice error={error} />

@@ -151,6 +151,8 @@ sum(values)
 
 Keep the runner as the only tool call in its Model response. Compose the needed calls inside its code and return only the data the Agent needs.
 
+With a Host-held execution runtime, a background receipt lets the Agent choose independent work or explicitly wait for a result. A later runner does not implicitly wait for an unrelated background Shell command to exit. Check server readiness separately before using it. Independent `run_program` calls from successive Model responses can overlap; `run_code` keeps one persistent inline session per logical Run, so wait for its active execution before another inline feed or `restart=True`. Explicit global sequential mode still waits for actual completion.
+
 For tools with `defer_loading=True`, discover the tool or load its Capability before calling the runner. For large collections, [grouped ToolSearch](tool-search.md#use-with-codeact) supports discovery inside the runner. ToolSearch proxy calls remain sequential, including inside `asyncio.gather`.
 
 ### Compose Browser Tools
@@ -232,6 +234,8 @@ codeact = CodeActCapability(CodeActConfig(
 ```
 
 Use this instance in place of `CodeActCapability()` in the builder. Defaults allow 128 nested tool attempts, concurrency 16, and 300 seconds per runner. Stored data defaults to 256 entries and 10 MiB. Parent tool-call limits and provider ceilings still apply.
+
+The catalog lists callable names and canonical-name mappings; use the native tool definitions for arguments. Set `catalog_argument_schemas=True` in `CodeActConfig` to also include exact argument JSON Schemas in the catalog. This strict boolean defaults to `False`; neither mode includes descriptions, Python declarations, or return schemas. A tool whose result fields a program must use before seeing a result can set Pydantic AI's `include_return_schema=True` so its native definition carries the return schema.
 
 ## Asynchronous Children
 

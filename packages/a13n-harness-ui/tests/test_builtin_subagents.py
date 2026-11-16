@@ -15,6 +15,7 @@ from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, p
 from a13n_harness_ui.errors import CompositionError, ConfigurationError
 from a13n_harness_ui.interactive.setup import SetupWizard
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
+from anyio import fail_after, sleep
 from click.testing import CliRunner
 from pydantic import ValidationError
 
@@ -357,6 +358,10 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
             elif calls == 3:
                 # A finished child with no tools must not retain the parent
                 # composition; explicit resume resolves from the active parent.
+                # Saved terminal status can precede process-local cleanup.
+                with fail_after(10):
+                    while app._subagent_operator._completion_continuations:
+                        await sleep(0)
                 assert not app._subagent_operator._completion_continuations
                 returned = next(
                     part
@@ -387,6 +392,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         configuration_path=path,
         host_mode="webui" if inject_apps else "local",
     ) as app:
+        # The exact usage counts cover explicit waits; an automatic result copy
+        # may also arrive after wait_subagent, depending on timing.
+        app._tool_executions.deliver_subagent = None
         selected_root = tmp_path / "run-only"
         selected_root.mkdir()
         thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))

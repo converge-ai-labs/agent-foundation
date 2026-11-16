@@ -8,9 +8,9 @@ from pydantic_ai.toolsets import ExternalToolset
 
 from a13n_harness.context import AgentContext
 
-from ._instructions import InstructionExternalToolset, tool_instruction
+from ._instructions import InstructionExternalToolset, tool_guidance
 
-_USER_INTERACTION_INSTRUCTION = tool_instruction("ask_user_question")
+_USER_INTERACTION_INSTRUCTION = tool_guidance("ask_user_question")
 
 ASK_USER_QUESTION_KIND = "ask_user_question"
 ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"

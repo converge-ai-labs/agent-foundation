@@ -1,11 +1,8 @@
-import { useAppearance } from "../appearance/react";
 import { BotComposerProvider, BotNavigation, BotPage } from "../bot";
-import { AppearanceSettings } from "../configuration/appearance";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
-import { ShareButton } from "../sharing";
 import { ModelsPage } from "../configuration/models";
-import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
+import { VoicePage, VoiceIndicator } from "../voice";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -19,7 +16,6 @@ import {
   Button,
   Logo,
   Input,
-  ModalFrame,
   Sheet,
   SheetPopup,
   SheetTitle,
@@ -28,19 +24,12 @@ import {
   MenuPopup,
   MenuItem,
   MenuSeparator,
-  MenuCheckboxItem,
 } from "a13n-ui";
 import {
-  Archive,
   ChartBar,
-  Waveform,
-  Brain,
   SidebarSimple,
-  Moon,
   SignOut,
-  Sun,
   List,
-  Users,
   Gear,
   Compass,
   CaretUpDown,
@@ -54,14 +43,17 @@ import { wizardDismissed } from "../setup/wizard-state";
 import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
   SettingsLayout,
-  GeneralSettings,
+  PreferencesPage,
+  WorkspaceSettingsPage,
+  MemorySettings,
+  DiagnosticsPage,
   ConnectionsPage,
   AgentsPage,
   EnvironmentsPage,
 } from "../configuration/settings";
 import { SettingsNavigation } from "../configuration/settings-navigation";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { ErrorNotice } from "./ui";
+import { ErrorNotice, PageHeader } from "./ui";
 import {
   SettingsChoice as ChoiceField,
   SettingsRow,
@@ -73,6 +65,7 @@ import { ParticipantAvatars, ParticipantAvatar } from "./participant-avatars";
 import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
+import { ChatSearchProvider } from "../conversations/chat-search";
 import { ConversationPage } from "../conversations/conversation";
 import { useThread } from "../conversations/queries";
 import { MemoryNavigation, MemoryPage } from "../memory";
@@ -86,7 +79,6 @@ import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 import { WorkbenchSidebar } from "./sidebar";
-import { NotificationSettings } from "./notifications";
 import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 
 const profileColors = [
@@ -116,7 +108,9 @@ export function Workbench(props: {
       <LiveThreadsProvider>
         <UnsentProvider>
           <BotComposerProvider>
-            <WorkbenchContent {...props} />
+            <ChatSearchProvider>
+              <WorkbenchContent {...props} />
+            </ChatSearchProvider>
           </BotComposerProvider>
         </UnsentProvider>
       </LiveThreadsProvider>
@@ -137,10 +131,8 @@ function WorkbenchContent({
   const results = useResults();
   const debug = useDebug();
   const setup = useSetup();
-  const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
-  const { dark, store: appearance } = useAppearance();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => readPreference("sidebar", "expanded") === "collapsed",
   );
@@ -158,13 +150,7 @@ function WorkbenchContent({
     null,
   );
   const sources = useSources();
-  const [peopleOpen, setPeopleOpen] = useState(false);
   const [displayName, setDisplayName] = useState(profile.display_name);
-  const openPeople = () => {
-    setMenu(false);
-    setDisplayName(profile.display_name);
-    setPeopleOpen(true);
-  };
   const [menu, setMenu] = useState(false);
   const mobileMenuButton = useRef<HTMLButtonElement>(null);
   const menuLocation = useRef("");
@@ -259,56 +245,15 @@ function WorkbenchContent({
               <Gear />
               {t("Settings")}
             </MenuItem>
-            {voiceSettings.data?.enabled && (
-              <MenuItem render={<Link to="/live" />}>
-                <Waveform />
-                {t("Live")}
-              </MenuItem>
-            )}
-            {memoryEnabled && (
-              <MenuItem render={<Link to="/memory" />}>
-                <Brain />
-                {t("Memory")}
-              </MenuItem>
-            )}
-            <MenuSeparator />
-            <MenuItem onClick={openPeople}>
-              <Users />
-              {t("People & profile")}
-            </MenuItem>
             <MenuItem render={<Link to="/usage" />}>
               <ChartBar />
               {t("Usage")}
             </MenuItem>
-            <MenuItem render={<Link to="/archived" />}>
-              <Archive />
-              {t("Archived chats")}
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              onClick={() => appearance.setTheme(dark ? "light" : "dark")}
-            >
-              {dark ? <Sun /> : <Moon />}
-              {dark ? t("Light appearance") : t("Dark appearance")}
-            </MenuItem>
-            <MenuCheckboxItem
-              checked={debug.enabled}
-              onCheckedChange={debug.setEnabled}
-              variant="switch"
-            >
-              <span className={styles.debugMenuLabel}>
-                <Bug />
-                {t("Debug mode")}
-              </span>
-            </MenuCheckboxItem>
             <MenuSeparator />
             <MenuItem onClick={forget}>
               <SignOut />
               {t("Log out")}
             </MenuItem>
-            <span className={styles.version}>
-              Harness UI - {status.version}
-            </span>
           </MenuPopup>
         </Menu>
       </div>
@@ -430,7 +375,6 @@ function WorkbenchContent({
             profile={
               <>
                 <VoiceIndicator />
-                <ShareButton />
                 <ParticipantAvatars
                   participants={(live.presence?.participants ?? []).filter(
                     (participant) =>
@@ -558,20 +502,211 @@ function WorkbenchContent({
                         to="/settings/environments?tab=browser"
                         replace
                       />
+                    ) : location.hash === "#bot" ? (
+                      <Navigate to="/settings/bot" replace />
+                    ) : location.hash === "#live" ? (
+                      <Navigate to="/settings/chats#live" replace />
                     ) : (
-                      <GeneralSettings />
+                      <PreferencesPage />
                     )
                   }
                 />
                 <Route
                   path="/settings/appearance"
-                  element={<AppearanceSettings />}
+                  element={<Navigate to="/settings#appearance" replace />}
                 />
                 <Route
                   path="/settings/notifications"
                   element={<Navigate to="/settings#notifications" replace />}
                 />
-                <Route path="/settings/models" element={<ModelsPage />} />
+                <Route
+                  path="/settings/people"
+                  element={
+                    <>
+                      <PageHeader title={t("People & profile")} />{" "}
+                      <div className={styles.stack}>
+                        <SettingsSection title={t("Your profile")}>
+                          <form
+                            className={styles.profileForm}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              if (
+                                !displayName.trim() ||
+                                Array.from(displayName.trim()).length > 80
+                              )
+                                return;
+                              updateProfile({
+                                ...profile,
+                                display_name: displayName.trim(),
+                              });
+                            }}
+                          >
+                            <SettingsRow
+                              label={t("Name")}
+                              controlId="workspace-display-name"
+                            >
+                              <div className={styles.profileNameControl}>
+                                <Input
+                                  aria-label={t("Your display name")}
+                                  id="workspace-display-name"
+                                  value={displayName}
+                                  onChange={(event) =>
+                                    setDisplayName(event.target.value)
+                                  }
+                                />
+                                <Button
+                                  aria-label={t("Save name")}
+                                  type="submit"
+                                  variant="outline"
+                                  disabled={
+                                    !displayName.trim() ||
+                                    Array.from(displayName.trim()).length > 80
+                                  }
+                                >
+                                  {t("Save")}
+                                </Button>
+                              </div>
+                            </SettingsRow>
+                          </form>
+                          <ChoiceField
+                            label={t("Color")}
+                            value={profile.color}
+                            onValueChange={(color) =>
+                              updateProfile({ ...profile, color })
+                            }
+                            options={profileColors.map((color) => ({
+                              ...color,
+                              label: t(color.label),
+                            }))}
+                          />
+                          <SettingsRow label={t("Presence")}>
+                            <span>{t(live.presenceState)}</span>
+                          </SettingsRow>
+                        </SettingsSection>
+                        <SettingsSection title={t("People")}>
+                          {live.presence?.participants.map((participant) => {
+                            const own =
+                              participant.participant_id ===
+                              live.presence?.participant_id;
+                            const samePage =
+                              live.presence?.same_page_participant_ids?.includes(
+                                participant.participant_id,
+                              );
+                            const href =
+                              participant.focus &&
+                              participant.availability === "available"
+                                ? pageLink(
+                                    participant.focus,
+                                    sources.data?.sources,
+                                  )
+                                : undefined;
+                            return (
+                              <div
+                                className={styles.personRow}
+                                key={participant.participant_id}
+                              >
+                                <ParticipantAvatar participant={participant} />
+                                <div className={styles.personInfo}>
+                                  <strong>
+                                    {participant.display_name || t("Anonymous")}
+                                    {own && (
+                                      <span className={styles.personYou}>
+                                        {" "}
+                                        - {t("You")}
+                                      </span>
+                                    )}
+                                  </strong>
+                                  <span>
+                                    {t(
+                                      participant.foreground
+                                        ? "Active"
+                                        : "Away",
+                                    )}
+                                    {samePage ? ` - ${t("This page")}` : ""}
+                                  </span>
+                                  {participant.unavailable_reason && (
+                                    <span>
+                                      {participant.unavailable_reason}
+                                    </span>
+                                  )}
+                                </div>
+                                {href && !own && !samePage && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-label={t("Open page")}
+                                    render={<Link to={href} />}
+                                  >
+                                    {t("Open")}
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </SettingsSection>
+                      </div>
+                    </>
+                  }
+                />
+                <Route
+                  path="/settings/chats"
+                  element={<WorkspaceSettingsPage group="chats" />}
+                />
+                <Route
+                  path="/settings/bot"
+                  element={<WorkspaceSettingsPage group="bot" />}
+                />
+                <Route path="/settings/memory" element={<MemorySettings />} />
+                <Route
+                  path="/settings/diagnostics"
+                  element={
+                    <DiagnosticsPage
+                      instance={
+                        <>
+                          {" "}
+                          <p>
+                            {t("Version")} {status.version} -{" "}
+                            {status.app?.state ?? t("Connected")}
+                          </p>
+                          <p>
+                            {t(
+                              status.features?.host_files
+                                ? "Computer sharing is on for this server."
+                                : "Computer sharing is off. Restart the server without --no-share-computer to turn it on.",
+                            )}
+                          </p>
+                          {status.features?.host_files &&
+                            !status.features?.host_git && (
+                              <p>
+                                {t(
+                                  "Git is unavailable on this server. Files remains available.",
+                                )}
+                              </p>
+                            )}
+                          {status.features?.host_files &&
+                            !status.features?.host_terminal && (
+                              <p>
+                                {t(
+                                  "Terminals aren't supported on this server. POSIX support is required.",
+                                )}
+                              </p>
+                            )}
+                        </>
+                      }
+                    />
+                  }
+                />
+                <Route
+                  path="/settings/models"
+                  element={
+                    <>
+                      <ModelsPage />
+                      <section id="accounts">
+                        <AccountsPage />
+                      </section>
+                    </>
+                  }
+                />
                 <Route path="/settings/agents" element={<AgentsPage />} />
                 <Route
                   path="/settings/capabilities"
@@ -611,7 +746,15 @@ function WorkbenchContent({
                   }
                 />
                 <Route path="/settings/source" element={<SourcePage />} />
-                <Route path="/settings/accounts" element={<AccountsPage />} />
+                <Route
+                  path="/settings/accounts"
+                  element={
+                    <Navigate
+                      to={"/settings/models" + location.search + "#accounts"}
+                      replace
+                    />
+                  }
+                />
                 <Route
                   path="/settings/catalog"
                   element={<Navigate to="/settings/agents" replace />}
@@ -636,140 +779,6 @@ function WorkbenchContent({
           </NativeWorkspace>
         </main>
       </div>
-      <ModalFrame
-        open={peopleOpen}
-        onOpenChange={setPeopleOpen}
-        title={t("People in this workspace")}
-        closeLabel={t("Close")}
-      >
-        <div className={styles.stack}>
-          <SettingsSection title={t("Your profile")}>
-            <form
-              className={styles.profileForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (
-                  !displayName.trim() ||
-                  Array.from(displayName.trim()).length > 80
-                )
-                  return;
-                updateProfile({ ...profile, display_name: displayName.trim() });
-                setPeopleOpen(false);
-              }}
-            >
-              <SettingsRow label={t("Name")} controlId="workspace-display-name">
-                <div className={styles.profileNameControl}>
-                  <Input
-                    aria-label={t("Your display name")}
-                    id="workspace-display-name"
-                    value={displayName}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                  />
-                  <Button
-                    aria-label={t("Save name")}
-                    type="submit"
-                    variant="outline"
-                    disabled={
-                      !displayName.trim() ||
-                      Array.from(displayName.trim()).length > 80
-                    }
-                  >
-                    {t("Save")}
-                  </Button>
-                </div>
-              </SettingsRow>
-            </form>
-            <ChoiceField
-              label={t("Color")}
-              value={profile.color}
-              onValueChange={(color) => updateProfile({ ...profile, color })}
-              options={profileColors.map((color) => ({
-                ...color,
-                label: t(color.label),
-              }))}
-            />
-            <SettingsRow label={t("Presence")}>
-              <span>{t(live.presenceState)}</span>
-            </SettingsRow>
-          </SettingsSection>
-          <details className={styles.details}>
-            <summary>{t("About this instance")}</summary>
-            <p>
-              {t("Version")} {status.version} -{" "}
-              {status.app?.state ?? t("Connected")}
-            </p>
-            <p>
-              {t(
-                status.features?.host_files
-                  ? "Computer sharing is on for this server."
-                  : "Computer sharing is off. Restart the server without --no-share-computer to turn it on.",
-              )}
-            </p>
-            {status.features?.host_files && !status.features?.host_git && (
-              <p>
-                {t(
-                  "Git is unavailable on this server. Files remains available.",
-                )}
-              </p>
-            )}
-            {status.features?.host_files && !status.features?.host_terminal && (
-              <p>
-                {t(
-                  "Terminals aren't supported on this server. POSIX support is required.",
-                )}
-              </p>
-            )}
-          </details>
-          <SettingsSection title={t("People")}>
-            {live.presence?.participants.map((participant) => {
-              const own =
-                participant.participant_id === live.presence?.participant_id;
-              const samePage =
-                live.presence?.same_page_participant_ids?.includes(
-                  participant.participant_id,
-                );
-              const href =
-                participant.focus && participant.availability === "available"
-                  ? pageLink(participant.focus, sources.data?.sources)
-                  : undefined;
-              return (
-                <div
-                  className={styles.personRow}
-                  key={participant.participant_id}
-                >
-                  <ParticipantAvatar participant={participant} />
-                  <div className={styles.personInfo}>
-                    <strong>
-                      {participant.display_name || t("Anonymous")}
-                      {own && (
-                        <span className={styles.personYou}> - {t("You")}</span>
-                      )}
-                    </strong>
-                    <span>
-                      {t(participant.foreground ? "Active" : "Away")}
-                      {samePage ? ` - ${t("This page")}` : ""}
-                    </span>
-                    {participant.unavailable_reason && (
-                      <span>{participant.unavailable_reason}</span>
-                    )}
-                  </div>
-                  {href && !own && !samePage && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t("Open page")}
-                      render={<Link to={href} />}
-                      onClick={() => setPeopleOpen(false)}
-                    >
-                      {t("Open")}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </SettingsSection>
-        </div>
-      </ModalFrame>
     </div>
   );
   return (

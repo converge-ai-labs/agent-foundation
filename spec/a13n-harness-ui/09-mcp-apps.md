@@ -29,7 +29,7 @@ Multiple Views can share one connection. They do not share follow-up result hist
 
 Connection retention and retirement follow the generic runtime contract. Multiple Views borrow the same eligible generation; View closure does not close it. Later explicit activation can create a replacement, but cannot recover the old server's private business state.
 
-Tool/resource discovery is refreshed through the live connection rather than a stale per-Run cache. Run-local notification handlers must not replace the connection's stable Host handlers. MCP sessions, process handles and resolved credentials are never serialized.
+Each Run reads the tool list on first use and caches it for that Run's model steps, bound to its original connection generation. A new Run reads the list again, even when it borrows the same retained client. Host-owned clients do not install Run-local `notifications/tools/list_changed` invalidation handlers, so mid-Run tool-list changes appear in the next Run. Resource discovery continues through the live connection. Run-local notification handlers must not replace the connection's stable Host handlers. MCP sessions, process handles and resolved credentials are never serialized.
 
 ## Original Capture and Presentation
 

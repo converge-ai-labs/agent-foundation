@@ -230,5 +230,17 @@ async def content(
         )
     if entry.kind == "tool_result":
         hint = "A retained tool execution ended. Read its result with tool_execution_result: "
-        return (_text(entry, hint + json.dumps(entry.payload, ensure_ascii=False)),)
+        payload = dict(entry.payload)
+        if payload.get("status") == "succeeded":
+            payload["status"] = "finished"
+        return (
+            TextContent(
+                hint + json.dumps(payload, ensure_ascii=False),
+                metadata={
+                    "source_id": entry.id,
+                    "notice_kind": "tool_execution.completion",
+                    "execution_ids": [payload["execution_id"]],
+                },
+            ),
+        )
     return _child_result(entry)

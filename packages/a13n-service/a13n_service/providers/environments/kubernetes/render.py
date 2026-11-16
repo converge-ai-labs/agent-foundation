@@ -21,6 +21,7 @@ from a13n_harness.providers.environment.kubernetes.configuration import (
 )
 from a13n_harness.providers.environment.kubernetes.runtime import labels, profile_fingerprint
 
+from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe, Metadata, borrowed_resources
 
 
@@ -112,13 +113,16 @@ def render(
         container["workingDir"] = recipe.working_directory
         container.setdefault("env", []).extend(
             {"name": key, "value": value}
-            for key, value in {
-                "A13N_ENVD_DEVICE_ID": state.environment_id,
-                "A13N_ENVD_TRANSPORT": "http",
-                "A13N_ENVD_HTTP_BIND": f"0.0.0.0:{recipe.envd_port}",
-                "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                "A13N_ENVD_HTTP_CREDENTIAL_FILE": CREDENTIAL_FILE,
-            }.items()
+            for key, value in envd_environment(
+                {
+                    "A13N_ENVD_DEVICE_ID": state.environment_id,
+                    "A13N_ENVD_TRANSPORT": "http",
+                    "A13N_ENVD_HTTP_BIND": f"0.0.0.0:{recipe.envd_port}",
+                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                    "A13N_ENVD_HTTP_CREDENTIAL_FILE": CREDENTIAL_FILE,
+                },
+                recipe.envd,
+            ).items()
         )
         spec.setdefault("volumes", []).append(
             {"name": CREDENTIAL_VOLUME, "secret": {"secretName": state.pod_name + "-envd", "defaultMode": 0o400}}

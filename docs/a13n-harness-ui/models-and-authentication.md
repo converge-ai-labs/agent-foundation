@@ -178,6 +178,17 @@ model_configuration:
 
 Save `key-gateway`, use the gateway's model ID and endpoint, validate, then test a request. The SDK appends version/resource paths; appending `/v1beta` or `/v1beta1` does not switch transports. `google-gla:`, `google-vertex:`, and `gemini:` are Cloud aliases. This route supplies API-key authentication, not Cloud IAM/service accounts.
 
+### Unmapped Chat Completions diagnostics
+
+For a Chat Completions Model using `OpenAIChatModel`, merge this opt-in setting into its Model file:
+
+```yaml
+settings:
+  openai_include_unmapped_response_data: true
+```
+
+Unknown response fields are retained in native `ModelResponse.provider_details.unmapped`; streaming stores them under `unmapped.chunks`. Captured Model recipes and saved Thread history preserve them. The adapter does not echo them in later requests. The default is off, and this is not a Responses API setting or a new diagnostics panel. Raw values may be sensitive and increase saved history size; inspect them before sharing state. Provider-history repair may discard them together with other provider-native metadata.
+
 ### OpenAI 12-hour prompt caching
 
 For a supported Responses API Model, merge these fields into its Model file:
@@ -501,4 +512,4 @@ Some reviewed API model IDs pair a thinking preset with `settings.max_tokens`. T
 
 For example, reviewed OpenAI effort presets use 16,384/32,768/65,536 for low/medium/high-or-xhigh; reviewed Claude adaptive presets use 32,768, while explicit 8,192-token extended thinking keeps 16,384 output. Gemini 2.5 high uses a 24,576-token thinking budget within a 32,768 output cap. Applicability is by exact reviewed model and native profile, not a model-name prefix; unreviewed adaptive Claude retains the 16,384 baseline. Other unreviewed routes gain no new cap. Subscription creation does not use API presets.
 
-Edit `settings.max_tokens` independently later. `/thinking` does not recalculate it, nor does loading/reusing a Model reapply a preset. Custom endpoints can have different limits. Native serialization determines the wire field; the installed DeepSeek adapter emits `max_completion_tokens`, whose live acceptance was not established by local mock-response tests. Validate actual endpoint behavior before relying on that cap.
+Edit `settings.max_tokens` independently later. `/thinking` does not recalculate it, nor does loading/reusing a Model reapply a preset. Custom endpoints can have different limits. Native serialization determines the wire field; the installed DeepSeek adapter emits `max_tokens`, whose live acceptance was not established by local mock-response tests. Validate actual endpoint behavior before relying on that cap.

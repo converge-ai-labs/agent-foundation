@@ -1,3 +1,4 @@
+import { useBackground } from "./background-context";
 import { useTranslation } from "../i18n";
 import { HelpTip } from "../shell/help-tip";
 import { ThreadBotNote } from "../bot-notes";
@@ -15,34 +16,19 @@ import {
   MenuPopup,
   MenuItem,
 } from "a13n-ui";
-import {
-  ListChecks,
-  Notebook,
-  UsersThree,
-  Terminal,
-  Wrench,
-  X,
-  DotsThree,
-} from "@phosphor-icons/react";
+import { ListChecks, Notebook, X, DotsThree } from "@phosphor-icons/react";
 import { type Schema } from "../transport/client";
 import { useGuestAccess } from "../transport/context";
 import { useThreadWork, workCaption } from "./work";
 import { useDebug } from "../shell/debug";
 import { ErrorNotice } from "../shell/ui";
-import { TaskIcon, TaskList, NoteList } from "./work-lists";
-import { Children } from "./details";
-import type { FocusDisplay } from "./stream";
-import { Processes } from "./processes";
-import { ToolExecutions, useToolExecutionsPage } from "./tool-executions";
+import { TaskList, NoteList } from "./work-lists";
 import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
 
 const activityViews = {
   tasks: { Icon: ListChecks },
   notes: { Icon: Notebook },
-  children: { Icon: UsersThree },
-  processes: { Icon: Terminal },
-  tools: { Icon: Wrench },
 };
 type ActivityView = keyof typeof activityViews;
 
@@ -56,21 +42,19 @@ function Loading({ label }: { label: string }) {
 }
 export function WorkInspector({
   threadId,
-  display,
   connected = true,
-  reconcile,
   goal,
   activity,
   onUseGoal,
   status,
   connectionStatus,
+  showDetails = true,
 }: {
+  showDetails?: boolean;
   status?: ReactNode;
   connectionStatus?: ReactNode;
   threadId: string;
-  display: FocusDisplay;
   connected?: boolean;
-  reconcile: () => void;
   goal?: Schema<"GoalView"> | null;
   activity?: Schema<"RootActivityView">;
   onUseGoal?: () => void;
@@ -79,9 +63,6 @@ export function WorkInspector({
   const labels: Record<ActivityView, string> = {
     tasks: t("Tasks"),
     notes: t("Notes"),
-    children: t("Subagents"),
-    processes: t("Processes"),
-    tools: t("Tools"),
   };
   const guest = useGuestAccess();
   const debug = useDebug();
@@ -99,55 +80,30 @@ export function WorkInspector({
   const saved = work.tasks;
   const page = work.tasks.data?.tasks.page ?? undefined;
   const summary = work.summary.data;
-  const active = summary?.tasks.active;
   const complete = summary?.tasks.completed ?? 0;
   const total = summary?.tasks.total ?? 0;
-  const childActive = summary?.children.active ?? 0;
-  const processes = display.processes.background;
-  const running = processes.filter((item) => item.phase === "running").length;
-  const incomplete =
-    !connected ||
-    display.gap ||
-    [...display.children.values()].some((child) => child.display.gap);
-  const toolsPage = useToolExecutionsPage(threadId, threadId, 0, !guest);
-  const toolCount = toolsPage.data?.length;
   const counts: Partial<Record<ActivityView, number | string>> = {
     tasks: total ? `${complete}/${total}` : undefined,
     notes: summary?.notes.total,
-    children: childActive,
-    processes: running,
-    tools: toolCount === 20 ? "20+" : toolCount,
   };
-  const tabs = (
-    ["tasks", "notes", "children", "processes", "tools"] as const
-  ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
+  const hasActivityCard = !!useBackground().threadId;
+  const tabs = ["tasks", "notes"] as const;
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
     <div className={styles.strip} aria-label={t("Work inspection")}>
-      {(goal || active) && (
+      {showDetails && goal && (
         <div className={styles.summary}>
-          {goal && (
-            <GoalStatus
-              goal={goal}
-              activity={activity}
-              open={tab === "goal"}
-              onOpenChange={(open) =>
-                setTab((current) =>
-                  open ? "goal" : current === "goal" ? null : current,
-                )
-              }
-              onUseObjective={onUseGoal}
-            />
-          )}
-          {active && (
-            <span
-              className={styles.active}
-              title={active.active_form || active.subject}
-            >
-              <TaskIcon status={active.status} />
-              <span>{active.active_form || active.subject}</span>
-            </span>
-          )}
+          <GoalStatus
+            goal={goal}
+            activity={activity}
+            open={tab === "goal"}
+            onOpenChange={(open) =>
+              setTab((current) =>
+                open ? "goal" : current === "goal" ? null : current,
+              )
+            }
+            onUseObjective={onUseGoal}
+          />
         </div>
       )}
       <Dialog
@@ -157,77 +113,67 @@ export function WorkInspector({
         }}
       >
         <div className={styles.shortcuts}>
-          {tabs.map((item) => {
-            const { Icon } = activityViews[item];
-            const label = labels[item];
-            return (
-              <DialogTrigger
-                key={item}
-                render={<Button variant="ghost" size="sm" />}
-                className={styles.shortcut}
-                aria-label={t("Inspect {{activity}}", {
-                  activity: label.toLowerCase(),
-                })}
-                onClick={(event) => {
-                  returnFocus.current = event.currentTarget;
-                  setTab(item);
-                }}
-              >
-                <Icon />
-                {!!counts[item] && (
-                  <span className={styles.count}>{counts[item]}</span>
-                )}
-              </DialogTrigger>
-            );
-          })}
-          <Menu>
-            <MenuTrigger
-              ref={moreTrigger}
-              render={<Button variant="ghost" size="sm" />}
-              className={styles.more}
-              aria-label={t("More activity")}
-            >
-              <DotsThree />
-              {!guest && running > 0 && (
-                <span
-                  className={styles.backgroundActivity}
-                  aria-label={t("{{count}} observed running processes", {
-                    count: running,
+          {showDetails &&
+            !hasActivityCard &&
+            tabs.map((item) => {
+              const { Icon } = activityViews[item];
+              const label = labels[item];
+              return (
+                <DialogTrigger
+                  key={item}
+                  render={<Button variant="ghost" size="sm" />}
+                  className={styles.shortcut}
+                  aria-label={t("Inspect {{activity}}", {
+                    activity: label.toLowerCase(),
                   })}
-                  title={t("{{count}} observed running processes", {
-                    count: running,
-                  })}
+                  onClick={(event) => {
+                    returnFocus.current = event.currentTarget;
+                    setTab(item);
+                  }}
                 >
-                  <Terminal />
-                  <span>{running}</span>
-                </span>
-              )}
-            </MenuTrigger>
-            <MenuPopup
-              align="end"
-              finalFocus={tab !== null ? false : undefined}
-            >
-              {tabs.map((item) => {
-                const { Icon } = activityViews[item];
-                const label = labels[item];
-                return (
-                  <MenuItem
-                    key={item}
-                    onClick={() => {
-                      returnFocus.current = moreTrigger.current;
-                      setTab(item);
-                    }}
-                  >
-                    <Icon />
-                    {label}
-                    {!!counts[item] && (
-                      <span className={styles.count}>{counts[item]}</span>
-                    )}
-                  </MenuItem>
-                );
-              })}
-            </MenuPopup>
-          </Menu>
+                  <Icon />
+                  {!!counts[item] && (
+                    <span className={styles.count}>{counts[item]}</span>
+                  )}
+                </DialogTrigger>
+              );
+            })}
+          {showDetails && !hasActivityCard && (
+            <Menu>
+              <MenuTrigger
+                ref={moreTrigger}
+                render={<Button variant="ghost" size="sm" />}
+                className={styles.more}
+                aria-label={t("More activity")}
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup
+                align="end"
+                finalFocus={tab !== null ? false : undefined}
+              >
+                {tabs.map((item) => {
+                  const { Icon } = activityViews[item];
+                  const label = labels[item];
+                  return (
+                    <MenuItem
+                      key={item}
+                      onClick={() => {
+                        returnFocus.current = moreTrigger.current;
+                        setTab(item);
+                      }}
+                    >
+                      <Icon />
+                      {label}
+                      {!!counts[item] && (
+                        <span className={styles.count}>{counts[item]}</span>
+                      )}
+                    </MenuItem>
+                  );
+                })}
+              </MenuPopup>
+            </Menu>
+          )}
           <div className={styles.connection}>{connectionStatus}</div>
           {status && <div className={styles.status}>{status}</div>}
         </div>
@@ -242,10 +188,6 @@ export function WorkInspector({
               {t("Chat activity")}
             </DialogTitle>
             <HelpTip label={t("About activity")}>
-              {key === "processes" &&
-                t(
-                  "Recent processes from this chat and its subagents. Other server processes are not shown. ",
-                )}
               {workCaption(
                 t,
                 key === "notes" ? work.notes.data : work.tasks.data,
@@ -286,9 +228,7 @@ export function WorkInspector({
               })}
             </div>
             <div className={styles.inspectorBody}>
-              {key !== "tools" && (
-                <h3 className={styles.panelTitle}>{labels[key]}</h3>
-              )}
+              <h3 className={styles.panelTitle}>{labels[key]}</h3>
               {key === "tasks" && (
                 <>
                   <ErrorNotice
@@ -304,16 +244,6 @@ export function WorkInspector({
                   <TaskList page={page} />
                 </>
               )}
-              {key === "tools" && tab === key && (
-                <ToolExecutions threadId={threadId} />
-              )}
-              {key === "processes" && tab === key && (
-                <Processes
-                  observations={processes}
-                  omitted={display.processes.omitted}
-                  incomplete={incomplete}
-                />
-              )}
               {key === "notes" && tab === key && (
                 <>
                   <ErrorNotice
@@ -328,25 +258,6 @@ export function WorkInspector({
                   )}
                   <NoteList page={work.notes.data?.notes.page} />
                   {!guest && <ThreadBotNote threadId={threadId} />}
-                </>
-              )}
-              {key === "children" && tab === key && (
-                <>
-                  {summary &&
-                    ((summary.children.active ?? 0) > 0 ||
-                      (summary.children.unavailable ?? 0) > 0) && (
-                      <p className={styles.caption}>
-                        {t("{{active}} active - {{unavailable}} unavailable", {
-                          active: summary.children.active ?? 0,
-                          unavailable: summary.children.unavailable ?? 0,
-                        })}
-                      </p>
-                    )}
-                  <Children
-                    threadId={threadId}
-                    reconcile={reconcile}
-                    display={display}
-                  />
                 </>
               )}
             </div>

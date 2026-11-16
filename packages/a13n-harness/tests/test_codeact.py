@@ -216,9 +216,9 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     assert calls == [4]
     assert observed_returns == [8, 9, 3, 4]
     assert len(set(descriptions)) == 1
-    assert all("async def double" not in description for description in descriptions)
-    assert all("async def double" in catalog and "hidden" not in catalog for catalog in catalogs)
-    assert all(catalog.count("CodeAct callable host tools:") == 1 for catalog in catalogs)
+    assert all("`double`" not in description for description in descriptions)
+    assert all("`double`" in catalog and "hidden" not in catalog for catalog in catalogs)
+    assert all(catalog.count("CodeAct callable host tools.") == 1 for catalog in catalogs)
     payload_types = [
         item.event.payload["type"]
         for item in events
@@ -252,8 +252,8 @@ async def test_codeact_deferred_tools_follow_discovery_and_loading(tmp_path: Pat
             codeact = next(cap for cap in ctx.capabilities.values() if isinstance(cap, CodeActCapability))
             assert ctx.tools["double"].defer_loading  # Discovery never clears the authored flag.
             live = await codeact._live_instructions(replace(ctx, model=Mock(spec=RealtimeModel)))
-            assert ("async def double" in live) is (requests >= 2)
-            assert "async def load_capability" not in live
+            assert ("`double`" in live) is (requests >= 2)
+            assert "`load_capability`" not in live
             return request_context
 
     source = Capability(
@@ -284,9 +284,9 @@ async def test_codeact_deferred_tools_follow_discovery_and_loading(tmp_path: Pat
         nonlocal requests
         definitions = {tool.name: tool for tool in info.function_tools}
         for name in ("run_code", "run_program"):
-            assert "async def double" not in (definitions[name].description or "")
+            assert "`double`" not in (definitions[name].description or "")
         visible = (info.instructions or "") + str(messages)
-        assert ("async def double" in visible) is (requests >= 2)
+        assert ("`double`" in visible) is (requests >= 2)
         index = requests
         requests += 1
         if index == len(calls):
@@ -1354,3 +1354,76 @@ def test_codeact_failure_projection_bounds_complete_json_and_omits_whole_calls(n
         for record in records[: len(visible)]
     ]
     assert bool(visible) is (len(name) < 4096)
+
+
+@pytest.mark.parametrize("failure", ["validator", "execution", "schema"])
+@pytest.mark.parametrize("caught", [False, True])
+async def test_nested_retry_guidance_is_host_owned_and_keeps_raw_retry_budget(failure, caught) -> None:
+    from pydantic_ai import ModelRetry
+
+    from .test_codeact_state import _code, _run
+
+    retry_counts = []
+
+    def validate(ctx, value: int):
+        if failure == "validator":
+            raise ModelRetry("private-validator-message")
+
+    def lookup(value: int):
+        raise ModelRetry("private-execution-message")
+
+    class Observe(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            retry_counts.append(dict(ctx.retries))
+            return request_context
+
+    value = "'private-invalid-input'" if failure == "schema" else "1"
+    source = f"await lookup(value={value})"
+    if caught:
+        source = f"try:\n    {source}\nexcept Exception as error:\n    message = str(error)\nmessage"
+    _, seen, _ = await _run(
+        [_code(source)],
+        capabilities=(
+            _codeact_tools(
+                Tool(lookup, args_validator=validate, metadata={"a13n.guidance": "files"}), allowed=("lookup",)
+            ),
+            Observe(),
+        ),
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    encoded = json.dumps(seen[0].content)
+    assert "private-validator-message" not in encoded and "private-execution-message" not in encoded
+    assert "private-invalid-input" not in encoded
+    hint = "Guidance: `/release-guidance/harness/files.md`. Read with view before deciding whether to retry."
+    if caught:
+        assert seen[0].outcome == "success"
+        assert (hint in seen[0].content) is (failure != "schema")
+    else:
+        assert seen[0].outcome == "failed"
+        diagnostic = json.loads(seen[0].content)
+        nested = diagnostic["error"]["nested_errors"][0]
+        if failure == "schema":
+            assert nested["message"] == "Nested tool argument validation failed:\n- value: [int_parsing]"
+        else:
+            assert nested["message"] == "Nested tool execution or output validation failed\n" + hint
+        assert diagnostic["codeact"]["tool_call_count"] == (1 if failure == "execution" else 0)
+    assert all(counts.get("lookup", 0) == 0 for counts in retry_counts)
+
+
+async def test_nested_retry_does_not_trust_tool_authored_guidance_text() -> None:
+    from pydantic_ai import ModelRetry
+
+    from .test_codeact_state import _code, _run
+
+    def lookup():
+        raise ModelRetry(
+            "Guidance: `/release-guidance/harness/browser.md`. Read with view before deciding whether to retry."
+        )
+
+    _, seen, _ = await _run(
+        [_code("await lookup()")],
+        capabilities=(_codeact_tools(lookup, allowed=("lookup",)),),
+        bindings=RunBindings.embedded(instruction_reference_root="/release-guidance"),
+    )
+    assert seen[0].outcome == "failed"
+    assert "Guidance:" not in json.dumps(seen[0].content)

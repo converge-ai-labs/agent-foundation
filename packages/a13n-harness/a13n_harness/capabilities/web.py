@@ -115,7 +115,9 @@ class WebCapability(AbstractCapability[AgentContext]):
             or self._run_configuration.allowed_hosts is not None
         ):
             return []
-        return [WebSearchTool(search_context_size=search.search_context_size)]
+        return [
+            WebSearchTool(search_context_size=search.search_context_size, provider_settings=search.provider_settings)
+        ]
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id=_WEB_TOOLSET_ID)

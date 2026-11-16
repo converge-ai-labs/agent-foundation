@@ -29,7 +29,10 @@
 }
 /* Menu focus guards can sit between the two action buttons while open. */
 @media (pointer: fine) {
-  .navigationHeadingActions > button,
+  .navigationHeadingActions > button {
+    inline-size: 24px;
+    block-size: 22px;
+  }
   .messageActions > button {
     inline-size: 22px;
     block-size: 22px;
@@ -410,18 +413,24 @@
      the row is hovered or focused, so idle titles use the full row width. */
   .threadActions {
     position: absolute;
-    top: 0;
+    top: 50%;
+    translate: 0 -50%;
     inset-inline-end: 0;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
     padding-inline-end: 32px;
   }
-  .threadRow:has(.threadStar):is(:hover, :focus-within, :has([data-popup-open]))
+  .threadRow:has(.threadStar, .threadStatus, .draftMarker, .resultDot):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
     .threadLink {
     padding-inline-end: 8px;
   }
-  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
-    visibility: hidden;
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
+    :is(.threadStar, .threadStatus, .draftMarker, .resultDot) {
+    opacity: 0;
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
@@ -528,9 +537,14 @@
   }
 }
 .resultDot {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+}
+.resultDot::before {
+  content: "";
   width: 7px;
   height: 7px;
-  flex: 0 0 7px;
   border-radius: 50%;
   background: var(--info-foreground);
 }
@@ -574,6 +588,23 @@
 .form {
   display: grid;
   gap: 16px;
+}
+:global([data-a13n-modal][data-size="md"]):has(.renameField) {
+  max-width: 400px;
+}
+.renameField {
+  position: relative;
+}
+.renameField input {
+  height: 40px;
+  padding-inline-end: 42px;
+}
+.renameField .generateTitle {
+  position: absolute;
+  inset-inline-end: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--a13n-secondary);
 }
 .summary {
   border-radius: 8px;
@@ -888,6 +919,7 @@
   list-style: none;
   transition: color 120ms ease;
 }
+.noticeSummary::before,
 .reasoning > summary::before {
   content: none;
 }
@@ -897,17 +929,17 @@
 .reasoning > summary:is(:hover, :focus-visible) {
   color: var(--a13n-text);
 }
-.reasoningCaret {
+.logCaret {
   flex: none;
   width: 12px;
   height: 12px;
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.reasoning[open] .reasoningCaret {
+details[open] > summary > .logCaret {
   transform: rotate(90deg);
 }
-.reasoning > summary:is(:hover, :focus-visible) .reasoningCaret {
+summary:is(:hover, :focus-visible) > .logCaret {
   opacity: 1;
 }
 .reasoningBody {
@@ -959,11 +991,6 @@
 }
 .children {
   margin-top: 12px;
-}
-.childControls {
-  display: grid;
-  gap: 12px;
-  margin-top: 24px;
 }
 .childControlActions {
   display: flex;
@@ -1035,6 +1062,7 @@
   margin-top: 4px;
 }
 .composerInput {
+  position: relative;
   --harness-control-height: 32px;
   display: grid;
   --composer-text-inset: 8px;
@@ -1069,7 +1097,7 @@
   .messageActions,
   .composerInput,
   .activity > summary,
-  .reasoningCaret,
+  .logCaret,
   .executionCaret,
   .executionToggle {
     transition: none;
@@ -1575,6 +1603,7 @@ dl.detailGrid > .detailLongRow dd {
 
 /* Attachment identities live in the editor text; widgets are their presentation. */
 .inlineAttachment {
+  position: relative;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
@@ -1604,21 +1633,13 @@ dl.detailGrid > .detailLongRow dd {
   padding: 0 7px;
   min-width: 0;
 }
-.inlineAttachmentOpen:has(img) {
-  padding-inline-start: 5px;
-}
 .inlineAttachmentOpen:has(+ .inlineAttachmentRemove) {
   padding-inline-end: 1px;
 }
-.inlineAttachment:has(img) {
-  height: 44px;
-}
 .inlineAttachmentOpen img {
   width: 36px;
-  height: 36px;
+  height: 100%;
   object-fit: contain;
-  border-radius: 4px;
-  flex-shrink: 0;
 }
 .inlineAttachmentOpen img[hidden] {
   display: none;
@@ -1654,6 +1675,72 @@ dl.detailGrid > .detailLongRow dd {
     min-width: 44px;
   }
 }
+/* Reserve the same space through upload and thumbnail decoding. */
+.inlineAttachment[data-preview]:not(:has(img[data-failed])) {
+  width: 112px;
+  height: 60px;
+  border: 0;
+  border-radius: 7px;
+  outline: 1px solid var(--a13n-border-soft);
+  outline-offset: -1px;
+
+  .inlineAttachmentOpen {
+    width: 100%;
+    padding: 0;
+    cursor: zoom-in;
+  }
+  img {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+  }
+  .inlineAttachmentOpen span {
+    display: none;
+  }
+  .inlineAttachmentRemove {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  &:hover .inlineAttachmentRemove,
+  &:focus-within .inlineAttachmentRemove {
+    opacity: 1;
+    pointer-events: auto;
+    background: transparent;
+  }
+  @media (pointer: coarse) {
+    .inlineAttachmentRemove {
+      width: 44px;
+      height: 44px;
+      opacity: 1;
+      pointer-events: auto;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 5px;
+    }
+  }
+  @media (max-width: 640px) {
+    width: 96px;
+    height: 52px;
+  }
+}
+.inlineAttachment[data-selected] {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.inlineAttachment[data-selected]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--a13n-signal) 22%, transparent);
+  pointer-events: none;
+}
 .attachmentThumbnail {
   width: 36px;
   height: 36px;
@@ -1663,6 +1750,35 @@ dl.detailGrid > .detailLongRow dd {
 }
 .attachmentThumbnail[hidden] {
   display: none;
+}
+.sentImage > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  min-width: 24px;
+  min-height: 26px;
+  margin-inline-end: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: zoom-in;
+}
+.sentImage img {
+  width: auto;
+  height: auto;
+  max-width: 36px;
+  max-height: 26px;
+  border-radius: 3px;
+}
+.sentImage > button:not(:has(img[data-failed])) > span {
+  display: none;
+}
+.sentImage > button:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
 }
 .inputText {
   font-size: inherit;
@@ -1811,6 +1927,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 
 .readerFrame {
+  --reader-fade-top: 20px;
   position: relative;
   isolation: isolate;
   display: flex;
@@ -1825,7 +1942,7 @@ dl.detailGrid > .detailLongRow dd {
   scrollbar-gutter: stable both-edges;
   /* Match the fade depth so the first message stays fully legible
      at scroll origin, then dissolves as it approaches the titlebar. */
-  padding-top: 48px;
+  padding-top: var(--reader-fade-top);
 }
 /* One masked surface keeps diffusion and tint on the same continuous curve.
    Stacking backdrop filters leaves dark halos around partially faded text. */
@@ -2144,7 +2261,7 @@ div:has(+ .execution) > .assistantMessage {
 }
 
 @media (hover: none), (pointer: coarse) {
-  .reasoningCaret,
+  .logCaret,
   .executionCaret {
     opacity: 1;
   }
@@ -2248,4 +2365,13 @@ div:has(+ .execution) > .assistantMessage {
 
 .composerActions > button[data-dictation-mic] {
   margin-inline-end: 4px;
+}
+
+.inputAuthor {
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-secondary);
+}
+
+.noticeSummary {
+  gap: 8px;
 }

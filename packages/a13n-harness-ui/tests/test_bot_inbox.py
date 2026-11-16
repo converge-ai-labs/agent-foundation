@@ -46,7 +46,9 @@ async def retain(app, connector_id, inputs):
 
 async def configure(app) -> ConnectorConfiguration:
     return await app._store.connectors.configure(
-        ConnectorConfiguration(connector_id="connector-example", kind="example", deliver_to_bot=True)
+        ConnectorConfiguration(
+            connector_id="connector-example", kind="example", group_name="example", deliver_to_bot=True
+        )
     )
 
 

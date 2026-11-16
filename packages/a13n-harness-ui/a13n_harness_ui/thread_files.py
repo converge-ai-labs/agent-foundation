@@ -19,7 +19,7 @@ from uuid import uuid4
 
 from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_harness_ui.file_context import CapturedSource
 
@@ -40,6 +40,13 @@ class ThreadAttachment(BaseModel):
     media_type: str
     size: int
     source: CapturedSource | None = None
+
+
+class InputAttachmentReference(BaseModel):
+    """An ordered input reference to a file staged in the same Thread."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    attachment_id: str = Field(min_length=1, max_length=100)
 
 
 @dataclass(frozen=True, slots=True)

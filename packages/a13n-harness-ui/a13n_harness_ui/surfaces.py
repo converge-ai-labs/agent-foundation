@@ -66,7 +66,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory", "live", "bot"]
+    kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -264,6 +264,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    display_id: str | None = Field(default=None, description="Native display item identity, when available.")
     duration_ms: int | None = Field(default=None, ge=0, description="Recorded elapsed time for this display item.")
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
@@ -568,7 +569,14 @@ class ChildActivityView(SurfaceModel):
     dropped_tool_calls: int = Field(default=0, ge=0)
 
 
+class ChildExecutionModel(SurfaceModel):
+    name: str
+    identity: str
+    thinking: str
+
+
 class ChildExecutionView(SurfaceModel):
+    model: ChildExecutionModel | None = None
     execution_id: str = Field(min_length=1, max_length=80)
     root_thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str = Field(min_length=1, max_length=80)
@@ -682,7 +690,7 @@ class ThreadWork(SurfaceModel):
 
 
 class ToolExecutionView(SurfaceModel):
-    """Detached status only; native results stay behind Harness result tools."""
+    """Detached execution status; output is read separately without acknowledgement."""
 
     execution_id: str
     thread_id: str
@@ -695,7 +703,18 @@ class ToolExecutionView(SurfaceModel):
     result_available: bool = False
     foreground_released: bool = False
     delivery_acknowledged: bool = False
+    cancel_requested: bool = False
     available_actions: tuple[Literal["cancel"], ...] = ()
+
+
+class ToolExecutionOutputView(SurfaceModel):
+    execution: ToolExecutionView
+    input: str | None = None
+    input_truncated: bool = False
+    text: str | None = None
+    state: Literal["available", "pending", "expired", "unavailable"]
+    truncated: bool = False
+    live: bool = False
 
 
 class ThreadFocusSnapshot(SurfaceModel):

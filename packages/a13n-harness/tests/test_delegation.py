@@ -342,7 +342,7 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
     assert len(child_instructions) == 1
     assert result.state is not None and "inline-context" not in result.state.model_dump_json()
     assert "Child authored instruction." in child_instructions[0]
-    assert ('<tool-instruction name="summarize">' in child_instructions[0]) is expected_child_toolset_guidance
+    assert ("<tool-name>summarize</tool-name>" in child_instructions[0]) is expected_child_toolset_guidance
 
 
 async def test_inline_children_receive_fresh_search_bindings_without_parent_inheritance() -> None:

@@ -162,7 +162,7 @@ jobs:
                           "context": ".",
                           "platforms": "linux/amd64,linux/arm64",
                           "variant": variant,
-                          "envd_variant": envd_variant,
+                          "envd_variant": "slim" if envd_variant == "default" and variant != "desktop" else envd_variant,
                           "tag": ("dev" if variant == "standard" else f"dev-{variant}") + ("-vm" if envd_variant == "vm" else ""),
                       })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
@@ -179,7 +179,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        envd-variant: [default, vm]
+        envd-variant: [slim, default, vm]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -205,6 +205,7 @@ jobs:
           shared-key: dev-sandbox-${{ matrix.target }}-${{ matrix.envd-variant }}
 
       - name: Install SDK build dependencies
+        if: matrix.envd-variant == 'vm'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Build sandbox binary
@@ -214,9 +215,10 @@ jobs:
           BOXLITE_DEPS_STUB: "2"
           BOXLITE_EMBED_RUNTIME: "1"
         run: |
-          features=""
+          features=desktop
+          if [[ "$ENVD_VARIANT" == slim ]]; then features=""; fi
           if [[ "$ENVD_VARIANT" == vm ]]; then features=vm; fi
-          cargo build --release --locked --package a13n-envd --features "$features" --target "$TARGET"
+          cargo build --release --locked --package a13n-envd --no-default-features --features "$features" --target "$TARGET"
 
       - name: Upload sandbox binary
         uses: actions/upload-artifact@v4

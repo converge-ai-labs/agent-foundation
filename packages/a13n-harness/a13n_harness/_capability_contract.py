@@ -35,6 +35,7 @@ from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
     _LifecycleEventActiveCapability,
 )
+from a13n_harness.capabilities.object_store import ObjectStoreCapability
 from a13n_harness.capabilities.skills import SKILLS_CAPABILITY_ID, SkillsCapability, _SkillsRunCapability
 from a13n_harness.capabilities.steering import STEERING_CAPABILITY_ID, SteeringCapability
 from a13n_harness.capabilities.subagents import (
@@ -67,12 +68,14 @@ from a13n_harness.environment.dynamic import (
 )
 from a13n_harness.errors import DefinitionError
 from a13n_harness.filters.integrity import MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID, MessageIntegrityFilterCapability
+from a13n_harness.mcp import MCPServer
 from a13n_harness.model_context import MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID, ModelContextCoordinatorCapability
 from a13n_harness.models.request_headers import MODEL_REQUEST_HEADERS_CAPABILITY_ID, ModelRequestHeadersCapability
 from a13n_harness.models.structured_output import (
     STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
     StructuredOutputAutoToolChoiceCapability,
 )
+from a13n_harness.objects import OBJECT_STORE_CAPABILITY_ID
 from a13n_harness.pricing import MODEL_COST_CAPABILITY_ID, AbstractModelCostCapability
 from a13n_harness.tools.client import CLIENT_TOOLS_CAPABILITY_ID, ClientToolsCapability
 from a13n_harness.tools.invocation import TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID, ToolExecutionBoundaryCapability
@@ -97,6 +100,7 @@ _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]
     USER_INTERACTION_CAPABILITY_ID: (UserInteractionCapability,),
     SKILLS_CAPABILITY_ID: (SkillsCapability, _SkillsRunCapability),
     DOCUMENTS_CAPABILITY_ID: (DocumentsCapability,),
+    OBJECT_STORE_CAPABILITY_ID: (ObjectStoreCapability,),
     WEB_CAPABILITY_ID: (WebCapability,),
     WORKING_STATE_CAPABILITY_ID: (WorkingStateCapability, _WorkingStateRunCapability),
     SUBAGENT_CAPABILITY_ID: (SubagentCapability, _InlineSubagentCapability, _AsyncSubagentCapability),
@@ -123,7 +127,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
 }
 _POLYMORPHIC_BUILT_TYPES = (ToolExecutionBoundaryCapability, ToolSurfaceCapability, AbstractModelCostCapability)
 _RESERVED_IDS = frozenset((*_BUILT_OWNERS, *_DEFINITION_OWNERS, INVOCATION_POLICY_CAPABILITY_ID))
-_RUN_TYPES = (MCP, InvocationPolicyCapability)
+_RUN_TYPES = (MCP, MCPServer, InvocationPolicyCapability)
 
 # Source admission has a narrower type guard than built ownership. Lifecycle is
 # builder-owned and checked at build time; the other excluded types retain ID guards.
@@ -490,6 +494,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
 
     for owner_id, binding, prefix, label in (
         (DOCUMENTS_CAPABILITY_ID, ctx.deps.document_converter, "documents", "Documents"),
+        (OBJECT_STORE_CAPABILITY_ID, ctx.deps.object_store, "object_store", "ObjectStore"),
         (WEB_CAPABILITY_ID, ctx.deps.web, "web", "Web"),
     ):
         owner = ctx.capabilities.get(owner_id)

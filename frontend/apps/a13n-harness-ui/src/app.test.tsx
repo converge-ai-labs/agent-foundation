@@ -385,7 +385,7 @@ it("distinguishes an unavailable listener from rejected credentials and retries 
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 1.2.3rc2");
+  await screen.findByRole("menuitem", { name: "Settings" });
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
 });
 
@@ -402,7 +402,7 @@ it("consumes the fragment before all network requests and retains only an accept
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 1.2.3rc2");
+  await screen.findByRole("menuitem", { name: "Settings" });
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("generated+key");
   expect(document.body.textContent).not.toContain("generated+key");
 });
@@ -452,7 +452,7 @@ it("accepts a replacement key after authentication failure without replaying mut
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 1.2.3rc2");
+  await screen.findByRole("menuitem", { name: "Settings" });
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("new-key");
 });
 
@@ -472,7 +472,13 @@ it("supports explicit server bypass without inventing a frontend version", async
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 0.0.0");
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Settings" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("link", { name: "Diagnostics" }),
+  );
+  await screen.findByText(/Version 0.0.0/);
   expect(screen.getByText(/Server login is disabled/)).toBeTruthy();
 });
 
@@ -555,7 +561,7 @@ it("forgets the retained credential and closes protected views", async () => {
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 1.2.3rc2");
+  await screen.findByRole("menuitem", { name: "Settings" });
   fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(screen.queryByRole("alert")).toBeNull();
@@ -596,7 +602,7 @@ it("keeps logout cleanup authenticated and warns when background delivery cannot
   await userEvent.click(
     await screen.findByRole("button", { name: "Workspace menu" }),
   );
-  await screen.findByText("Harness UI - 1.2.3rc2");
+  await screen.findByRole("menuitem", { name: "Settings" });
   fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(await screen.findByRole("alert")).toHaveProperty(
@@ -908,8 +914,12 @@ it("works without browser storage", async () => {
       screen.getByRole("button", { name: "Workspace menu" }),
     );
     await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Dark appearance" }),
+      await screen.findByRole("menuitem", { name: "Settings" }),
     );
+    await userEvent.click(
+      await screen.findByRole("combobox", { name: "Color theme" }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: "Dark" }));
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   } finally {
     get.mockRestore();
@@ -970,9 +980,9 @@ it("restores the native account login across navigation and respects completed c
   );
   await screen.findByRole("button", { name: "Cancel login" });
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(screen.getByRole("link", { name: "Preferences" }));
+  await screen.findByRole("heading", { name: "Preferences" });
   fireEvent.click(screen.getByRole("link", { name: "Models" }));
-  await screen.findByRole("heading", { name: "Models" });
-  fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "Manage account" }),
   );
@@ -1411,7 +1421,10 @@ it("persists generated and edited collaboration names across visits and rejects 
     }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "People & profile" }),
+    await screen.findByRole("menuitem", { name: "Settings" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("link", { name: "People & profile" }),
   );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
@@ -1429,7 +1442,7 @@ it("persists generated and edited collaboration names across visits and rejects 
 });
 
 it("shows Live entries only after enabling and saving, and hides them again without a reload", async () => {
-  window.history.replaceState(null, "", "/settings");
+  window.history.replaceState(null, "", "/settings/chats");
   const rootSource = {
     ...source,
     relative_path: "custom-root.yaml",
@@ -1462,7 +1475,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
     name: "Live",
   });
   const expectHidden = () => {
-    expect(screen.queryByRole("link", { name: "Live" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open Live" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Set up voice" })).toBeNull();
   };
@@ -1470,10 +1483,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   await user.click(live);
   expectHidden();
   await user.click(screen.getByRole("button", { name: "Save" }));
-  await user.click(screen.getByRole("link", { name: "Back to chats" }));
-  expectHidden();
-  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Live" }));
+  await user.click(await screen.findByRole("link", { name: "Open Live" }));
   expect(
     await screen.findByRole("button", { name: "Start voice" }),
   ).toBeTruthy();
@@ -1495,8 +1505,8 @@ it("shows Live entries only after enabling and saving, and hides them again with
   expect(writesToExecution).toEqual([]);
 });
 
-it("configures Sidekick in General without changing defaults or starting chats", async () => {
-  window.history.replaceState(null, "", "/settings");
+it("configures Sidekick in Agents without changing defaults or starting chats", async () => {
+  window.history.replaceState(null, "", "/settings/agents");
   const rootSource = {
     ...source,
     relative_path: "custom-root.yaml",
@@ -1570,10 +1580,9 @@ it("configures Sidekick in General without changing defaults or starting chats",
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  await screen.findByText("Subagent defaults");
-  await user.click(screen.getByText("Subagent defaults"));
   expect(
-    screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+    (await screen.findByRole("combobox", { name: "Sidekick agent" }))
+      .textContent,
   ).toContain("Use current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
   await user.click(await screen.findByRole("option", { name: "Worker model" }));
@@ -1619,8 +1628,9 @@ it("persists the initial collaboration color and restores explicit changes", asy
         name: "Workspace menu",
       }),
     );
+    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & profile" }),
+      await screen.findByRole("link", { name: "People & profile" }),
     );
     const color = await screen.findByRole("combobox", { name: "Color" });
     expect(color.textContent).toBe("Purple");
@@ -1634,8 +1644,9 @@ it("persists the initial collaboration color and restores explicit changes", asy
         name: "Workspace menu",
       }),
     );
+    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & profile" }),
+      await screen.findByRole("link", { name: "People & profile" }),
     );
     const remembered = await screen.findByRole("combobox", {
       name: "Color",
@@ -1655,8 +1666,9 @@ it("persists the initial collaboration color and restores explicit changes", asy
         name: "Workspace menu",
       }),
     );
+    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
     await user.click(
-      await screen.findByRole("menuitem", { name: "People & profile" }),
+      await screen.findByRole("link", { name: "People & profile" }),
     );
     expect(
       (await screen.findByRole("combobox", { name: "Color" })).textContent,
@@ -1887,10 +1899,11 @@ it("shares the root draft across General, execution, runtime, browser and connec
   render(<BrowserApp />);
   const user = userEvent.setup();
   const live = await screen.findByRole("switch", { name: "Live" });
+  expect(screen.queryByText("Voice settings")).toBeNull();
+  await user.click(live);
   expect(screen.getByText("Voice settings").closest("details")?.open).toBe(
     true,
   );
-  await user.click(live);
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(await screen.findByRole("combobox", { name: "Runtime" }));
   await user.click(await screen.findByRole("option", { name: "envd" }));
@@ -1915,7 +1928,7 @@ it("shares the root draft across General, execution, runtime, browser and connec
     browser: { mode: "disabled" },
   });
   expect(content).toContain("# Preserve me");
-  await user.click(screen.getByRole("link", { name: "General" }));
+  await user.click(screen.getByRole("link", { name: "Chats" }));
   expect(
     (await screen.findByRole("switch", { name: "Live" })).getAttribute(
       "aria-checked",
@@ -1957,14 +1970,17 @@ it.each([
       .getAllByRole("link")
       .map((item) => item.textContent),
   ).toEqual([
-    "General",
-    "Appearance",
+    "Preferences",
+    "People & profile",
+    "Chats",
     "Agents",
+    "Bot",
     "Models",
+    "Memory",
     "Environments",
-    "Accounts & API keys",
     "Connections",
     "Configuration files",
+    "Diagnostics",
   ]);
 });
 

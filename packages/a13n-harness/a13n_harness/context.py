@@ -45,6 +45,7 @@ if TYPE_CHECKING:
         ModelContextProjectionRequest,
     )
     from a13n_harness.models import RunModelResolver
+    from a13n_harness.objects import ObjectStore
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
     from a13n_harness.recovery import ToolRecoveryPlan
@@ -168,10 +169,12 @@ class RunBindings:
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
+    instruction_reference_root: str | None = field(default=None, kw_only=True)
     deferred_tools_supported: bool = True
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
+    object_store: ObjectStore | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -224,6 +227,8 @@ class RunBindings:
                 parse_mount_path(self.shell_output_directory)
             except ValueError as exc:
                 raise ValueError("shell_output_directory must be a canonical absolute Environment path") from exc
+        if self.instruction_reference_root is not None:
+            parse_mount_path(self.instruction_reference_root)
         if self.retained_history_directory is not None:
             parse_mount_path(self.retained_history_directory)
         if self.context_recovery_scope_id is not None and not self.context_recovery_scope_id:
@@ -238,6 +243,7 @@ class RunBindings:
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
+        from a13n_harness.objects import ObjectStore
         from a13n_harness.tools.client import ClientToolsetDefinition, _validate_toolsets
         from a13n_harness.toolsets.documents import DocumentConverter
         from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
@@ -245,6 +251,7 @@ class RunBindings:
         for name, value, expected in (
             ("browser_backend", self.browser_backend, BrowserBackend),
             ("web", self.web, WebBinding),
+            ("object_store", self.object_store, ObjectStore),
             ("document_converter", self.document_converter, DocumentConverter),
             ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
             ("task_state", self.task_state, TaskStateBinding),
@@ -272,6 +279,7 @@ class RunBindings:
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
+        instruction_reference_root: str | None = None,
         deferred_tools_supported: bool = True,
         model_context: ModelContextMiddleware | None = None,
         model_call_check: ModelCallCheck | None = None,
@@ -279,6 +287,7 @@ class RunBindings:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         browser_backend: BrowserBackend | None = None,
         web: WebBinding | None = None,
+        object_store: ObjectStore | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
@@ -308,6 +317,7 @@ class RunBindings:
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
+            instruction_reference_root=instruction_reference_root,
             deferred_tools_supported=deferred_tools_supported,
             model_context=model_context,
             model_call_check=model_call_check,
@@ -315,6 +325,7 @@ class RunBindings:
             capabilities=tuple(capabilities),
             browser_backend=browser_backend,
             web=web,
+            object_store=object_store,
             document_converter=document_converter,
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
@@ -448,6 +459,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    instruction_reference_root: str | None = field(default=None, kw_only=True)
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
     request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True
@@ -467,6 +479,7 @@ class AgentContext:
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
+    object_store: ObjectStore | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None

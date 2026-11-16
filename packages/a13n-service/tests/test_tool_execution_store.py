@@ -202,8 +202,15 @@ async def test_original_invocation_survives_run_and_another_runtime_reads_result
         # Delivery admits an ordinary successor. No worker affinity is introduced.
         (successor,) = await claim(service.runtime, worker_id="worker-b", worker_build="test", limit=1)
         assert successor.thread_id == lease.thread_id
+        assert service.runtime.executions.reports_background_completions
         scripted_model.say("The result is available")
         await execute(service.runtime, successor, AttemptControl())
+        requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+        messages = requests[-1]["messages"]
+        last_reply = max(i for i, m in enumerate(messages) if m["role"] == "assistant")
+        delivered_text = str([m["content"] for m in messages[last_reply + 1 :] if m["role"] == "user"])
+        assert "A retained tool execution ended" in delivered_text
+        assert delivered_text.count(record.execution_id) == 1
         assert (await second.result(lease.thread_id, record.execution_id)).record.delivery_acknowledged
         async with transaction(service.runtime.storage) as session:
             row = await session.get_one(ToolExecutionRow, record.execution_id)
@@ -711,7 +718,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
     assert (
         "expired" in returns[-1].content["message"]
         if status == "expired"
-        else "runtime" in returns[-1].content["message"]
+        else "do not reissue" in returns[-1].content["message"]
     )
     assert await restore(service.runtime, restored, thread_id=lease.thread_id, origin_run_id=lease.run_id) == restored
     if not record.terminal:
@@ -946,3 +953,23 @@ async def test_published_result_keeps_only_fenced_cleanup_authority(service, scr
     with pytest.raises(LeaseLost):
         async with transaction(service.runtime.storage) as session:
             await lock_execution(session, lease, record.execution_id, cleanup=True)
+
+
+@pytest.mark.parametrize("sequential", [False, True])
+@pytest.mark.parametrize("legacy_json", [False, True])
+async def test_original_ordering_intent_uses_durable_column_including_legacy_json(
+    service, scripted_model, runs_kit, sequential, legacy_json
+):
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store = Store(service.runtime)
+    record = _record(lease).model_copy(update={"sequential": sequential})
+    await _save(store, lease, StoredToolExecution(record))
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, record.execution_id)
+        assert row.sequential is sequential
+        assert row.record["sequential"] is sequential
+        if legacy_json:
+            row.record = {key: value for key, value in row.record.items() if key != "sequential"}
+    restored = await store.get(lease.thread_id, record.execution_id)
+    assert restored.record.sequential is sequential
+    assert (await store.list(lease.thread_id, offset=0, limit=20))[0].sequential is sequential

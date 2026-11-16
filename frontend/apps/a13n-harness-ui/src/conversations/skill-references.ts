@@ -1,4 +1,5 @@
 import type {
+  Completion,
   CompletionContext,
   CompletionResult,
 } from "@codemirror/autocomplete";
@@ -103,12 +104,49 @@ export function retainedSkillSpans(
   });
 }
 
+export function skillDisplayName(name: string) {
+  return name
+    .replace(/[-_]+/g, " ")
+    .replace(/(^|[ :])\p{Ll}/gu, (start) => start.toUpperCase());
+}
+
+// Only label sources identified by the catalog; an unknown source stays unlabelled.
+export function skillSourceLabel(id: string) {
+  const [owner, kind] = id.split(":");
+  if (owner !== "a13n-harness-ui") return;
+  switch (kind) {
+    case "project":
+      return "Project";
+    case "user-skills":
+      return "Personal";
+    case "builtin-skills":
+      return "Built-in";
+    case "content-plugin":
+      return "Plugin";
+    case "device":
+      return "Device";
+    case "explicit":
+      return "Configured";
+  }
+}
+
+export interface SkillOption extends Completion {
+  source: string;
+}
+
+function skillQuery(context: CompletionContext) {
+  // Either trigger starts a token. Slashes inside paths and URLs stay literal.
+  const token = context.matchBefore(/(?:^|\s)(?:\$[^\s$]*|\/[^\s/]*)$/);
+  if (!token || context.view?.compositionStarted) return null;
+  const from = token.from + token.text.search(/[$/]/);
+  return { from, prefix: context.state.sliceDoc(from + 1, context.pos) };
+}
+
 export function skillCompletion(load: LoadSkills) {
   return async (
     context: CompletionContext,
   ): Promise<CompletionResult | null> => {
-    const token = context.matchBefore(/(?:^|\s)\$[^\s]*/);
-    if (!token || context.view?.compositionStarted) return null;
+    if (!skillQuery(context)) return null;
     let catalog: SkillCatalog;
     try {
       catalog = await load();
@@ -117,26 +155,31 @@ export function skillCompletion(load: LoadSkills) {
       return null;
     }
     if (context.aborted) return null;
-    const options = catalog.items
+    const options: SkillOption[] = catalog.items
       .filter((item) => !/\s/.test(item.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((item) => ({
         label: `$${item.name}`,
-        detail: item.description.replace(/\s+/g, " ").slice(0, 160),
+        displayLabel: skillDisplayName(item.name),
+        detail: item.description.replace(/\s+/g, " ").trim(),
         apply: `$${item.name} `,
-        type: "text",
+        source: item.source_id,
       }));
     const complete = (current: CompletionContext): CompletionResult | null => {
-      const token = current.matchBefore(/(?:^|\s)\$[^\s]*/);
-      if (!token || current.view?.compositionStarted) return null;
-      const from = token.from + token.text.indexOf("$");
-      const prefix = current.state.sliceDoc(from, current.pos);
+      const query = skillQuery(current);
+      if (!query) return null;
       return {
-        from,
+        from: query.from,
+        // The accepted reference supplies its own separator.
+        to:
+          current.pos +
+          (current.state.sliceDoc(current.pos, current.pos + 1) === " "
+            ? 1
+            : 0),
         filter: false,
-        options: options.filter((item) => item.label.startsWith(prefix)),
-        // Keep exact prefix matching while updating locally on typing/deletion.
-        // validFor cannot be combined with filter: false.
+        options: options.filter((item) =>
+          item.label.startsWith(`$${query.prefix}`),
+        ),
         update: (_result, _from, _to, next) => complete(next),
       };
     };

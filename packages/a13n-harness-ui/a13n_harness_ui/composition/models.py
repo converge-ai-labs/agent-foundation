@@ -15,11 +15,14 @@ from a13n_harness_ui.configuration.models import (
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
+    SubagentsConfiguration,
     SubscriptionGroupResource,
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
+from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
+from a13n_harness_ui.surfaces import RunModelOverrides
 
 
 class CompositionModel(BaseModel):
@@ -84,12 +87,19 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    object_ref_tools: dict[str, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
+    oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Historical recipes were all generically selected, including Apps-enabled ones.
     generic_selected: bool = Field(default=True, exclude_if=lambda value: value)
     host_owned: bool = Field(default=False, exclude_if=lambda value: not value)
     protocol: Literal["auto", "legacy", "2026-07-28"] = Field(default="auto", exclude_if=lambda value: value == "auto")
+
+    def binding_key(self, *, apps: bool | None = None) -> str:
+        base = (self.transport.model_dump_json(), self.protocol, self.apps_enabled if apps is None else apps)
+        return repr(base if self.oauth_binding is None else (*base, self.oauth_binding.model_dump_json()))
 
 
 class ResolvedRunExtensionRecipe(CompositionModel):
@@ -126,10 +136,26 @@ class ResolvedEnvironmentBinding(CompositionModel):
         return self
 
 
+class ResolvedEnvironmentTarget(CompositionModel):
+    """One Bot-accessible Project recipe, captured without opening its execution."""
+
+    target_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1)
+    project_id: str | None = None
+    project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    environment_profile: ResolvedEnvironmentProfile
+    environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
+    default_environment: str | None = None
+    session_versions: dict[str, int] = Field(default_factory=dict)
+    unavailable: str | None = None
+
+
 class ResolvedAgentNode(CompositionModel):
-    source_kind: Literal["agent", "markdown", "memory", "live", "bot"]
+    source_kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
     source_id: str = Field(min_length=1, max_length=128)
     roster_name: str = Field(min_length=1, max_length=128)
+    # Bot retains its built-in identity while recording its execution-policy source.
+    base_agent_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     system_prompt: tuple[str, ...] = Field(default=(), max_length=16)
     instructions: tuple[str, ...] = Field(default=(), max_length=16)
     # None preserves legacy captures; an empty tuple explicitly clears global guidance.
@@ -195,9 +221,12 @@ class ResolvedRunComposition(CompositionModel):
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )
     tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
+    subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None
+    # The Run's explicit Model selection. Admissions without one reuse it.
+    model_overrides: RunModelOverrides | None = Field(default=None, exclude_if=lambda value: value is None)
     media_understanding: dict[NativeInputMediaKind, ResolvedModelRecipe] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )
@@ -208,6 +237,9 @@ class ResolvedRunComposition(CompositionModel):
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     session_versions: dict[str, int] = Field(default_factory=dict)
+    # Bot target Session selections are separate from its native workspace.
+    environment_scope: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_targets: tuple[ResolvedEnvironmentTarget, ...] = Field(default=(), exclude_if=lambda value: not value)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 

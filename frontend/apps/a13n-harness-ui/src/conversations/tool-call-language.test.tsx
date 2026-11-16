@@ -221,3 +221,23 @@ it("preserves a raw tool name that collides with a translated label and localize
   expect(screen.getByText("Search")).toBeTruthy();
   expect(screen.getByText("工具")).toBeTruthy();
 });
+
+it("presents dynamic creation with a translated action and the child's authored name", async () => {
+  show(
+    <ToolCall
+      tool={completed(
+        "spawn",
+        "spawn_subagent",
+        { name: "Checkout reviewer", prompt: "Check retries" },
+        { execution_id: "exec-child" },
+      )}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Start subagent Checkout reviewer" }),
+  ).toBeTruthy();
+  await language("简体中文");
+  expect(
+    screen.getByRole("button", { name: "启动子智能体 Checkout reviewer" }),
+  ).toBeTruthy();
+});

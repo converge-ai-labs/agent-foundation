@@ -27,7 +27,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
@@ -89,6 +89,22 @@ class ShellToolset:
         self._execution_guard = execution_guard
         self._process_controller = _ProcessController(environment, execution_guard=self._guard_execution)
 
+    @staticmethod
+    def available_names(actions: frozenset[EnvironmentAction]) -> frozenset[str]:
+        """Canonical selectors with at least one authorized Shell or process branch."""
+        names = set()
+        if EnvironmentAction.SHELL_EXEC in actions:
+            names.add("shell_exec")
+        if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
+            names.add("shell_info")
+        if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
+            names.add("shell_wait")
+        if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
+            names.add("shell_input")
+        if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
+            names.add("shell_signal")
+        return frozenset(names)
+
     def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         arbitrary_command_effects: set[ToolEffect] = {
             "read",
@@ -105,8 +121,9 @@ class ShellToolset:
         actions = frozenset(
             action for mount in self._environment.snapshot.mounts for action in mount.permission_ceiling.operations
         )
+        names = self.available_names(actions)
         tools: list[HarnessTool] = []
-        if EnvironmentAction.SHELL_EXEC in actions:
+        if "shell_exec" in names:
             tools.append(
                 self._tool(
                     shell_callable,
@@ -117,7 +134,7 @@ class ShellToolset:
                     name="shell_exec",
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT}:
+        if "shell_info" in names:
             tools.append(
                 self._tool(
                     self.shell_info if EnvironmentAction.PROCESS_LIST in actions else self.shell_inspect,
@@ -128,7 +145,7 @@ class ShellToolset:
                     name="shell_info",
                 )
             )
-        if {EnvironmentAction.PROCESS_WAIT, EnvironmentAction.PROCESS_READ_OUTPUT} <= actions:
+        if "shell_wait" in names:
             tools.append(
                 self._tool(
                     self.shell_wait,
@@ -138,13 +155,13 @@ class ShellToolset:
                     resources=self._process_resources,
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_CLOSE_STDIN}:
+        if "shell_input" in names:
             tools.append(
                 self._tool(
                     self.shell_input, "environment.process_input", {"write"}, "none", resources=self._process_resources
                 )
             )
-        if actions & {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.PROCESS_KILL}:
+        if "shell_signal" in names:
             tools.append(
                 self._tool(
                     self.shell_signal,
@@ -156,13 +173,10 @@ class ShellToolset:
             )
         if allowed_names is not None:
             tools = [tool for tool in tools if tool.name in allowed_names]
-        sections = [tool.name for tool in tools]
-        if any(name != "shell_exec" for name in sections):
-            sections.insert(0, "shell_processes")
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[tool_instruction("environment-shell", *sections)] if tools else [],
+            instructions=[tool_guidance("environment-shell")] if tools else [],
         )
 
     async def wrap_run(

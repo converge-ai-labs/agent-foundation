@@ -136,15 +136,19 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 
 ### Built-in tools and subagents
 
-| Root field                                | Default     | Purpose                                                                  |
-| ----------------------------------------- | ----------- | ------------------------------------------------------------------------ |
-| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                         |
-| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                              |
-| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch |
-| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools  |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                      |
-| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary       |
-| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`            |
+| Root field                                | Default     | Purpose                                                                                |
+| ----------------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                                       |
+| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                                            |
+| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch               |
+| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools                |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                                    |
+| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                     |
+| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
+| `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
+| `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
+| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
+| `subagents.dynamic.default_model`         | unset       | Allowed Model used when a spawn omits `model`; required when dynamic creation is on    |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 
@@ -227,7 +231,7 @@ A reconstruction warning remains visible after success. Investigate every recons
 
 Memory is enabled by default. Beside the selected YAML, `memory/global/` stores cross-Project facts and `memory/projects/<project-id>/` stores Project facts. Projectless conversations use global memory only. Keep `MEMORY.md` as a short index and detailed topics in separate files. Memory is historical context, separate from conversation history and Full Control permissions.
 
-In **Settings → General → Memory**, choose the organizer Model and instructions, or merge:
+In **Settings → Memory**, choose the organizer Model and instructions, or merge:
 
 ```yaml title="a13n-harness-ui.yaml — memory organization"
 memory:
@@ -240,7 +244,7 @@ memory:
 
 Use an existing Model ID. Omitted/null `model` follows `defaults.agent`; a configured Model is required. The organizer receives scoped memory tools, not the Agent's other tools or instructions. It preserves uncertainty and user corrections and reports changes.
 
-WebUI input can trigger organization of changed memory. Each scope has a read-only Memory Thread; organization reads neither old conversations nor other Projects. General settings shows outcomes and usage, which can incur Model charges.
+WebUI input can trigger organization of changed memory. Each scope has a read-only Memory Thread; organization reads neither old conversations nor other Projects. Memory settings shows outcomes and usage, which can incur Model charges.
 
 | State                                   | Next attempt                                                            |
 | --------------------------------------- | ----------------------------------------------------------------------- |
@@ -252,6 +256,22 @@ WebUI input can trigger organization of changed memory. Each scope has a read-on
 Disable `auto_organize.enabled` to keep memory without automatic requests. Disable `memory.enabled` to stop attaching memory to later Runs. Either switch or server shutdown cancels maintenance and retains partial edits. Files remain; active foreground Runs retain their settings.
 
 Back up `memory/` separately from application data. `.a13n-memory/` holds locks and organizer state. Optional Git supplies bounded diff hints, not revision history, and does not modify your repository.
+
+### Dictation
+
+Set **Settings → Chats → Dictation → Voice input** to **Codex subscription**, then select a native account or subscription group. The default speech service and Luna correction need no Model resource. Advanced settings exposes the correction model and context budget. See [voice input](webui.md#voice-input) for recording and text insertion.
+
+```yaml
+dictation:
+  backend: codex
+  codex:
+    group: codex-default
+    # Alternatively: account: acct-work (omit group).
+    # model: gpt-6-luna  # Optional correction LLM override.
+  context_words: 2000
+```
+
+Omitting `codex.group` and `codex.account` uses `codex-default`. Speech recognition and correction select independently from that group; `codex.account` pins both to one account. Speech recognition tries another eligible member only after a definite HTTP 401 or 429 rejection, never after an ambiguous upload timeout or network failure. Correction uses normal group failover; if it fails, the original transcript remains available without uploading audio again. Login alone does not enable dictation. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
 
 ### Media understanding
 
@@ -324,13 +344,17 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI Bot
 
-**Settings → General → Bot** selects a Model and optional custom instructions for the built-in personal assistant. `webui.bot.model` defaults to `null`, following only the global default Agent's Model. Bot uses its own instructions plus custom instructions and global `AGENTS.md`; no Agent selection is required.
+**Settings → Bot** selects an Agent, Model and optional custom instructions for the built-in personal assistant. `webui.bot.agent` defaults to `null`, following the global default Agent. Bot inherits that Agent's execution settings, including compaction, permissions, subagents, Plugins and MCP. `webui.bot.model` defaults to `null`, following the selected Agent's Model; an explicit Model overrides it. The independent `files_enabled`, `shell_enabled` and `computer_enabled` flags under `webui.bot` default to `null` (follow Agent); `true` or `false` overrides the corresponding access setting for Bot while retaining tool allowlists and Environment limits. Bot replaces the Agent's role instructions with its own plus custom instructions, keeps global `AGENTS.md`, and disables structured questions. See [Bot](bot.md) for inheritance and fallback details.
 
 `webui.bot.enabled` defaults to `false`. `webui.bot.heartbeat_enabled` defaults to `true`, `interval_seconds` to `3600` (one hour), and `connector_interval_seconds` to `60`. These fields are siblings under `webui.bot`. On first usable enable, the server sends one visible preset user message to introduce the workspace through an ordinary Model request. Previous activity or an introduction attempt prevents repetition. Reading the page starts no work. Enabling also schedules the first Heartbeat one interval later, independently of this introduction. See [Bot](bot.md) for the full example, bounds, workspace, memory access, pause, and recovery behavior.
 
+### WebUI subagents
+
+In **Settings → Agents → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
+
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
+**Settings → Agents → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:
@@ -405,3 +429,46 @@ run_configuration:
 Omitted/null `allowed_hosts` allows all destinations; `[]` denies all. Rules match normalized hostnames/IPs exactly, or use `regex:` for a full-hostname Python match. This pattern allows `docs.example.com` and its subdomains, not `docs.example.com.evil.test`. Single-quoted YAML preserves backslashes. Empty/invalid expressions fail validation; URLs, paths, ports, globs, and CIDRs are not host patterns.
 
 API-key Model clients and Host Web/MCP check declared destinations and redirect hops without DNS resolution or IP pinning. Restrictive rules reject opaque subscription transports. The captured policy stays fixed for root and child Runs. Namespaced `extensions` need an opting-in consumer; they are not Capability arguments. Shell/plugin networking needs Environment or deployment isolation. See [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions).
+
+## Object Store
+
+Enable reusable media references in the Agent resource:
+
+```yaml
+capabilities:
+  - capability: object_store
+```
+
+The private library belongs to the current Thread and survives Runs and App restarts. Each UI subagent is a separate child Thread with its own library; parent and child references do not resolve in each other's Store. It lives under `data_root/object-library/`, outside disposable scratch. Captured images retain native vision content; the Agent receives a compact reference for later tool arguments. The five management tools are `asset_ref`, `asset_store`, `asset_list`, `asset_info` and `asset_delete`.
+
+The root YAML owns restart-bound retention policy. Defaults keep temporary objects small; increase them for larger workflows:
+
+```yaml
+process:
+  object_store:
+    temporary_ttl_seconds: 86400
+    max_temporary_objects: 32
+    max_temporary_bytes: 67108864
+```
+
+Temporary objects expire after one day without an actual byte read. Reads refresh idle TTL and LRU order; list/info do not. Count and total-byte overflow evict least-recently-used temporary entries. Startup and hourly cleanup also visit inactive libraries. `asset_store` promotes an available object without changing its reference and excludes it from temporary expiry and quotas. Stored objects remain until deleted. This is explicit retention, so store only objects needed later.
+
+MCP tools opt into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport), the Harness tool extension that substitutes references with base64 without replaying argument validation. Use `object_ref_tools` rules in a schema-version-2 MCP resource to select tools whose string arguments accept base64. Rules use original server tool names, including prefix or suffix patterns:
+
+```yaml
+schema_version: "2"
+kind: mcp_server
+id: mcp-media
+name: Media tools
+object_ref_tools:
+  "*": false
+  "*_upload": true
+  send_image: true
+  text_upload: false
+transport:
+  url: https://example.com/mcp
+```
+
+`"*"` sets the default; omit it to retain native tool declarations, which default to unsupported. Exact names take precedence over patterns. `*` matches zero or more characters anywhere, so `image_*_upload` works too; other characters are literal and matching is case-sensitive. More literal characters make a pattern more specific; equally specific patterns prefer false, independently of entry order. The same rules apply to [native toolsets](../a13n-harness/capabilities.md#object-reference-transport) and Service MCP connections.
+
+A valid edit applies to the next Run. References are resolved after permission/approval at the actual target boundary; history keeps the reference. An expired reference fails without automatically replaying the producer. See [Object Store usage](../a13n-harness/capabilities.md#reuse-original-media-with-object-store) for capture limits and code-first opt-in.

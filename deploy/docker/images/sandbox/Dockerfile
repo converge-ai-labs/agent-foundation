@@ -3,16 +3,19 @@
 # Local builds compile this checkout; CI publications select same-run artifacts.
 ARG ENVD_BINARY_SOURCE=source
 ARG SANDBOX_VARIANT=standard
-ARG ENVD_VARIANT=default
+ARG ENVD_VARIANT=auto
 
 FROM rust:1.96-trixie AS builder
 ARG TARGETARCH
+ARG SANDBOX_VARIANT
 ARG ENVD_VARIANT
 # Use the SDK's versioned prebuilt runtime, embedded in the shipped daemon.
 ENV BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+RUN if [ "$ENVD_VARIANT" = vm ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends protobuf-compiler \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -22,8 +25,12 @@ COPY crates/a13n-envd crates/a13n-envd
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,id=a13n-envd-target-${TARGETARCH},target=/src/target,sharing=locked \
-    case "$ENVD_VARIANT" in default) features="" ;; vm) features=vm ;; *) exit 1 ;; esac \
-    && cargo build --release --locked --package a13n-envd --features "$features" \
+    variant="$ENVD_VARIANT" \
+    && if [ "$variant" = auto ]; then \
+         if [ "$SANDBOX_VARIANT" = desktop ]; then variant=default; else variant=slim; fi; \
+       fi \
+    && case "$variant" in default) features=desktop ;; slim) features="" ;; vm) features=vm ;; *) exit 1 ;; esac \
+    && cargo build --release --locked --package a13n-envd --no-default-features --features "$features" \
     && install -D target/release/a13n-envd /out/a13n-envd
 
 FROM scratch AS envd-source
@@ -78,7 +85,7 @@ COPY --chmod=0755 deploy/docker/images/sandbox/desktop.py /usr/local/bin/a13n-sa
 COPY --chmod=0755 packages/a13n-service/a13n_service/providers/environment/desktop_guest.py /opt/a13n-desktop-access.py
 ENTRYPOINT ["tini", "--", "a13n-sandbox-entrypoint", "a13n-sandbox-desktop"]
 
-# Tooling variants share daemon bytes within each Envd build variant.
+# Standard/slim tooling uses the core daemon; desktop tooling requires desktop support.
 FROM ${SANDBOX_VARIANT}-runtime AS runtime
 RUN groupadd --gid 1000 sandbox \
     && useradd --uid 1000 --gid sandbox --create-home --shell /bin/bash sandbox \
@@ -102,6 +109,14 @@ LABEL ai.a13n.environment.user="sandbox" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.version="${BUILD_VERSION}" \
       org.opencontainers.image.licenses="Apache-2.0"
+
+# Verify the copied artifact, including prebuilt/source flavor selection.
+RUN variant="$ENVD_VARIANT" \
+    && if [ "$variant" = auto ]; then \
+         if [ "$SANDBOX_VARIANT" = desktop ]; then variant=default; else variant=slim; fi; \
+       fi \
+    && test "$(a13n-envd --build-variant)" = "$variant" \
+    && { [ "$SANDBOX_VARIANT" != desktop ] || [ "$variant" != slim ]; }
 
 # A release label must agree with the version compiled into the daemon.
 RUN test "$BUILD_VERSION" = dev || test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"

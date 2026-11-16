@@ -64,9 +64,16 @@ it("replaces incompatible custom settings with preset defaults while keeping res
         disable_network: true,
         cpus: 2,
         memory_gb: 4,
+        envd: { limits: { max_sessions: 8 } },
         mounts,
       },
       presets.desktop,
     ),
-  ).toEqual({ ...presets.desktop, cpus: 2, memory_gb: 4, mounts });
+  ).toEqual({
+    ...presets.desktop,
+    cpus: 2,
+    memory_gb: 4,
+    mounts,
+    envd: { limits: { max_sessions: 8 } },
+  });
 });

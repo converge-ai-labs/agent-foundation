@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from release_version import COMPONENTS, parse_release_version, validate_version_syntax
@@ -87,6 +89,9 @@ class ReleaseChange:
     subject: str
     body: str = ""
     labels: tuple[str, ...] = ()
+    title: str | None = None
+    authors: tuple[str, ...] = ()
+    reviewers: tuple[str, ...] = ()
 
     @property
     def pull_request(self) -> str | None:
@@ -94,28 +99,146 @@ class ReleaseChange:
         return match[1] if match else None
 
 
-def load_pull_request_labels(changes: Sequence[ReleaseChange], repository: str) -> list[ReleaseChange]:
-    labels_by_pr: dict[str, tuple[str, ...]] = {}
+PR_COMMIT_AUTHORS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      commits(first: 100, after: $endCursor) {
+        nodes { commit { id authors(first: 100) { totalCount nodes { user { login } } } } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+"""
+COMMIT_AUTHORS_QUERY = """
+query($id: ID!, $endCursor: String) {
+  node(id: $id) {
+    ... on Commit {
+      authors(first: 100, after: $endCursor) {
+        nodes { user { login } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+"""
+
+
+@dataclass(frozen=True)
+class PullRequestMetadata:
+    title: str
+    labels: tuple[str, ...]
+    authors: tuple[str, ...]
+    reviewers: tuple[str, ...]
+
+
+def _unique_logins(logins: Iterable[str]) -> tuple[str, ...]:
+    accounts: dict[str, str] = {}
+    for login in logins:
+        if login:
+            accounts.setdefault(login.casefold(), login)
+    return tuple(sorted(accounts.values(), key=str.casefold))
+
+
+def _github_json(command: list[str]) -> Any:
+    response = subprocess.run(command, check=True, capture_output=True, text=True, encoding="utf-8", timeout=60)
+    return json.loads(response.stdout)
+
+
+def _pull_request_authors(repository: str, number: str) -> tuple[str, ...]:
+    owner, name = repository.split("/")
+    pages = _github_json(
+        [
+            "gh",
+            "api",
+            "graphql",
+            "--paginate",
+            "--slurp",
+            "-f",
+            f"query={PR_COMMIT_AUTHORS_QUERY}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"number={number}",
+        ]
+    )
+    logins = []
+    for page in pages:
+        for node in page["data"]["repository"]["pullRequest"]["commits"]["nodes"]:
+            commit = node["commit"]
+            authors = commit["authors"]
+            nodes = authors["nodes"]
+            if authors["totalCount"] > len(nodes):
+                author_pages = _github_json(
+                    [
+                        "gh",
+                        "api",
+                        "graphql",
+                        "--paginate",
+                        "--slurp",
+                        "-f",
+                        f"query={COMMIT_AUTHORS_QUERY}",
+                        "-F",
+                        f"id={commit['id']}",
+                    ]
+                )
+                nodes = [
+                    author for author_page in author_pages for author in author_page["data"]["node"]["authors"]["nodes"]
+                ]
+            logins.extend(author["user"]["login"] for author in nodes if author["user"] is not None)
+    return _unique_logins(logins)
+
+
+def load_pull_request_metadata(changes: Sequence[ReleaseChange], repository: str) -> list[ReleaseChange]:
+    metadata_by_pr: dict[str, PullRequestMetadata] = {}
     result = []
     for change in changes:
         number = change.pull_request
         if number is None:
             result.append(change)
             continue
-        if number not in labels_by_pr:
+        if number not in metadata_by_pr:
             try:
-                response = subprocess.run(
-                    ["gh", "pr", "view", number, "--repo", repository, "--json", "labels", "--jq", ".labels[].name"],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    timeout=30,
+                details = _github_json(
+                    ["gh", "pr", "view", number, "--repo", repository, "--json", "labels,title,author"]
                 )
-            except (OSError, subprocess.SubprocessError) as error:
-                raise ReleaseNotesError(f"Cannot read labels for PR #{number}: {error}") from error
-            labels_by_pr[number] = tuple(response.stdout.splitlines())
-        result.append(replace(change, labels=labels_by_pr[number]))
+                author = details["author"]
+                authors = _unique_logins(
+                    [
+                        *([author["login"]] if author is not None else []),
+                        *_pull_request_authors(repository, number),
+                    ]
+                )
+                review_pages = _github_json(
+                    ["gh", "api", "--paginate", "--slurp", f"repos/{repository}/pulls/{number}/reviews"]
+                )
+                reviewers = _unique_logins(
+                    review["user"]["login"]
+                    for page in review_pages
+                    for review in page
+                    if review["user"] is not None and review["state"] != "PENDING"
+                )
+                metadata_by_pr[number] = PullRequestMetadata(
+                    title=details["title"],
+                    labels=tuple(label["name"] for label in details["labels"]),
+                    authors=authors,
+                    reviewers=reviewers,
+                )
+            except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
+                raise ReleaseNotesError(f"Cannot read metadata for PR #{number}: {error}") from error
+        metadata = metadata_by_pr[number]
+        result.append(
+            replace(
+                change,
+                labels=metadata.labels,
+                title=metadata.title,
+                authors=metadata.authors,
+                reviewers=metadata.reviewers,
+            )
+        )
     return result
 
 
@@ -160,13 +283,16 @@ def _change_entry(change: ReleaseChange, repository: str) -> tuple[str, str]:
         subject = subject[: pr.start()]
     elif merge and change.body.strip():
         subject = change.body.strip().splitlines()[0]
+    if change.title is not None:
+        subject = change.title
     conventional = CONVENTIONAL_SUBJECT.match(subject)
     category = "Other changes"
     if conventional:
         category = {"feat": "Features", "fix": "Bug fixes", "perf": "Performance", "docs": "Documentation"}.get(
             conventional["type"], "Other changes"
         )
-        subject = conventional["title"]
+        if change.title is None:
+            subject = conventional["title"]
     if (conventional and conventional["breaking"]) or re.search(r"(?m)^BREAKING[ -]CHANGE:", change.body):
         category = "Breaking changes"
     # Labels own PR classification. Unlabelled historical PRs and direct commits
@@ -179,7 +305,15 @@ def _change_entry(change: ReleaseChange, repository: str) -> tuple[str, str]:
         link = f"[#{reference}](https://github.com/{repository}/pull/{reference})"
     else:
         link = f"[{change.commit[:7]}](https://github.com/{repository}/commit/{change.commit})"
-    return category, f"- {subject} ({link})"
+    attribution = ""
+    if change.authors:
+        attribution += " — by " + ", ".join(f"@{login}" for login in change.authors)
+    reviewers = [
+        login for login in change.reviewers if login.casefold() not in {author.casefold() for author in change.authors}
+    ]
+    if reviewers:
+        attribution += ("; " if attribution else " — ") + "reviewed by " + ", ".join(f"@{login}" for login in reviewers)
+    return category, f"- {subject}{attribution} ({link})"
 
 
 def render_release_notes(
@@ -190,27 +324,35 @@ def render_release_notes(
     previous_tag: str | None,
     changes: Sequence[ReleaseChange] = (),
     manual_notes: str | None = None,
+    releaser: str | None = None,
 ) -> str:
     current_tag = release_tag(component, version)
+    sections = [f"Release initiated by @{releaser}."] if releaser else []
+    contributors = [releaser] if releaser else []
     if previous_tag is None:
-        return (manual_notes or INITIAL_NOTES[component]) + "\n"
-    sections = [manual_notes] if manual_notes else []
-    sections.append("## What's Changed")
-    groups: dict[str, list[str]] = {category: [] for category in CHANGE_CATEGORIES}
-    for change in changes:
-        if SKIP_LABELS.intersection(change.labels) and "breaking-change" not in change.labels:
-            continue
-        category, entry = _change_entry(change, repository)
-        groups[category].append(entry)
-    for category, entries in groups.items():
-        if entries:
-            sections.append(f"### {category}\n\n" + "\n".join(entries))
-    if not any(groups.values()):
-        sections.append("No component-scoped changelog entries in this release.")
-    comparison = (
-        f"https://github.com/{repository}/compare/{quote(previous_tag, safe='')}...{quote(current_tag, safe='')}"
-    )
-    sections.append(f"**Full Changelog** (repository comparison): {comparison}")
+        sections.append(manual_notes or INITIAL_NOTES[component])
+    else:
+        if manual_notes:
+            sections.append(manual_notes)
+        sections.append("## What's Changed")
+        groups: dict[str, list[str]] = {category: [] for category in CHANGE_CATEGORIES}
+        for change in changes:
+            if SKIP_LABELS.intersection(change.labels) and "breaking-change" not in change.labels:
+                continue
+            category, entry = _change_entry(change, repository)
+            groups[category].append(entry)
+            contributors.extend((*change.authors, *change.reviewers))
+        for category, entries in groups.items():
+            if entries:
+                sections.append(f"### {category}\n\n" + "\n".join(entries))
+        if not any(groups.values()):
+            sections.append("No component-scoped changelog entries in this release.")
+        comparison = (
+            f"https://github.com/{repository}/compare/{quote(previous_tag, safe='')}...{quote(current_tag, safe='')}"
+        )
+        sections.append(f"**Full Changelog** (repository comparison): {comparison}")
+    if contributors:
+        sections.append("## Contributors\n\n" + " ".join(f"@{login}" for login in _unique_logins(contributors)))
     return "\n\n".join(sections) + "\n"
 
 

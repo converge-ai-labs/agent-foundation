@@ -136,15 +136,19 @@ subagents:
 
 ### 内置工具与 subagent
 
-| 根字段                                    | 默认值      | 用途                                                  |
-| ----------------------------------------- | ----------- | ----------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                      |
-| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`               |
-| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数          |
-| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接    |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                          |
-| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界           |
-| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer` |
+| 根字段                                    | 默认值      | 用途                                                       |
+| ----------------------------------------- | ----------- | ---------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                           |
+| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`                    |
+| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数               |
+| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接         |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                               |
+| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界                |
+| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer`      |
+| `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用 |
+| `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`           |
+| `subagents.dynamic.allowed_models`        | `[]`        | 显式创建时可选的已配置 Model ID，不能重复                  |
+| `subagents.dynamic.default_model`         | 未设置      | 省略 `model` 时使用；启用动态创建时必填                    |
 
 常规设置包含全部三个内置子级。高级设置提供全部或不选；编辑列表可选择子集。定义由包维护，不会复制 Markdown 文件。用 `a13n-harness-ui config subagents` 检查包含情况。见[子级继承和冲突](agents-and-subagents.md#built-in-subagents)。
 
@@ -227,7 +231,7 @@ background_compaction:
 
 记忆默认开启。在选中 YAML 旁，`memory/global/` 保存跨 Project 事实，`memory/projects/<project-id>/` 保存 Project 事实。无 Project 对话只使用全局记忆。`MEMORY.md` 保持短索引，详细主题分文件保存。记忆是历史上下文，与对话历史和 Full Control 权限分开。
 
-在 **Settings → General → Memory** 选择整理 Model 和指令，或合并：
+在 **Settings → Memory** 选择整理 Model 和指令，或合并：
 
 ```yaml title="a13n-harness-ui.yaml — memory organization"
 memory:
@@ -252,6 +256,22 @@ WebUI 输入可触发已变化记忆的整理。每个范围有只读 Memory Thr
 关闭 `auto_organize.enabled` 保留记忆但停止自动请求。关闭 `memory.enabled` 停止为后续 Run 附加记忆。任一开关关闭或服务器停止都会取消维护，保留部分修改。文件保留；活动前台 Run 保留原设置。
 
 将 `memory/` 与应用数据分开备份。`.a13n-memory/` 保存锁和整理器状态。可选 Git 提供有界 diff 提示，不保存版本历史，也不修改你的仓库。
+
+### 听写
+
+在**设置 → 聊天 → 听写 → 语音输入**中选择 **Codex 订阅**，再选择原生账号或订阅组。预设语音服务和 Luna 文本校正无需 Model 资源。高级设置提供校正模型和上下文预算。录音及文本插入流程见[语音输入](webui.md#voice-input)。
+
+```yaml
+dictation:
+  backend: codex
+  codex:
+    group: codex-default
+    # 或改用 account: acct-work，并省略 group。
+    # model: gpt-6-luna  # 可选的校正 LLM 覆盖值。
+  context_words: 2000
+```
+
+省略 `codex.group` 和 `codex.account` 时使用 `codex-default`。语音识别和文本校正分别从该组中选择账号；`codex.account` 将两步固定到单个账号。语音识别只在收到明确的 HTTP 401 或 429 拒绝后尝试其他可用成员，上传超时或网络失败时不会重传。文本校正沿用正常的订阅组故障切换；校正失败时保留原始转写，不再上传音频。仅登录账号不会启用听写。已有的 `dictation.model: model-id` 配置仍通过 `backend: model`（默认值）使用所选音频输入 Model。将该 Model 设为 null 可关闭听写；已保存的 Codex 预设仍会保留，供以后启用。
 
 ### 媒体理解
 
@@ -324,13 +344,17 @@ webui:
 
 ### WebUI Bot
 
-**设置 → 常规 → Bot** 为内置个人助手选择 Model，并按需添加自定义指令。`webui.bot.model` 默认为 `null`，仅沿用全局默认 Agent 的 Model。Bot 使用自己的指令、自定义指令和全局 `AGENTS.md`，无需选择 Agent。
+**设置 → Bot** 为内置个人助手选择 Agent、Model，并按需添加自定义指令。`webui.bot.agent` 默认为 `null`，沿用全局默认 Agent。Bot 继承该 Agent 的执行设置，包括 compaction、权限、子 Agent、Plugin 和 MCP。`webui.bot.model` 默认为 `null`，沿用所选 Agent 的 Model，也可显式覆盖。`webui.bot` 下独立的 `files_enabled`、`shell_enabled`、`computer_enabled` 默认为 `null`（跟随 Agent）；显式 `true` 或 `false` 可覆盖 Bot 对应的访问开关，工具白名单和 Environment 限制仍然生效。Agent 角色指令替换为 Bot 自身及自定义指令，保留全局 `AGENTS.md`，结构化提问保持关闭。继承和回退细节参见 [Bot](bot.md)。
 
 `webui.bot.enabled` 默认为 `false`。`webui.bot.heartbeat_enabled` 默认为 `true`，`interval_seconds` 为 `3600`（一小时），`connector_interval_seconds` 为 `60`。这些字段都直接位于 `webui.bot` 下。首次开启且 Model 可用时，服务器通过正常模型请求代发一条可见的预设用户消息，介绍工作区；已有活动或引导尝试会阻止重复发送。打开页面不会启动工作。开启后还会独立安排一个间隔后的首次 Heartbeat。完整示例、范围、工作区、记忆访问、暂停和恢复行为参见 [Bot](bot.md)。
 
+### WebUI 子智能体
+
+在 **Settings → Agents → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
+
 ### WebUI Sidekick
 
-**Settings → General → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
+**Settings → Agents → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
 
 ```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
 webui:
@@ -405,3 +429,46 @@ run_configuration:
 省略/null `allowed_hosts` 允许全部目标；`[]` 拒绝全部。规则精确匹配规范化主机名/IP，或用 `regex:` 做完整主机名 Python 匹配。该模式允许 `docs.example.com` 及其子域，不允许 `docs.example.com.evil.test`。YAML 单引号保留反斜杠。空/无效表达式验证失败；URL、路径、端口、glob 和 CIDR 不是主机模式。
 
 API 密钥 Model 客户端和 Host Web/MCP 检查声明目标及重定向跳转，不解析 DNS 或固定 IP。限制性规则拒绝不可检查的订阅传输。捕获的策略在根和子级 Run 内保持固定。带命名空间的 `extensions` 需要主动接入的消费者，不是 Capability 参数。Shell/插件网络需要 Environment 或部署隔离。见[主机规则](../a13n-harness/context.md#host-rules-and-regular-expressions)。
+
+## Object Store
+
+在 Agent 资源中启用可复用的媒体引用：
+
+```yaml
+capabilities:
+  - capability: object_store
+```
+
+私有对象库属于当前 Thread，可跨 Run 和 App 重启保留。每个 UI subagent 都是独立的子 Thread，拥有自己的对象库；父子 Thread 的引用不能在彼此的 Store 中解析。它位于 `data_root/object-library/`，与临时工作文件分开。捕获的图片保留原生视觉内容；Agent 获得紧凑引用，用于后续工具参数。五个管理工具为 `asset_ref`、`asset_store`、`asset_list`、`asset_info` 和 `asset_delete`。
+
+根 YAML 配置需要重启生效的保留策略。默认限制较小；较大工作流可调高：
+
+```yaml
+process:
+  object_store:
+    temporary_ttl_seconds: 86400
+    max_temporary_objects: 32
+    max_temporary_bytes: 67108864
+```
+
+临时对象一天未实际读取字节即过期。读取刷新闲置 TTL 和 LRU 顺序；list/info 不续期。数量或总字节超限时，淘汰最久未使用的临时对象。启动时和每小时的清理也会处理不活跃对象库。`asset_store` 提升可用对象的保留级别而不改变引用，之后不再受临时过期和配额影响。已保留对象持续存在，直到删除。显式保留会占用长期空间，只保存后续确实需要的对象。
+
+MCP 工具通过 [Object Reference Transport（对象引用传输）](../a13n-harness/capabilities.md#object-reference-transport) 接入 Harness 工具扩展：把引用替换成 base64，不重跑参数校验。在 schema-version-2 MCP 资源中，使用 `object_ref_tools` 规则选择字符串参数接受 base64 的工具。规则匹配服务原始工具名，支持前缀和后缀通配：
+
+```yaml
+schema_version: "2"
+kind: mcp_server
+id: mcp-media
+name: Media tools
+object_ref_tools:
+  "*": false
+  "*_upload": true
+  send_image: true
+  text_upload: false
+transport:
+  url: https://example.com/mcp
+```
+
+`"*"` 设置默认值；省略时沿用工具自身的声明，未声明的工具默认不支持。精确名称优先于通配模式。`*` 可以在任意位置匹配零个或多个字符，例如 `image_*_upload`；其他字符按字面匹配，并区分大小写。非 `*` 字符越多，模式越具体；具体程度相同时 false 优先，与条目顺序无关。[原生工具集](../a13n-harness/capabilities.md#object-reference-transport) 和 Service MCP 连接使用同一套规则。
+
+有效修改对下一个 Run 生效。引用在权限或审批通过后、真正调用目标时解析；历史保留引用。过期引用会明确失败，不会自动重放生产工具。捕获大小限制和代码侧启用方式见 [Object Store 用法](../a13n-harness/capabilities.md#reuse-original-media-with-object-store)。

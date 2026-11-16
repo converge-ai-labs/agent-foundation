@@ -18,6 +18,8 @@ from pydantic_ai.messages import (
     UserContent,
 )
 
+from a13n_harness_ui.background_input import ACTIVITY_SOURCES
+
 EXCERPT_LIMIT = 2048
 
 
@@ -59,11 +61,9 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
     attachments: list[str] = []
     for value, metadata in content:
         extra = metadata.model_extra or {}
-        if not metadata.display or extra.get("a13n.steering-source") in {
-            "background_process",
-            "async_subagent",
-            "envd_session",
-        }:
+        source = extra.get("a13n.steering-source")
+        # Parent-authored tasks still supply the child conversation's preview.
+        if not metadata.display or (source in ACTIVITY_SOURCES and source != "parent_agent"):
             continue
         attachment = extra.get("harness_ui")
         if isinstance(attachment, dict) and isinstance(attachment.get("attachment"), dict):

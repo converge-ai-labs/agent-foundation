@@ -6,15 +6,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from anyio import to_thread
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import ThreadError
 
 from .database import DatabaseSessions, short_session, transaction
-from .models import ThreadInspectionRecord, ThreadRecord, TranscriptEntryRecord, TranscriptTurnRecord
+from .models import (
+    ThreadInspectionRecord,
+    ThreadRecord,
+    TranscriptEntryRecord,
+    TranscriptTurnRecord,
+)
+from .repositories import latest_child_checkpoint_query
 
-INSPECTION_VERSION = 6
+INSPECTION_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,16 @@ class InspectionData:
     turns: tuple[InspectionTurn, ...]
     entry_offset: int = 0
     turn_offset: int = 0
+    sealed_prefix_digest: str | None = None
+
+
+async def _selected_source(session: AsyncSession, thread: ThreadRecord) -> str:
+    if thread.parent_thread_id is not None:
+        selected = await session.scalar(latest_child_checkpoint_query(thread.thread_id))
+        return (
+            selected.selected_checkpoint_digest if selected is not None else None
+        ) or f"initial:{thread.initial_state_digest}"
+    return thread.continuation_digest or f"initial:{thread.initial_state_digest}"
 
 
 def _header_key(record: ThreadInspectionRecord | None) -> tuple[str, int] | None:
@@ -79,6 +96,14 @@ class InspectionRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
+    async def sealed_prefix(self, thread_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            return await session.scalar(
+                select(ThreadInspectionRecord.sealed_prefix_digest).where(
+                    ThreadInspectionRecord.thread_id == thread_id, ThreadInspectionRecord.version == INSPECTION_VERSION
+                )
+            )
+
     async def header(self, thread_id: str, source_id: str) -> InspectionHeader | None:
         async with short_session(self._sessions) as session:
             record = await session.get(ThreadInspectionRecord, thread_id)
@@ -97,18 +122,23 @@ class InspectionRepository:
                 # Read the header and its rows from one coherent snapshot.
                 await session.execute(text("BEGIN"))
                 thread = await session.get(ThreadRecord, thread_id)
-                if (
-                    thread is None
-                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
-                ):
+                if thread is None or await _selected_source(session, thread) != source_id:
                     return False
-                previous = _header_key(await session.get(ThreadInspectionRecord, thread_id))
+                record = await session.get(ThreadInspectionRecord, thread_id)
+                previous = _header_key(record)
                 if previous == target:
                     return True
                 if (data.entry_offset or data.turn_offset) and previous != (expected_source, INSPECTION_VERSION):
-                    # A missing/stale derived prefix rebuilds on inspection, never
-                    # from execution authority or an unverified index base.
-                    return False
+                    # Every checkpoint in the same Run can replace its entire revisable tail.
+                    if not (
+                        record is not None
+                        and record.version == INSPECTION_VERSION
+                        and data.sealed_prefix_digest is not None
+                        and record.sealed_prefix_digest == data.sealed_prefix_digest
+                        and record.message_count >= data.entry_offset
+                        and record.turn_count >= data.turn_offset
+                    ):
+                        return False
                 entries = (
                     (
                         await session.execute(
@@ -142,10 +172,7 @@ class InspectionRepository:
             changed_entries, changed_turns = await to_thread.run_sync(_changed_rows, thread_id, data, entries, turns)
             async with transaction(self._sessions) as session:
                 thread = await session.get(ThreadRecord, thread_id)
-                if (
-                    thread is None
-                    or (thread.continuation_digest or f"initial:{thread.initial_state_digest}") != source_id
-                ):
+                if thread is None or await _selected_source(session, thread) != source_id:
                     return False
                 current = _header_key(await session.get(ThreadInspectionRecord, thread_id))
                 if current == target:
@@ -161,6 +188,7 @@ class InspectionRepository:
                     message_count=data.entry_offset + len(data.entries),
                     turn_count=data.turn_offset + len(data.turns),
                     metadata_json=data.metadata_json,
+                    sealed_prefix_digest=data.sealed_prefix_digest,
                 )
                 await session.execute(
                     header.on_conflict_do_update(
@@ -171,6 +199,7 @@ class InspectionRepository:
                             "message_count": header.excluded.message_count,
                             "turn_count": header.excluded.turn_count,
                             "metadata_json": header.excluded.metadata_json,
+                            "sealed_prefix_digest": header.excluded.sealed_prefix_digest,
                         },
                     )
                 )
@@ -228,6 +257,55 @@ class InspectionRepository:
         if len(values) != len(set(positions)):
             raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
         return values
+
+    async def title_entries(self, thread_id: str, source_id: str) -> tuple[str, ...]:
+        """Read the first and last authored entries without loading intervening tool results."""
+        async with short_session(self._sessions) as session:
+            parts = func.json_each(TranscriptEntryRecord.value_json, "$.parts").table_valued("value")
+            user_text = (
+                select(1)
+                .select_from(parts)
+                .where(
+                    func.json_extract(parts.c.value, "$.kind") == "user",
+                    func.coalesce(func.json_extract(parts.c.value, "$.metadata.display"), 1) == 1,
+                    func.coalesce(func.json_extract(parts.c.value, '$.metadata."a13n.steering-source"'), "user")
+                    == "user",
+                    func.json_extract(parts.c.value, "$.metadata.harness_ui.mcp_app_context").is_(None),
+                    func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text_skipped").is_(None),
+                    (
+                        func.json_extract(parts.c.value, "$.metadata.harness_ui.attachment").is_(None)
+                        | (func.json_extract(parts.c.value, "$.metadata.harness_ui.long_text") == 1)
+                    ),
+                )
+            )
+            position = TranscriptEntryRecord.position
+            query = (
+                select(position, TranscriptEntryRecord.value_json)
+                .join(ThreadInspectionRecord)
+                .where(
+                    TranscriptEntryRecord.thread_id == thread_id,
+                    ThreadInspectionRecord.source_id == source_id,
+                    user_text.exists(),
+                )
+            )
+            first = query.order_by(position).limit(32).subquery()
+            last = query.order_by(position.desc()).limit(32).subquery()
+            edges = select(first).union(select(last)).subquery()
+            return tuple(await session.scalars(select(edges.c.value_json).order_by(edges.c.position)))
+
+    async def matching_entries(self, thread_id: str, source_id: str, reference: str) -> tuple[str, ...]:
+        """Bounded retained rows containing a tool-call reference."""
+        async with short_session(self._sessions) as session:
+            query = (
+                select(TranscriptEntryRecord.value_json)
+                .join(ThreadInspectionRecord)
+                .where(
+                    ThreadInspectionRecord.thread_id == thread_id,
+                    ThreadInspectionRecord.source_id == source_id,
+                    func.instr(TranscriptEntryRecord.value_json, reference) > 0,
+                )
+            )
+            return tuple(await session.scalars(query.order_by(TranscriptEntryRecord.position.desc()).limit(20)))
 
     async def turns(
         self,

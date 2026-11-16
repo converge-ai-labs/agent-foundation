@@ -37,13 +37,16 @@ install: ## Install locked dependencies and Git hooks
 	@echo "Installing pre-commit hooks"
 	@uv run --locked pre-commit install --install-hooks
 
+ENVD_CARGO_ARGS ?=
 ENVD_FEATURES ?=
+ENVD_CARGO_PROFILE ?= release
+ENVD_PROFILE_DIR = $(if $(filter dev,$(ENVD_CARGO_PROFILE)),debug,$(ENVD_CARGO_PROFILE))
 
 .PHONY: accessibility-linux-test
 accessibility-linux-test: ## Test Linux AT-SPI against disposable GTK and native D-Bus providers
-	cargo build --release --locked --package a13n-envd --features "$(ENVD_FEATURES)"
-	CARGO_HOME="$${CARGO_HOME:-$$HOME/.cargo}" RUSTUP_HOME="$${RUSTUP_HOME:-$$HOME/.rustup}" bash dev/fixtures/linux-desktop/test-accessibility.sh cargo test --release --locked --package a13n-envd --features "$(ENVD_FEATURES)" --lib accessibility::linux -- --include-ignored --test-threads=1
-	A13N_ENVD_TEST_BINARY="$(CURDIR)/target/release/a13n-envd" bash dev/fixtures/linux-desktop/test-accessibility.sh uv run --locked --package a13n-harness --group test --no-default-groups pytest packages/a13n-harness/tests/test_accessibility_linux_native.py -q
+	$(if $(ENVD_BINARY),@test -x "$(ENVD_BINARY)",cargo build --profile "$(ENVD_CARGO_PROFILE)" --locked --package a13n-envd --features "$(ENVD_FEATURES)")
+	CARGO_HOME="$${CARGO_HOME:-$$HOME/.cargo}" RUSTUP_HOME="$${RUSTUP_HOME:-$$HOME/.rustup}" bash dev/fixtures/linux-desktop/test-accessibility.sh cargo test --profile "$(ENVD_CARGO_PROFILE)" --locked --package a13n-envd --features "$(ENVD_FEATURES)" --lib accessibility::linux -- --include-ignored --test-threads=1
+	A13N_ENVD_TEST_BINARY="$(if $(ENVD_BINARY),$(ENVD_BINARY),$(CURDIR)/target/$(ENVD_PROFILE_DIR)/a13n-envd)" bash dev/fixtures/linux-desktop/test-accessibility.sh uv run --locked --package a13n-harness --group test --no-default-groups pytest packages/a13n-harness/tests/test_accessibility_linux_native.py -q
 
 .PHONY: accessibility-chromium-test
 accessibility-chromium-test: ## Test real Chromium AT-SPI (A13N_ATSPI_CHROMIUM=/absolute/browser/path)
@@ -318,7 +321,7 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, wire-model and Service external-target integration tests
-	@cargo build --locked --package a13n-envd
+	@cargo build --locked --package a13n-envd $(ENVD_CARGO_ARGS)
 	@test -x "$(CURDIR)/target/debug/a13n-envd"
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip.xml) scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py packages/a13n-harness/tests/providers_environment/test_remote_envd.py packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest $(if $(EIP_TEST_REPORT_DIR),--junitxml=$(EIP_TEST_REPORT_DIR)/eip-example.xml) examples/environment-provider/tests

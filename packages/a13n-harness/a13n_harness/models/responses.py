@@ -19,8 +19,8 @@ from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
-from pydantic_ai.models._openai_responses_websocket import ResponsesWebSocketStream
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
+from pydantic_ai.models.openai._responses_websocket import ResponsesWebSocketStream
 from pydantic_ai.profiles import ModelProfileSpec
 from pydantic_ai.providers import Provider
 from pydantic_ai.settings import ModelSettings

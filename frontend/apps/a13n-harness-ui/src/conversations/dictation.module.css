@@ -41,9 +41,8 @@
   background: color-mix(in srgb, var(--a13n-secondary) 80%, transparent);
   border-radius: 999px;
 }
-.bar button {
+.bar button[data-size="icon-sm"] {
   border-radius: 50%;
-  flex: none;
 }
 .spin {
   width: 20px;

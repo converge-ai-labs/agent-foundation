@@ -282,22 +282,22 @@ it.each(["draft-test", undefined])(
   },
 );
 
-it("routes clipboard images and drops to the current insertion position", () => {
+it("pastes images over the selection and inserts dropped files at the pointer", () => {
   const { draft, editor, context, textbox } = inlineEditor();
   act(() => {
     draft.doc.getText("text").insert(0, "before after");
-    editor.current!.dispatch({ selection: { anchor: 7 } });
+    editor.current!.dispatch({ selection: { anchor: 9, head: 7 } });
   });
   const file = new File(["image"], "clipboard.png", { type: "image/png" });
   fireEvent.paste(textbox, { clipboardData: { files: [file] } });
-  expect(context.upload).toHaveBeenCalledWith([file], 7);
+  expect(context.upload).toHaveBeenCalledWith([file], 7, 9);
   vi.spyOn(editor.current!, "posAtCoords").mockReturnValue(3);
   fireEvent.drop(textbox, {
     dataTransfer: { files: [file] },
     clientX: 10,
     clientY: 10,
   });
-  expect(context.upload).toHaveBeenLastCalledWith([file], 3);
+  expect(context.upload).toHaveBeenLastCalledWith([file], 3, 3);
 });
 
 it("disposes thumbnail resources even when CodeMirror reuses DOM with an equal new widget", async () => {
@@ -437,7 +437,7 @@ it("keeps staged images between text slices with local preview, removal and undo
       static revokeObjectURL = revokeObjectURL;
     },
   );
-  const { draft, context, rendered, textbox } = inlineEditor();
+  const { draft, editor, context, rendered, textbox } = inlineEditor();
   try {
     let key = "";
     const file = new File(["image"], "draft.png", { type: "image/png" });
@@ -450,9 +450,19 @@ it("keeps staged images between text slices with local preview, removal and undo
     const chip = await screen.findByRole("button", {
       name: "draft.png - ready to upload",
     });
+    const image = chip.querySelector("img");
+    act(() =>
+      editor.current!.dispatch({
+        selection: { anchor: 0, head: editor.current!.state.doc.length },
+      }),
+    );
+    expect(chip.parentElement?.hasAttribute("data-selected")).toBe(true);
+    act(() => editor.current!.dispatch({ selection: { anchor: 0 } }));
+    expect(chip.parentElement?.hasAttribute("data-selected")).toBe(false);
+    expect(chip.querySelector("img")).toBe(image);
     expect(chip.textContent).toBe("draft.png");
     expect(textbox.querySelector(".cm-line")?.textContent).toBe(
-      "before draft.png×after",
+      "before draft.pngafter",
     );
     fireEvent.click(chip);
     expect(context.previewLocal).toHaveBeenCalledWith(file);
@@ -545,13 +555,17 @@ it("completes dollar skills without sending, and retains the editor across catal
     editor.current!.focus();
     startCompletion(editor.current!);
   });
-  await screen.findByRole("option", { name: /\$review/ });
+  await screen.findByRole("option", { name: /Review/ });
   expect(screen.getByText("Review carefully")).toBeTruthy();
   // CodeMirror compares Date.now against the completion's opening timestamp.
   now.mockReturnValue(1_100);
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   fireEvent.keyDown(textbox, { key: "Enter" });
   expect(submit).not.toHaveBeenCalled();
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  fireEvent.keyDown(textbox, { key: "Backspace" });
+  expect(draft.doc.getText("text").toString()).toBe("Use ");
+  act(() => draft.undo.undo());
   expect(draft.doc.getText("text").toString()).toBe("Use $review ");
   fireEvent.keyDown(textbox, { key: "Enter" });
   expect(submit).toHaveBeenCalledOnce();
@@ -577,10 +591,10 @@ it("completes dollar skills without sending, and retains the editor across catal
     editor.current!.focus();
     startCompletion(editor.current!);
   });
-  await screen.findByRole("option", { name: /\$review/ });
+  await screen.findByRole("option", { name: /Review/ });
 });
 
-it("sends immediately after ordinary typing even while completion checks are pending", async () => {
+it("sends ordinary text without starting skill completion", async () => {
   const { completionStatus } = await import("@codemirror/autocomplete");
   const editor = { current: null as EditorView | null };
   const submit = vi.fn();
@@ -602,7 +616,7 @@ it("sends immediately after ordinary typing even while completion checks are pen
       selection: { anchor: 5 },
       userEvent: "input.type",
     });
-    expect(completionStatus(editor.current!.state)).toBe("pending");
+    expect(completionStatus(editor.current!.state)).toBeNull();
     fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
   });
   expect(submit).toHaveBeenCalledOnce();
@@ -676,7 +690,7 @@ it("focuses when the initial page becomes ready without rebuilding or reclaiming
   expect(editor.current).toBe(original);
 });
 
-it("styles manually typed and remote skill text without atomic editing, and discards stale catalogs", async () => {
+it("renders manually typed and remote skill references, and discards stale catalogs", async () => {
   const catalog = {
     catalog_id: "a".repeat(64),
     context_kind: "draft" as const,
@@ -734,7 +748,7 @@ it("styles manually typed and remote skill text without atomic editing, and disc
   await waitFor(() =>
     expect(
       page.container.querySelector('[data-skill="review"]')?.textContent,
-    ).toBe("$review"),
+    ).toBe("Review"),
   );
   expect(editor.current).toBe(original);
   expect(draft.doc.getText("text").toString()).toBe("😀 $review $unknown");
@@ -761,6 +775,7 @@ it("styles manually typed and remote skill text without atomic editing, and disc
 it("opens skill suggestions without a typing debounce and filters each edit synchronously", async () => {
   const { currentCompletions, completionStatus } =
     await import("@codemirror/autocomplete");
+  const submit = vi.fn();
   const editor = { current: null as EditorView | null };
   const loadSkills = vi.fn(async () => ({
     catalog_id: "catalog",
@@ -779,7 +794,7 @@ it("opens skill suggestions without a typing debounce and filters each edit sync
       <ComposerEditor
         draft={new ThreadDraft()}
         editor={editor}
-        submit={vi.fn()}
+        submit={submit}
         loadSkills={loadSkills}
         profile={{ display_name: "Test", color: "#000000" }}
         presence={() => {}}
@@ -832,14 +847,25 @@ it("opens skill suggestions without a typing debounce and filters each edit sync
     });
     expect(labels()).toEqual(["$release"]);
     expect(loadSkills).toHaveBeenCalledTimes(requests);
-    act(() => {
-      editor.current!.dispatch({
-        changes: { from: 4, insert: " " },
-        selection: { anchor: 5 },
-        userEvent: "input.type",
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Escape" });
+    const type = async (text: string) => {
+      await act(async () => {
+        const view = editor.current!;
+        view.dispatch(view.state.replaceSelection(text), {
+          userEvent: "input.type",
+        });
+        await vi.advanceTimersByTimeAsync(100);
       });
-    });
+    };
+    await type("e");
+    expect(editor.current!.state.doc.toString()).toBe("$rele");
     expect(labels()).toEqual([]);
+    await type(" /");
+    expect(labels()).toEqual(["$release", "$review"]);
+    await type("tmp");
+    expect(labels()).toEqual([]);
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+    expect(submit).toHaveBeenCalledOnce();
   } finally {
     cleanup();
     vi.useRealTimers();

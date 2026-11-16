@@ -1453,6 +1453,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/title-suggestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest Chat Title */
+        post: operations["suggest_chat_title_api_threads__thread_id__title_suggestion_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models/choices": {
         parameters: {
             query?: never;
@@ -1980,6 +1997,75 @@ export interface paths {
         put?: never;
         /** Submit Login Callback */
         post: operations["submit_login_callback_api_auth_logins__session_id__callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/status/{kind}/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Oauth Status */
+        get: operations["mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Oauth Start */
+        post: operations["mcp_oauth_start_api_mcp_authorization_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/attempts/{attempt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Oauth Login Status */
+        get: operations["mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get"];
+        put?: never;
+        post?: never;
+        /** Mcp Oauth Cancel */
+        delete: operations["mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp-authorization/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mcp Oauth Disconnect */
+        post: operations["mcp_oauth_disconnect_api_mcp_authorization_disconnect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2514,6 +2600,23 @@ export interface paths {
         };
         /** Tool Executions */
         get: operations["tool_executions_api_threads__thread_id__tool_executions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool Execution Output */
+        get: operations["tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3225,14 +3328,14 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"] | components["schemas"]["DynamicAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Id */
             id: string;
         };
@@ -3607,6 +3710,22 @@ export interface components {
         };
         /** @enum {string} */
         AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
+        /** AuthorizationStatus */
+        AuthorizationStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "disconnected" | "connected" | "expired" | "reconnect_required";
+            login?: components["schemas"]["OAuthLoginStatus"] | null;
+            /**
+             * Scopes
+             * @default []
+             */
+            scopes?: string[];
+            /** Expires At */
+            expires_at?: number | null;
+        };
         /**
          * Availability
          * @enum {string}
@@ -3641,6 +3760,11 @@ export interface components {
             source: "user" | "heartbeat" | "connector" | "automatic";
             /** Text */
             text: string;
+            /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["ThreadAttachment"])[];
             /**
              * Created At
              * Format: date-time
@@ -3679,6 +3803,11 @@ export interface components {
             role: "user" | "assistant";
             /** Text */
             text: string;
+            /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["ThreadAttachment"])[];
             /**
              * Created At
              * Format: date-time
@@ -3763,6 +3892,8 @@ export interface components {
             available: boolean;
             /** Enabled */
             enabled: boolean;
+            /** Agent Id */
+            agent_id?: string | null;
             /** Model Id */
             model_id?: string | null;
             /** Heartbeat Enabled */
@@ -4097,9 +4228,11 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live" | "bot";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Source Id */
             source_id: string;
+            /** Base Agent Id */
+            base_agent_id?: string | null;
             /** Model Id */
             model_id: string;
             /** Thinking Summary */
@@ -4350,6 +4483,15 @@ export interface components {
             /** Persisted Status */
             persisted_status?: ("running" | "succeeded" | "failed" | "cancelled" | "lost") | null;
         };
+        /** ChildExecutionModel */
+        ChildExecutionModel: {
+            /** Name */
+            name: string;
+            /** Identity */
+            identity: string;
+            /** Thinking */
+            thinking: string;
+        };
         /** ChildExecutionPage */
         ChildExecutionPage: {
             /** Executions */
@@ -4361,6 +4503,7 @@ export interface components {
         };
         /** ChildExecutionView */
         ChildExecutionView: {
+            model?: components["schemas"]["ChildExecutionModel"] | null;
             /** Execution Id */
             execution_id: string;
             /** Root Thread Id */
@@ -4490,6 +4633,19 @@ export interface components {
             status: "running" | "success" | "failed" | "denied" | "interrupted";
             arguments?: components["schemas"]["JsonValue"] | null;
             result?: components["schemas"]["JsonValue"] | null;
+        };
+        /** CodexDictationConfiguration */
+        CodexDictationConfiguration: {
+            group?: components["schemas"]["ResourceId"] | null;
+            /** Account */
+            account?: string | null;
+            /**
+             * Model
+             * @default gpt-6-luna
+             */
+            model?: string;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /** CodexSubscriptionAuthentication */
         CodexSubscriptionAuthentication: {
@@ -4757,6 +4913,10 @@ export interface components {
         ContextItemUsage: {
             /** Characters */
             characters: number;
+            /** Occurrences */
+            occurrences?: number | null;
+            /** Distinct Versions */
+            distinct_versions?: number | null;
             /** Calls */
             calls?: number | null;
             /** Argument Characters */
@@ -5051,7 +5211,14 @@ export interface components {
         };
         /** DictationConfiguration */
         DictationConfiguration: {
+            /**
+             * Backend
+             * @default model
+             * @enum {string}
+             */
+            backend?: "model" | "codex";
             model?: components["schemas"]["ResourceId"] | null;
+            codex?: components["schemas"]["CodexDictationConfiguration"];
             /**
              * Context Words
              * @default 2000
@@ -5059,6 +5226,13 @@ export interface components {
             context_words?: number;
         } & {
             [key: string]: components["schemas"]["JsonValue"];
+        };
+        /** DictationResult */
+        DictationResult: {
+            /** Text */
+            text: string;
+            /** Warning */
+            warning?: "cleanup_failed" | null;
         };
         /** DirectoryEntry */
         DirectoryEntry: {
@@ -5148,6 +5322,20 @@ export interface components {
              * Format: date-time
              */
             unsent_since: string;
+        };
+        /**
+         * DynamicAgentSource
+         * @description Host-defined child; its complete definition is retained in its Run composition.
+         */
+        DynamicAgentSource: {
+            /**
+             * Kind
+             * @default dynamic
+             * @constant
+             */
+            kind?: "dynamic";
+            /** Id */
+            id: string;
         };
         EgressDestinations: components["schemas"]["PublicDestinations"] | components["schemas"]["AllowlistDestinations"];
         /**
@@ -5961,6 +6149,8 @@ export interface components {
             kind: string;
             /** Name */
             name: string;
+            /** Group Name */
+            group_name: string;
             /** Version */
             version: number;
             /** Enabled */
@@ -6241,6 +6431,11 @@ export interface components {
             server_id: string;
             /** Name */
             name: string;
+            /**
+             * Oauth
+             * @default false
+             */
+            oauth?: boolean;
         };
         /**
          * MemoryAgentSource
@@ -6694,6 +6889,20 @@ export interface components {
              */
             total?: number;
             page?: components["schemas"]["NotePage"] | null;
+        };
+        /** OAuthLoginStatus */
+        OAuthLoginStatus: {
+            /** Attempt Id */
+            attempt_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "connecting" | "waiting" | "connected" | "failed" | "cancelled";
+            /** Authorization Url */
+            authorization_url?: string | null;
+            /** Error */
+            error?: string | null;
         };
         /**
          * ObjectKind
@@ -7369,7 +7578,7 @@ export interface components {
              * @default submit
              * @enum {string}
              */
-            kind?: "submit" | "open_url" | "copy" | "confirm";
+            kind?: "submit" | "open_url" | "copy" | "confirm" | "oauth";
             /** Url */
             url?: string | null;
             /** Value */
@@ -7560,15 +7769,6 @@ export interface components {
              *     <configuration>
              *     Default configuration directory: ~/.a13n-harness-ui/
              *     An explicit --config selects a different root YAML and its sibling resource directories. Use the selected configuration directory for Harness UI configuration and the current working directory as the project workspace.
-             *
-             *     - a13n-harness-ui.yaml: Process settings, global defaults, display options, tool switches, and built-in subagent inclusion.
-             *     - models/: YAML Model definitions with settings and credential references, never literal credentials.
-             *     - agents/: YAML Agent definitions with instructions, capabilities, and child references.
-             *     - projects/: Optional named project roots; a conversation can run without a Project.
-             *     - extensions/: YAML Harness Plugin, Environment profile, and Environment Run Extension definitions.
-             *     - mcp/: YAML or JSON MCP server definitions, including multi-server mcpServers objects. Environment/header values accept literals or environment references.
-             *     - subagents/: User-authored Markdown child roles. Markdown children inherit the parent model; reference an Agent resource for independent model settings.
-             *     - AGENTS.md: Optional global guidance from the selected configuration directory.
              *
              *     The `configuration` Environment mount, when present, exposes the selected configuration directory for file reads and writes, not shell execution. If that directory is already a working mount, use its existing path instead. Configuration edits are validated before acceptance and do not rewrite the active Run's captured configuration. Preserve unrelated settings and keep credentials out of messages and resource files. Without a Project, use the Thread's `tmp/` directory as the working directory; do not infer a project from the configuration directory.
              *
@@ -8586,9 +8786,37 @@ export interface components {
             notes: components["schemas"]["NoteWorkSummary"];
             children: components["schemas"]["ChildStatusCounts"];
         };
+        /** ToolExecutionOutputView */
+        ToolExecutionOutputView: {
+            execution: components["schemas"]["ToolExecutionView"];
+            /** Input */
+            input?: string | null;
+            /**
+             * Input Truncated
+             * @default false
+             */
+            input_truncated?: boolean;
+            /** Text */
+            text?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "available" | "pending" | "expired" | "unavailable";
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated?: boolean;
+            /**
+             * Live
+             * @default false
+             */
+            live?: boolean;
+        };
         /**
          * ToolExecutionView
-         * @description Detached status only; native results stay behind Harness result tools.
+         * @description Detached execution status; output is read separately without acknowledgement.
          */
         ToolExecutionView: {
             /** Execution Id */
@@ -8631,6 +8859,11 @@ export interface components {
              * @default false
              */
             delivery_acknowledged?: boolean;
+            /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested?: boolean;
             /**
              * Available Actions
              * @default []
@@ -8790,6 +9023,11 @@ export interface components {
         };
         /** TranscriptPart */
         TranscriptPart: {
+            /**
+             * Display Id
+             * @description Native display item identity, when available.
+             */
+            display_id?: string | null;
             /**
              * Duration Ms
              * @description Recorded elapsed time for this display item.
@@ -9906,6 +10144,8 @@ export interface components {
              * @default
              */
             name?: string;
+            /** Group Name */
+            group_name: string;
             /** Expected Version */
             expected_version?: number | null;
             /**
@@ -9954,12 +10194,41 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
-        /** BotSubmit */
-        BotSubmit: {
+        /**
+         * DraftCapture
+         * @description Exact synchronized input to consume only after submission is accepted.
+         */
+        DraftCapture: {
+            /** Draft Id */
+            draft_id: string;
+            /** Update Base64 */
+            update_base64: string;
+            /** Options Update Base64 */
+            options_update_base64?: string | null;
+        };
+        /**
+         * InputAttachmentReference
+         * @description An ordered input reference to a file staged in the same Thread.
+         */
+        InputAttachmentReference: {
+            /** Attachment Id */
+            attachment_id: string;
+        };
+        /** BotSubmitRequest */
+        BotSubmitRequest: {
             /** Input Id */
             input_id: string;
-            /** Text */
-            text: string;
+            /**
+             * Text
+             * @default
+             */
+            text?: string;
+            /**
+             * Parts
+             * @default []
+             */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[];
+            draft?: components["schemas"]["DraftCapture"] | null;
         };
         /** BotPause */
         BotPause: {
@@ -10191,6 +10460,24 @@ export interface components {
             /** End Line */
             end_line?: number | null;
         };
+        /** DictationDraft */
+        DictationDraft: {
+            /**
+             * Before
+             * @default
+             */
+            before?: string;
+            /**
+             * Selected
+             * @default
+             */
+            selected?: string;
+            /**
+             * After
+             * @default
+             */
+            after?: string;
+        };
         /** DictationInput */
         DictationInput: {
             /** Audio */
@@ -10207,6 +10494,7 @@ export interface components {
              * @default
              */
             context?: string;
+            draft?: components["schemas"]["DictationDraft"];
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
@@ -10345,6 +10633,16 @@ export interface components {
              * Format: password
              */
             callback_url: string;
+        };
+        /** AuthorizationTarget */
+        AuthorizationTarget: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "connector";
+            /** Id */
+            id: string;
         };
         /** McpToolSelection */
         McpToolSelection: {
@@ -10572,24 +10870,7 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
-        /**
-         * DraftCapture
-         * @description Exact synchronized input to consume only after submission is accepted.
-         */
-        DraftCapture: {
-            /** Draft Id */
-            draft_id: string;
-            /** Update Base64 */
-            update_base64: string;
-            /** Options Update Base64 */
-            options_update_base64?: string | null;
-        };
         FastSelection: boolean | "ultrafast";
-        /** InputAttachmentReference */
-        InputAttachmentReference: {
-            /** Attachment Id */
-            attachment_id: string;
-        };
         /** @enum {string} */
         ReasoningMode: "standard" | "pro";
         /** SkillReference */
@@ -11109,7 +11390,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BotSubmit"];
+                "application/json": components["schemas"]["BotSubmitRequest"];
             };
         };
         responses: {
@@ -13413,7 +13694,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["DictationResult"];
+                };
+            };
+        };
+    };
+    suggest_chat_title_api_threads__thread_id__title_suggestion_post: {
+        parameters: {
+            query?: {
+                model_id?: string | null;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -14403,6 +14717,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_status_api_mcp_authorization_status__kind___target_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "mcp" | "connector";
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_start_api_mcp_authorization_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizationTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthLoginStatus"];
+                };
+            };
+        };
+    };
+    mcp_oauth_login_status_api_mcp_authorization_attempts__attempt_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthLoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_cancel_api_mcp_authorization_attempts__attempt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_disconnect_api_mcp_authorization_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorizationTarget"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -15577,6 +16033,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {
@@ -15663,6 +16121,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolExecutionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_execution_output_api_threads__thread_id__tool_executions__execution_id__output_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionOutputView"];
                 };
             };
             /** @description Validation Error */
@@ -16679,6 +17169,8 @@ export interface operations {
                 execution_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                /** @description List each child conversation's latest execution, running first, then newest first. */
+                latest?: boolean;
             };
             header?: never;
             path: {

@@ -3,10 +3,10 @@
 import shlex
 from pathlib import PurePosixPath
 
-VERSION = "0.8.0"
+VERSION = "0.8.2"
 TARGET = "x86_64-unknown-linux-gnu"
-SOURCE_REVISION = "3674db454385101566bc4fd50644edf4f3dda03a"
-INSTALLER_SHA256 = "a9b2be3131bb182f35bcdedd3e0cf763dac5f87aa36ba22d03216d138285d88d"
+SOURCE_REVISION = "06485312e6b0241121462a9da4e062789b579706"
+INSTALLER_SHA256 = "37a60f35e43a6a48596a76a5699e41348233d637afefd15712dc93eb76b14c52"
 
 
 def download_command(url: str, destination: str, digest: str) -> str:

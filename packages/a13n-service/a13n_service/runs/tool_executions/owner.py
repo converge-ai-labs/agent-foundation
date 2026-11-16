@@ -36,7 +36,7 @@ from a13n_service.runs.tool_executions.authority import authorize_control, lock_
 from a13n_service.runs.tool_executions.claims import ShellClaim, claim_shells, relinquish_shell
 from a13n_service.runs.tool_executions.output import Output, Snapshot
 from a13n_service.runs.tool_executions.routing import Caller, Request, Routing
-from a13n_service.runs.tool_executions.store import ORIGIN, SEQUENTIAL, Store
+from a13n_service.runs.tool_executions.store import ORIGIN, Store
 
 _RESOURCES: ContextVar[RetainedScope[Any]] = ContextVar("service_tool_resources")
 
@@ -62,6 +62,7 @@ class Executions(ToolExecutionRuntime):
         super().__init__(
             store=Store(runtime), max_active=runtime.settings.tool_executions.max_active, on_completed=self._completed
         )
+        self.reports_background_completions = True
         self.runtime = runtime
         self._origins: dict[str, Lease] = {}
         self.lease_deadlines: dict[str, float] = {}
@@ -200,28 +201,24 @@ class Executions(ToolExecutionRuntime):
                     finally:
                         self._forget_owner(record.execution_id)
 
-        token = SEQUENTIAL.set(sequential)
-        try:
-            record = super().admit(
-                operation,
-                thread_id=thread_id,
-                run_id=run_id,
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                release=cleanup,
-                sequential=sequential,
-            )
-            self._origins[record.execution_id] = origin
-            self.lease_deadlines[record.execution_id] = (
-                asyncio.get_running_loop().time() + self.runtime.settings.worker.lease_seconds
-            )
-            # No await between admission and retaining the scope; failure to admit retains nothing.
-            scope = _RESOURCES.get(None)
-            if scope is not None:
-                host_release = scope.retain()
-            return record
-        finally:
-            SEQUENTIAL.reset(token)
+        record = super().admit(
+            operation,
+            thread_id=thread_id,
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            release=cleanup,
+            sequential=sequential,
+        )
+        self._origins[record.execution_id] = origin
+        self.lease_deadlines[record.execution_id] = (
+            asyncio.get_running_loop().time() + self.runtime.settings.worker.lease_seconds
+        )
+        # No await between admission and retaining the scope; failure to admit retains nothing.
+        scope = _RESOURCES.get(None)
+        if scope is not None:
+            host_release = scope.retain()
+        return record
 
     async def before_dispatch(self, record: ToolExecutionRecord, *, sequential: bool) -> None:
         if record.execution_id in self._recovering:

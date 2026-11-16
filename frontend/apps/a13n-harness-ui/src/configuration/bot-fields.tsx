@@ -19,10 +19,12 @@ export function BotFields({
   source,
   onChange,
   setup = false,
+  showHeading = true,
 }: {
   source: string;
   onChange: (source: string, key: string, value: unknown) => void;
   setup?: boolean;
+  showHeading?: boolean;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -37,14 +39,18 @@ export function BotFields({
   const presets = [900, 1800, 3600, 7200, 14400, 28800, 86400];
   const [custom, setCustom] = useState(!presets.includes(interval));
   const models = selectors.data?.models ?? [];
-  const defaultAgent = selectors.data?.agents.find(
+  const agents = selectors.data?.agents ?? [];
+  const defaultAgent = agents.find(
     (agent) => agent.agent_id === document?.getIn(["defaults", "agent"]),
   );
+  const selectedAgent = get("agent")
+    ? agents.find((agent) => agent.agent_id === get("agent"))
+    : defaultAgent;
   const defaultModel = models.find(
-    (model) => model.model_id === defaultAgent?.model_id,
+    (model) => model.model_id === selectedAgent?.model_id,
   );
   return (
-    <SettingsSection title={setup ? undefined : t("Bot")}>
+    <SettingsSection title={!setup && showHeading ? t("Bot") : undefined}>
       {!setup && (
         <SettingsRow
           label={t("Bot")}
@@ -82,7 +88,31 @@ export function BotFields({
       {(setup || enabled) && (
         <>
           <ResourceChoice
+            label={t("Bot agent")}
+            description={t(
+              "Execution settings only; Bot keeps its own instructions.",
+            )}
+            value={String(get("agent") ?? "")}
+            options={[
+              {
+                value: "",
+                label: defaultAgent
+                  ? t("Default ({{name}})", { name: defaultAgent.name })
+                  : t("Default (built-in settings)"),
+              },
+              ...agents.map((agent) => ({
+                value: agent.agent_id,
+                label: agent.name,
+              })),
+            ]}
+            onValueChange={(value) => set("agent", value || null)}
+            loading={selectors.isLoading}
+          />
+          <ResourceChoice
             label={t("Bot model")}
+            description={t(
+              "Default follows the selected Agent's model. Changes apply to later runs.",
+            )}
             value={String(get("model") ?? "")}
             options={[
               {
@@ -91,7 +121,7 @@ export function BotFields({
                   ? t("Default ({{name}})", {
                       name: defaultModel.name,
                     })
-                  : t("Choose a model"),
+                  : t("Default (no model)"),
                 icon: defaultModel ? (
                   <ModelIcon model={defaultModel} />
                 ) : undefined,
@@ -118,6 +148,30 @@ export function BotFields({
               )}
             </p>
           )}
+          <p className={styles.fieldGroup}>
+            {t(
+              "Access follows the selected Agent, or built-in defaults without an Agent. Environment permissions still apply.",
+            )}
+          </p>
+          {[
+            { key: "files_enabled", label: t("Files access") },
+            { key: "shell_enabled", label: t("Shell access") },
+            { key: "computer_enabled", label: t("Computer access") },
+          ].map(({ key, label }) => (
+            <SettingsChoice
+              key={key}
+              label={label}
+              value={get(key) == null ? "inherit" : String(get(key))}
+              options={[
+                { value: "inherit", label: t("Follow Agent") },
+                { value: "true", label: t("Enabled") },
+                { value: "false", label: t("Disabled") },
+              ]}
+              onValueChange={(value) =>
+                set(key, value === "inherit" ? null : value === "true")
+              }
+            />
+          ))}
           <div className={styles.fieldGroup}>
             <FormField
               label={t("Custom instructions")}

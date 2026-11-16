@@ -41,12 +41,14 @@ function useBotSetup() {
   const source = applyEdits(root.data?.content ?? "");
   const document = readDocument(source)?.toJS();
   const agent = selectors.data?.agents.find(
-    (agent) => agent.agent_id === document?.defaults?.agent,
+    (agent) =>
+      agent.agent_id ===
+      (document?.webui?.bot?.agent ?? document?.defaults?.agent),
   );
   const modelId = document?.webui?.bot?.model ?? agent?.model_id;
-  const canEnable = selectors.data?.models?.some(
-    (model) => model.model_id === modelId,
-  );
+  const canEnable =
+    (!document?.webui?.bot?.agent || !!agent) &&
+    selectors.data?.models?.some((model) => model.model_id === modelId);
   const heartbeat = document?.webui?.bot?.heartbeat_enabled !== false;
   const enable = useMutation({
     retry: false,

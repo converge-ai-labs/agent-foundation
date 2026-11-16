@@ -1,0 +1,94 @@
+.group {
+  margin: 8px 0 20px;
+}
+.group h3 {
+  margin: 0 8px 4px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.group h3 span {
+  padding-inline-start: 4px;
+  color: var(--a13n-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.task,
+.note {
+  width: 100%;
+  text-align: start;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.task:hover,
+.note:hover,
+.task:focus-visible,
+.note:focus-visible {
+  background: var(--a13n-hover);
+}
+.task {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 8px;
+}
+.task svg,
+.status svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.note {
+  display: grid;
+  gap: 3px;
+  padding: 10px 8px;
+}
+.note strong {
+  font-weight: 500;
+}
+.note span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.reader {
+  max-width: 68ch;
+  padding: 7px 8px;
+  overflow-wrap: anywhere;
+}
+.reader h3 {
+  margin: 0 0 14px;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a13n-secondary);
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin-block: 16px;
+}
+.facts > div {
+  display: contents;
+}
+.facts dt,
+.muted {
+  color: var(--a13n-secondary);
+}
+.facts dd {
+  margin: 0;
+  display: grid;
+  justify-items: start;
+}
+.facts button:hover {
+  text-decoration: underline;
+}

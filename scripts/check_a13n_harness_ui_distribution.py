@@ -175,6 +175,20 @@ def _validate_builtin_skill(read: Callable[[str], bytes], names: set[str], prefi
     for document in documents:
         if str(prefix / document) not in names:
             raise DistributionError(f"Harness UI artifact is missing bundled documentation: {document}")
+    operations = prefix.parent / "harness-ui-operations"
+    index = str(operations / "SKILL.md")
+    if index not in names:
+        raise DistributionError("Harness UI artifact is missing the operation guidance index")
+    references = re.findall(r"\]\(((?:harness|ui)/[^)]+\.md)\)", read(index).decode("utf-8"))
+    if not references:
+        raise DistributionError("Harness UI operation Skill has no guidance map")
+    for reference in references:
+        if str(operations / reference) not in names:
+            raise DistributionError(f"Harness UI artifact is missing operation guidance: {reference}")
+        if reference.startswith("ui/"):
+            source = prefix.parent.parent / "guidance" / reference.removeprefix("ui/")
+            if str(source) not in names or read(str(source)) != read(str(operations / reference)):
+                raise DistributionError(f"Harness UI operation guidance differs from its runtime source: {reference}")
 
 
 def _validate_terminal_package(names: set[str], prefix: PurePosixPath | None = None) -> None:

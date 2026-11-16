@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::variant::Variant;
 use reqwest::blocking::Client;
 use semver::Version;
 use serde::Deserialize;
@@ -20,10 +21,12 @@ const MAX_ARCHIVE: u64 = 256 * 1024 * 1024;
 const MAX_METADATA: u64 = 4 * 1024 * 1024;
 const PIN: &str = ".a13n-envd-version";
 const HELP: &str = "a13n-envd update [--version X.Y.Z[-rc.N]] [--check] [--force]
+                 [--variant default|slim|vm]
                  [--install-dir ABSOLUTE_PATH] [--staging-dir ABSOLUTE_PATH]
 
 Update this executable to the newest stable Envd release, or an exact version.
 Stop daemons using this installation before updating; restart them afterward.
+--variant      Select a build flavor; omitted preserves this executable's flavor.
 --check        Show the selected version and destination without installing.
 --force        Reinstall even when the selected version is already installed.
 --install-dir  Install to another directory (requires --version); used by Hosts
@@ -37,6 +40,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 #[derive(Debug, Default)]
 struct Options {
     version: Option<Version>,
+    variant: Option<Variant>,
     directory: Option<PathBuf>,
     staging: Option<PathBuf>,
     check: bool,
@@ -55,6 +59,13 @@ impl Options {
                         .and_then(|value| value.to_str())
                         .ok_or("--version requires a canonical version")?;
                     options.version = Some(parse_version(value)?);
+                }
+                Some("--variant") if options.variant.is_none() => {
+                    let value = arguments
+                        .next()
+                        .and_then(|value| value.to_str())
+                        .ok_or("--variant requires default, slim or vm")?;
+                    options.variant = Some(Variant::parse(value)?);
                 }
                 Some("--install-dir") if options.directory.is_none() => {
                     let value = arguments.next().ok_or("--install-dir requires a path")?;
@@ -139,15 +150,13 @@ fn target() -> Result<&'static str> {
     }
 }
 
+#[cfg(test)]
 fn archive_name(version: &Version, target: &str, extension: &str) -> String {
-    // Updating a VM-capable Linux build must not silently remove its backends.
-    let suffix = if target.contains("linux")
-        && cfg!(any(feature = "vm-boxlite", feature = "vm-microsandbox"))
-    {
-        "-vm"
-    } else {
-        ""
-    };
+    archive_name_for(version, target, extension, Variant::current())
+}
+
+fn archive_name_for(version: &Version, target: &str, extension: &str, variant: Variant) -> String {
+    let suffix = variant.suffix();
     format!("a13n-envd-{version}-{target}{suffix}.{extension}")
 }
 
@@ -257,6 +266,7 @@ fn update(
         Some(version) => version.clone(),
         None => source.latest()?,
     };
+    let variant = options.variant.unwrap_or_else(Variant::current);
     reject_link(destination)?;
     let current = if destination == executable {
         Some(parse_version(env!("CARGO_PKG_VERSION"))?)
@@ -267,6 +277,18 @@ fn update(
     } else {
         installed_version(destination)?
     };
+    let current_variant = if destination == executable {
+        Some(Variant::current())
+    } else if current.as_ref().is_some_and(has_variant_probe) {
+        installed_variant(destination).ok()
+    } else {
+        None
+    };
+    println!(
+        "Variant: {}; selected: {}",
+        current_variant.map_or("unknown", Variant::name),
+        variant.name()
+    );
     println!("Destination: {}", destination.display());
     println!(
         "Current: {}; selected: {version}",
@@ -277,7 +299,7 @@ fn update(
     if options.check {
         return Ok(());
     }
-    if !options.force && current.as_ref() == Some(&version) {
+    if !options.force && current.as_ref() == Some(&version) && current_variant == Some(variant) {
         println!("Already up to date.");
         return Ok(());
     }
@@ -298,7 +320,7 @@ fn update(
     } else {
         "tar.gz"
     };
-    let archive_name = archive_name(&version, target, extension);
+    let archive_name = archive_name_for(&version, target, extension, variant);
     let base = format!("{}/{PREFIX}{version}", source.download);
     let archive = stage.path().join(&archive_name);
     source.get(
@@ -313,6 +335,9 @@ fn update(
     extract(&archive, &candidate, extension == "zip")?;
     if installed_version(&candidate)? != Some(version.clone()) {
         return Err("downloaded executable does not report the selected version".into());
+    }
+    if has_variant_probe(&version) && installed_variant(&candidate)? != variant {
+        return Err("downloaded executable does not report the selected variant".into());
     }
     publish(&candidate, executable, destination)?;
     println!("Installed a13n-envd {version}. Start Envd with your usual command or service.");
@@ -450,16 +475,35 @@ fn extract(archive: &Path, candidate: &Path, zip: bool) -> Result<()> {
     Ok(())
 }
 
+// Releases before 0.8.1 have --version but no build-flavor probe.
+fn has_variant_probe(version: &Version) -> bool {
+    version >= &Version::parse("0.8.1-rc.1").expect("constant version")
+}
+
+fn installed_variant(path: &Path) -> Result<Variant> {
+    let text = probe(path, "--build-variant")?;
+    Variant::parse(text.trim_end_matches(['\r', '\n'])).map_err(Into::into)
+}
+
 fn installed_version(path: &Path) -> Result<Option<Version>> {
     if !path.exists() {
         return Ok(None);
     }
+    let text = probe(path, "--version")?;
+    let value = text
+        .strip_prefix("a13n-envd ")
+        .and_then(|text| text.strip_suffix('\n'))
+        .ok_or("invalid executable version output")?;
+    Ok(Some(parse_version(value.trim_end_matches('\r'))?))
+}
+
+fn probe(path: &Path, argument: &str) -> Result<String> {
     reject_link(path)?;
     // File-backed output avoids unbounded pipe buffers and lets the parent enforce
     // a deadline without waiting for a candidate's inherited stdout handle.
     let mut stdout = tempfile::tempfile()?;
     let mut child = Command::new(path)
-        .arg("--version")
+        .arg(argument)
         .stdin(Stdio::null())
         .stdout(stdout.try_clone()?)
         .stderr(Stdio::null())
@@ -486,11 +530,7 @@ fn installed_version(path: &Path) -> Result<Option<Version>> {
     if text.len() > 1024 {
         return Err("executable version output exceeds limit".into());
     }
-    let value = text
-        .strip_prefix("a13n-envd ")
-        .and_then(|text| text.strip_suffix('\n'))
-        .ok_or("invalid executable version output")?;
-    Ok(Some(parse_version(value.trim_end_matches('\r'))?))
+    Ok(text)
 }
 
 #[cfg(test)]
@@ -501,29 +541,108 @@ mod tests {
     #[test]
     fn release_archive_preserves_linux_build_variant() {
         let version = Version::parse("1.2.3").unwrap();
-        let suffix = if cfg!(any(feature = "vm-boxlite", feature = "vm-microsandbox")) {
-            "-vm"
-        } else {
-            ""
-        };
-        for target in ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"] {
-            assert_eq!(
-                archive_name(&version, target, "tar.gz"),
-                format!("a13n-envd-1.2.3-{target}{suffix}.tar.gz")
-            );
+        for variant in [Variant::Default, Variant::Slim, Variant::Vm] {
+            for target in [
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "x86_64-apple-darwin",
+                "x86_64-pc-windows-msvc",
+            ] {
+                if variant == Variant::Vm && !target.contains("linux") {
+                    continue;
+                }
+                let extension = if target.contains("windows") {
+                    "zip"
+                } else {
+                    "tar.gz"
+                };
+                assert_eq!(
+                    archive_name_for(&version, target, extension, variant),
+                    format!("a13n-envd-1.2.3-{target}{}.{}", variant.suffix(), extension)
+                );
+            }
         }
         assert_eq!(
-            archive_name(&version, "x86_64-apple-darwin", "tar.gz"),
-            "a13n-envd-1.2.3-x86_64-apple-darwin.tar.gz"
-        );
-        assert_eq!(
-            archive_name(&version, "x86_64-pc-windows-msvc", "zip"),
-            "a13n-envd-1.2.3-x86_64-pc-windows-msvc.zip"
+            archive_name(&version, "x86_64-unknown-linux-gnu", "tar.gz"),
+            archive_name_for(
+                &version,
+                "x86_64-unknown-linux-gnu",
+                "tar.gz",
+                Variant::current()
+            )
         );
     }
 
     fn options(args: &[&str]) -> Result<Options> {
         Options::parse(&args.iter().map(OsString::from).collect::<Vec<_>>())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_version_switches_flavor_without_force_and_matching_flavor_is_a_noop() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut variants = vec![Variant::Default, Variant::Slim];
+        if cfg!(target_os = "linux") {
+            variants.push(Variant::Vm);
+        }
+        for variant in variants {
+            let temp = tempfile::tempdir().unwrap();
+            let executable = temp.path().join("source");
+            fs::write(&executable, b"source remains intact").unwrap();
+            let destination = temp.path().join(binary_name());
+            let script = |flavor: Variant| {
+                format!(
+                    "#!/bin/sh\nif [ \"$1\" = --build-variant ]; then echo {}; else echo a13n-envd 9.8.7; fi\n",
+                    flavor.name()
+                )
+            };
+            let old = if variant == Variant::Slim {
+                Variant::Default
+            } else {
+                Variant::Slim
+            };
+            fs::write(&destination, script(old)).unwrap();
+            fs::set_permissions(&destination, fs::Permissions::from_mode(0o755)).unwrap();
+            let candidate = script(variant);
+            let archive = tar_bytes(&[
+                (binary_name(), candidate.as_bytes()),
+                ("LICENSE", b"license"),
+            ]);
+            let name =
+                archive_name_for(&Version::new(9, 8, 7), target().unwrap(), "tar.gz", variant);
+            let checksum = format!("{:x}  {name}\n", Sha256::digest(&archive));
+            let (source, task) = server(vec![
+                (format!("/{PREFIX}9.8.7/{name}"), 200, archive),
+                (
+                    format!("/{PREFIX}9.8.7/SHA256SUMS"),
+                    200,
+                    checksum.into_bytes(),
+                ),
+            ]);
+            let selected = options(&["--version", "9.8.7", "--variant", variant.name()]).unwrap();
+            update(
+                &selected,
+                &executable,
+                &destination,
+                target().unwrap(),
+                &source,
+            )
+            .unwrap();
+            assert_eq!(installed_variant(&destination).unwrap(), variant);
+            task.join().unwrap();
+            // No HTTP handler: a matching version and flavor must not download.
+            let (source, task) = server(vec![]);
+            update(
+                &selected,
+                &executable,
+                &destination,
+                target().unwrap(),
+                &source,
+            )
+            .unwrap();
+            task.join().unwrap();
+            assert_eq!(fs::read(&executable).unwrap(), b"source remains intact");
+        }
     }
 
     // Private transport injection keeps production release origins fixed.
@@ -617,6 +736,9 @@ mod tests {
             vec!["--version"],
             vec!["--install-dir", "."],
             vec!["--unknown"],
+            vec!["--variant"],
+            vec!["--variant", "unknown"],
+            vec!["--variant", "slim", "--variant", "default"],
             vec!["--check", "--check"],
         ] {
             assert!(options(&args).is_err());
@@ -790,7 +912,7 @@ mod tests {
     #[test]
     fn separate_install_verifies_publishes_and_preserves_source_and_failed_target() {
         use std::os::unix::fs::PermissionsExt;
-        for failure in ["", "checksum", "version", "archive"] {
+        for failure in ["", "checksum", "version", "variant", "archive"] {
             let temp = tempfile::tempdir().unwrap();
             let source_executable = temp.path().join("source");
             fs::write(&source_executable, b"source installation").unwrap();
@@ -798,10 +920,23 @@ mod tests {
             // --force must also repair a corrupt installation.
             fs::write(&destination, b"damaged").unwrap();
             fs::set_permissions(&destination, fs::Permissions::from_mode(0o755)).unwrap();
+            let candidate_variant = if failure == "variant" {
+                if Variant::current() == Variant::Slim {
+                    Variant::Default
+                } else {
+                    Variant::Slim
+                }
+            } else {
+                Variant::current()
+            };
+            let valid_script = format!(
+                "#!/bin/sh\nif [ \"$1\" = --build-variant ]; then echo {}; else echo a13n-envd 9.8.7; fi\n",
+                candidate_variant.name()
+            );
             let script = if failure == "version" {
                 b"#!/bin/sh\necho a13n-envd 1.0.0\n".as_slice()
             } else {
-                b"#!/bin/sh\necho a13n-envd 9.8.7\n".as_slice()
+                valid_script.as_bytes()
             };
             let archive = if failure == "archive" {
                 b"invalid archive".to_vec()

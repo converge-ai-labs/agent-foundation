@@ -674,6 +674,7 @@ export function AccountsPage() {
   return (
     <div className={accountStyles.page}>
       <PageHeader
+        level={2}
         title={t("Accounts & API keys")}
         description={t("Connect the accounts and API keys your models use.")}
       />

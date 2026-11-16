@@ -30,6 +30,20 @@ make service-e2e-docker                # build the native Docker image, then run
 make service-e2e-check                          # code, fixture, configuration and selection checks without Docker
 ```
 
+## Slow reverse-link file import
+
+`test_client_transfer_backpressure.py` runs a native reverse-WebSocket Envd with one isolated Control/Worker stack and real PostgreSQL/Redis. A transparent TCP relay limits actual TLS carrier bytes to 20,000 bytes/s upstream and 200,000 bytes/s downstream, with a 35 ms initial delay in each direction. A Run imports a random 1 MiB file with `asset_ref` while three sibling Runs read a control file on independent Sessions over the same connection. The assertions cover completed sibling Runs before the upload drains, object publication, size, SHA-256, exact stored bytes, and no carrier reconnect. Both default chunks and an 8192-byte frame diagnostic run.
+
+Build this checkout's daemon before selecting the journey:
+
+```sh
+cargo build --locked --package a13n-envd --no-default-features
+A13N_ENVD_TEST_BINARY="$PWD/target/debug/a13n-envd" \
+  make service-e2e SERVICE_E2E_ARGS="--require-all -k client_transfer_backpressure"
+```
+
+The ordinary CI `other` shard builds and supplies this binary. Without it, local collection still works and execution skips; `--require-all` fails instead. The journey owns its daemon, relay, workspace and credentials, and the shared fixture owns its disposable stores and Service processes. Its observation deadlines allow the approximately 53 seconds of payload transmission plus protocol/control overhead; product heartbeat, Session cleanup, transfer and lease budgets remain unchanged. The WebSocket data-delivery fence trades one Ping/Pong round trip per bounded data batch for a bounded bulk backlog; this test establishes liveness at the stated rates, not at arbitrary slower links.
+
 The environment journey also reads recipe defaults and Agent/Thread/Run overrides inside Agent commands and their child processes, verifies that clearing the Thread map restores Agent defaults, exercises explicit and empty command overrides without leaking them to later commands, and checks that editing a template does not change a retained instance after stop/resume. The same assertions run for every selected provider.
 
 The `docker` environment journey needs the native execution image (`make image-sandbox`, or `SANDBOX_IMAGE`) and uses the Engine the Docker CLI uses. A hosted journey needs its vendor account in the environment and creates billable sandboxes, which it deletes, after a failure too. Hosted journeys are marked `hosted` with their type and run only when asked for: with `--hosted`, a `-m` expression naming `hosted`, or a `-k` expression naming their type, such as `-k e2b`; any other selection, `-k environments` say, leaves them out.

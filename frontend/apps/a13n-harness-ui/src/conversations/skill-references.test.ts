@@ -89,22 +89,26 @@ it("retains Unicode code-point occurrences and ignores missing or mismatched his
     [],
   );
 });
-it("offers prefix completion with descriptions only at dollar token boundaries", async () => {
+it("offers prefix completion with descriptions at dollar and slash token boundaries", async () => {
   const source = skillCompletion(async () => catalog);
   const complete = (doc: string) =>
     source(
       new CompletionContext(EditorState.create({ doc }), doc.length, false),
     );
-  expect((await complete("Use $rev"))?.options).toEqual([
+  expect((await complete("Use $rev"))?.options).toMatchObject([
     {
       label: "$review",
       detail: "Review code carefully.",
       apply: "$review ",
-      type: "text",
+      displayLabel: "Review",
     },
   ]);
   expect(await complete("x$rev")).toBeNull();
-  expect(await complete("/review")).toBeNull();
+  expect((await complete("/review"))?.options[0]?.apply).toBe("$review ");
+  expect((await complete("$review /rev"))?.options[0]?.apply).toBe("$review ");
+  expect((await complete("$review $rev"))?.options[0]?.apply).toBe("$review ");
+  expect(await complete("/review/file")).toBeNull();
+  expect(await complete("https://review")).toBeNull();
   expect((await complete("$unknown"))?.options).toEqual([]);
 });
 

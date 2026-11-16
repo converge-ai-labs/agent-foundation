@@ -132,6 +132,9 @@ class ConnectorConfigurationRecord(Base):
     """Host-private Connector instance configuration, including plaintext credentials."""
 
     __tablename__ = "connector_configuration"
+    __table_args__ = (
+        Index("uq_connector_configuration_group_name", "group_name", unique=True, sqlite_where=text("deleted = 0")),
+    )
 
     connector_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -141,6 +144,7 @@ class ConnectorConfigurationRecord(Base):
     settings: Mapped[str] = mapped_column(Text, nullable=False)
     credentials: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False, server_default=text("''"))
+    group_name: Mapped[str] = mapped_column(String(32), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     credential_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     rules: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
@@ -402,6 +406,7 @@ class ThreadInspectionRecord(Base):
     )
     source_id: Mapped[str] = mapped_column(String(80), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    sealed_prefix_digest: Mapped[str | None] = mapped_column(String(64))
     message_count: Mapped[int] = mapped_column(Integer, nullable=False)
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -453,7 +458,7 @@ class ThreadConfigurationRecord(Base):
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
-            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot')", name="agent_source_kind"
+            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot', 'dynamic')", name="agent_source_kind"
         ),
     )
 
@@ -507,6 +512,24 @@ class ChildExecutionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
+class McpOAuthRecord(Base):
+    """App-private registration and grant; references alone enter captured recipes."""
+
+    __tablename__ = "mcp_oauth"
+    __table_args__ = (
+        UniqueConstraint("owner", name="owner"),
+        CheckConstraint("credential_version >= 0", name="credential_version"),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    configuration_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    generation: Mapped[str] = mapped_column(String(80), nullable=False)
+    credential_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    refresh_pending: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    bundle_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class UsageModelRecord(Base):

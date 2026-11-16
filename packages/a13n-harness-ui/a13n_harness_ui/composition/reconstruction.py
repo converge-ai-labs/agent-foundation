@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from a13n_harness import (
     AgentContext,
@@ -21,13 +21,14 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     CompactionCapability,
     SubagentCapability,
-    SubagentOperator,
     ToolExecutionCapability,
     ToolSearchPlan,
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
+from a13n_harness.mcp import UnavailableMCPToolset
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -42,7 +43,11 @@ from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.tools.tool_search import grouped_tool_name
+from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
+from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.shell import ShellToolset
 from pydantic_ai import RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
@@ -58,12 +63,16 @@ from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.guardian_credits import GuardianParentCapability, GuardianReviewCapability
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.mcp_apps.connections import Connections
+from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource, model_recipe_id
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 
 from .auxiliary import capability_configuration
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
@@ -131,25 +140,52 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
 class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
     id: str | None = "a13n.ui.tool-allowlist"
 
-    def __init__(self, names: frozenset[str], *, optional_controls: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        names: frozenset[str],
+        *,
+        optional_controls: frozenset[str] = frozenset(),
+        mcp_groups: Mapping[str, str] | None = None,
+    ) -> None:
         self.names = names
         self.optional_controls = optional_controls
+        self.mcp_groups = dict(mcp_groups or {})
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost")
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
-        return _ToolAllowlistToolset(toolset, self.names, self.optional_controls)
+        return _ToolAllowlistToolset(toolset, self.names, self.optional_controls, self.mcp_groups)
 
 
 @dataclass
 class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
     names: frozenset[str]
     optional_controls: frozenset[str] = frozenset()
+    mcp_groups: Mapping[str, str] = field(default_factory=dict)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
         missing = self.names - tools.keys() - self.optional_controls
+
+        def omit_unavailable(toolset: AbstractToolset[AgentContext]) -> None:
+            nonlocal missing
+            if isinstance(toolset, UnavailableMCPToolset):
+                # An unrestricted missing inventory cannot establish whether a
+                # name is unknown. Defer that check until a healthy Run; the
+                # returned callable surface still intersects the exact allowlist.
+                group = self.mcp_groups.get(toolset.id) if toolset.id is not None else None
+                if toolset.selected_tools is not None:
+                    missing -= {
+                        grouped_tool_name(group, name) if group is not None else name for name in toolset.selected_tools
+                    }
+                elif group is not None:
+                    missing = {name for name in missing if not name.startswith(grouped_tool_name(group, ""))}
+                else:
+                    missing = set()
+
+        if missing:
+            self.wrapped.apply(omit_unavailable)
         if missing:
             raise CompositionError(
                 "The selected tool allowlist contains an unavailable tool.",
@@ -207,9 +243,11 @@ class AgentReconstructor:
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         mcp_apps: Connections | None = None,
         mcp_connections: HostConnections | None = None,
+        mcp_oauth: McpOAuth | None = None,
     ) -> None:
         self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
         self._mcp_apps = mcp_apps
+        self._mcp_oauth = mcp_oauth
         self._mcp_connections = mcp_connections or mcp_apps
         self._api_keys = api_keys
         self._configuration_root = configuration_root
@@ -220,7 +258,8 @@ class AgentReconstructor:
         self,
         composition: ResolvedRunComposition,
         *,
-        subagent_operator: SubagentOperator | None,
+        subagent_operator: HarnessUiSubagentOperator | None,
+        subagent: bool = False,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -243,6 +282,32 @@ class AgentReconstructor:
             positions=memory_positions,
             bot=composition.root.source_kind == "bot",
         )
+        from a13n_harness_ui.subagent_tools import SubagentTools, guidance
+
+        dynamic = not subagent and composition.subagents.dynamic.enabled
+        has_children = bool(composition.root.children) or dynamic
+        subagent_capability = None
+        if has_children:
+            if subagent_operator is None:
+                raise CompositionError(
+                    "The resolved Agent roster requires the Harness UI subagent operator.",
+                    code="subagent_operator_missing",
+                )
+            subagent_capability = SubagentCapability(async_enabled=True, operator=subagent_operator)
+        node = composition.root
+        host_tools = set()
+        if subagent:
+            host_tools.add("send_parent_message")
+            node = node.model_copy(update={"instructions": (guidance("child"), *node.instructions)})
+        elif dynamic:
+            host_tools.add("spawn_subagent")
+        if node.tools is not None:
+            node = node.model_copy(update={"tools": (*node.tools, *host_tools)})
+        if subagent_operator is not None and (subagent or has_children):
+            root_capabilities = (
+                *root_capabilities,
+                SubagentTools(subagent_operator, composition, subagent=subagent, has_children=has_children),
+            )
         if memory is not None:
             root_capabilities = (*root_capabilities, memory)
         plugin_keys = tuple(
@@ -269,9 +334,9 @@ class AgentReconstructor:
             )
             model_recipes = {model_recipe_id(recipe): recipe for recipe in composition.media_understanding.values()}
             definition = self._definition(
-                composition.root,
+                node,
                 plugin_catalog=plugin_catalog,
-                subagent_operator=subagent_operator,
+                subagent_capability=subagent_capability,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
                 path_layout=path_layout,
@@ -391,7 +456,7 @@ class AgentReconstructor:
         node: ResolvedAgentNode,
         *,
         plugin_catalog: HarnessPluginFactoryCatalog,
-        subagent_operator: SubagentOperator | None,
+        subagent_capability: SubagentCapability | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
         path_layout: EnvironmentPathLayout,
@@ -424,6 +489,7 @@ class AgentReconstructor:
             item.server_id: HarnessUiMCP(
                 item,
                 configuration_root=self._configuration_root,
+                oauth=self._mcp_oauth,
                 apps=self._mcp_apps if item.apps_enabled else None,
                 connections=self._mcp_connections,
             )
@@ -446,13 +512,8 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        if node.children:
-            if not isinstance(subagent_operator, SubagentOperator):
-                raise CompositionError(
-                    "The resolved Agent roster requires the Harness UI subagent operator.",
-                    code="subagent_operator_missing",
-                )
-            capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
+        if subagent_capability is not None and (root or node.children):
+            capabilities.append(subagent_capability)
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
@@ -479,7 +540,33 @@ class AgentReconstructor:
                         "list_connectors",
                     }
                 )
-            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
+            if node.source_kind == "bot":
+                # Captured targets add Computer tools only after being opened.
+                # Valid deferred selectors remain allowlisted, not mandatory at step one.
+                controls |= ComputerToolset.available_names()
+                environment = next(
+                    item.configuration for item in node.capabilities if item.capability == "dynamic_environment"
+                )
+                # Bot overrides may intentionally hide tools selected by its Agent.
+                # Keep their exact selectors without requiring disabled tools to exist.
+                if environment.get("files_enabled") is False:
+                    controls |= FileToolset.available_names((FILE_EXECUTION_ACTIONS,))
+                if environment.get("shell_enabled") is False:
+                    controls |= ShellToolset.available_names(FILE_EXECUTION_ACTIONS)
+            capabilities.append(
+                _ToolAllowlistCapability(
+                    names=frozenset(node.tools),
+                    optional_controls=controls,
+                    mcp_groups={
+                        source.id: name
+                        for name, group in tool_search.groups.items()
+                        for source in group.capabilities
+                        if isinstance(source, HarnessUiMCP) and source.id is not None
+                    }
+                    if tool_search is not None
+                    else None,
+                )
+            )
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
         if root:
@@ -505,7 +592,7 @@ class AgentReconstructor:
                 agent=self._definition(
                     item.definition,
                     plugin_catalog=plugin_catalog,
-                    subagent_operator=subagent_operator,
+                    subagent_capability=subagent_capability,
                     root_capabilities=(),
                     root=False,
                     path_layout=path_layout,

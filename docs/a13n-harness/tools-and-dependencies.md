@@ -200,6 +200,8 @@ Check failures at the layer that owns them:
 
 A model retry does not establish whether an external mutation took effect. Inspect uncertain outcomes before repeating a side effect. Tool-result bounds apply before model history; they are neither HTTP request-body limits nor durable attachment storage.
 
+With file-backed guidance, a tool may append its guidance page path to a custom-validator or execution-time `ModelRetry`. Read that page with `view` before deciding whether to retry. This applies only when the tool declares a page with a reference section; schema validation, other failures, inline guidance, and detached execution corrections stay unchanged.
+
 Test the visible schema and an actual call, as in the offline examples. Add denial, cancellation, and uncertain-outcome tests for tools that mutate application state.
 
 ## Next steps

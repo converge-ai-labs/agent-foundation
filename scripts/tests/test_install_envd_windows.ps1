@@ -67,7 +67,7 @@ $script:Candidate = [IO.Path]::Combine($root, 'candidate.exe')
 $script:InstallDirectory = [IO.Path]::Combine($root, 'install space [literal]')
 $asset = 'a13n-envd-1.2.3-x86_64-pc-windows-msvc.zip'
 $validEntries = @(@{ Name = 'a13n-envd.exe'; Content = 'new binary' }, @{ Name = 'LICENSE'; Content = 'license' })
-$environmentNames = @('A13N_ENVD_VERSION', 'A13N_ENVD_INSTALL_DIR', 'A13N_ENVD_ADD_TO_PATH', 'LOCALAPPDATA')
+$environmentNames = @('A13N_ENVD_VARIANT', 'A13N_ENVD_VERSION', 'A13N_ENVD_INSTALL_DIR', 'A13N_ENVD_ADD_TO_PATH', 'LOCALAPPDATA')
 $savedEnvironment = @{}
 foreach ($name in $environmentNames) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -107,6 +107,7 @@ try {
     Test-Case 'defaults, environment values, and overriding invalid unused environment' {
         $options = Read-EnvdInstallerOptions @()
         Assert-Equal $options.InstallDirectory ([IO.Path]::Combine($root, 'A13N', 'bin'))
+        Assert-Equal $options.Variant 'default'
         Assert-True ([string]::IsNullOrEmpty($options.Version))
         Assert-Equal $options.AddToPath $false
         $env:A13N_ENVD_VERSION = '1.2.3-rc.1'
@@ -131,6 +132,17 @@ try {
         $env:A13N_ENVD_ADD_TO_PATH = '0'
         Assert-Equal (Read-EnvdInstallerOptions @()).AddToPath $false
         $env:A13N_ENVD_ADD_TO_PATH = $null
+    }
+    Test-Case 'flavor defaults, environment and explicit override' {
+        $env:A13N_ENVD_VARIANT = 'slim'
+        Assert-Equal (Read-EnvdInstallerOptions @()).Variant 'slim'
+        Assert-Equal (Read-EnvdInstallerOptions @('--variant', 'default')).Variant 'default'
+        $env:A13N_ENVD_VARIANT = 'vm'
+        Assert-Throws { Read-EnvdInstallerOptions @() } '*Linux-only*'
+        Assert-Equal (Read-EnvdInstallerOptions @('--variant', 'slim')).Variant 'slim'
+        $env:A13N_ENVD_VARIANT = $null
+        Assert-Throws { Read-EnvdInstallerOptions @('--variant') }
+        Assert-Throws { Read-EnvdInstallerOptions @('--variant', 'unknown') }
     }
     Test-Case 'PATH separators are rejected only for opt-in' {
         $directory = [IO.Path]::Combine($root, 'semi;colon')
@@ -328,6 +340,18 @@ try {
         try { Install-Envd @('--version', '1.2.3', '--install-dir', $InstallDirectory, '--no-add-to-path') }
         finally { $env:A13N_ENVD_ADD_TO_PATH = $null }
         Assert-NoStaging
+    }
+    Test-Case 'slim install chooses its own immutable archive on both architectures' {
+        foreach ($arch in @('AMD64', 'ARM64')) {
+            $script:TestArchitecture = $arch
+            function Get-EnvdNativeArchitecture { return $script:TestArchitecture }
+            $script:DownloadUris = @()
+            Install-Envd @('--version', '0.8.1', '--variant', 'slim', '--install-dir', $InstallDirectory)
+            $target = if ($arch -eq 'AMD64') { 'x86_64' } else { 'aarch64' }
+            Assert-True ($script:DownloadUris[0].EndsWith("/a13n-envd-0.8.1-$target-pc-windows-msvc-slim.zip"))
+            Assert-Equal ([IO.File]::ReadAllText($installed)) 'new binary'
+            Assert-NoStaging
+        }
     }
     Test-Case 'default version uses stable resolution; ARM64 selects native asset' {
         $script:DownloadUris = @()

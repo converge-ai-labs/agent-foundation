@@ -1044,6 +1044,7 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
         "computer",
         "web",
         "memory",
+        "object_store",
         "assets",
         *PLATFORM_GROUPS,
     ]

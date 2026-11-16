@@ -214,7 +214,12 @@ async def test_failed_introduction_is_visible_and_never_automatically_replayed(
         item = await consumed(app, WORKSPACE_INTRODUCTION.input_id)
         assert item.state == "interrupted"
         assert len(attempts) == 1
-        assert [m.text for m in await app._store.bot.messages() if m.role == "user"] == [WORKSPACE_INTRODUCTION.text]
+        # Admission records interruption before introduction's finally publishes the message.
+        with fail_after(5):
+            async with bot._lock:
+                assert [m.text for m in await app._store.bot.messages() if m.role == "user"] == [
+                    WORKSPACE_INTRODUCTION.text
+                ]
         await bot.pause(False)
         await bot.introduce_workspace()
         await policy(app, root, enabled=False)

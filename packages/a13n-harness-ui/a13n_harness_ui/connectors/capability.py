@@ -45,11 +45,15 @@ def connector_capability(
 ) -> CombinedCapability[AgentContext]:
     sources = runtime.capabilities(captures)
     groups = {
-        "connector_" + hashlib.sha256(key.encode()).hexdigest()[:16]: ToolSearchGroup(
-            source=source,
-            description=f"Tools for Connector instance {key}. Upstream credentials and permissions apply.",
+        capture.group_name: ToolSearchGroup(
+            source=sources[capture.connector_id],
+            description=(
+                f"{capture.connector_key} tools for account {capture.connector_name or capture.connector_id!r}. "
+                "Upstream credentials and permissions apply."
+            ),
         )
-        for key, source in sources.items()
+        for capture in captures
+        if capture.connector_id in sources
     }
     return CombinedCapability(
         [

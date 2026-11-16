@@ -642,3 +642,42 @@ async def test_run_configuration_round_trips(tmp_path: Path, setting: str, expec
     assert loaded.document.run_configuration.allowed_hosts == expected
     assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
     assert path.read_bytes() == original
+
+
+async def test_codex_dictation_presets_need_no_model_resource_and_round_trip(tmp_path: Path):
+    loaded = await load_harness_ui_configuration(
+        _write_source_tree(tmp_path, root='schema_version: "1"\ndictation:\n  backend: codex\n')
+    )
+    assert loaded.document.dictation.codex.model == "gpt-6-luna"
+    assert loaded.document.dictation.model is None
+    assert loaded.subscription_group_providers() == {"codex"}
+    assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
+    assert loaded.document.model_dump(mode="json")["dictation"]["backend"] == "codex"
+
+
+async def test_codex_dictation_rejects_account_and_group_together(tmp_path: Path):
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(
+            _write_source_tree(
+                tmp_path,
+                root='schema_version: "1"\ndictation:\n  backend: codex\n  codex:\n    account: acct-work\n    group: codex-work\n',
+            )
+        )
+
+
+async def test_codex_dictation_rejects_missing_explicit_group(tmp_path: Path):
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(
+            _write_source_tree(
+                tmp_path, root='schema_version: "1"\ndictation:\n  backend: codex\n  codex:\n    group: codex-missing\n'
+            )
+        )
+
+
+async def test_disabled_dictation_preserves_advanced_preset_edits(tmp_path: Path):
+    loaded = await load_harness_ui_configuration(
+        _write_source_tree(tmp_path, root='schema_version: "1"\ndictation:\n  codex:\n    model: gpt-5.6-luna\n')
+    )
+    assert loaded.document.dictation.backend == "model"
+    assert loaded.document.model_dump(mode="json")["dictation"]["codex"]["model"] == "gpt-5.6-luna"
+    assert loaded.subscription_group_providers() == set()

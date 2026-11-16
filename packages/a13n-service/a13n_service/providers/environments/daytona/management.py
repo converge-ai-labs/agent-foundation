@@ -88,7 +88,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                             "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
                             "A13N_DESKTOP": "true" if self.config.desktop else "false",
                             "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
-                        }
+                        },
+                        self.config.envd,
                     ),
                     "autoStopInterval": 0,
                     "autoPauseInterval": 0,

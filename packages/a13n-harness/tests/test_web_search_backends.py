@@ -666,3 +666,25 @@ async def test_scrape_off_removes_only_the_scrape_surface() -> None:
 
     assert result.output_or_raise() == "done"
     assert {tool.name for tool in observed[0].function_tools} == {"fetch", "download"}
+
+
+@pytest.mark.parametrize("mode", ["native", "auto"])
+def test_web_provider_settings_reach_only_native_search(mode) -> None:
+    configuration = WebConfiguration.model_validate(
+        {"search": {"mode": mode, "provider_settings": {"openrouter": {"engine": "exa", "max_results": 5}}}}
+    )
+    capability = WebCapability(configuration)
+    tool = capability.get_native_tools()[0]
+    assert tool.provider_settings == {"openrouter": {"engine": "exa", "max_results": 5}}
+    configuration.search.provider_settings["openrouter"]["max_results"] = 10
+    assert tool.provider_settings["openrouter"]["max_results"] == 5
+    restricted = configuration.search.model_copy(update={"mode": "auto", "allow_domains": ("example.com",)})
+    assert WebCapability(configuration.model_copy(update={"search": restricted})).get_native_tools() == []
+
+
+def test_native_provider_settings_do_not_select_a_host_backend() -> None:
+    configuration = WebSearchConfiguration.model_validate(
+        {"mode": "host", "backend": "brave", "provider_settings": {"openrouter": {"engine": "exa"}}}
+    )
+    assert configuration.backend == "brave"
+    assert WebCapability(WebConfiguration(search=configuration)).get_native_tools() == []

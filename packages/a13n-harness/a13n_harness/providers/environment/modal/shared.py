@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
 
+from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
@@ -77,6 +78,12 @@ class ModalEnvironmentConfiguration(BaseModel):
                 | ({"execution"} if self.execution == "envd_http" else set())
             ).encode()
         ).hexdigest()
+
+    envd: EnvdSettings = Field(
+        default_factory=EnvdSettings,
+        exclude_if=lambda value: not value.overrides(),
+        description="Envd startup settings. Applies to new instances; existing instances keep their frozen settings.",
+    )
 
 
 class SnapshotReference(BaseModel):

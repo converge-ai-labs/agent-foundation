@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request, Response
 from pydantic import Field, JsonValue
 
-from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorRule
+from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorGroupName, ConnectorRule
 
 from .models import CatalogItem, Instance, SetupCommand, SetupOffer, SetupSnapshot, Value
 
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 class Save(Value):
     kind: str
     name: str = Field(default="", max_length=128)
+    group_name: ConnectorGroupName
     expected_version: int | None = Field(default=None, ge=1)
     enabled: bool = True
     deliver_to_bot: bool = False
@@ -56,6 +57,7 @@ def register_connector_routes(server: FastAPI, get_app: Callable[[], HarnessUiAp
             connector_id=connector_id,
             kind=command.kind,
             name=command.name,
+            group_name=command.group_name,
             enabled=command.enabled,
             deliver_to_bot=command.deliver_to_bot,
             settings=command.settings,

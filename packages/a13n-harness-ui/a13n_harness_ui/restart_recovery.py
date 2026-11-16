@@ -117,6 +117,9 @@ async def recover_restart(
             }
         )
         await restart_coordinator.repository.replace(batch, settled)
+        # Re-arm newly selected, root-only boundaries before releasing models.
+        # A second kill can continue these new Runs, never reclaim the old batch.
+        await restart_coordinator.arm_restored(blocked_roots=blocked_roots)
         restart_coordinator.restoration_pending.clear()
         restart_coordinator.restoring = False
         for item in batch.items:

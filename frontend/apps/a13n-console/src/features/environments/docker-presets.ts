@@ -3,7 +3,13 @@ export type DockerPreset = "standard" | "desktop";
 export type DockerMode = DockerPreset | "custom";
 type Recipe = Record<string, unknown>;
 export type DockerPresets = Record<DockerPreset, Recipe>;
-const resources = new Set(["cpus", "memory_gb", "mounts", "environment"]);
+const resources = new Set([
+  "cpus",
+  "memory_gb",
+  "mounts",
+  "environment",
+  "envd",
+]);
 
 export function dockerPresets(schema?: Recipe): DockerPresets | undefined {
   const presets = schema?.["x-environment-presets"] as

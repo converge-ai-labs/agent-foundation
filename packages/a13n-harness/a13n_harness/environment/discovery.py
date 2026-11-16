@@ -53,10 +53,12 @@ async def discover_documents(
             code="environment_unsupported",
             details={"reason": "unrepresentable_entries"},
         ) from error
+    # Listings may canonicalize a selected directory link. Keep child reads in
+    # the requested namespace so discovery preserves source and mount routing.
     candidates = [
         posixpath.join(request.root, request.basename),
         *(
-            posixpath.join(item.path, request.basename)
+            posixpath.join(request.root, posixpath.basename(item.path), request.basename)
             for item in sorted(entries.entries, key=lambda item: item.path)
             if item.kind == "directory"
         ),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import runpy
 from pathlib import Path
 
@@ -20,6 +21,21 @@ def _source(tmp_path: Path) -> tuple[Path, Path]:
     (assets / "configuration_skill.md").write_bytes(
         (PACKAGE_ROOT / "a13n_harness_ui/assets/configuration_skill.md").read_bytes()
     )
+    (assets / "operations_skill.md").write_bytes(
+        (PACKAGE_ROOT / "a13n_harness_ui/assets/operations_skill.md").read_bytes()
+    )
+    (assets / "guidance").mkdir()
+    (assets / "guidance/threads.md").write_text(
+        "<essential-rules>\nReceipts confirm admission.\n</essential-rules>\n\n<!-- reference -->\n\n"
+        "<best-practices>\nInspect outcomes.\n</best-practices>\n"
+    )
+    prompts = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"
+    prompts.mkdir(parents=True)
+    (prompts / "files.md").write_text(
+        "<essential-rules>\nRead in chunks.\n</essential-rules>\n\n<!-- reference -->\n\n"
+        "<best-practices>\nUse focused media instructions.\n</best-practices>\n"
+    )
+    (prompts.parent / "compact.md").write_text("Internal model instructions.\n")
     docs = repository / "docs/a13n-harness-ui"
     docs.mkdir(parents=True)
     (docs / "meta.json").write_text(
@@ -106,6 +122,9 @@ def test_sdist_preparation_uses_bundled_files_without_repository(tmp_path: Path)
     output = prepare_skills(package)
     original = _files(output)
     (repository / "docs/a13n-harness-ui/meta.json").unlink()
+    import shutil
+
+    shutil.rmtree(repository / "packages/a13n-harness")
     assert prepare_skills(package) == output
     assert _files(output) == original
     (output / "SKILL.md").unlink()
@@ -137,3 +156,104 @@ def test_localized_pages_are_not_bundled(tmp_path: Path) -> None:
     assert not list(output.rglob("*.zh-CN.*"))
     assert "设置" not in (output / "SKILL.md").read_text(encoding="utf-8")
     assert (output / "docs/settings.md").read_bytes() == (source / "settings.md").read_bytes()
+
+
+def test_operations_index_copies_only_reference_targets_verbatim_and_removes_stale_files(tmp_path: Path) -> None:
+    package, repository = _source(tmp_path)
+    guidance = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"
+    (guidance / "delegate.md").write_text("<subagents>\n{available_subagents}\n</subagents>\n")
+    build_skills(package, repository)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    assert "harness/files.md" in original and "ui/threads.md" in original
+    assert set(original) == {"SKILL.md", "harness/files.md", "ui/threads.md"}
+    assert "compact" not in original["SKILL.md"].decode()
+    for owner, source in (
+        ("harness", repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance"),
+        ("ui", package / "a13n_harness_ui/assets/guidance"),
+    ):
+        for path in source.glob("*.md"):
+            if b"<!-- reference -->" not in path.read_bytes():
+                assert not (output / owner / path.name).exists()
+                assert f"{owner}/{path.name}" not in original["SKILL.md"].decode()
+                continue
+            assert (output / owner / path.name).read_bytes() == path.read_bytes()
+            assert (
+                f"({owner}/{path.name}) — lines 1-{len(path.read_bytes().splitlines())}"
+                in original["SKILL.md"].decode()
+            )
+    build_skills(package, repository)
+    assert _files(output) == original
+    assert b"{available_subagents}" not in b"".join(original.values())
+    (package / "a13n_harness_ui/assets/guidance/threads.md").rename(
+        package / "a13n_harness_ui/assets/guidance/coordination.md"
+    )
+    build_skills(package, repository)
+    assert not (output / "ui/threads.md").exists()
+    assert (output / "ui/coordination.md").is_file()
+
+
+def test_operations_reuses_matching_bundle_across_builder_loads_without_rewriting(tmp_path: Path) -> None:
+    package, _ = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    for path in output.rglob("*"):
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+    original = {path.relative_to(output): path.stat().st_mtime_ns for path in output.rglob("*")}
+    reloaded = runpy.run_path(str(PACKAGE_ROOT / "build_skills.py"))
+    reloaded["prepare_skills"](package)
+    assert {path.relative_to(output): path.stat().st_mtime_ns for path in output.rglob("*")} == original
+
+
+@pytest.mark.parametrize("change", ["source", "template", "missing", "corrupt", "extra"])
+def test_operations_rebuilds_changed_inputs_or_incomplete_output(tmp_path: Path, change: str) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    source = repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance/files.md"
+    if change == "source":
+        source.write_text(source.read_text().replace("Read in chunks.", "Read focused chunks."))
+    elif change == "template":
+        template = package / "a13n_harness_ui/assets/operations_skill.md"
+        template.write_text(template.read_text() + "\nUpdated navigation guidance.\n")
+    elif change == "missing":
+        (output / "harness/files.md").unlink()
+    elif change == "corrupt":
+        (output / "harness/files.md").write_text("stale contents")
+    else:
+        (output / "stale.md").write_text("removed source")
+    prepare_skills(package)
+    rebuilt = _files(output)
+    assert rebuilt["harness/files.md"] == source.read_bytes()
+    if change in {"source", "template"}:
+        assert rebuilt != original
+    else:
+        assert rebuilt == original
+
+
+@pytest.mark.parametrize("owner", ["harness", "ui"])
+def test_operations_validates_sources_before_reusing_existing_output(tmp_path: Path, owner: str) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    original = _files(output)
+    source = (
+        repository / "packages/a13n-harness/a13n_harness/toolsets/prompts/guidance/files.md"
+        if owner == "harness"
+        else package / "a13n_harness_ui/assets/guidance/threads.md"
+    )
+    source.unlink()
+    with pytest.raises(ValueError, match=f"Missing {owner} operation guidance"):
+        prepare_skills(package)
+    assert _files(output) == original
+
+
+def test_sdist_preparation_rejects_missing_operations_reference(tmp_path: Path) -> None:
+    package, repository = _source(tmp_path)
+    prepare_skills(package)
+    (repository / "docs/a13n-harness-ui/meta.json").unlink()
+    output = package / BUILDER["BUNDLE_PATH"] / BUILDER["OPERATIONS_SKILL_NAME"]
+    (output / "harness/files.md").unlink()
+    with pytest.raises(RuntimeError, match="operation guidance is incomplete"):
+        prepare_skills(package)

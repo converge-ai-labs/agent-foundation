@@ -4,8 +4,13 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { TransportContext } from "../transport/context";
-import type { Schema, Transport } from "../transport/client";
-import { seedThreadSnapshot, useHistory, useTurnHistory } from "./queries";
+import { ApiError, type Schema, type Transport } from "../transport/client";
+import {
+  seedThreadSnapshot,
+  useHistory,
+  useThread,
+  useTurnHistory,
+} from "./queries";
 
 afterEach(cleanup);
 it("retains successful history and its identity across replacement loading and error, never across Threads", async () => {
@@ -521,7 +526,11 @@ it("cancels replacement turn pagination without publishing a late checkpoint", a
   const GET = vi.fn((_path, options) => {
     const continuation = options.params.query.expected_continuation_id;
     if (options.params.query.turn_id) {
-      oldSignal = options.signal;
+      if (continuation === "C1") oldSignal = options.signal;
+      if (continuation === "C2")
+        return Promise.resolve({
+          data: { entries: [2, 3, 4, 5].map(turnEntry), next_cursor: null },
+        });
       return new Promise((resolve) => {
         finish = resolve;
       });
@@ -529,8 +538,8 @@ it("cancels replacement turn pagination without publishing a late checkpoint", a
     return Promise.resolve({
       data: {
         continuation_id: continuation,
-        entries: (continuation === "C1" ? [5] : [2, 3, 4, 5]).map(turnEntry),
-        turns: [turn],
+        entries: (continuation === "C0" ? [2, 3, 4, 5] : [5]).map(turnEntry),
+        turns: [{ ...turn, content_revision: "same" }],
         next_cursor: null,
       },
     });
@@ -551,7 +560,7 @@ it("cancels replacement turn pagination without publishing a late checkpoint", a
   await act(async () =>
     finish({ data: { entries: [turnEntry(5)], next_cursor: "older" } }),
   );
-  expect(GET).toHaveBeenCalledTimes(4);
+  expect(GET).toHaveBeenCalledTimes(5);
   expect(
     queryClient.getQueryData(["thread", "one", "history", "C1"]),
   ).toBeUndefined();
@@ -614,4 +623,55 @@ it("reuses complete turn entries only with the same server content revision", as
   await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
   hook.unmount();
   client.clear();
+});
+
+it("refreshes detail and opens the selected turn on the current checkpoint after a history conflict", async () => {
+  let head = "C1";
+  const GET = vi.fn(async (path: string, options) => {
+    if (path.endsWith("/transcript")) {
+      const q = options.params.query;
+      expect(q.turn_id).toBe("input-one");
+      if (q.expected_continuation_id === "C1") {
+        head = "C2";
+        throw new ApiError(
+          "History changed",
+          400,
+          "thread_history_continuation_changed",
+        );
+      }
+      return {
+        data: {
+          continuation_id: head,
+          entries: [],
+          turns: [],
+          next_cursor: null,
+        },
+      };
+    }
+    return {
+      data: {
+        thread: { thread_id: "one", configuration: {} },
+        continuation_id: head,
+      },
+    };
+  });
+  const { wrapper } = turnHistoryHarness(GET);
+  const hook = renderHook(
+    () => {
+      const detail = useThread("one");
+      return useHistory(
+        "one",
+        detail.data?.continuation_id,
+        !!detail.data,
+        "input-one",
+      );
+    },
+    { wrapper },
+  );
+  await waitFor(() =>
+    expect(hook.result.current.data?.pages[0].continuation_id).toBe("C2"),
+  );
+  expect(
+    GET.mock.calls.filter(([path]) => path.endsWith("/transcript")),
+  ).toHaveLength(2);
 });

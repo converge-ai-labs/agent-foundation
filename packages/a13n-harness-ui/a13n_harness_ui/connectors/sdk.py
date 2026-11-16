@@ -29,6 +29,7 @@ class Context:
         self, connector_id: str, repository: ConnectorRepository, runtime: Connectors, signal: Callable[[], None]
     ) -> None:
         self.connector_id, self._repository, self._runtime, self._signal = connector_id, repository, runtime, signal
+        self.oauth = runtime.oauth
 
     async def configuration(self) -> ConnectorConfiguration:
         return await self._repository.configuration(self.connector_id)

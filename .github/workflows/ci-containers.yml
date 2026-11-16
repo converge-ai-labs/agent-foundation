@@ -162,6 +162,7 @@ jobs:
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               for arch, runner in (("amd64", "ubuntu-24.04"), ("arm64", "ubuntu-24.04-arm")):
                   for variant in ("standard", "slim", "desktop"):
+                      envd_variant = "default" if variant == "desktop" else "slim"
                       suffix = "" if variant == "standard" else f"-{variant}"
                       images.append({
                           "name": f"a13n-sandbox-{variant}-{arch}",
@@ -169,7 +170,8 @@ jobs:
                           "dockerfile": "deploy/docker/images/sandbox/Dockerfile",
                           "tag": f"a13n-sandbox:local{suffix}",
                           "arch": arch,
-                          "build_args": f"SANDBOX_VARIANT={variant}\nENVD_BINARY_SOURCE=prebuilt",
+                          "envd_variant": envd_variant,
+                          "build_args": f"SANDBOX_VARIANT={variant}\nENVD_BINARY_SOURCE=prebuilt\nENVD_VARIANT={envd_variant}",
                           "cache_scope": f"ci-sandbox-{variant}-{arch}",
                           "check_target": f"image-check-sandbox{suffix}",
                       })
@@ -183,6 +185,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        variant: [slim, default]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -190,6 +194,7 @@ jobs:
             runner: ubuntu-24.04-arm
     uses: ./.github/workflows/sandbox-binary.yml
     with:
+      variant: ${{ matrix.variant }}
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
 
@@ -220,7 +225,7 @@ jobs:
         if: startsWith(matrix.name, 'a13n-sandbox-')
         uses: actions/download-artifact@v5
         with:
-          name: sandbox-binary-${{ matrix.arch }}
+          name: sandbox-binary-${{ matrix.arch }}-${{ matrix.envd_variant }}
           path: tmp/sandbox-binaries/${{ matrix.arch }}
 
       - name: Set up Python for Browser integration checks

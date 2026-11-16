@@ -444,3 +444,60 @@ capabilities = (Capability(id="math", tools=[double]),)
 Capability ID、工具 ID、绑定 ID 和其他紧凑选择器用于关联和组合，不授予权限，也不恢复 provider 权限。
 
 压缩成功时，`a13n_harness.capabilities` 通过原生 Capability 事件通道发出 `CompactionSummaryEvent`。其 `operation_id` 与压缩生命周期事件一致，`summary` 包含生成的替代文本。它是带内容的输出，不是 Agent 的回答，也不证明检查点已保存。生命周期扩展本身仍只含元数据。Host 将就绪的 `compaction_result` 与 `previous_state` 一起传给 `run` 或 `stream` 后，Harness 在恢复历史之前判断并应用结果，在投影最新上下文前发出恢复与总结事件。该恢复过程无需配置 Compaction Capability 或 operator，详见[后台压缩](context.md#background-compaction)。
+
+## 用 Object Store 复用原始媒体
+
+选择 `ObjectStoreCapability`，并通过 `RunBindings.object_store` 绑定 Host 实现的 `a13n_harness.objects.ObjectStore`。Host 负责字节存储、作用域、授权和保留策略；Harness 负责媒体捕获、管理工具和参数传输。
+
+```python
+from a13n_harness.capabilities import ObjectRefToolset, ObjectStoreCapability
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+# `send_image` accepts base64; `host_store` implements ObjectStore.
+features = [
+    ObjectStoreCapability(),
+    Capability(toolsets=[ObjectRefToolset(FunctionToolset([send_image]), object_ref_tools={"send_*": True})]),
+]
+bindings = RunBindings.embedded(object_store=host_store)
+```
+
+捕获的原生用户媒体和工具/MCP 媒体会保留 Model 可见的原始内容，并附加 `a13n-object://obj_...` 等元数据。将准确的引用作为已启用目标工具的完整字符串参数。Harness 在真正调用目标时，每个不同对象只读取一次，并提供由原始字节编码的 base64。直接调用、ToolSearch 和 CodeAct 都支持嵌套参数值。程序源码、字典键、子字符串、审批请求和工具调用历史保留引用，不写入展开后的载荷。
+
+用 `asset_ref(path)` 导入有权限读取的普通 Environment 文件。`asset_store(ref=...)` 提升可用对象的保留级别而不改变 ID；`asset_store(path=...)` 导入并保留文件。`asset_list`、`asset_info` 和 `asset_delete` 管理当前 Host 作用域，且不向 Model 暴露字节。
+
+### Object Reference Transport
+
+Object Reference Transport（对象引用传输）是 Harness 的工具扩展，在最终授权参数中把完整引用替换成 base64。目标工具默认不支持引用。单个工具通过布尔元数据 `{"a13n.harness.supports_object_refs": True}` 接入。原生工具集使用 `ObjectRefToolset(toolset, object_ref_tools={"*_upload": True})`；两个 Host 的 MCP 配置暴露相同的 `object_ref_tools` 规则表。空表保留工具自身的声明，显式启用整个工具集则使用 `{"*": True}`。为字符串参数接受 base64 的工具启用。自定义工具集需要原生 Pydantic Core 参数校验器。
+
+规则匹配加前缀之前的原始工具名，并区分大小写。`*` 可以在任意位置匹配零个或多个字符，支持 `send_*`、`*_upload` 和 `image_*_upload`；其他字符按字面匹配。精确名称优先于通配模式；非 `*` 字符更多的模式优先于更宽泛的模式。具体程度相同时 false 优先，与条目顺序无关。匹配到的规则覆盖原生元数据；未匹配的工具沿用自身声明，未声明时默认不支持。例如，`{"*": False, "*_upload": True, "text_upload": False}` 启用除 `text_upload` 外的 upload 工具。直接调用、ToolSearch 和 CodeAct 共用选择规则，各自的权限规则保持不变。
+
+嵌套引用值支持字典、列表、元组（包括 `NamedTuple`）和 Pydantic 模型。带引用的参数应使用这些容器；dataclass 和集合不属于传输遍历契约。
+
+原生参数校验及校验前后钩子只运行一次。声明式字符串约束允许完整引用；字段/model validator 和自定义 `args_validator` 按原生流程处理带引用的参数，此时尚未读取 Store。回调必须接受并保留引用。派发时复制最终参数，保留类型化模型和已归一化的值，只替换仍存在的引用，不重跑校验或默认值工厂。依赖解码后字节的检查由消费函数或远程 MCP 服务负责。
+
+例如，自定义参数回调可以在 `data_base64` 仍为引用时进行授权；实现函数接收真正的 base64：
+
+```python
+import base64
+
+from a13n_harness.objects import SUPPORTS_OBJECT_REFS
+from pydantic_ai.tools import Tool
+
+
+def authorize_send(ctx, data_base64: str):
+    # Apply business authorization here; accept reference transport values.
+    assert ctx.deps.object_store is not None
+
+
+def send_image(data_base64: str):
+    image = base64.b64decode(data_base64, validate=True)
+    return upload_image(image)  # Your consumer validates and uploads the bytes.
+
+
+send_tool = Tool(send_image, args_validator=authorize_send, metadata={SUPPORTS_OBJECT_REFS: True})
+```
+
+权限拒绝和待审批不会读取 Store。引用可能在审批期间过期；恢复调用会报告对象不可用。Agent 必须使用当前列出的引用或明确重新导入，不能编造 base64 或自动重放生产工具。临时 TTL 和 LRU 上限由 Host 管理；显式保留后，对象不再受临时过期策略影响。`ObjectStoreConfiguration(capture_media=False)` 关闭自动捕获，`max_object_bytes` 限制导入和捕获大小。Host 上限可更小；捕获因大小被拒绝时，原生媒体仍保留，并报告没有生成可复用对象。
+
+内置 Host 配置见 [Harness UI](../a13n-harness-ui/configuration.md#object-store) 和 [Service](../a13n-service/agent-configuration.md#reuse-media-between-tools)。

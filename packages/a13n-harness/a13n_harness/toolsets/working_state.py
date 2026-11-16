@@ -17,11 +17,10 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
 
-from ._instructions import InstructionFunctionToolset, tool_instruction
+from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, tool_failure, validation_failure
 
-_TASK_INSTRUCTION = tool_instruction("task-manager")
-_NOTE_INSTRUCTION = tool_instruction("note")
+_WORKING_STATE_INSTRUCTION = tool_guidance("working-state")
 
 
 class TaskProjection(TypedDict):
@@ -88,6 +87,7 @@ class WorkingStateToolset:
         self._observed_provider_tasks = None
         self._observation_revision = 0
         self._notes_version = 1
+        self.note_revisions = dict.fromkeys(state.notes, self._notes_version)
 
     def publish_observation(self) -> None:
         from a13n_harness.capabilities.working_state import WorkingStateObservation
@@ -114,18 +114,15 @@ class WorkingStateToolset:
 
     def get_toolset(self, *, tasks: bool, notes: bool) -> FunctionToolset[AgentContext] | None:
         tools = []
-        instructions: list[str] = []
         if tasks:
             tools.extend((self.task_create, self.task_get, self.task_list, self.task_update))
-            instructions.append(_TASK_INSTRUCTION)
         if notes:
             tools.extend((self.note_write, self.note_delete, self.note_get))
-            instructions.append(_NOTE_INSTRUCTION)
         return (
             InstructionFunctionToolset(
                 tools=tools,
                 id="a13n-working-state-tools",
-                instructions=instructions,
+                instructions=_WORKING_STATE_INSTRUCTION,
             )
             if tools
             else None
@@ -149,9 +146,6 @@ class WorkingStateToolset:
     async def context_snapshot(self, ctx: RunContext[AgentContext]):
         await self.ensure_bound(ctx)
         return await self._task_snapshot() if self._configuration.tasks_enabled else None
-
-    def notes_snapshot(self) -> dict[str, str]:
-        return self._state.notes
 
     async def task_create(
         self,
@@ -280,8 +274,11 @@ class WorkingStateToolset:
                 return tool_failure(
                     "note_limit_exceeded", "The note limit is reached; update or remove an existing note first."
                 )
+            changed = notes.get(key) != value
             notes[key] = value
             await self._replace_notes(ctx, notes)
+            if changed:
+                self.note_revisions[key] = self._notes_version
         return {"ok": True, "key": key, "action": action}
 
     async def note_delete(self, ctx: RunContext[AgentContext], key: str) -> NoteToolResult:
@@ -295,6 +292,7 @@ class WorkingStateToolset:
                 return {"ok": True, "key": key, "action": "already_absent"}
             del notes[key]
             await self._replace_notes(ctx, notes)
+            del self.note_revisions[key]
         return {"ok": True, "key": key, "action": "deleted"}
 
     async def note_get(self, ctx: RunContext[AgentContext], key: str | None = None) -> NoteGetToolResult:

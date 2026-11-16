@@ -39,6 +39,8 @@ from anyio import to_thread
 from pydantic_ai import RunContext
 from pydantic_ai.messages import FilePart
 
+from a13n_harness_ui.settings import ObjectStoreSettings
+
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
 _USER_AGENT = "a13n-harness-ui/0 web tools"
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
@@ -216,9 +218,21 @@ class LocalDocumentConverter:
 def production_run_bindings(
     bindings: RunBindings,
     owner_capability_ids: Collection[str],
+    *,
+    data_root: Path | None = None,
+    thread_id: str | None = None,
+    object_store_policy: ObjectStoreSettings | None = None,
 ) -> RunBindings:
     """Supply fresh Host collaborators required by one logical Harness Run."""
 
+    from a13n_harness.objects import OBJECT_STORE_CAPABILITY_ID
+
+    if OBJECT_STORE_CAPABILITY_ID in owner_capability_ids:
+        from a13n_harness_ui.object_store import ThreadObjectStore
+
+        if data_root is None or thread_id is None:
+            raise ValueError("Object Store binding requires the data root and Thread identity")
+        bindings = replace(bindings, object_store=ThreadObjectStore(data_root, thread_id, policy=object_store_policy))
     if WEB_CAPABILITY_ID in owner_capability_ids:
         client = HttpxWebClient()
         policy = HttpWebPolicy(bindings.configuration)

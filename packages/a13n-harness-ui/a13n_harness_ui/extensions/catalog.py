@@ -22,6 +22,7 @@ from a13n_harness.capabilities.context import (
 from a13n_harness.capabilities.documents import DocumentsConfiguration
 from a13n_harness.capabilities.interaction import UserInteractionCapability
 from a13n_harness.capabilities.native_image_generation import NativeImageGenerationCapability
+from a13n_harness.capabilities.object_store import ObjectStoreCapability, ObjectStoreConfiguration
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
 from a13n_harness.capabilities.working_state import WorkingStateCapability, WorkingStateConfiguration
@@ -69,6 +70,7 @@ _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "handoff": HandoffCapability,
     "runtime_context": RuntimeContextCapability,
     "documents": DocumentsCapability,
+    "object_store": ObjectStoreCapability,
     "skills": SkillsCapability,
     "web": WebCapability,
     "native_image_generation": NativeImageGenerationCapability,
@@ -487,6 +489,8 @@ def _construct_capability(
         return DynamicEnvironmentCapability(DynamicEnvironmentConfiguration.model_validate(configuration))
     if capability_type is DocumentsCapability:
         return DocumentsCapability(DocumentsConfiguration.model_validate(configuration))
+    if capability_type is ObjectStoreCapability:
+        return ObjectStoreCapability(ObjectStoreConfiguration.model_validate(configuration))
     if capability_type is WebCapability:
         return WebCapability(WebConfiguration.model_validate(configuration))
     if capability_type is ToolPermissionsCapability:

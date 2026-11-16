@@ -12,7 +12,7 @@ from pathlib import Path
 
 MIB = 1024 * 1024
 # Keep both below the native updater's 256 MiB download/extraction limit.
-BUDGETS = {"default": (32 * MIB, 16 * MIB), "vm": (224 * MIB, 128 * MIB)}
+BUDGETS = {"default": (32 * MIB, 16 * MIB), "slim": (28 * MIB, 14 * MIB), "vm": (224 * MIB, 128 * MIB)}
 
 
 def package(binary: Path, license_path: Path, archive: Path) -> None:

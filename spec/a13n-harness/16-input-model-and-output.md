@@ -19,7 +19,7 @@ It does not add a hosted input wire format, durable model registry, serialized s
 
 `ExecutableAgent.live()` accepts a native `RealtimeModel` and native realtime settings, rather than resolving an ordinary request/response Model. Its `send`, `send_audio`, `stream_audio`, `commit_audio`, `clear_audio`, `create_response`, and `interrupt` methods delegate to the native session and preserve provider-profile restrictions. `interrupt` accepts mutually exclusive `played_ms` and `played_bytes`; native byte-based playback accounting requires one audio subscriber. Live is conversational and returns no validated business output; ordinary `run` and `stream` retain their output contracts.
 
-Initial model-context projection supplies connection instructions in full for each new Live connection; it does not fabricate a canonical user message. After connection succeeds, this projection is confirmed connection-local context exposed through the same read-only history query. Successful local tool execution and accepted external deferred results recompute context and receive selected blocks as supplemental native tool-result content before automatic continuation. Producers decide injection from the history observed at projection time; the bridge commits exactly their returned blocks. Native tool scheduling is unchanged: an already prepared result can arrive after another call's newer snapshot without replaying the older value. Selected content retains its source, key, placement, digest, and display metadata in canonical native history.
+Initial model-context projection supplies the connection instructions when a Live Run opens; it does not fabricate a canonical user message. After connection succeeds, this projection is confirmed connection-local context exposed through the same read-only history query. Successful local tool execution and accepted external deferred results recompute context and receive selected blocks as supplemental native tool-result content before automatic continuation. Snapshot producers compare connection-local history. Run-scoped notification producers keep confirmed initial lists and changes across reconnect; a dropped pending send remains eligible. Native transport replay of existing setup or history does not constitute a new application notification. For every producer, the bridge commits exactly their returned blocks. Native tool scheduling is unchanged: an already prepared result can arrive after another call's newer snapshot without replaying the older value. Selected content retains its source, key, placement, digest, and display metadata in canonical native history.
 
 Only a native session result observation after successful local send, with the expected supplemental content, adds confirmed presence. Prepared, failed, interrupted, or missing-content results cannot establish presence. Pending delivery makes the latest value for an affected identity unknown while preserving already confirmed historical presence. Overlapping deliveries remain unordered after call-order event replay; a later unambiguous confirmed delivery establishes the latest value again. Connection-local observations are discarded on reconnect and never serialized as durable last-hash state. Live does not promise wire-time deduplication or provider acknowledgement. Existing return values, supplemental evidence, and metadata remain intact through Harness rendering. Approved calls use the normal local execution boundary rather than projecting a second time through their approval result. Tool schemas are fixed when the native session opens; local preparation and policy can still refuse later calls, but Live does not promise mid-session tool-schema advertisement or graph/model-request hooks.
 
@@ -211,6 +211,8 @@ Pydantic AI retains the complete layering:
 - Capabilities own reusable Agent-loop behavior.
 
 The projection is a narrow native Model wrapper applied consistently to a concrete definition Model, a `RunModelResolver` result, or a Harness-inferred Model. It preserves the wrapped provider profile and behavior and maps only Harness `context_window_tokens` to native `context_window`. An explicit Harness value wins over a conflicting provider profile because it is managed definition policy; without that value, the original native profile is unchanged. The resulting `Model.context_window` and `Model.profile.context_window` agree, allowing external Pydantic AI Capabilities and first-party Harness Capabilities to share the upstream abstraction. This is interoperability projection, not a claim that the selected provider route supports a larger window; authoring remains responsible for selecting a compatible route.
+
+Native `openai_include_unmapped_response_data=True` is an opt-in `OpenAIChatModel` setting for Chat Completions-compatible adapters. The native response stores unmapped data in `provider_details["unmapped"]`, with streamed data under `unmapped["chunks"]`. The ordinary message codec retains it across state export/import, and the adapter excludes it from later provider requests. This is diagnostic response metadata, not a new Harness event, telemetry field, or display surface. Its contents may be sensitive; provider-history repair may remove it with other provider-native state. Responses API behavior remains adapter-owned.
 
 For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle characteristics and native provider request settings:
 
@@ -475,13 +477,14 @@ Custom `ModelRecoveryRule` values contain one exact matcher and one history repa
 class ModelRecoveryPolicy:
     enabled: bool = False
     max_attempts: int = 5
+    retry_output_limit: bool = True
     continuation_prompt: RunInputValue = DEFAULT_RECOVERY_PROMPT
     prompt_factory: RecoveryPromptFactory | None = None
     backoff_initial_seconds: float = 1.0
     backoff_max_seconds: float = 30.0
 ```
 
-`max_attempts` bounds consecutive failed attempts, including the initial failed attempt, rather than the cumulative attempts in a logical Run. An accepted primary model response resets the budget and equal-jitter exponential backoff. Recovery requires a recognized transient failure at the primary model-request boundary; interrupted history alone does not authorize a retry. [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery) owns the failure classification, budget reset, backoff, prompt-factory inputs, and cancellation rules.
+`max_attempts` bounds consecutive failed attempts, including the initial failed attempt, rather than the cumulative attempts in a logical Run. An accepted primary model response resets the budget and equal-jitter exponential backoff. Recovery requires explicit primary output truncation or a recognized transient failure at the primary model-request boundary; interrupted history alone does not authorize a retry. [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery) owns the failure classification, budget reset, backoff, prompt-factory inputs, and cancellation rules.
 
 Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID.
 
@@ -500,6 +503,8 @@ The Harness does not buffer events for replay, fan out consumers, or persist the
 ## Output Boundary
 
 Pydantic `OutputSpec`, object `AgentSpec.output_schema`, output validators, output tools, and retry behavior own output production. The Harness fixes one business-output contract when `HarnessBuilder` constructs the reusable Agent; `run()` and `stream()` expose no per-run `output_type` override.
+
+A recovered Run's `output` is the final native validated output, including for string-returning output functions. Partial text remains visible in history and the event stream; the Harness does not concatenate text segments or stitch JSON fragments into a business output. Explicit output-token truncation is never successful completion on its own, even when recovery is disabled.
 
 Exactly one build-time source is valid:
 

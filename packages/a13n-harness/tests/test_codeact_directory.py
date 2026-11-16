@@ -1,128 +1,39 @@
 from __future__ import annotations
 
-import ast
 import json
+import re
 from copy import deepcopy
 from dataclasses import replace
 
 import pytest
 from a13n_harness import HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities.codeact import CodeActCapability
+from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.toolsets.codeact import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
     _build_catalog,
-    _render_tool_declaration,
     render_codeact_catalog,
 )
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.messages import InstructionDeltaPart, ModelMessagesTypeAdapter, ModelRequest, ModelResponse
+from pydantic_ai.messages import (
+    InstructionDeltaPart,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.usage import RunUsage
 
 
-def test_declaration_preserves_keyword_requiredness_defaults_and_return_types() -> None:
-    schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "count": {"type": "integer", "minimum": 1, "default": 3},
-            "mode": {"type": "string", "enum": ["short", "full"], "default": "short"},
-        },
-        "required": ["count"],
-    }
-    original = deepcopy(schema)
-    declaration = _render_tool_declaration(
-        ToolDefinition(name="inspect", parameters_json_schema=schema, return_schema={"type": "boolean"})
-    )
-    function = ast.parse(declaration).body[-1]
-    assert isinstance(function, ast.AsyncFunctionDef)
-    assert not function.args.args
-    assert [arg.arg for arg in function.args.kwonlyargs] == ["count", "mode"]
-    assert function.args.kw_defaults[0] is None  # A schema default does not make a required key optional.
-    assert ast.literal_eval(function.args.kw_defaults[1]) == "short"
-    assert ast.unparse(function.returns) == "bool"
-    assert schema == original
-
-
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "object", "additionalProperties": {"type": "integer"}},
-        {"type": "object", "properties": {"optional": {"type": "string"}}, "additionalProperties": False},
-        {
-            "type": "object",
-            "properties": {"some-key": {"type": "string"}},
-            "required": ["some-key"],
-            "additionalProperties": False,
-        },
-        {
-            "type": "object",
-            "properties": {"class": {"type": "string"}},
-            "required": ["class"],
-            "additionalProperties": False,
-        },
-    ],
-)
-def test_nonrepresentable_argument_shapes_keep_callable_mapping_form(schema: dict) -> None:
-    declaration = _render_tool_declaration(ToolDefinition(name="custom", parameters_json_schema=schema))
-    function = ast.parse(declaration).body[-1]
-    assert isinstance(function, ast.AsyncFunctionDef)
-    assert function.args.kwarg is not None and function.args.kwarg.arg == "kwargs"
-    assert not function.args.kwonlyargs
-
-
-def test_referenced_shapes_are_self_contained_and_qualified_by_tool() -> None:
-    def definition(name: str, field: str) -> ToolDefinition:
-        return ToolDefinition(
-            name=name,
-            parameters_json_schema={
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {"value": {"$ref": "#/$defs/Item"}},
-                "required": ["value"],
-                "$defs": {
-                    "Item": {
-                        "type": "object",
-                        "properties": {field: {"type": "string"}},
-                        "required": [field],
-                    }
-                },
-            },
-        )
-
-    for name, field in [("first", "one"), ("second", "two")]:
-        rendered = _render_tool_declaration(definition(name, field))
-        module = ast.parse(rendered)
-        shape, function = module.body
-        assert isinstance(shape, ast.ClassDef) and shape.name == f"{name}_Item"
-        assert isinstance(function, ast.AsyncFunctionDef)
-        assert ast.unparse(function.args.kwonlyargs[0].annotation) == shape.name
-        assert isinstance(shape.body[0], ast.AnnAssign)
-        assert ast.unparse(shape.body[0].target) == field
-
-
-def test_conflicting_input_and_output_shape_names_fall_back_to_exact_schemas() -> None:
-    definition = ToolDefinition(
-        name="transform",
-        parameters_json_schema={
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"item": {"$ref": "#/$defs/Item"}},
-            "required": ["item"],
-            "$defs": {"Item": {"type": "object", "properties": {"input": {"type": "integer"}}}},
-        },
-        return_schema={
-            "$ref": "#/$defs/Item",
-            "$defs": {"Item": {"type": "object", "properties": {"output": {"type": "string"}}}},
-        },
-    )
-    function = ast.parse(_render_tool_declaration(definition)).body[-1]
-    assert isinstance(function, ast.AsyncFunctionDef)
-    assert function.args.kwarg is not None
+@pytest.mark.parametrize("value", [0, 1, "true", None])
+def test_catalog_argument_schemas_requires_a_strict_bool(value) -> None:
+    with pytest.raises(TypeError, match="catalog_argument_schemas"):
+        CodeActConfig(catalog_argument_schemas=value)
 
 
 @pytest.mark.anyio
@@ -147,15 +58,23 @@ async def test_runner_directory_uses_current_prepared_schemas_and_eligibility() 
         "required": ["query"],
     }
     updated = replace(original, tool_def=replace(original.tool_def, parameters_json_schema=updated_schema))
-    before = render_codeact_catalog(tools, ctx=ctx)
-    after = render_codeact_catalog({**tools, "lookup-items": updated}, ctx=ctx)
-    assert "async def lookup_items(*, count: int)" in before
-    assert "async def lookup_items(*, query: str)" in after
-    assert "count: int" not in after
+    before = render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=True)
+    after = render_codeact_catalog({**tools, "lookup-items": updated}, ctx=ctx, catalog_argument_schemas=True)
+    assert '"count"' in before
+    assert '"query"' in after
+    assert '"count"' not in after
+    default = render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=False)
+    assert default == (
+        "CodeAct callable host tools. Call them with the same keyword arguments as the matching tool definitions.\n"
+        "`lookup_items` (tool `lookup-items`)"
+    )
+    assert "async def" not in after and "Return JSON Schema" not in after
+    assert "lookup(count" not in after
     assert "denied" not in after
     assert "(tool `lookup-items`)" in after
     encoded_schema = after.split("Arguments JSON Schema: ", 1)[1].splitlines()[0]
     assert json.loads(encoded_schema) == updated_schema
+    assert encoded_schema == json.dumps(updated_schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert original.tool_def.parameters_json_schema != updated_schema
 
 
@@ -171,8 +90,8 @@ async def test_deferred_catalog_tracks_current_discovery_and_prepared_membership
     for discovered in (False, True, False):
         ctx.discovered_tool_names = {"lookup"} if discovered else set()
         assert bool(_build_catalog(tools, ctx=ctx).definitions) is discovered
-        description = render_codeact_catalog(tools, ctx=ctx)
-        assert ("async def lookup" in description) is discovered
+        description = render_codeact_catalog(tools, ctx=ctx, catalog_argument_schemas=False)
+        assert ("`lookup`" in description) is discovered
         assert tools["lookup"].tool_def.defer_loading
     ctx.discovered_tool_names = {"lookup"}
     assert not _build_catalog({}, ctx=ctx).definitions  # Stale discovery cannot restore a removed tool.
@@ -193,7 +112,8 @@ async def test_deferred_tools_participate_in_preparation_name_collision_checks()
 
 
 @pytest.mark.anyio
-async def test_catalog_changes_append_once_without_rewriting_runner_definitions_or_prefix() -> None:
+@pytest.mark.parametrize("argument_schemas", [False, True])
+async def test_catalog_changes_append_once_without_rewriting_runner_definitions_or_prefix(argument_schemas) -> None:
     requests = 0
     prefixes: list[str | None] = []
     runners: list[list[ToolDefinition]] = []
@@ -238,7 +158,7 @@ async def test_catalog_changes_append_once_without_rewriting_runner_definitions_
                     )
                 ]
             ),
-            CodeActCapability(),
+            CodeActCapability(CodeActConfig(catalog_argument_schemas=argument_schemas)),
         ),
     )
     result = await executable.run("run", bindings=RunBindings.embedded())
@@ -246,8 +166,8 @@ async def test_catalog_changes_append_once_without_rewriting_runner_definitions_
     assert requests == 6
     assert all(definitions == runners[0] for definitions in runners)
     assert all(prefix == prefixes[0] for prefix in prefixes)
-    assert prefixes[0] is not None and prefixes[0].count("async def lookup") == 1
-    assert "value: int" in prefixes[0]
+    assert prefixes[0] is not None and prefixes[0].count("`lookup`") == 1
+    assert ('"type":"integer"' in prefixes[0]) is argument_schemas
     changes = [
         part
         for message in result.all_messages()
@@ -255,10 +175,11 @@ async def test_catalog_changes_append_once_without_rewriting_runner_definitions_
         for part in message.parts
         if isinstance(part, InstructionDeltaPart) and str(part.id) == "capability:a13n.codeact:catalog"
     ]
-    assert len(changes) == 2
-    assert changes[0].content is not None and "value: str" in changes[0].content
-    assert changes[1].content is not None and "async def lookup" not in changes[1].content
-    assert "async def store" in changes[1].content
+    assert len(changes) == (2 if argument_schemas else 1)
+    if argument_schemas:
+        assert changes[0].content is not None and '"type":"string"' in changes[0].content
+    assert changes[-1].content is not None and "`lookup`" not in changes[-1].content
+    assert "`store`" in changes[-1].content
 
     # A new native run resumes the same instruction window without restoring the
     # removed tool or appending the unchanged stored-values-only catalog again.
@@ -288,3 +209,70 @@ async def test_catalog_changes_append_once_without_rewriting_runner_definitions_
     assert continued.output_or_raise()
     assert prefixes[-1] == prefixes[0]
     assert runners[-1] == runners[0]
+
+
+@pytest.mark.anyio
+async def test_catalog_names_have_native_definitions_in_each_request_after_discovery() -> None:
+    from pydantic_ai.capabilities import ToolSearch
+
+    requests = 0
+    catalogs = []
+
+    def lookup() -> int:
+        return 42
+
+    async def model(messages, info):
+        nonlocal requests
+        # FunctionModel receives native instruction deltas projected as user parts.
+        visible = (
+            (info.instructions or "")
+            + "\n"
+            + "\n".join(
+                part.content
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+            )
+        )
+        catalog = re.findall(
+            r'<pyai:context id="capability:a13n.codeact:catalog">\n(.*?)\n</pyai:context>', visible, re.S
+        )[-1]
+        entries = [line for line in catalog.splitlines() if line.startswith("`")]
+        native_names = {tool.name for tool in info.function_tools}
+        for entry in entries:
+            name = entry.split("`")[1]
+            canonical = entry.split("(tool `")[1].split("`")[0] if "(tool `" in entry else name
+            assert canonical in native_names
+        catalogs.append(entries)
+        requests += 1
+        if requests == 1:
+            yield {0: DeltaToolCall(name="search_tools", json_args='{"queries":["deferred"]}', tool_call_id="search-1")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            Capability(
+                toolsets=[
+                    CodeActPolicyToolset(
+                        FunctionToolset(
+                            [Tool(lookup, name="crm.lookup"), Tool(lookup, name="deferred", defer_loading=True)]
+                        ),
+                        CodeActToolPolicy(default=True),
+                    )
+                ]
+            ),
+            ToolSearch(strategy="keywords"),
+            CodeActCapability(),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert requests == 2
+    assert "`crm_lookup` (tool `crm.lookup`)" in catalogs[0]
+    assert "`deferred`" not in catalogs[0]
+    assert "`deferred`" in catalogs[1]

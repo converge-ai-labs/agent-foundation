@@ -71,7 +71,7 @@ def test_reconstruction_total_budget_and_huge_inputs(budget: int) -> None:
 
 @pytest.mark.parametrize(
     "budget,reference_chars,kept",
-    [(2048, 992, True), (2048, 993, False), (2048, 1024, False), (4096, 1024, True), (2048, 1025, False)],
+    [(2048, 1021, True), (2048, 1022, False), (2048, 1024, False), (4096, 1024, True), (2048, 1025, False)],
 )
 def test_legacy_reconstruction_budgets_the_complete_retained_reference(
     budget: int, reference_chars: int, kept: bool
