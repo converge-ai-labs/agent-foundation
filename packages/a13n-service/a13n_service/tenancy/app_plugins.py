@@ -98,9 +98,10 @@ async def update(
         row = await lock(session, OrganizationRow, scope.organization_id)
         assert row is not None
         require_match(if_match, row.id, row.version)
-        runtime.apps.require(app_id)
         current = policy(row.settings)
         selected = set(current.enabled)
+        if enabled or app_id not in selected:
+            runtime.apps.require(app_id)
         if (app_id in selected) != enabled:
             if enabled:
                 selected.add(app_id)

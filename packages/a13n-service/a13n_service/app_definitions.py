@@ -15,7 +15,7 @@ from a13n_service.settings import Section
 
 @dataclass(frozen=True)
 class OrganizationSweep:
-    """One bounded organization work unit. The host selects tenants; the callback owns replica coordination."""
+    """One organization callback with its own timeout; the host selects tenants in bounded passes."""
 
     name: str
     every: float

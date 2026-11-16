@@ -151,6 +151,26 @@ async def test_policy_preconditions_authority_and_atomic_audit(apps_service):
     assert changed.details == {"enabled": True}
 
 
+async def test_policy_can_disable_an_uninstalled_retained_app_without_changing_other_settings(apps_service):
+    service = apps_service
+    retained = "retired.reports"
+    async with transaction(service.runtime.storage) as session:
+        organization = await session.get_one(OrganizationRow, service.tenant.organization_id)
+        organization.settings = {"other": {"value": 1}, "app_plugins": {"enabled": [retained]}}
+    path = f"{service.organization}/app-plugins"
+    current = await service.client.get(path)
+    response = await service.client.put(f"{path}/{retained}", json={"enabled": False}, headers=if_match(current.json()))
+    assert response.status_code == 200, response.text
+    assert response.json()["version"] == current.json()["version"] + 1
+    async with short_session(service.runtime.storage) as session:
+        organization = await session.get_one(OrganizationRow, service.tenant.organization_id)
+        assert organization.settings == {"other": {"value": 1}, "app_plugins": {"enabled": []}}
+        events = list(await session.scalars(select(AuditEventRow).where(AuditEventRow.target_id == retained)))
+        assert len(events) == 1 and events[0].details == {"enabled": False}
+    denied = await service.client.put(f"{path}/{retained}", json={"enabled": True}, headers=if_match(response.json()))
+    assert denied.status_code == 404
+
+
 async def test_guard_runs_before_dependencies_and_preserves_csrf_and_workspace_authority(apps_service):
     service = apps_service
     path = f"/api/v1/apps/{APP_ID}/report"
@@ -191,6 +211,10 @@ async def test_packaged_assets_keep_chunks_css_real_404_and_immutable_cache(apps
     missing = await service.client.get(frontend["entry"].replace("index.js", "missing.js"))
     assert missing.status_code == 404 and "text/html" not in missing.headers["content-type"]
     assert (await service.client.get(frontend["entry"].replace("/1.0/", "/2.0/"))).status_code == 404
+    for path in ("%00.js", "..%2F..%2Foutside.js", "a" * 300):
+        response = await service.client.get(frontend["entry"].replace("index.js", path))
+        assert response.status_code == 404, response.text
+        assert "text/html" not in response.headers["content-type"]
     await toggle(service, False)
     # Public code is cached independently of business authority, as with core Console assets.
     assert (await service.client.get(frontend["entry"])).status_code == 200
@@ -282,6 +306,57 @@ async def test_background_adapter_selects_only_enabled_tenants_outside_sql(apps_
     await toggle(service, False)
     await job.run()
     assert calls == [service.tenant.organization_id]
+
+
+@pytest.mark.parametrize("failure", ["error", "timeout", "cancel"])
+async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancellation(apps_service, failure):
+    service = apps_service
+    organizations = ["org_app_first", "org_app_second"]
+    async with transaction(service.runtime.storage) as session:
+        session.add_all(
+            [
+                OrganizationRow(
+                    id=organization_id, name=organization_id, settings={"app_plugins": {"enabled": [APP_ID]}}
+                )
+                for organization_id in organizations
+            ]
+        )
+    calls = []
+
+    async def sweep(runtime, organization_id):
+        assert runtime.storage.engine.pool.checkedout() == 0
+        calls.append(organization_id)
+        if organization_id == organizations[0]:
+            if failure == "error":
+                raise RuntimeError("First organization failed")
+            if failure == "cancel":
+                raise asyncio.CancelledError
+            await asyncio.Event().wait()
+
+    apps = installed_apps(sweeps=(OrganizationSweep("reports", 1, 0.01, sweep),))
+    settings = service.runtime.settings.model_copy(
+        update={"control": service.runtime.settings.control.model_copy(update={"sweep_batch": 2})}
+    )
+    scoped = replace(service.runtime, settings=settings)
+    [job] = app_sweeps(scoped, apps)
+    admission_timeout = settings.database.connect_timeout + settings.database.statement_timeout
+    assert job.timeout == admission_timeout + 2 * (admission_timeout + 0.01)
+    if failure == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            await job.run()
+        assert calls == organizations[:1]
+        return
+    with pytest.raises(ExceptionGroup) as error:
+        await job.run()
+    assert len(error.value.exceptions) == 1
+    assert isinstance(error.value.exceptions[0], RuntimeError if failure == "error" else TimeoutError)
+    assert organizations[0] in error.value.exceptions[0].__notes__[0]
+    assert calls == organizations
+    await job.run()  # Empty next page resets the keyset cursor.
+    assert calls == organizations
+    with pytest.raises(ExceptionGroup):
+        await job.run()
+    assert calls == organizations * 2
 
 
 def test_catalog_rejects_duplicate_identity_ownership_and_unguarded_routes():
