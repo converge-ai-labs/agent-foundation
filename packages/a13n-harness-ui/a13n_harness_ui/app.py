@@ -681,25 +681,26 @@ class HarnessUiApp:
         )
         if not text.strip():
             return
-        try:
-            title = await self._generate_chat_title(
-                thread.thread_id,
-                [text],
-                admission.source,
-                admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+        async with self._operation():
+            try:
+                title = await self._generate_chat_title(
+                    thread.thread_id,
+                    [text],
+                    admission.source,
+                    admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+                )
+            except HarnessUiError as exc:
+                get_logger(__name__).info(
+                    "Automatic chat title unavailable", extra={"thread_id": thread.thread_id, "code": exc.code}
+                )
+                return
+            await self.update_thread_metadata(
+                thread_id=thread.thread_id,
+                mutation=ThreadMetadataMutation(
+                    expected_version=thread.metadata_version,
+                    patch=ThreadMetadataPatch(title=title),
+                ),
             )
-        except HarnessUiError as exc:
-            get_logger(__name__).info(
-                "Automatic chat title unavailable", extra={"thread_id": thread.thread_id, "code": exc.code}
-            )
-            return
-        await self.update_thread_metadata(
-            thread_id=thread.thread_id,
-            mutation=ThreadMetadataMutation(
-                expected_version=thread.metadata_version,
-                patch=ThreadMetadataPatch(title=title),
-            ),
-        )
 
     async def _transcribe_subscription(
         self, request: DictationInput, source: LoadedHarnessUiConfiguration
