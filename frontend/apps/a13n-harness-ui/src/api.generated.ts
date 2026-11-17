@@ -10379,7 +10379,7 @@ export interface components {
              * @default en
              * @enum {string}
              */
-            language?: "en" | "zh-CN";
+            language?: "en" | "zh-CN" | "hi";
         };
         /** ShareCreate */
         ShareCreate: {

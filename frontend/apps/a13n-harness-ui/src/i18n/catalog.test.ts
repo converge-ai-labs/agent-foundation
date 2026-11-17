@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import ts from "typescript";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
+import hi from "./locales/hi.json";
 import { i18n } from "./index";
 import type { Schema } from "../transport/client";
 import { resourceKinds } from "../configuration/documents";
@@ -50,7 +51,7 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
 }
 
 it("validates localized catalogs with locale-specific plurals and interpolation", () => {
-  expect(catalogErrors({ en, "zh-CN": zhCN })).toEqual([]);
+  expect(catalogErrors({ en, "zh-CN": zhCN, hi })).toEqual([]);
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
 });
 

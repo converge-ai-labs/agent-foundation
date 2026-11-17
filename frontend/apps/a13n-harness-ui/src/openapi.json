@@ -29021,7 +29021,8 @@
             "type": "string",
             "enum": [
               "en",
-              "zh-CN"
+              "zh-CN",
+              "hi"
             ],
             "title": "Language",
             "default": "en"

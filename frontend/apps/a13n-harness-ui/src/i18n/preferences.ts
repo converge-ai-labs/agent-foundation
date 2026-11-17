@@ -1,10 +1,13 @@
 const key = "a13n-harness-ui.language";
-export type LanguagePreference = "system" | "en" | "zh-CN";
+export type DisplayLanguage = "en" | "zh-CN" | "hi";
+export type LanguagePreference = "system" | DisplayLanguage;
 
 export function readLanguagePreference(): LanguagePreference {
   try {
     const value = localStorage.getItem(key);
-    return value === "en" || value === "zh-CN" ? value : "system";
+    return value === "en" || value === "zh-CN" || value === "hi"
+      ? value
+      : "system";
   } catch {
     return "system";
   }
@@ -12,7 +15,7 @@ export function readLanguagePreference(): LanguagePreference {
 
 export function resolveLanguage(
   preference: LanguagePreference,
-): "en" | "zh-CN" {
+): DisplayLanguage {
   if (preference !== "system") return preference;
   const languages =
     typeof navigator === "undefined"
@@ -22,12 +25,13 @@ export function resolveLanguage(
         : [navigator.language];
   for (const language of languages) {
     if (/^zh(?:-|$)/i.test(language)) return "zh-CN";
+    if (/^hi(?:-|$)/i.test(language)) return "hi";
     if (/^en(?:-|$)/i.test(language)) return "en";
   }
   return "en";
 }
 
-export function readLanguage(): "en" | "zh-CN" {
+export function readLanguage(): DisplayLanguage {
   return resolveLanguage(readLanguagePreference());
 }
 

@@ -21,6 +21,22 @@ it("follows the browser when no language was selected", () => {
   expect(readLanguage()).toBe("zh-CN");
 });
 
+it("resolves Hindi browser languages and restores an explicit Hindi choice", () => {
+  vi.stubGlobal("localStorage", { getItem: () => null });
+  vi.stubGlobal("navigator", { languages: ["hi-IN", "en-US"] });
+  expect(readLanguage()).toBe("hi");
+  vi.stubGlobal("navigator", { languages: [], language: "hi" });
+  expect(readLanguage()).toBe("hi");
+  // A language that merely starts with the same letters is not Hindi.
+  vi.stubGlobal("navigator", { languages: ["hil-PH"] });
+  expect(readLanguage()).toBe("en");
+
+  vi.stubGlobal("localStorage", { getItem: () => "hi" });
+  vi.stubGlobal("navigator", { languages: ["zh-CN"] });
+  expect(readLanguagePreference()).toBe("hi");
+  expect(readLanguage()).toBe("hi");
+});
+
 it("restores explicit choices and can return to browser language", () => {
   const getItem = vi.fn().mockReturnValue("en");
   const setItem = vi.fn();

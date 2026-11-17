@@ -25,26 +25,64 @@ from a13n_harness_ui.storage.push import PushRepository
 
 _LOG = get_logger("a13n_harness_ui.web_push")
 
+# Notification text per supported display language; English is the fallback.
+_TEXT: dict[str, dict[str, str]] = {
+    "en": {
+        "bot_message": "New message from Bot",
+        "bot_attention": "Bot needs your response",
+        "completed": "Task completed",
+        "failed": "Task failed",
+        "suspended": "Your input is needed",
+        "goal_verified": "Goal verified by the Agent",
+        "goal_incomplete": "Goal not verified",
+        "conversation": "Conversation",
+        "test_title": "Harness UI test notification",
+        "test_body": "Background notifications can reach this device even when WebUI is closed.",
+    },
+    "zh-CN": {
+        "bot_message": "Bot 给你发了消息",
+        "bot_attention": "Bot 需要你的回应",
+        "completed": "任务已完成",
+        "failed": "任务失败",
+        "suspended": "需要你的输入",
+        "goal_verified": "Agent 已验证目标",
+        "goal_incomplete": "目标未验证",
+        "conversation": "聊天",
+        "test_title": "Harness UI 测试通知",
+        "test_body": "WebUI 关闭后仍可向此设备发送后台通知。",
+    },
+    "hi": {
+        "bot_message": "Bot से नया संदेश",
+        "bot_attention": "Bot को आपके जवाब की ज़रूरत है",
+        "completed": "टास्क पूरा हुआ",
+        "failed": "टास्क विफल",
+        "suspended": "आपके इनपुट की ज़रूरत है",
+        "goal_verified": "Agent ने लक्ष्य की पुष्टि की",
+        "goal_incomplete": "लक्ष्य की पुष्टि नहीं हुई",
+        "conversation": "चैट",
+        "test_title": "Harness UI टेस्ट सूचना",
+        "test_body": "WebUI बंद होने पर भी इस डिवाइस पर बैकग्राउंड सूचनाएँ भेजी जा सकती हैं।",
+    },
+}
+
+
+def _text(language: str) -> dict[str, str]:
+    return _TEXT.get(language, _TEXT["en"])
+
 
 def notice_payload(
     thread_id: str, thread_title: str | None, notice: RootOperationNotice, *, language: str
 ) -> dict[str, str]:
     """Present messages as messages, keeping execution outcomes distinct."""
-    chinese = language == "zh-CN"
+    text = _text(language)
     bot = thread_id == BOT_THREAD_ID
     if bot and notice.message_id is not None:
-        title = "Bot 给你发了消息" if chinese else "New message from Bot"
+        title = text["bot_message"]
     elif bot and notice.status == "suspended":
-        title = "Bot 需要你的回应" if chinese else "Bot needs your response"
+        title = text["bot_attention"]
     else:
-        title = {
-            "completed": "任务已完成" if chinese else "Task completed",
-            "failed": "任务失败" if chinese else "Task failed",
-            "suspended": "需要你的输入" if chinese else "Your input is needed",
-            "goal_verified": "Agent 已验证目标" if chinese else "Goal verified by the Agent",
-            "goal_incomplete": "目标未验证" if chinese else "Goal not verified",
-        }[notice.status]
-        title += f" · {(thread_title or ('聊天' if chinese else 'Conversation'))[:80]}"
+        title = text[notice.status]
+        title += f" · {(thread_title or text['conversation'])[:80]}"
     return {
         "title": title,
         "body": notice.brief[:180],
@@ -104,13 +142,12 @@ class WebPush:
         subscription = await self.repository.get(subscription_id)
         if subscription is None:
             raise HarnessUiError("Enable background notifications again.", code="push_subscription_missing")
+        text = _text(subscription.language)
         accepted = await self._deliver(
             subscription,
             {
-                "title": "Harness UI 测试通知" if subscription.language == "zh-CN" else "Harness UI test notification",
-                "body": "WebUI 关闭后仍可向此设备发送后台通知。"
-                if subscription.language == "zh-CN"
-                else "Background notifications can reach this device even when WebUI is closed.",
+                "title": text["test_title"],
+                "body": text["test_body"],
                 "tag": "a13n-harness-ui.test",
                 "path": "/settings/notifications",
             },
