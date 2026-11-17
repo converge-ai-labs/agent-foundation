@@ -405,9 +405,14 @@ it("requires an explicitly supported backend for domain-restricted scrape", asyn
   });
   const user = userEvent.setup();
   await user.click(screen.getByText("Web options"));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Scrape backend" }),
+  const backend = await screen.findByRole("combobox", {
+    name: "Scrape backend",
+  });
+  await waitFor(() =>
+    expect((backend as HTMLButtonElement).disabled).toBe(false),
   );
+  await user.click(backend);
+  const account = await screen.findByRole("option", { name: "Cloud work" });
   for (const name of [
     "Local default",
     "Local HTML scraping",
@@ -416,7 +421,7 @@ it("requires an explicitly supported backend for domain-restricted scrape", asyn
     expect(
       screen.getByRole("option", { name }).getAttribute("aria-disabled"),
     ).toBe("true");
-  await user.click(await screen.findByRole("option", { name: "Cloud work" }));
+  await user.click(account);
   expect(sourceValue().capabilities[0].configuration.scrape).toEqual({
     mode: "host",
     allow_domains: ["example.com"],
