@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import httpx2
 import pytest
-from a13n_harness import RunConfiguration
+from a13n_harness import DefinitionError, RunConfiguration
 from a13n_harness.capabilities.web import (
     WebScrapeRequest,
     WebScrapeResult,
@@ -18,7 +20,7 @@ from a13n_harness.providers import ProviderCatalog
 from a13n_harness.providers.authentication import Authentication, AuthenticationCase, CredentialMode
 from a13n_harness.providers.web import WebProviderDefinition
 from a13n_harness.providers.web.configuration import ApiKeyCredential, EmptyConfiguration
-from a13n_harness.toolsets.web import WebConfiguration, WebProviderError
+from a13n_harness.toolsets.web import WebConfiguration, WebProviderError, WebToolset
 from a13n_harness_ui import web_providers
 from a13n_harness_ui.capability_runtime import web_run_binding
 from a13n_harness_ui.composition import AgentCompositionResolver, AgentReconstructor, ThreadCompositionSelection
@@ -189,6 +191,57 @@ async def test_sources_are_lazy_shared_by_concurrent_operations_and_fresh_per_ru
     fresh = web_run_binding(RunConfiguration(), accounts=(recipe,), web_configuration=configuration, keys=keys)
     await fresh.search_backends[1].provider.search(WebSearchRequest(query="query", limit=8))
     assert keys.reads == 2
+
+
+@pytest.mark.parametrize("supports_restrictions", [True, False])
+async def test_run_domain_options_and_scrape_support_reach_account_adapters(
+    fake_provider, monkeypatch, supports_restrictions
+):
+    definition, calls = fake_provider
+    monkeypatch.setattr(
+        web_providers,
+        "web_provider_catalog",
+        lambda: ProviderCatalog((replace(definition, supports_restricted_scrape=supports_restrictions),)),
+    )
+    recipe = _account(configuration={"anonymous": True}, credential=None)
+    domains = {"allow_domains": ["result.test"], "deny_domains": ["blocked.result.test"]}
+    configuration = WebConfiguration(search={"backend": recipe.id, **domains}, scrape={"backend": recipe.id, **domains})
+    binding = web_run_binding(RunConfiguration(), accounts=(recipe,), web_configuration=configuration)
+    assert binding.scrape_backends[1].supports_domain_restrictions is supports_restrictions
+
+    def build_toolset():
+        return WebToolset(
+            client=binding.client,
+            policy=binding.policy,
+            files=cast(Any, SimpleNamespace()),
+            configuration=configuration,
+            search_backends=binding.search_backends,
+            scrape_backends=binding.scrape_backends,
+        )
+
+    if not supports_restrictions:
+        with pytest.raises(DefinitionError) as caught:
+            build_toolset()
+        assert caught.value.code == "web_scrape_domain_restrictions_unsupported"
+        assert not calls
+        return
+    assert build_toolset().configuration == configuration
+    await binding.search_backends[1].provider.search(WebSearchRequest(query="query", limit=8))
+    scrape = binding.scrape_backends[1].provider
+    request = WebScrapeRequest(
+        url="https://result.test/page", deadline_seconds=30, max_redirects=2, max_content_bytes=9
+    )
+    await scrape.scrape(request, policy=binding.policy)
+    assert [call[0] for call in calls] == ["search", "scrape"]
+    for operation, _, _, options in calls:
+        assert options.allow_domains == ("result.test",)
+        assert options.deny_domains == ("blocked.result.test",)
+        assert options.max_results == 8 if operation == "search" else options.max_content_bytes == 9
+    with pytest.raises(WebProviderError):
+        await scrape.scrape(
+            request.model_copy(update={"url": "https://blocked.result.test/page"}), policy=binding.policy
+        )
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("configuration", [{}, {"search": {"mode": "native"}, "scrape": {"mode": "off"}}])

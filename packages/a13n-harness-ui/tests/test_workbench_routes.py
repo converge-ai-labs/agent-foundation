@@ -60,6 +60,7 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
                     "https://composio.dev",
                     "https://parallel.ai",
                     "https://serpapi.com",
+                    "https://specstream.ai",
                     "https://www.tinyfish.ai",
                     "https://e2b.dev",
                     "https://modal.com",

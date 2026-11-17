@@ -43,9 +43,13 @@ export function WebOptions({
           const mode =
             current.mode ?? (operation === "search" ? "auto" : "host");
           const priority: string[] = current.backend_priority ?? [];
+          const restrictedScrape =
+            operation === "scrape" &&
+            !!(current.allow_domains?.length || current.deny_domains?.length);
           const options = [
             {
               value: "default",
+              disabled: restrictedScrape,
               label: t(
                 operation === "search"
                   ? "Local DuckDuckGo search"
@@ -64,11 +68,7 @@ export function WebOptions({
                 value: account.id,
                 label: account.name,
                 disabled:
-                  operation === "scrape" &&
-                  !!(
-                    current.allow_domains?.length ||
-                    current.deny_domains?.length
-                  ) &&
+                  restrictedScrape &&
                   !catalog.data?.types.find(
                     (type) => type.type === account.type,
                   )?.supports_restricted_scrape,
@@ -129,9 +129,17 @@ export function WebOptions({
                     )}
                     value={selected}
                     options={[
-                      { value: "", label: t("Local default") },
+                      {
+                        value: "",
+                        label: t("Local default"),
+                        disabled: restrictedScrape,
+                      },
                       ...options,
-                      { value: "priority", label: t("Ordered fallback") },
+                      {
+                        value: "priority",
+                        label: t("Ordered fallback"),
+                        disabled: restrictedScrape,
+                      },
                     ]}
                     onValueChange={(next) =>
                       patch(

@@ -126,6 +126,8 @@ Removing the entire `web` Capability removes its Host toolset. Changing a search
 
 `backend` selects one account ID or local `default`. `backend_priority` orders explicitly selected accounts and cannot be combined with `backend`; remaining bound local backends follow that list. It is not an allowlist. Harness UI never adds unselected accounts automatically. Keep credentials out of Agent Capability values; define their sources on the reusable account below.
 
+Domain-restricted scrape requires a single `backend` whose definition supports those restrictions. Local HTML scraping does not, so WebUI disables local defaults and ordered fallback for restricted scrape. Search and scrape domain lists are also passed to provider adapters for vendor-side filtering where supported.
+
 ### Web provider accounts
 
 In WebUI, open **Settings → Connections → Web providers → Add Web provider**. Choose a provider, name the account, and select each credential's source: a server environment variable, an existing saved key, or **Save a new credential**. Saving a credential writes the key store separately; **Create** then validates and saves the account recipe. It does not test credentials or issue a provider request.

@@ -145,12 +145,19 @@ _UNRESOLVED = object()
 class _RunWebAccount:
     """One account's successful credential resolution, shared by concurrent operations."""
 
-    def __init__(self, recipe: WebProviderResource, keys: ApiKeyStore | None, transport: WebProviderTransport) -> None:
+    def __init__(
+        self,
+        recipe: WebProviderResource,
+        keys: ApiKeyStore | None,
+        transport: WebProviderTransport,
+        configuration: WebConfiguration,
+    ) -> None:
         self.recipe = recipe
         self.definition = web_provider_catalog().require(recipe.type)
         self.supports_domain_restrictions = self.definition.supports_restricted_scrape
         self._keys = keys
         self._transport = transport
+        self._configuration = configuration
         self._credential: object = _UNRESOLVED
         self._lock = Lock()
 
@@ -183,7 +190,11 @@ class _RunWebAccount:
         async with self.definition.open(
             self.recipe.configuration,
             credential,
-            options=SearchOptions(max_results=request.limit),
+            options=SearchOptions(
+                max_results=request.limit,
+                allow_domains=self._configuration.search.allow_domains,
+                deny_domains=self._configuration.search.deny_domains,
+            ),
             transport=self._transport,
         ) as provider:
             return await provider.search(request)
@@ -193,7 +204,11 @@ class _RunWebAccount:
         async with self.definition.open(
             self.recipe.configuration,
             credential,
-            options=ScrapeOptions(max_content_bytes=request.max_content_bytes),
+            options=ScrapeOptions(
+                max_content_bytes=request.max_content_bytes,
+                allow_domains=self._configuration.scrape.allow_domains,
+                deny_domains=self._configuration.scrape.deny_domains,
+            ),
             transport=self._transport,
         ) as provider:
             return await provider.scrape(request, policy=policy)
@@ -208,9 +223,9 @@ def account_backend_bindings(
 ) -> tuple[tuple[WebSearchBackendBinding, ...], tuple[WebScrapeBackendBinding, ...]]:
     search, scrape = [], []
     for account, wants_search, wants_scrape in selected_web_accounts(configuration, accounts):
-        runtime = _RunWebAccount(account, keys, WebProviderTransport(endpoint_policy=endpoint_policy))
+        runtime = _RunWebAccount(account, keys, WebProviderTransport(endpoint_policy=endpoint_policy), configuration)
         if wants_search:
             search.append(WebSearchBackendBinding(account.id, runtime))
         if wants_scrape:
-            scrape.append(WebScrapeBackendBinding(account.id, runtime))
+            scrape.append(WebScrapeBackendBinding(account.id, runtime, runtime.supports_domain_restrictions))
     return tuple(search), tuple(scrape)

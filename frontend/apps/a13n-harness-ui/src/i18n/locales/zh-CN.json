@@ -1,4 +1,9 @@
 {
+  "Save a new credential": "保存新凭据",
+  "Local default": "本地默认服务",
+  "Ordered fallback": "有序后备服务",
+  "Choose a backend": "选择服务",
+  "web provider": "Web 服务商",
   "Add Web provider": "添加 Web 服务商",
   "Add fallback backend": "添加后备服务",
   "Choose a Web provider": "选择 Web 服务商",

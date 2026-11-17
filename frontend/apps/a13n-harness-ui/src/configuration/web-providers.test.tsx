@@ -26,7 +26,7 @@ const provider: Schema<"WebProviderType"> = {
   type: "future_cloud",
   display_name: "Future cloud",
   operations: ["search", "scrape"],
-  supports_restricted_scrape: false,
+  supports_restricted_scrape: true,
   configuration_schema: {
     type: "object",
     required: ["region"],
@@ -396,6 +396,32 @@ it("filters backend operations, edits fallback order and clears Host preferences
   });
   expect(sourceValue().capabilities[0].configuration.custom).toBe("keep");
   expect(writes).toEqual([]);
+});
+
+it("requires an explicitly supported backend for domain-restricted scrape", async () => {
+  fixture({
+    options: true,
+    initial: `kind: agent\ncapabilities:\n  - capability: web\n    configuration:\n      scrape: {mode: host, allow_domains: [example.com]}\n`,
+  });
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Web options"));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Scrape backend" }),
+  );
+  for (const name of [
+    "Local default",
+    "Local HTML scraping",
+    "Ordered fallback",
+  ])
+    expect(
+      screen.getByRole("option", { name }).getAttribute("aria-disabled"),
+    ).toBe("true");
+  await user.click(await screen.findByRole("option", { name: "Cloud work" }));
+  expect(sourceValue().capabilities[0].configuration.scrape).toEqual({
+    mode: "host",
+    allow_domains: ["example.com"],
+    backend: "web-provider-work",
+  });
 });
 
 it("uses configuration defaults for conditional credential presence without writing them", () => {
