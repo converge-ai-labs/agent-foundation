@@ -4123,7 +4123,7 @@
           "cpu_periods_total": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4136,7 +4136,7 @@
           "cpu_system_usec": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4149,7 +4149,7 @@
           "cpu_throttled_periods_total": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4162,7 +4162,7 @@
           "cpu_throttled_usec": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4175,7 +4175,7 @@
           "cpu_usage_usec": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4188,7 +4188,7 @@
           "cpu_user_usec": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4211,7 +4211,7 @@
           "memory_current_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4237,7 +4237,7 @@
           "pids_current": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -4250,7 +4250,7 @@
           "pids_limit": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -5093,7 +5093,7 @@
         "properties": {
           "tcp_states": {
             "additionalProperties": {
-              "maximum": 1.8446744073709552e+19,
+              "maximum": 18446744073709551615,
               "minimum": 0.0,
               "type": "integer"
             },
@@ -5104,7 +5104,7 @@
           "tcp_total": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -5117,7 +5117,7 @@
           "udp_sockets": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -6404,7 +6404,7 @@
         "additionalProperties": false,
         "properties": {
           "connections": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Connections",
             "type": "integer"
@@ -6412,7 +6412,7 @@
           "processes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -6425,7 +6425,7 @@
           "retained_output_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -6436,7 +6436,7 @@
             "title": "Retained Output Bytes"
           },
           "sessions": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Sessions",
             "type": "integer"
@@ -6444,7 +6444,7 @@
           "transfers": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7538,7 +7538,7 @@
           "busy_time_ms": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7556,7 +7556,7 @@
           "in_progress": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7569,7 +7569,7 @@
           "read_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7582,7 +7582,7 @@
           "read_operations": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7595,7 +7595,7 @@
           "read_time_ms": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7608,7 +7608,7 @@
           "weighted_time_ms": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7621,7 +7621,7 @@
           "write_operations": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7634,7 +7634,7 @@
           "write_time_ms": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -7647,7 +7647,7 @@
           "written_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -10020,7 +10020,7 @@
         "additionalProperties": false,
         "properties": {
           "available_bytes": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Available Bytes",
             "type": "integer"
@@ -10028,7 +10028,7 @@
           "available_inodes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -10039,7 +10039,7 @@
             "title": "Available Inodes"
           },
           "free_bytes": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Free Bytes",
             "type": "integer"
@@ -10047,7 +10047,7 @@
           "free_inodes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -10058,7 +10058,7 @@
             "title": "Free Inodes"
           },
           "total_bytes": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Total Bytes",
             "type": "integer"
@@ -10066,7 +10066,7 @@
           "total_inodes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -11916,13 +11916,13 @@
             "type": "string"
           },
           "period_usec": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 1.0,
             "title": "Period Usec",
             "type": "integer"
           },
           "quota_usec": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 1.0,
             "title": "Quota Usec",
             "type": "integer"
@@ -11940,7 +11940,7 @@
         "additionalProperties": false,
         "properties": {
           "bytes": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Bytes",
             "type": "integer"
@@ -12937,7 +12937,7 @@
           "high": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -12950,7 +12950,7 @@
           "low": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -12963,7 +12963,7 @@
           "max": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -12976,7 +12976,7 @@
           "oom": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -12989,7 +12989,7 @@
           "oom_group_kill": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -13002,7 +13002,7 @@
           "oom_kill": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -14638,7 +14638,7 @@
             ]
           },
           "collection_duration_ms": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Collection Duration Ms",
             "type": "integer"
@@ -14701,7 +14701,7 @@
             ]
           },
           "sample_age_ms": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Sample Age Ms",
             "type": "integer"
@@ -14712,7 +14712,7 @@
             "type": "string"
           },
           "sequence": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 1.0,
             "title": "Sequence",
             "type": "integer"
@@ -16087,7 +16087,7 @@
           "receive_drops": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16100,7 +16100,7 @@
           "receive_errors": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16113,7 +16113,7 @@
           "received_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16126,7 +16126,7 @@
           "received_packets": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16139,7 +16139,7 @@
           "transmit_drops": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16152,7 +16152,7 @@
           "transmit_errors": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16165,7 +16165,7 @@
           "transmitted_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -16178,7 +16178,7 @@
           "transmitted_packets": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -18411,7 +18411,7 @@
             "type": "number"
           },
           "total_usec": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 0.0,
             "title": "Total Usec",
             "type": "integer"
@@ -23354,7 +23354,7 @@
         "additionalProperties": false,
         "properties": {
           "idle_timeout_ms": {
-            "maximum": 1.8446744073709552e+19,
+            "maximum": 18446744073709551615,
             "minimum": 1.0,
             "title": "Idle Timeout Ms",
             "type": "integer"
@@ -23362,7 +23362,7 @@
           "max_lifetime_ms": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 1.0,
                 "type": "integer"
               },
@@ -25707,7 +25707,7 @@
           "commit_limit_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25720,7 +25720,7 @@
           "commit_total_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25756,7 +25756,7 @@
           "handle_count": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25782,7 +25782,7 @@
           "memory_available_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25795,7 +25795,7 @@
           "memory_cache_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25808,7 +25808,7 @@
           "memory_compressed_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25821,7 +25821,7 @@
           "memory_total_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25834,7 +25834,7 @@
           "memory_wired_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25857,7 +25857,7 @@
           "process_count": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25870,7 +25870,7 @@
           "swap_total_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25883,7 +25883,7 @@
           "swap_used_bytes": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -25896,7 +25896,7 @@
           "thread_count": {
             "anyOf": [
               {
-                "maximum": 1.8446744073709552e+19,
+                "maximum": 18446744073709551615,
                 "minimum": 0.0,
                 "type": "integer"
               },
