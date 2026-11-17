@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 455" role="img" aria-label="LLM calls tools inside Harness. Harness supplies context, executes operations in an environment, and returns results to the next model call.">
+  <rect class="pf" x="240.5" y="52" width="279.5" height="338" />
+  <text class="pt ink" x="256.75" y="80.379" style="font-size: 15.6px">Harness</text>
+  <path class="pf" d="M256.75 97.5 L503.75 97.5" />
+  <rect class="pa" x="256.75" y="113.75" width="247" height="91" />
+  <text class="pt acc" x="269.75" y="135.941" style="font-size: 13.65px">Context</text>
+  <text class="pt ink" x="269.75" y="161.278" style="font-size: 11.7px">/workspace + access</text>
+  <text class="pt" x="269.75" y="185.978" style="font-size: 11.7px">tool definitions + results</text>
+  <rect class="pl" x="256.75" y="240.5" width="247" height="91" />
+  <text class="pt ink" x="269.75" y="262.691" style="font-size: 13.65px">Tools</text>
+  <text class="pt ink" x="269.75" y="288.678" style="font-size: 11.7px">files / shell / processes</text>
+  <text class="pt" x="269.75" y="314.457" style="font-size: 11.05px">select / check / dispatch</text>
+  <path class="pa" d="M380.25 240.5 L380.25 204.75 M377 210.6 L380.25 204.75 L383.5 210.6" />
+  <text class="pt acc" x="390" y="226.161" style="font-size: 10.4px">feedback</text>
+  <rect class="pl" x="26" y="208" width="136.5" height="117" />
+  <text class="pt ink" x="39" y="241.813" style="font-size: 18.2px">LLM</text>
+  <text class="pt" x="39" y="276.328" style="font-size: 11.7px">choose the</text>
+  <text class="pt" x="39" y="297.128" style="font-size: 11.7px">next action</text>
+  <path class="pa" d="M256.75 156 L94.25 156 L94.25 208 M97.5 202.15 L94.25 208 L91 202.15" />
+  <text class="pt acc" x="29.25" y="141.128" style="font-size: 11.7px">context + tools</text>
+  <path class="pl" d="M162.5 273 L256.75 273 M250.9 269.75 L256.75 273 L250.9 276.25" />
+  <text class="pt ink" x="170.95" y="261.482" style="font-size: 11.05px">tool call</text>
+  <rect class="pf" x="617.5" y="52" width="136.5" height="338" />
+  <text class="pt ink" x="627.25" y="79.391" style="font-size: 13.65px">Environment</text>
+  <text class="pt" x="627.25" y="105.157" style="font-size: 11.05px">CPU + files</text>
+  <rect class="pl" x="627.25" y="143" width="117" height="45.5" />
+  <text class="pt ink" x="637" y="170.599" style="font-size: 12.35px">sales.csv</text>
+  <path class="pa" d="M685.75 188.5 L685.75 214.5 M689 208.65 L685.75 214.5 L682.5 208.65" />
+  <rect class="pl" x="627.25" y="214.5" width="117" height="45.5" />
+  <text class="pt ink" x="637" y="242.099" style="font-size: 12.35px">analyze.py</text>
+  <path class="pa" d="M685.75 260 L685.75 286 M689 280.15 L685.75 286 L682.5 280.15" />
+  <rect class="pl" x="627.25" y="286" width="117" height="71.5" />
+  <path class="pf" d="M638.95 345.8 L734.5 345.8" />
+  <rect class="band" x="648.05" y="329.55" width="15.6" height="16.25" />
+  <rect class="band" x="677.95" y="316.55" width="15.6" height="29.25" />
+  <rect class="fa" x="707.85" y="303.55" width="15.6" height="42.25" />
+  <path class="pl" d="M503.75 273 L617.5 273 M611.65 269.75 L617.5 273 L611.65 276.25" />
+  <text class="pt ink" x="529.75" y="262.132" style="font-size: 11.05px">execute</text>
+  <path class="pa" d="M617.5 364 L380.25 364 L380.25 331.5 M377 337.35 L380.25 331.5 L383.5 337.35" />
+  <text class="pt acc" x="396.5" y="381.407" style="font-size: 11.05px">status + output</text>
+  <path class="pf" d="M26 416 L754 416" />
+  <text class="pt" x="390" y="440.362" style="font-size: 14.3px" text-anchor="middle">Harness connects model decisions to compute and files.</text>
+</svg>

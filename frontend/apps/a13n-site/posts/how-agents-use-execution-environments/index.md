@@ -26,6 +26,8 @@ Tool definitions describe operations and their parameters. Toolsets also carry i
 
 For the CSV task, the user or application identifies the input file. Environment context tells the model which environments are available and how to address them. File and command tools provide the operations needed to read the data and run the analysis.
 
+![Context and tools inside Harness connect the model to the selected environment.](context-tools-execution.svg "Figure 1. Harness supplies context and tools, dispatches operations, and returns execution feedback.")
+
 ## Why combine shell access with dedicated tools?
 
 One basic choice is whether to give the model only shell access or combine it with dedicated tools.
@@ -60,6 +62,8 @@ An analysis script might finish quickly or take several minutes. Execution envir
 
 Harness exposes these capabilities through tools. When the model calls `shell_exec` on an environment with process controls, Harness waits for an initial interval. If the command finishes during that interval, it returns the result. Otherwise, it returns an execution reference and the current status, so the model can follow up with tools such as `shell_wait`. The model uses the same command tool in either case; it does not have to choose a background mode in advance.
 
+![A short command returns its final result; a longer command returns a reference while the same program continues running.](command-waiting.svg "Figure 2. In environments with process controls, shell_exec waits briefly before returning either a final result or an execution reference.")
+
 For a backend that only supports foreground execution, the underlying call waits for the command to finish. Whether Harness keeps the model waiting for that result also depends on the application's tool-execution policy.
 
 Short commands can therefore return a result in one call, while longer commands remain available to follow up on. When parallel execution is allowed, the agent can make progress on independent work while a command runs.
@@ -79,6 +83,8 @@ Now put the pieces together for the original task: analyze monthly sales and gen
 4. **Follow the execution state.** If the script finishes quickly, the model receives the result immediately. If it is still running, Harness returns an execution reference, and the model uses `shell_wait` to wait and retrieve output. If execution reports an invalid field format, the model can inspect the relevant data, revise the script, and run it again. Each decision follows from the returned status and information.
 
 5. **Check and deliver the output.** After the script finishes successfully, the model uses a file tool to inspect the chart and check its months, values, and labels against the task. It then explains the sales trends and delivers the chart through the application's file display or download mechanism.
+
+![A numbered CSV workflow connecting the LLM, context and tools inside Harness, and the sandbox where the script runs.](csv-workflow.svg "Figure 3. From context to a verified chart: model decisions become tool calls, and execution results inform the next decision.")
 
 Throughout this process, the model chooses its next action from the task and execution results. Harness supplies consistent context and tools and routes calls to the selected environment. The environment performs the computation and file operations. The analysis is completed through this sequence of calls and feedback.
 
