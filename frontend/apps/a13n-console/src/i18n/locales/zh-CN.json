@@ -2928,6 +2928,7 @@
   "Cancelled": "已取消",
   "Findings views": "发现项视图",
   "Analysis details": "分析详情",
+  "Analysis not found": "未找到分析",
   "Workspace traces": "工作区 Trace",
   "Analysis summary": "分析摘要",
   "Submit findings with execution evidence.": "提交包含执行证据的发现。",

@@ -720,3 +720,91 @@ it("observes analysis progress on the initial Findings tab and refreshes partial
   );
   cache.clear();
 });
+
+const analysis = {
+  id: "fan_latest",
+  agent_id: null,
+  session_id: "sess_analysis",
+  thread_id: "thread_analysis",
+  run_id: "run_analysis",
+  run_status: "completed",
+  selection: {},
+  selected_traces: [],
+  read_trace_ids: [],
+  finding_count: 0,
+  cited_trace_count: 0,
+  selection_truncated: false,
+  created_at: "2026-10-09T10:00:00Z",
+};
+
+it("resolves an analysis deep link beyond the first history page", async () => {
+  const original = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path, options) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              options.params.query.cursor
+                ? { ...analysis, id: "fan_older", run_id: "run_older" }
+                : analysis,
+            ],
+            next_cursor: options.params.query.cursor ? null : "older",
+          },
+        }
+      : original(path, options),
+  );
+  mount("/workspace/ws_test/findings?tab=history&analysis=fan_older");
+  const link = await screen.findByRole("link", { name: "Open analysis run" });
+  expect(link.getAttribute("href")).toContain("/runs/run_older");
+  expect(http.GET).toHaveBeenCalledWith(
+    "/api/v1/finding-analyses",
+    expect.objectContaining({
+      params: { query: { limit: 100, cursor: "older" } },
+    }),
+  );
+});
+
+it("opens a new analysis while the history table remains on its second page", async () => {
+  backend.type = "logfire";
+  const original = http.GET.getMockImplementation()!;
+  let created = false;
+  http.GET.mockImplementation(async (path, options) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              options.params.query.cursor
+                ? { ...analysis, id: "fan_older" }
+                : created
+                  ? { ...analysis, id: "fan_new", run_id: "run_new" }
+                  : analysis,
+            ],
+            next_cursor: options.params.query.cursor ? null : "older",
+          },
+        }
+      : original(path, options),
+  );
+  http.POST.mockImplementation(async () => {
+    created = true;
+    return { data: { ...analysis, id: "fan_new", run_id: "run_new" } };
+  });
+  const user = mount("/workspace/ws_test/findings?tab=history");
+  await user.click(await screen.findByRole("button", { name: "Next" }));
+  await screen.findByRole("button", { name: "Previous" });
+  await user.click(screen.getByRole("button", { name: "Analyze traces" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Start analysis" }),
+  );
+  const link = await screen.findByRole("link", { name: "Open analysis run" });
+  expect(link.getAttribute("href")).toContain("/runs/run_new");
+  expect(screen.getByRole("button", { name: "Previous" })).toBeTruthy();
+});
+
+it("shows a missing deep-linked analysis explicitly and lets the inspector close", async () => {
+  const user = mount(
+    "/workspace/ws_test/findings?tab=history&analysis=fan_missing",
+  );
+  await screen.findByText("Analysis not found");
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+});

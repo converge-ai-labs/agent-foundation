@@ -4,10 +4,12 @@ import {
   InfoIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
+import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import type { Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
@@ -227,10 +229,73 @@ export function AnalysisHistory({ onStart }: { onStart?: () => void }) {
       <CollectionFooter>
         <Pagination page={page} next={query.data?.next_cursor} />
       </CollectionFooter>
-      {selected && (
-        <AnalysisInspector analysis={selected} onClose={() => select(null)} />
+      {selectedId && (
+        <SelectedAnalysis
+          id={selectedId}
+          current={selected}
+          onClose={() => select(null)}
+        />
       )}
     </>
+  );
+}
+
+/** Resolve a deep link independently of the history table's current page. */
+function SelectedAnalysis({
+  id,
+  current,
+  onClose,
+}: {
+  id: string;
+  current?: Schema["Analysis"];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation(),
+    client = useClient(),
+    { workspace } = useWorkspace();
+  const query = useQuery({
+    queryKey: ["finding-analysis", workspace.id, id],
+    enabled: !current,
+    queryFn: async ({ signal }) => {
+      // The list is the existing read API. Stop as soon as the requested item
+      // is found; ordinary row inspection needs no additional requests.
+      let cursor: string | undefined;
+      do {
+        const page = await client
+          .workspace(workspace.id)
+          .GET("/api/v1/finding-analyses", {
+            params: { query: { limit: 100, cursor } },
+            signal,
+          })
+          .then(data);
+        const analysis = page.items.find((item) => item.id === id);
+        if (analysis) return analysis;
+        cursor = page.next_cursor ?? undefined;
+      } while (cursor);
+      return null;
+    },
+    refetchInterval: (query) =>
+      query.state.data && isActive(query.state.data) ? 3000 : false,
+  });
+  const analysis = current ?? query.data;
+  return analysis ? (
+    <AnalysisInspector analysis={analysis} onClose={onClose} />
+  ) : (
+    <Panel
+      open
+      defaultWidth={520}
+      dismissOnOutsidePress
+      title={t("Analysis details")}
+      onClose={onClose}
+    >
+      {query.isPending ? (
+        <Loading />
+      ) : query.isError ? (
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      ) : (
+        <p>{t("Analysis not found")}</p>
+      )}
+    </Panel>
   );
 }
 
