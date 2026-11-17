@@ -12,6 +12,16 @@ groups:
       summary: Due work is not progressing
       description: '{{ $labels.deployment }} queue {{ $labels.queue }}: oldest due item exceeded 10m. Check queue-specific
         owners; sleeping/retry-backoff work is excluded.'
+  - alert: A13nOutboxBacklogSustained
+    expr: max by (job,deployment,kind) (a13n_outbox_backlog_alert{job="a13n-service"} and on (job,deployment,instance)
+      (time() - a13n_outbox_updated_seconds{job="a13n-service"} < 60)) == 1
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: Outbox backlog exceeded its kind policy
+      description: '{{ $labels.deployment }} kind {{ $labels.kind }} stayed above its configured count or age threshold
+        for its policy duration. Check delivery throughput and the kind owner; restarting a reporter resets its timer.'
   - alert: A13nWorkersSaturated
     expr: (sum by (job,deployment) (a13n_worker_slots{job="a13n-service",state="free"}) == 0) and on (job,deployment)
       (max by (job,deployment) (a13n_backlog_oldest_age_seconds{job="a13n-service",queue="runs"} and on (job,deployment,instance,queue)

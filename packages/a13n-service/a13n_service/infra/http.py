@@ -108,9 +108,10 @@ class RequestIds:
                 status = message["status"]
                 headers = MutableHeaders(scope=message)
                 streaming = headers.get("content-type", "").split(";", 1)[0] == "text/event-stream"
-                attributes = _request_attributes(scope, status, streaming=streaming)
-                RESPONSE_START.record(time.perf_counter() - started, attributes)
                 if streaming:
+                    RESPONSE_START.record(
+                        time.perf_counter() - started, _request_attributes(scope, status, streaming=True)
+                    )
                     STREAM_ACTIVE.add(1)
                 headers[REQUEST_ID_HEADER] = request_id
                 answer: Response | None = state.get(_ANSWER)
@@ -145,10 +146,17 @@ class RequestIds:
 def _request_attributes(scope: Scope, status: int, *, streaming: bool) -> dict[str, str | int]:
     route = scope.get("route")
     template = route.path if route is not None else "unmatched"
+    # Console fallback and MCP mounts have no route template. Use the namespace only
+    # to classify them; the raw path is never exported as a label.
+    path = route.path if route is not None else scope["path"]
     kind = (
         "probe"
         if template in _UNLOGGED_ROUTES
-        else ("stream" if streaming else "api" if template == "unmatched" or template.startswith("/api/") else "static")
+        else "stream"
+        if streaming
+        else "api"
+        if path == "/api" or path.startswith("/api/")
+        else "static"
     )
     return {
         "http.request.method": scope["method"] if scope["method"] in _METHODS else "_OTHER",

@@ -134,6 +134,33 @@ async def test_requests_are_logged_and_measured_by_route_template_never_by_url(
     assert measured(reader, "http.server.request.duration", listed) == before + 1
 
 
+async def test_console_fallback_and_unmatched_api_have_separate_bounded_metrics(tmp_path, reader, logged):
+    from a13n_service.app import console_fallback
+    from a13n_service.infra.http import RequestIds
+    from fastapi import FastAPI
+
+    (tmp_path / "index.html").write_text("<html>Console</html>")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("// Console asset")
+    app = FastAPI()
+    app.add_middleware(RequestIds)
+    app.router.default = console_fallback(tmp_path, app.router.default)
+    api = {"a13n.request.kind": "api", "http.route": "unmatched"}
+    static = {"a13n.request.kind": "static", "http.route": "unmatched"}
+    before_api = measured(reader, "http.server.request.duration", api)
+    before_static = measured(reader, "http.server.request.duration", static)
+    before_headers = measured(reader, "a13n.http.response_start.duration")
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="https://service.test") as client:
+        for path in ("/threads/private-thread?code=private-code", "/assets/app.js", "/api-not-a-namespace"):
+            assert (await client.get(path)).status_code == 200
+        for path in ("/api", "/api/v1/private-route"):
+            assert (await client.get(path)).status_code == 404
+    assert measured(reader, "http.server.request.duration", api) == before_api + 2
+    assert measured(reader, "http.server.request.duration", static) == before_static + 3
+    assert measured(reader, "a13n.http.response_start.duration") == before_headers
+    assert "private-" not in str(messages(logged, "Request finished"))
+
+
 async def test_a_run_is_logged_and_counted_from_its_request_to_its_seal(
     executing: SimpleNamespace,
     scripted_model: Any,
@@ -620,3 +647,136 @@ async def test_thread_stream_counts_gap_notifications_not_unique_missing_frames(
         assert "event: gap" in _frame("gap", Gap(run_id="run_private", position="1-9"))
     _frame("reset", RunSignal(run_id="run_private"))
     assert measured(reader, "a13n.stream.gaps") == before + 2
+
+
+@pytest.mark.parametrize("workflow", ["maintain_browsers", "maintain_browser_control", "maintain_desktop_control"])
+@pytest.mark.parametrize("failed", [False, True])
+async def test_isolated_browser_and_desktop_calls_keep_outcomes_and_retry_cleanup(
+    reader, monkeypatch, workflow, failed
+):
+    from contextlib import asynccontextmanager
+
+    from a13n_service.runs.browsers import maintenance as browsers
+    from a13n_service.runs.environments.desktop import maintenance as desktop
+
+    current = datetime.now(UTC)
+    runtime = SimpleNamespace(storage=object(), settings=Settings())
+    result = "failed" if failed else "succeeded"
+    before = measured(reader, "a13n.sweep.items", {"sweep": workflow, "result": result})
+    row = SimpleNamespace(
+        generation=1, episode=2, control_due_at=current, claim_until=None, control="automation", due_at=None
+    )
+
+    async def call(*args, **kwargs):
+        if failed:
+            raise RuntimeError("isolated provider call failed")
+
+    @asynccontextmanager
+    async def session(*args):
+        yield object()
+
+    async def find(*args, **kwargs):
+        return row
+
+    async def now(*args):
+        return current
+
+    if workflow == "maintain_browsers":
+        monkeypatch.setattr(browsers, "maintain", call)
+        await browsers.Maintenance(runtime)._one("workspace", "browser")
+    elif workflow == "maintain_browser_control":
+        monkeypatch.setattr(browsers.control, "reconcile", call)
+        monkeypatch.setattr(browsers, "transaction", session)
+        monkeypatch.setattr(browsers.lifecycle, "find", find)
+        monkeypatch.setattr(browsers, "now", now)
+        await browsers.ControlMaintenance(runtime)._one("workspace", "browser", 1, 2, current)
+        assert row.control_due_at > current  # Existing finally reschedules success and failure alike.
+    else:
+        row.control = "human"
+        monkeypatch.setattr(desktop.control, "reconcile", call)
+        monkeypatch.setattr(desktop, "transaction", session)
+        monkeypatch.setattr(desktop, "lock", find)
+        monkeypatch.setattr(desktop, "now", now)
+        owner = desktop.Maintenance(runtime)
+        owner.inflight.add("control")
+        await owner._one("control")
+        assert not owner.inflight
+        assert (row.due_at is not None) == failed
+    assert measured(reader, "a13n.sweep.items", {"sweep": workflow, "result": result}) == before + 1
+
+
+async def test_backlog_counts_pending_entries_only_in_actionable_threads(service, scripted_model, runs_kit):
+    from a13n_service.runs.tables import AttemptRow
+
+    from .test_runs_inbox import _queue
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    cases = {}
+    for state in ("completed", "active", "archived", "waiting", "failed", "cancelled"):
+        submitted = await runs_kit.start_thread(service, agent, "initial")
+        cases[submitted["run"]["id"]] = state
+        for message in ("next", "later"):
+            await _queue(service, runs_kit, submitted["thread"]["id"], agent, message)
+    leases = await claim(service.runtime, worker_id="backlog-fixture", worker_build="test", limit=6)
+    assert len(leases) == 6
+    async with transaction(service.runtime.storage) as session:
+        for lease in leases:
+            state = cases[lease.run_id]
+            if state == "active":
+                continue
+            run = await session.get_one(RunRow, lease.run_id)
+            thread = await session.get_one(ThreadRow, lease.thread_id)
+            attempt = await session.get_one(AttemptRow, lease.attempt_id)
+            run.status = "completed" if state == "archived" else state
+            run.sealed_at = datetime.now(UTC)
+            run.current_attempt_id = None
+            attempt.status, attempt.finished_at = "succeeded", run.sealed_at
+            thread.current_run_id, thread.last_run_id = None, run.id
+            if state == "archived":
+                thread.archived_at = run.sealed_at
+            if state in {"completed", "archived", "waiting"}:
+                run.checkpoint, run.tail = {}, {}
+            if state == "waiting":
+                run.wait_reason, run.pending = "approval", {}
+            if state in {"failed", "cancelled"}:
+                run.failure = {"code": "fixture", "message": "Fixture"}
+    values = await report_backlog(service.runtime.storage)
+    assert values["inbox"][0] == 2  # Both entries, not one distinct eligible Thread.
+
+
+async def test_backlog_expired_tool_leases_exclude_shell_completed_and_live(service, scripted_model, runs_kit):
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "retained tool")
+    [lease] = await claim(service.runtime, worker_id="backlog-fixture", worker_build="test", limit=1)
+    current = datetime.now(UTC)
+    async with transaction(service.runtime.storage) as session:
+        for state in ("expired", "shell", "completed", "live"):
+            session.add(
+                ToolExecutionRow(
+                    id="exec-backlog-" + state,
+                    organization_id=lease.organization_id,
+                    workspace_id=lease.workspace_id,
+                    thread_id=lease.thread_id,
+                    run_id=lease.run_id,
+                    attempt_id=lease.attempt_id,
+                    worker_id=lease.worker_id,
+                    lease_token_hash="fixture",
+                    record={},
+                    environment_mounts=[],
+                    created_at=current - timedelta(minutes=2),
+                    lease_expires_at=current + timedelta(minutes=1)
+                    if state == "live"
+                    else current - timedelta(minutes=1),
+                    shell={} if state == "shell" else None,
+                    status="succeeded" if state == "completed" else "running",
+                    completed_at=current if state == "completed" else None,
+                    expires_at=current + timedelta(hours=1) if state == "completed" else None,
+                )
+            )
+    values = await report_backlog(service.runtime.storage)
+    assert values["execution_lease_expired"][0] == 1
+    assert 60 <= values["execution_lease_expired"][1] < 90

@@ -21,7 +21,7 @@ from a13n_service.infra.db import transaction
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from .monitoring_support import EXPORTER, MONITORING, dashboard, expand_usage, usage_queries
+from .monitoring_support import EXPORTER, MONITORING, dashboard, expand_usage, prometheus_test_files, usage_queries
 from .test_monitoring_collectors_live import docker, eventually, port, ready
 from .test_usage_analytics import observed_run
 
@@ -114,8 +114,7 @@ async def test_prometheus_rules_queries_and_grafana_postgres_import(service, scr
         )
     exporter_port, prom_port, grafana_port = port(), port(), port()
     prom, grafana = f"http://127.0.0.1:{prom_port}", f"http://127.0.0.1:{grafana_port}"
-    for source in sorted((MONITORING / "alerts").glob("*.yaml")):
-        (tmp_path / source.name).write_text(source.read_text())
+    prometheus_test_files(tmp_path)
     (tmp_path / "prometheus.yml").write_text(
         yaml.safe_dump(
             {
@@ -135,75 +134,15 @@ async def test_prometheus_rules_queries_and_grafana_postgres_import(service, scr
             }
         )
     )
-    # Unit-evaluate stale replica exclusion BEFORE max, deployment isolation and optional alert boundaries.
-    unit = {
-        "rule_files": ["/config/capacity.yaml", "/config/availability.yaml"],
-        "evaluation_interval": "1m",
-        "tests": [
-            {
-                "interval": "1m",
-                "input_series": [
-                    {
-                        "series": 'a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}',
-                        "values": "900+0x20",
-                    },
-                    {
-                        "series": 'a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}',
-                        "values": "0+0x20",
-                    },
-                    {
-                        "series": 'a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}',
-                        "values": "5+0x20",
-                    },
-                    {
-                        "series": 'a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}',
-                        "values": "0+60x20",
-                    },
-                    {
-                        "series": 'a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}',
-                        "values": "700+0x20",
-                    },
-                    {
-                        "series": 'a13n_backlog_updated_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}',
-                        "values": "0+60x20",
-                    },
-                ],
-                "promql_expr_test": [
-                    {
-                        "expr": 'max by (deployment,queue) (a13n_backlog_oldest_age_seconds{job="a13n-service"} and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job="a13n-service"} < 60))',
-                        "eval_time": "20m",
-                        "exp_samples": [
-                            {"labels": '{deployment="a",queue="runs"}', "value": 5},
-                            {"labels": '{deployment="b",queue="runs"}', "value": 700},
-                        ],
-                    }
-                ],
-                "alert_rule_test": [
-                    {
-                        "eval_time": "20m",
-                        "alertname": "A13nBacklogStuck",
-                        "exp_alerts": [
-                            {
-                                "exp_labels": {
-                                    "job": "a13n-service",
-                                    "deployment": "b",
-                                    "queue": "runs",
-                                    "severity": "warning",
-                                },
-                                "exp_annotations": {
-                                    "summary": "Due work is not progressing",
-                                    "description": "b queue runs: oldest due item exceeded 10m. Check queue-specific owners; sleeping/retry-backoff work is excluded.",
-                                },
-                            }
-                        ],
-                    }
-                ],
-            }
-        ],
-    }
-    (tmp_path / "rules-test.yml").write_text(yaml.safe_dump(unit))
     for args in [
-        ("check", "rules", "/config/availability.yaml", "/config/capacity.yaml", "/config/execution.yaml"),
+        (
+            "check",
+            "rules",
+            "/config/availability.yaml",
+            "/config/capacity.yaml",
+            "/config/execution.yaml",
+            "/config/query-rules.yaml",
+        ),
         ("test", "rules", "/config/rules-test.yml"),
     ]:
         await docker(
@@ -283,11 +222,9 @@ async def test_prometheus_rules_queries_and_grafana_postgres_import(service, scr
                         )
                         await session.execute(text(f'GRANT CONNECT ON DATABASE "{url.database}" TO a13n_usage_reader'))
                         await session.execute(text("GRANT USAGE ON SCHEMA public TO a13n_usage_reader"))
-                        await session.execute(
-                            text(
-                                "GRANT SELECT ON organizations, workspaces, agents, models, runs, usage_records TO a13n_usage_reader"
-                            )
-                        )
+                        for statement in (MONITORING / "usage-reader.sql").read_text().split(";"):
+                            if statement.strip():
+                                await session.execute(text(statement))
                     sources = [
                         {
                             "name": "Beta Prometheus",

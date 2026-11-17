@@ -32,6 +32,32 @@ def expand_usage(query, *, organizations, workspaces, start, end):
     )
 
 
+def prometheus_test_files(directory):
+    """The same pinned promtool inputs in ordinary CI and the live stack test."""
+    import yaml
+
+    records = []
+    for panel in dashboard("operations")["panels"]:
+        for target in panel.get("targets", ()):
+            records.append(
+                {
+                    "record": f"test:panel{panel['id']}_{target['refId']}",
+                    "expr": target["expr"]
+                    .replace("$job", "a13n-service")
+                    .replace("$deployment", "local-beta")
+                    .replace("$__rate_interval", "5m"),
+                }
+            )
+    for source in sorted((MONITORING / "alerts").glob("*.yaml")):
+        (directory / source.name).write_text(source.read_text())
+        for group in yaml.safe_load(source.read_text())["groups"]:
+            records.extend({"record": "test:alert_" + rule["alert"], "expr": rule["expr"]} for rule in group["rules"])
+    (directory / "query-rules.yaml").write_text(
+        yaml.safe_dump({"groups": [{"name": "query-validation", "rules": records}]})
+    )
+    (directory / "rules-test.yml").write_text((MONITORING / "tests" / "alerts.test.yaml").read_text())
+
+
 # The real executable exporter, with one observation of each exported family used by the bundle.
 # Run in a child process because OpenTelemetry installs its provider only once per process.
 EXPORTER = """

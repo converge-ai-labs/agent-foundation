@@ -101,7 +101,7 @@
         "defaults": {
           "unit": "currencyUSD",
           "noValue": "Unavailable",
-          "decimals": 6
+          "decimals": 2
         },
         "overrides": [
           {
@@ -120,7 +120,7 @@
               },
               {
                 "id": "decimals",
-                "value": 6
+                "value": 2
               }
             ]
           }
@@ -494,7 +494,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT date_trunc('day',u.ingested_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS time, count(*) AS requests, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0) AS cached_input_tokens, CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd, count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT to_char(u.ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, count(*) AS requests, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0) AS cached_input_tokens, CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd, count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY 1",
           "format": "table",
           "editorMode": "code",
           "rawQuery": true
@@ -610,26 +610,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "time"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Day (UTC)"
-              },
-              {
-                "id": "unit",
-                "value": "time:YYYY-MM-DD"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "day"
             },
             "properties": [
@@ -695,7 +675,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT date_trunc('day',r.started_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS time, r.status, count(*) AS runs FROM runs r WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring}) GROUP BY 1,2 ORDER BY 1,2",
+          "rawSql": "SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, r.status, count(*) AS runs FROM runs r WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring}) GROUP BY 1,2 ORDER BY 1,2",
           "format": "table",
           "editorMode": "code",
           "rawQuery": true
@@ -708,26 +688,6 @@
           "decimals": 0
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "time"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Day (UTC)"
-              },
-              {
-                "id": "unit",
-                "value": "time:YYYY-MM-DD"
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              }
-            ]
-          },
           {
             "matcher": {
               "id": "byName",

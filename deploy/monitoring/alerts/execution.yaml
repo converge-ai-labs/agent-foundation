@@ -15,15 +15,14 @@ groups:
       description: Failure share among completed+failed seals, not accepted cohort success. waiting/cancelled excluded;
         >=5 failures in 15m. Inspect reason breakdown.
   - alert: A13nOutboxDead
-    expr: max by (job,deployment,kind) (a13n_outbox_dead{job="a13n-service"} and on (job,deployment,instance) (time()
-      - a13n_outbox_updated_seconds{job="a13n-service"} < 60)) > 0
+    expr: sum by (job,deployment,kind) (increase(a13n_outbox_deliveries_total{job="a13n-service",result="dead"}[15m])) > 0
     for: 5m
     labels:
       severity: warning
     annotations:
-      summary: Retained dead outbox deliveries exist
-      description: Kind {{ $labels.kind }} needs diagnosis. This is retained state, not only newly dead events;
-        purging clears it.
+      summary: New dead outbox deliveries were recorded
+      description: Kind {{ $labels.kind }} had new dead settlements within 15m. Route tenant webhook failures to the
+        subscription owner for diagnosis/redelivery. Retained dead rows remain visible without keeping this alert firing.
   - alert: A13nOutboxSettlementFailing
     expr: sum by (job,deployment,kind) (increase(a13n_outbox_settlement_failures_total{job="a13n-service"}[15m]))
       >= 3
@@ -34,24 +33,27 @@ groups:
       summary: Outbox results cannot be settled
       description: Claims retry after lease expiry. Inspect Outbox settlement failed logs and database availability.
   - alert: A13nSweepItemsFailing
-    expr: sum by (job,deployment,sweep) (increase(a13n_sweep_items_total{job="a13n-service",result="failed"}[15m]))
-      >= 3
+    expr: (sum by (job,deployment,sweep) (increase(a13n_sweep_items_total{job="a13n-service",result="failed"}[15m]))
+      / sum by (job,deployment,sweep) (increase(a13n_sweep_items_total{job="a13n-service"}[15m])) > 0.2)
+      and on (job,deployment,sweep) (sum by (job,deployment,sweep) (increase(a13n_sweep_items_total{job="a13n-service",result="failed"}[15m])) >= 3)
     for: 5m
     labels:
       severity: warning
     annotations:
       summary: Isolated background calls are failing
-      description: '{{ $labels.sweep }} may report a succeeded outer pass while its item calls fail. Inspect item-level
-        logs.'
+      description: '{{ $labels.sweep }} has >20% failed isolated calls and >=3 failures in 15m. Its outer pass may
+        still succeed. Inspect item-level logs; advance_threads also includes its seal/delivery fast path.'
   - alert: A13nSweepFailing
-    expr: sum by (job,deployment,sweep) (increase(a13n_sweep_passes_total{job="a13n-service",result="failed"}[15m]))
-      >= 3
+    expr: (sum by (job,deployment,sweep) (increase(a13n_sweep_passes_total{job="a13n-service",result="failed"}[15m]))
+      / sum by (job,deployment,sweep) (increase(a13n_sweep_passes_total{job="a13n-service"}[15m])) > 0.2)
+      and on (job,deployment,sweep) (sum by (job,deployment,sweep) (increase(a13n_sweep_passes_total{job="a13n-service",result="failed"}[15m])) >= 3)
     for: 5m
     labels:
       severity: warning
     annotations:
       summary: Background sweep scans are failing
-      description: Inspect Sweep failed logs. A successful pass does not prove all individual work succeeded.
+      description: More than 20% of scans failed with >=3 failures in 15m. Inspect Sweep failed logs. Successful
+        passes do not prove all individual work succeeded.
   - alert: A13nLeaseExpiry
     expr: sum by (job,deployment) (increase(a13n_attempt_ended_total{job="a13n-service",reason="lease_expired"}[15m]))
       >= 3
@@ -73,11 +75,11 @@ groups:
       description: Inspect scheduling queues, creator authority, dispatch retries and worker/control health. Submission
         is distinct from execution.
   - alert: A13nStreamDegraded
-    expr: sum by (job,deployment) (increase(a13n_stream_dropped_total{job="a13n-service"}[5m])) >= 100
+    expr: sum by (job,deployment) (increase(a13n_stream_dropped_total{job="a13n-service",reason=~"write_buffer_full|redis_append_failed"}[5m])) >= 100
     for: 5m
     labels:
       severity: warning
     annotations:
       summary: Live output is being dropped
-      description: Durable checkpoint output may still be intact. Inspect Redis, writer buffers and oversized frames;
-        gap counts are per reader.
+      description: Durable checkpoint output may still be intact. Inspect Redis and writer buffers. Deliberate
+        oversized-frame refusals are excluded; gap counts are per reader.

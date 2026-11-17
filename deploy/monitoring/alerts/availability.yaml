@@ -24,15 +24,15 @@ groups:
       description: '{{ $labels.deployment }}: >5% 5xx and >0.02 failures/sec over 5m, sustained 10m. Probes, static
         content and SSE excluded. Inspect request logs.'
   - alert: A13nBacklogSnapshotStale
-    expr: (time() - a13n_backlog_updated_seconds{job="a13n-service"} > 60) or (up{job="a13n-service",role=~"all|control"}
+    expr: (max by (job,deployment,instance) (time() - a13n_backlog_updated_seconds{job="a13n-service"}) > 60) or (up{job="a13n-service",role=~"all|control"}
       == 1 unless on (job,deployment,instance) a13n_backlog_updated_seconds{job="a13n-service"})
     for: 2m
     labels:
       severity: warning
     annotations:
       summary: Backlog reporter is stale or has not initialized
-      description: Cached queue values are excluded after 60s. Check report_backlog, sweeps and PostgreSQL before
-        interpreting missing queues.
+      description: Cached queue values are excluded after 60s; scrape at least every 30s. One alert per reporter,
+        not per queue. Check report_backlog, sweeps and PostgreSQL before interpreting missing queues.
   - alert: A13nSweepStalled
     expr: (time() - a13n_sweep_last_success_seconds{job="a13n-service"}) > a13n_sweep_stale_after_seconds{job="a13n-service"}
     for: 1m

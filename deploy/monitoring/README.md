@@ -32,6 +32,7 @@ scrape_configs:
   - job_name: a13n-service
     kubernetes_sd_configs:
       - role: pod
+    scrape_interval: 30s
     relabel_configs:
       - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_annotation_prometheus_io_scrape]
         regex: a13n-service;true
@@ -52,12 +53,15 @@ For static hosts, group targets by domain and role:
 ```yaml
 scrape_configs:
   - job_name: a13n-service
+    scrape_interval: 30s
     static_configs:
       - targets: [control.internal:9464]
         labels: {deployment: production-a, role: control}
       - targets: [worker-1.internal:9464, worker-2.internal:9464]
         labels: {deployment: production-a, role: worker}
 ```
+
+Use a scrape interval of **30 seconds or less**, including the data source's minimum interval. The bundle's 60-second freshness cutoff allows for the 15-second report cadence, startup jitter and pass timeout at that scrape interval. Longer intervals require increasing the cutoff consistently in the dashboard and all presets; otherwise fresh inventory can appear missing between scrapes.
 
 Scrape success is not readiness: check `/readyz` separately. `up == 0` cannot detect a target removed from discovery; use your infrastructure's expected-replica checks for that case. Missing series are not healthy zeroes.
 
@@ -79,10 +83,12 @@ Point the data source at a read replica when available. Create a read-only login
 CREATE ROLE a13n_usage_reader LOGIN PASSWORD 'choose-a-password';
 GRANT CONNECT ON DATABASE a13n_service TO a13n_usage_reader;
 GRANT USAGE ON SCHEMA public TO a13n_usage_reader;
-GRANT SELECT ON organizations, workspaces, agents, models, runs, usage_records TO a13n_usage_reader;
+\i deploy/monitoring/usage-reader.sql
 ```
 
-Queries use UTC days and the half-open selected range `[from,to)`. Model contributions use their first `ingested_at`; later replacements revise that original bucket. Runs are independently selected by `started_at`, with average runtime over sealed members. Waiting seals before human approval; resumed successors count separately. Cached input is already included in input tokens. Known cost is recorded USD, never current-price repricing: zero requests → 0, all prices unknown → unavailable, partial pricing → known subtotal plus unpriced count. Breakdown tables show the top 100 rows; overview totals are untruncated.
+Run the bundled [column grants](usage-reader.sql) as the table owner with `psql` from the repository root. Reapply them when upgrading from the previous whole-table recipe: they revoke those table grants before granting only the columns used by the queries and selectors. Keep this role out of broader role memberships. It can read the granted reporting facts across organizations, but not Run payloads/caller headers, Model configuration or Organization settings. `SELECT *` is intentionally denied.
+
+Queries use UTC date strings and the half-open selected range `[from,to)`. Model contributions use their first `ingested_at`; later replacements revise that original bucket. Runs are independently selected by `started_at`, with average runtime over sealed members. Waiting seals before human approval; resumed successors count separately. Cached input is already included in input tokens. Known cost is recorded USD, never current-price repricing: zero requests → 0, all prices unknown → unavailable, partial pricing → known subtotal plus unpriced count. Breakdown tables show the top 100 rows; overview totals are untruncated.
 
 ## Opt in to alert presets
 
@@ -103,7 +109,7 @@ rule_files:
 
 For Prometheus Operator, wrap each selected file's `groups` under a `PrometheusRule.spec`, and set metadata labels to match your `ruleSelector`. The chart does not create a PrometheusRule or provision Grafana.
 
-Preset starting points include >5% API 5xx with >0.02 failures/sec, >=5 failed Runs with >20% failure share among completed+failed seals, and >10-minute due queue age. Holds and minimum event counts reduce idle/low-traffic noise. Cancelled/waiting Runs, planned handoffs, empty worker scans and expected provider renewal limits are separate outcomes. Inspect queue-specific owners before changing capacity.
+Preset starting points include >5% API 5xx with >0.02 failures/sec, >=5 failed Runs with >20% failure share among completed+failed seals, and >10-minute due queue age. Outbox policy pressure has its own sustained-backlog rule; new dead-delivery events alert for their recent window, while retained dead rows remain a dashboard diagnostic. Sweep failure alerts require both a minimum count and a >20% failure share, and live-output degradation excludes deliberate oversized-frame refusal. Holds and minimum event counts reduce idle/low-traffic noise. Cancelled/waiting Runs, planned handoffs, empty worker scans and expected provider renewal limits are separate outcomes. Inspect queue-specific owners before changing capacity.
 
 ## Environment monitoring is separate
 

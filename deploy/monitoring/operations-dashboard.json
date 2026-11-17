@@ -86,8 +86,8 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Scrape targets up",
-      "description": "Successful metrics scrapes by role. This is not /readyz. Missing targets are not healthy zeroes.",
+      "title": "Scrape targets up / down",
+      "description": "Discovered targets by role, split into successful and failed scrapes. Not /readyz; targets removed from discovery cannot appear as down.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -112,8 +112,16 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (deployment,role) (up{job=~\"$job\",deployment=~\"$deployment\"})",
-          "legendFormat": "{{deployment}} {{role}}",
+          "expr": "sum by (deployment,role) ((up{job=~\"$job\",deployment=~\"$deployment\"} == bool 1))",
+          "legendFormat": "{{deployment}} {{role}} up",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (deployment,role) ((up{job=~\"$job\",deployment=~\"$deployment\"} == bool 0))",
+          "legendFormat": "{{deployment}} {{role}} down",
           "range": false,
           "instant": true,
           "editorMode": "code"
@@ -297,7 +305,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -357,7 +364,20 @@
           "decimals": 2,
           "noValue": "No samples",
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
           }
         },
         "overrides": []
@@ -379,7 +399,7 @@
           ],
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "value",
         "graphMode": "none",
         "textMode": "auto",
         "orientation": "auto"
@@ -416,7 +436,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -459,7 +478,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "API latency p95",
-      "description": "Receiving request through response end, by route template; SSE and probes excluded. Inspect logs for request IDs.",
+      "description": "Ten slowest API route templates per deployment at each evaluation, request through response end. Probes, static responses and SSE excluded; inspect logs for request IDs.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -491,7 +510,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le,deployment,http_route) (rate(http_server_request_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval])))",
+          "expr": "topk by (deployment) (10, histogram_quantile(0.95, sum by (le,deployment,http_route) (rate(http_server_request_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval]))))",
           "legendFormat": "{{deployment}} {{http_route}}",
           "range": true,
           "instant": false,
@@ -587,7 +606,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -700,7 +718,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "Due work oldest age",
-      "description": "Waiting age of currently due work, not historical completed latency. A zero means no due work in a fresh snapshot.",
+      "description": "Waiting age of currently due work, not historical completed latency. A zero means no due work in a fresh snapshot. Inbox age starts at entry creation, including time blocked behind a prior Run, not eligibility time.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -815,8 +833,8 @@
     {
       "id": 17,
       "type": "timeseries",
-      "title": "Inbox and due queue wait p95",
-      "description": "Inbox: entry creation to assignment, including deliberate business blocking. Queue: available_at to claim. Different populations; do not add their quantiles.",
+      "title": "Inbox assignment wait p95",
+      "description": "Entry creation to each committed assignment, including deliberate blocking behind a prior Run and reassignments. Not time since eligibility; separate from worker claim wait.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -853,9 +871,58 @@
           "range": true,
           "instant": false,
           "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
         },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Due Run claim wait p95",
+      "description": "available_at to committed worker claim, excluding future retry backoff. Separate from inbox business blocking.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
         {
-          "refId": "B",
+          "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_attempt_queue_wait_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
           "legendFormat": "{{deployment}} due Run claim",
           "range": true,
@@ -887,7 +954,7 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 45,
         "w": 12,
         "h": 8
@@ -895,7 +962,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -944,15 +1010,14 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 45,
+        "x": 0,
+        "y": 53,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -995,13 +1060,13 @@
       "id": 20,
       "type": "timeseries",
       "title": "Attempt and Run duration p95",
-      "description": "Attempt: claim to end. Run: creation to seal, including recovery/queueing. waiting seals before human approval; resume creates a successor Run.",
+      "description": "Attempt claim-to-end and Run creation-to-seal, each split by terminal status. Waiting ends at the approval pause; its successor is a separate Run. Compare matching outcomes, not mixed populations.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 53,
         "w": 12,
         "h": 8
@@ -1027,16 +1092,16 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_attempt_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
-          "legendFormat": "{{deployment}} Attempt",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,status) (rate(a13n_attempt_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} Attempt {{status}}",
           "range": true,
           "instant": false,
           "editorMode": "code"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_run_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
-          "legendFormat": "{{deployment}} Run lifetime",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,status) (rate(a13n_run_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} Run lifetime {{status}}",
           "range": true,
           "instant": false,
           "editorMode": "code"
@@ -1066,15 +1131,14 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 53,
+        "x": 0,
+        "y": 61,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1123,7 +1187,7 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 61,
         "w": 12,
         "h": 8
@@ -1131,7 +1195,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1180,15 +1243,14 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 12,
-        "y": 61,
-        "w": 12,
+        "x": 0,
+        "y": 69,
+        "w": 24,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1235,7 +1297,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 69,
+        "y": 77,
         "w": 24,
         "h": 1
       }
@@ -1251,14 +1313,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 78,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "tps",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1308,7 +1369,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 70,
+        "y": 78,
         "w": 12,
         "h": 8
       },
@@ -1362,7 +1423,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 78,
+        "y": 86,
         "w": 24,
         "h": 1
       }
@@ -1378,7 +1439,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 79,
+        "y": 87,
         "w": 12,
         "h": 8
       },
@@ -1435,14 +1496,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 79,
+        "y": 87,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1492,14 +1552,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 87,
+        "y": 95,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1549,14 +1608,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 87,
+        "y": 95,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1614,14 +1672,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 95,
+        "y": 103,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1679,7 +1736,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 95,
+        "y": 103,
         "w": 12,
         "h": 8
       },
@@ -1736,14 +1793,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 103,
+        "y": 111,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1793,14 +1849,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 103,
+        "y": 111,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -1855,7 +1910,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 111,
+        "y": 119,
         "w": 24,
         "h": 1
       }
@@ -1871,7 +1926,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 112,
+        "y": 120,
         "w": 12,
         "h": 8
       },
@@ -1928,7 +1983,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 112,
+        "y": 120,
         "w": 12,
         "h": 8
       },
@@ -1985,14 +2040,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 120,
+        "y": 128,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -2042,7 +2096,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 120,
+        "y": 128,
         "w": 12,
         "h": 8
       },
@@ -2101,14 +2155,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 128,
+        "y": 136,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -2158,14 +2211,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 128,
+        "y": 136,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -2208,21 +2260,20 @@
       "id": 43,
       "type": "timeseries",
       "title": "Isolated item outcomes",
-      "description": "Counts isolated calls in advancement/expiry/maintenance/renewal. succeeded may be a lock-race no-op; not a durable work count.",
+      "description": "Counts isolated advancement, expiry, environment/browser maintenance and browser/desktop control calls. sweep identifies the owning workflow; advance_threads includes post-seal and delivery fast paths. succeeded may be a lock-race no-op; not a durable work count.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
-        "y": 136,
+        "y": 144,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
-          "decimals": 2,
           "noValue": "No samples",
           "color": {
             "mode": "palette-classic"
@@ -2272,7 +2323,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 136,
+        "y": 144,
         "w": 12,
         "h": 8
       },

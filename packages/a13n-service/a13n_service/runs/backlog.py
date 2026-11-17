@@ -19,7 +19,7 @@ from a13n_service.infra.telemetry import Gauge
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow, ToolExecutionRow
 
-# A count past this bound is reported as the bound, so one pass stays cheap however large the backlog grows.
+# A count at this bound is a lower bound. LIMIT caps returned candidates, not planner scan or sort work.
 COUNT_LIMIT = 10_000
 REPORT_SECONDS = 15
 

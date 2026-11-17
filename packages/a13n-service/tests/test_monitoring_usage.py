@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from a13n_service.infra.db import short_session, transaction
@@ -9,11 +10,28 @@ from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.runs.tables import UsageRecordRow
 from a13n_service.tenancy.tables import WorkspaceRow
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
-from .monitoring_support import expand_usage, usage_queries
+from .monitoring_support import MONITORING, dashboard, expand_usage, usage_queries
 from .test_usage_analytics import START, observed_run
 
 pytestmark = pytest.mark.anyio
+
+
+def test_cost_precision_keeps_headlines_readable_and_tables_exact():
+    cost = next(p for p in dashboard("usage")["panels"] if p["id"] == 2)
+    assert cost["fieldConfig"]["defaults"]["decimals"] == 2
+    assert [
+        prop["value"]
+        for override in cost["fieldConfig"]["overrides"]
+        for prop in override["properties"]
+        if prop["id"] == "decimals"
+    ] == [2]
+    for panel in dashboard("usage")["panels"]:
+        if panel["type"] == "table":
+            for override in panel["fieldConfig"]["overrides"]:
+                if override["matcher"]["options"] == "known_cost_usd":
+                    assert {prop["id"]: prop["value"] for prop in override["properties"]}["decimals"] == 6
 
 
 async def test_dashboard_populations_prices_boundaries_and_identity(service, scripted_model, runs_kit):
@@ -94,7 +112,8 @@ async def test_dashboard_populations_prices_boundaries_and_identity(service, scr
     assert only["Started runs"][0]["runs"] == 2
     assert only["Average sealed runtime"][0]["average_duration_seconds"] == 20
     assert sum(row["input_tokens"] for row in only["Daily model usage"]) == 1150
-    assert [row["time"].astimezone(START.tzinfo).day for row in only["Daily model usage"]] == [1, 2, 3]
+    assert [row["day"] for row in only["Daily model usage"]] == ["2026-09-01", "2026-09-02", "2026-09-03"]
+    assert {row["day"] for row in only["Daily started runs"]} == {"2026-09-01"}
     model = only["Model usage by workspace and model"][0]
     assert model["cache_hit_rate"] == pytest.approx(Decimal(230) / Decimal(1100))
     assert sum(row["requests"] for row in only["Usage by agent"]) == 4
@@ -152,3 +171,43 @@ async def test_dashboard_populations_prices_boundaries_and_identity(service, scr
     assert corrected["Known recorded cost"][0]["known_cost_usd"] == Decimal("0.6")
     assert corrected["Model requests"][0]["requests"] == 4
     assert corrected["Daily model usage"][0]["known_cost_usd"] == Decimal("0.6")
+
+
+async def test_documented_column_role_runs_all_queries_but_cannot_read_private_fields(service):
+    role = "usage_test_" + uuid4().hex
+    queries = [*usage_queries().values()]
+    queries.extend(v["query"] for v in dashboard("usage")["templating"]["list"][1:])
+    # Keep role creation and privileges uncommitted; closing this session rolls them back.
+    async with short_session(service.runtime.storage) as session:
+        await session.execute(text(f"CREATE ROLE {role}"))
+        await session.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
+        # Reproduce an upgrade from the previous, overbroad documented grants.
+        await session.execute(
+            text(f"GRANT SELECT ON organizations, workspaces, agents, models, runs, usage_records TO {role}")
+        )
+        for statement in (MONITORING / "usage-reader.sql").read_text().split(";"):
+            if statement.strip():
+                await session.execute(text(statement.replace("a13n_usage_reader", role)))
+        await session.execute(text(f"SET LOCAL ROLE {role}"))
+        for sql in queries:
+            await session.execute(
+                text(
+                    expand_usage(
+                        sql,
+                        organizations=[service.tenant.organization_id],
+                        workspaces=[service.tenant.workspace_id],
+                        start=START,
+                        end=START + timedelta(days=3),
+                    )
+                )
+            )
+        for table, columns in [
+            ("runs", "output, options, authority, pending, mcp_headers"),
+            ("models", "config"),
+            ("organizations", "settings"),
+            ("runs", "*"),
+        ]:
+            with pytest.raises(DBAPIError) as refused:
+                async with session.begin_nested():
+                    await session.execute(text(f"SELECT {columns} FROM {table} LIMIT 1"))
+            assert refused.value.orig.sqlstate == "42501"
