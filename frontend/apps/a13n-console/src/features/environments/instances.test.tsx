@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -7,7 +7,12 @@ import { EnvironmentInstances } from "./instances";
 import { EnvironmentsPage } from "./page";
 import { Page } from "../../shared/page";
 
-const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
+const http = vi.hoisted(() => ({
+  GET: vi.fn(),
+  POST: vi.fn(),
+  DELETE: vi.fn(),
+}));
+const access = vi.hoisted(() => ({ can: vi.fn(() => true) }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http, workspace: () => http }),
 }));
@@ -16,11 +21,14 @@ vi.mock("../../layout/workspace", () => ({
     workspace: { id: "ws_test" },
     basePath: "/workspace/ws_test",
     organization: { id: "org_test" },
-    can: () => true,
+    can: access.can,
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 
 const collections: Record<string, unknown[]> = {
@@ -55,6 +63,8 @@ const collections: Record<string, unknown[]> = {
 };
 
 beforeEach(() => {
+  access.can.mockReturnValue(true);
+  http.DELETE.mockReset().mockResolvedValue({ data: {} });
   http.GET.mockImplementation(async (path: string) => ({
     data:
       path === "/api/v1/metrics-data-sources/capabilities"
@@ -243,3 +253,134 @@ it("distinguishes lost and permanently unavailable targets from ready instances"
   expect(screen.getAllByText("state.ready")).toHaveLength(2);
   cache.clear();
 });
+
+const listedEnvironment = {
+  id: "env_test",
+  workspace_id: "ws_test",
+  name: "Scratch sandbox",
+  kind: "managed",
+  template_id: "envtpl_python",
+  provider_id: "eprov_docker",
+  status: "ready",
+  version: 3,
+  failure: null,
+  updated_at: "2026-11-17T00:00:00Z",
+  desktop_preview: "not_configured",
+};
+
+function openInstances({ writable = true, detailFails = false } = {}) {
+  access.can.mockImplementation(() => writable);
+  const initialRead = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) => {
+    if (path === "/api/v1/environments")
+      return { data: { items: [listedEnvironment], next_cursor: null } };
+    if (path === "/api/v1/environments/{environment_id}") {
+      if (detailFails) throw new Error("Environment read failed");
+      return {
+        data: listedEnvironment,
+        response: new Response(null, { headers: { ETag: '"env_test:3"' } }),
+      };
+    }
+    if (path === "/api/v1/provider-types/{kind}")
+      return {
+        data: {
+          items: [
+            { type: "docker", supports_stop: true, supports_destroy: true },
+          ],
+        },
+      };
+    return initialRead(path, ...args);
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 15_000 } },
+  });
+  cache.setQueryData(["environment", listedEnvironment.id], {
+    value: { ...listedEnvironment, version: 1 },
+    etag: '"env_test:1"',
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <EnvironmentInstances />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return { cache, user: userEvent.setup() };
+}
+
+it("deletes from the row menu only after confirmation, uses the current ETag and preserves failures", async () => {
+  const { cache, user } = openInstances();
+  await screen.findByText("Scratch sandbox");
+  expect(
+    http.GET.mock.calls.some(
+      ([path]) => path === "/api/v1/environments/{environment_id}",
+    ),
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Environment actions" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete environment",
+  });
+  expect(within(dialog).getByText("Scratch sandbox")).toBeTruthy();
+  expect(screen.queryByText("Effective retention policy")).toBeNull();
+  expect(http.DELETE).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Delete environment" }),
+    ).toBeNull(),
+  );
+  expect(http.DELETE).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Environment actions" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+  http.DELETE.mockRejectedValueOnce(new Error("Environment is in use"));
+  await user.click(screen.getByRole("button", { name: "Delete environment" }));
+  expect(await screen.findByText("Environment is in use")).toBeTruthy();
+  expect(http.DELETE).toHaveBeenCalledWith(
+    "/api/v1/environments/{environment_id}",
+    {
+      params: { path: { environment_id: "env_test" } },
+      headers: { "If-Match": '"env_test:3"' },
+    },
+  );
+  http.GET.mockClear();
+  await user.click(screen.getByRole("button", { name: "Delete environment" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Delete environment" }),
+    ).toBeNull(),
+  );
+  expect(
+    http.GET.mock.calls.some(([path]) => path === "/api/v1/environments"),
+  ).toBe(true);
+  cache.clear();
+});
+
+it.each([
+  ["read-only access", { writable: false, detailFails: false }],
+  ["a failed current-state read", { writable: true, detailFails: true }],
+])(
+  "keeps details accessible without lifecycle actions for %s",
+  async (_name, options) => {
+    const { cache, user } = openInstances(options);
+    await user.click(
+      await screen.findByRole("button", { name: "Environment actions" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Details" }),
+    ).toBeTruthy();
+    if (options.detailFails) await screen.findByText("Environment read failed");
+    expect(screen.queryByRole("menuitem", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+    if (options.writable === false) {
+      expect(
+        http.GET.mock.calls.some(
+          ([path]) => path === "/api/v1/environments/{environment_id}",
+        ),
+      ).toBe(false);
+      await user.click(screen.getByRole("menuitem", { name: "Details" }));
+      await screen.findByText("Effective retention policy");
+    }
+    cache.clear();
+  },
+);

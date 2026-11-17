@@ -129,6 +129,7 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
+.table[data-row-menu-visibility="always"] .rowMenu,
 tr:hover .rowMenu,
 tr:focus-within .rowMenu,
 .rowMenu:has([data-popup-open]) {
