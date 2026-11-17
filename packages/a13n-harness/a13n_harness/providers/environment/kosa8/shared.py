@@ -32,7 +32,7 @@ class Kosa8EnvironmentConfiguration(CommandConfiguration):
         extra="forbid",
         json_schema_extra={"x-primary-fields": ["size", "image", "disk_gb"]},
     )
-    # The kosa8 files API reaches /workspace only, so every guest file path lives under it.
+    # kosa8 sandboxes create /workspace for agent files; the files API reaches any path in the guest.
     root: str = "/workspace"
     size: Literal["2x4", "4x8", "8x16", "16x32"] = Field(default="2x4", description="vCPU x GiB memory.")
     image: str | None = Field(
