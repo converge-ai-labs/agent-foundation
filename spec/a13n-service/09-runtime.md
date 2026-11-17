@@ -170,6 +170,10 @@ Every limit is finite and visible: a setting or a fixed bound in code. Reaching 
 
 A provider call, a credential refresh, an environment operation and an object write have separate deadlines; no single timeout makes them all recoverable.
 
+## App plugins
+
+[15: App plugins](15-app-plugins.md) owns dedicated installed entry-point discovery, organization policy, accepted activation and business dispatch. Assembly discovers definitions before extension settings, translates their allowed registrations into existing runtime facilities and keeps executable callbacks above business layers. App definitions never contribute tables or migrations; Distribution retains that artifact-level responsibility.
+
 ## Console
 
 The package carries the Console production build under `a13n_service/static/`, placed there before packaging (`make a13n-service-assets`); a wheel or sdist without it fails to build, and the image builds it in a Node.js stage. API-serving roles answer what no route matched from it: `GET` and `HEAD` of `/assets/...` return the content-hashed file with `Cache-Control: public, max-age=31536000, immutable`, and any other browser path returns `index.html` with `Cache-Control: no-store`, since the Console routes in the browser. Paths under `/api`, other methods and missing assets keep the router's own answers ([HTTP ingress](#http-ingress-and-escaping-failures)), so the API behaves identically with or without a build. A source checkout has no build and serves the API only; the Console development server proxies `/api` to it.

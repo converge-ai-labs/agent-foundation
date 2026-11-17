@@ -48,6 +48,17 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         assert json.loads(target.read_text()) == schema
 
 
+def test_export_never_discovers_locally_installed_apps(monkeypatch) -> None:
+    from a13n_service import app
+
+    def unexpected_discovery():
+        pytest.fail("Core artifact exports must not discover local App packages")
+
+    monkeypatch.setattr(app, "discover_apps", unexpected_discovery)
+    exported = contract.documents()
+    assert json.loads((contract.TARGET / "openapi.json").read_text()) == exported[contract.TARGET / "openapi.json"]
+
+
 def test_exported_platform_tools_are_independent_of_http_admission() -> None:
     from a13n_service.platform_catalog import catalog
 

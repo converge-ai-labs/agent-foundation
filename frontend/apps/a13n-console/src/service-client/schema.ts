@@ -2925,6 +2925,43 @@ export interface paths {
     patch: operations["update_organization"];
     trace?: never;
   };
+  "/api/v1/organizations/{organization_id}/app-plugins": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List App Plugins
+     * @description Organization administration is intentionally outside the MCP management surface.
+     */
+    get: operations["list_app_plugins"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization_id}/app-plugins/{app_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Update App Plugin */
+    put: operations["update_app_plugin"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization_id}/audit-events": {
     parameters: {
       query?: never;
@@ -5888,6 +5925,17 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** AppPlugins */
+    AppPlugins: {
+      /** Id */
+      id: string;
+      /** Items */
+      items: components["schemas"]["AppView"][];
+      /** Permissions */
+      permissions: string[];
+      /** Version */
+      version: number;
+    };
     /** AppReference */
     AppReference: {
       /** Agent Definition Id */
@@ -5943,6 +5991,27 @@ export interface components {
       result: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /** AppUpdate */
+    AppUpdate: {
+      /** Enabled */
+      enabled: boolean;
+    };
+    /** AppView */
+    AppView: {
+      /** App Id */
+      app_id: string;
+      /** Distribution */
+      distribution: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Factory Keys */
+      factory_keys: string[];
+      frontend: components["schemas"]["FrontendView"] | null;
+      /** Name */
+      name: string;
+      /** Version */
+      version: string;
     };
     /** @enum {string} */
     ApplicationStatus:
@@ -9145,6 +9214,15 @@ export interface components {
       template_id: string;
       /** Working Directory */
       working_directory?: string | null;
+    };
+    /** FrontendView */
+    FrontendView: {
+      /** Bridge */
+      bridge: number;
+      /** Entry */
+      entry: string;
+      /** Styles */
+      styles: string[];
     };
     /**
      * GitHubSource
@@ -21957,6 +22035,62 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Organization"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_app_plugins: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AppPlugins"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_app_plugin: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+      };
+      path: {
+        organization_id: string;
+        app_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AppPlugins"];
         };
       };
       400: components["responses"]["Error"];

@@ -663,6 +663,8 @@ class RunRow(Stamped, Base):
     authority: Mapped[dict] = mapped_column(JSONB)
     # `RunOptions` frozen at acceptance: validated, their overrides with pins resolved.
     options: Mapped[dict] = mapped_column(JSONB)
+    # App policy and installed ownership frozen at acceptance, never hydrated from current policy.
+    app_activation: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # The digest of the options as the source message submitted them, or as the run's history inherited them:
     # a steer joins the run only when its own options have this digest.
     options_digest: Mapped[str] = mapped_column(String(64))

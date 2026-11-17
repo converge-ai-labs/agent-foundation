@@ -75,7 +75,7 @@ Notes on the shape:
 - `passwords` holds one Argon2id hash per user, replaced in place, never expired and never looked up by hash. It shares no table with anything the [expiry sweep](#expiry) deletes.
 - `tokens.data` holds the one value a kind needs: `{"new_email": ...}` for `email_change`, nothing otherwise.
 - `grants.workspace_id IS NULL` is an organization-scope grant; it applies to every workspace of the organization. `role` is validated text, not a database CHECK, because distributions add roles ([Roles and grant sources](#roles-and-grant-sources)). A role change replaces the row.
-- `workspaces.settings` holds workspace-wide defaults that are not resources; today only the media-understanding model defaults under `media`, owned by [04](04-resources.md). `organizations.settings` is reserved; no operation reads or writes it.
+- `workspaces.settings` holds workspace-wide defaults that are not resources; today only the media-understanding model defaults under `media`, owned by [04](04-resources.md). `organizations.settings.app_plugins` holds organization desired App enablement, owned by [15: App plugins](15-app-plugins.md#organization-policy-and-management).
 - `image` holds the reference to an organization's or workspace's icon or a user's avatar ([Images](#images)); service accounts have none. `description` is a service account's free text (at most 2048 characters, default empty).
 - `api_keys`, `grants`, `invitations` and `audit_events` reference their workspace by the pair `(organization_id, workspace_id)` ([Tenant integrity](#tenant-integrity)).
 - `audit_events.organization_id` is NULL only for account-wide events (a user's own account and login sessions), which belong to no tenant.

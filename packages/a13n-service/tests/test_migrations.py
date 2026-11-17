@@ -1108,7 +1108,8 @@ async def test_session_binding_cutover_preserves_views_and_history(service, scri
         connection.commit()
     thread_id = submitted["thread"]["id"]
     history_query = f"SELECT message_history::text, version::text, updated_at::text FROM threads WHERE id='{thread_id}'"
-    runs_query = f"SELECT to_jsonb(runs)::text FROM runs WHERE thread_id='{thread_id}' ORDER BY id"
+    # Compare the old cutover's facts independently of the later additive App activation column.
+    runs_query = f"SELECT (to_jsonb(runs) - 'app_activation')::text FROM runs WHERE thread_id='{thread_id}' ORDER BY id"
     mounts_query = "SELECT thread_id, environment_id, name, working_directory, permission_ceiling::text, created_at::text FROM thread_environments"
     before = [rows(database, query) for query in (history_query, runs_query, mounts_query)]
     upgrade(database, OSS)

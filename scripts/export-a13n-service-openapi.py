@@ -33,7 +33,7 @@ def platform_tools(distribution: Distribution = OSS) -> list[dict]:
 
 
 def documents(distribution: Distribution = OSS) -> dict[Path, object]:
-    openapi = build_app(distribution=distribution).openapi()
+    openapi = build_app(distribution=distribution, apps=()).openapi()
     return {
         TARGET / "openapi.json": openapi,
         TARGET / "session-stream.schema.json": frames_schema(),

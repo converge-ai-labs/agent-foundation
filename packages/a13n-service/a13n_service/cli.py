@@ -15,7 +15,8 @@ import uvicorn
 from a13n_logging import configure_logging
 from pydantic import SecretStr, ValidationError
 
-from a13n_service.app import build_app, check_schema, open_objects, open_storage
+from a13n_service.app import build_app, check_schema, compose_apps, open_objects, open_storage
+from a13n_service.app_definitions import discover_apps
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
@@ -33,7 +34,9 @@ from a13n_service.tenancy.users import set_account_status
 @click.pass_context
 def main(ctx: click.Context, config: Path | None) -> None:
     try:
-        ctx.obj = load_settings(config)
+        apps = discover_apps()
+        ctx.meta["app_plugins"] = apps
+        ctx.obj = load_settings(config, extensions=compose_apps(OSS, apps).settings)
     except (ValueError, OSError) as error:
         # Validation errors can contain input values, including deployment secrets.
         raise click.ClickException(f"Invalid Service configuration ({type(error).__name__})") from None
@@ -55,12 +58,13 @@ def main(ctx: click.Context, config: Path | None) -> None:
 
 @main.command()
 @click.option("--role", type=click.Choice(get_args(ProcessRole)), default="all")
-@click.pass_obj
-def run(settings: Settings, role: ProcessRole) -> None:
+@click.pass_context
+def run(ctx: click.Context, role: ProcessRole) -> None:
+    settings: Settings = ctx.obj
     if settings.telemetry.metrics_port is not None:
         serve_metrics(settings.server.host, settings.telemetry.metrics_port)
     uvicorn.run(
-        build_app(role=role, settings=settings),
+        build_app(role=role, settings=settings, apps=ctx.meta["app_plugins"]),
         host=settings.server.host,
         port=settings.server.port,
         timeout_graceful_shutdown=settings.server.shutdown_timeout,

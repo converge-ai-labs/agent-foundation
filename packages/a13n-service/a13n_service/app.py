@@ -26,6 +26,10 @@ from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
+from a13n_service.app_definitions import InstalledApp, discover_apps
+from a13n_service.app_plugin_runtime import app_routers, app_sweeps, open_assets
+from a13n_service.app_plugin_runtime import router as app_assets_router
+from a13n_service.app_plugins import AppCatalog
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
 from a13n_service.infra.db import Storage, short_session
@@ -60,6 +64,7 @@ from a13n_service.runs.stream import SessionHub
 from a13n_service.runs.thread_stream import ThreadHub
 from a13n_service.runs.worker import Worker
 from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
+from a13n_service.tenancy.app_plugins import router as app_policy_router
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
 
@@ -173,10 +178,17 @@ def open_storage(config: Database) -> Storage:
 
 
 async def open_runtime(
-    stack: AsyncExitStack, distribution: Distribution, config: Settings, *, executes: bool, maintains: bool = True
+    stack: AsyncExitStack,
+    distribution: Distribution,
+    config: Settings,
+    *,
+    executes: bool,
+    maintains: bool = True,
+    apps: tuple[InstalledApp, ...] = (),
 ) -> Runtime:
     from a13n_service.runs.search import initialize
 
+    catalog = AppCatalog(tuple(app.manifest for app in apps))
     validate_artifact_catalog(tuple(tool for contribute in distribution.platform_tools for tool in contribute()))
     await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
@@ -211,6 +223,8 @@ async def open_runtime(
     modal_transports.start()
     stack.push_async_callback(modal_transports.close)
     tasks = Tasks()
+    # App resources outlive task drain, including each in-flight callback's final cleanup.
+    app_resources = await stack.enter_async_context(AsyncExitStack())
     # HTTP connection drain stays bounded by server.shutdown_timeout. Lifespan cleanup must also allow
     # the worker's natural-completion and finalization windows before closing its shared clients.
     shutdown_seconds = config.server.shutdown_timeout
@@ -241,13 +255,20 @@ async def open_runtime(
             max_bytes=config.monitoring.query_bytes,
         ),
         access=replace(access, authenticator=RunAuthenticator(access.authenticator)),
-        plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
+        plugins=build_harness_plugin_factory_catalog(
+            plugin_keys=tuple(dict.fromkeys((*config.plugins.keys, *catalog.factory_keys)))
+        ),
+        apps=catalog,
         admission=distribution.admission,
         instrumentation=instrumentation,
         # Backends hold no connection between queries, so the query side needs no lifecycle.
         traces=telemetry.trace_config(),
     )
-    return replace(runtime, metrics_proxy=Proxy(runtime))
+    runtime = replace(runtime, metrics_proxy=Proxy(runtime))
+    for app in apps:
+        if app.definition.startup is not None:
+            await app.definition.startup(runtime, app_resources)
+    return runtime
 
 
 def _key_ring(encryption: Encryption) -> KeyRing:
@@ -292,13 +313,26 @@ def console_fallback(root: Path, otherwise: ASGIApp) -> ASGIApp:
     return fallback
 
 
+def compose_apps(distribution: Distribution, apps: tuple[InstalledApp, ...]) -> Distribution:
+    """Validate and project App registrations into existing assembly facilities, without runtime I/O."""
+    AppCatalog(tuple(app.manifest for app in apps))
+    for installed in apps:
+        distribution = distribution.extend(Distribution(name=distribution.name, settings=installed.definition.settings))
+    return replace(
+        distribution, routers=(*distribution.routers, app_policy_router, app_assets_router, *app_routers(apps))
+    )
+
+
 def build_app(
     distribution: Distribution = OSS,
     *,
     role: ProcessRole = "all",
     settings: Settings | None = None,
     console: Path = CONSOLE,
+    apps: tuple[InstalledApp, ...] | None = None,
 ) -> FastAPI:
+    apps = discover_apps() if apps is None else apps
+    distribution = compose_apps(distribution, apps)
     config = settings or load_settings(extensions=distribution.settings)
     if role not in get_args(ProcessRole):
         raise ValueError(f"Unknown process role: {role}")
@@ -313,7 +347,10 @@ def build_app(
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
         async with AsyncExitStack() as stack:
-            runtime = await open_runtime(stack, distribution, config, executes=executes, maintains=serves_api)
+            runtime = await open_runtime(
+                stack, distribution, config, executes=executes, maintains=serves_api, apps=apps
+            )
+            app.state.app_assets = await asyncio.to_thread(open_assets, stack, runtime.apps) if serves_api else {}
             app.state.runtime = runtime
             app.state.started = False
             app.state.background = runtime.tasks.services
@@ -360,7 +397,7 @@ def build_app(
                     runtime.tasks.start(app.state.session_hub.run(), name="session-hub", service=True)
                     app.state.thread_hub = ThreadHub(runtime)
                     runtime.tasks.start(app.state.thread_hub.run(), name="thread-hub", service=True)
-                    sweeps = [factory(runtime) for factory in distribution.sweeps]
+                    sweeps = [*[factory(runtime) for factory in distribution.sweeps], *app_sweeps(runtime, apps)]
                     require_unique(sweeps)
                     runtime.tasks.start(run_sweeps(sweeps), name="control-sweeps", service=True)
                 if executes:
