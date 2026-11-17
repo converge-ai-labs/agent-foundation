@@ -9,7 +9,7 @@ import {
 import { useClient } from "../auth/context";
 import { useAccess } from "../layout/workspace";
 import { data } from "../shared/api";
-import { i18n } from "../i18n";
+import { getI18n } from "react-i18next";
 import {
   validateContribution,
   type AppContribution,
@@ -42,7 +42,7 @@ export async function loadApp(
     const frontend = app.frontend!;
     if (frontend.bridge !== 1)
       throw new Error(
-        i18n.t("This App requires an unsupported Console bridge."),
+        getI18n().t("This App requires an unsupported Console bridge."),
       );
     await Promise.all(
       frontend.styles.map(
@@ -55,7 +55,9 @@ export async function loadApp(
             link.onerror = () =>
               reject(
                 new Error(
-                  i18n.t("Could not load App stylesheet: {{href}}", { href }),
+                  getI18n().t("Could not load App stylesheet: {{href}}", {
+                    href,
+                  }),
                 ),
               );
             styles.push(link);
