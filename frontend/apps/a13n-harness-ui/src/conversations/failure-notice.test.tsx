@@ -19,15 +19,19 @@ it("shows a concise failure with longer details collapsed and no retry action", 
   );
   expect(screen.queryByRole("button")).toBeNull();
 });
-it("shows current terminal failure after saved cutover and does not reuse it for another receipt", () => {
+it("replaces the live failure with finalized diagnostics and does not reuse them for another receipt", () => {
   const display = new FocusDisplay();
   display.runId = "run-old";
   display.terminalFailure = "Stream failed";
+  display.terminalFailureCode = "agent_run_failed";
   const operation = {
     receipt: { receipt_id: "old" },
-    status: "failed",
+    status: "running",
     run_id: "run-old",
-    failure: { message: "Saved failure" },
+    failure: {
+      code: "checkpoint_save_failed",
+      message: "Saved failure\nDiagnostic report: /tmp/report.json",
+    },
   } as Schema<"RootOperationView">;
   vi.mocked(useOperation).mockReturnValue({ data: operation } as ReturnType<
     typeof useOperation
@@ -36,11 +40,21 @@ it("shows current terminal failure after saved cutover and does not reuse it for
     <RootFailureNotice threadId="thread" receipt="old" display={display} />,
   );
   expect(screen.getByText("Stream failed")).toBeTruthy();
-  display.terminalFailure = undefined;
+  expect(screen.getByText("Error code: agent_run_failed")).toBeTruthy();
+  operation.status = "failed";
   view.rerender(
     <RootFailureNotice threadId="thread" receipt="old" display={display} />,
   );
   expect(screen.getByText("Saved failure")).toBeTruthy();
+  expect(screen.queryByText("Stream failed")).toBeNull();
+  expect(screen.getByText("Error code: checkpoint_save_failed")).toBeTruthy();
+  fireEvent.click(screen.getByText("Error details"));
+  expect(
+    screen.getByText(/Diagnostic report: \/tmp\/report.json/).textContent,
+  ).toContain("Run ID: run-old");
+  expect(
+    screen.getByText(/Diagnostic report: \/tmp\/report.json/).textContent,
+  ).toContain("Execution ID: old");
   vi.mocked(useOperation).mockReturnValue({
     data: {
       ...operation,
@@ -106,6 +120,51 @@ it("offers continuation only for confirmed failure and disables unresolved submi
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 });
 
+it.each(["execution", "continuation"] as const)(
+  "shows the finalized %s failure instead of the generic stream error",
+  (source) => {
+    const display = new FocusDisplay();
+    display.runId = "run-failed";
+    display.terminalFailure = "Agent execution failed.";
+    display.terminalFailureCode = "agent_run_failed";
+    vi.mocked(useOperation).mockReturnValue({
+      data: {
+        receipt: { receipt_id: "failed" },
+        status: "failed",
+        run_id: "run-failed",
+        outcome: {
+          execution: {},
+          continuation: {},
+          [source]: {
+            failure: {
+              code: "checkpoint_save_failed",
+              message:
+                "No space left on device (ENOSPC, errno 28).\nDiagnostic report: /tmp/report.json",
+              details: { errno: 28 },
+            },
+          },
+        },
+      },
+    } as ReturnType<typeof useOperation>);
+    render(
+      <RootFailureNotice
+        threadId="thread"
+        receipt="failed"
+        display={display}
+      />,
+    );
+    expect(screen.queryByText("Agent execution failed.")).toBeNull();
+    expect(
+      screen.getByText("No space left on device (ENOSPC, errno 28)."),
+    ).toBeTruthy();
+    expect(screen.getByText("Error code: checkpoint_save_failed")).toBeTruthy();
+    fireEvent.click(screen.getByText("Error details"));
+    expect(
+      screen.getByText(/Diagnostic report: \/tmp\/report.json/).textContent,
+    ).toContain('"errno": 28');
+  },
+);
+
 it.each([true, false])(
   "retains failure details but removes retry after clearing context (checkpoint: %s)",
   (checkpoint) => {
@@ -164,6 +223,10 @@ it("restores a durable failure after cold reload without fetching an expired rec
   expect(screen.getByRole("alert").textContent).toContain(
     "Environment preparation failed",
   );
+  expect(screen.getByText("Error code: preparation_failed")).toBeTruthy();
+  expect(
+    screen.getByText(/Execution ID: receipt-previous-process/),
+  ).toBeTruthy();
   expect(screen.getByText("Error details").closest("details")?.open).toBe(
     false,
   );

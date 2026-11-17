@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field, replace
@@ -759,14 +760,22 @@ class RootRunExecutor:
                     # Before-model hooks execute inside the model request boundary.
                     # Preserve the Host checkpoint failure instead of blaming the model.
                     if stream.diagnostic_error is checkpoint_error:
-                        message = (
-                            "Permission denied while saving the conversation checkpoint. "
-                            "Check filesystem permissions on the Harness UI data directory; "
-                            "the diagnostic report identifies the affected path."
-                            if isinstance(checkpoint_error, PermissionError)
-                            else "The conversation checkpoint could not be saved. "
-                            "Review the diagnostic report before continuing."
-                        )
+                        if isinstance(checkpoint_error, OSError) and checkpoint_error.errno == errno.ENOSPC:
+                            message = (
+                                "No space left on device (ENOSPC, errno 28) while saving the conversation checkpoint. "
+                                "Free disk space or expand the Harness UI data volume before continuing."
+                            )
+                        elif isinstance(checkpoint_error, PermissionError):
+                            message = (
+                                "Permission denied while saving the conversation checkpoint. "
+                                "Check filesystem permissions on the Harness UI data directory; "
+                                "the diagnostic report identifies the affected path."
+                            )
+                        else:
+                            message = (
+                                "The conversation checkpoint could not be saved. "
+                                "Review the diagnostic report before continuing."
+                            )
                         failure = failure.model_copy(update={"code": "checkpoint_save_failed", "message": message})
                     feedback = await to_thread.run_sync(
                         partial(

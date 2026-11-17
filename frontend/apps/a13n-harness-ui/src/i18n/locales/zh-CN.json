@@ -1,4 +1,8 @@
 {
+  "Error code": "错误码",
+  "Thread ID": "会话 ID",
+  "Run ID": "运行 ID",
+  "Execution ID": "执行 ID",
   "Tool execution": "工具执行",
   "Automatic background execution": "自动转后台",
   "All eligible tools": "所有支持后台执行的工具",

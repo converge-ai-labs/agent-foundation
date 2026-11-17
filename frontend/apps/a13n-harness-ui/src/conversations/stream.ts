@@ -154,6 +154,7 @@ export class FocusDisplay {
     retries: number;
   };
   terminalFailure?: string;
+  terminalFailureCode?: string;
   contextUsage?: { tokens: number; ordinal: number; recordId?: string };
   readonly checkpoints = new Map<string, number>();
   private readonly savedBlocks = new Map<string, number>();
@@ -208,6 +209,7 @@ export class FocusDisplay {
     this.contextUsage = undefined;
     this.recovery = undefined;
     this.terminalFailure = undefined;
+    this.terminalFailureCode = undefined;
     this.checkpoints.clear();
     this.recoveryCheckpoint = undefined;
     this.savedBlocks.clear();
@@ -600,6 +602,9 @@ export class FocusDisplay {
         : "success";
       this.terminalFailure = failed
         ? string(payload.message) || "The operation could not finish."
+        : undefined;
+      this.terminalFailureCode = failed
+        ? string(payload.code) || undefined
         : undefined;
       const status = `${this.runId}:execution`;
       if (type === "RUN_FINISHED" && outcome === "success") {
