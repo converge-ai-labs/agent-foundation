@@ -50,11 +50,9 @@ class BotMessage(BotModel):
     display_ids: tuple[str, ...] = ()
 
 
-class BotProse(BotModel):
-    item_id: str
-    text: str
-    created_at: datetime
-    final: bool = False
+class BotMessagesPage(BotModel):
+    messages: tuple[BotMessage, ...]
+    next_cursor: str | None = None
 
 
 class BotNoteSummary(BotModel):

@@ -188,6 +188,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bot/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bot Messages */
+        get: operations["bot_messages_api_bot_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bot/notes": {
         parameters: {
             query?: never;
@@ -3859,6 +3876,13 @@ export interface components {
              */
             display_ids?: string[];
         };
+        /** BotMessagesPage */
+        BotMessagesPage: {
+            /** Messages */
+            messages: components["schemas"]["BotMessage"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** BotNote */
         BotNote: {
             /** Thread Id */
@@ -3900,23 +3924,6 @@ export interface components {
             /** Next Offset */
             next_offset?: number | null;
         };
-        /** BotProse */
-        BotProse: {
-            /** Item Id */
-            item_id: string;
-            /** Text */
-            text: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Final
-             * @default false
-             */
-            final?: boolean;
-        };
         /** BotSnapshot */
         BotSnapshot: {
             /**
@@ -3954,11 +3961,6 @@ export interface components {
              * @default []
              */
             messages?: components["schemas"]["BotMessage"][];
-            /**
-             * Prose
-             * @default []
-             */
-            prose?: components["schemas"]["BotProse"][];
         };
         /** BotState */
         BotState: {
@@ -11431,6 +11433,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BotSnapshot"];
+                };
+            };
+        };
+    };
+    bot_messages_api_bot_messages_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotMessagesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

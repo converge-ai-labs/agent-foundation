@@ -229,3 +229,57 @@ async def test_checkpoint_lock_cancellation_while_waiting_preserves_holder(tmp_p
     with fail_after(2):
         async with checkpoint_lock(tmp_path, "thread-wait"):
             pass
+
+
+async def test_checkpoint_payload_publication_does_not_hold_selected_head_gate(tmp_path, monkeypatch):
+    module = import_module("a13n_harness_ui.root_execution")
+    publish = module.publish_continuation
+    publishing, release = Event(), Event()
+
+    async def resolve(self, model_id, *, thread_id):
+        async def model(messages, info):
+            yield "Saved response"
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=_write_configuration(tmp_path)) as app:
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="First")
+        await app.wait_root_operation(first.receipt_id)
+        before = await app._store.threads.get(thread.thread_id)
+
+        async def slow_publication(*args, **kwargs):
+            publishing.set()
+            await release.wait()
+            return await publish(*args, **kwargs)
+
+        monkeypatch.setattr(module, "publish_continuation", slow_publication)
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="Second")
+        try:
+            with fail_after(5):
+                await publishing.wait()
+            with fail_after(2):
+                async with checkpoint_lock(settings.storage.data_root, thread.thread_id):
+                    selected = await app._store.threads.get(thread.thread_id)
+                    assert selected.continuation == before.continuation
+                await app._store.read_continuation(thread.thread_id, before.continuation)
+        finally:
+            release.set()
+        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
+
+
+async def test_compaction_consumer_departure_does_not_wait_for_checkpoint_gate(tmp_path):
+    from a13n_harness_ui.compaction import BackgroundCompaction
+
+    settings = _settings(tmp_path / "state")
+    async with open_local_store(settings.storage) as store:
+        owner = BackgroundCompaction(store.compactions, store.layout.root)
+        consumer = owner.use("thread-departure")
+        await consumer.__aenter__()
+        async with checkpoint_lock(store.layout.root, "thread-departure"):
+            with fail_after(2):
+                await consumer.__aexit__(None, None, None)
+        assert not tuple(owner._use_directory("thread-departure").glob("*.lock"))
+        await owner.close()

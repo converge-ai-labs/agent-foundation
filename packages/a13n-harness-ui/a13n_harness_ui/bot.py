@@ -15,7 +15,15 @@ from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sl
 from filelock import AsyncFileLock, Timeout
 from pydantic_ai.messages import TextContent
 
-from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotNotesPage, BotProse, BotState, BotSubmit
+from a13n_harness_ui.bot_models import (
+    BOT_THREAD_ID,
+    BotInput,
+    BotMessage,
+    BotMessagesPage,
+    BotNotesPage,
+    BotState,
+    BotSubmit,
+)
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration.models import BotConfiguration
 from a13n_harness_ui.connectors.models import SetupOffer
@@ -54,7 +62,6 @@ class BotSnapshot(SurfaceModel):
     pending_decision: bool = False
     inputs: tuple[BotInput, ...] = ()
     messages: tuple[BotMessage, ...] = ()
-    prose: tuple[BotProse, ...] = ()
 
 
 WORKSPACE_INTRODUCTION = BotSubmit(
@@ -158,41 +165,17 @@ class BotController:
             pending_decision=bool(detail and detail.deferred_requests),
             inputs=await self._store.bot.inputs(),
             messages=await self._store.bot.messages(),
-            prose=await self._saved_prose(),
         )
 
-    async def _saved_prose(self, *, current_run_only: bool = False) -> tuple[BotProse, ...]:
-        from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
-        from a13n_harness_ui.storage.continuations import read_continuation
-        from a13n_harness_ui.storage.display import read_display
-
-        async with checkpoint_lock(self._store.layout.root, BOT_THREAD_ID):
-            thread = await self._store.threads.get(BOT_THREAD_ID)
-            if thread is None or thread.continuation is None:
-                return ()
-            stored = await read_continuation(self._store.objects, thread.continuation, include_display=True)
-            if stored.display is None:
-                return ()
-            display = await read_display(self._store.objects, stored.display)
-        return tuple(
-            BotProse(
-                item_id=item.id,
-                text=text,
-                created_at=item.started_at,
-                final=item.id in display.completed,
-            )
-            for item in display.items
-            if assistant_text(item)
-            and (
-                not current_run_only
-                or (
-                    display.continuation is not None
-                    and item.content.get("responseGroup") == display.continuation.response_groups.get("root")
-                )
-            )
-            and isinstance(text := item.content.get("text"), str)
-            and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
-            and text.strip()
+    async def messages(self, *, before: str | None = None, limit: int = 50) -> BotMessagesPage:
+        """Read intentional publications independently of native checkpoint history."""
+        if not 1 <= limit <= 100:
+            raise ThreadError("Message page is outside supported bounds.", code="bot_message_page_invalid")
+        values = await self._store.bot.messages(before=before, limit=limit + 1)
+        visible = values[-limit:]
+        return BotMessagesPage(
+            messages=visible,
+            next_cursor=visible[0].message_id if len(values) > limit else None,
         )
 
     async def submit(self, command: BotSubmit) -> BotInput:
@@ -407,9 +390,13 @@ class BotController:
             display_ids=display_ids,
         )
 
-    async def publish_display(self, publication: DisplayPublication, stopped: bool = False) -> None:
-        """Notify once per ended segment, including partial text when execution stops."""
-        for item in publication.items:
+    async def publish_display(
+        self, publication: DisplayPublication | None, stopped: bool = False, final_output: str | None = None
+    ) -> None:
+        """Publish producer-owned text without reopening its saved checkpoint."""
+        final_native = False
+        final_group = publication.continuation.response_groups.get("root") if publication is not None else None
+        for item in publication.items if publication is not None else ():
             if (
                 assistant_text(item)
                 and (stopped or item.state != "in_progress")
@@ -424,6 +411,14 @@ class BotController:
                     text=text,
                     display_ids=(item.id,),
                 )
+                final_native |= final_group is not None and item.content.get("responseGroup") == final_group
+        if final_output is not None and final_output.strip() and not final_native:
+            # Hosts without native text still publish output. Multi-part native
+            # responses keep their individual identities, never an aggregate copy.
+            active = await self._runs.active(BOT_THREAD_ID)
+            if active is not None:
+                receipt_id = active.receipt.receipt_id
+                await self.publish(message_id=f"reply-{receipt_id}", text=final_output, receipt_id=receipt_id)
 
     async def _publish(
         self,
@@ -678,26 +673,8 @@ class BotController:
                 and operation.outcome is not None
                 and operation.outcome.continuation.status == "selected"
             ):
-                output = operation.outcome.execution.output
-                if isinstance(output, str) and output.strip():
-                    final = tuple(row for row in await self._saved_prose(current_run_only=True) if row.final)
-                    if final:
-                        for row in final:
-                            # Live publication and settlement share the same durable
-                            # identity, so final text never creates a second notice.
-                            await self.publish(
-                                message_id=f"{item.receipt_id}-{_prose_message_id(row.item_id)}",
-                                text=row.text,
-                                receipt_id=item.receipt_id,
-                                display_ids=(row.item_id,),
-                            )
-                    else:
-                        # Hosts/models without native display items retain the ordinary fallback.
-                        await self.publish(
-                            message_id=f"reply-{item.receipt_id}",
-                            text=output,
-                            receipt_id=item.receipt_id,
-                        )
+                # The producer has already published native text or its no-display
+                # fallback. Receipt settlement never reopens checkpoint history.
                 for value in related:
                     await self._store.bot.save_input(value.model_copy(update={"state": "completed"}))
                 state = await self._store.bot.state()

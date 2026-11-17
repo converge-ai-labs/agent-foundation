@@ -174,18 +174,20 @@ async def test_saved_bot_prose_survives_tools_and_silent_completion_with_one_pub
         await bot.submit(BotSubmit(input_id="prose", text="Check ongoing work"))
         assert (await consumed(app, "prose")).state == "completed"
         snapshot = await bot.snapshot()
-        assert [prose.text for prose in snapshot.prose] == [
+        history = await app.get_thread_transcript(thread_id="thread_bot", limit=100)
+        prose = [part for entry in history.entries for part in entry.parts if part.kind == "assistant"]
+        assert [part.text for part in prose] == [
             "I will inspect the working Threads.",
             *([] if silent else ["Verified final result."]),
         ]
-        assert len(snapshot.messages) == 1 + len(snapshot.prose)  # User input plus each visible segment once.
+        assert len(snapshot.messages) == 1 + len(prose)  # User input plus each visible segment once.
         publications = [message for message in snapshot.messages if message.role == "assistant"]
         assert [(message.text, message.display_ids) for message in publications] == [
-            (prose.text, (prose.item_id,)) for prose in snapshot.prose
+            (part.text, (part.display_id,)) for part in prose
         ]
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         restored = await (await ready(app)).snapshot()
-        assert restored.prose == snapshot.prose
+        assert (await app.get_thread_transcript(thread_id="thread_bot", limit=100)).entries == history.entries
         assert restored.messages == snapshot.messages
 
 

@@ -194,7 +194,9 @@ class RootRunExecutor:
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
         self._work = work
-        self._bot_display_publisher: Callable[[DisplayPublication, bool], Awaitable[None]] | None = None
+        self._bot_display_publisher: Callable[[DisplayPublication | None, bool, str | None], Awaitable[None]] | None = (
+            None
+        )
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
             None
         )
@@ -211,7 +213,9 @@ class RootRunExecutor:
             raise RuntimeError("Root Thread Capability factory is already configured")
         self._root_capability_factory = factory
 
-    def set_bot_display_publisher(self, publisher: Callable[[DisplayPublication, bool], Awaitable[None]]) -> None:
+    def set_bot_display_publisher(
+        self, publisher: Callable[[DisplayPublication | None, bool, str | None], Awaitable[None]]
+    ) -> None:
         self._bot_display_publisher = publisher
 
     async def capture(
@@ -705,7 +709,7 @@ class RootRunExecutor:
                         if publication is not None:
                             try:
                                 if thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
-                                    await self._bot_display_publisher(publication, False)
+                                    await self._bot_display_publisher(publication, False, None)
                                 await self._publish_live(
                                     thread_id=thread.thread_id,
                                     run_id=stream.run_id,
@@ -731,17 +735,25 @@ class RootRunExecutor:
         continuation = RootContinuationSelection(status="not_available")
         with phase("finalize") as finalization_span:
             with CancelScope(shield=True):
-                if run_error is not None and thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
-                    # Cancellation can stop consumption before TEXT_MESSAGE_END.
-                    # Retry the complete live suffix, including visible partial text.
+                if thread_id == BOT_THREAD_ID and self._bot_display_publisher is not None:
+                    # Retry this producer's live suffix before receipt settlement.
+                    # Cancellation also publishes already visible partial text; a
+                    # successful Run never needs to reopen its saved checkpoint.
                     display.publication_failed()
-                    if (publication := display.drain()) is not None:
-                        try:
-                            await self._bot_display_publisher(publication, True)
-                        except Exception:
-                            get_logger(__name__).exception(
-                                "Bot terminal text publication failed: thread_id=%s", thread_id
-                            )
+                    try:
+                        await self._bot_display_publisher(
+                            display.drain(),
+                            run_error is not None,
+                            result.output
+                            if result is not None and isinstance(result.output, str) and run_error is None
+                            else None,
+                        )
+                    except Exception as exc:
+                        get_logger(__name__).exception("Bot terminal text publication failed: thread_id=%s", thread_id)
+                        # Save native history below, but do not acknowledge an input
+                        # whose final communication could not be published.
+                        if run_error is None:
+                            run_error = exc
                 finalization_span.set_attribute("a13n.phase.step", "environment")
                 try:
                     finalization = (
@@ -1099,8 +1111,10 @@ class RootRunExecutor:
             # cancellation; terminal saving starts only after stream teardown.
             # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
+            # New checkpoint payloads are immutable and privately owned until CAS.
+            # Serialization, verification and compression do not need the head gate.
+            published_ref = await publish_continuation(self._store.objects, continuation)
             async with checkpoint_lock(self._store.layout.root, thread.thread_id):
-                published_ref = await publish_continuation(self._store.objects, continuation)
                 settlement = await self._store.compactions.settlement(state)
                 selected = await self._store.threads.select_continuation(
                     thread_id=thread.thread_id,

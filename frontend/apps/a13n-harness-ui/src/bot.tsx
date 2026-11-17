@@ -6,7 +6,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { Link, NavLink } from "react-router";
 import { Button } from "a13n-ui";
 import { Robot, Pause, Play, Gear } from "@phosphor-icons/react";
@@ -40,6 +46,89 @@ export function useBot(enabled = true) {
     enabled: enabled && !shareId,
     queryFn: ({ signal }) => result(client.GET("/api/bot", { signal })),
   });
+}
+
+function useBotMessages(snapshot: Schema<"BotSnapshot"> | undefined) {
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const messages = useInfiniteQuery({
+    queryKey: ["bot-messages"],
+    enabled: !!snapshot?.thread || !!snapshot?.messages?.length,
+    staleTime: Infinity,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      result(
+        client.GET("/api/bot/messages", {
+          params: { query: { before: pageParam, limit: 50 } },
+          signal,
+        }),
+      ),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  });
+  useEffect(() => {
+    const head = snapshot?.messages;
+    if (!head?.length || !messages.data) return;
+    const identities = new Set(
+      messages.data.pages.flatMap((page) =>
+        page.messages.map((message) => message.message_id),
+      ),
+    );
+    if (head.every((message) => identities.has(message.message_id))) return;
+    queries.setQueryData<
+      InfiniteData<Schema<"BotMessagesPage">, string | undefined>
+    >(["bot-messages"], (cached) => {
+      if (!cached) return cached;
+      const retained = cached.pages.flatMap((page) => page.messages);
+      const latest = retained.toSorted(compareBotMessages).at(-1);
+      const next = head.at(-1)!;
+      // A disconnected head leaves a gap. Keep the already rendered records,
+      // but walk that gap from the new head on subsequent bounded page loads.
+      // Overlapping updates leave the existing older cursor untouched.
+      const disconnected =
+        latest &&
+        compareBotMessages(latest, next) < 0 &&
+        !head.some((message) => message.message_id === latest.message_id);
+      const pages = disconnected
+        ? [
+            {
+              messages: retained,
+              next_cursor: head[0].message_id,
+            },
+          ]
+        : cached.pages;
+      const merged = new Map(
+        pages[0].messages.map((message) => [message.message_id, message]),
+      );
+      for (const message of head) merged.set(message.message_id, message);
+      return {
+        pages: [
+          {
+            ...pages[0],
+            messages: [...merged.values()].sort(compareBotMessages),
+          },
+          ...pages.slice(1),
+        ],
+        pageParams: disconnected ? [undefined] : cached.pageParams,
+      };
+    });
+  }, [snapshot?.messages, messages.data, queries]);
+  const retained = new Map(
+    (messages.data?.pages.flatMap((page) => page.messages) ?? []).map(
+      (message) => [message.message_id, message],
+    ),
+  );
+  for (const message of snapshot?.messages ?? [])
+    retained.set(message.message_id, message);
+  return {
+    ...messages,
+    messages: [...retained.values()].sort(compareBotMessages),
+  };
+}
+
+function compareBotMessages(a: Schema<"BotMessage">, b: Schema<"BotMessage">) {
+  if (a.created_at !== b.created_at)
+    return a.created_at < b.created_at ? -1 : 1;
+  return a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0;
 }
 
 export function BotNavigation() {
@@ -305,7 +394,8 @@ export function BotPage({
   const bot = useBot();
   const data = bot.data;
   const debug = useDebug();
-  const messages = data?.messages ?? [];
+  const publications = useBotMessages(data);
+  const messages = publications.messages;
   const composer = useContext(BotComposerContext);
   if (!composer) throw new Error("Bot composer is missing.");
   const {
@@ -387,6 +477,17 @@ export function BotPage({
         revision: JSON.stringify([visibleMessages, busy, send.isPending]),
         completionVersion: data?.thread?.completion?.version ?? 0,
         messages: visibleMessages,
+        history: {
+          revision: publications.data,
+          hasEarlier: !!publications.hasNextPage || publications.isError,
+          isFetching: publications.isFetching,
+          isFetchingEarlier: publications.isFetchingNextPage,
+          isError: publications.isError,
+          fetchEarlier: () =>
+            publications.isError && !publications.data
+              ? publications.refetch()
+              : publications.fetchNextPage(),
+        },
         activity: (
           <RunActivity
             submission={

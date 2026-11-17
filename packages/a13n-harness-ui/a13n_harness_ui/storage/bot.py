@@ -1,6 +1,6 @@
 """Narrow retained Bot ingress and separately published user communication."""
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, tuple_, update
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotInput, BotMessage, BotState
 from a13n_harness_ui.errors import ThreadError
@@ -103,8 +103,20 @@ class BotRepository:
         current = tuple(
             item for item in await self.inputs(pending_only=True) if item.state in {"dispatching", "admitted"}
         )
-        identities = {item.input_id for item in current}
-        return any(message.role == "assistant" and message.input_id in identities for message in await self.messages())
+        identities = tuple(item.input_id for item in current)
+        if not identities:
+            return False
+        async with short_session(self._sessions) as session:
+            return bool(
+                await session.scalar(
+                    select(BotMessageRecord.message_id)
+                    .where(
+                        func.json_extract(BotMessageRecord.payload, "$.role") == "assistant",
+                        func.json_extract(BotMessageRecord.payload, "$.input_id").in_(identities),
+                    )
+                    .limit(1)
+                )
+            )
 
     async def messages(self, *, before: str | None = None, limit: int = 100) -> tuple[BotMessage, ...]:
         statement = select(BotMessageRecord)
@@ -114,8 +126,7 @@ class BotRepository:
                 if anchor is None:
                     raise ThreadError("Message cursor is unavailable.", code="bot_message_cursor_invalid")
                 statement = statement.where(
-                    (BotMessageRecord.created_at < anchor.created_at)
-                    | ((BotMessageRecord.created_at == anchor.created_at) & (BotMessageRecord.message_id < before))
+                    tuple_(BotMessageRecord.created_at, BotMessageRecord.message_id) < (anchor.created_at, before)
                 )
             rows = (
                 await session.scalars(

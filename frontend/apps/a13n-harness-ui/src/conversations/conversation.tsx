@@ -129,6 +129,14 @@ function ConversationContent({
     revision: string;
     completionVersion: number;
     messages: PublishedMessage[];
+    history?: {
+      revision: unknown;
+      hasEarlier: boolean;
+      isFetching: boolean;
+      isFetchingEarlier: boolean;
+      isError: boolean;
+      fetchEarlier: () => Promise<unknown>;
+    };
     activity?: ReactNode;
     composer:
       ReactNode | ((dictation: DictationTarget | undefined) => ReactNode);
@@ -214,6 +222,21 @@ function ConversationContent({
     !!detail.data,
     selectedTurn,
   );
+  const publicationHistory = publication?.history;
+  const hasEarlier = history.hasNextPage || publicationHistory?.hasEarlier;
+  const fetchingEarlier =
+    history.isFetchingNextPage || publicationHistory?.isFetchingEarlier;
+  const fetchingHistory = history.isFetching || publicationHistory?.isFetching;
+  const earlierError =
+    history.isFetchNextPageError || publicationHistory?.isError;
+  const fetchEarlier = useCallback(async () => {
+    await Promise.all([
+      history.hasNextPage ? history.fetchNextPage() : undefined,
+      publicationHistory?.hasEarlier
+        ? publicationHistory.fetchEarlier()
+        : undefined,
+    ]);
+  }, [history.hasNextPage, history.fetchNextPage, publicationHistory]);
   const { display, connection, reconnections, revision } =
     useLiveThread(threadId);
   const [showAvailable, setShowAvailable] = useState(false);
@@ -542,7 +565,7 @@ function ConversationContent({
       !pendingJump.current
     )
       restoreReadingAnchor(element, readingAnchor.current);
-    if (olderAnchor.current && !history.isFetchingNextPage) {
+    if (olderAnchor.current && !fetchingEarlier) {
       element.scrollTop =
         olderAnchor.current.top +
         element.scrollHeight -
@@ -567,7 +590,8 @@ function ConversationContent({
     revision,
     visibleContent,
     history.data,
-    history.isFetchingNextPage,
+    publicationHistory?.revision,
+    fetchingEarlier,
     scrollToLatest,
   ]);
   useEffect(() => {
@@ -608,24 +632,25 @@ function ConversationContent({
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
-      history.hasNextPage &&
-      !history.isFetching &&
-      !history.isFetchNextPageError &&
+      hasEarlier &&
+      !fetchingHistory &&
+      !earlierError &&
       !olderAnchor.current
     ) {
       olderAnchor.current = {
         height: element.scrollHeight,
         top: element.scrollTop,
       };
-      void history.fetchNextPage();
+      void fetchEarlier();
     }
   }, [
     pageReady,
     history.data,
-    history.hasNextPage,
-    history.isFetching,
-    history.isFetchNextPageError,
-    history.fetchNextPage,
+    publicationHistory?.revision,
+    hasEarlier,
+    fetchingHistory,
+    earlierError,
+    fetchEarlier,
   ]);
   useLayoutEffect(() => {
     const element = reader.current;
@@ -878,26 +903,26 @@ function ConversationContent({
                 : captureReadingAnchor(element);
               if (
                 element.scrollTop < 160 &&
-                history.hasNextPage &&
-                !history.isFetching &&
-                !history.isFetchNextPageError &&
+                hasEarlier &&
+                !fetchingHistory &&
+                !earlierError &&
                 !olderAnchor.current
               ) {
                 olderAnchor.current = {
                   height: element.scrollHeight,
                   top: element.scrollTop,
                 };
-                void history.fetchNextPage();
+                void fetchEarlier();
               }
             }}
           >
             <div className={styles.transcript}>
-              {history.isFetchingNextPage && (
+              {fetchingEarlier && (
                 <small role="status">
                   {t("Loading earlier messages\u2026")}
                 </small>
               )}
-              {history.isFetchNextPageError && (
+              {earlierError && (
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -907,7 +932,7 @@ function ConversationContent({
                         height: element.scrollHeight,
                         top: element.scrollTop,
                       };
-                    void history.fetchNextPage();
+                    void fetchEarlier();
                   }}
                 >
                   {t("Retry loading")}

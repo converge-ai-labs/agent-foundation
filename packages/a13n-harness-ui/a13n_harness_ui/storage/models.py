@@ -232,6 +232,7 @@ class BotInputRecord(Base):
 
 class BotMessageRecord(Base):
     __tablename__ = "bot_message"
+    __table_args__ = (Index("ix_bot_message_created_id", "created_at", "message_id"),)
 
     message_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
