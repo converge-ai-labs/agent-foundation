@@ -10,21 +10,27 @@ from datetime import datetime
 from typing import get_args
 
 from a13n_logging import get_logger
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, SQLColumnExpression, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
 
 from a13n_service.infra.db import Storage, now, short_session
 from a13n_service.infra.outbox import OutboxKind, OutboxRow, Policy
 from a13n_service.infra.telemetry import Gauge
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow, ToolExecutionRow
 
-# A count past this bound is reported as the bound, so one pass stays cheap however large the backlog grows.
+# A count at this bound is a lower bound. LIMIT caps returned candidates, not planner scan or sort work.
 COUNT_LIMIT = 10_000
 REPORT_SECONDS = 15
 
 BACKLOG_SIZE = Gauge(
     "a13n.backlog.size", unit="{item}", description=f"Due work waiting to be claimed, by queue, up to {COUNT_LIMIT}"
+)
+BACKLOG_UPDATED = Gauge(
+    "a13n.backlog.updated", unit="s", description="Unix time of last successful backlog snapshot by queue"
+)
+BACKLOG_LIMIT = Gauge(
+    "a13n.backlog.limit", unit="{item}", description="Bounded count ceiling; a size at this limit is a lower bound"
 )
 BACKLOG_OLDEST_AGE = Gauge(
     "a13n.backlog.oldest_age", unit="s", description="How long the oldest due item of each queue has waited"
@@ -37,7 +43,40 @@ async def report_backlog(
     async with short_session(storage) as session:
         current = await now(session)
         queues = {"runs": await _due(session, RunRow.available_at, current, RunRow.status == "accepted")}
+        # Only idle, unpaused threads are actionable by advancement. Deliberate waits and active runs
+        # are not stuck work. Inbox wait histograms separately include all business blocking.
+        actionable = (
+            select(ThreadRow.id)
+            .where(
+                ThreadRow.id == InboxEntryRow.thread_id,
+                ThreadRow.current_run_id.is_(None),
+                ThreadRow.archived_at.is_(None),
+                ~select(RunRow.id)
+                .where(RunRow.id == ThreadRow.last_run_id, RunRow.status.in_(("waiting", "failed", "cancelled")))
+                .exists(),
+            )
+            .exists()
+        )
+        queues["inbox"] = await _due(
+            session, InboxEntryRow.created_at, current, InboxEntryRow.status == "pending", actionable
+        )
+        queues["schedule_due"] = await _due(session, ScheduleRow.next_fire_at, current, ScheduleRow.state == "enabled")
+        queues["schedule_dispatch"] = await _due(
+            session,
+            func.least(OccurrenceRow.next_attempt_at, OccurrenceRow.deadline_at),
+            current,
+            OccurrenceRow.status == "pending",
+        )
+        queues["execution_lease_expired"] = await _due(
+            session,
+            ToolExecutionRow.lease_expires_at,
+            current,
+            ToolExecutionRow.completed_at.is_(None),
+            ToolExecutionRow.shell.is_(None),
+        )
+        limits: dict[str, int] = {}
         for kind in get_args(OutboxKind.__value__):
+            limits[kind] = max(COUNT_LIMIT, policies[kind].backlog_count) if policies is not None else COUNT_LIMIT
             queues[kind] = await _due(
                 session,
                 OutboxRow.available_at,
@@ -45,7 +84,7 @@ async def report_backlog(
                 OutboxRow.kind == kind,
                 OutboxRow.status == "pending",
                 or_(OutboxRow.lease_expires_at.is_(None), OutboxRow.lease_expires_at <= current),
-                limit=max(COUNT_LIMIT, policies[kind].backlog_count) if policies is not None else COUNT_LIMIT,
+                limit=limits[kind],
             )
     values = {
         queue: (size, (current - oldest).total_seconds() if oldest is not None else 0)
@@ -54,12 +93,14 @@ async def report_backlog(
     for queue, (size, age) in values.items():
         BACKLOG_SIZE.set(size, {"queue": queue})
         BACKLOG_OLDEST_AGE.set(age, {"queue": queue})
+        BACKLOG_LIMIT.set(limits.get(queue, COUNT_LIMIT), {"queue": queue})
+        BACKLOG_UPDATED.set(current.timestamp(), {"queue": queue})
     return values
 
 
 async def _due(
     session: AsyncSession,
-    available_at: InstrumentedAttribute[datetime],
+    available_at: SQLColumnExpression[datetime | None],
     current: datetime,
     *where: ColumnElement[bool],
     limit: int = COUNT_LIMIT,
@@ -72,6 +113,9 @@ async def _due(
 
 
 logger = get_logger(__name__)
+OUTBOX_UPDATED = Gauge(
+    "a13n.outbox.updated", unit="s", description="Unix time of last successful outbox policy and dead-state snapshot"
+)
 OUTBOX_ALERT = Gauge("a13n.outbox.backlog_alert", unit="1", description="Sustained due backlog above its kind policy")
 OUTBOX_DEAD = Gauge("a13n.outbox.dead", unit="1", description="Whether a kind has retained dead deliveries")
 
@@ -118,3 +162,4 @@ class BacklogReporter:
             if kind in dead and kind not in self.dead:
                 logger.warning("Outbox has dead deliveries", extra={"kind": kind})
         self.dead = dead
+        OUTBOX_UPDATED.set(current.timestamp())

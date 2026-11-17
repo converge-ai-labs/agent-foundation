@@ -10,8 +10,7 @@ import socket
 import subprocess
 import sys
 from collections.abc import Callable, Iterator, Mapping
-from datetime import timedelta
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,12 +33,13 @@ from a13n_service.settings import Settings
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from sqlalchemy import func, text, update
+from sqlalchemy import func, select, text, update
+
+from .monitoring_support import EXPORTER, MONITORING, expand_usage, usage_queries
 
 pytestmark = pytest.mark.anyio
 
 LIFECYCLE = ("Run accepted", "Attempt claimed", "Attempt ended", "Run sealed")
-MONITORING = Path(__file__).resolve().parents[3] / "deploy/monitoring"
 
 # A logged record's fields, bound ones included, and its message.
 type Event = dict[str, Any]
@@ -134,6 +134,33 @@ async def test_requests_are_logged_and_measured_by_route_template_never_by_url(
     assert measured(reader, "http.server.request.duration", listed) == before + 1
 
 
+async def test_console_fallback_and_unmatched_api_have_separate_bounded_metrics(tmp_path, reader, logged):
+    from a13n_service.app import console_fallback
+    from a13n_service.infra.http import RequestIds
+    from fastapi import FastAPI
+
+    (tmp_path / "index.html").write_text("<html>Console</html>")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("// Console asset")
+    app = FastAPI()
+    app.add_middleware(RequestIds)
+    app.router.default = console_fallback(tmp_path, app.router.default)
+    api = {"a13n.request.kind": "api", "http.route": "unmatched"}
+    static = {"a13n.request.kind": "static", "http.route": "unmatched"}
+    before_api = measured(reader, "http.server.request.duration", api)
+    before_static = measured(reader, "http.server.request.duration", static)
+    before_headers = measured(reader, "a13n.http.response_start.duration")
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="https://service.test") as client:
+        for path in ("/threads/private-thread?code=private-code", "/assets/app.js", "/api-not-a-namespace"):
+            assert (await client.get(path)).status_code == 200
+        for path in ("/api", "/api/v1/private-route"):
+            assert (await client.get(path)).status_code == 404
+    assert measured(reader, "http.server.request.duration", api) == before_api + 2
+    assert measured(reader, "http.server.request.duration", static) == before_static + 3
+    assert measured(reader, "a13n.http.response_start.duration") == before_headers
+    assert "private-" not in str(messages(logged, "Request finished"))
+
+
 async def test_a_run_is_logged_and_counted_from_its_request_to_its_seal(
     executing: SimpleNamespace,
     scripted_model: Any,
@@ -146,6 +173,10 @@ async def test_a_run_is_logged_and_counted_from_its_request_to_its_seal(
     counted = {
         "a13n.runs.accepted": {"trigger": "input"},
         "a13n.attempt.queue_wait": {},
+        "a13n.attempt.started": {"reason": "initial"},
+        "a13n.attempt.ended": {"status": "succeeded", "reason": "none"},
+        "a13n.run.duration": {"status": "completed"},
+        "a13n.inbox.wait": {},
         "a13n.attempt.duration": {"status": "succeeded"},
         "a13n.runs.sealed": {"status": "completed"},
         "a13n.harness.run.duration": {"a13n.run.outcome": "completed"},
@@ -186,6 +217,7 @@ async def test_a_seal_that_rolls_back_is_never_counted_or_logged(
 ) -> None:
     cancelled = {"status": "cancelled", "reason": "cancelled"}
     before = measured(reader, "a13n.runs.sealed", cancelled)
+    duration_before = measured(reader, "a13n.run.duration", {"status": "cancelled"})
     agent = await runs_kit.create_agent(service, scripted_model)
     run = (await runs_kit.start_thread(service, agent, "hi"))["run"]
     runtime: Runtime = service.runtime
@@ -198,11 +230,13 @@ async def test_a_seal_that_rolls_back_is_never_counted_or_logged(
             await stop(session, runtime, thread, row)
             raise RuntimeError("the transaction rolls back")
     assert measured(reader, "a13n.runs.sealed", cancelled) == before
+    assert measured(reader, "a13n.run.duration", {"status": "cancelled"}) == duration_before
     assert not messages(logged, "Run sealed")
 
     response = await service.client.post(f"{service.api}/runs/{run['id']}/interrupt")
     assert response.status_code == 200, response.text
     assert measured(reader, "a13n.runs.sealed", cancelled) == before + 1
+    assert measured(reader, "a13n.run.duration", {"status": "cancelled"}) == duration_before + 1
     [sealed] = messages(logged, "Run sealed")
     assert (sealed["run_id"], sealed["reason"]) == (run["id"], "cancelled")
 
@@ -371,34 +405,9 @@ def test_the_executable_serves_metrics_in_the_prometheus_format() -> None:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    # One measurement of every Service instrument.
-    script = f"""
-import sys
-from a13n_service.infra.telemetry import serve_metrics
-serve_metrics("127.0.0.1", {port})
-from a13n_service.infra.http import REQUEST_DURATION
-from a13n_service.infra.outbox import DELIVERIES
-from a13n_service.infra.sweeps import PASSES
-from a13n_service.runs.accept import RUNS_ACCEPTED
-from a13n_service.runs.backlog import BACKLOG_OLDEST_AGE, BACKLOG_SIZE
-from a13n_service.runs.claim import QUEUE_WAIT
-from a13n_service.runs.seal import ATTEMPT_DURATION, RUNS_SEALED
-from a13n_service.runs.worker import SLOTS
-labels = {{"http.request.method": "GET", "http.route": "/healthz", "http.response.status_code": 200}}
-REQUEST_DURATION.record(0.01, labels)
-RUNS_ACCEPTED.add(1, {{"trigger": "input"}})
-RUNS_SEALED.add(1, {{"status": "failed", "reason": "lease_expired"}})
-QUEUE_WAIT.record(1)
-ATTEMPT_DURATION.record(42, {{"status": "failed"}})
-SLOTS.set(4, {{"state": "free"}})
-BACKLOG_SIZE.set(3, {{"queue": "runs"}})
-BACKLOG_OLDEST_AGE.set(5, {{"queue": "runs"}})
-DELIVERIES.add(1, {{"kind": "email", "result": "dead"}})
-PASSES.add(1, {{"sweep": "expire_leases", "result": "failed"}})
-print("ready", flush=True)
-sys.stdin.read()
-"""
-    process = subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        [sys.executable, "-c", EXPORTER, str(port)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
     try:
         assert process.stdout is not None and process.stdout.readline().strip() == "ready"
         with httpx2.Client(trust_env=False) as client:
@@ -415,15 +424,25 @@ sys.stdin.read()
     # A gauge keeps its value until it is replaced, however often it is scraped.
     assert 'a13n_backlog_size{queue="runs"} 3.0' in first
     assert 'a13n_backlog_size{queue="runs"} 3.0' in second
+    # A custom App meter shares the host exporter. An instrument created during App import
+    # before provider initialization and another created afterward both retain their own names/labels.
+    assert 'acme_reports_previews_total{result="completed"} 2.0' in first
+    assert 'acme_reports_preview_duration_seconds_bucket{le="0.1",result="completed"} 0.0' in first
+    assert 'acme_reports_preview_duration_seconds_bucket{le="0.25",result="completed"} 1.0' in first
     assert 'service_name="a13n-service"' in first
     assert "otel_scope" not in first
     # The alert rules and the operations dashboard select only series the Service serves.
     selected = set()
-    for name in ("alerts.yaml", "operations-dashboard.json"):
-        selected |= set(re.findall(r"\b(?:a13n|http_server)_[a-z_]+", (MONITORING / name).read_text()))
+    for path in [MONITORING / "operations-dashboard.json", *sorted((MONITORING / "alerts").glob("*.yaml"))]:
+        selected |= set(re.findall(r"\b(?:a13n|http_server|gen_ai)_[a-z_]+(?=\{)", path.read_text()))
     assert selected
     served = set(re.findall(r"^([a-z0-9_]+)[{ ]", first, re.MULTILINE))
     assert selected <= served, selected - served
+    assert "tenant-configured-model" not in first and "another-private-model" not in first
+    assert 'gen_ai_provider_name="openai"' in first
+    assert 'gen_ai_token_type="input"' in first
+    assert "gen_ai_request_model=" not in first and "gen_ai_response_model=" not in first
+    assert re.search(r"gen_ai_client_token_usage_count\{[^\n]+\} 2.0", first)
 
 
 async def test_the_usage_dashboard_reads_the_facts_of_a_run(
@@ -434,13 +453,17 @@ async def test_the_usage_dashboard_reads_the_facts_of_a_run(
     run = (await runs_kit.start_thread(executing, agent, "hi"))["run"]
     await runs_kit.sealed(executing, run["id"])
 
-    dashboard = json.loads((MONITORING / "usage-dashboard.json").read_text())
-    queries = {panel["title"]: target["rawSql"] for panel in dashboard["panels"] for target in panel.get("targets", ())}
+    queries = usage_queries()
     assert queries
     async with short_session(executing.runtime.storage) as session:
         for title, query in queries.items():
-            # Grafana expands the time filter to the dashboard's range.
-            expanded = re.sub(r"\$__timeFilter\(([^)]+)\)", r"\1 > now() - interval '1 day'", query)
+            expanded = expand_usage(
+                query,
+                organizations=[executing.tenant.organization_id],
+                workspaces=[executing.tenant.workspace_id],
+                start=datetime.now(UTC) - timedelta(days=1),
+                end=datetime.now(UTC) + timedelta(days=1),
+            )
             rows = (await session.execute(text(expanded))).all()
             assert rows or title == "Failed runs by reason", title
 
@@ -469,3 +492,361 @@ async def test_after_commit_closes_its_session_and_logs_stack_locations_without_
             after_commit(session, fail)
             raise ValueError("rollback")
     assert len(messages(logged, "After-commit callback failed")) == 1
+
+
+@pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled", "disconnected"])
+async def test_sse_headers_active_connections_and_close_outcomes_are_separate_from_api_latency(reader, outcome):
+    from a13n_service.infra.http import RequestIds
+
+    result = {"result": outcome}
+    before = measured(reader, "a13n.stream.duration", result)
+    active = measured(reader, "a13n.stream.active")
+    headers_before = measured(reader, "a13n.http.response_start.duration", {"a13n.request.kind": "stream"})
+    scope = {
+        "type": "http",
+        "method": "PRIVATE-UNBOUNDED-METHOD",
+        "route": SimpleNamespace(path="/api/v1/runs/{id}/events"),
+    }
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            assert measured(reader, "a13n.stream.active") == active + 1
+
+    async def app(scope, receive, send):
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream; charset=utf-8")],
+            }
+        )
+        if outcome == "failed":
+            raise RuntimeError("output failed after headers")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError()
+        if outcome == "disconnected":
+            await receive()
+        else:
+            await send({"type": "http.response.body", "body": b"data: {}\n\n", "more_body": False})
+
+    middleware = RequestIds(app)
+    if outcome in {"failed", "cancelled"}:
+        with pytest.raises(RuntimeError if outcome == "failed" else asyncio.CancelledError):
+            await middleware(scope, receive, send)
+    else:
+        await middleware(scope, receive, send)
+    assert measured(reader, "a13n.stream.active") == active
+    assert measured(reader, "a13n.stream.duration", result) == before + 1
+    assert measured(reader, "a13n.http.response_start.duration", {"a13n.request.kind": "stream"}) == headers_before + 1
+    assert (
+        measured(
+            reader,
+            "http.server.request.duration",
+            {
+                "http.route": "/api/v1/runs/{id}/events",
+                "http.request.method": "_OTHER",
+                "a13n.request.kind": "stream",
+            },
+        )
+        >= 1
+    )
+    assert measured(reader, "http.server.request.duration", {"http.request.method": "PRIVATE-UNBOUNDED-METHOD"}) == 0
+
+
+async def test_caught_item_failures_do_not_turn_a_completed_scan_into_a_successful_item(reader):
+    from a13n_service.infra.sweeps import item
+
+    name = "isolated-failure-test"
+    calls = 0
+
+    async def scan():
+        nonlocal calls
+        calls += 1
+        try:
+            with item(name):
+                raise ValueError("one item failed")
+        except ValueError:
+            pass
+        with item(name):
+            pass
+
+    task = asyncio.create_task(run_sweeps([Sweep(name=name, every=0.01, run=scan, timeout=1)]))
+    try:
+        await eventually(lambda: measured(reader, "a13n.sweep.passes", {"sweep": name, "result": "succeeded"}) >= 1)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert measured(reader, "a13n.sweep.items", {"sweep": name, "result": "failed"}) == calls
+    assert measured(reader, "a13n.sweep.items", {"sweep": name, "result": "succeeded"}) == calls
+    assert measured(reader, "a13n.sweep.last_success", {"sweep": name}) > 0
+    assert measured(reader, "a13n.sweep.stale_after", {"sweep": name}) == pytest.approx(3.03)
+
+
+async def test_partial_backlog_scan_does_not_refresh_or_replace_cached_snapshot(service, reader, monkeypatch):
+    from a13n_service.runs import backlog
+
+    await report_backlog(service.runtime.storage)
+    before = measured(reader, "a13n.backlog.updated", {"queue": "runs"})
+    size = measured(reader, "a13n.backlog.size", {"queue": "runs"})
+    calls = 0
+
+    async def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ConnectionError("snapshot interrupted")
+        return 42, None
+
+    monkeypatch.setattr(backlog, "_due", fail_second)
+    with pytest.raises(ConnectionError):
+        await report_backlog(service.runtime.storage)
+    assert measured(reader, "a13n.backlog.updated", {"queue": "runs"}) == before
+    assert measured(reader, "a13n.backlog.size", {"queue": "runs"}) == size
+    assert measured(reader, "a13n.backlog.limit", {"queue": "runs"}) == 10000
+
+
+async def test_schedule_backlog_includes_overlap_planning_and_expired_dispatch_deadlines(
+    service, scripted_model, runs_kit, reader
+):
+    from a13n_service.runs.schedules import lifecycle
+    from a13n_service.runs.schedules.tables import ScheduleRow
+
+    from .test_schedule_dispatch import schedule_for
+
+    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ScheduleRow, schedule["id"])
+        current = await session.scalar(select(func.now()))
+        row.state, row.pause_reason = "enabled", None
+        row.next_fire_at = current - timedelta(minutes=5)
+        pending = await lifecycle.occurrence(
+            session,
+            service.runtime,
+            row,
+            current - timedelta(minutes=2, seconds=row.max_lateness_seconds),
+            trigger="manual",
+            requested_by_id=row.principal_id,
+            request_key="expired-deadline",
+            request_digest="0" * 64,
+        )
+        pending.next_attempt_at = current + timedelta(minutes=10)
+    await report_backlog(service.runtime.storage)
+    assert measured(reader, "a13n.backlog.size", {"queue": "schedule_due"}) == 1
+    assert measured(reader, "a13n.backlog.size", {"queue": "schedule_dispatch"}) == 1
+    assert 120 <= measured(reader, "a13n.backlog.oldest_age", {"queue": "schedule_dispatch"}) < 130
+
+
+async def test_thread_stream_counts_gap_notifications_not_unique_missing_frames(reader):
+    from a13n_service.runs.thread_stream import Gap, RunSignal, _frame
+
+    before = measured(reader, "a13n.stream.gaps")
+    for _ in range(2):  # Two readers can observe the same missing sequence.
+        assert "event: gap" in _frame("gap", Gap(run_id="run_private", position="1-9"))
+    _frame("reset", RunSignal(run_id="run_private"))
+    assert measured(reader, "a13n.stream.gaps") == before + 2
+
+
+@pytest.mark.parametrize("workflow", ["maintain_browsers", "maintain_browser_control", "maintain_desktop_control"])
+@pytest.mark.parametrize("failed", [False, True])
+async def test_isolated_browser_and_desktop_calls_keep_outcomes_and_retry_cleanup(
+    reader, monkeypatch, workflow, failed
+):
+    from contextlib import asynccontextmanager
+
+    from a13n_service.runs.browsers import maintenance as browsers
+    from a13n_service.runs.environments.desktop import maintenance as desktop
+
+    current = datetime.now(UTC)
+    runtime = SimpleNamespace(storage=object(), settings=Settings())
+    result = "failed" if failed else "succeeded"
+    before = measured(reader, "a13n.sweep.items", {"sweep": workflow, "result": result})
+    row = SimpleNamespace(
+        generation=1, episode=2, control_due_at=current, claim_until=None, control="automation", due_at=None
+    )
+
+    async def call(*args, **kwargs):
+        if failed:
+            raise RuntimeError("isolated provider call failed")
+
+    @asynccontextmanager
+    async def session(*args):
+        yield object()
+
+    async def find(*args, **kwargs):
+        return row
+
+    async def now(*args):
+        return current
+
+    if workflow == "maintain_browsers":
+        monkeypatch.setattr(browsers, "maintain", call)
+        await browsers.Maintenance(runtime)._one("workspace", "browser")
+    elif workflow == "maintain_browser_control":
+        monkeypatch.setattr(browsers.control, "reconcile", call)
+        monkeypatch.setattr(browsers, "transaction", session)
+        monkeypatch.setattr(browsers.lifecycle, "find", find)
+        monkeypatch.setattr(browsers, "now", now)
+        await browsers.ControlMaintenance(runtime)._one("workspace", "browser", 1, 2, current)
+        assert row.control_due_at > current  # Existing finally reschedules success and failure alike.
+    else:
+        row.control = "human"
+        monkeypatch.setattr(desktop.control, "reconcile", call)
+        monkeypatch.setattr(desktop, "transaction", session)
+        monkeypatch.setattr(desktop, "lock", find)
+        monkeypatch.setattr(desktop, "now", now)
+        owner = desktop.Maintenance(runtime)
+        owner.inflight.add("control")
+        await owner._one("control")
+        assert not owner.inflight
+        assert (row.due_at is not None) == failed
+    assert measured(reader, "a13n.sweep.items", {"sweep": workflow, "result": result}) == before + 1
+
+
+async def test_backlog_counts_pending_entries_only_in_actionable_threads(service, scripted_model, runs_kit):
+    from a13n_service.runs.tables import AttemptRow
+
+    from .test_runs_inbox import _queue
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    cases = {}
+    for state in ("completed", "active", "archived", "waiting", "failed", "cancelled"):
+        submitted = await runs_kit.start_thread(service, agent, "initial")
+        cases[submitted["run"]["id"]] = state
+        for message in ("next", "later"):
+            await _queue(service, runs_kit, submitted["thread"]["id"], agent, message)
+    leases = await claim(service.runtime, worker_id="backlog-fixture", worker_build="test", limit=6)
+    assert len(leases) == 6
+    async with transaction(service.runtime.storage) as session:
+        for lease in leases:
+            state = cases[lease.run_id]
+            if state == "active":
+                continue
+            run = await session.get_one(RunRow, lease.run_id)
+            thread = await session.get_one(ThreadRow, lease.thread_id)
+            attempt = await session.get_one(AttemptRow, lease.attempt_id)
+            run.status = "completed" if state == "archived" else state
+            run.sealed_at = datetime.now(UTC)
+            run.current_attempt_id = None
+            attempt.status, attempt.finished_at = "succeeded", run.sealed_at
+            thread.current_run_id, thread.last_run_id = None, run.id
+            if state == "archived":
+                thread.archived_at = run.sealed_at
+            if state in {"completed", "archived", "waiting"}:
+                run.checkpoint, run.tail = {}, {}
+            if state == "waiting":
+                run.wait_reason, run.pending = "approval", {}
+            if state in {"failed", "cancelled"}:
+                run.failure = {"code": "fixture", "message": "Fixture"}
+    values = await report_backlog(service.runtime.storage)
+    assert values["inbox"][0] == 2  # Both entries, not one distinct eligible Thread.
+
+
+async def test_backlog_expired_tool_leases_exclude_shell_completed_and_live(service, scripted_model, runs_kit):
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "retained tool")
+    [lease] = await claim(service.runtime, worker_id="backlog-fixture", worker_build="test", limit=1)
+    current = datetime.now(UTC)
+    async with transaction(service.runtime.storage) as session:
+        for state in ("expired", "shell", "completed", "live"):
+            session.add(
+                ToolExecutionRow(
+                    id="exec-backlog-" + state,
+                    organization_id=lease.organization_id,
+                    workspace_id=lease.workspace_id,
+                    thread_id=lease.thread_id,
+                    run_id=lease.run_id,
+                    attempt_id=lease.attempt_id,
+                    worker_id=lease.worker_id,
+                    lease_token_hash="fixture",
+                    record={},
+                    environment_mounts=[],
+                    created_at=current - timedelta(minutes=2),
+                    lease_expires_at=current + timedelta(minutes=1)
+                    if state == "live"
+                    else current - timedelta(minutes=1),
+                    shell={} if state == "shell" else None,
+                    status="succeeded" if state == "completed" else "running",
+                    completed_at=current if state == "completed" else None,
+                    expires_at=current + timedelta(hours=1) if state == "completed" else None,
+                )
+            )
+    values = await report_backlog(service.runtime.storage)
+    assert values["execution_lease_expired"][0] == 1
+    assert 60 <= values["execution_lease_expired"][1] < 90
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("commit", [False, True])
+async def test_deliveries_created_dead_are_observed_only_after_insertion_commits(
+    runtime, reader, logged, monkeypatch, batch, commit
+):
+    labels = {"kind": "email", "result": "dead"}
+    before = measured(reader, "a13n.outbox.deliveries", labels)
+    monkeypatch.setattr(outbox, "_BATCH_ROWS", 1)
+
+    async def stage(session):
+        if batch:
+            rows = [
+                outbox.prepare(
+                    organization_id=None, workspace_id=None, kind="email", target={}, payload={}, dead=reason
+                )
+                for reason in ("unusable", None, "unusable")
+            ]
+            await outbox.enqueue_batch(session, iter(rows))
+        else:
+            for reason in ("unusable", None, "unusable"):
+                enqueue(
+                    session, organization_id=None, workspace_id=None, kind="email", target={}, payload={}, dead=reason
+                )
+        await session.flush()
+        assert measured(reader, "a13n.outbox.deliveries", labels) == before
+
+    if commit:
+        async with transaction(runtime.storage) as session:
+            await stage(session)
+    else:
+        with pytest.raises(RuntimeError, match="rollback"):
+            async with transaction(runtime.storage) as session:
+                await stage(session)
+                raise RuntimeError("rollback")
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
+    assert len(messages(logged, "Outbox delivery dead")) == (2 if commit else 0)
+    async with short_session(runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(outbox.OutboxRow)) == (3 if commit else 0)
+    # Dead-at-insert rows are not claimed or counted a second time.
+    await outbox.claim(runtime.storage, "email", owner="test", limit=10, lease_seconds=60, max_attempts=1)
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
+
+
+@pytest.mark.parametrize("batch", [False, True])
+async def test_missing_webhook_signing_secrets_count_new_dead_deliveries(service, runs_kit, reader, batch):
+    from a13n_service.resources.subscriptions.delivery import Subject, Transition, prepare_webhooks, stage_webhooks
+    from a13n_service.resources.subscriptions.tables import SubscriptionRow
+
+    from .test_subscriptions import subscribe
+
+    await runs_kit.pause_sweeps(service)
+    broken = await subscribe(service, "http://127.0.0.1:9/hook", ["run.accepted"])
+    healthy = await subscribe(service, "http://127.0.0.1:9/hook", ["run.accepted"])
+    runtime = service.runtime
+    async with transaction(runtime.storage) as session:
+        source = await session.get_one(SubscriptionRow, healthy["id"])
+        (await session.get_one(SubscriptionRow, broken["id"])).signing_secret = dict(source.signing_secret)
+    labels = {"kind": "webhook", "result": "dead"}
+    before = measured(reader, "a13n.outbox.deliveries", labels)
+    subject = Subject(service.tenant.workspace_id, "agent", "session", "thread")
+    async with transaction(runtime.storage) as session:
+        if batch:
+            rows = await prepare_webhooks(session, runtime.keys, [Transition(subject, ["run.accepted"], {})], limit=32)
+            await outbox.enqueue_batch(session, rows)
+        else:
+            await stage_webhooks(session, runtime.keys, subject, ["run.accepted"], {}, limit=32)
+        assert measured(reader, "a13n.outbox.deliveries", labels) == before
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + 1

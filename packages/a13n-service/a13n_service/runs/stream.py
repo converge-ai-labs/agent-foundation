@@ -39,6 +39,7 @@ from sqlalchemy import func, select
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_range, trim
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, Pointer, TailPointer
 from a13n_service.runs.contents import ContentObject, decode
@@ -56,6 +57,17 @@ from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Authenticated, workspace_scope
 
 logger = get_logger(__name__)
+DROPPED = meter.create_counter(
+    "a13n.stream.dropped", unit="{frame}", description="Live output frames dropped before durable checkpoint recovery"
+)
+GAPS = meter.create_counter(
+    "a13n.stream.gaps",
+    unit="{gap}",
+    description="Gap notifications per reader; one missing frame may affect many readers",
+)
+SLOW_READERS = meter.create_counter(
+    "a13n.stream.slow_readers", unit="{connection}", description="Connections closed for bounded reader buffer overflow"
+)
 
 # Deltas a worker buffers while Redis is slow; beyond it output is dropped and readers see a gap.
 WRITE_BUFFER = 1024
@@ -184,6 +196,7 @@ class ThreadStream:
     def delta(self, observed: Observed) -> None:
         event = json.dumps(observed.event, separators=(",", ":"))
         if len(event.encode()) > MAX_DELTA_BYTES:
+            DROPPED.add(1, {"reason": "oversized"})
             return
         self._put(
             {
@@ -205,7 +218,8 @@ class ThreadStream:
         try:
             self.buffer.put_nowait({"run_id": self.run_id, "attempt": str(self.attempt), **fields})
         except asyncio.QueueFull:
-            pass  # Readers detect the missing sequence and wait for a checkpoint that covers it.
+            DROPPED.add(1, {"reason": "write_buffer_full"})
+            # Readers detect the missing sequence and wait for a checkpoint that covers it.
 
     async def _write(self) -> None:
         worker, timeout = self.settings.worker, self.settings.redis.timeout
@@ -216,6 +230,8 @@ class ThreadStream:
             ids = await append(
                 self.redis, self.key, entries, max_length=worker.stream_length, ttl=worker.stream_ttl, timeout=timeout
             )
+            if not ids:
+                DROPPED.add(len(entries), {"reason": "redis_append_failed"})
             for entry_id, fields in zip(ids, entries, strict=bool(ids)):
                 if "boundary" not in fields:
                     self.last_written = WrittenPosition(self.attempt, int(fields["sequence"]), entry_id)
@@ -288,6 +304,8 @@ class Reader:
             return
         size = _size(signal)
         if isinstance(signal, Close) or self.signals.qsize() >= READ_BUFFER or self.size + size > READ_BYTES:
+            if not isinstance(signal, Close):
+                SLOW_READERS.add(1)
             self.closed = True
             self.signals.put_nowait(Close())
             return
@@ -757,6 +775,7 @@ class _Connection:
         if follow.held is not None:
             return []
         follow.held = through if through is not None else follow.sequence + 1
+        GAPS.add(1)
         return [_frame("gap", Gap(thread_id=follow.thread_id, run_id=run_id))]
 
     def ask(self, run_id: str, attempt: int) -> None:

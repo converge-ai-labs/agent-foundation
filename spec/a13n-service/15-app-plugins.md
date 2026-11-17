@@ -23,6 +23,8 @@ Duplicate App IDs, factory ownership, settings sections and HTTP operations fail
 
 The detached installed catalog contains metadata only. Tenancy and execution consume that catalog without importing registration callbacks. Assembly alone opens callbacks and registrations over the existing real Runtime, `Tasks`, `Sweep` scheduler and `AsyncExitStack`. Process startup and imports may execute installed code while its tenant policy is disabled; organization business callbacks require host admission. Startup resources register shutdown on the host exit stack.
 
+Apps reuse the host's process-wide OpenTelemetry provider and private metrics listener through the standard metrics API. The [observability contract](12-observability.md#app-plugin-metrics) owns initialization, instrument namespaces, bounded labels, publication and cached collection; no separate metrics registration is part of an App definition.
+
 ## App persistence
 
 An optional `AppDatabase` has the same `app_id` as its definition, ordinary independent SQLAlchemy metadata, a package-relative migration resource (`package:directory`) and an optional prefix label. App rows use the existing Runtime Storage and canonical short-session/transaction scopes. Native ORM rows can participate in the same queries and joins. Explicit native table references support foreign-key resolution without granting the App generator ownership of native DDL. Apps enforce their business authorization and tenant scoping; table prefixes isolate migration ownership, not database privileges.

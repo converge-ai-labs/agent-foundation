@@ -12,6 +12,7 @@ on:
       - "dev/service/**"
       - "dev/fixtures/**"
       - "dev/observability/**"
+      - "deploy/monitoring/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
@@ -41,6 +42,7 @@ on:
       - "dev/service/**"
       - "dev/fixtures/**"
       - "dev/observability/**"
+      - "deploy/monitoring/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
@@ -103,6 +105,7 @@ jobs:
               - 'dev/service/**'
               - 'dev/fixtures/**'
               - 'dev/observability/**'
+              - 'deploy/monitoring/**'
               - 'packages/a13n-service/pyproject.toml'
               - 'packages/a13n-service/*.py'
               - 'packages/a13n-service/.importlinter'
@@ -149,6 +152,7 @@ jobs:
                   if (path.match("test_*.py") or path.match("*_test.py"))
                   and path not in {
                       root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py",
+                      root / "test_monitoring_bundle_live.py",
                       root / "test_browser_native_live.py", root / "test_browser_selfhost_live.py",
                   }
                   and not path.is_relative_to(root / "environment_providers")

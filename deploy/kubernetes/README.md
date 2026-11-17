@@ -68,7 +68,7 @@ With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-obj
 
 ### Metrics
 
-Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The [monitoring bundle](../monitoring/README.md) holds alert rules and dashboards for these metrics.
+Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The PodMonitor adds `deployment=<namespace>/<release>` and `role=control|worker` target labels; preserve unique deployment identity across clusters when forwarding to a shared backend. The [monitoring bundle](../monitoring/README.md) holds optional editable dashboards and independent opt-in alert presets. Neither is automatically provisioned by the chart.
 
 ### Environment monitoring collectors
 

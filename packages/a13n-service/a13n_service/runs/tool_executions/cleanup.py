@@ -8,7 +8,7 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow, ToolExecutionRow
-from a13n_service.runs.tool_executions.store import notify, observation
+from a13n_service.runs.tool_executions.store import ended, notify, observation
 
 
 async def reconcile(runtime: Runtime, *, limit: int = 100) -> int:
@@ -39,6 +39,7 @@ async def reconcile(runtime: Runtime, *, limit: int = 100) -> int:
                 }
             )
             row.status, row.record, row.completed_at = "lost", record.model_dump(mode="json"), current
+            ended(session, row)
             row.expires_at = current + timedelta(seconds=runtime.settings.tool_executions.max_retention_seconds)
             await notify(session, row)
         return len(rows)

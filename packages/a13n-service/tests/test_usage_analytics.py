@@ -22,7 +22,7 @@ WINDOW = {"start": START.isoformat(), "end": (START + timedelta(days=3)).isoform
 
 
 async def observed_run(
-    service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None, thread_id=None
+    service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None, thread_id=None, outcome="failed"
 ):  # type: ignore[no-untyped-def]
     submitted = (
         await kit.start_thread(service, agent, "Usage fixture")
@@ -37,12 +37,24 @@ async def observed_run(
         thread = await session.get_one(ThreadRow, run.thread_id)
         end = started + timedelta(seconds=seconds)
         run.started_at, run.sealed_at = started, end
-        run.status, run.failure, run.current_attempt_id = "failed", {"code": "fixture", "message": "Fixture"}, None
-        attempt.status, attempt.started_at, attempt.finished_at = "failed", started, end
+        run.status = outcome
+        run.failure = {"code": "fixture", "message": "Fixture"} if outcome == "failed" else None
+        run.current_attempt_id = None
+        if outcome == "completed":
+            # Analytics fixtures do not dereference checkpoint bodies or render retained output.
+            run.checkpoint, run.tail = {}, {}
+        attempt.status = "failed" if outcome == "failed" else "succeeded"
+        attempt.started_at, attempt.finished_at = started, end
         thread.current_run_id = None
         thread.last_run_id = run_id
         for model, input_tokens, output_tokens, cached, cost, ingested, *timing in records:
-            model_id = await session.scalar(select(ModelRow.id).where(ModelRow.key == model)) if model else None
+            model_id = (
+                await session.scalar(
+                    select(ModelRow.id).where(ModelRow.key == model, ModelRow.workspace_id == run.workspace_id)
+                )
+                if model
+                else None
+            )
             record = ModelUsageRecord(
                 record_id=new_object_id("usage"),
                 run_id=lease.attempt_id,

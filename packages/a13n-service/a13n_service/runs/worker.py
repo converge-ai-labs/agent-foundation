@@ -18,7 +18,7 @@ from a13n_logging import exception_details, get_logger, log_context
 
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.redis import wait_for_wake
-from a13n_service.infra.telemetry import Gauge
+from a13n_service.infra.telemetry import Gauge, meter
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
 from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
@@ -28,6 +28,12 @@ logger = get_logger(__name__)
 
 type Execute = Callable[[Runtime, Lease, AttemptControl], Coroutine[Any, Any, None]]
 
+CLAIMS = meter.create_histogram(
+    "a13n.worker.claim.duration",
+    unit="s",
+    description="Worker claim scans by claimed, empty or failed result",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 15, 30),
+)
 SLOTS = Gauge("a13n.worker.slots", unit="{slot}", description="This worker's attempt slots by state")
 
 
@@ -90,6 +96,7 @@ class Worker:
                     try:
                         leases = await claim(self.runtime, worker_id=self.id, worker_build=self.build, limit=requested)
                     except Exception as error:
+                        CLAIMS.record(asyncio.get_running_loop().time() - sent, {"result": "failed"})
                         # Running attempts keep their slots and leases; the next scan tries again.
                         logger.warning(
                             "Claim failed",
@@ -97,6 +104,9 @@ class Worker:
                         )
                         await asyncio.sleep(settings.scan_seconds)
                         continue
+                    CLAIMS.record(
+                        asyncio.get_running_loop().time() - sent, {"result": "claimed" if leases else "empty"}
+                    )
                     for lease in leases:
                         self.free -= 1
                         control = AttemptControl(

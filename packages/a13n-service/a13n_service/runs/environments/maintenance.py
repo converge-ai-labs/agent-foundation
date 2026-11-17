@@ -18,7 +18,7 @@ from sqlalchemy import Integer, Select, and_, delete, func, or_, select, text
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.sweeps import Sweep
+from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
 from a13n_service.runs.environments import vercel_snapshots
@@ -71,14 +71,19 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
         or_(EnvironmentRow.lease_expires_at.is_(None), EnvironmentRow.lease_expires_at < func.now()),
         or_(EnvironmentRow.next_operation_at.is_(None), EnvironmentRow.next_operation_at <= func.now()),
     )
-    await _each(runtime, due.order_by(EnvironmentRow.updated_at), partial(advance, runtime, owner=owner))
-    await _each(runtime, vercel_snapshots.orphaned(), partial(vercel_snapshots.drain, runtime))
+    await _each(
+        runtime,
+        due.order_by(EnvironmentRow.updated_at),
+        partial(advance, runtime, owner=owner),
+        "maintain_environments",
+    )
+    await _each(runtime, vercel_snapshots.orphaned(), partial(vercel_snapshots.drain, runtime), "maintain_environments")
 
 
 async def renew_environments(runtime: Runtime) -> None:
     """One renewal pass: the due renewals, most urgent first."""
     due = select(EnvironmentRow.id).where(EnvironmentRow.renew_at <= func.now()).order_by(EnvironmentRow.renew_at)
-    await _each(runtime, due, partial(renew, runtime))
+    await _each(runtime, due, partial(renew, runtime), "renew_environments")
 
 
 async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"], batch: int) -> None:
@@ -194,18 +199,19 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
             )
 
 
-async def _each(runtime: Runtime, due: Select[tuple[str]], call: Callable[[str], Awaitable[None]]) -> None:
+async def _each(runtime: Runtime, due: Select[tuple[str]], call: Callable[[str], Awaitable[None]], sweep: str) -> None:
     """Call `call` concurrently for at most `environments.batch` of the `due` instances; a failure is logged."""
     async with transaction(runtime.storage) as session:
         environment_ids = list(await session.scalars(due.limit(runtime.settings.environments.batch)))
     async with anyio.create_task_group() as group:
         for environment_id in environment_ids:
-            group.start_soon(_logged, call, environment_id)
+            group.start_soon(_logged, call, environment_id, sweep)
 
 
-async def _logged(call: Callable[[str], Awaitable[None]], environment_id: str) -> None:
+async def _logged(call: Callable[[str], Awaitable[None]], environment_id: str, sweep: str) -> None:
     try:
-        await call(environment_id)
+        with item(sweep):
+            await call(environment_id)
     except Exception as error:
         logger.warning(
             "Environment maintenance call failed",

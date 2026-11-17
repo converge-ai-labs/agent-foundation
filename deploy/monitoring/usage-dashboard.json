@@ -1,12 +1,15 @@
 {
   "uid": "a13n-service-usage",
   "title": "a13n Service usage",
-  "description": "Runs and model usage per tenant, read from the Service's PostgreSQL facts. Use a read-only database role.",
+  "description": "Optional operator-only PostgreSQL dashboard. Selectors are analysis filters, NOT Service tenant authorization. Read-only credential can read all granted rows. UTC, [from,to), first-ingested model contributions and independently started Runs. Custom copies are user-owned.",
   "tags": [
-    "a13n"
+    "a13n",
+    "usage"
   ],
   "editable": true,
   "schemaVersion": 39,
+  "version": 1,
+  "timezone": "utc",
   "time": {
     "from": "now-30d",
     "to": "now"
@@ -19,203 +22,1677 @@
         "label": "PostgreSQL",
         "type": "datasource",
         "query": "grafana-postgresql-datasource"
+      },
+      {
+        "name": "organization",
+        "label": "Organization",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "query": "SELECT name || ' [' || id || ']' AS __text, id AS __value FROM organizations ORDER BY name,id",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "workspace",
+        "label": "Workspace",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "query": "SELECT name || ' [' || id || ']' AS __text, id AS __value FROM workspaces WHERE organization_id IN (${organization:sqlstring}) ORDER BY name,id",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       }
     ]
   },
   "panels": [
     {
-      "type": "row",
-      "title": "Over time",
       "id": 1,
+      "type": "row",
+      "title": "Usage overview \u2014 durable facts, UTC, half-open selected window",
       "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
-      },
-      "panels": []
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
     },
     {
       "id": 2,
+      "type": "stat",
+      "title": "Known recorded cost",
+      "description": "Known USD subtotal only; compare pricing completeness. All unknown prices \u2192 unavailable; zero requests \u2192 0. Never reprices history.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 1
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Runs per day by status",
       "targets": [
         {
           "refId": "A",
-          "format": "time_series",
-          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring})",
+          "format": "table",
           "editorMode": "code",
-          "rawSql": "SELECT date_trunc('day', r.created_at) AS time, r.status AS metric, count(*) AS value\nFROM runs r\nWHERE $__timeFilter(r.created_at)\nGROUP BY 1, 2\nORDER BY 1"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "Unavailable",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "known_cost_usd"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Known cost (USD)"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
       }
     },
     {
       "id": 3,
+      "type": "stat",
+      "title": "Unpriced requests",
+      "description": "Model contributions without a recorded price. A zero-priced known request is priced, not unknown.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 1
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Model tokens per day",
       "targets": [
         {
           "refId": "A",
-          "format": "time_series",
-          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring})",
+          "format": "table",
           "editorMode": "code",
-          "rawSql": "SELECT date_trunc('day', u.ingested_at) AS time,\n  sum((u.record->'request_usage'->>'input_tokens')::bigint) AS input_tokens,\n  sum((u.record->'request_usage'->>'output_tokens')::bigint) AS output_tokens\nFROM usage_records u\nWHERE u.record->>'kind' = 'model' AND $__timeFilter(u.ingested_at)\nGROUP BY 1\nORDER BY 1"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unpriced_requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Unpriced requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
       }
     },
     {
       "id": 4,
+      "type": "stat",
+      "title": "Pricing coverage",
+      "description": "Share of requests with known prices, not share of token or spend coverage. No requests \u2192 unavailable.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 9
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Active workspaces per day",
       "targets": [
         {
           "refId": "A",
-          "format": "time_series",
-          "rawQuery": true,
+          "rawSql": "SELECT count((u.record->'request_usage'->>'cost')::numeric)::numeric / nullif(count(*),0) AS pricing_coverage FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring})",
+          "format": "table",
           "editorMode": "code",
-          "rawSql": "SELECT date_trunc('day', r.created_at) AS time, count(DISTINCT r.workspace_id) AS workspaces\nFROM runs r\nWHERE $__timeFilter(r.created_at)\nGROUP BY 1\nORDER BY 1"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pricing_coverage"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Pricing coverage"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
       }
     },
     {
-      "type": "row",
-      "title": "By tenant",
       "id": 5,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 17
-      },
-      "panels": []
-    },
-    {
-      "id": 6,
+      "type": "stat",
+      "title": "Model requests",
+      "description": "Current model contributions selected by first ingested_at. Replacement reports revise this original time bucket; not raw event count.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
         "x": 0,
-        "y": 18
+        "y": 6,
+        "w": 8,
+        "h": 5
       },
-      "type": "table",
-      "title": "Runs by workspace",
       "targets": [
         {
           "refId": "A",
+          "rawSql": "SELECT count(*) AS requests FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring})",
           "format": "table",
-          "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT o.name AS organization, w.name AS workspace, count(*) AS runs,\n  count(*) FILTER (WHERE r.status = 'completed') AS completed,\n  count(*) FILTER (WHERE r.status = 'failed') AS failed,\n  count(*) FILTER (WHERE r.status = 'cancelled') AS cancelled\nFROM runs r\nJOIN workspaces w ON w.id = r.workspace_id\nJOIN organizations o ON o.id = r.organization_id\nWHERE $__timeFilter(r.created_at)\nGROUP BY o.name, w.name\nORDER BY runs DESC\nLIMIT 100"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Started runs",
+      "description": "Runs selected independently by started_at, including ongoing Runs. Waiting seals; resumed successors count separately.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT count(*) AS runs FROM runs r WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring})",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runs"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Runs"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
       }
     },
     {
       "id": 7,
+      "type": "stat",
+      "title": "Average sealed runtime",
+      "description": "Started Run cohort, average over sealed members only. Includes recovery waits; not only model execution.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 26
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 5
       },
-      "type": "table",
-      "title": "Model usage by workspace and model",
       "targets": [
         {
           "refId": "A",
+          "rawSql": "SELECT avg(extract(epoch FROM r.sealed_at-r.started_at)) AS average_duration_seconds FROM runs r WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring})",
           "format": "table",
-          "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT o.name AS organization, w.name AS workspace, coalesce(m.key, 'unattributed') AS model,\n  count(*) AS requests,\n  sum((u.record->'request_usage'->>'input_tokens')::bigint) AS input_tokens,\n  sum((u.record->'request_usage'->>'output_tokens')::bigint) AS output_tokens,\n  sum((u.record->'request_usage'->>'cost')::numeric) AS cost\nFROM usage_records u\nJOIN workspaces w ON w.id = u.workspace_id\nJOIN organizations o ON o.id = u.organization_id\nLEFT JOIN models m ON m.id = u.model_id\nWHERE u.record->>'kind' = 'model' AND $__timeFilter(u.ingested_at)\nGROUP BY o.name, w.name, m.key\nORDER BY requests DESC\nLIMIT 100"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "average_duration_seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Average runtime"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
       },
-      "description": "Cost sums each record's priced cost; records without a price count tokens only."
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto"
+      }
     },
     {
       "id": 8,
+      "type": "row",
+      "title": "Trends \u2014 consumption follows first ingestion, Runs follow first start",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Daily model usage",
+      "description": "Daily UTC facts. Late contribution replacements revise earlier ingestion buckets. Missing days have no observations, not synthetic zeroes.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
         "x": 0,
-        "y": 34
+        "y": 12,
+        "w": 24,
+        "h": 9
       },
-      "type": "table",
-      "title": "Failed runs by reason",
       "targets": [
         {
           "refId": "A",
+          "rawSql": "SELECT to_char(u.ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, count(*) AS requests, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0) AS cached_input_tokens, CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd, count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY 1",
           "format": "table",
-          "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT r.failure->>'code' AS reason, count(*) AS runs, count(DISTINCT r.workspace_id) AS workspaces\nFROM runs r\nWHERE r.status = 'failed' AND $__timeFilter(r.created_at)\nGROUP BY 1\nORDER BY runs DESC"
+          "rawQuery": true
         }
       ],
       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "known_cost_usd"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Known cost (USD)"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unpriced_requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Unpriced requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Output tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cached_input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cached input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Day (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Daily started runs",
+      "description": "UTC start cohort and current statuses. Not a time series of seal events. Pending never-started Runs are excluded.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, r.status, count(*) AS runs FROM runs r WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring}) GROUP BY 1,2 ORDER BY 1,2",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Day (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runs"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Runs"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "barchart",
+      "title": "Daily known cost",
+      "description": "USD known subtotal by UTC ingestion day. Partial-day selections remain visible as date categories. Null days remain unknown, not zero.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT to_char(u.ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, sum((u.record->'request_usage'->>'cost')::numeric) AS known_cost_usd FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY 1",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "Unavailable",
+          "decimals": 4,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "known_cost_usd"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Known cost (USD)"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Day (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "day",
+        "orientation": "vertical",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "showValue": "auto",
+        "stacking": "none",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "Daily tokens",
+      "description": "UTC date categories retain partial-day selections. Cached input is already included in input tokens; do not add it again.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT to_char(u.ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS day, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens FROM usage_records u WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY 1",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Output tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "day"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Day (UTC)"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "day",
+        "orientation": "vertical",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "showValue": "auto",
+        "stacking": "none",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Breakdown \u2014 identities are IDs; names are display only",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Runs by workspace",
+      "description": "Top 100 by started Runs, grouped by immutable tenant identity. Same-name workspaces never merge.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT o.id AS organization_id, o.name AS organization, w.id AS workspace_id, w.name AS workspace, count(*) AS runs, count(*) FILTER (WHERE r.status='failed') AS failed, count(*) FILTER (WHERE r.status='waiting') AS waiting, avg(extract(epoch FROM r.sealed_at-r.started_at)) AS average_duration_seconds FROM runs r JOIN workspaces w ON w.id=r.workspace_id JOIN organizations o ON o.id=r.organization_id WHERE r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring}) GROUP BY o.id,o.name,w.id,w.name ORDER BY runs DESC,o.id,w.id LIMIT 100",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "average_duration_seconds"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Average runtime"
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "organization_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Organization ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workspace_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Workspace ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runs"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Runs"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "organization"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Organization"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workspace"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Workspace"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Model usage by workspace and model",
+      "description": "Top 100 current model contributions; IDs prevent cross-tenant name collisions. Known cost excludes unpriced requests. Cache rate is ratio of totals.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT o.id AS organization_id, o.name AS organization, w.id AS workspace_id, w.name AS workspace, coalesce(m.id,'unattributed') AS model_id, coalesce(m.key,'unattributed') AS model, count(*) AS requests, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0) AS cached_input_tokens, CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd, count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0)::numeric / nullif(coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0),0) AS cache_hit_rate FROM usage_records u JOIN workspaces w ON w.id=u.workspace_id JOIN organizations o ON o.id=u.organization_id LEFT JOIN models m ON m.id=u.model_id WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY o.id,o.name,w.id,w.name,m.id,m.key ORDER BY requests DESC,o.id,w.id,m.id LIMIT 100",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "known_cost_usd"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Known cost (USD)"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unpriced_requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Unpriced requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cache_hit_rate"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cache hit rate"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Output tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cached_input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cached input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "organization_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Organization ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workspace_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Workspace ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "model_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Model ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "organization"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Organization"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workspace"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Workspace"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "model"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Model"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Usage by agent",
+      "description": "Top 100 Agents for selected tenants and ingestion window. Usage population is independent of started Run population.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT r.agent_id, a.name AS agent, count(*) AS requests, coalesce(sum((u.record->'request_usage'->>'input_tokens')::bigint), 0) AS input_tokens, coalesce(sum((u.record->'request_usage'->>'output_tokens')::bigint), 0) AS output_tokens, coalesce(sum((u.record->'request_usage'->>'cache_read_tokens')::bigint), 0) AS cached_input_tokens, CASE WHEN count(*) = 0 THEN 0 ELSE sum((u.record->'request_usage'->>'cost')::numeric) END AS known_cost_usd, count(*) FILTER (WHERE (u.record->'request_usage'->>'cost')::numeric IS NULL) AS unpriced_requests FROM usage_records u JOIN runs r ON r.id=u.run_id JOIN agents a ON a.id=r.agent_id WHERE u.record->>'kind' = 'model' AND u.ingested_at >= to_timestamp(${__from} / 1000.0) AND u.ingested_at < to_timestamp(${__to} / 1000.0) AND u.organization_id IN (${organization:sqlstring}) AND u.workspace_id IN (${workspace:sqlstring}) GROUP BY r.agent_id,a.name ORDER BY requests DESC,r.agent_id LIMIT 100",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "known_cost_usd"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Known cost (USD)"
+              },
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unpriced_requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Unpriced requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "output_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Output tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cached_input_tokens"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Cached input tokens"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Agent ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "requests"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Requests"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "agent"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Agent"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Failed runs by reason",
+      "description": "Failed Runs in selected start cohort. waiting/cancelled excluded. Durable failures may precede/follow current consumption window.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT r.failure->>'code' AS reason, count(*) AS runs, count(DISTINCT r.workspace_id) AS workspaces FROM runs r WHERE r.status='failed' AND r.started_at >= to_timestamp(${__from} / 1000.0) AND r.started_at < to_timestamp(${__to} / 1000.0) AND r.organization_id IN (${organization:sqlstring}) AND r.workspace_id IN (${workspace:sqlstring}) GROUP BY 1 ORDER BY runs DESC,reason",
+          "format": "table",
+          "editorMode": "code",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workspace_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Workspace ID"
+              },
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runs"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Runs"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
       }
     }
   ]

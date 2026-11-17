@@ -1,0 +1,176 @@
+rule_files:
+- /config/capacity.yaml
+- /config/availability.yaml
+- /config/execution.yaml
+- /config/query-rules.yaml
+evaluation_interval: 1m
+tests:
+- interval: 1m
+  input_series:
+  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}
+    values: 900+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}
+    values: 0+0x20
+  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}
+    values: 5+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}
+    values: 0+60x20
+  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}
+    values: 700+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}
+    values: 0+60x20
+  promql_expr_test:
+  - expr: max by (deployment,queue) (a13n_backlog_oldest_age_seconds{job="a13n-service"}
+      and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job="a13n-service"}
+      < 60))
+    eval_time: 20m
+    exp_samples:
+    - labels: '{deployment="a",queue="runs"}'
+      value: 5
+    - labels: '{deployment="b",queue="runs"}'
+      value: 700
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: A13nBacklogStuck
+    exp_alerts:
+    - exp_labels:
+        job: a13n-service
+        deployment: b
+        queue: runs
+        severity: warning
+      exp_annotations:
+        summary: Due work is not progressing
+        description: 'b queue runs: oldest due item exceeded 10m. Check queue-specific
+          owners; sleeping/retry-backoff work is excluded.'
+- interval: 1m
+  input_series:
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q0"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q1"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q2"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q3"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q4"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q5"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q6"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q7"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q8"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q9"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q10"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q11"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q12"}
+    values: 0+0x20
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stalled",queue="q13"}
+    values: 0+0x20
+  promql_expr_test:
+  - expr: count(test:alert_A13nBacklogSnapshotStale) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- interval: 1m
+  input_series:
+  - series: a13n_outbox_backlog_alert{job="a13n-service",deployment="a",instance="fresh",kind="webhook"}
+    values: 1+0x20
+  - series: a13n_outbox_updated_seconds{job="a13n-service",deployment="a",instance="fresh"}
+    values: 0+60x20
+  - series: a13n_outbox_backlog_alert{job="a13n-service",deployment="a",instance="stale",kind="email"}
+    values: 1+0x20
+  - series: a13n_outbox_updated_seconds{job="a13n-service",deployment="a",instance="stale"}
+    values: 0+0x20
+  - series: a13n_outbox_deliveries_total{job="a13n-service",deployment="a",instance="worker",kind="webhook",result="dead"}
+    values: 0+1x20
+  - series: a13n_outbox_deliveries_total{job="a13n-service",deployment="a",instance="worker",kind="email",result="dead"}
+    values: 0+0x20
+  - series: a13n_outbox_dead{job="a13n-service",deployment="a",instance="fresh",kind="email"}
+    values: 1+0x20
+  promql_expr_test:
+  - expr: count(test:alert_A13nOutboxBacklogSustained) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: count(test:alert_A13nOutboxBacklogSustained{kind="email"}) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 0
+  - expr: count(test:alert_A13nOutboxDead) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: count(test:alert_A13nOutboxDead{kind="email"}) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 0
+- interval: 1m
+  input_series:
+  - series: a13n_sweep_items_total{job="a13n-service",deployment="a",instance="control",sweep="occasional",result="failed"}
+    values: 0+1x20
+  - series: a13n_sweep_items_total{job="a13n-service",deployment="a",instance="control",sweep="occasional",result="succeeded"}
+    values: 0+100x20
+  - series: a13n_sweep_items_total{job="a13n-service",deployment="a",instance="control",sweep="broken",result="failed"}
+    values: 0+1x20
+  - series: a13n_sweep_items_total{job="a13n-service",deployment="a",instance="control",sweep="broken",result="succeeded"}
+    values: 0+1x20
+  - series: a13n_sweep_passes_total{job="a13n-service",deployment="a",instance="control",sweep="occasional",result="failed"}
+    values: 0+1x20
+  - series: a13n_sweep_passes_total{job="a13n-service",deployment="a",instance="control",sweep="occasional",result="succeeded"}
+    values: 0+100x20
+  - series: a13n_sweep_passes_total{job="a13n-service",deployment="a",instance="control",sweep="broken",result="failed"}
+    values: 0+1x20
+  - series: a13n_sweep_passes_total{job="a13n-service",deployment="a",instance="control",sweep="broken",result="succeeded"}
+    values: 0+1x20
+  promql_expr_test:
+  - expr: count(test:alert_A13nSweepItemsFailing) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: count(test:alert_A13nSweepFailing) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+  - expr: count(test:alert_A13nSweepItemsFailing{sweep="occasional"}) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 0
+  - expr: count(test:alert_A13nSweepFailing{sweep="occasional"}) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 0
+- interval: 1m
+  input_series:
+  - series: a13n_stream_dropped_total{job="a13n-service",deployment="a",instance="worker",reason="oversized"}
+    values: 0+100x20
+  promql_expr_test:
+  - expr: count(test:alert_A13nStreamDegraded) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 0
+- interval: 1m
+  input_series:
+  - series: a13n_stream_dropped_total{job="a13n-service",deployment="a",instance="worker",reason="redis_append_failed"}
+    values: 0+100x20
+  promql_expr_test:
+  - expr: count(test:alert_A13nStreamDegraded) or vector(0)
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 1

@@ -73,8 +73,15 @@ class Policy(BaseModel):
     backlog_alert_seconds: float = Field(default=300, gt=0, le=86400)
 
 
+SETTLEMENT_FAILURES = meter.create_counter(
+    "a13n.outbox.settlement_failures",
+    unit="{attempt}",
+    description="Failed settlements; the lease must expire before retry",
+)
 DELIVERIES = meter.create_counter(
-    "a13n.outbox.deliveries", unit="{delivery}", description="Settled outbox delivery attempts by kind and result"
+    "a13n.outbox.deliveries",
+    unit="{delivery}",
+    description="Committed outbox outcomes, including deliveries created already dead",
 )
 
 
@@ -207,6 +214,8 @@ def enqueue(
         dead=dead,
     )
     session.add(row)
+    if dead is not None:
+        _settled(session, row.id, row.kind, "dead", reason=dead)
     return row.id
 
 
@@ -220,6 +229,8 @@ async def enqueue_batch(session: AsyncSession, rows: Iterable[OutboxRow]) -> Non
     chunk: list[dict] = []
     size = 0
     for row in rows:
+        if row.status == "dead":
+            _settled(session, row.id, row.kind, "dead", reason=row.last_error)
         row_size = len(json.dumps([row.target, row.payload], ensure_ascii=False).encode())
         if chunk and (len(chunk) >= _BATCH_ROWS or size + row_size > _BATCH_BYTES):
             await session.execute(insert(OutboxRow).values(chunk))
@@ -430,6 +441,7 @@ class Delivery:
                 outcome = "dead" if dead else "retry"
                 await settle(session, claimed, outcome, error=reason, retry_after=backoff(claimed.attempts))
         except Exception as failure:
+            SETTLEMENT_FAILURES.add(1, {"kind": claimed.kind})
             logger.warning(
                 "Outbox settlement failed",
                 extra={

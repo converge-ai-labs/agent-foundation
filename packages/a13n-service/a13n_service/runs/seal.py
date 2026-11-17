@@ -17,6 +17,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.outbox import enqueue_once
+from a13n_service.infra.sweeps import item
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import checkpoints, inbox
 from a13n_service.runs.accept import advance
@@ -35,6 +36,17 @@ ATTEMPT_DURATION = meter.create_histogram(
     unit="s",
     description="Time from claim to the end of an attempt, by how it ended",
     explicit_bucket_boundaries_advisory=(1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600),
+)
+ATTEMPTS_ENDED = meter.create_counter(
+    "a13n.attempt.ended",
+    unit="{attempt}",
+    description="Committed attempt endings, including recovery and planned handoff",
+)
+RUN_DURATION = meter.create_histogram(
+    "a13n.run.duration",
+    unit="s",
+    description="Run creation to seal, including queueing and recovery; not human wait after seal",
+    explicit_bucket_boundaries_advisory=(1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600, 14400, 86400),
 )
 RUNS_SEALED = meter.create_counter(
     "a13n.runs.sealed", unit="{run}", description="Sealed runs by status, and by failure code when they failed"
@@ -87,18 +99,30 @@ def _finish_attempt(
 
     async def ended() -> None:
         ATTEMPT_DURATION.record(seconds, {"status": status})
+        reason = (
+            "lease_expired"
+            if failure is not None and failure.code == "lease_expired"
+            else "failure"
+            if failure is not None
+            else "handoff"
+            if status == "yielded"
+            else "none"
+        )
+        ATTEMPTS_ENDED.add(1, {"status": status, "reason": reason})
         logger.info("Attempt ended", extra=fields)
 
     after_commit(session, ended)
 
 
-def _sealed(session: AsyncSession, run: RunRow, outcome: Outcome) -> None:
+def _sealed(session: AsyncSession, run: RunRow, outcome: Outcome, at: datetime) -> None:
     reason = outcome.failure.code if outcome.failure is not None else None
     labels = {"status": outcome.status} | ({"reason": reason} if reason is not None else {})
     fields = {"run_id": run.id, "status": outcome.status, "reason": reason}
+    duration = max(0, (at - run.created_at).total_seconds())
 
     async def sealed() -> None:
         RUNS_SEALED.add(1, labels)
+        RUN_DURATION.record(duration, {"status": outcome.status})
         logger.info("Run sealed", extra=fields)
 
     after_commit(session, sealed)
@@ -119,7 +143,7 @@ async def seal(
     usage = await totals(session, run.id)
     if attempt is not None:
         _finish_attempt(session, attempt, _ATTEMPT_STATUS[outcome.status], at=at, failure=outcome.failure)
-    _sealed(session, run, outcome)
+    _sealed(session, run, outcome, at)
     kinds = _kinds(outcome.status, attempt.status if attempt is not None else None)
     run.status, run.sealed_at, run.current_attempt_id = outcome.status, at, None
     run.output = outcome.output
@@ -277,7 +301,8 @@ class LeaseExpirer:
         for thread_id, run_id, attempt_id, expires_at in expired:
             self.after = expires_at, attempt_id
             try:
-                await _expire(runtime, thread_id, run_id, attempt_id)
+                with item("expire_leases"):
+                    await _expire(runtime, thread_id, run_id, attempt_id)
             except Exception as error:
                 logger.warning(
                     "Lease expiry failed",

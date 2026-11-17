@@ -144,6 +144,49 @@ async with short_session(runtime.storage) as session:
 
 测试中可复用 `a13n_service.migrations.scratch.scratch_database(development_database_settings)`：在其作用域内调用 `a13n_service.migrations` 中 Core 的 `runner.upgrade(scratch, OSS)` 和 App 的 `apps.upgrade(scratch, OSS, database)`，再打开普通 `Storage(scratch.url.get_secret_value())`。在退出作用域前关闭 Storage。这样测试会执行包内历史，并在结束后删除临时数据库。CI 加入 `apps db check`；`status` 检查部署中的版本状态，`check` 则从全新回放验证迁移与模型一致。
 
+## 上报自定义指标
+
+App 插件复用 Service 的进程级 metrics provider 和私有 `/metrics` 监听器。使用标准 `opentelemetry-api` 包；App 导入该包时，应将 `opentelemetry-api>=1.39,<2` 声明为直接依赖。无需在 `AppDefinition` 中注册，也无需另建 exporter。运维人员按照[监控指南](monitoring.md#metrics)启用 `telemetry.metrics_port`，并抓取每个 control 和 worker 进程。
+
+指标名称使用 App 自己的前缀。只有 meter scope 不足以隔离 Prometheus 序列，因为 Service exporter 不导出 scope 标签。以下代码扩展 [Reports 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin)的 `/preview` handler，统计完成的预览次数，并测量成功 handler 的耗时：
+
+```python
+from time import perf_counter
+
+from opentelemetry import metrics
+
+meter = metrics.get_meter("acme.reports")
+previews = meter.create_counter("acme.reports.previews", description="Report previews completed")
+preview_duration = meter.create_histogram(
+    "acme.reports.preview.duration",
+    unit="s",
+    description="Successful report preview handler duration",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5),
+)
+
+
+@router.post("/preview", name="preview_acme_report")
+async def preview(body: PreviewRequest, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> Preview:
+    started = perf_counter()
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "write")
+    result = Preview(workspace_id=workspace_id, title=body.title)
+    # Host admission and the action's write check both succeeded.
+    previews.add(1, {"result": "completed"})
+    preview_duration.record(perf_counter() - started, {"result": "completed"})
+    return result
+```
+
+现有示例提供路由、请求与响应类型、授权相关导入；应替换其中的 handler，不要重复注册 `/preview` 路由。Prometheus 导出 `acme_reports_previews_total` 和 `acme_reports_preview_duration_seconds` histogram。计数器测量成功执行的 handler 调用，不表示独立报告数量或浏览器已收到结果。宿主 HTTP 指标已经覆盖被拒绝和失败的请求。组织 sweep 已通过 `sweep="app:acme.reports:<name>"` 获得宿主的扫描、失败和新鲜度指标；只补充这些信号无法回答的业务测量。自定义指标使用独立 Grafana 面板和告警；内置看板覆盖 Service 指标。
+
+遵循以下规则：
+
+- Service 负责 meter provider、监听器和进程关闭。App 不应调用 `set_meter_provider()`、`serve_metrics()` 或 `start_http_server()`。关闭 metrics 时，标准 API 不执行导出。直接调用 `build_app()` 的嵌入式 Host 负责初始化遥测。
+- 可以在模块导入时创建 meter 和 instrument。应在可执行程序完成初始化后，从 startup 或已获准的业务工作中记录观测；provider 初始化前的观测会被丢弃。即使所有组织都禁用 App，startup 仍会执行，因此 startup 指标表示进程状态，不代表组织启用状态。
+- 使用固定的指标名称，以及代码中定义的有限属性值。指标标签不得包含组织、workspace、用户或 run ID、模型名称、报告标题、原始 URL、凭证或载荷。宿主不会自动清洗 App 自定义属性。
+- 耗时使用秒，并为具体操作选择 histogram bucket。持久化业务事实只能在事务提交后计数，使用现有 `after_commit(session, callback)` 边界。操作尝试指标可以统计每次尝试，包括重试；名称应明确表达这一口径。
+- Observable gauge 回调在抓取期间执行，只能读取内存缓存快照。通过有界、已获准的后台工作刷新外部系统、SQL 或 Redis 状态，并为库存快照同时发布新鲜度时间戳。禁用 App 会阻止后续组织回调，不会清除已经导出的计数值或缓存样本；看板查询应排除过期样本。
+
 ## 启用组织
 
 读取安装目录及组织 ETag：

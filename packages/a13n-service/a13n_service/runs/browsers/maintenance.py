@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import now, short_session, transaction
-from a13n_service.infra.sweeps import Sweep
+from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.runs.browsers import control, lifecycle
 from a13n_service.runs.browsers.schemas import Viewer
 from a13n_service.runs.browsers.tables import BrowserRow
@@ -101,7 +101,8 @@ class ControlMaintenance:
 
     async def _one(self, workspace_id: str, browser_id: str, generation: int, episode: int, lease) -> None:
         try:
-            await control.reconcile(self.runtime, workspace_id, browser_id, lease)
+            with item("maintain_browser_control"):
+                await control.reconcile(self.runtime, workspace_id, browser_id, lease)
         except Exception as error:
             logger.warning(
                 "Browser control maintenance failed",
@@ -146,7 +147,8 @@ class Maintenance:
 
     async def _one(self, workspace_id: str, browser_id: str) -> None:
         try:
-            await maintain(self.runtime, workspace_id, browser_id)
+            with item("maintain_browsers"):
+                await maintain(self.runtime, workspace_id, browser_id)
         except Exception as error:
             logger.warning(
                 "Browser maintenance failed",

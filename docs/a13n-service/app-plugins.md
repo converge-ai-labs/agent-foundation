@@ -142,6 +142,49 @@ async with short_session(runtime.storage) as session:
 
 For integration tests, reuse `a13n_service.migrations.scratch.scratch_database(development_database_settings)`. Inside that scope, call `runner.upgrade(scratch, OSS)` and `apps.upgrade(scratch, OSS, database)` from `a13n_service.migrations`, then open ordinary `Storage(scratch.url.get_secret_value())`. Close Storage before leaving the scope. This exercises the packaged history and drops the database after the test. Add `apps db check` to CI; `status` checks deployment revision state, while `check` proves migration/model parity on a fresh replay.
 
+## Report custom metrics
+
+App plugins use the same process-wide metrics provider and private `/metrics` listener as Service. Use the standard `opentelemetry-api` package; declare `opentelemetry-api>=1.39,<2` as a direct dependency when your App imports it. No `AppDefinition` registration or separate exporter is needed. Operators enable `telemetry.metrics_port` and scrape every control and worker process as described in [monitoring](monitoring.md#metrics).
+
+Create instruments under your App's own prefix. A meter scope alone does not namespace Prometheus series: the Service exporter omits scope labels. This example extends the `/preview` handler from the [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) to count completed previews and measure their successful handler duration:
+
+```python
+from time import perf_counter
+
+from opentelemetry import metrics
+
+meter = metrics.get_meter("acme.reports")
+previews = meter.create_counter("acme.reports.previews", description="Report previews completed")
+preview_duration = meter.create_histogram(
+    "acme.reports.preview.duration",
+    unit="s",
+    description="Successful report preview handler duration",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5),
+)
+
+
+@router.post("/preview", name="preview_acme_report")
+async def preview(body: PreviewRequest, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> Preview:
+    started = perf_counter()
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "write")
+    result = Preview(workspace_id=workspace_id, title=body.title)
+    # Host admission and the action's write check both succeeded.
+    previews.add(1, {"result": "completed"})
+    preview_duration.record(perf_counter() - started, {"result": "completed"})
+    return result
+```
+
+The existing example supplies the route, request/response types and authorization imports; replace its handler rather than registering a second `/preview` route. Prometheus exports `acme_reports_previews_total` and the `acme_reports_preview_duration_seconds` histogram. The counter measures successful handler calls, not distinct reports or delivery to the browser. Core HTTP metrics already cover refused/failed requests. Organization sweeps already receive host pass/failure/freshness metrics under `sweep="app:acme.reports:<name>"`; add only business measurements that those signals do not answer. Use your own Grafana panels and alerts for custom names; the bundled dashboards cover Service instruments.
+
+Follow these rules:
+
+- Service owns the meter provider, listener and process shutdown. Do not call `set_meter_provider()`, `serve_metrics()` or `start_http_server()` from an App. With metrics disabled, the standard API performs no export. Embedded hosts that call `build_app()` directly own their telemetry initialization.
+- Creating meters/instruments during import is supported. Record observations from startup or admitted business work, after executable initialization; observations made before provider initialization are discarded. Startup runs even when all organizations disable the App, so a startup metric is process state, not tenant enablement.
+- Use fixed instrument names and bounded attribute values defined in code. Never label metrics with organization/workspace/user/run IDs, model names, report titles, raw URLs, credentials or payloads. The host does not automatically sanitize custom App attributes.
+- Use seconds for durations and choose histogram buckets for the operation. Count a durable business fact only after its transaction commits, using the existing `after_commit(session, callback)` boundary. An operation-attempt metric can instead count each attempt, including retries; name it accordingly.
+- Observable gauge callbacks run during scrapes. Read a cached in-memory snapshot only; refresh external/SQL/Redis state in bounded admitted background work and publish a freshness timestamp alongside inventory. Disabling an App stops future organization callbacks, not previously exported counter values or cached samples; expire stale samples in dashboard queries.
+
 ## Enable an organization
 
 Read the installed inventory and its organization ETag:

@@ -28,6 +28,9 @@ from a13n_service.runs.webhooks import lifecycle_transition, notify_subscribers
 
 logger = get_logger(__name__)
 
+ATTEMPTS_STARTED = meter.create_counter(
+    "a13n.attempt.started", unit="{attempt}", description="Committed claims by initial, handoff, or recovery start"
+)
 QUEUE_WAIT = meter.create_histogram(
     "a13n.attempt.queue_wait",
     unit="s",
@@ -182,8 +185,9 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
         )
         deliveries.extend(await checkpoints.prepare_reclaims(session, takeovers))
         await enqueue_batch(session, deliveries)
-    for lease, wait in zip(leases, waits, strict=True):
+    for lease, wait, attempt in zip(leases, waits, attempts, strict=True):
         QUEUE_WAIT.record(wait)
+        ATTEMPTS_STARTED.add(1, {"reason": attempt["start_reason"]})
         logger.info(
             "Attempt claimed",
             extra={"run_id": lease.run_id, "attempt_id": lease.attempt_id, "queue_wait_ms": round(wait * 1000)},

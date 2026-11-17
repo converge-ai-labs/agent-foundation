@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.infra.db import after_commit
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents import stored
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import webhooks
@@ -20,6 +22,30 @@ from a13n_service.runs.schedules.schemas import (
 )
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.tenancy.authorize import ExecutionAuthority
+
+DISPOSITIONS = meter.create_counter(
+    "a13n.schedule.dispositions",
+    unit="{occurrence}",
+    description="Committed occurrence dispositions; submitted does not mean execution started",
+)
+DISPATCH_DELAY = meter.create_histogram(
+    "a13n.schedule.dispatch_delay",
+    unit="s",
+    description="Scheduled fire to automatic disposition; no human or execution wait",
+    explicit_bucket_boundaries_advisory=(1, 5, 15, 30, 60, 300, 900, 3600, 86400),
+)
+
+
+def _observe(session: AsyncSession, item: OccurrenceRow, at: datetime) -> None:
+    labels = {"trigger": item.trigger, "status": item.status, "reason": item.reason or "none"}
+    delay = max(0, (at - item.scheduled_at).total_seconds()) if item.scheduled_at else None
+
+    async def committed() -> None:
+        DISPOSITIONS.add(1, labels)
+        if delay is not None:
+            DISPATCH_DELAY.record(delay, {"status": labels["status"]})
+
+    after_commit(session, committed)
 
 
 def rule(row: ScheduleRow) -> ScheduleRule:
@@ -109,6 +135,8 @@ async def occurrence(
     if scheduled_at is not None:
         row.last_processed_fire_at = scheduled_at
     await webhooks.occurrence_changed(session, runtime, result, current)
+    if status != "pending":
+        _observe(session, result, current)
     return result
 
 
@@ -137,6 +165,7 @@ async def finish(
     reason: str | None,
 ) -> None:
     item.status, item.reason, item.finished_at = status, reason, current
+    _observe(session, item, current)
     item.next_attempt_at = None
     if row.pending_occurrence_id == item.id:
         row.pending_occurrence_id = None
