@@ -16,6 +16,7 @@ import { InputContent, inputCopyText, type InputPart } from "./input-content";
 import { previewInput } from "./local-input";
 import { ConversationTranscript, LiveOutput } from "./transcript";
 import type { Schema } from "../transport/client";
+import { i18n } from "../i18n";
 
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({
@@ -24,11 +25,63 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
   }));
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  await i18n.changeLanguage("en");
 });
+
+it.each([
+  ["zh-CN", "星期一 20:56"],
+  ["en", "Monday 8:56 PM"],
+])("separates the weekday and time in %s", async (language, expected) => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 10, 17, 12));
+  await i18n.changeLanguage(language);
+  const date = new Date(2026, 10, 16, 20, 56);
+  const { container } = render(<CopyMessage timestamp={date.getTime()} />);
+  const time = container.querySelector("time")!;
+  expect(time.textContent).toBe(expected);
+  expect(time.dateTime).toBe(date.toISOString());
+  expect(time.title).toBe(date.toLocaleString(language));
+});
+
+it.each(["en", "zh-CN"])(
+  "preserves today's time and older date formats in %s",
+  async (language) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 17, 22));
+    await i18n.changeLanguage(language);
+    const dates = [
+      new Date(2026, 10, 17, 20, 56),
+      new Date(2026, 10, 10, 20, 56),
+      new Date(2025, 10, 16, 20, 56),
+    ];
+    const { container } = render(
+      <>
+        {dates.map((date) => (
+          <CopyMessage key={date.getTime()} timestamp={date.getTime()} />
+        ))}
+      </>,
+    );
+    expect(
+      Array.from(
+        container.querySelectorAll("time"),
+        (time) => time.textContent,
+      ),
+    ).toEqual(
+      dates.map((date, index) =>
+        date.toLocaleString(language, {
+          ...(index > 0 && { month: "short", day: "numeric" }),
+          ...(index === 2 && { year: "numeric" }),
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+      ),
+    );
+  },
+);
 
 function clipboard(writeText = vi.fn().mockResolvedValue(undefined)) {
   vi.stubGlobal("navigator", { clipboard: { writeText } });

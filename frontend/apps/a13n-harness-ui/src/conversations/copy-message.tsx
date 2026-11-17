@@ -25,17 +25,20 @@ function MessageTime({ timestamp }: { timestamp: string | number }) {
               year: "numeric",
             }),
           };
+  const time: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const label = day.weekday
+    ? `${date.toLocaleDateString(i18n.language, day)} ${date.toLocaleTimeString(i18n.language, time)}`
+    : date.toLocaleString(i18n.language, { ...day, ...time });
   return (
     <time
       className={styles.messageTime}
       dateTime={date.toISOString()}
       title={date.toLocaleString(i18n.language)}
     >
-      {date.toLocaleString(i18n.language, {
-        ...day,
-        hour: "numeric",
-        minute: "2-digit",
-      })}
+      {label}
     </time>
   );
 }

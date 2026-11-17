@@ -188,28 +188,28 @@ it("closes an untouched capture without confirmation", async () => {
   expect(onClose).toHaveBeenCalledOnce();
   expect(screen.queryByText("Discard annotations?")).toBeNull();
 });
-it("focuses Copy after clipboard readiness without stealing an active tool's focus", async () => {
-  let ready!: () => void;
-  await show(
-    new Promise<void>((resolve) => {
-      ready = resolve;
-    }),
-  );
-  const popup = screen.getByRole("dialog");
-  await waitFor(() => expect(document.activeElement).toBe(popup));
-  const tool = screen.getByRole("button", { name: "Text (T)" });
-  tool.focus();
-  await act(async () => ready());
-  expect(document.activeElement).toBe(tool);
-});
-it("initially focuses Copy rather than Download", async () => {
-  await show();
-  await waitFor(() =>
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Copy PNG (Ctrl/⌘ Enter)" }),
-    ),
-  );
-});
+it.each(["popup", "tool"])(
+  "hands off focus after clipboard readiness while %s owns focus",
+  async (owner) => {
+    let ready!: () => void;
+    await show(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+    );
+    const popup = screen.getByRole("dialog");
+    await waitFor(() => expect(document.activeElement).toBe(popup));
+    const copy = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Copy PNG (Ctrl/⌘ Enter)",
+    });
+    expect(copy.disabled).toBe(true);
+    const tool = screen.getByRole("button", { name: "Text (T)" });
+    if (owner === "tool") tool.focus();
+    await act(async () => ready());
+    expect(copy.disabled).toBe(false);
+    expect(document.activeElement).toBe(owner === "tool" ? tool : copy);
+  },
+);
 it("waits for text writes, preserves edits on failed copy, and offers download or retry", async () => {
   let ready!: () => void;
   const { onCopied } = await show(
