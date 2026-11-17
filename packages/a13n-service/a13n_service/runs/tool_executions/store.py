@@ -16,12 +16,32 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import lock, now, short_session, transaction
+from a13n_service.infra.db import after_commit, lock, now, short_session, transaction
 from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.infra.outbox import OutboxRow, enqueue
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
+
+DURATION = meter.create_histogram(
+    "a13n.execution.duration",
+    unit="s",
+    description="Retained tool execution creation to first committed terminal result",
+    explicit_bucket_boundaries_advisory=(0.01, 0.1, 1, 5, 30, 60, 300, 1800, 3600, 14400, 86400),
+)
+
+
+def ended(session: AsyncSession, row: ToolExecutionRow) -> None:
+    assert row.completed_at is not None
+    seconds = max(0, (row.completed_at - row.created_at).total_seconds())
+    status = row.status
+
+    async def recorded() -> None:
+        DURATION.record(seconds, {"status": status})
+
+    after_commit(session, recorded)
+
 
 # Set by the worker's resource scope. The original Harness task inherits it; later readers need no origin.
 ORIGIN: contextvars.ContextVar[Lease] = contextvars.ContextVar("service_tool_origin")
@@ -188,6 +208,7 @@ class Store:
             if record.terminal:
                 assert record.completed_at is not None
                 row.completed_at = record.completed_at
+                ended(session, row)
                 row.expires_at = record.completed_at + timedelta(
                     seconds=self.runtime.settings.tool_executions.max_retention_seconds
                 )

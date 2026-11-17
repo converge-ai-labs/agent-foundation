@@ -16,8 +16,10 @@ from sqlalchemy import func, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
+from a13n_service.infra.db import after_commit, now
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found, rate_limited
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents import stored
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RequestContext, RunOptions, canonical_json
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow, ToolExecutionRow
@@ -27,6 +29,12 @@ from a13n_service.tenancy.authorize import ExecutionAuthority
 type RequestKind = Literal["thread", "message", "fork"]
 
 OUTSTANDING = ("pending", "assigned")
+WAIT = meter.create_histogram(
+    "a13n.inbox.wait",
+    unit="s",
+    description="Entry creation to each committed assignment, including business blocking and reassignments",
+    explicit_bucket_boundaries_advisory=(0.1, 1, 5, 15, 60, 300, 1800, 3600, 14400, 86400),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,8 +348,14 @@ async def fail_assigned(session: AsyncSession, run_id: str, entry_id: str, failu
     )
 
 
-def assign(entry: InboxEntryRow, run: RunRow) -> None:
+def assign(session: AsyncSession, entry: InboxEntryRow, run: RunRow, *, at: datetime) -> None:
     entry.status, entry.assigned_run_id = "assigned", run.id
+    seconds = max(0, (at - entry.created_at).total_seconds())
+
+    async def recorded() -> None:
+        WAIT.record(seconds)
+
+    after_commit(session, recorded)
 
 
 def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> bool:
@@ -395,12 +409,13 @@ async def assign_steers(
     origins = await _origins(session, candidates)
     chosen: list[InboxEntryRow] = []
     size = 0
+    current = await now(session)
     for entry in candidates:
         if not steers_into(entry, run, origins.get(entry.origin_run_id or "")):
             continue
         if len(chosen) == max_count or size + entry.size > max_bytes:
             break
-        assign(entry, run)
+        assign(session, entry, run, at=current)
         chosen.append(entry)
         size += entry.size
     await session.flush()

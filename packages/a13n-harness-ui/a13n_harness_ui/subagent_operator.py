@@ -1490,6 +1490,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         bindings = production_run_bindings(
             bindings,
             reconstructed.definition_capability_ids,
+            web=reconstructed.fresh_web_binding(),
             data_root=self._store.settings.data_root,
             thread_id=state.thread_id,
             object_store_policy=self._store.settings.object_store,

@@ -5403,6 +5403,24 @@
         }
       }
     },
+    "/api/web-providers": {
+      "get": {
+        "summary": "Web Providers",
+        "operationId": "web_providers_api_web_providers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderCatalogView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/configuration/sources": {
       "get": {
         "summary": "Configuration Sources",
@@ -10952,6 +10970,63 @@
         ],
         "title": "ApprovalRequestView"
       },
+      "Authentication": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode",
+            "default": "required"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/AuthenticationCase"
+            },
+            "type": "array",
+            "title": "Cases",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Authentication"
+      },
+      "AuthenticationCase": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "title": "Field"
+          },
+          "equals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equals"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field",
+          "equals",
+          "mode"
+        ],
+        "title": "AuthenticationCase",
+        "description": "Override credential presence for one declared configuration field value."
+      },
       "AuthenticationKind": {
         "type": "string",
         "enum": [
@@ -14699,6 +14774,38 @@
         "type": "object",
         "title": "CpuTimeSeconds"
       },
+      "CredentialFieldSource": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/EnvironmentVariableSource"
+          },
+          {
+            "$ref": "#/components/schemas/CredentialReferenceSource"
+          }
+        ]
+      },
+      "CredentialMode": {
+        "type": "string",
+        "enum": [
+          "required",
+          "optional",
+          "forbidden"
+        ],
+        "title": "CredentialMode"
+      },
+      "CredentialReferenceSource": {
+        "properties": {
+          "credential_ref": {
+            "$ref": "#/components/schemas/ResourceId"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "credential_ref"
+        ],
+        "title": "CredentialReferenceSource"
+      },
       "DaemonMetrics": {
         "properties": {
           "sessions": {
@@ -16350,6 +16457,22 @@
           "message"
         ],
         "title": "EnvironmentReadiness"
+      },
+      "EnvironmentVariableSource": {
+        "properties": {
+          "env": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Env"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "env"
+        ],
+        "title": "EnvironmentVariableSource"
       },
       "EventDeclaration": {
         "properties": {
@@ -26874,6 +26997,174 @@
           "expires_at"
         ],
         "title": "Wait"
+      },
+      "WebProviderCatalogView": {
+        "properties": {
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/WebProviderType"
+            },
+            "type": "array",
+            "title": "Types"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/WebProviderResource"
+            },
+            "type": "array",
+            "title": "Accounts",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "types"
+        ],
+        "title": "WebProviderCatalogView"
+      },
+      "WebProviderResource": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version"
+          },
+          "kind": {
+            "type": "string",
+            "const": "web_provider",
+            "title": "Kind"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ResourceId"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CatalogKey"
+          },
+          "configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Configuration"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/CredentialFieldSource"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "kind",
+          "id",
+          "name",
+          "type"
+        ],
+        "title": "WebProviderResource",
+        "description": "Configured Web account with ordinary inputs and credential references only."
+      },
+      "WebProviderType": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "configuration_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Configuration Schema"
+          },
+          "credential_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "operations": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "search",
+                "scrape"
+              ]
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "supports_restricted_scrape": {
+            "type": "boolean",
+            "title": "Supports Restricted Scrape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "display_name",
+          "configuration_schema",
+          "credential_schema",
+          "authentication",
+          "setup_url",
+          "setup_label",
+          "operations",
+          "supports_restricted_scrape"
+        ],
+        "title": "WebProviderType"
       },
       "WorkbenchPage": {
         "additionalProperties": false,

@@ -72,3 +72,23 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   fireEvent.error(logo);
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
+
+it("resolves every built-in Web provider identity while keeping unknown providers generic", () => {
+  for (const identity of [
+    "duckduckgo",
+    "keenable",
+    "brave",
+    "deepseek",
+    "exa",
+    "parallel",
+    "tavily",
+    "firecrawl",
+    "jina",
+    "perplexity",
+    "serpapi",
+    "specstream",
+    "tinyfish",
+  ])
+    expect(resolveBrand({ identity })?.icon).toBeTruthy();
+  expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
+});

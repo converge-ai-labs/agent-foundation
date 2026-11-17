@@ -34,6 +34,7 @@ Runloop and boxd use the same configuration model for execution and management; 
 | `shell_profiles`           | false    | array of DirectLocalShellProfile | default=[]                              |
 | `allowed_executables`      | false    | array of string                  | uniqueItems=true; default=[]            |
 | `environment`              | false    | EnvironmentVariables             | —; default from model factory           |
+| `envd`                     | false    | EnvdSettings                     | —; default from model factory           |
 | `inherit_environment`      | false    | boolean                          | default=false                           |
 | `allowed_environment_keys` | false    | array of string or null          | uniqueItems=true; default=[]            |
 | `allowed_ports`            | false    | array of integer                 | uniqueItems=true; default=[]            |
@@ -59,6 +60,55 @@ Runloop and boxd use the same configuration model for execution and management; 
 | `fixed_arguments` | false    | array of string       | default=[]                 |
 | `dialect`         | false    | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false    | boolean               | default=false              |
+
+## `EnvdLimits`
+
+Daemon budgets, with the same defaults and constraints as config.rs.
+
+| Field                              | Required | Type / choices | Constraints and default                                     |
+| ---------------------------------- | -------- | -------------- | ----------------------------------------------------------- |
+| `max_device_spool_bytes`           | false    | integer        | minimum=1; maximum=2305843009213693951; default=4294967296  |
+| `max_device_spool_objects`         | false    | integer        | minimum=1; maximum=2305843009213693951; default=65536       |
+| `max_device_staged_file_bytes`     | false    | integer        | minimum=1; maximum=2305843009213693951; default=34359738368 |
+| `max_device_staged_file_objects`   | false    | integer        | minimum=1; maximum=2305843009213693951; default=2048        |
+| `max_device_concurrent_operations` | false    | integer        | minimum=1; maximum=2305843009213693951; default=256         |
+| `max_device_processes`             | false    | integer        | minimum=1; maximum=2305843009213693951; default=512         |
+| `max_device_operation_records`     | false    | integer        | minimum=1; maximum=2305843009213693951; default=65536       |
+| `max_device_process_records`       | false    | integer        | minimum=1; maximum=2305843009213693951; default=4096        |
+| `max_device_file_transfers`        | false    | integer        | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_device_file_transfer_records` | false    | integer        | minimum=1; maximum=2305843009213693951; default=2048        |
+| `max_sessions`                     | false    | integer        | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_file_bytes`                   | false    | integer        | minimum=1; maximum=2305843009213693951; default=8589934592  |
+| `max_request_bytes`                | false    | integer        | minimum=1; maximum=2305843009213693951; default=16777216    |
+| `max_response_bytes`               | false    | integer        | minimum=1; maximum=2305843009213693951; default=16777216    |
+| `max_concurrent_operations`        | false    | integer        | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_processes`                    | false    | integer        | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_operation_duration_ms`        | false    | integer        | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_output_preview_bytes`         | false    | integer        | minimum=1; maximum=2305843009213693951; default=2097152     |
+| `max_output_bytes_per_stream`      | false    | integer        | minimum=1; maximum=2305843009213693951; default=268435456   |
+| `max_spool_bytes`                  | false    | integer        | minimum=1; maximum=2305843009213693951; default=1073741824  |
+| `max_spool_objects`                | false    | integer        | minimum=1; maximum=2305843009213693951; default=16384       |
+| `max_operation_records`            | false    | integer        | minimum=1; maximum=2305843009213693951; default=16384       |
+| `operation_record_ttl_ms`          | false    | integer        | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_process_records`              | false    | integer        | minimum=1; maximum=2305843009213693951; default=1024        |
+| `max_transfer_frame_bytes`         | false    | integer        | minimum=26; maximum=2305843009213693951; default=4194304    |
+| `max_concurrent_file_transfers`    | false    | integer        | minimum=1; maximum=2305843009213693951; default=64          |
+| `max_file_transfer_records`        | false    | integer        | minimum=1; maximum=2305843009213693951; default=512         |
+| `file_transfer_record_ttl_ms`      | false    | integer        | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_staged_file_bytes`            | false    | integer        | minimum=1; maximum=2305843009213693951; default=8589934592  |
+| `max_staged_file_objects`          | false    | integer        | minimum=1; maximum=2305843009213693951; default=512         |
+| `file_transfer_idle_ttl_ms`        | false    | integer        | minimum=1; maximum=2305843009213693951; default=600000      |
+| `max_file_transfer_duration_ms`    | false    | integer        | minimum=1; maximum=2305843009213693951; default=7200000     |
+
+## `EnvdSettings`
+
+| Field                                | Required | Type / choices  | Constraints and default                                       |
+| ------------------------------------ | -------- | --------------- | ------------------------------------------------------------- |
+| `limits`                             | false    | EnvdLimits      | —; default from model factory                                 |
+| `vm_startup_timeout_ms`              | false    | integer         | minimum=1; maximum=2305843009213693951; default=120000        |
+| `computer_use_permission_timeout_ms` | false    | integer         | minimum=1; maximum=2305843009213693951; default=120000        |
+| `idle_timeout_ms`                    | false    | integer         | minimum=1; maximum=2305843009213693951; default=3600000       |
+| `max_lifetime_ms`                    | false    | integer or null | maximum=2305843009213693951; exclusiveMinimum=0; default=null |
 
 ## `EnvironmentVariables`
 
@@ -303,6 +353,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_output_bytes_per_stream` | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false    | integer                              | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false    | integer                              | exclusiveMinimum=0; default=128                                                  |
+| `envd`                        | false    | EnvdSettings                         | —; default from model factory                                                    |
 
 ## `DockerMountConfiguration`
 
@@ -338,6 +389,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_output_bytes_per_stream` | false    | integer                              | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false    | integer                              | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false    | integer                              | exclusiveMinimum=0; default=128                                                  |
+| `envd`                        | false    | EnvdSettings                         | —; default from model factory                                                    |
 | `desktop_assistance`          | false    | boolean                              | default=false                                                                    |
 | `desktop_viewer_url`          | false    | string or null                       | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false    | "never", "if_missing"                | default="if_missing"                                                             |
@@ -361,6 +413,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_active_observations`   | false    | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `envd`                      | false    | EnvdSettings                     | —; default from model factory                             |
 
 ## `E2BRecipe`
 
@@ -382,6 +435,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_active_observations`   | false    | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `envd`                      | false    | EnvdSettings                     | —; default from model factory                             |
 | `desktop_assistance`        | false    | boolean                          | default=false                                             |
 | `timeout_seconds`           | false    | integer                          | minimum=30; maximum=86400; default=3600                   |
 
@@ -395,6 +449,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
 | `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
 | `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `envd`                    | false    | EnvdSettings              | —; default from model factory                                                               |
 | `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
 
@@ -411,6 +466,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `timeout_seconds`         | false    | integer                   | minimum=300; maximum=86400; default=86400                                                   |
 | `cpu`                     | false    | number                    | maximum=64; exclusiveMinimum=0; default=1                                                   |
 | `memory`                  | false    | integer                   | minimum=128; maximum=262144; default=1024                                                   |
+| `envd`                    | false    | EnvdSettings              | —; default from model factory                                                               |
 | `startup_command`         | false    | array of string or null   | minItems=1; default=null                                                                    |
 | `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
@@ -421,6 +477,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | ------------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `envd_management`         | false    | "managed", "preinstalled"        | default="preinstalled"                                                              |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                                                       |
+| `envd`                    | false    | EnvdSettings                     | —; default from model factory                                                       |
 | `root`                    | false    | string                           | default="/vercel/sandbox"                                                           |
 | `python`                  | false    | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
 | `shell`                   | false    | string                           | default="/bin/bash"                                                                 |
@@ -443,6 +500,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
 | `envd_management`         | false    | "managed", "preinstalled"        | default="preinstalled"                                 |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `envd`                    | false    | EnvdSettings                     | —; default from model factory                          |
 | `root`                    | false    | string                           | default="/home/sprite"                                 |
 | `python`                  | false    | string                           | default="python3"                                      |
 | `shell`                   | false    | string                           | default="/bin/bash"                                    |
@@ -464,6 +522,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
 | `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
 | `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `envd`                    | false    | EnvdSettings           | —; default from model factory                |
 
 ## `ModalEnvironmentConfiguration`
 
@@ -477,12 +536,14 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
 | `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
 | `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
+| `envd`                    | false    | EnvdSettings           | —; default from model factory                |
 
 ## `VercelEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices                   | Constraints and default                                                             |
 | ------------------------- | -------- | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                                                       |
+| `envd`                    | false    | EnvdSettings                     | —; default from model factory                                                       |
 | `root`                    | false    | string                           | default="/vercel/sandbox"                                                           |
 | `python`                  | false    | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
 | `shell`                   | false    | string                           | default="/bin/bash"                                                                 |
@@ -502,6 +563,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | Field                     | Required | Type / choices                   | Constraints and default                                |
 | ------------------------- | -------- | -------------------------------- | ------------------------------------------------------ |
 | `environment`             | false    | EnvironmentVariables             | —; default from model factory                          |
+| `envd`                    | false    | EnvdSettings                     | —; default from model factory                          |
 | `root`                    | false    | string                           | default="/home/sprite"                                 |
 | `python`                  | false    | string                           | default="python3"                                      |
 | `shell`                   | false    | string                           | default="/bin/bash"                                    |
@@ -518,6 +580,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | Field                     | Required | Type / choices                                   | Constraints and default                                |
 | ------------------------- | -------- | ------------------------------------------------ | ------------------------------------------------------ |
 | `environment`             | false    | EnvironmentVariables                             | —; default from model factory                          |
+| `envd`                    | false    | EnvdSettings                                     | —; default from model factory                          |
 | `root`                    | false    | string                                           | default="/home/user"                                   |
 | `python`                  | false    | string                                           | default="python3"                                      |
 | `shell`                   | false    | string                                           | default="/bin/bash"                                    |
@@ -534,6 +597,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | Field                            | Required | Type / choices                       | Constraints and default                                |
 | -------------------------------- | -------- | ------------------------------------ | ------------------------------------------------------ |
 | `environment`                    | false    | EnvironmentVariables                 | —; default from model factory                          |
+| `envd`                           | false    | EnvdSettings                         | —; default from model factory                          |
 | `root`                           | false    | string                               | default="/home/boxd"                                   |
 | `python`                         | false    | string                               | default="python3"                                      |
 | `shell`                          | false    | string                               | default="/bin/bash"                                    |

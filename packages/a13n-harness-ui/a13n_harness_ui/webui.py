@@ -231,6 +231,7 @@ from a13n_harness_ui.thread_files import (
     ThreadAttachment,
 )
 from a13n_harness_ui.voice_transport import VoiceCommand, VoiceOwner, VoicePing, register_voice_routes
+from a13n_harness_ui.web_providers import WebProviderCatalogView
 from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
@@ -1924,6 +1925,10 @@ def create_webui(
             await app().select_mcp_tools(server_id, await _document(request, McpToolSelection))
         )
 
+    @server.get("/api/web-providers", response_model=WebProviderCatalogView)
+    async def web_providers() -> WebProviderCatalogView:
+        return await app().web_provider_catalog()
+
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:
         return await app().configuration_sources()
@@ -2813,7 +2818,7 @@ def create_webui(
                     # Script, connection and sandbox policies remain unchanged.
                     "img-src 'self' data: blob: https://cdn.jsdelivr.net https://svgl.app "
                     "https://cdn.simpleicons.org https://deepwiki.com https://composio.dev "
-                    "https://parallel.ai https://serpapi.com https://www.tinyfish.ai "
+                    "https://parallel.ai https://serpapi.com https://www.tinyfish.ai https://specstream.ai "
                     "https://e2b.dev https://modal.com https://framerusercontent.com "
                     "https://docs.runloop.ai https://fly.io; media-src 'self' blob:; "
                     "style-src 'self' 'unsafe-inline'; "

@@ -62,7 +62,130 @@ def definition() -> AppDefinition:
 
 `AppDefinition.factory_keys` 声明所属 Harness factory key。按照[插件和扩展](../a13n-harness/plugins.md#publish-a-plugin-factory)将 factory 注册到 `a13n_harness.plugins`，再将 key 加入定义，例如 `factory_keys=frozenset({"acme.audit"})`。在 agent 配置中照常选择具名插件实例。Service 在启动时加载所属 factory，并根据已接受 run 的快照决定是否构造实例。独立 factory 通过 `plugins.keys` 选择。
 
-`OrganizationSweep` 回调接收已有 Runtime 和一个已启用的组织 ID。Service 选择组织，并在回调前关闭 SQL session。回调负责有界业务工作以及多副本安全的认领。每个组织使用声明的超时时间；某个回调失败后，同批其他组织继续执行，该轮扫描记为失败。可选的 `startup(runtime, stack)` 打开进程资源，并在已有退出栈上注册清理。每个已安装 App 都会运行 startup，与组织启用状态无关。App 定义不提供表或迁移；业务数据库应通过应用自身的运维流程准备。
+`OrganizationSweep` 回调接收已有 Runtime 和一个已启用的组织 ID。Service 选择组织，并在回调前关闭 SQL session。回调负责有界业务工作以及多副本安全的认领。每个组织使用声明的超时时间；某个回调失败后，同批其他组织继续执行，该轮扫描记为失败。可选的 `startup(runtime, stack)` 打开进程资源，并在已有退出栈上注册清理。每个已安装 App 都会运行 startup，与组织启用状态无关。App 可以声明带独立迁移的可选数据库，见下文。Service 在运行任何 App startup 回调前校验所有已安装 App 的数据库版本。
+
+## 持久化业务数据
+
+App 需要在宿主 PostgreSQL 数据库中建表时，使用 `AppDatabase`。每个 App 在 `public` 中拥有独立的迁移历史。App 使用普通 SQLAlchemy 模型和现有 Runtime Storage，可以直接关联查询原生 Service ORM 行，无需另建连接池。前缀划分迁移归属；App 代码仍需执行租户范围限制和授权。
+
+在 `models.py` 等模块中声明数据库和模型，再从 `app.py` 导入该模块，并将同一数据库对象传入 `AppDefinition(database=database)`。部署配置必须在导入模型前解析：
+
+```python
+import os
+
+from a13n_service.app_database import AppDatabase
+from a13n_service.tenancy.tables import WorkspaceRow
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Optional deployment override. Leave unset for a stable App-ID-derived prefix.
+database = AppDatabase(
+    "acme.reports",
+    migrations="acme_reports:migrations",
+    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX") or None,
+)
+database.reference(WorkspaceRow.__table__)  # Read-only foreign-key target, never App-owned DDL.
+
+
+class Base(DeclarativeBase):
+    metadata = database.metadata
+
+
+class Note(Base):
+    __tablename__ = database.name("notes")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    body: Mapped[str]
+```
+
+默认物理表名为 `app__acme_report_8b627b7edb3d__notes`。标签由可读短名和完整、精确 App ID 的稳定摘要组成，因此 `acme.reports` 与 `acme_reports` 获得不同命名空间，与安装顺序无关。长 App ID 也无需额外配置。可选显式标签须使用小写 snake case，以字母开头，且不超过 24 字节。例如，`ACME_REPORTS_TABLE_PREFIX=reports_1` 选择 `app__reports_1__notes`。通过 `database.name(...)` 获取名称，不要硬编码物理名称。同一部署的 migration、control 和 worker 进程须使用相同配置；编写迁移时可以使用默认前缀，因为生成的标识符支持跨前缀部署。Service 拒绝重复 App ID 和冲突的显式前缀。数据库初始化后，保留的 App ID/前缀绑定会阻止意外改指其他命名空间。修改配置不会搬迁现有数据；迁移已部署的命名空间需要显式审查的数据库迁移。
+
+1. 在兼容 Service 的开发环境中以 editable 方式安装 App。在 App 项目根目录执行以下编写命令。当前项目只有一个明确的 App 时，可省略 `--app`。
+
+   ```bash
+   a13n-service apps db init --app acme.reports
+   a13n-service apps db revision --app acme.reports -m "create notes" \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   a13n-service apps db check --app acme.reports \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   ```
+
+`init` 只创建声明的包内迁移目录。`revision` 和 `check` 在新建的临时数据库中回放 Core 及目标 App 的历史，不会升级配置中的业务数据库。`--scratch-url` 可选择本地或 CI PostgreSQL 服务器；省略时使用 Service 配置中的服务器。所选角色须具有创建和删除临时数据库的权限。不要将开发检查指向生产服务器。
+
+审查生成的 Alembic 草稿，包括破坏性变更、锁、数据迁移和回滚行为。生成的标识符通过 `migration_name("notes")` 在执行时解析所选前缀，因此同一包内历史支持不同部署的前缀。默认值和数据字符串保持原样。手写 SQL、表达式和其他数据库对象需要显式使用 `migration_name`，并手动检查可移植性。将 `migrations/versions/*.py` 包含在 wheel 和源码包中；先运行 `apps db check`，再发布。
+
+部署时，在各进程安装相同的 App wheel 并配置相同前缀。默认情况下，`all` 和 `control` 启动时依次升级 Core 和所有已安装 App 的数据库。采用独立迁移任务时运行：
+
+```bash
+a13n-service migrate
+a13n-service apps db status --app acme.reports
+# Apply only this App after Core is current:
+a13n-service apps db upgrade --app acme.reports
+```
+
+`migrate` 先升级 Core，再逐个升级所有已安装 App；`migrate --no-apps` 只升级 Core。各 App 的历史与版本表相互独立。使用独立迁移任务时，在服务副本中设置 `A13N_DATABASE__AUTO_MIGRATE=false`。如果只自动升级 Core、单独管理 App 升级，则保持总开关开启并设置 `A13N_DATABASE__AUTO_MIGRATE_APPS=false`。这两个配置只影响启动，显式 CLI 命令仍执行迁移。`migrate --check` 对部署数据库执行只读 Core/App 一致性检查，不需要 `CREATE DATABASE` 权限；`apps db check` 用于临时数据库上的开发和 CI 回放。所有角色在 App 回调前校验已安装 App 的绑定和精确版本，包括组织尚未启用的 App。worker、readiness 和组织启用操作都不会执行 DDL。卸载包会保留数据、版本表和命名空间绑定。
+
+业务查询使用 `a13n_service.infra.db` 中的 `transaction(runtime.storage)` 或 `short_session(runtime.storage)`。每个会话只围绕一次短数据库操作。原生关联查询使用同一个 ORM 会话：
+
+```python
+from a13n_service.infra.db import short_session
+from sqlalchemy import select
+
+async with short_session(runtime.storage) as session:
+    rows = (
+        await session.execute(
+            select(Note.body, WorkspaceRow.name)
+            .join(WorkspaceRow, Note.workspace_id == WorkspaceRow.id)
+            .where(WorkspaceRow.id == authorized_workspace_id)
+        )
+    ).all()
+```
+
+测试中可复用 `a13n_service.migrations.scratch.scratch_database(development_database_settings)`：在其作用域内调用 `a13n_service.migrations` 中 Core 的 `runner.upgrade(scratch, OSS)` 和 App 的 `apps.upgrade(scratch, OSS, database)`，再打开普通 `Storage(scratch.url.get_secret_value())`。在退出作用域前关闭 Storage。这样测试会执行包内历史，并在结束后删除临时数据库。CI 加入 `apps db check`；`status` 检查部署中的版本状态，`check` 则从全新回放验证迁移与模型一致。
+
+## 上报自定义指标
+
+App 插件复用 Service 的进程级 metrics provider 和私有 `/metrics` 监听器。使用标准 `opentelemetry-api` 包；App 导入该包时，应将 `opentelemetry-api>=1.39,<2` 声明为直接依赖。无需在 `AppDefinition` 中注册，也无需另建 exporter。运维人员按照[监控指南](monitoring.md#metrics)启用 `telemetry.metrics_port`，并抓取每个 control 和 worker 进程。
+
+指标名称使用 App 自己的前缀。只有 meter scope 不足以隔离 Prometheus 序列，因为 Service exporter 不导出 scope 标签。以下代码扩展 [Reports 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin)的 `/preview` handler，统计完成的预览次数，并测量成功 handler 的耗时：
+
+```python
+from time import perf_counter
+
+from opentelemetry import metrics
+
+meter = metrics.get_meter("acme.reports")
+previews = meter.create_counter("acme.reports.previews", description="Report previews completed")
+preview_duration = meter.create_histogram(
+    "acme.reports.preview.duration",
+    unit="s",
+    description="Successful report preview handler duration",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5),
+)
+
+
+@router.post("/preview", name="preview_acme_report")
+async def preview(body: PreviewRequest, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> Preview:
+    started = perf_counter()
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "write")
+    result = Preview(workspace_id=workspace_id, title=body.title)
+    # Host admission and the action's write check both succeeded.
+    previews.add(1, {"result": "completed"})
+    preview_duration.record(perf_counter() - started, {"result": "completed"})
+    return result
+```
+
+现有示例提供路由、请求与响应类型、授权相关导入；应替换其中的 handler，不要重复注册 `/preview` 路由。Prometheus 导出 `acme_reports_previews_total` 和 `acme_reports_preview_duration_seconds` histogram。计数器测量成功执行的 handler 调用，不表示独立报告数量或浏览器已收到结果。宿主 HTTP 指标已经覆盖被拒绝和失败的请求。组织 sweep 已通过 `sweep="app:acme.reports:<name>"` 获得宿主的扫描、失败和新鲜度指标；只补充这些信号无法回答的业务测量。自定义指标使用独立 Grafana 面板和告警；内置看板覆盖 Service 指标。
+
+遵循以下规则：
+
+- Service 负责 meter provider、监听器和进程关闭。App 不应调用 `set_meter_provider()`、`serve_metrics()` 或 `start_http_server()`。关闭 metrics 时，标准 API 不执行导出。直接调用 `build_app()` 的嵌入式 Host 负责初始化遥测。
+- 可以在模块导入时创建 meter 和 instrument。应在可执行程序完成初始化后，从 startup 或已获准的业务工作中记录观测；provider 初始化前的观测会被丢弃。即使所有组织都禁用 App，startup 仍会执行，因此 startup 指标表示进程状态，不代表组织启用状态。
+- 使用固定的指标名称，以及代码中定义的有限属性值。指标标签不得包含组织、workspace、用户或 run ID、模型名称、报告标题、原始 URL、凭证或载荷。宿主不会自动清洗 App 自定义属性。
+- 耗时使用秒，并为具体操作选择 histogram bucket。持久化业务事实只能在事务提交后计数，使用现有 `after_commit(session, callback)` 边界。操作尝试指标可以统计每次尝试，包括重试；名称应明确表达这一口径。
+- Observable gauge 回调在抓取期间执行，只能读取内存缓存快照。通过有界、已获准的后台工作刷新外部系统、SQL 或 Redis 状态，并为库存快照同时发布新鲜度时间戳。禁用 App 会阻止后续组织回调，不会清除已经导出的计数值或缓存样本；看板查询应排除过期样本。
 
 ## 启用组织
 

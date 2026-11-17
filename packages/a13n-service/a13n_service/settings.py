@@ -112,6 +112,7 @@ class Server(Section):
 class Database(Section):
     url: SecretStr = SecretStr("postgresql+psycopg://localhost/a13n_service")
     auto_migrate: bool = True
+    auto_migrate_apps: bool = True
     pool_size: int = Field(default=32, ge=1, le=1024)
     connect_timeout: int = Field(default=5, ge=1, le=60)
     statement_timeout: int = Field(default=10, ge=1, le=300)

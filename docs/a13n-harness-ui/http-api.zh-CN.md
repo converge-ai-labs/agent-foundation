@@ -237,6 +237,8 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 ### 编辑可复用资源
 
+对于 Web 账号，GET `/api/web-providers` 可发现已安装服务商类型、配置和凭据 schema、认证规则、支持的操作、设置链接以及已接受的安全账号配置。通过下方同一源文件流程创建或更新 `web_providers/*.yaml`；凭据值单独通过 `/api/auth/keys` 保存。目录读取和源校验不会探测服务商访问。见 [Web 服务商账号](native-and-web-tools.md#web-provider-accounts)。
+
 1. GET `/api/configuration/sources`，再读取 `/api/configuration/sources/{relative_path}`，检查已接受的文件。已接受代际可能不同于磁盘上的无效编辑。MCP 源内容可能含凭据，因此返回 null；不要把这个 null 写回去。
 2. 向 `/api/configuration/validate?path=projects/work.yaml` POST `{"content":"..."}`，校验修改后的完整配置。
 3. 向 `/api/configuration/sources/projects/work.yaml` PUT 同一请求体以发布。对可移除的非根源文件使用 DELETE。

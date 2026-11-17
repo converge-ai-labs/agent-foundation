@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.pool import NullPool
 
 from a13n_service.distribution import Distribution
@@ -39,10 +39,8 @@ def heads(distribution: Distribution) -> tuple[str, ...]:
 
 
 @contextmanager
-def migration_connection(settings: Database, distribution: Distribution) -> Iterator[Config]:
-    # Validate and execute the same composition without copying every table twice.
-    config = configuration(distribution)
-    _heads(config)
+def locked_connection(settings: Database) -> Iterator[Connection]:
+    """One bounded connection and advisory lock, shared by Core and independent App runners."""
     engine = create_engine(
         settings.url.get_secret_value(), poolclass=NullPool, connect_args={"connect_timeout": settings.connect_timeout}
     )
@@ -59,11 +57,20 @@ def migration_connection(settings: Database, distribution: Distribution) -> Iter
                 text(f"SET idle_in_transaction_session_timeout = {settings.migration_idle_transaction_timeout * 1000}")
             )
             connection.commit()
-            config.attributes["connection"] = connection
-            yield config
+            yield connection
     finally:
         # Closing the dedicated connection releases the lock on success and failure.
         engine.dispose()
+
+
+@contextmanager
+def migration_connection(settings: Database, distribution: Distribution) -> Iterator[Config]:
+    # Validate and execute the same composition without copying every table twice.
+    config = configuration(distribution)
+    _heads(config)
+    with locked_connection(settings) as connection:
+        config.attributes["connection"] = connection
+        yield config
 
 
 def upgrade(settings: Database, distribution: Distribution) -> None:

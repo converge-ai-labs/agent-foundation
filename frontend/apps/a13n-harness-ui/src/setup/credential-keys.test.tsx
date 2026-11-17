@@ -22,7 +22,11 @@ afterEach(() => {
   clients.forEach((client) => client.clear());
   vi.unstubAllGlobals();
 });
-function mount({ failSources = false, unavailableDevice = false } = {}) {
+function mount({
+  failSources = false,
+  unavailableDevice = false,
+  webAccounts = false,
+} = {}) {
   const writes: { method: string; path: string; body: unknown }[] = [];
   const keys = ["key-work", "key-shared", "key-spare", "key-device"];
   const models = [
@@ -72,10 +76,35 @@ function mount({ failSources = false, unavailableDevice = false } = {}) {
       }
       if (path === "/api/auth/keys")
         return json(keys.map((credential_ref) => ({ credential_ref })));
+      if (path === "/api/web-providers")
+        return json({
+          types: [{ type: "test_cloud", display_name: "Test cloud" }],
+          accounts: [
+            {
+              id: "web-provider-cloud",
+              name: "Cloud work",
+              type: "test_cloud",
+              credential: {
+                access_key: { credential_ref: "key-shared" },
+                secret_key: { credential_ref: "key-shared" },
+              },
+            },
+          ],
+        });
       if (path === "/api/configuration/sources") {
         if (failSources) return new Response("Unavailable", { status: 503 });
         return json({
           sources: [
+            ...(webAccounts
+              ? [
+                  {
+                    relative_path: "web_providers/cloud.yaml",
+                    resource_kind: "web_provider",
+                    resource_ids: ["web-provider-cloud"],
+                    content_available: true,
+                  },
+                ]
+              : []),
             ...models.map((_, index) => ({
               relative_path: `models/${index}.yaml`,
               resource_kind: "model",
@@ -136,7 +165,7 @@ it("groups keys by linked model providers, distinguishes shared and unlinked key
   expect(
     within(
       screen.getByRole("region", {
-        name: "Not linked to a Model or Device keys",
+        name: "Not linked to a Model, Device or Web account keys",
       }),
     ).getByText("key-spare"),
   ).toBeTruthy();
@@ -197,7 +226,9 @@ it("keeps keys manageable when provider metadata cannot be read", async () => {
     name: "Usage not resolved keys",
   });
   expect(within(unknown).getByText("key-work")).toBeTruthy();
-  expect(screen.queryByText("Not linked to a Model or Device")).toBeNull();
+  expect(
+    screen.queryByText("Not linked to a Model, Device or Web account"),
+  ).toBeNull();
 });
 
 it("shows Device-only and shared consumers before confirming deletion", async () => {
@@ -217,7 +248,9 @@ it("shows Device-only and shared consumers before confirming deletion", async ()
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText("Model: Work Claude")).toBeTruthy();
   expect(within(dialog).getByText("Device: Shared Device")).toBeTruthy();
-  expect(within(dialog).getByText(/Linked models and devices/)).toBeTruthy();
+  expect(
+    within(dialog).getByText(/Linked models, devices and Web accounts/),
+  ).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(writes).toHaveLength(0);
   fireEvent.change(screen.getByLabelText("Search API keys"), {
@@ -234,7 +267,9 @@ it("does not call a key unlinked when Device sources cannot be read", async () =
     name: "Usage not resolved keys",
   });
   expect(within(unknown).getByText("key-device")).toBeTruthy();
-  expect(screen.queryByText("Not linked to a Model or Device")).toBeNull();
+  expect(
+    screen.queryByText("Not linked to a Model, Device or Web account"),
+  ).toBeNull();
 });
 
 it("retains a key draft while switching languages", async () => {
@@ -260,4 +295,26 @@ it("retains a key draft while switching languages", async () => {
   await act(async () => {
     await i18n.changeLanguage("en");
   });
+});
+
+it("lists every Web credential field sharing a key and includes them in removal warnings", async () => {
+  const writes = mount({ webAccounts: true });
+  const access = await screen.findByRole("link", {
+    name: "Web account: Cloud work · access_key",
+  });
+  expect(access.getAttribute("href")).toContain("web_providers%2Fcloud.yaml");
+  expect(
+    screen.getByRole("link", { name: "Web account: Cloud work · secret_key" }),
+  ).toBeTruthy();
+  const row = screen.getByText("key-shared").closest("article")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+  const dialog = screen.getByRole("dialog");
+  expect(
+    within(dialog).getByText("Web account: Cloud work · access_key"),
+  ).toBeTruthy();
+  expect(
+    within(dialog).getByText("Web account: Cloud work · secret_key"),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(writes).toHaveLength(0);
 });

@@ -23,6 +23,7 @@ import { useRootConfiguration } from "./root-configuration";
 import { BotFields } from "./bot-fields";
 import { DictationFields } from "./dictation-fields";
 import { ModelFields } from "./model-editor";
+import { WebProviderFields } from "./web-providers";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
@@ -276,6 +277,9 @@ export function ResourceFields({
             connections={referenceLists([])}
           />
         </>
+      )}
+      {kind === "web_provider" && (
+        <WebProviderFields source={source} onChange={onChange} />
       )}
       {kind === "device" && (
         <DeviceFields source={source} onChange={onChange} />

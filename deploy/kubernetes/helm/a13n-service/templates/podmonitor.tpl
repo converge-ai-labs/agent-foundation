@@ -18,4 +18,11 @@ spec:
     - port: metrics
       path: /metrics
       interval: {{ .Values.metrics.podMonitor.interval }}
+      relabelings:
+        # The namespace/release pair is the database/scheduling domain. Include a cluster prefix in
+        # external relabeling when multiple clusters remote-write into the same metrics backend.
+        - targetLabel: deployment
+          replacement: {{ printf "%s/%s" .Release.Namespace .Release.Name | quote }}
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+          targetLabel: role
 {{- end }}

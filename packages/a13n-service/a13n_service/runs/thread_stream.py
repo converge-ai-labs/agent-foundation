@@ -33,7 +33,7 @@ from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.redis import StreamEntry, last_id, read, read_entry, read_range
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.stream import STREAM_PREFIX, stream_key
+from a13n_service.runs.stream import GAPS, STREAM_PREFIX, stream_key
 from a13n_service.runs.tables import AttemptRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import Access, Authenticated, reauthenticate, workspace_scope
@@ -295,6 +295,8 @@ async def open_stream(
 
 
 def _frame(event: FrameName, data: BaseModel, entry_id: str | None = None) -> str:
+    if event == "gap":
+        GAPS.add(1)
     head = f"id: {entry_id}\n" if entry_id is not None else ""
     return f"{head}event: {event}\ndata: {data.model_dump_json()}\n\n"
 

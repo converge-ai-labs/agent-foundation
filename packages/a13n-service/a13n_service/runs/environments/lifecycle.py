@@ -34,9 +34,10 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import advisory_lock, lock, now, transaction
+from a13n_service.infra.db import advisory_lock, after_commit, lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.providers.environment import envd_policy
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
 from a13n_service.providers.environment.errors import cancelled_management_failure, observed_environment_state
@@ -74,6 +75,13 @@ from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
 logger = get_logger(__name__)
+
+OPERATION_DURATION = meter.create_histogram(
+    "a13n.environment.operation.duration",
+    unit="s",
+    description="Claimed operation publication age, including pending polls; not individual provider latency",
+    explicit_bucket_boundaries_advisory=(1, 5, 15, 30, 60, 300, 900, 3600, 14400),
+)
 
 type Phase = Literal["creating", "starting", "stopping", "deleting"]
 _PHASES: dict[str, Phase] = {
@@ -845,6 +853,19 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         environment.operation_deadline = environment.next_operation_at = None
         handle = Handle.model_validate(environment.handle)
+        result = "pending" if outcome.pending else "failed" if outcome.fault is not None else "completed"
+        certainty = outcome.fault.certainty if outcome.fault is not None else "none"
+        seconds = (
+            max(0, (current - environment.operation_started_at).total_seconds())
+            if environment.operation_started_at
+            else 0
+        )
+        labels = {"phase": operation.phase, "result": result, "certainty": certainty}
+
+        async def observed() -> None:
+            OPERATION_DURATION.record(seconds, labels)
+
+        after_commit(session, observed)
         if outcome.pending:
             environment.next_operation_at = current + timedelta(seconds=outcome.retry_after_seconds)
             environment.operation_unsettled = not outcome.settled

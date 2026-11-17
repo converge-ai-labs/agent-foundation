@@ -17,6 +17,7 @@ from a13n_harness_ui.configuration.models import (
     SidekickConfiguration,
     SubagentsConfiguration,
     SubscriptionGroupResource,
+    WebProviderResource,
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
@@ -204,6 +205,7 @@ class ResolvedSubagent(CompositionModel):
 
 class ResolvedRunComposition(CompositionModel):
     schema_version: Literal["1"] = "1"
+    web_providers: tuple[WebProviderResource, ...] = Field(default=(), exclude_if=lambda value: not value)
     package_prompt_revision: str = Field(min_length=1, max_length=128)
     generation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     thread_id: str = Field(min_length=1, max_length=80)

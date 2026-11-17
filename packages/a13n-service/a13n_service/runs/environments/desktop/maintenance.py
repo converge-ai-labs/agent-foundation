@@ -6,7 +6,7 @@ from a13n_logging import exception_details, get_logger
 from sqlalchemy import delete, func, or_, select
 
 from a13n_service.infra.db import lock, now, transaction
-from a13n_service.infra.sweeps import Sweep
+from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.runs.environments.desktop import access, control
 from a13n_service.runs.environments.desktop.tables import DesktopControlRow, DesktopViewerRow
 from a13n_service.runs.runtime import Runtime
@@ -47,7 +47,8 @@ class Maintenance:
     async def _one(self, control_id: str) -> None:
         try:
             # Reconcile owns the cross-worker claim and bounds its remote connection.
-            await control.reconcile(self.runtime, control_id)
+            with item("maintain_desktop_control"):
+                await control.reconcile(self.runtime, control_id)
         except Exception as error:
             logger.warning(
                 "Desktop control maintenance failed",

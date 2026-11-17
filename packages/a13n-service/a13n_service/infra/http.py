@@ -1,6 +1,7 @@
 """Request IDs and the request log, the HTTP error envelope, strong resource preconditions, request idempotency keys
 and the headers stored content is served with."""
 
+import asyncio
 import time
 from typing import Annotated, Any, Protocol
 from urllib.parse import quote
@@ -31,7 +32,23 @@ REQUEST_DURATION = meter.create_histogram(
     description="Time from receiving an HTTP request until its response ends, streams included",
     explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10),
 )
-# Probes answer every few seconds and say nothing about a request; they are measured but not logged.
+RESPONSE_START = meter.create_histogram(
+    "a13n.http.response_start.duration",
+    unit="s",
+    description="Request to response headers; not first model token",
+    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
+)
+STREAM_ACTIVE = meter.create_up_down_counter(
+    "a13n.stream.active", unit="{connection}", description="Open SSE responses"
+)
+STREAM_DURATION = meter.create_histogram(
+    "a13n.stream.duration",
+    unit="s",
+    description="SSE response lifetime by close outcome",
+    explicit_bucket_boundaries_advisory=(1, 5, 15, 30, 60, 300, 900, 3600, 14400, 86400),
+)
+_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"})
+# Probes answer every few seconds and say nothing about a business request; measured separately, never logged.
 _UNLOGGED_ROUTES = frozenset({"/healthz", "/readyz"})
 
 _STATUS: dict[ErrorCode, int] = {
@@ -76,12 +93,26 @@ class RequestIds:
         state = scope.setdefault("state", {})
         state["request_id"] = request_id
         started, status = time.perf_counter(), 500
+        streaming, disconnected, outcome = False, False, "completed"
+
+        async def receive_observed() -> Message:
+            nonlocal disconnected
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                disconnected = True
+            return message
 
         async def send_with_id(message: Message) -> None:
-            nonlocal status
+            nonlocal status, streaming
             if message["type"] == "http.response.start":
                 status = message["status"]
                 headers = MutableHeaders(scope=message)
+                streaming = headers.get("content-type", "").split(";", 1)[0] == "text/event-stream"
+                if streaming:
+                    RESPONSE_START.record(
+                        time.perf_counter() - started, _request_attributes(scope, status, streaming=True)
+                    )
+                    STREAM_ACTIVE.add(1)
                 headers[REQUEST_ID_HEADER] = request_id
                 answer: Response | None = state.get(_ANSWER)
                 if answer is not None:
@@ -95,18 +126,50 @@ class RequestIds:
 
         with log_context(request_id=request_id):
             try:
-                await self.app(scope, receive, send_with_id)
+                await self.app(scope, receive_observed, send_with_id)
+            except asyncio.CancelledError:
+                outcome = "cancelled"
+                raise
+            except Exception:
+                outcome = "failed"
+                raise
             finally:
-                _finished(scope, status, time.perf_counter() - started)
+                seconds = time.perf_counter() - started
+                if streaming:
+                    STREAM_ACTIVE.add(-1)
+                    STREAM_DURATION.record(
+                        seconds, {"result": "disconnected" if disconnected and outcome == "completed" else outcome}
+                    )
+                _finished(scope, status, seconds, streaming=streaming)
 
 
-def _finished(scope: Scope, status: int, seconds: float) -> None:
+def _request_attributes(scope: Scope, status: int, *, streaming: bool) -> dict[str, str | int]:
     route = scope.get("route")
     template = route.path if route is not None else "unmatched"
-    REQUEST_DURATION.record(
-        seconds,
-        {"http.request.method": scope["method"], "http.route": template, "http.response.status_code": status},
+    # Console fallback and MCP mounts have no route template. Use the namespace only
+    # to classify them; the raw path is never exported as a label.
+    path = route.path if route is not None else scope["path"]
+    kind = (
+        "probe"
+        if template in _UNLOGGED_ROUTES
+        else "stream"
+        if streaming
+        else "api"
+        if path == "/api" or path.startswith("/api/")
+        else "static"
     )
+    return {
+        "http.request.method": scope["method"] if scope["method"] in _METHODS else "_OTHER",
+        "http.route": template,
+        "http.response.status_code": status,
+        "a13n.request.kind": kind,
+    }
+
+
+def _finished(scope: Scope, status: int, seconds: float, *, streaming: bool = False) -> None:
+    attributes = _request_attributes(scope, status, streaming=streaming)
+    template = attributes["http.route"]
+    REQUEST_DURATION.record(seconds, attributes)
     if template not in _UNLOGGED_ROUTES:
         logger.info(
             "Request finished",

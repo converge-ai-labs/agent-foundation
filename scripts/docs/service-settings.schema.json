@@ -471,6 +471,11 @@
           "title": "Auto Migrate",
           "type": "boolean"
         },
+        "auto_migrate_apps": {
+          "default": true,
+          "title": "Auto Migrate Apps",
+          "type": "boolean"
+        },
         "pool_size": {
           "default": 32,
           "maximum": 1024,
@@ -527,19 +532,6 @@
     "DefaultGuides": {
       "additionalProperties": false,
       "properties": {
-        "file": {
-          "anyOf": [
-            {
-              "maxLength": 65536,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "File"
-        },
         "record": {
           "anyOf": [
             {
@@ -993,7 +985,7 @@
           "type": "integer"
         },
         "guide_bytes": {
-          "default": 4096,
+          "default": 16384,
           "maximum": 65536,
           "minimum": 256,
           "title": "Guide Bytes",
@@ -1219,6 +1211,32 @@
         "query_endpoint"
       ],
       "title": "MonitoringPreset",
+      "type": "object"
+    },
+    "ObjectStoreSettings": {
+      "additionalProperties": false,
+      "description": "Retention of private Thread objects, independent of workspace Assets.",
+      "properties": {
+        "temporary_ttl_seconds": {
+          "default": 86400,
+          "exclusiveMinimum": 0,
+          "title": "Temporary Ttl Seconds",
+          "type": "number"
+        },
+        "max_temporary_objects": {
+          "default": 32,
+          "minimum": 1,
+          "title": "Max Temporary Objects",
+          "type": "integer"
+        },
+        "max_temporary_bytes": {
+          "default": 67108864,
+          "minimum": 1,
+          "title": "Max Temporary Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "ObjectStoreSettings",
       "type": "object"
     },
     "Objects": {
@@ -2226,6 +2244,9 @@
     },
     "objects": {
       "$ref": "#/$defs/Objects"
+    },
+    "object_store": {
+      "$ref": "#/$defs/ObjectStoreSettings"
     },
     "redis": {
       "$ref": "#/$defs/RedisSettings"

@@ -222,6 +222,10 @@ class AgentCompositionResolver:
     def validate_generation(self, source: LoadedHarnessUiConfiguration, *, warnings: list[str] | None = None) -> None:
         """Validate a generation, reporting unusable Agent Capabilities separately."""
 
+        from a13n_harness_ui.web_providers import validate_web_account
+
+        for account in source.web_providers.values():
+            validate_web_account(account)
         plugin_keys = tuple(item.plugin_key for item in source.harness_plugins.values())
         plugin_catalog = self.catalog.plugin_catalog(plugin_keys)
         for item in source.harness_plugins.values():
@@ -392,6 +396,7 @@ class AgentCompositionResolver:
         return ResolvedRunComposition(
             package_prompt_revision=PACKAGE_PROMPT_REVISION,
             generation_digest=source.source_digest,
+            web_providers=tuple(item.model_copy(deep=True) for item in source.web_providers.values()),
             thread_id=selection.thread_id,
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
@@ -920,6 +925,12 @@ class AgentCompositionResolver:
                 else:
                     _LOGGER.warning("capability_skipped", extra={"warning": warning})
                 continue
+            if item.capability == "web":
+                from a13n_harness.toolsets.web import WebConfiguration
+
+                from a13n_harness_ui.web_providers import selected_web_accounts
+
+                selected_web_accounts(WebConfiguration.model_validate(configuration), source.web_providers.values())
             guardian_credits = False
             capability = validated[0].capability
             if (

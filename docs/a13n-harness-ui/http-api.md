@@ -237,6 +237,8 @@ During active work, a null `captured` means that operation has not published its
 
 ### Edit reusable resources
 
+For Web accounts, GET `/api/web-providers` to discover installed provider types, their configuration and credential schemas, authentication rules, supported operations, setup links, and accepted safe account recipes. Create or update `web_providers/*.yaml` through the same source workflow below; use `/api/auth/keys` separately for secret values. The catalog and source validation never probe provider access. See [Web provider accounts](native-and-web-tools.md#web-provider-accounts).
+
 1. GET `/api/configuration/sources` and then `/api/configuration/sources/{relative_path}` to inspect accepted files. The accepted generation can differ from an invalid edit on disk. MCP source content is withheld as null because it can contain credentials; do not write that null back.
 2. POST `{"content":"..."}` to `/api/configuration/validate?path=projects/work.yaml` to validate the resulting complete configuration.
 3. PUT the same body to `/api/configuration/sources/projects/work.yaml` to publish it. Use DELETE for a removable non-root source.

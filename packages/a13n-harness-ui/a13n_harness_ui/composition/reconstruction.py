@@ -74,6 +74,11 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSo
 if TYPE_CHECKING:
     from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 
+from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.toolsets.web import WebConfiguration
+
+from a13n_harness_ui.configuration.models import WebProviderResource
+
 from .auxiliary import capability_configuration
 from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
 
@@ -89,6 +94,21 @@ class ReconstructedAgent:
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
     compaction: CompactionRun | None = None
+    web_providers: tuple[WebProviderResource, ...] = ()
+    web_configuration: WebConfiguration | None = None
+    api_keys: ApiKeyStore | None = None
+
+    def fresh_web_binding(self) -> WebBinding | None:
+        if self.web_configuration is None:
+            return None
+        from a13n_harness_ui.capability_runtime import web_run_binding
+
+        return web_run_binding(
+            self.run_configuration,
+            accounts=self.web_providers,
+            web_configuration=self.web_configuration,
+            keys=self.api_keys,
+        )
 
     def file_media_understanding(self, thread_id: str) -> FileMediaUnderstanding | None:
         if not self.media_models:
@@ -387,6 +407,16 @@ class AgentReconstructor:
             ) from exc
         return ReconstructedAgent(
             run_configuration=composition.run_configuration,
+            web_providers=composition.web_providers,
+            web_configuration=next(
+                (
+                    WebConfiguration.model_validate(item.configuration)
+                    for item in node.capabilities
+                    if item.capability == "web"
+                ),
+                None,
+            ),
+            api_keys=self._api_keys,
             memory_cursors=cursors,
             executable=cast(ExecutableAgent[str | None], executable),
             model_resolver=model_resolver,

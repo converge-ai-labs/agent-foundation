@@ -45,6 +45,7 @@ a13n-harness-ui --config /path/to/a13n-harness-ui.yaml config validate
 | `a13n-harness-ui.yaml`       | 进程设置、默认值、显示、工具开关及下文的根级配置                                           |
 | `models/*.yaml`              | [提供方连接、凭据引用和请求设置](models-and-authentication.md#model-file-reference)        |
 | `agents/*.yaml`              | [指令、Model 选择、Capability 和子级](agents-and-subagents.md#agent-file-reference)        |
+| `web_providers/*.yaml`       | [可复用的 Host 搜索/抓取账号与凭据来源](native-and-web-tools.md#web-provider-accounts)     |
 | `subscription_groups/*.yaml` | [有序订阅账户和选择策略](models-and-authentication.md#account-store-locations)             |
 | `projects/*.yaml`            | [工作根目录、Device 绑定和创建默认值](environments-and-projects.md#project-file-reference) |
 | `devices/*.yaml`             | [远程 Device 连接](environments-and-projects.md#add-device-bindings)                       |

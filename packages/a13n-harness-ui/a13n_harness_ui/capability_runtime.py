@@ -35,10 +35,13 @@ from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from a13n_harness.configuration import HostNotAllowedError, RunConfiguration
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.http import outbound_tls_verify
+from a13n_harness.toolsets.web import WebConfiguration
 from anyio import to_thread
 from pydantic_ai import RunContext
 from pydantic_ai.messages import FilePart
 
+from a13n_harness_ui.configuration.models import WebProviderResource
+from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.settings import ObjectStoreSettings
 
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -222,6 +225,7 @@ def production_run_bindings(
     data_root: Path | None = None,
     thread_id: str | None = None,
     object_store_policy: ObjectStoreSettings | None = None,
+    web: WebBinding | None = None,
 ) -> RunBindings:
     """Supply fresh Host collaborators required by one logical Harness Run."""
 
@@ -234,20 +238,38 @@ def production_run_bindings(
             raise ValueError("Object Store binding requires the data root and Thread identity")
         bindings = replace(bindings, object_store=ThreadObjectStore(data_root, thread_id, policy=object_store_policy))
     if WEB_CAPABILITY_ID in owner_capability_ids:
-        client = HttpxWebClient()
-        policy = HttpWebPolicy(bindings.configuration)
-        bindings = replace(
-            bindings,
-            web=WebBinding(
-                client=client,
-                policy=policy,
-                search_backends=(WebSearchBackendBinding("default", DuckDuckGoSearchProvider(client, policy)),),
-                scrape_backends=(WebScrapeBackendBinding("default", HtmlScrapeProvider(client)),),
-            ),
-        )
+        bindings = replace(bindings, web=web or web_run_binding(bindings.configuration))
     if DOCUMENTS_CAPABILITY_ID in owner_capability_ids:
         bindings = replace(bindings, document_converter=LocalDocumentConverter())
     return bindings
+
+
+def web_run_binding(
+    configuration: RunConfiguration,
+    *,
+    accounts: tuple[WebProviderResource, ...] = (),
+    web_configuration: WebConfiguration | None = None,
+    keys: ApiKeyStore | None = None,
+) -> WebBinding:
+    """Fresh local defaults plus explicitly selected account adapters; no credential I/O."""
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy
+
+    from a13n_harness_ui.web_providers import account_backend_bindings
+
+    client = HttpxWebClient()
+    policy = HttpWebPolicy(configuration)
+    search, scrape = account_backend_bindings(
+        web_configuration or WebConfiguration(),
+        accounts,
+        keys=keys,
+        endpoint_policy=EndpointPolicy(configuration=configuration, require_https=True),
+    )
+    return WebBinding(
+        client=client,
+        policy=policy,
+        search_backends=(WebSearchBackendBinding("default", DuckDuckGoSearchProvider(client, policy)), *search),
+        scrape_backends=(WebScrapeBackendBinding("default", HtmlScrapeProvider(client)), *scrape),
+    )
 
 
 async def save_native_image(ctx: RunContext[AgentContext], image: FilePart) -> str:

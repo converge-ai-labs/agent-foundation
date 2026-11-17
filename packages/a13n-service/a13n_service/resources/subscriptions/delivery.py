@@ -29,7 +29,7 @@ from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbound import open_http
-from a13n_service.infra.outbox import Claim, OutboxRow, Undelivered, prepare, secret_location, settle
+from a13n_service.infra.outbox import Claim, OutboxRow, Undelivered, enqueue_batch, prepare, secret_location, settle
 from a13n_service.resources.subscriptions.schemas import (
     SECRET_UNAVAILABLE,
     LifecycleKind,
@@ -84,7 +84,9 @@ async def stage_webhooks(
     Each delivery adds its own `id` and `type` to `payload`. A subscription whose signing secret cannot be
     decrypted gets dead deliveries instead, so it never fails the transition.
     """
-    session.add_all(await prepare_webhooks(session, keys, [Transition(subject, kinds, payload)], limit=limit))
+    await enqueue_batch(
+        session, await prepare_webhooks(session, keys, [Transition(subject, kinds, payload)], limit=limit)
+    )
 
 
 @dataclass(frozen=True, slots=True)

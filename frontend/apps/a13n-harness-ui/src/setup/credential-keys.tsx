@@ -11,7 +11,11 @@ import { Link } from "react-router";
 import { parseDocument } from "yaml";
 import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
-import { useSources, useTransport } from "../transport/context";
+import {
+  useSources,
+  useTransport,
+  useWebProviders,
+} from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, SearchField, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
@@ -43,29 +47,59 @@ export function CredentialKeys({
         ),
     })),
   });
-  const associations = resources.flatMap((resource, index) => {
-    if (!resource.data?.content) return [];
-    const kind = credentialSources[index].resource_kind;
-    const document = parseDocument(resource.data.content);
-    const reference = document.getIn(["authentication", "credential_ref"]);
-    const route = document.get("route");
-    const name = document.get("name");
-    if (typeof reference !== "string") return [];
-    const provider =
-      kind === "model" && typeof route === "string"
-        ? route.split(":")[0]
-        : null;
-    return [
-      {
-        reference,
-        provider,
-        kind,
-        name: typeof name === "string" ? name : resource.data.relative_path,
-        path: resource.data.relative_path,
-      },
-    ];
-  });
+  const hasWebAccounts =
+    sources.data?.sources.some(
+      (item) => item.resource_kind === "web_provider",
+    ) ?? false;
+  const web = useWebProviders(hasWebAccounts);
+  const associations = resources
+    .flatMap((resource, index) => {
+      if (!resource.data?.content) return [];
+      const kind = credentialSources[index].resource_kind;
+      const document = parseDocument(resource.data.content);
+      const reference = document.getIn(["authentication", "credential_ref"]);
+      const route = document.get("route");
+      const name = document.get("name");
+      if (typeof reference !== "string") return [];
+      const provider =
+        kind === "model" && typeof route === "string"
+          ? route.split(":")[0]
+          : null;
+      return [
+        {
+          reference,
+          provider,
+          kind,
+          name: typeof name === "string" ? name : resource.data.relative_path,
+          path: resource.data.relative_path,
+        },
+      ];
+    })
+    .concat(
+      (web.data?.accounts ?? []).flatMap((account) =>
+        Object.entries(account.credential ?? {}).flatMap(([field, source]) => {
+          if (!("credential_ref" in source)) return [];
+          const path = sources.data?.sources.find(
+            (item) =>
+              item.resource_kind === "web_provider" &&
+              item.resource_ids.includes(account.id),
+          )?.relative_path;
+          return path
+            ? [
+                {
+                  reference: source.credential_ref,
+                  provider: account.type,
+                  kind: "web_provider",
+                  name: `${account.name} · ${field}`,
+                  path,
+                },
+              ]
+            : [];
+        }),
+      ),
+    );
   const unresolved =
+    (hasWebAccounts && (web.isPending || !!web.error)) ||
     sources.isPending ||
     !!sources.error ||
     credentialSources.some(
@@ -129,12 +163,15 @@ export function CredentialKeys({
               (connection) =>
                 connection.provider === providers[0] &&
                 connection.authentication === "api_key",
-            )?.label ?? providers[0])
+            )?.label ??
+            web.data?.types.find((item) => item.type === providers[0])
+              ?.display_name ??
+            providers[0])
           : linked.some((item) => item.kind === "device")
             ? t("Devices")
             : unresolved
               ? t("Usage not resolved")
-              : t("Not linked to a Model or Device");
+              : t("Not linked to a Model, Device or Web account");
     if (
       !`${key.credential_ref} ${provider} ${linked.map((item) => item.name).join(" ")}`
         .toLowerCase()
@@ -153,14 +190,14 @@ export function CredentialKeys({
     <section className={styles.section} aria-label={t("Saved API keys")}>
       <p className={styles.help}>
         {t(
-          "Keys for models and devices on this server. These aren't your browser login key.",
+          "Credentials for models, devices and Web accounts on this server. These aren't your browser login key.",
         )}
       </p>
       <div className={styles.listToolbar}>
         {!!keys.data?.length && (
           <SearchField
             label={t("Search API keys")}
-            placeholder={t("Search keys, models or devices…")}
+            placeholder={t("Search credentials and consumers…")}
             value={filter}
             onChange={setFilter}
           />
@@ -216,12 +253,16 @@ export function CredentialKeys({
                     <div className={styles.modelLinks}>
                       {key.resources.map((resource) => (
                         <Link
-                          key={resource.path}
+                          key={`${resource.path}/${resource.name}`}
                           to={`/settings/source?path=${encodeURIComponent(resource.path)}`}
                         >
                           {resource.kind === "device"
                             ? t("Device: {{name}}", { name: resource.name })
-                            : t("Model: {{name}}", { name: resource.name })}
+                            : resource.kind === "web_provider"
+                              ? t("Web account: {{name}}", {
+                                  name: resource.name,
+                                })
+                              : t("Model: {{name}}", { name: resource.name })}
                         </Link>
                       ))}
                     </div>
@@ -257,7 +298,9 @@ export function CredentialKeys({
         <p className={layout.emptySection}>
           {filter
             ? t("No keys match your search.")
-            : t("No API keys yet. Add one to use with a model or device.")}
+            : t(
+                "No saved credentials yet. Add one to use with a model, device or Web account.",
+              )}
         </p>
       )}
       <ModalFrame
@@ -271,9 +314,11 @@ export function CredentialKeys({
         title={editing === "new" ? t("Add API key") : t("Replace API key")}
         description={
           editing === "new"
-            ? t("Save a key to use with models and devices.")
+            ? t(
+                "Save a credential to use with models, devices and Web accounts.",
+              )
             : t(
-                "Linked models and devices will use the new key next time they load it.",
+                "Linked models, devices and Web accounts will use the new credential next time they load it.",
               )
         }
         closeLabel={t("Close")}
@@ -341,7 +386,7 @@ export function CredentialKeys({
         }}
         title={t("Remove saved key?")}
         description={t(
-          "Linked models and devices will need another key to connect.",
+          "Linked models, devices and Web accounts will need another credential to connect.",
         )}
         closeLabel={t("Close")}
         footer={
@@ -368,16 +413,16 @@ export function CredentialKeys({
           {associations
             .filter((item) => item.reference === deleting)
             .map((item) => (
-              <li key={item.path}>
+              <li key={`${item.path}/${item.name}`}>
                 {item.kind === "device"
                   ? t("Device: {{name}}", { name: item.name })
-                  : t("Model: {{name}}", { name: item.name })}
+                  : item.kind === "web_provider"
+                    ? t("Web account: {{name}}", { name: item.name })
+                    : t("Model: {{name}}", { name: item.name })}
               </li>
             ))}
         </ul>
-        {unresolved && (
-          <p>{t("Some Model and Device links are unavailable.")}</p>
-        )}
+        {unresolved && <p>{t("Some credential consumers are unavailable.")}</p>}
         <ErrorNotice error={remove.error} />
       </ModalFrame>
     </section>

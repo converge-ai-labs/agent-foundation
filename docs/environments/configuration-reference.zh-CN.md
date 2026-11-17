@@ -34,6 +34,7 @@ Runloop 和 boxd 的执行与管理使用同一配置模型，没有独立的 Se
 | `shell_profiles`           | false | 数组，元素类型为 DirectLocalShellProfile | default=[]                              |
 | `allowed_executables`      | false | string 数组                              | uniqueItems=true; default=[]            |
 | `environment`              | false | EnvironmentVariables                     | —; 默认值由模型工厂计算                 |
+| `envd`                     | false | EnvdSettings                             | —; 默认值由模型工厂计算                 |
 | `inherit_environment`      | false | boolean                                  | default=false                           |
 | `allowed_environment_keys` | false | string 数组 或 null                      | uniqueItems=true; default=[]            |
 | `allowed_ports`            | false | integer 数组                             | uniqueItems=true; default=[]            |
@@ -59,6 +60,55 @@ Runloop 和 boxd 的执行与管理使用同一配置模型，没有独立的 Se
 | `fixed_arguments` | false | string 数组           | default=[]                 |
 | `dialect`         | false | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false | boolean               | default=false              |
+
+## `EnvdLimits`
+
+守护进程预算，默认值和约束与 config.rs 保持一致。
+
+| 字段                               | 必填  | 类型 / 可选值 | 约束与默认值                                                |
+| ---------------------------------- | ----- | ------------- | ----------------------------------------------------------- |
+| `max_device_spool_bytes`           | false | 整数          | minimum=1; maximum=2305843009213693951; default=4294967296  |
+| `max_device_spool_objects`         | false | 整数          | minimum=1; maximum=2305843009213693951; default=65536       |
+| `max_device_staged_file_bytes`     | false | 整数          | minimum=1; maximum=2305843009213693951; default=34359738368 |
+| `max_device_staged_file_objects`   | false | 整数          | minimum=1; maximum=2305843009213693951; default=2048        |
+| `max_device_concurrent_operations` | false | 整数          | minimum=1; maximum=2305843009213693951; default=256         |
+| `max_device_processes`             | false | 整数          | minimum=1; maximum=2305843009213693951; default=512         |
+| `max_device_operation_records`     | false | 整数          | minimum=1; maximum=2305843009213693951; default=65536       |
+| `max_device_process_records`       | false | 整数          | minimum=1; maximum=2305843009213693951; default=4096        |
+| `max_device_file_transfers`        | false | 整数          | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_device_file_transfer_records` | false | 整数          | minimum=1; maximum=2305843009213693951; default=2048        |
+| `max_sessions`                     | false | 整数          | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_file_bytes`                   | false | 整数          | minimum=1; maximum=2305843009213693951; default=8589934592  |
+| `max_request_bytes`                | false | 整数          | minimum=1; maximum=2305843009213693951; default=16777216    |
+| `max_response_bytes`               | false | 整数          | minimum=1; maximum=2305843009213693951; default=16777216    |
+| `max_concurrent_operations`        | false | 整数          | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_processes`                    | false | 整数          | minimum=1; maximum=2305843009213693951; default=128         |
+| `max_operation_duration_ms`        | false | 整数          | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_output_preview_bytes`         | false | 整数          | minimum=1; maximum=2305843009213693951; default=2097152     |
+| `max_output_bytes_per_stream`      | false | 整数          | minimum=1; maximum=2305843009213693951; default=268435456   |
+| `max_spool_bytes`                  | false | 整数          | minimum=1; maximum=2305843009213693951; default=1073741824  |
+| `max_spool_objects`                | false | 整数          | minimum=1; maximum=2305843009213693951; default=16384       |
+| `max_operation_records`            | false | 整数          | minimum=1; maximum=2305843009213693951; default=16384       |
+| `operation_record_ttl_ms`          | false | 整数          | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_process_records`              | false | 整数          | minimum=1; maximum=2305843009213693951; default=1024        |
+| `max_transfer_frame_bytes`         | false | 整数          | minimum=26; maximum=2305843009213693951; default=4194304    |
+| `max_concurrent_file_transfers`    | false | 整数          | minimum=1; maximum=2305843009213693951; default=64          |
+| `max_file_transfer_records`        | false | 整数          | minimum=1; maximum=2305843009213693951; default=512         |
+| `file_transfer_record_ttl_ms`      | false | 整数          | minimum=1; maximum=2305843009213693951; default=86400000    |
+| `max_staged_file_bytes`            | false | 整数          | minimum=1; maximum=2305843009213693951; default=8589934592  |
+| `max_staged_file_objects`          | false | 整数          | minimum=1; maximum=2305843009213693951; default=512         |
+| `file_transfer_idle_ttl_ms`        | false | 整数          | minimum=1; maximum=2305843009213693951; default=600000      |
+| `max_file_transfer_duration_ms`    | false | 整数          | minimum=1; maximum=2305843009213693951; default=7200000     |
+
+## `EnvdSettings`
+
+| 字段                                 | 必填  | 类型 / 可选值 | 约束与默认值                                                  |
+| ------------------------------------ | ----- | ------------- | ------------------------------------------------------------- |
+| `limits`                             | false | EnvdLimits    | —; 默认值由模型工厂计算                                       |
+| `vm_startup_timeout_ms`              | false | 整数          | minimum=1; maximum=2305843009213693951; default=120000        |
+| `computer_use_permission_timeout_ms` | false | 整数          | minimum=1; maximum=2305843009213693951; default=120000        |
+| `idle_timeout_ms`                    | false | 整数          | minimum=1; maximum=2305843009213693951; default=3600000       |
+| `max_lifetime_ms`                    | false | 整数或 null   | maximum=2305843009213693951; exclusiveMinimum=0; default=null |
 
 ## `EnvironmentVariables`
 
@@ -303,6 +353,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `max_output_bytes_per_stream` | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false | integer                                   | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false | integer                                   | exclusiveMinimum=0; default=128                                                  |
+| `envd`                        | false | EnvdSettings                              | —; 默认值由模型工厂计算                                                          |
 
 ## `DockerMountConfiguration`
 
@@ -338,6 +389,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `max_output_bytes_per_stream` | false | integer                          | exclusiveMinimum=0; default=16777216                                             |
 | `max_spool_bytes`             | false | integer                          | exclusiveMinimum=0; default=67108864                                             |
 | `max_concurrent_processes`    | false | integer                          | exclusiveMinimum=0; default=128                                                  |
+| `envd`                        | false | EnvdSettings                     | —; 默认值由模型工厂计算                                                          |
 | `desktop_assistance`          | false | boolean                          | default=false                                                                    |
 | `desktop_viewer_url`          | false | string 或 null                   | maxLength=2048; default=null                                                     |
 | `pull_policy`                 | false | "never", "if_missing"            | default="if_missing"                                                             |
@@ -348,6 +400,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | --------------------------- | ----- | -------------------------------- | --------------------------------------------------------- |
 | `template`                  | false | string                           | minLength=1; maxLength=256; default="base"                |
 | `execution`                 | false | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `preparation`               | false | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false | boolean                          | default=false                                             |
 | `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
 | `root`                      | false | string                           | default="/home/user"                                      |
@@ -360,6 +413,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `max_active_observations`   | false | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `envd`                      | false | EnvdSettings                     | —; 默认值由模型工厂计算                                   |
 
 ## `E2BRecipe`
 
@@ -368,6 +422,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `envd_management`           | false | "managed", "preinstalled"        | default="preinstalled"                                    |
 | `template`                  | false | string                           | minLength=1; maxLength=256; default="base"                |
 | `execution`                 | false | "native", "envd_http", "envd_ws" | default="native"                                          |
+| `preparation`               | false | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false | boolean                          | default=false                                             |
 | `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
 | `root`                      | false | string                           | default="/home/user"                                      |
@@ -380,6 +435,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `max_active_observations`   | false | integer                          | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false | integer                          | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false | integer                          | maximum=100000; exclusiveMinimum=0; default=10000         |
+| `envd`                      | false | EnvdSettings                     | —; 默认值由模型工厂计算                                   |
 | `desktop_assistance`        | false | boolean                          | default=false                                             |
 | `timeout_seconds`           | false | integer                          | minimum=30; maximum=86400; default=3600                   |
 
@@ -388,12 +444,13 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段                      | 必填  | 类型 / 可选值             | 约束与默认值                                                                                |
 | ------------------------- | ----- | ------------------------- | ------------------------------------------------------------------------------------------- |
 | `envd_management`         | false | "managed", "preinstalled" | default="preinstalled"                                                                      |
-| `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `snapshot`                | false | string                    | minLength=1; maxLength=256; default="auto"                                                  |
 | `desktop`                 | false | boolean                   | default=false                                                                               |
 | `execution`               | false | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
 | `environment`             | false | EnvironmentVariables      | —; 默认值由模型工厂计算                                                                     |
 | `request_timeout_seconds` | false | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `envd`                    | false | EnvdSettings              | —; 默认值由模型工厂计算                                                                     |
+| `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false | boolean                   | default=false                                                                               |
 
 ## `ModalRecipe`
@@ -401,8 +458,6 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段                      | 必填  | 类型 / 可选值             | 约束与默认值                                                                                |
 | ------------------------- | ----- | ------------------------- | ------------------------------------------------------------------------------------------- |
 | `envd_management`         | false | "managed", "preinstalled" | default="preinstalled"                                                                      |
-| `startup_command`         | false | 字符串数组或 null         | minItems=1; default=null                                                                    |
-| `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `image`                   | false | string                    | minLength=1; maxLength=256; default="auto"                                                  |
 | `desktop`                 | false | boolean                   | default=false                                                                               |
 | `execution`               | false | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
@@ -411,6 +466,9 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `timeout_seconds`         | false | integer                   | minimum=300; maximum=86400; default=86400                                                   |
 | `cpu`                     | false | number                    | maximum=64; exclusiveMinimum=0; default=1                                                   |
 | `memory`                  | false | integer                   | minimum=128; maximum=262144; default=1024                                                   |
+| `envd`                    | false | EnvdSettings              | —; 默认值由模型工厂计算                                                                     |
+| `startup_command`         | false | 字符串数组或 null         | minItems=1; default=null                                                                    |
+| `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false | boolean                   | default=false                                                                               |
 
 ## `VercelRecipe`
@@ -419,6 +477,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | ------------------------- | ----- | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `envd_management`         | false | "managed", "preinstalled"        | default="preinstalled"                                                              |
 | `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                                             |
+| `envd`                    | false | EnvdSettings                     | —; 默认值由模型工厂计算                                                             |
 | `root`                    | false | string                           | default="/vercel/sandbox"                                                           |
 | `python`                  | false | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
 | `shell`                   | false | string                           | default="/bin/bash"                                                                 |
@@ -441,6 +500,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | ------------------------- | ----- | -------------------------------- | ------------------------------------------------------ |
 | `envd_management`         | false | "managed", "preinstalled"        | default="preinstalled"                                 |
 | `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                |
+| `envd`                    | false | EnvdSettings                     | —; 默认值由模型工厂计算                                |
 | `root`                    | false | string                           | default="/home/sprite"                                 |
 | `python`                  | false | string                           | default="python3"                                      |
 | `shell`                   | false | string                           | default="/bin/bash"                                    |
@@ -462,6 +522,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
 | `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
 | `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
+| `envd`                    | false | EnvdSettings           | —; 默认值由模型工厂计算                      |
 
 ## `ModalEnvironmentConfiguration`
 
@@ -475,12 +536,14 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `timeout_seconds`         | false | integer                | minimum=300; maximum=86400; default=86400    |
 | `cpu`                     | false | number                 | maximum=64; exclusiveMinimum=0; default=1    |
 | `memory`                  | false | integer                | minimum=128; maximum=262144; default=1024    |
+| `envd`                    | false | EnvdSettings           | —; 默认值由模型工厂计算                      |
 
 ## `VercelEnvironmentConfiguration`
 
 | 字段                      | 必填  | 类型 / 可选值                    | 约束与默认值                                                                        |
 | ------------------------- | ----- | -------------------------------- | ----------------------------------------------------------------------------------- |
 | `environment`             | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                                             |
+| `envd`                    | false | EnvdSettings                     | —; 默认值由模型工厂计算                                                             |
 | `root`                    | false | string                           | default="/vercel/sandbox"                                                           |
 | `python`                  | false | string                           | default="/vercel/runtimes/python/bin/python3"                                       |
 | `shell`                   | false | string                           | default="/bin/bash"                                                                 |
@@ -500,6 +563,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                           |
 | ------------------------- | ----- | ---------------------- | ------------------------------------------------------ |
 | `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                                |
+| `envd`                    | false | EnvdSettings           | —; 默认值由模型工厂计算                                |
 | `root`                    | false | string                 | default="/home/sprite"                                 |
 | `python`                  | false | string                 | default="python3"                                      |
 | `shell`                   | false | string                 | default="/bin/bash"                                    |
@@ -516,6 +580,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | 字段                      | 必填  | 类型 / 可选值                                    | 约束与默认值                                           |
 | ------------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------ |
 | `environment`             | false | EnvironmentVariables                             | —; 默认值由模型工厂计算                                |
+| `envd`                    | false | EnvdSettings                                     | —; 默认值由模型工厂计算                                |
 | `root`                    | false | string                                           | default="/home/user"                                   |
 | `python`                  | false | string                                           | default="python3"                                      |
 | `shell`                   | false | string                                           | default="/bin/bash"                                    |
@@ -531,7 +596,8 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 
 | Field                            | Required | Type / choices                       | Constraints and default                                |
 | -------------------------------- | -------- | ------------------------------------ | ------------------------------------------------------ |
-| `environment`                    | false    | EnvironmentVariables                 | —; default from model factory                          |
+| `environment`                    | false    | EnvironmentVariables                 | —; 默认值由模型工厂计算                                |
+| `envd`                           | false    | EnvdSettings                         | —; 默认值由模型工厂计算                                |
 | `root`                           | false    | string                               | default="/home/boxd"                                   |
 | `python`                         | false    | string                               | default="python3"                                      |
 | `shell`                          | false    | string                               | default="/bin/bash"                                    |
@@ -656,7 +722,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 
 | 字段      | 必填  | 类型 / 可选值 | 约束与默认值                                   |
 | --------- | ----- | ------------- | ---------------------------------------------- |
-| `headers` | false | object        | —; default from model factory                  |
+| `headers` | false | object        | —; 默认值由模型工厂计算                        |
 | `token`   | true  | string        | minLength=1; maxLength=4096; format="password" |
 
 ## `WebSocketEnvdConnectionConfiguration`
