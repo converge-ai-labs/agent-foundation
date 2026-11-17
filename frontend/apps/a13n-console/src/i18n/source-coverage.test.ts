@@ -369,7 +369,13 @@ function translationKeyLiterals(
     )
       return [...resolve(node.left), ...resolve(node.right)];
   }
-  if (ts.isParenthesizedExpression(node)) return resolve(node.expression);
+  if (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isTypeAssertionExpression(node) ||
+    ts.isSatisfiesExpression(node)
+  )
+    return resolve(node.expression);
   return [];
 }
 
@@ -546,6 +552,47 @@ it("keeps static navigation and dynamic application keys in the catalogs", () =>
       "Fatal",
     ]),
   );
+});
+
+it.each([
+  ['({ ready: "Missing asserted key" } as const)', "fixture.tsx"],
+  [
+    '({ ready: "Missing asserted key" } satisfies Record<string, string>)',
+    "fixture.tsx",
+  ],
+  [
+    '({ ready: "Missing asserted key" } as Record<string, string>)',
+    "fixture.tsx",
+  ],
+  ['(<Record<string, string>>{ ready: "Missing asserted key" })', "fixture.ts"],
+])("validates translation keys in %s", (initializer, path) => {
+  const keys = translationKeys(
+    path,
+    `const labels = ${initializer}; const label = labels[state]; t(label);`,
+  ).map(([key]) => key);
+  expect(keys).toEqual(["Missing asserted key"]);
+  expect(keys.filter((key) => !(key in en))).toEqual(["Missing asserted key"]);
+});
+
+it.each([
+  [
+    "features/providers/credentials-pill.tsx",
+    ["Configured", "Not configured", "Not required"],
+  ],
+  [
+    "features/mcp/oauth-client.tsx",
+    [
+      "Public client (no secret)",
+      "Client secret in Basic header",
+      "Client secret in request body",
+    ],
+  ],
+] as const)("collects asserted label maps in %s", (path, labels) => {
+  const keys = translationKeys(
+    path,
+    readFileSync(new URL(`../${path}`, import.meta.url), "utf8"),
+  ).map(([key]) => key);
+  expect(keys).toEqual(expect.arrayContaining([...labels]));
 });
 
 it("validates literal key fixtures, including conditional branches", () => {
