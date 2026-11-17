@@ -346,7 +346,7 @@ it("switches collections without stacking tables and preserves analysis evidence
                   { trace_id: "a".repeat(32), run_id: "run_a" },
                   { trace_id: "b".repeat(32), run_id: "run_b" },
                 ],
-                read_trace_ids: ["a".repeat(32)],
+                read_trace_ids: ["a".repeat(32), "c".repeat(32)],
                 finding_count: 3,
                 cited_trace_count: 1,
                 selection_truncated: true,
@@ -368,7 +368,7 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(screen.queryByRole("link", { name: "Open analysis run" })).toBeNull();
   expect(screen.getByRole("button", { name: "Analyze traces" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Workspace traces" }));
-  const details = await screen.findByRole("dialog", {
+  const details = await screen.findByRole("complementary", {
     name: "Analysis details",
   });
   const fact = (label: string) =>
@@ -376,6 +376,7 @@ it("switches collections without stacking tables and preserves analysis evidence
       ?.textContent;
   expect(fact("Scope")).toBe("Workspace traces");
   expect(fact("Selected traces")).toBe("2");
+  expect(fact("Read traces")).toBe("2");
   expect(fact("Findings")).toBe("3");
   expect(fact("Evidence-cited traces")).toBe("1");
   expect(
@@ -393,14 +394,21 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(
     screen.getByText(/Open the analysis run for the full report/),
   ).toBeTruthy();
-  await user.click(
-    within(details).getByRole("button", { name: /Selected traces/ }),
-  );
   expect(
     screen.getByRole("link", { name: "a".repeat(32) }).getAttribute("href"),
   ).toBe("/workspace/ws_test/traces/" + "a".repeat(32));
+  // Selection, successful reads and analyst-discovered reads stay distinct.
+  const row = (trace: string) =>
+    screen.getByRole("link", { name: trace }).closest("li")!.textContent;
+  expect(row("a".repeat(32))).toMatch(/Selected.*trace\.read/);
+  expect(row("b".repeat(32))).toMatch(/Selected.*Not read/);
+  expect(row("c".repeat(32))).toMatch(/Found by analyst.*trace\.read/);
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("complementary", { name: "Analysis details" }),
+    ).toBeNull(),
+  );
   await user.click(screen.getByRole("tab", { name: "Findings" }));
   await screen.findByText("No findings in this view");
   await waitFor(() =>
@@ -658,9 +666,18 @@ it("observes analysis progress on the initial Findings tab and refreshes partial
             items: [
               {
                 id: "fan_active",
+                agent_id: null,
+                session_id: "sess_analysis",
+                thread_id: "thread_analysis",
+                run_id: "run_analysis",
                 run_status: count ? "failed" : "running",
+                selection: {},
+                selected_traces: [],
+                read_trace_ids: [],
                 finding_count: count,
                 cited_trace_count: count,
+                selection_truncated: false,
+                created_at: "2026-10-09T10:00:00Z",
               },
             ],
             next_cursor: null,
@@ -673,6 +690,9 @@ it("observes analysis progress on the initial Findings tab and refreshes partial
   });
   mount("/workspace/ws_test/findings", cache);
   await screen.findByText("No findings in this view");
+  // The live strip names the active analysis and opens its progress beside history.
+  await screen.findByText("Analysis in progress");
+  expect(screen.getByRole("button", { name: /View progress/ })).toBeTruthy();
   await waitFor(() =>
     expect(
       http.GET.mock.calls.some(([path]) => path === "/api/v1/finding-analyses"),
@@ -694,5 +714,8 @@ it("observes analysis progress on the initial Findings tab and refreshes partial
   expect(
     screen.getByRole("tab", { name: "Findings" }).getAttribute("aria-selected"),
   ).toBe("true");
+  await waitFor(() =>
+    expect(screen.queryByText("Analysis in progress")).toBeNull(),
+  );
   cache.clear();
 });

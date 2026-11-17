@@ -181,7 +181,7 @@ export function RunDock({
           <span>{t("Analysis results and controls")}</span>
           <Link
             className={styles.dockLink}
-            to={`${basePath}/findings?tab=history`}
+            to={`${basePath}/findings?tab=history&analysis=${run.finding_analysis_id}`}
           >
             {t("Analysis history")}
           </Link>

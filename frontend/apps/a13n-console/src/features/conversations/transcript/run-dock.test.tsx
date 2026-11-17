@@ -255,7 +255,7 @@ it("shows managed Analysis controls without conversation input and can stop acti
   expect(screen.queryByText("Queued test")).toBeNull();
   expect(
     screen.getByRole("link", { name: "Analysis history" }).getAttribute("href"),
-  ).toContain("findings?tab=history");
+  ).toContain("findings?tab=history&analysis=fan_analysis");
   expect(
     screen.getByRole("link", { name: "Analyze traces" }).getAttribute("href"),
   ).toContain("findings?analyze=1");

@@ -16,11 +16,17 @@ import { ApiError } from "../../service-client";
 import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { MarkdownContent } from "../../shared/markdown";
-import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StatePill,
+  Timestamp,
+} from "../../shared/feedback";
 import {
   DetailHeader,
   DetailPage,
   Page,
+  RailNote,
   RailRow,
   RailSection,
   Section,
@@ -33,7 +39,7 @@ import {
   categoryLabels,
   Severity,
   useFindingAgents,
-} from "./page";
+} from "./shared";
 import styles from "./findings.module.css";
 
 export function FindingDetail() {
@@ -111,6 +117,7 @@ export function FindingDetail() {
       </Page>
     );
   const agent = agents.data?.find((agent) => agent.id === finding.agent_id);
+  const dismissed = ["expected", "false_positive"].includes(finding.assessment);
   const fix = () => {
     if (!revision.data || !finding.agent_revision_id) return;
     composer.start({
@@ -126,6 +133,7 @@ export function FindingDetail() {
       header={
         <DetailHeader
           name={finding.title}
+          description={`${t(categoryLabels[finding.category])} · ${agent?.name ?? finding.agent_id}`}
           actions={
             <>
               {can("write") && (
@@ -154,11 +162,7 @@ export function FindingDetail() {
               )}
               {can("run") && composer.available && (
                 <Button
-                  disabled={
-                    !revision.data ||
-                    composer.pending ||
-                    ["expected", "false_positive"].includes(finding.assessment)
-                  }
+                  disabled={!revision.data || composer.pending || dismissed}
                   onClick={fix}
                 >
                   <SparkleIcon aria-hidden="true" />
@@ -196,6 +200,27 @@ export function FindingDetail() {
             <RailRow label={t("Updated")}>
               <Timestamp value={finding.updated_at} relative />
             </RailRow>
+            {can("run") && composer.available && dismissed && (
+              <RailNote>
+                {t(
+                  "Review with Composer is unavailable for expected or false-positive findings.",
+                )}
+              </RailNote>
+            )}
+          </RailSection>
+          <RailSection title={t("Source")}>
+            {finding.source_run_id && (
+              <RailRow
+                label={
+                  finding.analysis_id ? t("Analysis run") : t("Source run")
+                }
+              >
+                <RunEvidence runId={finding.source_run_id} />
+              </RailRow>
+            )}
+            <RailRow label={t("Created")}>
+              <Timestamp value={finding.created_at} />
+            </RailRow>
           </RailSection>
           <DisclosureSection title={t("Technical references")}>
             <RailSection>
@@ -216,7 +241,7 @@ export function FindingDetail() {
               )}
               {finding.source_run_id && (
                 <RailRow label={t("Analysis run")}>
-                  <RunEvidence runId={finding.source_run_id} />
+                  <CopyableId value={finding.source_run_id} />
                 </RailRow>
               )}
             </RailSection>
@@ -229,7 +254,12 @@ export function FindingDetail() {
       <Section title={t("What happened")}>
         <MarkdownContent text={finding.explanation} />
       </Section>
-      <Section title={t("Evidence")}>
+      <Section
+        title={t("Evidence")}
+        description={t(
+          "Traces the analyst read and cited for this finding. Open a trace to inspect the cited steps.",
+        )}
+      >
         <div className={styles.evidenceList}>
           {finding.evidence.map((evidence, index) => (
             <Evidence key={index} evidence={evidence} number={index + 1} />
@@ -245,7 +275,7 @@ export function FindingDetail() {
         </Section>
       )}
       {(finding.assessment !== "unreviewed" || finding.assessment_note) && (
-        <Section title={t("Assessment")}>
+        <Section title={t("Reviewer feedback")}>
           <div className={styles.reviewSummary}>
             <strong>{t(assessmentLabels[finding.assessment])}</strong>
             {finding.assessment_note && (
@@ -266,48 +296,66 @@ function Evidence({
 }) {
   const { basePath } = useWorkspace(),
     { t } = useTranslation();
+  const steps = evidence.span_ids?.length ?? 0;
   return (
-    <div className={styles.evidenceCard}>
-      <div className={styles.evidenceHeader}>
-        <Link
-          className={styles.evidenceTitle}
-          to={`${basePath}/traces/${evidence.trace_id}`}
-        >
-          {t("Trace {{number}}", { number })}
-        </Link>
-        <RunEvidence runId={evidence.run_id} />
-      </div>
-      <DisclosureSection title={t("Trace references")}>
-        <dl className={styles.evidenceIds}>
-          <div>
-            <dt>{t("Trace ID")}</dt>
-            <dd>
-              <CopyableId value={evidence.trace_id} />
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Run ID")}</dt>
-            <dd>
-              <CopyableId value={evidence.run_id} />
-            </dd>
-          </div>
-          {evidence.span_ids?.length ? (
+    <article className={styles.evidenceCard}>
+      <span className={styles.evidenceNumber} aria-hidden="true">
+        {number}
+      </span>
+      <div className={styles.evidenceBody}>
+        <div className={styles.evidenceHeader}>
+          <Link
+            className={styles.evidenceTitle}
+            to={`${basePath}/traces/${evidence.trace_id}`}
+          >
+            {t("Trace {{number}}", { number })}
+          </Link>
+          <span className={styles.evidenceMeta}>
+            <RunEvidence runId={evidence.run_id} summary />
+            {steps > 0 && <span>{t("Cited steps: {{steps}}", { steps })}</span>}
+          </span>
+        </div>
+        <DisclosureSection title={t("Trace references")}>
+          <dl className={styles.evidenceIds}>
             <div>
-              <dt>{t("Steps")}</dt>
+              <dt>{t("Trace ID")}</dt>
               <dd>
-                {evidence.span_ids.map((id) => (
-                  <CopyableId key={id} value={id} />
-                ))}
+                <CopyableId value={evidence.trace_id} />
               </dd>
             </div>
-          ) : null}
-        </dl>
-      </DisclosureSection>
-    </div>
+            <div>
+              <dt>{t("Run ID")}</dt>
+              <dd>
+                <CopyableId value={evidence.run_id} />
+              </dd>
+            </div>
+            {steps ? (
+              <div>
+                <dt>{t("Steps")}</dt>
+                <dd>
+                  {evidence.span_ids!.map((id) => (
+                    <CopyableId key={id} value={id} />
+                  ))}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </DisclosureSection>
+      </div>
+    </article>
   );
 }
-/** A link to the cited run, or a quiet note when it cannot be read. */
-function RunEvidence({ runId }: { runId: string }) {
+/**
+ * A link to the cited run, or a quiet note when it cannot be read. `summary`
+ * adds the run's state and start time, so evidence reads without opening it.
+ */
+function RunEvidence({
+  runId,
+  summary = false,
+}: {
+  runId: string;
+  summary?: boolean;
+}) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
@@ -338,15 +386,24 @@ function RunEvidence({ runId }: { runId: string }) {
         )}
       </span>
     );
-  return query.data ? (
+  if (!query.data)
+    return <span className={styles.unavailable}>{t("Open run")}</span>;
+  const run = query.data;
+  const link = (
     <Link
       className={styles.link}
-      to={`${basePath}/sessions/${query.data.session_id}/threads/${query.data.thread_id}/runs/${runId}`}
+      to={`${basePath}/sessions/${run.session_id}/threads/${run.thread_id}/runs/${runId}`}
     >
       {t("Open run")}
     </Link>
-  ) : (
-    <span className={styles.unavailable}>{t("Open run")}</span>
+  );
+  if (!summary || !run.status) return link;
+  return (
+    <span className={styles.runSummary}>
+      <StatePill state={run.status} />
+      {run.created_at && <Timestamp value={run.created_at} />}
+      {link}
+    </span>
   );
 }
 
