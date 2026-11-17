@@ -34,7 +34,6 @@ async def list_attempt_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The attempt's spans, including its inline child runs."""
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
     return await traces.list_attempt_spans(
         ctx.runtime.storage,
         ctx.runtime.traces,
@@ -64,7 +63,6 @@ async def list_traces(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """Trace root spans, one per attempt. A cursor keeps the window of the first page."""
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
     return await traces.list_traces(
         ctx.runtime.storage,
         ctx.runtime.traces,
@@ -91,13 +89,11 @@ async def search_traces(
     Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
     Incomplete queries fail without a partial rank.
     """
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, None)
     return await trace_search.search(ctx.runtime, ctx.actor, ctx.workspace_id, filters)
 
 
 async def get_trace(ctx: ToolContext, *, trace_id: TraceId) -> content.ContentView[trace_reads.SpanSummary]:
     """Read a redacted observation summary and version-bound content references."""
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     span = await traces.get_trace(ctx.runtime.storage, ctx.runtime.traces, ctx.actor, ctx.workspace_id, trace_id)
     await analysis.record_read(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     return content.ContentView(
@@ -127,7 +123,6 @@ async def list_trace_spans(
 
     Continue with the returned cursor; use get_trace_span for content references to a selected span.
     """
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     page = await traces.list_trace_spans(
         ctx.runtime.storage,
         ctx.runtime.traces,
@@ -147,7 +142,6 @@ async def get_trace_span(
     ctx: ToolContext, *, trace_id: TraceId, span_id: Annotated[str, Path(pattern="^[0-9a-f]{16}$")]
 ) -> content.ContentView[trace_reads.SpanSummary]:
     """Read a redacted observation summary and version-bound content references."""
-    await analysis.read_scope(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     span = await traces.get_trace_span(
         ctx.runtime.storage, ctx.runtime.traces, ctx.actor, ctx.workspace_id, trace_id, span_id
     )

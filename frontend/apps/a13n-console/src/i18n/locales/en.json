@@ -3458,8 +3458,8 @@
   "Add requirements for this agent. Official instructions also apply.": "Add requirements for this agent. Official instructions also apply.",
   "Only temperature and top_p can be changed here for built-in agents.": "Only temperature and top_p can be changed here for built-in agents.",
   "Requirements for this analysis": "Requirements for this analysis",
-  "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
-  "Analysis uses the Finding Agent's selected default version and model.": "Analysis uses the Finding Agent's selected default version and model.",
+  "Optional. Applies only to this analysis; saved supplemental instructions stay unchanged.": "Optional. Applies only to this analysis; saved supplemental instructions stay unchanged.",
+  "Analysis maintains the required tools while preserving your model, supported model settings and supplemental instructions.": "Analysis maintains the required tools while preserving your model, supported model settings and supplemental instructions.",
   "Current official instructions": "Current official instructions",
   "Official instructions follow the deployed version; they are not saved in this agent version.": "Official instructions follow the deployed version; they are not saved in this agent version.",
   "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.": "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.",
@@ -4405,5 +4405,9 @@
   "App requests use a relative path beginning with /.": "App requests use a relative path beginning with /.",
   "App requests must stay within their App namespace.": "App requests must stay within their App namespace.",
   "This App requires an unsupported Console bridge.": "This App requires an unsupported Console bridge.",
-  "Could not load App stylesheet: {{href}}": "Could not load App stylesheet: {{href}}"
+  "Could not load App stylesheet: {{href}}": "Could not load App stylesheet: {{href}}",
+  "Analysis results and controls": "Analysis results and controls",
+  "Retry previous request": "Retry previous request",
+  "Start new analysis": "Start new analysis",
+  "The analysis may already have started. Retry the previous request to recover it. Edited settings start a new analysis.": "The analysis may already have started. Retry the previous request to recover it. Edited settings start a new analysis."
 }

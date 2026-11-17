@@ -44,7 +44,6 @@ async def list_attempt_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The attempt's spans, including its inline child runs."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
     return await traces.list_attempt_spans(
         runtime.storage,
         runtime.traces,
@@ -82,7 +81,6 @@ async def list_traces(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """Trace root spans, one per attempt. A cursor keeps the window of the first page."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
     return await traces.list_traces(
         runtime.storage,
         runtime.traces,
@@ -120,7 +118,6 @@ async def search_traces(
     Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
     Incomplete queries fail without a partial rank.
     """
-    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
     return await trace_search.search(runtime, actor, workspace_id, query)
 
 
@@ -143,7 +140,6 @@ async def get_trace(
     query: reads.Search = None,
 ) -> Span | trace_reads.SpanSummary | reads.TextRead:
     """The trace's root span."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     span = await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, trace_id)
     await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     if section is not None:
@@ -182,7 +178,6 @@ async def list_trace_spans(
     cursor: str | None = None,
 ) -> SpanPage | trace_reads.SpanReadPage:
     """The trace's spans."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     page = await traces.list_trace_spans(
         runtime.storage,
         runtime.traces,
@@ -214,7 +209,6 @@ async def get_trace_span(
     origin: OriginRun,
 ) -> Span:
     """One complete observation, including redacted input, output and diagnostic metadata."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     span = await traces.get_trace_span(runtime.storage, runtime.traces, actor, workspace_id, trace_id, span_id)
     await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     return span
@@ -246,7 +240,6 @@ async def read_span_content(
 ) -> trace_reads.SpanContentPage:
     """Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the
     trace has no such span. Continue fragments with version and next_offset."""
-    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     # Full span is needed only internally; projection happens after the original tenancy and redaction checks.
     span = await traces.find_trace_span(runtime.storage, runtime.traces, actor, workspace_id, trace_id, span_id)
     if span is None:

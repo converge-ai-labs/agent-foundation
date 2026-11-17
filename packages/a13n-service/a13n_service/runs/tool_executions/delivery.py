@@ -8,7 +8,7 @@ from a13n_service.runs import inbox
 from a13n_service.runs.accept import advance
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow, ThreadRow, ToolExecutionRow
-from a13n_service.runs.tool_executions.store import observation
+from a13n_service.runs.tool_executions.store import managed_inline, observation
 
 
 def tool_results(runtime: Runtime) -> Handler:
@@ -23,6 +23,10 @@ def tool_results(runtime: Runtime) -> Handler:
             origin = await session.get(RunRow, row.run_id)
             if thread is None or origin is None or row.thread_id != thread.id:
                 await settle(session, claimed, "dead", error="invalid_target")
+                return
+            if await managed_inline(session, origin):
+                # Even an already-claimed old notification cannot fork a managed inline Analysis.
+                await settle(session, claimed, "delivered", error="inline_result")
                 return
             if row.first_delivered_at is not None:
                 await settle(session, claimed, "delivered")

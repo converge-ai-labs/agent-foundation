@@ -138,7 +138,7 @@ export function DebugRunSection({
           <span className={styles.headingActions}>
             {/* Sending a stopped run again is the run's action, beside its
                 other two. */}
-            {resubmit && (
+            {resubmit && !run.finding_analysis_id && (
               <Button
                 type="button"
                 size="sm"
@@ -150,13 +150,15 @@ export function DebugRunSection({
                 <span data-action-label>{t("Resubmit")}</span>
               </Button>
             )}
-            <ForkRun
-              run={run}
-              thread={thread}
-              level="debug"
-              index={index}
-              compact
-            />
+            {!run.finding_analysis_id && (
+              <ForkRun
+                run={run}
+                thread={thread}
+                level="debug"
+                index={index}
+                compact
+              />
+            )}
             <Button
               type="button"
               size="sm"

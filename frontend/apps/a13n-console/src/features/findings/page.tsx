@@ -47,6 +47,8 @@ import { DateTimeField, FormSection, TextAreaField } from "../../shared/forms";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
 import { useMountedModal } from "../../shared/dialogs";
+import { useIdempotency } from "../../shared/idempotency";
+import { ApiError } from "../../service-client";
 
 export const categoryLabels = {
   unclear_request: "Unclear request",
@@ -131,7 +133,9 @@ export function FindingsPage() {
     navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const [tab, setTab] = useTabParam(["findings", "history"]);
-  const [open, setOpen] = useState(search.has("trace"));
+  const [open, setOpen] = useState(
+    search.has("trace") || search.has("analyze"),
+  );
   const [category, setCategory] = useState("all");
   const [severity, setSeverity] = useState("all"),
     [assessment, setAssessment] = useState("all"),
@@ -176,6 +180,7 @@ export function FindingsPage() {
     setSearch(
       (current) => {
         const next = new URLSearchParams(current);
+        next.delete("analyze");
         if (next.has("trace")) {
           next.delete("trace");
           next.delete("agent");
@@ -364,11 +369,9 @@ export function FindingsPage() {
             </>
           )}
         </TabsPanel>
-        <TabsPanel value="history" keepMounted className={styles.tabPanel}>
-          <AnalysisHistory agentName={agentName} />
-        </TabsPanel>
+        <AnalysisHistory agentName={agentName} />
       </Tabs>
-      {open && (
+      {open && can("run") && can("write") && (
         <AnalyzeDialog
           traceId={search.get("trace") ?? undefined}
           onClose={() => closeAnalysis()}
@@ -425,7 +428,7 @@ function AnalysisHistory({
   const runPath = (item: Schema["Analysis"]) =>
     `${basePath}/sessions/${item.session_id}/threads/${item.thread_id}/runs/${item.run_id}`;
   return (
-    <>
+    <TabsPanel value="history" className={styles.tabPanel}>
       <Toolbar
         trailing={
           <RefreshButton
@@ -633,7 +636,7 @@ function AnalysisHistory({
           </div>
         </ModalFrame>
       )}
-    </>
+    </TabsPanel>
   );
 }
 
@@ -668,7 +671,7 @@ function AnalyzeDialog({
       "recovery",
       "answer",
     ]);
-  const [requestKey] = useState(() => crypto.randomUUID());
+  const command = useIdempotency();
   const [windowEnd] = useState(() => new Date().toISOString());
   const [start, setStart] = useState(() =>
       formatLocalDateTime(new Date(Date.parse(windowEnd) - 86400000)),
@@ -683,45 +686,40 @@ function AnalyzeDialog({
       !endDate ||
       endDate <= startDate ||
       endDate.getTime() - startDate.getTime() > 31 * 86400000);
+  const body: Schema["AnalysisCreate"] = {
+    trace_id: traceId,
+    ...(scope === "agent" ? { agent_id: agent } : {}),
+    session_ids: scope === "sessions" ? Array.from(sessions.keys()) : undefined,
+    started_after:
+      traceId || days === "all"
+        ? undefined
+        : custom
+          ? startDate?.toISOString()
+          : new Date(
+              Date.parse(windowEnd) - Number(days) * 86400000,
+            ).toISOString(),
+    started_before: traceId
+      ? undefined
+      : custom
+        ? endDate?.toISOString()
+        : windowEnd,
+    max_traces: traceId
+      ? 1
+      : scope === "sessions"
+        ? Math.max(10, sessions.size)
+        : 10,
+    presets,
+    instructions,
+  };
   const mutation = useMutation({
-    mutationFn: async () => {
-      await client
-        .workspace(workspace.id)
-        .POST("/api/v1/finding-agent")
-        .then(data);
-      return client
+    mutationFn: (request: Schema["AnalysisCreate"]) =>
+      client
         .workspace(workspace.id)
         .POST("/api/v1/finding-analyses", {
-          body: {
-            trace_id: traceId,
-            ...(scope === "agent" ? { agent_id: agent } : {}),
-            session_ids:
-              scope === "sessions" ? Array.from(sessions.keys()) : undefined,
-            started_after:
-              traceId || days === "all"
-                ? undefined
-                : custom
-                  ? startDate?.toISOString()
-                  : new Date(
-                      Date.parse(windowEnd) - Number(days) * 86400000,
-                    ).toISOString(),
-            started_before: traceId
-              ? undefined
-              : custom
-                ? endDate?.toISOString()
-                : windowEnd,
-            max_traces: traceId
-              ? 1
-              : scope === "sessions"
-                ? Math.max(10, sessions.size)
-                : 10,
-            presets,
-            instructions,
-          },
-          params: { header: commandHeaders(requestKey) },
+          body: request,
+          params: { header: commandHeaders(command.forBody(request)) },
         })
-        .then(data);
-    },
+        .then(data),
     onSuccess: () => {
       void cache.invalidateQueries({
         queryKey: ["finding-analyses", workspace.id],
@@ -731,6 +729,11 @@ function AnalyzeDialog({
       onClose();
     },
   });
+  const unconfirmed =
+    mutation.isError &&
+    (!(mutation.error instanceof ApiError) || mutation.error.status >= 500);
+  const changedRequest =
+    unconfirmed && JSON.stringify(body) !== JSON.stringify(mutation.variables);
   const disabled =
     mutation.isPending ||
     invalidWindow ||
@@ -758,7 +761,11 @@ function AnalyzeDialog({
             {t("Cancel")}
           </Button>
           <Button type="submit" form={formId} disabled={disabled}>
-            {mutation.isPending ? t("Starting…") : t("Start analysis")}
+            {mutation.isPending
+              ? t("Starting…")
+              : changedRequest
+                ? t("Start new analysis")
+                : t("Start analysis")}
           </Button>
         </>
       }
@@ -767,11 +774,28 @@ function AnalyzeDialog({
         id={formId}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!disabled) mutation.mutate();
+          if (!disabled) mutation.mutate(body);
         }}
         className={styles.form}
       >
         <ErrorNotice error={backend.error ?? mutation.error} />
+        {unconfirmed && mutation.variables && (
+          <div role="status">
+            <p>
+              {t(
+                "The analysis may already have started. Retry the previous request to recover it. Edited settings start a new analysis.",
+              )}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate(mutation.variables!)}
+            >
+              {t("Retry previous request")}
+            </Button>
+          </div>
+        )}
         {backend.isSuccess && !backend.data.type && (
           <p role="alert">{t("Connect a trace provider to start analysis.")}</p>
         )}
@@ -911,7 +935,7 @@ function AnalyzeDialog({
         <TextAreaField
           label={t("Requirements for this analysis")}
           hint={t(
-            "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
+            "Optional. Applies only to this analysis; saved supplemental instructions stay unchanged.",
           )}
           value={instructions}
           onChange={setInstructions}
@@ -923,7 +947,7 @@ function AnalyzeDialog({
           <ul className={styles.analysisNotes}>
             <li>
               {t(
-                "Analysis uses the Finding Agent's selected default version and model.",
+                "Analysis maintains the required tools while preserving your model, supported model settings and supplemental instructions.",
               )}
             </li>
             {!traceId && (

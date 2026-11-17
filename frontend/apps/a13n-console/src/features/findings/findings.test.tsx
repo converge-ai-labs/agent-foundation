@@ -22,6 +22,7 @@ const http = vi.hoisted(() => ({
 }));
 const composer = vi.hoisted(() => ({ start: vi.fn() }));
 const backend = vi.hoisted(() => ({ type: null as null | "logfire" }));
+const access = vi.hoisted(() => ({ permissions: ["read", "run", "write"] }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ workspace: () => http }),
 }));
@@ -29,7 +30,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
     basePath: "/workspace/ws_test",
-    can: () => true,
+    can: (verb: string) => access.permissions.includes(verb),
   }),
 }));
 vi.mock("../agents/composer", () => ({
@@ -70,6 +71,7 @@ const finding = {
 };
 beforeEach(() => {
   backend.type = null;
+  access.permissions = ["read", "run", "write"];
   http.GET.mockImplementation(async (path: string) => ({
     data:
       path === "/api/v1/findings/{finding_id}"
@@ -186,9 +188,6 @@ it("submits selected rules and a bounded scope through the managed preset and or
   );
   await user.click(screen.getByRole("button", { name: "Start analysis" }));
   await waitFor(() =>
-    expect(http.POST).toHaveBeenCalledWith("/api/v1/finding-agent"),
-  );
-  await waitFor(() =>
     expect(http.POST).toHaveBeenCalledWith(
       "/api/v1/finding-analyses",
       expect.objectContaining({
@@ -201,7 +200,10 @@ it("submits selected rules and a bounded scope through the managed preset and or
       }),
     ),
   );
-  expect(http.POST.mock.calls[0][0]).toBe("/api/v1/finding-agent");
+  expect(http.POST.mock.calls[0][0]).toBe("/api/v1/finding-analyses");
+  expect(
+    http.POST.mock.calls.some(([path]) => path === "/api/v1/finding-agent"),
+  ).toBe(false);
   expect(
     http.POST.mock.calls.find(
       ([path]) => path === "/api/v1/finding-analyses",
@@ -605,4 +607,92 @@ it("keeps a failed assessment draft in the dialog and restores trigger focus on 
     ).value,
   ).toBe("");
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("recovers an uncertain original request after edits and gives an edited command a new key", async () => {
+  backend.type = "logfire";
+  http.POST.mockRejectedValue(new TypeError("Connection lost"));
+  const user = mount("/workspace/ws_test/findings?analyze=1");
+  await screen.findByRole("dialog", { name: "Analyze traces" });
+  await user.click(screen.getByRole("button", { name: "Start analysis" }));
+  await screen.findByRole("button", { name: "Retry previous request" });
+  const original = http.POST.mock.calls[0][1];
+  await user.type(
+    screen.getByRole("textbox", { name: "Requirements for this analysis" }),
+    "New requirements",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Retry previous request" }),
+  );
+  await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(2));
+  expect(http.POST.mock.calls[1][1]).toEqual(original);
+  await screen.findByRole("button", { name: "Start new analysis" });
+  await user.click(screen.getByRole("button", { name: "Start new analysis" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(3));
+  const edited = http.POST.mock.calls[2][1];
+  expect(edited.body.instructions).toBe("New requirements");
+  expect(edited.params.header["Idempotency-Key"]).not.toBe(
+    original.params.header["Idempotency-Key"],
+  );
+});
+
+it.each([["read"], ["read", "run"], ["read", "write"]])(
+  "does not open a URL analysis form with permissions %j",
+  async (...permissions) => {
+    access.permissions = permissions as string[];
+    mount("/workspace/ws_test/findings?analyze=1&trace=" + "a".repeat(32));
+    await screen.findByText("No findings in this view");
+    expect(screen.queryByRole("dialog", { name: "Analyze traces" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Analyze traces" })).toBeNull();
+    expect(http.POST).not.toHaveBeenCalled();
+  },
+);
+
+it("observes analysis progress on the initial Findings tab and refreshes partial output", async () => {
+  const original = http.GET.getMockImplementation()!;
+  let count = 0;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              {
+                id: "fan_active",
+                run_status: count ? "failed" : "running",
+                finding_count: count,
+                cited_trace_count: count,
+              },
+            ],
+            next_cursor: null,
+          },
+        }
+      : original(path, ...args),
+  );
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  mount("/workspace/ws_test/findings", cache);
+  await screen.findByText("No findings in this view");
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.some(([path]) => path === "/api/v1/finding-analyses"),
+    ).toBe(true),
+  );
+  const before = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/findings",
+  ).length;
+  count = 1;
+  await act(async () => {
+    await cache.refetchQueries({ queryKey: ["finding-analyses", "ws_test"] });
+  });
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/findings")
+        .length,
+    ).toBeGreaterThan(before),
+  );
+  expect(
+    screen.getByRole("tab", { name: "Findings" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  cache.clear();
 });

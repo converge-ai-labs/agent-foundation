@@ -24,6 +24,7 @@ from a13n_service.runs.accept import (
     Source,
     accept,
     primary_source,
+    require_message_source,
     require_thread_tool_names,
     run_revision,
     snapshot_options,
@@ -119,6 +120,7 @@ async def prepare_message(
     schedule_occurrence_id: str | None = None,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
+    await require_message_source(session, thread, message.agent_id)
     revision, overrides, options = await validate_message(
         session, runtime, actor, scope, thread, message, authority=authority
     )

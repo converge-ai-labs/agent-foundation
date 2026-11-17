@@ -3578,8 +3578,8 @@
   "Add requirements for this agent. Official instructions also apply.": "添加此 Agent 需要遵循的要求。官方指令会同时生效。",
   "Only temperature and top_p can be changed here for built-in agents.": "内置 Agent 在此处仅支持修改 temperature 和 top_p。",
   "Requirements for this analysis": "本次检查要求",
-  "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "选填。仅用于本次分析，不修改 Finding Agent 的配置。",
-  "Analysis uses the Finding Agent's selected default version and model.": "分析使用 Finding Agent 当前选定的默认版本和模型。",
+  "Optional. Applies only to this analysis; saved supplemental instructions stay unchanged.": "选填。仅用于本次分析，不修改已保存的补充指令。",
+  "Analysis maintains the required tools while preserving your model, supported model settings and supplemental instructions.": "分析会维护所需工具，同时保留你的模型、受支持的模型设置及补充指令。",
   "Current official instructions": "当前官方指令",
   "Official instructions follow the deployed version; they are not saved in this agent version.": "官方指令随部署版本更新，不保存在此修订版本中。",
   "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.": "此配置保存你的补充指令。内置指令由 Worker 版本提供；实际使用的文本可在模型请求 trace 中查看。",
@@ -4405,5 +4405,9 @@
   "App requests use a relative path beginning with /.": "App 请求须使用以 / 开头的相对路径。",
   "App requests must stay within their App namespace.": "App 请求必须位于自己的 App 命名空间内。",
   "This App requires an unsupported Console bridge.": "此 App 所需的 Console 桥接版本尚不受支持。",
-  "Could not load App stylesheet: {{href}}": "无法加载 App 样式表：{{href}}"
+  "Could not load App stylesheet: {{href}}": "无法加载 App 样式表：{{href}}",
+  "Analysis results and controls": "分析结果与控制",
+  "Retry previous request": "重试上次请求",
+  "Start new analysis": "开始新分析",
+  "The analysis may already have started. Retry the previous request to recover it. Edited settings start a new analysis.": "分析可能已经开始。重试上次请求可找回它；修改后的设置会启动新的分析。"
 }

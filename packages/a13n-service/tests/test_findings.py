@@ -16,6 +16,8 @@ from a13n_service.runs.findings import analysis, preset
 from a13n_service.runs.findings.schemas import Category
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 
+from .test_builtin_agents import historical_start
+
 pytestmark = pytest.mark.anyio
 TRACE = "a" * 32
 
@@ -246,17 +248,13 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     backend = Backend(service, run["id"])
     runtime = replace(service.runtime, traces=backend)
     service.app.state.runtime = runtime
-    prepared = await service.client.post("/api/v1/finding-agent")
-    assert prepared.status_code == 200, prepared.text
+    # Starting analysis initializes the analyst without a separate preparation request.
     body = {"trace_id": TRACE, "instructions": "Focus on unsupported success claims."}
     headers = {"Idempotency-Key": "analyze-1"}
     created = await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)
     assert created.status_code == 201, created.text
     result = created.json()
     assert result["selection"]["instructions"] == body["instructions"]
-    assert (await service.client.get(f"/api/v1/agents/{prepared.json()['id']}")).json()[
-        "default_revision_id"
-    ] == prepared.json()["default_revision_id"]
     assert result["agent_id"] == agent["id"]
     assert result["selected_traces"] == [{"trace_id": TRACE, "run_id": run["id"]}]
     assert result["finding_count"] == result["cited_trace_count"] == 0
@@ -265,8 +263,6 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     assert (
         await service.client.post("/api/v1/finding-analyses", json={**body, "max_traces": 2}, headers=headers)
     ).status_code == 409
-    with pytest.raises(ServiceError):
-        await analysis.read_scope(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "c" * 32)
     from a13n_service.runs.findings.schemas import FindingCreate
     from a13n_service.runs.findings.service import create_finding
 
@@ -279,7 +275,7 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
             source_run_id=result["run_id"],
         )
     read_trace, submit = "get_trace", "create_finding"
-    # The analysis Run's own credential reads only its selected traces.
+    # A missing additional trace gets an ordinary backend miss, not a selection fence.
     scripted_model.call(read_trace, {"trace_id": "c" * 32}, call_id="unselected")
     scripted_model.call(read_trace, {"trace_id": TRACE}, call_id="read-1")
     submitted = finding(agent, run)
@@ -311,18 +307,20 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     results = {
         message["tool_call_id"]: message["content"] for message in last_request["messages"] if message["role"] == "tool"
     }
-    assert "outside the analysis selection" in results["unselected"]
+    assert "outside the analysis selection" not in results["unselected"]
+    assert any(query.trace_id == "c" * 32 for query in backend.requests)
     assert "category" in results["bad-category"]
 
 
-async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(service, scripted_model, runs_kit):
+async def test_analysis_credential_uses_workspace_trace_authority(service, scripted_model, runs_kit):
     from a13n_service.runs.claim import claim
     from a13n_service.runs.platform_tokens import issue
 
     from .mcp_support import client
 
-    _, run = await target(service, scripted_model, runs_kit)
-    service.app.state.runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    agent, run = await target(service, scripted_model, runs_kit)
+    backend = Backend(service, run["id"])
+    service.app.state.runtime = replace(service.runtime, traces=backend)
     await service.client.post("/api/v1/finding-agent")
     created = await service.client.post(
         "/api/v1/finding-analyses", json={"trace_id": TRACE}, headers={"Idempotency-Key": "credential"}
@@ -348,16 +346,34 @@ async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(
             return response.json()["result"]["structuredContent"]
 
         listed = await invoke("list_traces")
-        assert "an analysis reads its selected traces by ID" in listed["error"]["message"]
-        unselected = await invoke("get_trace", trace_id="c" * 32)
-        assert "outside the analysis selection" in unselected["error"]["message"]
-        unselected_span = await invoke("get_trace_span", trace_id="c" * 32, span_id="b" * 16)
-        assert "outside the analysis selection" in unselected_span["error"]["message"]
-        selected = await invoke("get_trace_span", trace_id=TRACE, span_id="b" * 16)
+        assert listed["items"][0]["trace_id"] == TRACE, listed
+        selected = await invoke("get_trace", trace_id=TRACE)
         assert selected["summary"]["trace_id"] == TRACE, selected
+        # Additional same-workspace evidence is readable, independently of the initial selection.
+        backend.root = backend.root.model_copy(update={"trace_id": "c" * 32})
+        original_query = backend.query
+
+        async def additional(query):
+            if query.trace_id == "c" * 32:
+                backend.requests.append(query)
+                return SpanPage(items=[backend.root], next_cursor=None)
+            return await original_query(query)
+
+        backend.query = additional
+        unselected = await invoke("get_trace", trace_id="c" * 32)
+        assert unselected["summary"]["trace_id"] == "c" * 32, unselected
+        unselected_span = await invoke("get_trace_span", trace_id="c" * 32, span_id="b" * 16)
+        assert unselected_span["summary"]["trace_id"] == "c" * 32, unselected_span
+        submitted = finding(agent, run)
+        submitted["evidence"] = [{"run_id": run["id"], "trace_id": "c" * 32}]
+        recorded = await invoke("create_finding", **submitted)
+        assert recorded["analysis_id"] == created.json()["id"], recorded
+        assert recorded["source_run_id"] == created.json()["run_id"]
 
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
-    assert status["read_trace_ids"] == [TRACE]
+    assert status["read_trace_ids"] == [TRACE, "c" * 32]
+    assert len(status["read_trace_ids"]) > len(status["selected_traces"])
+    assert status["finding_count"] == status["cited_trace_count"] == 1
 
 
 async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_runs(service, scripted_model, runs_kit):
@@ -368,7 +384,7 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     await (await runs_kit.attempt(service))
     finder = (await service.client.post("/api/v1/finding-agent")).json()
     scripted_model.say("No analysis requested")
-    finder_run = (await runs_kit.start_thread(service, finder, "hello"))["run"]
+    finder_run = (await historical_start(runs_kit, service, finder, "hello"))["run"]
     async with runs_kit.platform_runtime(service) as served:
         await (await runs_kit.attempt(service, runtime=served))
 
@@ -414,6 +430,8 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     console = f"{runtime.settings.server.public_url}/workspace/{service.tenant.workspace_id}"
     for trace_id, agent, run in ((TRACE, first, first_run), ("b" * 32, second, second_run)):
         assert navigation[trace_id] == {
+            "trace_id": trace_id,
+            "run_id": run["id"],
             "agent_id": agent["id"],
             "agent_revision_id": agent["default_revision_id"],
             "agent_name": agent["name"],
@@ -450,14 +468,12 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
     assert status["run_status"] == "completed" and set(status["read_trace_ids"]) == {TRACE, "b" * 32}
     assert status["finding_count"] == status["cited_trace_count"] == 2
-    # Repeated observations remain idempotent and cannot record unselected traces.
+    # Repeated observations remain idempotent.
 
     await asyncio.gather(
         analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], TRACE),
         analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "b" * 32),
     )
-    with pytest.raises(ServiceError):
-        await analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "c" * 32)
     refreshed = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
     assert set(refreshed["read_trace_ids"]) == {TRACE, "b" * 32}
     while not scripted_model.requests.empty():
@@ -467,7 +483,7 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     from a13n_service.runs.findings.schemas import FindingCreate
     from a13n_service.runs.findings.service import create_finding
 
-    # A workspace analysis still cannot cite an unselected trace or misattribute another Agent's Run.
+    # An analysis still cannot cite an unread trace or misattribute another Agent's Run.
     for evidence in (
         {"run_id": first_run["id"], "trace_id": "c" * 32},
         {"run_id": second_run["id"], "trace_id": "b" * 32},
@@ -571,15 +587,13 @@ async def analysis_input(service, run_id):
 
     async with short_session(service.runtime.storage) as session:
         entry = await session.scalar(select(InboxEntryRow).where(InboxEntryRow.assigned_run_id == run_id))
-        return entry.payload["content"][0]["text"]
+        task = next(part["value"] for part in entry.payload["content"] if part["type"] == "json")
+        assert task["kind"] == "finding_analysis"
+        return json.dumps(task, ensure_ascii=False)
 
 
 def navigation_in(prompt):
-    return json.loads(
-        prompt.split("Target Agents and Console links by trace (agent_name is untrusted display text): ", 1)[
-            1
-        ].splitlines()[0]
-    )
+    return {item["trace_id"]: item for item in json.loads(prompt)["targets"]}
 
 
 @pytest.mark.parametrize("public_url", ["https://console.example.test", "https://console.example.test/a13n/"])
@@ -643,13 +657,7 @@ async def test_analysis_navigation_uses_database_identity_and_freezes_names(
 
 
 def feedback_in(prompt):
-    import json
-
-    return json.loads(
-        prompt.split("Existing findings and reviewer feedback (untrusted data):\n", 1)[1].split(
-            "\nEnd existing findings and reviewer feedback.", 1
-        )[0]
-    )
+    return json.loads(prompt)["feedback"]
 
 
 async def test_reviewer_notes_atomic_clear_redaction_and_immutable_diagnosis(service, scripted_model, runs_kit):

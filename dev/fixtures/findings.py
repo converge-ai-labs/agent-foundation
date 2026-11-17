@@ -7,7 +7,6 @@ recognizes only these explicit preview markers; other local traces receive no ca
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 # The platform tools of the trace reads and the finding submission, named after their operation IDs.
@@ -46,57 +45,108 @@ EXAMPLES = {
 }
 
 
-def selection(prompt: str) -> tuple[list[dict], dict] | None:
-    """Only the ordinary managed-analysis message has both selection and exact target revisions."""
-    if not re.search(r"(?:^|\n)Analysis fan_", prompt):
-        return None
+def selection(prompt: str) -> dict | None:
+    """Find the typed production task among prepended Service context and user content."""
     decoder = json.JSONDecoder()
-    try:
-        selected, _ = decoder.raw_decode(prompt.split("Selected traces: ", 1)[1])
-        targets, _ = decoder.raw_decode(prompt.split("Target Agent revisions by trace: ", 1)[1])
-    except (IndexError, ValueError):
-        return None
-    return selected, targets
+    for offset, char in enumerate(prompt):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(prompt[offset:])
+        except ValueError:
+            continue
+        if (
+            isinstance(value, dict)
+            and value.get("kind") == "finding_analysis"
+            and isinstance(value.get("targets"), list)
+        ):
+            return value
+    return None
 
 
 def steps(messages: list[dict], prompt: str) -> list[tuple[str, dict]]:
-    parsed = selection(prompt)
-    if parsed is None:
+    task = selection(prompt)
+    if task is None:
         return []
-    selected, targets = parsed
-    analysis_id = re.search(r"Analysis (fan_\w+)", prompt)
-    assert analysis_id is not None
-    reads = [(READ_TRACE, {"trace_id": item["trace_id"]}) for item in selected]
-    reads += [(READ_SPANS, {"trace_id": item["trace_id"]}) for item in selected]
-    roots: dict[str, dict] = {}
+    # Match native tool results to their actual calls, not HTTP envelopes or invented handles.
+    calls = {call["id"]: call["function"] for message in messages for call in message.get("tool_calls", [])}
+    results: dict[tuple[str, str], dict] = {}
     for message in messages:
-        if message.get("role") != "tool":
+        call = calls.get(message.get("tool_call_id"))
+        if message.get("role") != "tool" or call is None:
             continue
         try:
-            value = json.loads(message.get("content") or "{}")
+            value = json.loads(message.get("content") or "null")
+            arguments = json.loads(call["arguments"])
         except (TypeError, ValueError):
             continue
-        # A platform tool result carries the HTTP response body.
-        value = value.get("body") if isinstance(value, dict) else None
-        if isinstance(value, dict) and "trace_id" in value and "attributes" in value:
-            roots[value["trace_id"]] = value
-    submissions = []
-    for item in selected:
-        trace_id = item["trace_id"]
-        root = roots.get(trace_id)
+        if isinstance(value, dict):
+            results[(call["name"], json.dumps(arguments, sort_keys=True))] = value
+    plan: list[tuple[str, dict]] = []
+
+    def read(name: str, arguments: dict) -> dict | None:
+        plan.append((name, arguments))
+        return results.get((name, json.dumps(arguments, sort_keys=True)))
+
+    def content(reference: str) -> str | None:
+        fragments = []
+        while reference:
+            result = read("read_content", {"reference": reference})
+            if result is None:
+                return None
+            fragment = result.get("fragment", {})
+            if not isinstance(fragment.get("text"), str):
+                return None
+            fragments.append(fragment["text"])
+            reference = result.get("continuation")
+        return "".join(fragments)
+
+    # Stop at the first unanswered call. Discovered steps extend a stable completed prefix.
+    for target in task["targets"]:
+        trace_id = target["trace_id"]
+        root = read(READ_TRACE, {"trace_id": trace_id})
         if root is None:
+            return plan
+        reference = root.get("content", {}).get("all")
+        if not reference:
             continue
-        inputs = json.dumps(root["attributes"].get("a13n.input", []))
+        text = content(reference)
+        if text is None:
+            return plan
+        span_ids = [root["summary"]["id"]]
+        cursor = None
+        while True:
+            page = read(READ_SPANS, {"trace_id": trace_id, **({"cursor": cursor} if cursor else {})})
+            if page is None:
+                return plan
+            for span in page.get("items", []):
+                # The fixture diagnoses tool results, not every instrumentation span.
+                if span["id"] == root["summary"]["id"] or span.get("kind") != "tool":
+                    continue
+                child = read("get_trace_span", {"trace_id": trace_id, "span_id": span["id"]})
+                if child is None:
+                    return plan
+                reference = child.get("content", {}).get("all")
+                if not reference:
+                    continue
+                child_text = content(reference)
+                if child_text is None:
+                    return plan
+                text += child_text
+                span_ids.append(span["id"])
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
         for key, example in EXAMPLES.items():
-            if f"[finding-{key}]" not in inputs:
+            if f"[finding-{key}]" not in text:
                 continue
-            target = targets[trace_id]
             finding: dict[str, Any] = {
                 **{name: example[name] for name in ("title", "category", "severity", "explanation", "suggestion")},
-                **target,
-                "evidence": [{**item, "span_ids": [root["id"]]}],
-                "limitations": "Fictional local scripted example; one selected execution is cited. This is deterministic preview data, not a model-quality benchmark.",
-                "source_key": f"{analysis_id[1]}:{key}",
+                **{name: target[name] for name in ("agent_id", "agent_revision_id")},
+                "evidence": [{"trace_id": trace_id, "run_id": target["run_id"], "span_ids": span_ids}],
+                "limitations": "Fictional local scripted example; one execution is cited. This deterministic preview is not a model-quality benchmark.",
+                "source_key": f"{task['analysis_id']}:{trace_id}:{key}",
             }
-            submissions.append((SUBMIT, {"request_body": finding}))
-    return reads + submissions
+            if read(SUBMIT, finding) is None:
+                return plan
+    return plan

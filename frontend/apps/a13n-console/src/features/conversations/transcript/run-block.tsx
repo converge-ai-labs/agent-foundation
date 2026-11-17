@@ -59,7 +59,7 @@ export function RunBlock({
   // and a run waiting for the person offers only its answer below the turn.
   const finished =
     !!run.sealed_at && !isActiveRun(run.status) && run.status !== "waiting";
-  const branch = finished && can("run");
+  const branch = finished && can("run") && !run.finding_analysis_id;
   const copy = finished && reply?.state === "completed" ? reply : null;
   return (
     <article className={styles.turn} data-run-id={run.id}>

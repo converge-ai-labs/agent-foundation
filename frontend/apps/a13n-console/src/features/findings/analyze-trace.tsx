@@ -30,7 +30,12 @@ export function AnalyzeTrace({
         .then(data),
   });
   const run = query.isSuccess ? query.data : undefined;
-  if (!run || !["completed", "failed", "cancelled"].includes(run.status))
+  if (
+    !can("run") ||
+    !can("write") ||
+    !run ||
+    !["completed", "failed", "cancelled"].includes(run.status)
+  )
     return null;
   const search = new URLSearchParams({ trace: traceId });
   return (

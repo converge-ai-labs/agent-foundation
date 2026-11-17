@@ -84,6 +84,7 @@ function mount({
   question = false,
   search = "",
   consoleStarted = true,
+  analysis = false,
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
@@ -94,6 +95,7 @@ function mount({
   question?: boolean;
   search?: string;
   consoleStarted?: boolean;
+  analysis?: boolean;
 } = {}) {
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   const reads: string[] = [];
@@ -101,6 +103,7 @@ function mount({
   const current = fixtureRun({
     ...run,
     status,
+    finding_analysis_id: analysis ? "fan_analysis" : null,
     ...(status === "waiting"
       ? {
           wait_reason: question ? "call" : "approval",
@@ -245,6 +248,31 @@ function mount({
       result.rerender(tree({ ...thread, ...changes })),
   });
 }
+it("shows managed Analysis controls without conversation input and can stop active work", async () => {
+  const posts = mount({ status: "running", analysis: true });
+  await screen.findByText("Analysis results and controls");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.queryByText("Queued test")).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Analysis history" }).getAttribute("href"),
+  ).toContain("findings?tab=history");
+  expect(
+    screen.getByRole("link", { name: "Analyze traces" }).getAttribute("href"),
+  ).toContain("findings?analyze=1");
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0]?.path).toBe("/api/v1/runs/run/interrupt");
+});
+
+it("keeps managed Analysis read-only when running is denied", async () => {
+  denied = ["run"];
+  mount({ analysis: true });
+  await screen.findByText("Analysis results and controls");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Analyze traces" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+});
+
 it("continues the completed head with a next-run message and navigates to its Run", async () => {
   const posts = mount();
   await waitFor(() =>

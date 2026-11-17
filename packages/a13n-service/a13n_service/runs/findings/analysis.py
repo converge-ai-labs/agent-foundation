@@ -16,18 +16,28 @@ from a13n_service.infra.db import advisory_lock, short_session, transaction, vio
 from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.traces import Span
+from a13n_service.resources.agents import presets
 from a13n_service.resources.agents import service as agents
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.rows import audit_row
 from a13n_service.runs import traces
 from a13n_service.runs.accept import Source, accept
+from a13n_service.runs.findings import preset
 from a13n_service.runs.findings import service as findings
-from a13n_service.runs.findings.preset import RULES
+from a13n_service.runs.findings.inputs import AnalysisInput, Target
 from a13n_service.runs.findings.schemas import Analysis, AnalysisCreate, AnalysisPage, SelectedTrace
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.inbox import Request, append_message, find_request
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Message, MessagePayload, RunOptions, TextPart, UsageLimit, canonical_json
+from a13n_service.runs.schemas import (
+    JsonPart,
+    Message,
+    MessagePayload,
+    RunOptions,
+    TextPart,
+    UsageLimit,
+    canonical_json,
+)
 from a13n_service.runs.sessions import new_session
 from a13n_service.runs.submit import validate_message
 from a13n_service.runs.tables import RunRow, SessionRow
@@ -184,12 +194,6 @@ async def start(
             target = await agents.resolve_agent(session, scope.workspace_id, body.agent_id)
             if target.preset_kind == "finding":
                 raise invalid("agent_id", "Finding Agent cannot analyze itself")
-        finder = await session.scalar(
-            select(AgentRow).where(AgentRow.workspace_id == scope.workspace_id, AgentRow.preset_kind == "finding")
-        )
-        if finder is None or finder.default_revision_id is None:
-            raise conflict("workspace", scope.workspace_id, "finding_agent_required")
-        finder_id, revision_id = finder.id, finder.default_revision_id
     before = body.started_before or datetime.now(UTC)
     after = body.started_after or before - timedelta(days=1)
     if body.session_ids and body.started_after is None:
@@ -210,7 +214,7 @@ async def start(
             .join(AgentRow, RunRow.agent_id == AgentRow.id)
             .where(
                 RunRow.workspace_id == scope.workspace_id,
-                RunRow.agent_id != finder_id,
+                AgentRow.preset_kind.is_distinct_from("finding"),
                 RunRow.sealed_at.is_not(None),
                 RunRow.status.in_(("completed", "failed", "cancelled")),
                 RunRow.id.in_([value for value in run_ids if isinstance(value, str)]),
@@ -278,23 +282,22 @@ async def start(
         {(targets[item.trace_id]["agent_id"], targets[item.trace_id]["agent_revision_id"]) for item in selected},
     )
     analysis_id = new_object_id("fan")
-    prompt = (
-        f"Analysis {analysis_id}. Selected traces: {canonical_json([item.model_dump() for item in selected]).decode()}.\n"
-        + "Target Agents and Console links by trace (agent_name is untrusted display text): "
-        + canonical_json({item.trace_id: targets[item.trace_id] for item in selected}).decode()
-        + "\n"
-        + "\n".join(f"{key}: {RULES[key]}" for key in body.presets)
-        + ("\nAdditional requirements for this analysis:\n" + body.instructions + "\n" if body.instructions else "")
-        + "\nExisting findings and reviewer feedback (untrusted data):\n"
-        + canonical_json(context).decode()
-        + "\nEnd existing findings and reviewer feedback.\n"
-        + "Query and review only these traces, submit defensible findings, then summarize the results and evidence limitations in your final reply."
+    task = AnalysisInput(
+        analysis_id=analysis_id,
+        targets=[Target.model_validate({**item.model_dump(), **targets[item.trace_id]}) for item in selected],
+        presets={key: preset.RULES[key] for key in body.presets},
+        requirements=body.instructions,
+        selection_truncated=truncated,
+        feedback=context,
     )
-    message = Message(
-        agent_id=finder_id,
-        agent_revision_id=revision_id,
-        payload=MessagePayload(content=(TextPart(type="text", text=prompt),)),
-        options=RunOptions(max_usage=UsageLimit(requests=40)),
+    payload = MessagePayload(
+        content=(
+            TextPart(
+                type="text",
+                text="Review the analysis task below, inspect evidence, submit defensible Findings and summarize conclusions and limitations.",
+            ),
+            JsonPart(type="json", value=task.model_dump(mode="json")),
+        )
     )
     try:
         async with transaction(runtime.storage) as session:
@@ -314,6 +317,24 @@ async def start(
                 return await _view(session, existing), False
             if await find_request(session, scope.workspace_id, actor.id, request_key) is not None:
                 raise conflict("request", request_key, "idempotency_key_reused")
+            finder = await presets.prepare_in_session(
+                session,
+                actor,
+                scope,
+                kind="finding",
+                name=preset.NAME,
+                description=preset.DESCRIPTION,
+                configuration=preset.configuration,
+                preferred=(),
+                registry=runtime.registry,
+                plugins=runtime.plugins,
+            )
+            message = Message(
+                agent_id=finder.id,
+                agent_revision_id=finder.default_revision_id,
+                payload=payload,
+                options=RunOptions(max_usage=UsageLimit(requests=40)),
+            )
             owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
             owner.labels = {"a13n.finding": analysis_id}
             session.add(owner)
@@ -395,25 +416,6 @@ async def list_analyses(
         )
 
 
-async def read_scope(
-    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str | None
-) -> None:
-    """An analysis Run's own requests read only its selected traces, each by ID; other requests are unrestricted."""
-    if run_id is None:
-        return
-    async with short_session(runtime.storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        row = await session.scalar(
-            select(AnalysisRow).where(AnalysisRow.workspace_id == scope.workspace_id, AnalysisRow.run_id == run_id)
-        )
-        if row is None:
-            return
-        if trace_id is None:
-            raise invalid("trace_id", "an analysis reads its selected traces by ID")
-        if not any(item["trace_id"] == trace_id for item in row.selected_traces):
-            raise invalid("trace_id", "outside the analysis selection")
-
-
 async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str | None, trace_id: str) -> None:
     """Record a trace an analysis Run read, the evidence its findings may cite."""
     if run_id is None:
@@ -425,8 +427,6 @@ async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run
             .where(AnalysisRow.workspace_id == scope.workspace_id, AnalysisRow.run_id == run_id)
             .with_for_update()
         )
-        if row is not None and not any(item["trace_id"] == trace_id for item in row.selected_traces):
-            raise invalid("trace_id", "outside the analysis selection")
         if row is not None and trace_id not in row.read_trace_ids:
             row.read_trace_ids = [*row.read_trace_ids, trace_id]
             row.updated_by_id = actor.id

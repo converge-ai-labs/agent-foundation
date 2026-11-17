@@ -202,18 +202,27 @@ export function AgentDetail() {
                   trigger="button"
                 />
               )}
-              {can("run") && (
-                <Button
-                  variant="default"
-                  disabled={!!agent.archived_at}
-                  onClick={() =>
-                    navigate(`${basePath}/sessions/new?agent=${agent.id}`)
-                  }
-                >
-                  <PlayIcon aria-hidden="true" />
-                  {t("Try agent")}
-                </Button>
-              )}
+              {can("run") &&
+                (agent.preset_kind !== "finding" || can("write")) && (
+                  <Button
+                    variant="default"
+                    disabled={!!agent.archived_at}
+                    onClick={() =>
+                      navigate(
+                        agent.preset_kind === "finding"
+                          ? `${basePath}/findings?analyze=1`
+                          : `${basePath}/sessions/new?agent=${agent.id}`,
+                      )
+                    }
+                  >
+                    <PlayIcon aria-hidden="true" />
+                    {t(
+                      agent.preset_kind === "finding"
+                        ? "Analyze traces"
+                        : "Try agent",
+                    )}
+                  </Button>
+                )}
               <AgentActions
                 key={editorKey}
                 resource={query.data}

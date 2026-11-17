@@ -194,17 +194,26 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
           const revision = revisions[items.indexOf(agent)]?.data;
           return (
             <>
-              {can("run") && (
-                <MenuItem
-                  disabled={!!agent.archived_at}
-                  onClick={() =>
-                    navigate(`${basePath}/sessions/new?agent=${agent.id}`)
-                  }
-                >
-                  <PlayIcon aria-hidden="true" />
-                  {t("Try agent")}
-                </MenuItem>
-              )}
+              {can("run") &&
+                (agent.preset_kind !== "finding" || can("write")) && (
+                  <MenuItem
+                    disabled={!!agent.archived_at}
+                    onClick={() =>
+                      navigate(
+                        agent.preset_kind === "finding"
+                          ? `${basePath}/findings?analyze=1`
+                          : `${basePath}/sessions/new?agent=${agent.id}`,
+                      )
+                    }
+                  >
+                    <PlayIcon aria-hidden="true" />
+                    {t(
+                      agent.preset_kind === "finding"
+                        ? "Analyze traces"
+                        : "Try agent",
+                    )}
+                  </MenuItem>
+                )}
               {can("run") && (
                 <ConnectAgent
                   key={`${workspace.id}:${agent.id}`}

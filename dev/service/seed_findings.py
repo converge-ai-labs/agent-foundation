@@ -40,7 +40,6 @@ def seed_findings(api: Api, local: Local, connection: Json) -> dict[str, str]:
         page = api.until(f"/api/v1/traces?run_id={run['id']}", lambda page: bool(page["items"]), timeout=60)
         traces[key] = page["items"][0]
         index[f"findings_trace_{key}"] = traces[key]["trace_id"]
-    api.post("/api/v1/finding-agent")
     analysis = api.post("/api/v1/finding-analyses", {"agent_id": agent["id"], "max_traces": 3}, idempotent=True)
     finished = api.sealed_run(analysis["run_id"])
     if finished["status"] != "completed":

@@ -40,7 +40,7 @@ Connections expose nonsecret configuration and readiness. Confidential setup use
 
 Results contain business identities, state, resource versions, pagination and request identity without an HTTP status/header/body envelope. Accepted dispatch remains distinct from execution completion. Errors retain their Service code and safe details. Missing or stale versions fail; approval binds the actual target, delta and original version. Neither approval nor retries may refresh that version. Unknown write outcomes require reconciliation, never automatic replay.
 
-Large execution reads return bounded summaries and authenticated content references. References bind the Run, workspace and source representation, convey no authority, and repeat the source's current authorization and analysis restrictions on every read or search. Item-list discovery references defer payload loading and version selection until the first content read or search. That response returns a version-bound reference and continuation; subsequent reads through either reject changed content. Reusing the original item discovery reference starts a new snapshot. Other source references bind their version at the parent read. Continuations remain snapshot-consistent and preserve original redaction and truncation evidence.
+Large execution reads return bounded summaries and authenticated content references. References bind the Run, workspace and source representation, convey no authority, and repeat the source's current workspace authorization on every read or search. Analysis selections do not restrict these reads; successful trace reads are recorded independently of the initial selection. Item-list discovery references defer payload loading and version selection until the first content read or search. That response returns a version-bound reference and continuation; subsequent reads through either reject changed content. Reusing the original item discovery reference starts a new snapshot. Other source references bind their version at the parent read. Continuations remain snapshot-consistent and preserve original redaction and truncation evidence.
 
 The selected model's actual adapter prepares tool schemas before use. Known incompatibility fails explicitly with the tool name and schema context; tools, constraints and models are never silently changed. Contract tests separately cover JSON Schema validity and real provider-adapter serialization.
 
@@ -177,7 +177,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | GET    | `/findings/{finding}` | Read one finding and its ETag; `read`                                                                |
 | PATCH  | `/findings/{finding}` | Review, close or reopen; `write`, `If-Match`                                                         |
 
-[Findings and analysis](07-facts-and-delivery.md#findings-and-analysis) owns selection, submission retry and coverage semantics. Both lists use bounded keyset pages; finding cursors bind their filters. These commands do not publish an Agent revision.
+[Findings and analysis](07-facts-and-delivery.md#findings-and-analysis) owns selection, submission retry and coverage semantics. Both lists use bounded keyset pages; finding cursors bind their filters. Analysis start may publish or select the required Finding Agent platform revision while preserving user preferences. Finding submission and review do not publish Agent revisions; business Agent configuration stays unchanged.
 
 ### Health
 

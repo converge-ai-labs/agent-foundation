@@ -633,6 +633,7 @@ class ScheduleOrigin(BaseModel):
 
 
 class RunView(BaseModel):
+    finding_analysis_id: str | None = None
     schedule_origin: ScheduleOrigin | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str

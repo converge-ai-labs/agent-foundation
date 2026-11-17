@@ -62,15 +62,8 @@ async def create_finding(
             run = await get_run(session, scope.workspace_id, evidence.run_id)
             if (run.agent_id, run.agent_revision_id) != (body.agent_id, body.agent_revision_id):
                 raise invalid("evidence", "each cited run must use the named Agent revision")
-            if analysis is not None and (
-                (analysis.agent_id is not None and analysis.agent_id != body.agent_id)
-                or evidence.trace_id not in analysis.read_trace_ids
-                or not any(
-                    item["trace_id"] == evidence.trace_id and item["run_id"] == evidence.run_id
-                    for item in analysis.selected_traces
-                )
-            ):
-                raise invalid("evidence", "the analysis must read a selected trace before citing it")
+            if analysis is not None and evidence.trace_id not in analysis.read_trace_ids:
+                raise invalid("evidence", "the analysis must read a trace before citing it")
         row = FindingRow(
             id=new_object_id("fnd"),
             organization_id=scope.organization_id,
