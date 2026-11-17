@@ -217,17 +217,20 @@ type CredentialDraft = {
 const untouched = (): CredentialDraft => ({ mode: "keep", rows: [] });
 function credentialPayload(
   value: CredentialDraft,
+  t: (key: string) => string,
 ): Schema["Credentials"] | null | undefined {
   if (value.mode === "keep") return undefined;
   if (value.mode === "clear") return null;
   if (!value.rows.length)
-    throw new Error("Add at least one header to replace credentials.");
+    throw new Error(t("Add at least one header to replace credentials."));
   const headers: Record<string, string> = {};
   for (const row of value.rows) {
     const name = row.name.trim().toLowerCase();
     if (!name || !row.value || name in headers)
       throw new Error(
-        "Header names must be nonempty and unique, and each header needs a value.",
+        t(
+          "Header names must be nonempty and unique, and each header needs a value.",
+        ),
       );
     headers[name] = row.value;
   }
@@ -387,13 +390,13 @@ function SourceEditor({
         },
         export_credentials:
           exporting && exportUrl
-            ? credentialPayload(exportCredential)
+            ? credentialPayload(exportCredential, t)
             : undefined,
         deployment_preset_revision: preset?.revision,
         use_deployment_query_credentials: useDeploymentCredential,
         query_credentials:
           queryUrl && !useDeploymentCredential
-            ? credentialPayload(queryCredential)
+            ? credentialPayload(queryCredential, t)
             : undefined,
       };
       if (basis)

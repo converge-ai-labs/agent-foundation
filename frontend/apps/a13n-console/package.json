@@ -14,7 +14,8 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:i18n": "vitest run src/i18n"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

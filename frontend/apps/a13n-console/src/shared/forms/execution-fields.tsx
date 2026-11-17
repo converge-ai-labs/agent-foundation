@@ -10,6 +10,7 @@ export type ExecutionOverride = Schema["ExecutionOverride"];
 /** Inherited leaves stay absent in Agent defaults and single-Run options. */
 export function executionOverride(
   value: ExecutionOverride,
+  t: (key: string) => string,
 ): ExecutionOverride | undefined {
   const mode = value.tools?.mode;
   const wait = value.tools?.foreground_wait_seconds;
@@ -23,10 +24,10 @@ export function executionOverride(
     )
   )
     throw new Error(
-      "Environment variables require portable names and values without NUL.",
+      t("Environment variables require portable names and values without NUL."),
     );
   if (wait != null && (!Number.isFinite(wait) || wait < 0 || wait > 300))
-    throw new Error("Foreground wait must be between 0 and 300 seconds.");
+    throw new Error(t("Foreground wait must be between 0 and 300 seconds."));
   const tools = {
     ...(mode ? { mode } : {}),
     ...(wait != null ? { foreground_wait_seconds: wait } : {}),
@@ -47,8 +48,9 @@ export function executionOverride(
 /** Thread PATCH uses explicit nulls to reset previously overridden leaves. */
 export function executionPatch(
   value: ExecutionOverride,
+  t: (key: string) => string,
 ): ExecutionOverride | null {
-  const override = executionOverride(value);
+  const override = executionOverride(value, t);
   return override
     ? {
         tools: {

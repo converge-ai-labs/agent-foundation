@@ -38,7 +38,7 @@ export function ThreadExecutionDialog({
             path: { thread_id: base.id },
             header: { "If-Match": rowTag(base) },
           },
-          body: { execution: executionPatch(execution) },
+          body: { execution: executionPatch(execution, t) },
         })
         .then(data),
     onSuccess: (value) => {

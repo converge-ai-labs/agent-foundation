@@ -363,7 +363,7 @@ export function buildDraftConfig(
       config: buildConfig(
         initial,
         {
-          execution: executionOverride(draft.execution),
+          execution: executionOverride(draft.execution, t),
           background_compaction: draft.backgroundCompaction,
           summarize: draft.summarize,
           instructions: draft.instructions,
