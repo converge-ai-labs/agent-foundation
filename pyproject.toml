@@ -17,7 +17,8 @@ dev = [
     "import-linter>=2.3,<3",
     # Keep real MCP server fixtures available in the default local development environment.
     "fastmcp>=4.0,<5",
-    "grpcio-tools>=1.75,<2",
+    # Protocol generation stays on the development interpreter; protobuf 6 tools have no Python 3.15 wheels.
+    "grpcio-tools>=1.75,<2; python_version < '3.15'",
     "mdformat==1.0.0",
     "mdformat-footnote==0.1.3",
     "mdformat-front-matters==2.0.0",

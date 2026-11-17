@@ -787,3 +787,47 @@ def test_windows_ui_gate_requires_all_full_suite_shards(result):
         ["bash", "-e", "-c", gate["steps"][0]["run"]], env={"WINDOWS_RESULT": result}, check=False
     )
     assert (completed.returncode == 0) == (result == "success")
+
+
+@pytest.mark.parametrize(
+    "filename,job_name",
+    [
+        ("ci-a13n-harness.yml", "harness"),
+        ("ci-a13n-harness-ui.yml", "tests"),
+        ("ci-a13n-service.yml", "validation"),
+        ("ci-a13n-stream-protocol.yml", "protocol"),
+        ("ci-a13n-envd.yml", "client"),
+        ("ci-examples.yml", "examples"),
+    ],
+)
+def test_python_component_ci_runs_each_supported_interpreter(filename: str, job_name: str) -> None:
+    job = yaml.safe_load((WORKFLOWS / filename).read_text())["jobs"][job_name]
+    assert job["strategy"]["matrix"]["python-version"] == ["3.13", "3.14", "3.15"]
+    assert job["strategy"]["fail-fast"] is False
+    # uv otherwise follows the checkout's .python-version instead of setup-python.
+    assert job["env"]["UV_PYTHON"] == "${{ matrix.python-version }}"
+    setup = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/setup-python@"))
+    assert setup["with"]["python-version"] == "${{ matrix.python-version }}"
+    assert "${{ matrix.python-version }}" in job["name"]
+    for step in job["steps"]:
+        if step.get("uses", "").startswith("actions/upload-artifact@"):
+            assert "${{ matrix.python-version }}" in step["with"]["name"]
+
+
+def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
+    job = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())["jobs"]["harness"]
+    matrix = job["strategy"]["matrix"]
+    assert matrix["name"] == ["tests-1", "tests-2", "checks", "browser", "Windows"]
+    assert {entry["name"] for entry in matrix["include"]} == set(matrix["name"])
+    for entry in matrix["include"]:
+        assert "python-version" not in entry
+        assert entry["runner"] == ("windows-2025" if entry["name"] == "Windows" else "ubuntu-24.04")
+
+
+def test_service_python_versions_cross_the_selected_tasks() -> None:
+    job = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())["jobs"]["validation"]
+    assert job["strategy"]["matrix"]["task"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
+    assert job["runs-on"] == "${{ matrix.task.runner }}"
+    tests = next(step for step in job["steps"] if step.get("name") == "Test a13n Service")
+    assert tests["if"] == "startsWith(matrix.task.name, 'tests-')"
+    assert tests["env"]["TEST_TARGETS"] == "${{ matrix.task.targets }}"

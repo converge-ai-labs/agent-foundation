@@ -53,11 +53,13 @@ concurrency:
 
 jobs:
   harness:
-    name: a13n Harness (${{ matrix.name }})
+    name: a13n Harness (${{ matrix.name }}, Python ${{ matrix.python-version }})
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
+        python-version: ["3.13", "3.14", "3.15"]
+        name: [tests-1, tests-2, checks, browser, Windows]
         include:
           - name: tests-1
             runner: ubuntu-24.04
@@ -77,6 +79,8 @@ jobs:
               packages/a13n-harness/tests/test_monitored_process.py
               packages/a13n-harness/tests/providers_environment
 
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
@@ -88,7 +92,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -159,7 +163,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harness-${{ matrix.name }}-${{ github.run_attempt }}
+          name: harness-${{ matrix.name }}-py${{ matrix.python-version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 

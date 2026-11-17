@@ -55,7 +55,13 @@ concurrency:
 
 jobs:
   protocol:
-    name: a13n Stream Protocol
+    name: a13n Stream Protocol (Python ${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14", "3.15"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     steps:
@@ -67,7 +73,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -95,7 +101,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stream-protocol-${{ github.run_attempt }}
+          name: stream-protocol-py${{ matrix.python-version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 
