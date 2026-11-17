@@ -23,7 +23,7 @@ The frame of a screen.
 
 Everything that renders many resources.
 
-- `ResourceTable` — the one table anatomy. Columns declare `label`, `tone`, and `render`; the first column is the identity. `onRowActivate` makes rows clickable and keyboard-activatable; `rowMenu` adds the trailing overflow menu column, which stays visible on touch devices.
+- `ResourceTable` — the one table anatomy. Columns declare `label`, `tone`, and `render`; the first column is the identity. `onRowActivate` makes rows clickable and keyboard-activatable; `rowMenu` adds the trailing overflow menu column, which stays visible on touch devices. Set `rowMenuVisibility="always"` when actions must remain discoverable without hover.
 - `ResourceIdentity` — the identity cell: an identity tile and name, one line of secondary text, and the reference popover for identifiers. Re-exported here because it is a table concern as much as an identity one.
 - `Toolbar` — bounded search input with a leading icon, then filters, then secondary actions at the right. `searchLabel` names the field; `searchPlaceholder` adds the hint when the field accepts something more specific.
 - `ArchivedFilter` — the toolbar chip that adds archived items to a head list (agents, skills) of open ones.

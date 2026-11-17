@@ -1,24 +1,12 @@
-import {
-  DotsThreeOutlineVerticalIcon,
-  StopIcon,
-  TrashIcon,
-} from "@phosphor-icons/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "a13n-ui";
+import { DotsThreeOutlineVerticalIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+import { Button, Menu, MenuPopup, MenuTrigger } from "a13n-ui";
 import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, ifMatch, type Schema } from "../../shared/api";
-import { Confirm } from "../../shared/dialogs";
+import { data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
@@ -33,6 +21,10 @@ import { CreationProgress, DesktopPreview } from "./creation-progress";
 import { Fact } from "./fact";
 import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
+import {
+  EnvironmentLifecycleItems,
+  environmentLifecycleAvailability,
+} from "./instance-actions";
 import { EnvironmentStatus } from "./instance-status";
 import { useEnvironmentTypes } from "./providers";
 import { KubernetesDetails } from "./kubernetes-details";
@@ -85,7 +77,6 @@ export function EnvironmentPanel({
   onClose: () => void;
 }) {
   const client = useClient(),
-    cache = useQueryClient(),
     { can } = useWorkspace(),
     { t } = useTranslation(),
     [renaming, setRenaming] = useState(false),
@@ -133,26 +124,6 @@ export function EnvironmentPanel({
         })
         .then(data),
   });
-  async function act(action: "stop" | "delete") {
-    const http = client.workspace(environment.workspace_id);
-    const request = {
-      params: { path: { environment_id: environment.id } },
-      headers: ifMatch(detail.data?.etag),
-    };
-    if (action === "stop")
-      await http
-        .POST("/api/v1/environments/{environment_id}/stop", request)
-        .then(data);
-    else
-      await http
-        .DELETE("/api/v1/environments/{environment_id}", request)
-        .then(data);
-    await Promise.all([
-      cache.invalidateQueries({ queryKey: ["environment", environment.id] }),
-      cache.invalidateQueries({ queryKey: ["environments"] }),
-      cache.invalidateQueries({ queryKey: ["run-options"] }),
-    ]);
-  }
   const types = useEnvironmentTypes(open);
   const value = detail.data?.value;
   const capabilities = types.data?.items.find(
@@ -161,16 +132,11 @@ export function EnvironmentPanel({
   // External targets are connect-only: the Service never stops them, and
   // deleting one only retires it, so no provider type decides anything.
   const managed = !!value?.template_id;
-  const status = value?.status ?? environment.status;
   const name = value?.name ?? environment.name;
-  // Stop is offered only while a target can still be stopped.
-  const canStop =
-    managed &&
-    !!capabilities?.supports_stop &&
-    !["stopping", "stopped", "deleting", "deleted"].includes(status);
-  const canDelete =
-    (!managed || !!capabilities?.supports_destroy) &&
-    !["deleting", "deleted"].includes(status);
+  const { canStop, canDelete } = environmentLifecycleAvailability(
+    value ?? environment,
+    capabilities,
+  );
   const lifecycle = can("write") && !!value && (canStop || canDelete);
   return (
     <Panel
@@ -201,43 +167,12 @@ export function EnvironmentPanel({
               <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
             </MenuTrigger>
             <MenuPopup align="end">
-              {canStop && (
-                <Confirm
-                  subject={name}
-                  title={t("Stop environment")}
-                  description={t(
-                    "This stops the environment when no run is using it. A later run can resume it.",
-                  )}
-                  triggerElement={
-                    <MenuItem
-                      closeOnClick={false}
-                      disabled={!!value?.failure?.permanent}
-                    >
-                      <StopIcon aria-hidden="true" />
-                      {t("Stop")}
-                    </MenuItem>
-                  }
-                  action={() => act("stop")}
-                />
-              )}
-              {canStop && canDelete && <MenuSeparator />}
-              {canDelete && (
-                <Confirm
-                  subject={name}
-                  title={t("Delete environment")}
-                  description={t(
-                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a session while still usable, cannot be deleted.",
-                  )}
-                  danger
-                  triggerElement={
-                    <MenuItem closeOnClick={false} variant="destructive">
-                      <TrashIcon aria-hidden="true" />
-                      {t("Delete")}
-                    </MenuItem>
-                  }
-                  action={() => act("delete")}
-                />
-              )}
+              <EnvironmentLifecycleItems
+                environment={value!}
+                etag={detail.data?.etag}
+                canStop={canStop}
+                canDelete={canDelete}
+              />
             </MenuPopup>
           </Menu>
         )

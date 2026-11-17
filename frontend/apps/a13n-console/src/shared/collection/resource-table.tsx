@@ -35,6 +35,7 @@ export function ResourceTable<T extends { id: string } | { key: string }>({
   canActivateRow,
   rowMenu,
   rowMenuLabel,
+  rowMenuVisibility = "hover",
   className,
 }: {
   items: readonly T[];
@@ -45,6 +46,7 @@ export function ResourceTable<T extends { id: string } | { key: string }>({
   /** Overflow menu items for one row; the column is added when provided. */
   rowMenu?: (item: T) => ReactNode;
   rowMenuLabel?: string;
+  rowMenuVisibility?: "hover" | "always";
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -57,6 +59,7 @@ export function ResourceTable<T extends { id: string } | { key: string }>({
         // Lists that size their own columns pass a className; the rest give the
         // identity column the width the supporting columns leave.
         data-fit={className ? undefined : ""}
+        data-row-menu-visibility={rowMenuVisibility}
       >
         <TableCaption className="sr-only">
           {caption ?? t("Resources")}

@@ -50,6 +50,7 @@ import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
 import { ConnectComputer } from "./connect-computer";
+import { EnvironmentRowMenu } from "./instance-row-menu";
 
 const STATUSES = [
   "reserved",
@@ -161,13 +162,22 @@ export function EnvironmentInstances() {
       </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading variant="table" columns={5} />
+        <Loading variant="table" columns={6} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
             caption={t("Environment instances")}
             items={query.data.items}
             onRowActivate={(item) => setSelected(item)}
+            rowMenuLabel={t("Environment actions")}
+            rowMenuVisibility="always"
+            rowMenu={(item) => (
+              <EnvironmentRowMenu
+                environment={item}
+                providerType={providerById.get(item.provider_id ?? "")?.type}
+                onDetails={() => setSelected(item)}
+              />
+            )}
             columns={[
               {
                 label: t("Environment"),
