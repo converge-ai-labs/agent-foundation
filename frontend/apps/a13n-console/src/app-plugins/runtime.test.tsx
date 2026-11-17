@@ -13,7 +13,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../service-client";
 import { i18n } from "../i18n";
-import { AppPluginsProvider, catalogKey } from "./registry";
+import { AppPluginsProvider, catalogKey, loadApp } from "./registry";
 import { AppRoute, WorkspaceHome } from "./views";
 import { AppContext, useApp } from "./context";
 import { AppManagement } from "./management";
@@ -68,7 +68,7 @@ const inventory = () => ({
       factory_keys: [],
       enabled,
       frontend: enabled
-        ? { bridge: 1, entry: "./fixture.tsx", styles: [] }
+        ? { bridge: 1, entry: "../../tests/app-plugin-fixture.tsx", styles: [] }
         : null,
     },
   ],
@@ -120,6 +120,16 @@ afterEach(() => {
   cache.clear();
   vi.restoreAllMocks();
 });
+it("localizes App bridge failures in the selected Console language", async () => {
+  await i18n.changeLanguage("zh-CN");
+  const app = inventory().items[0];
+  app.frontend!.bridge = 2;
+  const loaded = await loadApp(app, []);
+  expect(loaded.error?.message).toBe(
+    "此 App 所需的 Console 桥接版本尚不受支持。",
+  );
+});
+
 function Runtime({ path }: { path: string }) {
   return (
     <QueryClientProvider client={cache}>

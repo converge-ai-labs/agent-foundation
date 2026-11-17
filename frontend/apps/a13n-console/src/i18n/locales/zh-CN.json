@@ -4395,5 +4395,11 @@
   "Unconfirmed Sessions": "Session 状态未确认",
   "Counts cover all pages. Each binding version is counted once; it is confirmed only when every selected credential is applied.": "统计涵盖全部分页，每个绑定版本只计一次。选中的凭据全部应用后，才计为已确认。",
   "Native tool discovery": "原生工具发现",
-  "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed.": "原生工具发现：模型先搜索工具，再直接调用，无需分组。"
+  "Native tool discovery: the model searches for tools, then calls them directly. No groups are needed.": "原生工具发现：模型先搜索工具，再直接调用，无需分组。",
+  "useApp requires a mounted App contribution.": "useApp 需要已挂载的 App 贡献。",
+  "App business requests require a selected workspace.": "App 业务请求需要先选择工作区。",
+  "App requests use a relative path beginning with /.": "App 请求须使用以 / 开头的相对路径。",
+  "App requests must stay within their App namespace.": "App 请求必须位于自己的 App 命名空间内。",
+  "This App requires an unsupported Console bridge.": "此 App 所需的 Console 桥接版本尚不受支持。",
+  "Could not load App stylesheet: {{href}}": "无法加载 App 样式表：{{href}}"
 }

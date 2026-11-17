@@ -10,7 +10,7 @@ import {
   useQueryClient,
   useWorkspace,
   useTranslation,
-} from "./bridge";
+} from "../src/app-plugins/bridge";
 function Overview() {
   const app = useApp();
   const cache = useQueryClient();
