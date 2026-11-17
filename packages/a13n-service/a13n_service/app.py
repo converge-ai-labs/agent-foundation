@@ -26,7 +26,7 @@ from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
-from a13n_service.app_definitions import InstalledApp, discover_apps
+from a13n_service.app_definitions import InstalledApp, app_databases, discover_apps
 from a13n_service.app_plugin_runtime import app_routers, app_sweeps, open_assets
 from a13n_service.app_plugin_runtime import router as app_assets_router
 from a13n_service.app_plugins import AppCatalog
@@ -42,6 +42,7 @@ from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.mcp import WorkspaceKey, build_mcp, build_platform_mcp
+from a13n_service.migrations import apps as app_migrations
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.platform_artifact import validate_artifact_catalog
@@ -193,6 +194,11 @@ async def open_runtime(
     await asyncio.to_thread(initialize)
     storage = open_storage(config.database)
     stack.push_async_callback(storage.close)
+    databases = app_databases(apps)
+    if databases:
+        async with asyncio.timeout(config.server.readiness_timeout):
+            await check_schema(storage, heads(distribution))
+            await app_migrations.require_current(storage, databases)
     redis = Redis.from_url(
         config.redis.url.get_secret_value(),
         socket_timeout=config.redis.timeout,
@@ -316,6 +322,7 @@ def console_fallback(root: Path, otherwise: ASGIApp) -> ASGIApp:
 def compose_apps(distribution: Distribution, apps: tuple[InstalledApp, ...]) -> Distribution:
     """Validate and project App registrations into existing assembly facilities, without runtime I/O."""
     AppCatalog(tuple(app.manifest for app in apps))
+    app_databases(apps)
     for installed in apps:
         distribution = distribution.extend(Distribution(name=distribution.name, settings=installed.definition.settings))
     return replace(
@@ -440,6 +447,7 @@ def build_app(
             dependency = "database"
             async with asyncio.timeout(config.server.readiness_timeout):
                 await check_schema(runtime.storage, expected)
+                await app_migrations.require_current(runtime.storage, app_databases(apps))
         except Exception:
             return JSONResponse({"status": "unavailable", "dependency": dependency}, status_code=503)
         body: dict[str, object] = {"status": "ready", "role": role}

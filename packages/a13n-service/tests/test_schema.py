@@ -10,6 +10,7 @@ from sqlalchemy import ForeignKeyConstraint, String
 # model dispatches are keyed by Harness call ID. Browser bindings use Thread IDs; tabs and selections use
 # Browser/target and Browser/Thread pairs; downloads use Browser/generation/GUID. Every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
+    "app_databases",  # Deployment namespace ownership is keyed by the installed App ID.
     "browser_downloads",
     "client_environment_settings",
     "browser_tabs",

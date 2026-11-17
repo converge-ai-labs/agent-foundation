@@ -124,7 +124,7 @@ Minimize database work across the complete application operation using the short
 
 ## Migrations
 
-Each a13n Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; a13n Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.
+Each a13n Service build artifact supplies one final Core metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Core owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change Core migration contents. Installed Apps may declare independent public-schema metadata and packaged histories under the [App persistence contract](spec/a13n-service/15-app-plugins.md#app-persistence); each App has its own namespace, version table and at most one head. App metadata and revisions never merge into the Core graph.
 
 The OSS artifact resolves its registry from `a13n_service.distribution.OSS` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 

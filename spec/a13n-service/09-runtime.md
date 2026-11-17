@@ -13,7 +13,8 @@ One non-root image carries one executable, `a13n-service`:
 | `run --role all` (default)                                | the API, the control sweeps and the worker in one process; development and single-host deployments                             |
 | `run --role control`                                      | the API, session streams and the control sweeps                                                                                |
 | `run --role worker`                                       | claims and executes runs; serves only health and readiness                                                                     |
-| `migrate`                                                 | upgrades the database to this build's schema head ([Schema migrations](#schema-migrations))                                    |
+| `migrate [--apps]`                                        | upgrades Core, then optionally all installed App histories ([Schema migrations](#schema-migrations))                           |
+| `apps db init/revision/check/status/upgrade [--app ID]`   | authors, verifies and explicitly applies independent [App persistence](15-app-plugins.md#app-persistence) histories            |
 | `bootstrap --email EMAIL [--password-stdin]`              | creates the first organization and administrator ([03](03-tenancy.md#bootstrap)); exits with status 3 when already initialized |
 | `user disable --email EMAIL`, `user enable --email EMAIL` | the operator's switch for a user account ([03](03-tenancy.md#disabling))                                                       |
 
@@ -43,7 +44,7 @@ Every replica of a role runs the same components; replicas coordinate only throu
 A process starts in this order and serves nothing until it finishes:
 
 1. Assembly checks ([Assembly](#assembly)): an invalid distribution fails here.
-2. `all` and `control` upgrade the schema when `database.auto_migrate` is true.
+2. `all` and `control` upgrade the Core schema when `database.auto_migrate` is true. App schemas require explicit operator upgrade.
 3. The process opens its runtime: the database pool (`database.pool_size` connections and no overflow; `database.connect_timeout` also bounds the wait for a pooled connection; `database.statement_timeout` bounds each statement), the Redis client (`redis.timeout` for connecting and every call), the object store, the encryption key ring ([03](03-tenancy.md#credential-encryption)), the provider registry, the access configuration, the installed Harness plugin factories (`plugins.keys`), the admission policy, the trace backend that queries read (none when tracing is off) and, on executing roles, trace export. The registry offers environment types by `provisioning.local.enabled`, `environments.docker_host` and `environments.docker_mount_roots` ([08](08-providers.md#registry)) and derives each calling API's settings schema as it is assembled. An invalid key ring, an `encryption.key_file` that cannot be read or created, or an invalid plugin key fails startup.
 4. Within `server.readiness_timeout` the process checks that the database is exactly at its build's migration head; otherwise startup fails with an instruction to run `a13n-service migrate`.
 5. The `all` role awaits one [workspace provisioning](#workspace-provisioning) catch-up after schema validation.
@@ -72,7 +73,7 @@ Background compaction generation belongs to `all` and `worker`, independently of
 
 ## Schema migrations
 
-The schema is one Alembic graph composed from the distribution's migration directories and table metadata. The graph must have exactly one head, and every process requires the database at that head.
+The Core schema is one Alembic graph composed from the distribution's migration directories and table metadata. The graph must have exactly one head, and every process requires the database at that head. Installed Apps can declare independent [public-schema persistence](15-app-plugins.md#app-persistence) with separate namespaces, histories and version tables. App histories never merge into the Core graph. `migrate --apps` explicitly upgrades Core first, then installed App histories; plain `migrate` and startup auto migration own Core only. Every role validates all installed App bindings and exact heads before any App startup callback, and readiness repeats that check without DDL.
 
 - **Authority.** `a13n-service migrate` upgrades the database; deployments with a dedicated migration job set `database.auto_migrate = false`. Otherwise `all` and `control` upgrade at startup. The worker role never migrates.
 - **Coordination.** A migration runs on a dedicated connection outside the pool, holding a session-level PostgreSQL advisory lock for its whole duration. A concurrent migrator waits for that lock for at most `database.migration_advisory_lock_timeout` and fails when the wait runs out; once it holds the lock it finds the schema at head and changes nothing. Under the lock, statements run with `lock_timeout = database.migration_lock_timeout`, `statement_timeout = database.migration_statement_timeout` and `idle_in_transaction_session_timeout = database.migration_idle_transaction_timeout`. Closing the connection releases the lock after success or failure.
