@@ -6,6 +6,7 @@ import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
 
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
+import { AppPluginsProvider } from "../app-plugins/registry";
 import { CreateWorkspace } from "../features/settings/create-workspace";
 import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
@@ -126,7 +127,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       />
     );
   if (!workspaceId && location.pathname === "/")
-    return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
+    return <Navigate to={workspacePath(workspace)} replace />;
   return (
     <Context.Provider
       value={{
@@ -234,7 +235,9 @@ function NoWorkspace({
           <ErrorToast error={logout.error} />
           {isPersonalSettings(location.pathname) ||
           location.pathname.startsWith("/organization/settings") ? (
-            <Outlet />
+            <AppPluginsProvider>
+              <Outlet />
+            </AppPluginsProvider>
           ) : (
             <Empty
               title={t("No workspaces available")}

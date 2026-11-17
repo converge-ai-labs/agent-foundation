@@ -10,6 +10,9 @@ vi.mock("./auth/context", () => ({
   useClient: () => ({ http: {} }),
 }));
 vi.mock("./layout/shell", () => ({ Shell: () => null }));
+vi.mock("./app-plugins/registry", () => ({
+  AppPluginsProvider: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("./layout/workspace", () => ({
   WorkspaceProvider: ({ children }: { children: ReactNode }) => children,
   useWorkspace: () => ({ basePath: "/workspace/test" }),

@@ -1,0 +1,4 @@
+.venv/
+dist/
+frontend/node_modules/
+src/acme_reports/static/

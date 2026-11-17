@@ -1,0 +1,12 @@
+{
+  "name": "acme-reports-app-frontend-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}

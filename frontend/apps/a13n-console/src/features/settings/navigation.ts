@@ -1,5 +1,6 @@
 import {
   PulseIcon,
+  PuzzlePieceIcon,
   IdentificationBadgeIcon,
   RobotIcon,
   ClipboardTextIcon,
@@ -19,6 +20,8 @@ import {
 import { workspacePath } from "../../shared/paths";
 import type { Schema } from "../../shared/api";
 import { useAccess } from "../../layout/workspace";
+import { useAppSettings } from "../../app-plugins/views";
+import { settingsKey } from "../../app-plugins/types";
 
 export type SettingsScope = "personal" | "workspace" | "organization";
 
@@ -136,6 +139,12 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   ],
   organization: [
     {
+      value: "app-plugins",
+      label: "App plugins",
+      description: "Enable installed apps for this organization.",
+      icon: PuzzlePieceIcon,
+    },
+    {
       value: "general",
       label: "General",
       description: "Manage this organization's name and icon.",
@@ -193,6 +202,17 @@ export function resolveSection(
 
 export function useSettingsNavigation() {
   const { workspace, organization, can, organizationCan } = useAccess();
+  const workspaceApps = useAppSettings("workspace");
+  const organizationApps = useAppSettings("organization");
+  const appSections = (
+    items: typeof workspaceApps,
+  ): SettingsSectionDefinition[] =>
+    items.map((section) => ({
+      value: settingsKey(section.appId, section.id),
+      label: section.label,
+      description: section.description,
+      icon: PuzzlePieceIcon,
+    }));
   return [
     {
       scope: "personal" as const,
@@ -208,9 +228,12 @@ export function useSettingsNavigation() {
             label: "Workspace",
             name: workspace.name,
             path: `${workspacePath(workspace)}/settings`,
-            sections: sections.workspace.filter(
-              (item) => !item.permission || can(item.permission),
-            ),
+            sections: [
+              ...sections.workspace.filter(
+                (item) => !item.permission || can(item.permission),
+              ),
+              ...appSections(workspaceApps),
+            ],
           },
         ]
       : []),
@@ -221,7 +244,10 @@ export function useSettingsNavigation() {
             label: "Organization",
             name: organization.name,
             path: "/organization/settings",
-            sections: sections.organization,
+            sections: [
+              ...sections.organization,
+              ...appSections(organizationApps),
+            ],
           },
         ]
       : []),

@@ -28,7 +28,10 @@ it.each([
       root,
       publicDir: false,
       logLevel: "silent",
-      build: { write: false },
+      build: {
+        write: false,
+        rolldownOptions: { input: { index: join(root, "index.html") } },
+      },
     });
     if (!("output" in result)) throw new Error("Expected one browser build");
     const license = await readFile(new URL("LICENSE.coss", uiRoot), "utf8");
