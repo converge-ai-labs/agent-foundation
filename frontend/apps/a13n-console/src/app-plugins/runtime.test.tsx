@@ -23,6 +23,7 @@ import { WorkspaceSettings } from "../features/settings/pages";
 const state = vi.hoisted(() => ({
   client: null as Client | null,
   workspaceId: "ws_one",
+  organizationAdmin: true,
 }));
 vi.mock("../auth/context", () => ({
   useClient: () => state.client,
@@ -44,7 +45,7 @@ vi.mock("../layout/workspace", () => {
     workspace: { id: state.workspaceId, name: "Demo" },
     workspaces: [],
     can: () => true,
-    organizationCan: () => true,
+    organizationCan: () => state.organizationAdmin,
     basePath: `/workspace/${state.workspaceId}`,
   });
   return { useAccess, useWorkspace: useAccess };
@@ -78,6 +79,7 @@ beforeEach(async () => {
   catalogRead = undefined;
   policyWrite = undefined;
   state.workspaceId = "ws_one";
+  state.organizationAdmin = true;
   cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -198,7 +200,7 @@ it("renders contributed settings through their actual metadata and content owner
 });
 it("manages policy through the organization precondition and removes disabled contributions", async () => {
   mount("/manage");
-  const toggle = await screen.findByRole("switch", { name: "Enable Reports" });
+  const toggle = await screen.findByRole("switch", { name: "Reports" });
   fireEvent.click(toggle);
   await waitFor(() =>
     expect(requests.some((request) => request.method === "PUT")).toBe(true),
@@ -213,7 +215,7 @@ it("manages policy through the organization precondition and removes disabled co
 
 it("keeps a committed policy response when an older catalog read finishes later", async () => {
   mount("/manage");
-  const toggle = await screen.findByRole("switch", { name: "Enable Reports" });
+  const toggle = await screen.findByRole("switch", { name: "Reports" });
   const oldInventory = inventory();
   let finishRead!: (value: unknown) => void;
   const delayedRead = new Promise<unknown>((resolve) => {
@@ -343,7 +345,7 @@ it.each([
   async (path, heading) => {
     mount(path);
     if (heading) await screen.findByRole("heading", { name: heading });
-    else await screen.findByRole("switch", { name: "Enable Reports" });
+    else await screen.findByRole("switch", { name: "Reports" });
     catalogRead = async () => {
       throw new Error("Catalog refresh failed");
     };
@@ -358,10 +360,7 @@ it.each([
     );
     if (heading)
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
-    else
-      expect(
-        screen.getByRole("switch", { name: "Enable Reports" }),
-      ).toBeTruthy();
+    else expect(screen.getByRole("switch", { name: "Reports" })).toBeTruthy();
     expect(
       screen.queryByRole("heading", { name: "App unavailable" }),
     ).toBeNull();
@@ -369,14 +368,15 @@ it.each([
 );
 it("keeps failed policy updates locked until a fresh catalog read succeeds", async () => {
   mount("/manage");
-  const toggle = await screen.findByRole("switch", { name: "Enable Reports" });
+  const toggle = await screen.findByRole("switch", { name: "Reports" });
   policyWrite = async () => {
     throw new Error("Policy response lost");
   };
   fireEvent.click(toggle);
-  const reload = await screen.findByRole("button", {
-    name: "Reload installed apps",
-  });
+  await screen.findByText(
+    "The App change could not be confirmed. Reload installed apps before changing an App again.",
+  );
+  const reload = screen.getByRole("button", { name: "Reload installed apps" });
   expect(toggle.hasAttribute("data-disabled")).toBe(true);
   let failRead!: (reason: unknown) => void;
   const delayedRead = new Promise<unknown>((_, reject) => {
@@ -396,7 +396,12 @@ it("keeps failed policy updates locked until a fresh catalog read succeeds", asy
       "idle",
     ),
   );
-  expect(screen.getByRole("switch", { name: "Enable Reports" })).toBe(toggle);
+  expect(screen.getByRole("switch", { name: "Reports" })).toBe(toggle);
+  expect(
+    screen.getByText(
+      "Installed apps could not be reloaded. The last confirmed state is shown.",
+    ),
+  ).toBeTruthy();
   expect(toggle.hasAttribute("data-disabled")).toBe(true);
   expect(
     screen
@@ -404,14 +409,25 @@ it("keeps failed policy updates locked until a fresh catalog read succeeds", asy
       .hasAttribute("disabled"),
   ).toBe(false);
   const fresh = { ...inventory(), version: 3 };
-  catalogRead = async () => fresh;
-  fireEvent.click(
-    screen.getByRole("button", { name: "Reload installed apps" }),
-  );
+  let finishFreshRead!: (value: unknown) => void;
+  catalogRead = () =>
+    new Promise((resolve) => {
+      finishFreshRead = resolve;
+    });
+  reload.focus();
+  fireEvent.click(reload);
+  await waitFor(() => expect(reload.hasAttribute("disabled")).toBe(true));
+  // Browsers blur a native button while its loading state disables it.
+  reload.blur();
+  await act(async () => {
+    finishFreshRead(fresh);
+  });
   await waitFor(() => expect(toggle.hasAttribute("data-disabled")).toBe(false));
-  expect(
-    screen.queryByRole("button", { name: "Reload installed apps" }),
-  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Reload installed apps" })).toBe(
+    reload,
+  );
+  expect(document.activeElement).toBe(reload);
+  expect(screen.queryByRole("alert")).toBeNull();
   policyWrite = undefined;
   fireEvent.click(toggle);
   await waitFor(() =>
@@ -434,7 +450,7 @@ it.each(["/apps/acme.reports/overview", "/manage"])(
     };
     mount(path);
     await screen.findByText("Initial catalog read failed");
-    expect(screen.queryByRole("switch", { name: "Enable Reports" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Reports" })).toBeNull();
     expect(
       screen.queryByRole("heading", { name: "Installed report" }),
     ).toBeNull();
@@ -453,4 +469,82 @@ it("resets App component state when its host workspace changes", async () => {
   const replacement = screen.getByRole("textbox", { name: "Report draft" });
   expect(replacement).not.toBe(input);
   expect((replacement as HTMLInputElement).value).toBe("");
+});
+
+it("explains a stale policy switch inline without claiming an editor draft", async () => {
+  policyWrite = async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "precondition_failed",
+          message: "Policy changed",
+          details: {},
+          request_id: "req_policy",
+        },
+      }),
+      { status: 412, headers: { "Content-Type": "application/json" } },
+    );
+  mount("/manage");
+  const toggle = await screen.findByRole("switch", { name: "Reports" });
+  expect(toggle.getAttribute("aria-describedby")).toBe(
+    "app-plugin-acme.reports-description",
+  );
+  expect(
+    document.querySelector('label[for="app-plugin-acme.reports"]')?.textContent,
+  ).toBe("Reports");
+  fireEvent.click(toggle);
+  await screen.findByRole("alert");
+  expect(
+    screen.getByText(
+      "The App change could not be confirmed. Reload installed apps before changing an App again.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Your draft is preserved/)).toBeNull();
+  expect(toggle.hasAttribute("data-disabled")).toBe(true);
+});
+
+it("offers catalog retry and a workspace-scoped exit from an unavailable App", async () => {
+  catalogRead = async () => {
+    throw new Error("Catalog temporarily offline");
+  };
+  mount("/apps/acme.reports/overview");
+  await screen.findByRole("heading", { name: "App unavailable" });
+  expect(
+    screen.getByRole("link", { name: "Go to agents" }).getAttribute("href"),
+  ).toBe("/workspace/ws_one/agents");
+  catalogRead = undefined;
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByRole("heading", { name: "Installed report" });
+});
+
+it("offers reload and an exit when an installed frontend cannot load", async () => {
+  const malformed = inventory();
+  malformed.items[0].frontend!.entry = "./invalid-fixture.tsx";
+  catalogRead = async () => malformed;
+  mount("/apps/acme.reports/overview");
+  await screen.findByRole("heading", { name: "App unavailable" });
+  expect(screen.getByRole("button", { name: "Reload Console" })).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Go to agents" }).getAttribute("href"),
+  ).toBe("/workspace/ws_one/agents");
+});
+
+it("gives members a usable missing-App exit without directing them to admin settings", async () => {
+  state.organizationAdmin = false;
+  enabled = false;
+  mount("/apps/acme.reports/overview");
+  await screen.findByRole("heading", { name: "App page not found" });
+  expect(
+    screen.getByText(
+      "Choose another page or contact your organization administrator.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByText(
+      "Enable the App in organization settings, or choose another page.",
+    ),
+  ).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Go to agents" }).getAttribute("href"),
+  ).toBe("/workspace/ws_one/agents");
 });

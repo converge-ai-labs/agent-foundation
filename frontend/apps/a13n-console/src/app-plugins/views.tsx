@@ -5,7 +5,7 @@ import { Link, Navigate, useLocation, useParams } from "react-router";
 import { useAccess, useWorkspace } from "../layout/workspace";
 import { ErrorPage, Loading, NotFoundPage } from "../shared/feedback";
 import { AppContext } from "./context";
-import { useAppPlugins } from "./registry";
+import { useAppCatalog, useAppPlugins } from "./registry";
 import { appText, type AppSettings } from "./types";
 
 class ContributionBoundary extends Component<
@@ -67,7 +67,9 @@ export function AppSurface({
 export function AppRoute() {
   const { appId, pageId } = useParams();
   const { apps, pending, error } = useAppPlugins();
-  const { can } = useAccess();
+  const catalog = useAppCatalog();
+  const { can, organizationCan } = useAccess();
+  const { basePath } = useWorkspace();
   const { t } = useTranslation();
   const loaded = apps.find((entry) => entry.app.app_id === appId);
   const page = loaded?.contribution?.pages?.find(
@@ -76,15 +78,47 @@ export function AppRoute() {
   if (pending) return <Loading page />;
   if (loaded?.error || error)
     return (
-      <ErrorPage title={t("App unavailable")} error={loaded?.error ?? error} />
+      <ErrorPage
+        title={t("App unavailable")}
+        error={loaded?.error ?? error}
+        actions={
+          <>
+            {loaded?.error ? (
+              <Button onClick={() => window.location.reload()}>
+                {t("Reload Console")}
+              </Button>
+            ) : (
+              <Button
+                loading={catalog.isFetching}
+                onClick={() => void catalog.refetch()}
+              >
+                {t("Try again")}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              render={<Link to={`${basePath}/agents`} />}
+            >
+              {t("Go to agents")}
+            </Button>
+          </>
+        }
+      />
     );
   if (!page || (page.permission && !can(page.permission)))
     return (
       <NotFoundPage
         title={t("App page not found")}
         description={t(
-          "Enable the App in organization settings, or choose another page.",
+          organizationCan("admin")
+            ? "Enable the App in organization settings, or choose another page."
+            : "Choose another page or contact your organization administrator.",
         )}
+        actions={
+          <Button render={<Link to={`${basePath}/agents`} />}>
+            {t("Go to agents")}
+          </Button>
+        }
       />
     );
   return (

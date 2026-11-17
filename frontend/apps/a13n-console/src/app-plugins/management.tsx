@@ -1,12 +1,13 @@
 import { Button, SettingsRow, SettingsSection, Switch } from "a13n-ui";
 import { PuzzlePieceIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../auth/context";
 import { useAccess } from "../layout/workspace";
 import { data, rowTag } from "../shared/api";
 import { Empty } from "../shared/collection";
-import { ErrorPage, ErrorToast, Loading } from "../shared/feedback";
+import { ErrorNotice, ErrorPage, Loading } from "../shared/feedback";
 import { catalogKey, useAppCatalog, useAppPlugins } from "./registry";
 
 export function AppManagement() {
@@ -15,6 +16,13 @@ export function AppManagement() {
   const client = useClient();
   const cache = useQueryClient();
   const catalog = useAppCatalog();
+  const reloadButton = useRef<HTMLButtonElement>(null);
+  const restoreReloadFocus = useRef(false);
+  useEffect(() => {
+    if (catalog.isFetching || !restoreReloadFocus.current) return;
+    restoreReloadFocus.current = false;
+    if (document.activeElement === document.body) reloadButton.current?.focus();
+  }, [catalog.isFetching]);
   const { apps } = useAppPlugins();
   const update = useMutation({
     mutationFn: ({
@@ -70,23 +78,33 @@ export function AppManagement() {
           "Enable apps for everyone in this organization. New Runs use the updated selection; active Runs keep theirs.",
         )}
       </p>
-      <ErrorToast error={update.error ?? catalog.error} />
-      {update.error && (
-        <Button
-          variant="outline"
-          disabled={catalog.isFetching}
-          onClick={async () => {
-            const fresh = await catalog.refetch();
-            if (fresh.isSuccess) update.reset();
-          }}
-        >
-          {t("Reload installed apps")}
-        </Button>
-      )}
+      <ErrorNotice
+        error={catalog.error ?? update.error}
+        description={t(
+          catalog.error
+            ? "Installed apps could not be reloaded. The last confirmed state is shown."
+            : "The App change could not be confirmed. Reload installed apps before changing an App again.",
+        )}
+      />
+      <Button
+        ref={reloadButton}
+        variant="outline"
+        loading={catalog.isFetching}
+        disabled={catalog.isFetching || update.isPending}
+        onClick={async () => {
+          restoreReloadFocus.current =
+            document.activeElement === reloadButton.current;
+          const fresh = await catalog.refetch();
+          if (fresh.isSuccess) update.reset();
+        }}
+      >
+        {t("Reload installed apps")}
+      </Button>
       <SettingsSection variant="outlined">
         {catalog.data.items.map((app) => (
           <SettingsRow
             key={app.app_id}
+            controlId={`app-plugin-${app.app_id}`}
             label={app.name}
             description={
               <span>
@@ -105,7 +123,11 @@ export function AppManagement() {
             }
           >
             <Switch
-              aria-label={t("Enable {{name}}", { name: app.name })}
+              id={`app-plugin-${app.app_id}`}
+              aria-describedby={`app-plugin-${app.app_id}-description`}
+              aria-busy={
+                update.isPending && update.variables?.appId === app.app_id
+              }
               checked={app.enabled}
               disabled={
                 !organizationCan("admin") || update.isPending || !!update.error
