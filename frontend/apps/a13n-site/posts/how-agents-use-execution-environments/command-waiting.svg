@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 429" role="img" aria-label="Short commands complete during the initial wait. Longer commands return an execution reference while the same program keeps running, and shell_wait retrieves its result.">
+  <text class="pt ink" x="26" y="36.088" style="font-size: 18.2px">One command tool, two return paths</text>
+  <text class="pt" x="26" y="61.607" style="font-size: 11.05px">For environments with process controls. Time runs from left to right; durations are illustrative.</text>
+  <text class="pt acc" x="26" y="94.211" style="font-size: 10.4px">SHORT COMMAND</text>
+  <text class="pt ink" x="26" y="131.911" style="font-size: 10.4px">Tool call</text>
+  <text class="pt ink" x="26" y="177.411" style="font-size: 10.4px">Program</text>
+  <text class="pt ink" x="149.5" y="99.411" style="font-size: 10.4px">shell_exec</text>
+  <text class="pt acc" x="260" y="99.411" style="font-size: 10.4px">final result</text>
+  <rect class="pf" x="149.5" y="117" width="110.5" height="23.4" />
+  <text class="pt" x="204.75" y="131.69" style="font-size: 9.75px" text-anchor="middle">wait</text>
+  <rect class="pl" x="146.9" y="126.1" width="5.2" height="5.2" />
+  <rect class="pa" x="257.4" y="126.1" width="5.2" height="5.2" />
+  <path class="pa thick" d="M149.5 174.2 L260 174.2" />
+  <rect class="pa" x="146.575" y="171.275" width="5.85" height="5.85" />
+  <rect class="pa" x="257.075" y="171.275" width="5.85" height="5.85" />
+  <path class="pa" d="M260 170.95 L260 141.7 M256.75 147.55 L260 141.7 L263.25 147.55" />
+  <text class="pt" x="292.5" y="174.707" style="font-size: 11.05px">finishes during initial wait</text>
+  <path class="pf" d="M26 201.5 L754 201.5" />
+  <text class="pt acc" x="26" y="230.711" style="font-size: 10.4px">LONG COMMAND</text>
+  <text class="pt ink" x="26" y="278.161" style="font-size: 10.4px">Tool call</text>
+  <text class="pt ink" x="26" y="336.661" style="font-size: 10.4px">Program</text>
+  <text class="pt ink" x="149.5" y="235.911" style="font-size: 10.4px">shell_exec</text>
+  <text class="pt acc" x="299" y="235.911" style="font-size: 10.4px">execution reference</text>
+  <text class="pt ink" x="507" y="235.911" style="font-size: 10.4px">shell_wait</text>
+  <text class="pt acc" x="663" y="235.911" style="font-size: 10.4px">final result</text>
+  <rect class="pf" x="149.5" y="263.25" width="149.5" height="23.4" />
+  <text class="pt" x="224.25" y="277.94" style="font-size: 9.75px" text-anchor="middle">initial wait</text>
+  <rect class="pf" x="507" y="263.25" width="182" height="23.4" />
+  <text class="pt" x="598" y="277.94" style="font-size: 9.75px" text-anchor="middle">wait / read output</text>
+  <rect class="pl" x="146.9" y="272.35" width="5.2" height="5.2" />
+  <rect class="pa" x="296.4" y="272.35" width="5.2" height="5.2" />
+  <rect class="pl" x="504.4" y="272.35" width="5.2" height="5.2" />
+  <rect class="pa" x="686.4" y="272.35" width="5.2" height="5.2" />
+  <path class="pf dash" d="M305.5 274.95 L497.25 274.95 M491.4 271.7 L497.25 274.95 L491.4 278.2" />
+  <text class="pt" x="315.25" y="304.59" style="font-size: 9.75px">model can continue</text>
+  <path class="pa thick" d="M149.5 333.45 L689 333.45" />
+  <rect class="pa" x="146.575" y="330.525" width="5.85" height="5.85" />
+  <rect class="pa" x="686.075" y="330.525" width="5.85" height="5.85" />
+  <path class="pa" d="M689 330.2 L689 287.95 M685.75 293.8 L689 287.95 L692.25 293.8" />
+  <path class="pf dash" d="M299 305.5 L299 351" />
+  <text class="pt acc" x="318.5" y="363.857" style="font-size: 11.05px">The same program keeps running</text>
+  <path class="pf" d="M26 383.5 L754 383.5" />
+  <text class="pt ink" x="26" y="409.578" style="font-size: 11.7px">Returning a reference does not restart or stop the command.</text>
+</svg>

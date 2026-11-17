@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 936 650" role="img" aria-label="Five steps connect the LLM, context and tools inside Harness, and the selected sandbox: provide context, read data and write a script, execute, follow results, then inspect and deliver the chart.">
+  <text class="pt ink" x="26" y="36.53" style="font-size: 19.5px">From reading a CSV to delivering a chart</text>
+  <text class="pt" x="26" y="65.18" style="font-size: 12px">Context and tools stay in Harness. Computation and files stay in the selected environment.</text>
+  <rect class="pf" x="305.5" y="97.5" width="305.5" height="390" />
+  <text class="pt ink" x="321.75" y="126.646" style="font-size: 16.9px">Harness</text>
+  <rect class="pa" x="321.75" y="149.5" width="273" height="97.5" />
+  <text class="pt acc" x="334.75" y="171.912" style="font-size: 14.3px">Context</text>
+  <text class="pt ink" x="334.75" y="195.505" style="font-size: 12px">Task + /workspace/sales.csv</text>
+  <text class="pt ink" x="334.75" y="216.955" style="font-size: 12px">Environment + access + tools</text>
+  <text class="pt" x="334.75" y="237.105" style="font-size: 12px">Prior tool results</text>
+  <rect class="pl" x="321.75" y="292.5" width="273" height="130" />
+  <text class="pt ink" x="334.75" y="314.912" style="font-size: 14.3px">Tools</text>
+  <text class="pt ink" x="334.75" y="339.155" style="font-size: 12px">Read CSV / write analyze.py</text>
+  <text class="pt ink" x="334.75" y="362.555" style="font-size: 12px">shell_exec / shell_wait</text>
+  <text class="pt ink" x="334.75" y="385.955" style="font-size: 12px">Read the generated chart</text>
+  <path class="pf" d="M334.75 396.5 L581.75 396.5" />
+  <text class="pt" x="334.75" y="414.88" style="font-size: 12px">Select / check / dispatch</text>
+  <path class="pa" d="M458.25 292.5 L458.25 247 M455 252.85 L458.25 247 L461.5 252.85" />
+  <text class="pt acc" x="468" y="272.205" style="font-size: 12px">add results</text>
+  <rect class="pl" x="26" y="279.5" width="149.5" height="123.5" />
+  <text class="pt ink" x="39" y="311.48" style="font-size: 19.5px">LLM</text>
+  <text class="pt ink" x="39" y="344.799" style="font-size: 12.35px">Choose a tool</text>
+  <text class="pt ink" x="39" y="366.249" style="font-size: 12.35px">and arguments</text>
+  <text class="pt" x="39" y="389.855" style="font-size: 12px">Review the result</text>
+  <path class="pa" d="M321.75 195 L100.75 195 L100.75 279.5 M104 273.65 L100.75 279.5 L97.5 273.65" />
+  <text class="pt acc" x="26" y="163.891" style="font-size: 13.65px">1  Context + tools</text>
+  <text class="pt" x="26" y="187.705" style="font-size: 12px">Input for each model call</text>
+  <path class="pl" d="M175.5 325 L321.75 325 M315.9 321.75 L321.75 325 L315.9 328.25" />
+  <text class="pt ink" x="188.5" y="308.93" style="font-size: 12px">2  Read / write</text>
+  <rect class="pf" x="734.5" y="97.5" width="175.5" height="390" />
+  <text class="pt ink" x="747.5" y="124.254" style="font-size: 15.6px">Sandbox /</text>
+  <text class="pt ink" x="747.5" y="145.704" style="font-size: 15.6px">environment</text>
+  <text class="pt" x="747.5" y="173.73" style="font-size: 12px">CPU + filesystem</text>
+  <rect class="pl" x="747.5" y="201.5" width="149.5" height="55.25" />
+  <text class="pt ink" x="757.25" y="223.041" style="font-size: 13.65px">sales.csv</text>
+  <text class="pt" x="757.25" y="245.23" style="font-size: 12px">header + rows</text>
+  <path class="pa" d="M822.25 256.75 L822.25 282.75 M825.5 276.9 L822.25 282.75 L819 276.9" />
+  <rect class="pl" x="747.5" y="282.75" width="149.5" height="65" />
+  <text class="pt ink" x="757.25" y="303.73" style="font-size: 12px">python analyze.py</text>
+  <text class="pt" x="757.25" y="331.355" style="font-size: 12px">aggregate + plot</text>
+  <path class="pa" d="M822.25 347.75 L822.25 373.75 M825.5 367.9 L822.25 373.75 L819 367.9" />
+  <rect class="pl" x="747.5" y="373.75" width="149.5" height="74.75" />
+  <path class="pf" d="M759.2 436.8 L887.25 436.8" />
+  <rect class="band" x="768.3" y="420.55" width="15.6" height="16.25" />
+  <rect class="band" x="798.2" y="407.55" width="15.6" height="29.25" />
+  <rect class="fa" x="828.1" y="394.55" width="15.6" height="42.25" />
+  <text class="pt acc" x="747.5" y="468.624" style="font-size: 12.35px">chart.png</text>
+  <path class="pl" d="M594.75 325 L734.5 325 M728.65 321.75 L734.5 325 L728.65 328.25" />
+  <text class="pt ink" x="627.25" y="311.22" style="font-size: 13px">3  Execute</text>
+  <path class="pa" d="M734.5 461.5 L458.25 461.5 L458.25 422.5 M455 428.35 L458.25 422.5 L461.5 428.35" />
+  <text class="pt acc" x="627.25" y="435.03" style="font-size: 12px">4  Status</text>
+  <text class="pt acc" x="627.25" y="454.53" style="font-size: 12px">+ output</text>
+  <text class="pt" x="321.75" y="509.455" style="font-size: 12px">running + reference, or completed + output</text>
+  <path class="pl" d="M100.75 403 L100.75 552.5 M104 546.65 L100.75 552.5 L97.5 546.65" />
+  <text class="pt ink" x="130" y="537.966" style="font-size: 13.65px">5  Verify + deliver</text>
+  <rect class="pa" x="26" y="552.5" width="884" height="71.5" />
+  <text class="pt ink" x="42.25" y="578.058" style="font-size: 14.95px">Monthly sales chart + explanation</text>
+  <text class="pt" x="42.25" y="606.099" style="font-size: 12.35px">Inspect chart.png through the file tool, then present the chart and findings to the user.</text>
+</svg>

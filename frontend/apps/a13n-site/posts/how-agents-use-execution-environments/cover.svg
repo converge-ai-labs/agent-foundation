@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-label="An LLM exchanges context and tool calls with Harness. Inside Harness, context cards describe the task, environment and tools; file, shell and process tools connect to an environment containing a CSV, a running script, CPU resources and a chart.">
+  <rect class="pf" x="308" y="58" width="310" height="416" rx="4" />
+  <text class="pt ink" x="330" y="88">Harness</text>
+  <path class="pf" d="M330 100H596" />
+
+  <!-- Model: input messages and a selected action remain visible without labels. -->
+  <text class="pt ink" x="124" y="186" text-anchor="middle">LLM</text>
+  <rect class="pl" x="36" y="210" width="176" height="180" rx="4" />
+  <path class="pf" d="M36 236H212" />
+  <circle class="fi" cx="50" cy="223" r="2" />
+  <circle class="ff" cx="60" cy="223" r="2" />
+  <circle class="ff" cx="70" cy="223" r="2" />
+  <path class="pf" d="M54 252H164M54 264H190M54 276H142" />
+  <path class="pl thin" d="M124 290V304M78 318V304H170V318" />
+  <rect class="pf" x="61" y="318" width="34" height="40" rx="2" />
+  <rect class="band" x="107" y="318" width="34" height="40" rx="2" />
+  <rect class="pa thin" x="107" y="318" width="34" height="40" rx="2" />
+  <rect class="pf" x="153" y="318" width="34" height="40" rx="2" />
+  <path class="pf" d="M69 330H86M69 340H81M161 330H178M161 340H173" />
+  <path class="pa thin" d="m115 337 6 6 12-13" />
+  <path class="pf dash" d="M141 338H200" />
+  <text class="pt" x="124" y="526" text-anchor="middle">choose next action</text>
+
+  <!-- Context: task, environment access, and tool definitions. -->
+  <rect class="pa thin" x="330" y="116" width="266" height="140" rx="3" />
+  <rect class="band" x="330" y="116" width="266" height="28" rx="3" />
+  <text class="pt acc" x="346" y="135">context</text>
+  <path class="pf" d="M330 144H596M346 182H580M346 218H580" />
+  <path class="pl thin" d="M347 154H365V171H354l-7 5Z" />
+  <path class="pf" d="M380 158H558M380 170H510" />
+  <path class="pl thin" d="M346 196V190H356l5 6H369V211H346Z" />
+  <path class="pa thin" d="M380 196H454" />
+  <path class="pf" d="M466 196H570M380 207H530" />
+  <path class="pa thin" d="M353 229l-6 6 6 6M362 229l6 6-6 6" />
+  <path class="pf" d="M380 230H546M380 242H492" />
+
+  <!-- Tools: distinct file, shell and process operations. -->
+  <rect class="pl" x="330" y="306" width="266" height="134" rx="3" />
+  <path class="pf" d="M330 334H596" />
+  <text class="pt ink" x="346" y="325">tools</text>
+  <rect class="pf" x="346" y="350" width="66" height="68" rx="2" />
+  <path class="pl thin" d="M363 362H383l8 8V402H363ZM383 362V370H391" />
+  <path class="pf" d="M370 380H384M370 388H384M370 396H380" />
+  <rect class="pa thin" x="430" y="350" width="66" height="68" rx="2" />
+  <path class="pa" d="m442 365 7 6-7 6M455 378H469" />
+  <path class="pf" d="M442 390H484M442 401H472" />
+  <rect class="pf" x="514" y="350" width="66" height="68" rx="2" />
+  <circle class="pa thin" cx="547" cy="372" r="12" />
+  <path class="pa thin" d="M547 364V372H554" />
+  <path class="pf" d="M526 398H568" />
+  <path class="pa thin" d="M526 398H552" />
+  <circle class="fa" cx="552" cy="398" r="2.5" />
+
+  <!-- The environment supplies real files, compute and generated output. -->
+  <rect class="pf" x="718" y="58" width="206" height="416" rx="4" />
+  <text class="pt ink" x="738" y="88">environment</text>
+  <path class="pf" d="M738 100H904" />
+  <path class="pl" d="M740 128V114H786l10 10H902V190H740Z" />
+  <path class="pf" d="M740 140H902M752 156H890M752 172H890M776 144V182M830 144V182" />
+  <rect class="band" x="752" y="144" width="138" height="12" />
+  <path class="pa thin" d="M754 151H768M784 151H818M840 151H882" />
+
+  <path class="pa thin" d="M821 190V220m-4-6 4 6 4-6" />
+  <rect class="pl" x="740" y="220" width="162" height="120" rx="3" />
+  <path class="pf" d="M740 242H902" />
+  <circle class="fi" cx="752" cy="231" r="2" />
+  <circle class="ff" cx="762" cy="231" r="2" />
+  <path class="pa" d="m752 255 7 6-7 6M766 267H780" />
+  <path class="pf" d="M752 282H824M752 294H810M752 306H832" />
+  <path class="pa thin" d="M752 322H800" />
+  <rect class="pa thin" x="853" y="260" width="30" height="30" rx="2" />
+  <rect class="band" x="860" y="267" width="16" height="16" />
+  <path class="pa thin" d="M860 254V260M868 254V260M876 254V260M860 290V296M868 290V296M876 290V296M847 267H853M847 275H853M847 283H853M883 267H889M883 275H889M883 283H889" />
+  <path class="pa thin" d="M821 340V370m-4-6 4 6 4-6" />
+  <rect class="pl" x="740" y="370" width="162" height="80" rx="3" />
+  <path class="pf" d="M754 382V436H888M754 400H888M754 418H888" />
+  <rect class="band" x="768" y="418" width="22" height="18" />
+  <rect class="band" x="810" y="401" width="22" height="35" />
+  <rect class="fa" x="852" y="382" width="22" height="54" />
+  <path class="pa thin" d="M768 418H790M810 401H832" />
+
+  <!-- Inputs, calls, and execution feedback form a single loop. -->
+  <path class="pa" d="M330 164H124V210m-5-7 5 7 5-7" />
+  <text class="pt acc" x="216" y="151" text-anchor="middle">context + tools</text>
+  <path class="pl" d="M212 340H330m-7-5 7 5-7 5" />
+  <text class="pt" x="271" y="327" text-anchor="middle">tool call</text>
+  <path class="pa" d="M596 340H718m-7-5 7 5-7 5" />
+  <text class="pt acc" x="657" y="327" text-anchor="middle">execute</text>
+  <path class="pa" d="M718 458H463V440m-5 7 5-7 5 7M463 306V256m-5 7 5-7 5 7" />
+  <text class="pt" x="477" y="284">feedback</text>
+  <circle class="fa" cx="656" cy="458" r="3" />
+  <path class="pf" d="M36 500H924M124 390V500M463 474V500M821 474V500" />
+  <circle class="fa" cx="124" cy="500" r="2.5" />
+  <circle class="fa" cx="463" cy="500" r="2.5" />
+  <circle class="fa" cx="821" cy="500" r="2.5" />
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 728 390" role="img" aria-label="Harness supplies environment context and tool instructions to the model, routes tool calls, and returns status and output from the environment.">
+  <text class="pt ink" x="26" y="39.338" style="font-size: 18.2px">Context, calls and feedback</text>
+  <text class="pt" x="26" y="63.882" style="font-size: 11.05px">The model chooses an action. Harness connects it to the environment.</text>
+  <rect class="pf" x="266.5" y="91" width="182" height="247" />
+  <text class="pt ink" x="279.5" y="115.362" style="font-size: 14.3px">Harness</text>
+  <rect class="band" x="279.5" y="133.25" width="156" height="71.5" />
+  <rect class="pa" x="279.5" y="133.25" width="156" height="71.5" />
+  <text class="pt acc" x="289.25" y="152.711" style="font-size: 10.4px">Environment context</text>
+  <text class="pt" x="289.25" y="170.469" style="font-size: 9.1px">names / paths / access</text>
+  <text class="pt ink" x="289.25" y="191.711" style="font-size: 10.4px">Tools + instructions</text>
+  <rect class="pl" x="279.5" y="221" width="156" height="65" />
+  <text class="pt ink" x="289.25" y="239.382" style="font-size: 11.05px">Select target</text>
+  <text class="pt ink" x="289.25" y="256.932" style="font-size: 11.05px">Check permission</text>
+  <text class="pt ink" x="289.25" y="274.482" style="font-size: 11.05px">Prepare + dispatch</text>
+  <text class="pt" x="279.5" y="316.719" style="font-size: 9.1px">Route calls; return results</text>
+  <rect class="pl" x="26" y="221" width="130" height="65" />
+  <text class="pt ink" x="35.75" y="245.362" style="font-size: 14.3px">Model</text>
+  <text class="pt" x="35.75" y="268.84" style="font-size: 9.75px">Choose next action</text>
+  <rect class="pl" x="559" y="221" width="143" height="65" />
+  <text class="pt ink" x="568.75" y="245.362" style="font-size: 14.3px">Environment</text>
+  <text class="pt" x="568.75" y="268.619" style="font-size: 9.1px">Read / run / interact</text>
+  <path class="pa" d="M279.5 169 L91 169 L91 221 M94.25 215.15 L91 221 L87.75 215.15" />
+  <text class="pt acc" x="110.5" y="154.661" style="font-size: 10.4px">context + tools</text>
+  <path class="pl" d="M156 237.25 L279.5 237.25 M273.65 234 L279.5 237.25 L273.65 240.5" />
+  <text class="pt ink" x="162.5" y="225.94" style="font-size: 9.75px">tool + arguments</text>
+  <path class="pa" d="M279.5 273 L156 273 M161.85 276.25 L156 273 L161.85 269.75" />
+  <text class="pt acc" x="162.5" y="297.44" style="font-size: 9.75px">status + output</text>
+  <path class="pl" d="M435.5 237.25 L559 237.25 M553.15 234 L559 237.25 L553.15 240.5" />
+  <text class="pt ink" x="455" y="225.94" style="font-size: 9.75px">operation</text>
+  <path class="pa" d="M559 273 L435.5 273 M441.35 276.25 L435.5 273 L441.35 269.75" />
+  <text class="pt acc" x="455" y="297.44" style="font-size: 9.75px">status + output</text>
+  <path class="pf" d="M26 357.5 L702 357.5" />
+  <text class="pt" x="26" y="377.286" style="font-size: 10.4px">Context describes access. Tools express actions. Results inform the next step.</text>
+</svg>
