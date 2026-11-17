@@ -40,3 +40,137 @@
   flex: 1;
   min-width: 0;
 }
+.operations {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.operation {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 999px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 1;
+  white-space: nowrap;
+}
+.chooser {
+  display: grid;
+  gap: 12px;
+}
+.catalog {
+  display: grid;
+  gap: 2px;
+}
+.catalogItem {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.catalogItem:hover {
+  background: var(--a13n-hover);
+}
+.catalogItem:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+.catalogItem > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connect {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.connectHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.back {
+  margin-inline-start: -8px;
+}
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.setupLink {
+  justify-self: start;
+  height: auto;
+  margin-top: -8px;
+  padding-inline: 0;
+}
+/* Fixed columns keep Search and Scrape aligned across rows. */
+.operationChoices {
+  display: grid;
+  grid-template-columns: repeat(2, 6.5em);
+  gap: 8px;
+  color: var(--a13n-text);
+}
+.operationChoice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.empty {
+  margin: 0;
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.route {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+}
+.route dt {
+  color: var(--a13n-text);
+}
+.route dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.priorityGroup {
+  display: grid;
+  gap: 4px;
+}
+.priorityGroup > h4 {
+  margin: 0;
+  font-size: var(--a13n-text-body);
+  font-weight: 500;
+}
+.priorityGroup > button {
+  justify-self: start;
+  margin-top: 4px;
+}
+@media (pointer: coarse) {
+  .catalogItem {
+    min-height: 44px;
+  }
+}

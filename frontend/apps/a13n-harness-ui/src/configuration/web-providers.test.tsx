@@ -64,6 +64,23 @@ const provider: Schema<"WebProviderType"> = {
   setup_url: "https://provider.test/setup",
   setup_label: null,
 };
+const simple: Schema<"WebProviderType"> = {
+  type: "simple_cloud",
+  display_name: "Simple cloud",
+  operations: ["search", "scrape"],
+  supports_restricted_scrape: true,
+  configuration_schema: { type: "object", properties: {} },
+  credential_schema: {
+    type: "object",
+    required: ["api_key"],
+    properties: {
+      api_key: { type: "string", title: "API key", writeOnly: true },
+    },
+  },
+  authentication: { mode: "required" },
+  setup_url: "https://simple.test/keys",
+  setup_label: "Get an API key",
+};
 const clients: QueryClient[] = [];
 afterEach(() => {
   cleanup();
@@ -77,11 +94,13 @@ function fixture({
   options = false,
   flow = false,
   failCredential = false,
+  failValidation = false,
 }: {
   initial?: string;
   options?: boolean;
   flow?: boolean;
   failCredential?: boolean;
+  failValidation?: boolean;
 } = {}) {
   const writes: {
     method: string;
@@ -112,9 +131,34 @@ function fixture({
       type: "search_only",
       configuration: {},
     },
+    {
+      schema_version: "1",
+      kind: "web_provider",
+      id: "web-provider-plain",
+      name: "Plain scrape",
+      type: "plain_scrape",
+      configuration: {},
+    },
   ];
-  const json = (value: unknown) =>
+  const types = [
+    provider,
+    {
+      ...provider,
+      type: "search_only",
+      display_name: "Search only",
+      operations: ["search"],
+    },
+    {
+      ...provider,
+      type: "plain_scrape",
+      display_name: "Plain scrape",
+      supports_restricted_scrape: false,
+    },
+    simple,
+  ];
+  const json = (value: unknown, status = 200) =>
     new Response(JSON.stringify(value), {
+      status,
       headers: { "Content-Type": "application/json" },
     });
   vi.stubGlobal(
@@ -136,7 +180,17 @@ function fixture({
           return json({ credential_ref: body.credential_ref });
         }
         if (path === "/api/configuration/validate")
-          return json({ candidate_digest: "candidate" });
+          return failValidation
+            ? json(
+                {
+                  error: {
+                    message: "Account configuration is invalid",
+                    code: "web_provider_configuration_invalid",
+                  },
+                },
+                422,
+              )
+            : json({ candidate_digest: "candidate" });
         const relative = path.replace("/api/configuration/sources/", "");
         sources.set(relative, body.content);
         const value = parse(body.content);
@@ -148,19 +202,7 @@ function fixture({
           generation_digest: "new-generation",
         });
       }
-      if (path === "/api/web-providers")
-        return json({
-          types: [
-            provider,
-            {
-              ...provider,
-              type: "search_only",
-              display_name: "Search only",
-              operations: ["search"],
-            },
-          ],
-          accounts,
-        });
+      if (path === "/api/web-providers") return json({ types, accounts });
       if (path === "/api/auth/keys")
         return json(keys.map((credential_ref) => ({ credential_ref })));
       if (path === "/api/configuration/sources")
@@ -309,124 +351,231 @@ it("saves a new secret separately and keeps only references in the account draft
   expect(screen.queryByDisplayValue("synthetic-secret")).toBeNull();
 });
 
-it("creates a typed draft from Connections and publishes through source validation/save", async () => {
-  const { writes, drafts } = fixture({ flow: true });
+it("adds an account with a pasted key in one step and stores only its reference", async () => {
+  const { writes, sources } = fixture({ flow: true });
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Add Web provider" }));
   await user.click(
-    await screen.findByRole("combobox", { name: "Provider type" }),
+    await screen.findByRole("button", { name: "Add Web provider" }),
   );
-  await user.click(await screen.findByRole("option", { name: /Future cloud/ }));
-  await user.click(screen.getByRole("button", { name: "Continue" }));
-  const access = await screen.findByRole("group", { name: "Access key" });
-  for (const group of [
-    access,
-    screen.getByRole("group", { name: "Secret key" }),
-  ]) {
-    await user.click(
-      within(group).getByRole("combobox", { name: "Credential source" }),
-    );
-    await user.click(
-      await screen.findByRole("option", { name: "key-existing" }),
-    );
-  }
-  expect(writes).toHaveLength(0);
-  const [path, draft] = [...drafts][0];
-  expect(path).toMatch(/^web_providers\/web-provider-/);
-  expect(parse(draft.content)).toMatchObject({
-    type: "future_cloud",
-    name: "Future cloud",
+  const choice = await screen.findByRole("button", { name: /Simple cloud/ });
+  expect(within(choice).getByText("Search")).toBeTruthy();
+  expect(within(choice).getByText("Scrape")).toBeTruthy();
+  await user.click(choice);
+  expect(screen.getByRole("link", { name: "Get an API key" })).toBeTruthy();
+  const add = screen.getByRole("button", { name: "Add" });
+  expect((add as HTMLButtonElement).disabled).toBe(true);
+  await user.type(
+    screen.getByLabelText("API key", { selector: "input" }),
+    "synthetic-secret",
+  );
+  await user.click(add);
+  await waitFor(() => expect(writes).toHaveLength(3));
+  expect(writes.map((item) => item.path)).toEqual([
+    expect.stringMatching(/^\/api\/configuration\/validate$/),
+    "/api/auth/keys",
+    expect.stringMatching(/^\/api\/configuration\/sources\/web_providers\//),
+  ]);
+  const reference = writes[1].body.credential_ref as string;
+  expect(writes[1].body.key).toBe("synthetic-secret");
+  const [content] = [...sources.values()];
+  expect(content).not.toContain("synthetic-secret");
+  expect(parse(content)).toMatchObject({
+    kind: "web_provider",
+    name: "Simple cloud",
+    type: "simple_cloud",
     configuration: {},
+    credential: { api_key: { credential_ref: reference } },
+  });
+  // The validated draft already carried the same reference.
+  expect(parse(writes[0].body.content as string).credential).toEqual({
+    api_key: { credential_ref: reference },
+  });
+});
+
+it("stores no key when the account recipe is rejected", async () => {
+  const { writes } = fixture({ flow: true, failValidation: true });
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Add Web provider" }),
+  );
+  await user.click(await screen.findByRole("button", { name: /Simple cloud/ }));
+  await user.type(
+    screen.getByLabelText("API key", { selector: "input" }),
+    "synthetic-secret",
+  );
+  await user.click(screen.getByRole("button", { name: "Add" }));
+  await screen.findByText("Account configuration is invalid");
+  expect(writes.map((item) => item.path)).toEqual([
+    "/api/configuration/validate",
+  ]);
+});
+
+it("keeps environment and saved-key sources under More options", async () => {
+  const { writes, sources } = fixture({ flow: true });
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Add Web provider" }),
+  );
+  await user.click(await screen.findByRole("button", { name: /Future cloud/ }));
+  await user.click(screen.getByText("More options"));
+  await user.click(screen.getByRole("combobox", { name: "Access key" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Server environment variable" }),
+  );
+  await user.type(
+    screen.getByLabelText("Access key environment variable"),
+    "MY_ACCESS",
+  );
+  await user.click(screen.getByRole("combobox", { name: "Secret key" }));
+  await user.click(await screen.findByRole("option", { name: "key-existing" }));
+  await user.click(screen.getByRole("button", { name: "Add" }));
+  await waitFor(() => expect(sources.size).toBe(1));
+  expect(writes.map((item) => item.path)).not.toContain("/api/auth/keys");
+  expect(parse([...sources.values()][0])).toMatchObject({
+    type: "future_cloud",
     credential: {
-      access_key: { credential_ref: "key-existing" },
+      access_key: { env: "MY_ACCESS" },
       secret_key: { credential_ref: "key-existing" },
     },
   });
-  fireEvent.change(screen.getByRole("textbox", { name: /Region/ }), {
-    target: { value: "west" },
-  });
-  await user.click(screen.getByText("Advanced configuration"));
-  await user.click(screen.getByRole("button", { name: "Check settings" }));
-  await screen.findByText("Configuration valid - not saved");
-  expect(writes[0].path).toBe("/api/configuration/validate");
-  await user.click(screen.getByRole("button", { name: "Create" }));
-  await screen.findByText("Saved");
-  expect(writes[1].path).toBe(`/api/configuration/sources/${path}`);
-  expect(writes.map((item) => item.path)).not.toContain("/api/auth/keys");
 });
 
-it("filters backend operations, edits fallback order and clears Host preferences for native/off", async () => {
-  const { writes } = fixture({
-    options: true,
-    initial: `kind: agent\ncapabilities:\n  - capability: web\n    configuration:\n      search: {mode: host, allowed_domains: [example.com]}\n      scrape: {mode: host}\n      custom: keep\n`,
-  });
+const agent = (web: string) =>
+  `kind: agent\ncapabilities:\n  - capability: web\n    configuration:\n${web}`;
+const webValue = () => sourceValue().capabilities[0].configuration;
+
+async function openOptions() {
   const user = userEvent.setup();
   await user.click(screen.getByText("Web options"));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Scrape backend" }),
+  await screen.findByRole("checkbox", { name: "Use Cloud work for search" });
+  return user;
+}
+
+it("lists accounts without selecting them and reuses one account for search and scrape", async () => {
+  const initial = agent(
+    "      search: {mode: host} # keep search\n      scrape: {mode: host}\n      custom: keep\n",
   );
-  expect(screen.queryByRole("option", { name: "Search only" })).toBeNull();
-  await user.click(await screen.findByRole("option", { name: "Cloud work" }));
-  await user.click(screen.getByRole("combobox", { name: "Search backend" }));
-  await user.click(
-    await screen.findByRole("option", { name: "Ordered fallback" }),
-  );
-  await user.click(
-    screen.getByRole("combobox", { name: "Add fallback backend" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "Cloud work" }));
-  await user.click(
-    screen.getAllByRole("button", { name: "Move backend up" })[1],
-  );
+  const { writes } = fixture({ options: true, initial });
+  const user = await openOptions();
+  for (const box of screen.getAllByRole("checkbox"))
+    expect(box.getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  expect(screen.getByText("Local DuckDuckGo search")).toBeTruthy();
   expect(
-    sourceValue().capabilities[0].configuration.search.backend_priority,
-  ).toEqual(["web-provider-work", "default"]);
-  await user.click(screen.getByRole("combobox", { name: "Web search" }));
+    screen.queryByRole("checkbox", { name: "Use Search only for scraping" }),
+  ).toBeNull();
   await user.click(
-    await screen.findByRole("option", { name: "Model-native search" }),
+    screen.getByRole("checkbox", { name: "Use Cloud work for search" }),
   );
-  expect(sourceValue().capabilities[0].configuration.search).toEqual({
-    mode: "native",
-    allowed_domains: ["example.com"],
+  await user.click(
+    screen.getByRole("checkbox", { name: "Use Cloud work for scraping" }),
+  );
+  expect(webValue().search).toEqual({
+    mode: "host",
+    backend: "web-provider-work",
   });
-  await user.click(screen.getByRole("combobox", { name: "Web scraping" }));
-  await user.click(await screen.findByRole("option", { name: "Off" }));
-  expect(sourceValue().capabilities[0].configuration.scrape).toEqual({
-    mode: "off",
+  expect(webValue().scrape).toEqual({
+    mode: "host",
+    backend: "web-provider-work",
   });
-  expect(sourceValue().capabilities[0].configuration.custom).toBe("keep");
+  expect(webValue().custom).toBe("keep");
+  expect(screen.getByTestId("source").textContent).toContain("# keep search");
+  await user.click(
+    screen.getByRole("checkbox", { name: "Use Cloud work for search" }),
+  );
+  expect(webValue().search).toEqual({ mode: "host" });
   expect(writes).toEqual([]);
 });
 
-it("requires an explicitly supported backend for domain-restricted scrape", async () => {
+it("orders several chosen services as an explicit fallback", async () => {
   fixture({
     options: true,
-    initial: `kind: agent\ncapabilities:\n  - capability: web\n    configuration:\n      scrape: {mode: host, allow_domains: [example.com]}\n`,
+    initial: agent("      scrape: {mode: host, backend: web-provider-work}\n"),
   });
-  const user = userEvent.setup();
-  await user.click(screen.getByText("Web options"));
-  const backend = await screen.findByRole("combobox", {
-    name: "Scrape backend",
-  });
-  await waitFor(() =>
-    expect((backend as HTMLButtonElement).disabled).toBe(false),
+  const user = await openOptions();
+  await user.click(screen.getByText("Fallback order"));
+  await user.click(
+    screen.getByRole("button", { name: "Fall back to local default" }),
   );
-  await user.click(backend);
-  const account = await screen.findByRole("option", { name: "Cloud work" });
-  for (const name of [
-    "Local default",
-    "Local HTML scraping",
-    "Ordered fallback",
-  ])
-    expect(
-      screen.getByRole("option", { name }).getAttribute("aria-disabled"),
-    ).toBe("true");
-  await user.click(account);
-  expect(sourceValue().capabilities[0].configuration.scrape).toEqual({
+  expect(webValue().scrape).toEqual({
+    mode: "host",
+    backend_priority: ["web-provider-work"],
+  });
+  await user.click(
+    screen.getByRole("checkbox", { name: "Use Plain scrape for scraping" }),
+  );
+  expect(webValue().scrape.backend_priority).toEqual([
+    "web-provider-work",
+    "web-provider-plain",
+  ]);
+  expect(
+    screen.getByText("Cloud work → Plain scrape → Local default"),
+  ).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Move Local default up" }),
+  );
+  expect(webValue().scrape.backend_priority).toEqual([
+    "web-provider-work",
+    "default",
+    "web-provider-plain",
+  ]);
+  await user.click(screen.getByRole("button", { name: "Use only Cloud work" }));
+  expect(webValue().scrape).toEqual({
+    mode: "host",
+    backend: "web-provider-work",
+  });
+});
+
+it("allows only one supporting service for domain-restricted scrape", async () => {
+  fixture({
+    options: true,
+    initial: agent(
+      "      scrape: {mode: host, allow_domains: [example.com]}\n",
+    ),
+  });
+  const user = await openOptions();
+  const plain = screen.getByRole("checkbox", {
+    name: "Use Plain scrape for scraping",
+  });
+  expect(plain.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByRole("note").textContent).toContain(
+    "local scraping and fallback are unavailable",
+  );
+  await user.click(
+    screen.getByRole("checkbox", { name: "Use Cloud work for scraping" }),
+  );
+  expect(webValue().scrape).toEqual({
     mode: "host",
     allow_domains: ["example.com"],
     backend: "web-provider-work",
   });
+  // The single choice can be replaced but not cleared, and has no fallback.
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Use Cloud work for scraping" })
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  expect(screen.queryByText("Fallback order")).toBeNull();
+});
+
+it("clears Host backend preferences when search turns native or scraping turns off", async () => {
+  const { writes } = fixture({
+    options: true,
+    initial: agent(
+      "      search: {mode: host, backend_priority: [web-provider-work, default], allow_domains: []}\n      scrape: {mode: host, backend: web-provider-work}\n      fetch: {enabled: false}\n",
+    ),
+  });
+  const user = await openOptions();
+  await user.click(screen.getByRole("combobox", { name: "Web search" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Model-native search" }),
+  );
+  expect(webValue().search).toEqual({ mode: "native", allow_domains: [] });
+  await user.click(screen.getByRole("switch", { name: "Web scraping" }));
+  expect(webValue().scrape).toEqual({ mode: "off" });
+  expect(webValue().fetch).toEqual({ enabled: false });
+  expect(screen.queryByText("Services")).toBeNull();
+  expect(writes).toEqual([]);
 });
 
 it("uses configuration defaults for conditional credential presence without writing them", () => {

@@ -14,8 +14,118 @@ import {
   CredentialSourceField,
   type CredentialSource,
 } from "./credential-source";
-import { readDocument, updateDocument } from "./documents";
+import { readDocument, template, updateDocument } from "./documents";
 import styles from "./web-providers.module.css";
+
+type WebProviderType = Schema<"WebProviderType">;
+
+/** Which Agent operations a provider can serve, shown wherever it is chosen. */
+export function OperationTags({
+  operations,
+}: {
+  operations: readonly ("search" | "scrape")[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className={styles.operations}>
+      {operations.map((operation) => (
+        <span key={operation} className={styles.operation}>
+          {t(operation === "search" ? "Search" : "Scrape")}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+export function credentialFields(type: WebProviderType) {
+  const schema = type.credential_schema as FormSchema | null;
+  return Object.entries(schema?.properties ?? {}).map(([name, field]) => ({
+    name,
+    title: resolveField(field, schema!).title ?? name,
+    required: !!schema?.required?.includes(name),
+  }));
+}
+
+/** One credential field in the add dialog; secrets stay in memory only. */
+export type KeyChoice = {
+  source: "none" | "new" | "saved" | "env";
+  secret: string;
+  env: string;
+  /** Pre-allocated for a pasted key, or the chosen saved key. */
+  reference: string;
+};
+export type AccountDraft = {
+  id: string;
+  type: WebProviderType;
+  name: string;
+  configuration: Record<string, Json>;
+  keys: Record<string, KeyChoice>;
+  /** Allocated once so a retried save overwrites the same stored keys. */
+  references: Record<string, string>;
+};
+
+export function accountDraft(type: WebProviderType): AccountDraft {
+  const fields = credentialFields(type);
+  const references = Object.fromEntries(
+    fields.map((field) => [
+      field.name,
+      `key-${crypto.randomUUID().replaceAll("-", "")}`,
+    ]),
+  );
+  return {
+    id: `web-provider-${crypto.randomUUID().slice(0, 8)}`,
+    type,
+    name: type.display_name,
+    configuration: {},
+    references,
+    keys: Object.fromEntries(
+      fields.map((field) => [
+        field.name,
+        {
+          source: field.required ? "new" : "none",
+          secret: "",
+          env: "",
+          reference: references[field.name],
+        },
+      ]),
+    ),
+  };
+}
+
+/** The account file a draft would save: credential sources, never secrets. */
+export function accountSource(draft: AccountDraft) {
+  const mode = credentialMode(draft.type, draft.configuration);
+  const fields = credentialFields(draft.type);
+  const provided: Record<string, CredentialSource> = {};
+  for (const { name } of fields) {
+    const choice = draft.keys[name];
+    if (
+      (choice.source === "new" && choice.secret.trim()) ||
+      choice.source === "saved"
+    )
+      provided[name] = { credential_ref: choice.reference };
+    else if (choice.source === "env" && choice.env.trim())
+      provided[name] = { env: choice.env.trim() };
+  }
+  const credential =
+    mode === "forbidden" ||
+    (mode === "optional" && !Object.keys(provided).length)
+      ? undefined
+      : provided;
+  const complete = fields.every(
+    (field) => !field.required || provided[field.name],
+  );
+  let content = template("web_provider", draft.id);
+  content = updateDocument(content, ["name"], draft.name.trim());
+  content = updateDocument(content, ["type"], draft.type.type);
+  content = updateDocument(content, ["configuration"], draft.configuration);
+  content = updateDocument(content, ["credential"], credential);
+  return {
+    mode,
+    content,
+    ready: !!draft.name.trim() && (credential === undefined || complete),
+  };
+}
 
 export function WebProviderIdentity({
   type,
@@ -111,14 +221,11 @@ export function WebProviderFields({
       <SettingsSection title={t("Web provider")}>
         {type ? (
           <SettingsRow
-            label={t("Provider type")}
-            description={type.operations
-              .map((operation) =>
-                t(operation === "search" ? "Search" : "Scrape"),
-              )
-              .join(" · ")}
+            label={
+              <WebProviderIdentity type={type.type} name={type.display_name} />
+            }
           >
-            <WebProviderIdentity type={type.type} name={type.display_name} />
+            <OperationTags operations={type.operations} />
           </SettingsRow>
         ) : (
           <WebProviderPicker
