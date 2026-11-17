@@ -200,7 +200,7 @@ def test_revision_change_during_collection_does_not_publish(change):
     assert publish([file("README.md")], current={**PR, **change}) == []
 
 
-def test_workflow_loads_only_base_code_and_ci_runs_tests():
+def test_workflow_loads_only_trusted_default_branch_code_and_ci_runs_tests():
     workflow = yaml.load((ROOT / ".github/workflows/pr-change-breakdown.yml").read_text(), Loader=yaml.BaseLoader)
     assert set(workflow["on"]) == {"pull_request_target"}
     assert set(workflow["on"]["pull_request_target"]["types"]) == {
@@ -214,13 +214,90 @@ def test_workflow_loads_only_base_code_and_ci_runs_tests():
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     steps = workflow["jobs"]["breakdown"]["steps"]
     assert len(steps) == 2
-    assert steps[0]["with"]["ref"] == "${{ github.event.pull_request.base.sha }}"
+    assert steps[0]["uses"] == "actions/checkout@v6"
+    assert steps[0]["with"]["ref"] == "${{ github.sha }}"
+    assert "repository" not in steps[0]["with"]
     assert steps[0]["with"]["persist-credentials"] == "false"
+    assert steps[0]["with"]["sparse-checkout-cone-mode"] == "false"
+    assert steps[1]["uses"] == "actions/github-script@v8"
     assert "${{" not in steps[1]["with"]["script"]
     ci = yaml.load((ROOT / ".github/workflows/ci-automation.yml").read_text(), Loader=yaml.BaseLoader)
     for event in ("push", "pull_request"):
         assert "scripts/tests/test_pr_change_breakdown.py" in ci["on"][event]["paths"]
     assert "scripts/tests/test_pr_change_breakdown.py" in ci["jobs"]["release-tooling"]["steps"][-1]["run"]
+
+
+@pytest.mark.parametrize("base_branch", ["main", "template/app-plugin"])
+def test_sparse_checkout_uses_one_trusted_revision_for_all_dependencies(tmp_path, base_branch):
+    workflow = yaml.load((ROOT / ".github/workflows/pr-change-breakdown.yml").read_text(), Loader=yaml.BaseLoader)
+    checkout = workflow["jobs"]["breakdown"]["steps"][0]["with"]
+    source = tmp_path / "source"
+    source.mkdir()
+
+    def git(*args, cwd=source):
+        return subprocess.run(
+            ["git", "-c", "user.name=Workflow test", "-c", "user.email=workflow@example.test", *args],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    manifest = Path("proto/a13n-envd/eip/v1/artifacts/generated-files.json")
+    dependencies = [MODULE.relative_to(ROOT), RULES.relative_to(ROOT), manifest]
+    for path in dependencies:
+        target = source / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / path).read_bytes())
+    # A revision-specific manifest entry proves the dependency is coupled to the scripts.
+    (source / manifest).write_text(json.dumps({"files": ["trusted/generated.bin"]}))
+    trusted_files = {path: (source / path).read_bytes() for path in dependencies}
+    git("add", ".")
+    git("commit", "-m", "Trusted default-branch automation")
+    trusted_sha = git("rev-parse", "HEAD")
+    base_sha = trusted_sha
+    if base_branch != "main":
+        git("switch", "--orphan", base_branch)
+        (source / "README.md").write_text("Template without repository automation\n")
+        git("add", ".")
+        git("commit", "-m", "Independent template base")
+        base_sha = git("rev-parse", "HEAD")
+        assert not (source / MODULE.relative_to(ROOT)).exists()
+        assert not (source / manifest).exists()
+    git("switch", "-c", "untrusted-pr-head")
+    for path in dependencies:
+        target = source / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "throw new Error('PR head code must not run');\n" if path.suffix == ".cjs" else '{"files": []}'
+        )
+    git("add", ".")
+    git("commit", "-m", "Untrusted PR changes")
+    head_sha = git("rev-parse", "HEAD")
+    event_refs = {
+        "${{ github.sha }}": trusted_sha,
+        "${{ github.event.pull_request.base.sha }}": base_sha,
+        "${{ github.event.pull_request.head.sha }}": head_sha,
+    }
+    destination = tmp_path / "checkout"
+    git("clone", "--no-checkout", str(source), str(destination))
+    git("sparse-checkout", "set", "--no-cone", *checkout["sparse-checkout"].splitlines(), cwd=destination)
+    git("checkout", "--detach", event_refs[checkout["ref"]], cwd=destination)
+    assert git("rev-parse", "HEAD", cwd=destination) == trusted_sha
+    for path, content in trusted_files.items():
+        assert (destination / path).read_bytes() == content
+    body = node(
+        "console.log(JSON.stringify(require(input.module).report(input.pr, input.files)))",
+        {
+            "module": str(destination / MODULE.relative_to(ROOT)),
+            "pr": {**PR, "head": {"sha": head_sha}, "base": {"sha": base_sha}, "changed_files": 1},
+            "files": [file("trusted/generated.bin")],
+        },
+    )
+    assert "Generated files" in body
+    assert "1 file · +10 / -2" in body
+    assert f"Head: `{head_sha}` · Base: `{base_sha}`" in body
 
 
 def test_no_core_and_zero_text_delta_do_not_imply_runtime_changes():
