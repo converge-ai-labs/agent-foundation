@@ -39,75 +39,108 @@ async def prepare(
 ) -> Agent:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        # One preparation of a workspace at a time: the first one creates the head. `FOR NO KEY UPDATE` leaves
-        # rows that merely reference the workspace free to be written meanwhile.
-        await session.execute(
-            select(WorkspaceRow.id).where(WorkspaceRow.id == scope.workspace_id).with_for_update(key_share=True)
+        return await prepare_in_session(
+            session,
+            actor,
+            scope,
+            kind=kind,
+            name=name,
+            description=description,
+            configuration=configuration,
+            preferred=preferred,
+            registry=registry,
+            plugins=plugins,
         )
-        head = await session.scalar(
-            select(AgentRow)
+
+
+async def prepare_in_session(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    *,
+    kind: PresetKind,
+    name: str,
+    description: str,
+    configuration: Callable[[str], AgentConfig],
+    preferred: Sequence[str],
+    registry: Registry,
+    plugins: HarnessPluginFactoryCatalog,
+) -> Agent:
+    """Prepare within the caller's transaction, including atomic analysis acceptance."""
+    # Serialize first creation without blocking rows that only reference the workspace.
+    await session.execute(
+        select(WorkspaceRow.id).where(WorkspaceRow.id == scope.workspace_id).with_for_update(key_share=True)
+    )
+    head = await session.scalar(
+        select(AgentRow)
+        .where(AgentRow.workspace_id == scope.workspace_id, AgentRow.source == "builtin", AgentRow.preset_kind == kind)
+        .with_for_update()
+    )
+    if head is None:
+        model = await _model(session, actor, scope, None, preferred)
+        body = AgentCreate(name=name, description=description, config=configuration(model))
+        head = await insert_head(
+            session, actor, scope, body, source="builtin", preset_kind=kind, registry=registry, plugins=plugins
+        )
+        audit_row(session, actor, head, f"{kind}.prepare")
+        return agent_view(head)
+    current = (
+        None if head.default_revision_id is None else await session.get(AgentRevisionRow, head.default_revision_id)
+    )
+    await revisions.update_head(session, actor, head, {"name": name, "description": description})
+    if kind in preset_edits.EDITABLE_KINDS and current is not None:
+        held = stored.read(AgentConfig, current.config, kind=current.KIND, id=current.id)
+        config = configuration(held.model)
+        # Only supported settings belong to the user; other defaults remain platform-owned.
+        settings = dict(held.model_settings)
+        if kind == "finding":
+            settings = dict(config.model_settings)
+            settings.update(
+                {key: value for key, value in held.model_settings.items() if key in preset_edits.MODEL_SETTINGS}
+            )
+        config = config.model_copy(update={"model_settings": settings, "instructions": held.instructions})
+        if config == held:
+            return agent_view(head)
+        config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
+        offered = await session.scalar(
+            select(AgentRevisionRow)
             .where(
-                AgentRow.workspace_id == scope.workspace_id, AgentRow.source == "builtin", AgentRow.preset_kind == kind
+                AgentRevisionRow.agent_id == head.id,
+                AgentRevisionRow.digest == revisions.config_digest(config.model_dump(mode="json")),
             )
-            .with_for_update()
+            .order_by(AgentRevisionRow.number.desc())
+            .limit(1)
         )
-        if head is None:
-            model = await _model(session, actor, scope, None, preferred)
-            body = AgentCreate(name=name, description=description, config=configuration(model))
-            head = await insert_head(
-                session, actor, scope, body, source="builtin", preset_kind=kind, registry=registry, plugins=plugins
+        # Finding tools are operational requirements, not an optional candidate update.
+        automatic = kind == "finding"
+        if offered is not None:
+            changed = automatic and revisions.set_default(head, offered, actor=actor)
+            revision = offered
+        else:
+            revision, changed = await revisions.publish(
+                session,
+                head,
+                AgentRevisionRow,
+                config,
+                actor=actor,
+                note="Official preset update",
+                make_default=automatic,
             )
-            audit_row(session, actor, head, f"{kind}.prepare")
-            return agent_view(head)
-        current = (
-            None if head.default_revision_id is None else await session.get(AgentRevisionRow, head.default_revision_id)
-        )
-        await revisions.update_head(session, actor, head, {"name": name, "description": description})
-        if kind in preset_edits.EDITABLE_KINDS and current is not None:
-            held = stored.read(AgentConfig, current.config, kind=current.KIND, id=current.id)
-            config = configuration(held.model).model_copy(
-                update={
-                    "model_settings": held.model_settings,
-                    "instructions": held.instructions,
-                }
-            )
-            if config == held:
-                return agent_view(head)
-            config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
-            # A rollback keeps its selected revision. Do not recreate the same update on every preparation.
-            offered = await session.scalar(
-                select(AgentRevisionRow.id)
-                .where(
-                    AgentRevisionRow.agent_id == head.id,
-                    AgentRevisionRow.digest == revisions.config_digest(config.model_dump(mode="json")),
-                )
-                .limit(1)
-            )
-            if offered is None:
-                revision, created = await revisions.publish(
-                    session,
-                    head,
-                    AgentRevisionRow,
-                    config,
-                    actor=actor,
-                    note="Official preset update",
-                    make_default=False,
-                )
-                if created:
-                    audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})
-                    await session.flush()
-                    await session.refresh(head)
-            return agent_view(head)
-        model = await _model(session, actor, scope, current, preferred)
-        config = await validate_config(
-            session, actor, scope, head.id, configuration(model), registry=registry, plugins=plugins
-        )
-        revision, created = await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
-        if created:
+        if changed:
             audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})
             await session.flush()
             await session.refresh(head)
         return agent_view(head)
+    model = await _model(session, actor, scope, current, preferred)
+    config = await validate_config(
+        session, actor, scope, head.id, configuration(model), registry=registry, plugins=plugins
+    )
+    revision, created = await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
+    if created:
+        audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})
+        await session.flush()
+        await session.refresh(head)
+    return agent_view(head)
 
 
 async def _model(

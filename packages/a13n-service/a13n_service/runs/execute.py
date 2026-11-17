@@ -106,6 +106,7 @@ from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.runs.tool_executions.owner import resources
+from a13n_service.runs.tool_executions.recovery import acknowledge as acknowledge_executions
 from a13n_service.runs.tool_executions.recovery import restore as restore_executions
 from a13n_service.runs.tool_executions.state import SharedCodeActState
 from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
@@ -879,6 +880,13 @@ class _Attempt:
                     result_retention_seconds=self.runtime.settings.tool_executions.delivered_retention_seconds,
                     usage=usage,
                     at=current,
+                )
+                await acknowledge_executions(
+                    session,
+                    run,
+                    state,
+                    at=current,
+                    seconds=self.runtime.settings.tool_executions.delivered_retention_seconds,
                 )
                 checkpoints.retire(session, run, self.committed, committed)
                 await compactions.acknowledge(session, self.runtime, thread.id, acknowledgement, at=current)

@@ -411,7 +411,7 @@
     "effect": "write",
     "group": "execution",
     "key": "create_finding",
-    "summary": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites only selected traces it has read."
+    "summary": "Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.\nA Run's own submission names that Run as its source; an analysis cites workspace traces it has read."
   },
   {
     "effect": "read",

@@ -21,8 +21,10 @@ from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.infra.outbox import OutboxRow, enqueue
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
+from a13n_service.runs.findings.tables import AnalysisRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import ToolExecutionRow
+from a13n_service.runs.schemas import RunOptions
+from a13n_service.runs.tables import RunRow, ToolExecutionRow
 
 DURATION = meter.create_histogram(
     "a13n.execution.duration",
@@ -45,6 +47,17 @@ def ended(session: AsyncSession, row: ToolExecutionRow) -> None:
 
 # Set by the worker's resource scope. The original Harness task inherits it; later readers need no origin.
 ORIGIN: contextvars.ContextVar[Lease] = contextvars.ContextVar("service_tool_origin")
+
+
+async def managed_inline(session: AsyncSession, run: RunRow) -> bool:
+    """Classify by accepted execution policy and persisted Analysis origin, never today's preset."""
+    options = RunOptions.model_validate(run.options)
+    return (
+        options.execution is not None
+        and options.execution.tools is not None
+        and options.execution.tools.mode == "inline"
+        and await session.scalar(select(AnalysisRow.id).where(AnalysisRow.run_id == run.id)) is not None
+    )
 
 
 def available():
@@ -277,4 +290,9 @@ class Store:
         async with transaction(self.runtime.storage) as session:
             row = await lock(session, ToolExecutionRow, execution_id)
             if row is not None and row.thread_id == thread_id:
+                run = await session.get(RunRow, row.run_id)
+                if run is not None and await managed_inline(session, run):
+                    # Harness reconciliation precedes durable checkpoint publication. Only that
+                    # transaction may consume a managed inline result and shorten its retention.
+                    return
                 delivered(row, await now(session), self.runtime.settings.tool_executions.delivered_retention_seconds)

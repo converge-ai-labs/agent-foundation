@@ -129,7 +129,9 @@ export function NewConversation() {
   const [memory, setMemory] = useState<Schema["SessionMemorySettings"] | null>(
     null,
   );
-  const enabled = agents.data ?? [];
+  const enabled = (agents.data ?? []).filter(
+    (agent) => agent.preset_kind !== "finding",
+  );
   const selected = enabled.find((agent) => agent.id === agentId);
   return (
     <div className={styles.startPage}>

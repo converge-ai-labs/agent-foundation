@@ -25,10 +25,8 @@ async def list_finding_analyses(ctx: ToolContext, *, limit: PageLimit = 20, curs
 
 async def create_finding(ctx: ToolContext, *, body: FindingCreate) -> Finding:
     """Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
-    A Run's own submission names that Run as its source; an analysis cites only selected traces it has read."""
-    return await service.create_finding(
-        ctx.runtime.storage, ctx.actor, ctx.workspace_id, body, source_run_id=ctx.origin
-    )
+    A Run's own submission names that Run as its source; an analysis cites workspace traces it has read."""
+    return await service.create_finding(ctx.runtime, ctx.actor, ctx.workspace_id, body, source_run_id=ctx.origin)
 
 
 async def list_findings(

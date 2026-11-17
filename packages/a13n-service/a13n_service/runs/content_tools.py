@@ -232,7 +232,6 @@ async def _read(
                 source.part,
             )
     else:
-        await analysis.read_scope(runtime, actor, workspace_id, ctx.origin, source.trace_id)
         span = await traces.get_trace_span(
             runtime.storage, runtime.traces, actor, workspace_id, source.trace_id, source.span_id
         )

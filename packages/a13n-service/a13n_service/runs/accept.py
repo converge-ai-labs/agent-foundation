@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride, matches
 from a13n_service.infra.db import after_commit, now, transaction
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import item
 from a13n_service.infra.telemetry import meter
@@ -27,6 +27,7 @@ from a13n_service.resources.agents.service import (
     select_revision,
     validate_override,
 )
+from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.agents.validation import require_subagent_tool_names
 from a13n_service.runs import definitions, inbox
 from a13n_service.runs.admission import AcceptedIntent
@@ -44,6 +45,7 @@ from a13n_service.runs.environments.mounts import (
     thread_has_primary,
 )
 from a13n_service.runs.environments.schemas import MountCreate
+from a13n_service.runs.findings.tables import AnalysisRow
 from a13n_service.runs.memories.mounts import freeze_memories, inherited_cursors
 from a13n_service.runs.memories.session_memory import inherit_defaults
 from a13n_service.runs.runtime import Runtime
@@ -81,6 +83,26 @@ def eligible(thread: ThreadRow, last: RunRow | None) -> bool:
 def paused(last: RunRow | None) -> bool:
     """After a failed or cancelled run only an explicit action continues the thread."""
     return last is not None and last.status in {"failed", "cancelled"}
+
+
+async def require_message_source(session: AsyncSession, thread: ThreadRow, agent_id: str) -> None:
+    """The managed analyst's ordinary product entry is an analysis command, not another chat message."""
+    # Frozen inline graphs and internal inherited continuations keep their accepted contract.
+    if thread.agent_snapshot is not None:
+        return
+    head = await session.get(AgentRow, agent_id)
+    if head is not None and head.preset_kind == "finding":
+        raise invalid("agent_id", "Start the Finding Agent through finding-analyses; use a custom copy for chat.")
+    if (
+        await session.scalar(
+            select(AnalysisRow.id)
+            .join(RunRow, AnalysisRow.run_id == RunRow.id)
+            .where(RunRow.thread_id == thread.id)
+            .limit(1)
+        )
+        is not None
+    ):
+        raise conflict("thread", thread.id, "managed_analysis")
 
 
 async def run_revision(
@@ -216,6 +238,7 @@ class Source:
     ) -> "Source":
         """A message as its principal's current grants and its agent's current revisions accept it now."""
         assert entry.agent_id is not None
+        await require_message_source(session, thread, entry.agent_id)
         scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
         authority = ExecutionAuthority.model_validate(entry.authority)
         principal = await _authorized(session, runtime, scope, entry.principal_id, authority)

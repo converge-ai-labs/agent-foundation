@@ -1939,7 +1939,7 @@ export interface paths {
     /**
      * Create Finding
      * @description Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
-     *     A Run's own submission names that Run as its source; an analysis cites only selected traces it has read.
+     *     A Run's own submission names that Run as its source; an analysis cites traces it has read.
      */
     post: operations["create_finding"];
     delete?: never;
@@ -12952,6 +12952,8 @@ export interface components {
       /** Environment Mounts */
       environment_mounts: components["schemas"]["EnvironmentMount"][];
       failure: components["schemas"]["Failure"] | null;
+      /** Finding Analysis Id */
+      finding_analysis_id?: string | null;
       /** Id */
       id: string;
       /** Input */

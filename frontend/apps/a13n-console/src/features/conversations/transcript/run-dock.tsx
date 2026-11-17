@@ -54,13 +54,15 @@ export function ThreadDock({
   return (
     <div className={styles.dock} data-thread-dock hidden={hidden}>
       <div className={styles.queue}>
-        <ThreadInbox
-          thread={thread}
-          canRunNext={
-            !!latest.data &&
-            ["failed", "cancelled"].includes(latest.data.status)
-          }
-        />
+        {!latest.data?.finding_analysis_id && (
+          <ThreadInbox
+            thread={thread}
+            canRunNext={
+              !!latest.data &&
+              ["failed", "cancelled"].includes(latest.data.status)
+            }
+          />
+        )}
       </div>
       {children}
     </div>
@@ -170,6 +172,31 @@ export function RunDock({
     ) : (
       <PendingRequests pending={waiting.pending} />
     ));
+  if (run.finding_analysis_id)
+    return (
+      <div className={styles.dockControls}>
+        {above}
+        <ErrorNotice error={interrupt.error} />
+        <div className={styles.dockNotice}>
+          <span>{t("Analysis results and controls")}</span>
+          <Link
+            className={styles.dockLink}
+            to={`${basePath}/findings?tab=history&analysis=${run.finding_analysis_id}`}
+          >
+            {t("Analysis history")}
+          </Link>
+          {can("run") && can("write") && (
+            <Button
+              variant="outline"
+              render={<Link to={`${basePath}/findings?analyze=1`} />}
+            >
+              {t("Analyze traces")}
+            </Button>
+          )}
+          {stop}
+        </div>
+      </div>
+    );
   return (
     <>
       <ErrorToast error={interrupt.error} />

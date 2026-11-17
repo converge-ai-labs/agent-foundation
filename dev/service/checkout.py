@@ -101,7 +101,13 @@ class Checkout:
         """The Service settings of this checkout; `telemetry` selects the trace backend."""
         ports = self.instance.ports
         settings = {
-            "server": {"host": "127.0.0.1", "port": ports.service, "public_url": self.console_url},
+            "server": {
+                "host": "127.0.0.1",
+                "port": ports.service,
+                "public_url": self.console_url,
+                # Platform tools also run during seeding, before the Console proxy starts.
+                "control_url": self.service_url,
+            },
             "database": {"url": self.database_url},
             "redis": {"url": f"redis://127.0.0.1:{ports.redis}/0"},
             "objects": {"root": str(self.objects)},

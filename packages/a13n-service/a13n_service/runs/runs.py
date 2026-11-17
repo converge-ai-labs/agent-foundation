@@ -19,6 +19,7 @@ from a13n_service.runs import checkpoints, definitions, read_views
 from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
+from a13n_service.runs.findings.tables import AnalysisRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.origin import origins
 from a13n_service.runs.schemas import (
@@ -50,6 +51,15 @@ def newest(pointer: TailPointer | None, limit: int) -> int:
 async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunView | UnavailableConfiguration]:
     """Views with each run's source input, which the Console shows as the request of that run."""
     schedule_origins = await origins(session, (run.id for run in runs if run.occurrence_trigger_entry_id is not None))
+    analyses = dict(
+        (
+            await session.execute(
+                select(AnalysisRow.run_id, AnalysisRow.id).where(AnalysisRow.run_id.in_([run.id for run in runs]))
+            )
+        )
+        .tuples()
+        .all()
+    )
     sources = [run.source_entry_id for run in runs if run.source_entry_id is not None]
     payloads = (
         dict(
@@ -70,6 +80,7 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
                 update={
                     "input": payloads.get(run.source_entry_id or ""),
                     "schedule_origin": schedule_origins.get(run.id),
+                    "finding_analysis_id": analyses.get(run.id),
                 }
             )
         )

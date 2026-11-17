@@ -3640,6 +3640,18 @@
             }
           ]
         },
+        "finding_analysis_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finding Analysis Id"
+        },
         "id": {
           "title": "Id",
           "type": "string"

@@ -424,10 +424,21 @@ def _findings(api: Api, index: dict[str, str]) -> Iterator[Check]:
         all(
             root["trace_id"] == index[f"findings_trace_{key}"]
             and root["attributes"]["a13n.observation.metadata.service_run_id"] == runs[key]["id"]
-            and findings[key]["evidence"]
-            == [{"trace_id": root["trace_id"], "run_id": runs[key]["id"], "span_ids": [root["id"]]}]
+            and len(findings[key]["evidence"]) == 1
+            and findings[key]["evidence"][0]["trace_id"] == root["trace_id"]
+            and findings[key]["evidence"][0]["run_id"] == runs[key]["id"]
+            and root["id"] in findings[key]["evidence"][0]["span_ids"]
+            and all(
+                (span := api.get(f"/api/v1/traces/{root['trace_id']}/spans/{span_id}"))["trace_id"] == root["trace_id"]
+                and span["attributes"]["a13n.observation.metadata.service_run_id"] == runs[key]["id"]
+                for span_id in findings[key]["evidence"][0]["span_ids"]
+            )
             for key, root in roots.items()
         ),
+    )
+    yield (
+        "Tool diagnoses cite inspected child spans as well as the root",
+        all(len(findings[key]["evidence"][0]["span_ids"]) > 1 for key in ("endpoint", "readonly")),
     )
     yield (
         "Long Finding titles and reviewer notes exercise the preview layout",

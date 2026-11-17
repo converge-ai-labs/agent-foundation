@@ -29,10 +29,12 @@ afterEach(() => {
   access.permissions = ["run", "write"];
 });
 
-function mount(runId: string | null = "run_test") {
-  const cache = new QueryClient({
+function mount(
+  runId: string | null = "run_test",
+  cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  });
+  }),
+) {
   caches.push(cache);
   render(
     <QueryClientProvider client={cache}>
@@ -96,5 +98,14 @@ it("does not offer analysis for an active run", async () => {
       "success",
     ),
   );
+  expect(screen.queryByRole("link", { name: "Analyze trace" })).toBeNull();
+});
+
+it("does not expose cached completed-run actions to a read-only viewer", () => {
+  const cache = new QueryClient();
+  cache.setQueryData(["run", "ws_test", "run_test"], { status: "completed" });
+  access.permissions = ["read"];
+  mount("run_test", cache);
+  expect(http.GET).not.toHaveBeenCalled();
   expect(screen.queryByRole("link", { name: "Analyze trace" })).toBeNull();
 });

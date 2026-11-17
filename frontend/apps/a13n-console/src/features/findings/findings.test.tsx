@@ -22,6 +22,7 @@ const http = vi.hoisted(() => ({
 }));
 const composer = vi.hoisted(() => ({ start: vi.fn() }));
 const backend = vi.hoisted(() => ({ type: null as null | "logfire" }));
+const access = vi.hoisted(() => ({ permissions: ["read", "run", "write"] }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ workspace: () => http }),
 }));
@@ -29,7 +30,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
     basePath: "/workspace/ws_test",
-    can: () => true,
+    can: (verb: string) => access.permissions.includes(verb),
   }),
 }));
 vi.mock("../agents/composer", () => ({
@@ -70,6 +71,7 @@ const finding = {
 };
 beforeEach(() => {
   backend.type = null;
+  access.permissions = ["read", "run", "write"];
   http.GET.mockImplementation(async (path: string) => ({
     data:
       path === "/api/v1/findings/{finding_id}"
@@ -186,9 +188,6 @@ it("submits selected rules and a bounded scope through the managed preset and or
   );
   await user.click(screen.getByRole("button", { name: "Start analysis" }));
   await waitFor(() =>
-    expect(http.POST).toHaveBeenCalledWith("/api/v1/finding-agent"),
-  );
-  await waitFor(() =>
     expect(http.POST).toHaveBeenCalledWith(
       "/api/v1/finding-analyses",
       expect.objectContaining({
@@ -201,7 +200,10 @@ it("submits selected rules and a bounded scope through the managed preset and or
       }),
     ),
   );
-  expect(http.POST.mock.calls[0][0]).toBe("/api/v1/finding-agent");
+  expect(http.POST.mock.calls[0][0]).toBe("/api/v1/finding-analyses");
+  expect(
+    http.POST.mock.calls.some(([path]) => path === "/api/v1/finding-agent"),
+  ).toBe(false);
   expect(
     http.POST.mock.calls.find(
       ([path]) => path === "/api/v1/finding-analyses",
@@ -249,7 +251,8 @@ it("reviews impact independently and sends the exact revision and evidence to Co
     data: { ...finding, ...options.body, version: 2 },
   }));
   const user = mount("/workspace/ws_test/findings/fnd_test");
-  await screen.findByText(/Critical.*Unconfirmed/);
+  // Severity leads the header and repeats in the summary rail.
+  expect(await screen.findAllByText(/Critical.*Unconfirmed/)).toHaveLength(2);
   await user.click(screen.getByRole("button", { name: "Add assessment" }));
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
@@ -344,7 +347,7 @@ it("switches collections without stacking tables and preserves analysis evidence
                   { trace_id: "a".repeat(32), run_id: "run_a" },
                   { trace_id: "b".repeat(32), run_id: "run_b" },
                 ],
-                read_trace_ids: ["a".repeat(32)],
+                read_trace_ids: ["a".repeat(32), "c".repeat(32)],
                 finding_count: 3,
                 cited_trace_count: 1,
                 selection_truncated: true,
@@ -366,16 +369,17 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(screen.queryByRole("link", { name: "Open analysis run" })).toBeNull();
   expect(screen.getByRole("button", { name: "Analyze traces" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Workspace traces" }));
-  const details = await screen.findByRole("dialog", {
+  const details = await screen.findByRole("complementary", {
     name: "Analysis details",
   });
   const fact = (label: string) =>
     within(details).getByText(label, { selector: "dt" }).nextElementSibling
       ?.textContent;
   expect(fact("Scope")).toBe("Workspace traces");
-  expect(fact("Selected traces")).toBe("2");
+  expect(fact("Selected")).toBe("2");
+  expect(fact("trace.read")).toBe("2");
+  expect(fact("Cited")).toBe("1");
   expect(fact("Findings")).toBe("3");
-  expect(fact("Evidence-cited traces")).toBe("1");
   expect(
     within(details).getByText("Check unsupported success claims."),
   ).toBeTruthy();
@@ -391,14 +395,21 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(
     screen.getByText(/Open the analysis run for the full report/),
   ).toBeTruthy();
-  await user.click(
-    within(details).getByRole("button", { name: /Selected traces/ }),
-  );
   expect(
     screen.getByRole("link", { name: "a".repeat(32) }).getAttribute("href"),
   ).toBe("/workspace/ws_test/traces/" + "a".repeat(32));
+  // Selection, successful reads and analyst-discovered reads stay distinct.
+  const row = (trace: string) =>
+    screen.getByRole("link", { name: trace }).closest("li")!.textContent;
+  expect(row("a".repeat(32))).toMatch(/Selected.*trace\.read/);
+  expect(row("b".repeat(32))).toMatch(/Selected.*Not read/);
+  expect(row("c".repeat(32))).toMatch(/Found by analyst.*trace\.read/);
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("complementary", { name: "Analysis details" }),
+    ).toBeNull(),
+  );
   await user.click(screen.getByRole("tab", { name: "Findings" }));
   await screen.findByText("No findings in this view");
   await waitFor(() =>
@@ -605,4 +616,195 @@ it("keeps a failed assessment draft in the dialog and restores trigger focus on 
     ).value,
   ).toBe("");
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("recovers an uncertain original request after edits and gives an edited command a new key", async () => {
+  backend.type = "logfire";
+  http.POST.mockRejectedValue(new TypeError("Connection lost"));
+  const user = mount("/workspace/ws_test/findings?analyze=1");
+  await screen.findByRole("dialog", { name: "Analyze traces" });
+  await user.click(screen.getByRole("button", { name: "Start analysis" }));
+  await screen.findByRole("button", { name: "Retry previous request" });
+  const original = http.POST.mock.calls[0][1];
+  await user.type(
+    screen.getByRole("textbox", { name: "Requirements for this analysis" }),
+    "New requirements",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Retry previous request" }),
+  );
+  await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(2));
+  expect(http.POST.mock.calls[1][1]).toEqual(original);
+  await screen.findByRole("button", { name: "Start new analysis" });
+  await user.click(screen.getByRole("button", { name: "Start new analysis" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(3));
+  const edited = http.POST.mock.calls[2][1];
+  expect(edited.body.instructions).toBe("New requirements");
+  expect(edited.params.header["Idempotency-Key"]).not.toBe(
+    original.params.header["Idempotency-Key"],
+  );
+});
+
+it.each([["read"], ["read", "run"], ["read", "write"]])(
+  "does not open a URL analysis form with permissions %j",
+  async (...permissions) => {
+    access.permissions = permissions as string[];
+    mount("/workspace/ws_test/findings?analyze=1&trace=" + "a".repeat(32));
+    await screen.findByText("No findings in this view");
+    expect(screen.queryByRole("dialog", { name: "Analyze traces" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Analyze traces" })).toBeNull();
+    expect(http.POST).not.toHaveBeenCalled();
+  },
+);
+
+it("observes analysis progress on the initial Findings tab and refreshes partial output", async () => {
+  const original = http.GET.getMockImplementation()!;
+  let count = 0;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              {
+                id: "fan_active",
+                agent_id: null,
+                session_id: "sess_analysis",
+                thread_id: "thread_analysis",
+                run_id: "run_analysis",
+                run_status: count ? "failed" : "running",
+                selection: {},
+                selected_traces: [],
+                read_trace_ids: [],
+                finding_count: count,
+                cited_trace_count: count,
+                selection_truncated: false,
+                created_at: "2026-10-09T10:00:00Z",
+              },
+            ],
+            next_cursor: null,
+          },
+        }
+      : original(path, ...args),
+  );
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  mount("/workspace/ws_test/findings", cache);
+  await screen.findByText("No findings in this view");
+  // The live strip names the active analysis and opens its progress beside history.
+  await screen.findByText("Analysis in progress");
+  expect(screen.getByRole("button", { name: /View progress/ })).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.some(([path]) => path === "/api/v1/finding-analyses"),
+    ).toBe(true),
+  );
+  const before = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/findings",
+  ).length;
+  count = 1;
+  await act(async () => {
+    await cache.refetchQueries({ queryKey: ["finding-analyses", "ws_test"] });
+  });
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/findings")
+        .length,
+    ).toBeGreaterThan(before),
+  );
+  expect(
+    screen.getByRole("tab", { name: "Findings" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  await waitFor(() =>
+    expect(screen.queryByText("Analysis in progress")).toBeNull(),
+  );
+  cache.clear();
+});
+
+const analysis = {
+  id: "fan_latest",
+  agent_id: null,
+  session_id: "sess_analysis",
+  thread_id: "thread_analysis",
+  run_id: "run_analysis",
+  run_status: "completed",
+  selection: {},
+  selected_traces: [],
+  read_trace_ids: [],
+  finding_count: 0,
+  cited_trace_count: 0,
+  selection_truncated: false,
+  created_at: "2026-10-09T10:00:00Z",
+};
+
+it("resolves an analysis deep link beyond the first history page", async () => {
+  const original = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path, options) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              options.params.query.cursor
+                ? { ...analysis, id: "fan_older", run_id: "run_older" }
+                : analysis,
+            ],
+            next_cursor: options.params.query.cursor ? null : "older",
+          },
+        }
+      : original(path, options),
+  );
+  mount("/workspace/ws_test/findings?tab=history&analysis=fan_older");
+  const link = await screen.findByRole("link", { name: "Open analysis run" });
+  expect(link.getAttribute("href")).toContain("/runs/run_older");
+  expect(http.GET).toHaveBeenCalledWith(
+    "/api/v1/finding-analyses",
+    expect.objectContaining({
+      params: { query: { limit: 100, cursor: "older" } },
+    }),
+  );
+});
+
+it("opens a new analysis while the history table remains on its second page", async () => {
+  backend.type = "logfire";
+  const original = http.GET.getMockImplementation()!;
+  let created = false;
+  http.GET.mockImplementation(async (path, options) =>
+    path === "/api/v1/finding-analyses"
+      ? {
+          data: {
+            items: [
+              options.params.query.cursor
+                ? { ...analysis, id: "fan_older" }
+                : created
+                  ? { ...analysis, id: "fan_new", run_id: "run_new" }
+                  : analysis,
+            ],
+            next_cursor: options.params.query.cursor ? null : "older",
+          },
+        }
+      : original(path, options),
+  );
+  http.POST.mockImplementation(async () => {
+    created = true;
+    return { data: { ...analysis, id: "fan_new", run_id: "run_new" } };
+  });
+  const user = mount("/workspace/ws_test/findings?tab=history");
+  await user.click(await screen.findByRole("button", { name: "Next" }));
+  await screen.findByRole("button", { name: "Previous" });
+  await user.click(screen.getByRole("button", { name: "Analyze traces" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Start analysis" }),
+  );
+  const link = await screen.findByRole("link", { name: "Open analysis run" });
+  expect(link.getAttribute("href")).toContain("/runs/run_new");
+  expect(screen.getByRole("button", { name: "Previous" })).toBeTruthy();
+});
+
+it("shows a missing deep-linked analysis explicitly and lets the inspector close", async () => {
+  const user = mount(
+    "/workspace/ws_test/findings?tab=history&analysis=fan_missing",
+  );
+  await screen.findByText("Analysis not found");
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
 });

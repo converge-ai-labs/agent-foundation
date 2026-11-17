@@ -1,6 +1,7 @@
 """Managed Agent edits keep user instructions in revisions and official guidance in Host capabilities."""
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from a13n_service.resources.agents import composer, instructions
@@ -8,6 +9,12 @@ from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.findings import preset as finding_preset
 
 pytestmark = pytest.mark.anyio
+
+
+async def historical_start(runs_kit, service, head, message):
+    # These tests exercise accepted executions from before Finding's managed-entry cutover.
+    with patch("a13n_service.runs.submit.require_message_source", new=AsyncMock()):
+        return await runs_kit.start_thread(service, head, message)
 
 
 async def prepared(service, endpoint):
@@ -28,7 +35,7 @@ async def test_edit_saves_only_user_instructions_and_keeps_selected_version(
     head, path, original = await prepared(service, endpoint)
     assert original["config"]["instructions"] == ""
     assert original["builtin_instructions"]
-    started = await runs_kit.start_thread(service, head.json(), "Use the original revision")
+    started = await historical_start(runs_kit, service, head.json(), "Use the original revision")
     body = {
         "config": {
             **original["config"],
@@ -131,7 +138,7 @@ async def test_official_guidance_comes_from_the_worker_without_revising_user_con
     )
     assert saved.status_code == 201, saved.text
     current = (await service.client.get(path)).json()
-    accepted = await runs_kit.start_thread(service, current, "Inspect this")
+    accepted = await historical_start(runs_kit, service, current, "Inspect this")
     monkeypatch.setattr(instructions, attribute, "Official policy after deployment.")
     again, _, revision = await prepared(service, endpoint)
     assert revision["id"] == saved.json()["id"]
@@ -149,7 +156,7 @@ async def test_official_guidance_comes_from_the_worker_without_revising_user_con
 
 
 @pytest.mark.parametrize(("endpoint", "module"), [("agent-composer", composer), ("finding-agent", finding_preset)])
-async def test_tool_definition_update_is_only_a_candidate(
+async def test_tool_definition_updates_are_automatic_for_finding_and_candidates_for_composer(
     service, scripted_model, runs_kit, monkeypatch, endpoint, module
 ):
     await runs_kit.create_model(service, scripted_model)
@@ -165,7 +172,12 @@ async def test_tool_definition_update_is_only_a_candidate(
         module, "configuration", lambda model: definition(model).model_copy(update={"lazy_environment": False})
     )
     refreshed, _, current = await prepared(service, endpoint)
-    assert current == saved.json()
+    if endpoint == "agent-composer":
+        assert current == saved.json()
+    else:
+        assert current["id"] != saved.json()["id"]
+        assert current["config"]["lazy_environment"] is False
+        assert current["config"]["instructions"] == "Keep this."
     versions = (await service.client.get(f"{path}/revisions")).json()["items"]
     assert len(versions) == 3
     candidate = versions[0]
