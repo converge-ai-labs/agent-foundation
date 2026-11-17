@@ -397,6 +397,11 @@ def test_the_executable_serves_metrics_in_the_prometheus_format() -> None:
     # A gauge keeps its value until it is replaced, however often it is scraped.
     assert 'a13n_backlog_size{queue="runs"} 3.0' in first
     assert 'a13n_backlog_size{queue="runs"} 3.0' in second
+    # A custom App meter shares the host exporter. An instrument created during App import
+    # before provider initialization and another created afterward both retain their own names/labels.
+    assert 'acme_reports_previews_total{result="completed"} 2.0' in first
+    assert 'acme_reports_preview_duration_seconds_bucket{le="0.1",result="completed"} 0.0' in first
+    assert 'acme_reports_preview_duration_seconds_bucket{le="0.25",result="completed"} 1.0' in first
     assert 'service_name="a13n-service"' in first
     assert "otel_scope" not in first
     # The alert rules and the operations dashboard select only series the Service serves.

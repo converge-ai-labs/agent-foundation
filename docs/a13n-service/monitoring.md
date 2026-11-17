@@ -102,6 +102,8 @@ For API latency and error ratios, select `a13n_request_kind="api"`; probes, stat
 
 Workers also export [Harness metrics](../a13n-harness/observation.md), including `a13n_harness_run_duration_seconds` and model token usage as `gen_ai_client_token_usage`. Tenant-configured request/response model names are stripped from process metrics; use durable usage for per-model accounting. Service metrics describe process health and global work; use the usage API for workspace-level numbers.
 
+Installed App plugins can [report custom business metrics](app-plugins.md#report-custom-metrics) through this same listener using the standard OpenTelemetry API. Each App owns its metric-name prefix and bounded attributes; the host already measures its HTTP routes and organization sweep passes. Custom Grafana panels and alerts remain operator-owned.
+
 ## Usage
 
 Use Console or the API to read a workspace's stored run and model-usage facts. Operators who need organization-wide reporting can import the optional Usage dashboard through a read-only PostgreSQL role; the bundle documents the grants, including `agents`. Both dashboard JSON files can be imported, edited, saved as custom copies and exported without Service integration.

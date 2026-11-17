@@ -81,9 +81,9 @@ curl --fail http://127.0.0.1:9464/metrics
 ```
 
 3. 将**每个 control 和 worker 进程**加入 Prometheus 或 VictoriaMetrics 抓取配置。使用仓库[监控套件](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring)时，将任务名设为 `a13n-service`。
-4. 导入套件的运维看板和告警规则。确认目标正在被抓取，再检查请求、运行、worker 容量和投递情况。
+4. 按需导入套件的可编辑 Operations 看板。选择数据源、job 和 deployment，再检查 API/SSE、运行、队列新鲜度、worker 容量、调度和投递。只启用需要的告警预设；看板与告警彼此独立。
 
-指标监听器独立于 API 监听器，应保留在私有网络中。Helm chart 默认启用 9464 端口并支持 PodMonitor；套件中包含 operator 和静态主机配置说明。
+指标监听器独立于 API 监听器，应保留在私有网络中。为每个目标添加唯一的共享 `deployment` 域及其 `role`（`all`、`control` 或 `worker`）。Helm chart 的可选 PodMonitor 提供 namespace/release 和 role 标签；套件说明 operator 和静态主机配置。抓取成功只表示指标监听器可达；就绪状态应另行检查 `/readyz`。
 
 | 运维问题               | 可用指标                                                                                                 |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -94,15 +94,21 @@ curl --fail http://127.0.0.1:9464/metrics
 | 投递是否失败？         | `a13n_outbox_deliveries_total`、`a13n_outbox_backlog_alert`、`a13n_outbox_dead`                          |
 | 后台任务是否失败？     | `a13n_sweep_passes_total`，按 `sweep` 和 `result` 分组                                                   |
 
-积压指已经到执行时间的工作，不包含等待中的运行和未来的定时工作。`all` 和 `control` 副本每 15 秒刷新同一组积压值。跨副本应取**最大值**，不要相加。计数上限取 10,000 和该 outbox 类型 `backlog_count` 中的较大值。
+积压指当前符合消费者执行条件的工作：已到期的 accepted run、空闲线程中可处理的收件箱条目、调度规划与 occurrence 派发、过期的非 shell 工具租约，以及已到期且未被租约占用的 outbox 工作。排除 waiting run 和未来的重试退避。`all` 和 `control` 副本每 15 秒刷新共享快照。先使用 `a13n_backlog_updated_seconds`，按 job/deployment/instance/queue 匹配，排除至少 60 秒未更新的快照，再取**每个 deployment/queue 的最大值**。缺失库存表示不可用，不是零。`a13n_backlog_limit` 给出有界计数上限：达到上限时，size 只是下界。进程本地的 worker 槽位和开放 SSE 连接则跨进程求和。
 
-两个 outbox gauge 同样取跨副本最大值。某类型持续超过阈值达 `backlog_alert_seconds` 后，`a13n_outbox_backlog_alert` 变为 1；进程重启会重置计时。保留有 dead 投递时，`a13n_outbox_dead` 为 1。
+两个 outbox gauge 使用相同的先过滤新鲜度、再取最大值规则，新鲜度来自 `a13n_outbox_updated_seconds`。某类型持续超过阈值达 `backlog_alert_seconds` 后，`a13n_outbox_backlog_alert` 变为 1；进程重启会重置计时。保留有 dead 投递时，`a13n_outbox_dead` 为 1。
 
-Worker 还导出 [Harness 指标](../a13n-harness/observation.md)，包括 `a13n_harness_run_duration_seconds` 和模型 token 用量 `gen_ai_client_token_usage`。Service 指标描述进程健康和全局工作情况；工作空间级数据使用用量 API。
+计算 API 延迟和错误比例时，选择 `a13n_request_kind="api"`，避免探测、静态响应和长连接 SSE 干扰。SSE 单独记录响应头延迟、活跃连接、关闭结果及 reader gap/drop；HTTP 200 的流仍可能在响应头发出后失败。Sweep pass 成功只表示扫描正常返回，还应检查独立条目失败和扫描新鲜度。调度提交表示收件箱条目已提交，不表示执行已开始。Waiting run 会封存；人工等待和恢复后的后继 run 分开处理。
+
+Worker 还导出 [Harness 指标](../a13n-harness/observation.md)，包括 `a13n_harness_run_duration_seconds` 和模型 token 用量 `gen_ai_client_token_usage`。进程指标会移除租户配置的请求/响应模型名称；按模型核算应使用持久化用量。Service 指标描述进程健康和全局工作情况；工作空间级数据使用用量 API。
+
+已安装的 App 插件可以使用标准 OpenTelemetry API，通过同一个监听器[上报自定义业务指标](app-plugins.md#report-custom-metrics)。每个 App 负责自己的指标名称前缀和有限属性值；宿主已经测量其 HTTP 路由和组织 sweep pass。自定义 Grafana 面板和告警由运维人员管理。
 
 ## 用量
 
-通过 Console 或 API 读取工作空间保存的运行和模型用量记录。运维人员需要组织级报告时，可以导入监控套件的用量看板，并通过只读 PostgreSQL 角色连接数据库。
+通过 Console 或 API 读取工作空间保存的运行和模型用量记录。运维人员需要组织级报告时，可以通过只读 PostgreSQL 角色导入可选 Usage 看板；套件说明授权范围，包括 `agents`。两份看板 JSON 均可导入、编辑、另存自定义副本和导出，无需 Service 集成。
+
+PostgreSQL 看板仅供运维人员使用。Organization/Workspace 选择器只是分析筛选，不执行 Service 授权：任何能查询该数据源的人都能读取所有已授予的行。租户侧访问应使用已授权的 API 或适当限制的数据库/视图。看板按 UTC 划分日期，所选时间范围为半开区间 `[from,to)`；明细表最多显示前 100 行，概览总计覆盖完整人口。
 
 生成 API 报告时，设置 `A13N_URL`，并提供具有读取权限的工作空间 `A13N_API_KEY`。将 `START` 和 `END` 设为 RFC 3339 时间戳，范围大于零且不超过 366 天；`END` 为不包含的结束边界。以下请求按 UTC 日期分组：
 

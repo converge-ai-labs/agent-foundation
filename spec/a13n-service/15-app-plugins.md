@@ -23,6 +23,8 @@ Duplicate App IDs, factory ownership, settings sections and HTTP operations fail
 
 The detached installed catalog contains metadata only. Tenancy and execution consume that catalog without importing registration callbacks. Assembly alone opens callbacks and registrations over the existing real Runtime, `Tasks`, `Sweep` scheduler and `AsyncExitStack`. Process startup and imports may execute installed code while its tenant policy is disabled; organization business callbacks require host admission. Startup resources register shutdown on the host exit stack.
 
+Apps reuse the host's process-wide OpenTelemetry provider and private metrics listener through the standard metrics API. The [observability contract](12-observability.md#app-plugin-metrics) owns initialization, instrument namespaces, bounded labels, publication and cached collection; no separate metrics registration is part of an App definition.
+
 ## Organization policy and management
 
 The settings namespace is a typed JSON object `{"enabled": ["acme.reports"]}`. Missing entries default to disabled, including newly installed Apps. Unknown retained policy IDs confer no authority. An administrator can remove a retained ID with a disabling policy update after its package is uninstalled; enabling requires an installed App. Unrelated organization settings survive policy updates.

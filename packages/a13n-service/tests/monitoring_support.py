@@ -37,8 +37,14 @@ def expand_usage(query, *, organizations, workspaces, start, end):
 EXPORTER = """
 import sys
 from opentelemetry import metrics
+# App definitions can import their instruments before the executable installs its provider.
+app_meter = metrics.get_meter("acme.reports")
+APP_PREVIEWS = app_meter.create_counter("acme.reports.previews")
 from a13n_service.infra.telemetry import serve_metrics
 serve_metrics("127.0.0.1", int(sys.argv[1]))
+APP_DURATION = app_meter.create_histogram(
+    "acme.reports.preview.duration", unit="s", explicit_bucket_boundaries_advisory=(0.1, 0.25, 1)
+)
 from a13n_service.infra.http import REQUEST_DURATION, RESPONSE_START, STREAM_ACTIVE, STREAM_DURATION
 from a13n_service.infra.outbox import DELIVERIES, SETTLEMENT_FAILURES
 from a13n_service.infra.sweeps import PASSES, ITEMS, DURATION, LAST_SUCCESS, DEADLINE
@@ -61,6 +67,8 @@ def observe():
     import time
     wave = 1 + 0.35 * math.sin(time.time() / 20) if live else 1
     tick = int(time.time()) if live else 0
+    APP_PREVIEWS.add(2, {"result": "completed"})
+    APP_DURATION.record(0.2, {"result": "completed"})
     labels = {"http.request.method": "GET", "http.route": "/api/v1/agents", "http.response.status_code": 200, "a13n.request.kind": "api"}
     for _ in range(3 + tick % 4):
         REQUEST_DURATION.record(0.025 * wave, labels)
