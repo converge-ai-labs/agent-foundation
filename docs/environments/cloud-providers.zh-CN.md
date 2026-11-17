@@ -270,7 +270,7 @@ Native 执行使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`�
 
 ### kosa8
 
-默认根目录使用 `/workspace`，Python 使用客体 PATH 中的 `python3`；kosa8 文件 API 只能访问 `/workspace`，因此 `root` 须位于其下。每个 Environment 对应一个 [kosa8](https://kosa8.com) 沙箱，即拥有独立内核的 microVM，按 `size`（`2x4`、`4x8`、`8x16` 或 `16x32`，vCPU x GiB）从 `image`（省略时使用 kosa8 默认镜像）启动，并带有 `disk_gb` 数据盘（省略时为 32 GB）。沙箱是持久的：整个文件系统和后台进程在命令之间保留，`docker: true` 允许其运行自己的 dockerd。`stop()` 让沙箱休眠并保留内存和进程；`start()` 唤醒沙箱。空闲休眠关闭，因此沙箱不会自行停止。设置 `ttl_seconds` 后，kosa8 在创建后经过该时长删除沙箱；省略时不会过期。销毁操作删除记录中的那个沙箱，并等待确认其不存在。该 provider 通过 Harness HTTP 客户端调用 kosa8 Cloud REST API，无需安装 extra。在 kosa8 控制台创建 API 密钥；一个密钥只作用于一个组织。
+默认根目录使用 `/workspace`，Python 使用客体 PATH 中的 `python3`；kosa8 文件 API 只能访问 `/workspace`，因此 `root` 须位于其下。每个 Environment 对应一个 [kosa8](https://kosa8.com) 沙箱，即拥有独立内核的 microVM，按 `size`（`2x4`、`4x8`、`8x16` 或 `16x32`，vCPU x GiB）从 `image` 启动，并带有 `disk_gb` 数据盘（省略时为 32 GB）。未设置 `image`、`disk_gb` 和 `docker` 时，从快照启动 kosa8 的 `universal-<size>` 模板（Ubuntu，含 `python3`）。沙箱是持久的：整个文件系统和后台进程在命令之间保留，`docker: true` 允许其运行自己的 dockerd。`stop()` 让沙箱休眠并保留内存和进程；`start()` 唤醒沙箱。空闲休眠关闭，因此沙箱不会自行停止。设置 `ttl_seconds` 后，kosa8 在创建后经过该时长删除沙箱；省略时不会过期。销毁操作删除记录中的那个沙箱，并等待确认其不存在。该 provider 通过 Harness HTTP 客户端调用 kosa8 Cloud REST API，无需安装 extra。在 kosa8 控制台创建 API 密钥；一个密钥只作用于一个组织。
 
 ### 嵌入式配置
 
