@@ -198,6 +198,34 @@ async def test_scrape_maps_markdown_truncates_utf8_and_records_usage(providers, 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("upstream_truncated", [False, True])
+@pytest.mark.parametrize("max_content_bytes", [4, 1024])
+async def test_scrape_preserves_upstream_and_local_truncation(
+    providers, policy, upstream_truncated: bool, max_content_bytes: int
+) -> None:
+    payload = {
+        "data": {
+            "results": [
+                {
+                    "url": "https://example.com/article",
+                    "status": "ok",
+                    "text": "界界",
+                    "text_truncated": upstream_truncated,
+                }
+            ]
+        }
+    }
+    async with providers["specstream"].open(
+        {},
+        {"api_key": "secret"},
+        transport=transport(lambda _: httpx2.Response(200, json=payload)),
+    ) as web:
+        result = await web.scrape(scrape_request(max_content_bytes=max_content_bytes), policy=policy)
+    assert result.content == ("界" if max_content_bytes == 4 else "界界")
+    assert result.truncated is (upstream_truncated or max_content_bytes == 4)
+
+
+@pytest.mark.anyio
 async def test_scrape_handles_empty_status_without_failing(providers, policy) -> None:
     payload = {"data": {"results": [{"url": "https://example.com/article", "status": "empty"}], "price_usd": 0}}
     async with providers["specstream"].open(
@@ -235,6 +263,9 @@ async def test_scrape_maps_failure_statuses(status: str, providers, policy) -> N
         {"data": {"results": []}},
         {"data": {"results": [{"url": "https://example.com/article", "text": "missing status"}]}},
         {"data": {"results": [{"url": "https://example.com/article", "status": "unknown", "text": "ok"}]}},
+        {"data": {"results": [{"url": "https://example.com/article", "status": [], "text": "ok"}]}},
+        {"data": {"results": [{"url": "https://example.com/article", "status": {}, "text": "ok"}]}},
+        {"data": {"results": [{"status": "ok", "text": "ok", "text_truncated": "false"}]}},
         {"data": {"results": [{"url": "https://example.com/article", "status": "ok"}]}},
     ],
 )

@@ -85,6 +85,8 @@ async def scrape(
         raise WebProviderError("web_scrape_response_invalid")
     item = results[0]
     status = item.get("status")
+    if not isinstance(status, str):
+        raise WebProviderError("web_scrape_response_invalid")
     if status in _SCRAPE_FAILURE_STATUSES:
         raise WebProviderError("web_scrape_failed")
     if status == "empty":
@@ -93,11 +95,15 @@ async def scrape(
         content = item.get("text")
     else:
         raise WebProviderError("web_scrape_response_invalid")
+    truncated = item.get("text_truncated", False)
+    if not isinstance(truncated, bool):
+        raise WebProviderError("web_scrape_response_invalid")
     return scrape_result(
         content=content,
         canonical_url=item.get("url") or request.url,
         title=item.get("title"),
         request=request,
+        truncated=truncated,
         usage=_usage(data, "extract"),
     )
 
