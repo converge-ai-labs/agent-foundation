@@ -101,12 +101,87 @@ class AbstractHarnessPlugin(ABC):
         return await call_next(exchange)
 
 
-class BoundPluginContext:
-    """Atomic read-only view of the complete run-bound plugin graph."""
+@dataclass(frozen=True, slots=True)
+class PluginSource:
+    """One explicitly selected instance, constructed only when enabled."""
+
+    plugin_id: str
+    factory: Callable[[], AbstractHarnessPlugin]
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.plugin_id, str) or not self.plugin_id.strip():
+            raise PluginError("Plugin IDs must not be blank.", code="plugin_id_invalid")
+        if not callable(self.factory) or not isinstance(self.enabled, bool):
+            raise TypeError("PluginSource requires a callable factory and boolean enabled")
+
+    @classmethod
+    def from_plugin(cls, plugin: AbstractHarnessPlugin, *, enabled: bool = True) -> PluginSource:
+        """Select an already constructed trusted object without running its hooks."""
+        if not isinstance(plugin, AbstractHarnessPlugin):
+            raise PluginError("Configured plugins must inherit AbstractHarnessPlugin.", code="plugin_invalid")
+        return cls(plugin.plugin_id, lambda: plugin, enabled)
+
+
+@dataclass(frozen=True, slots=True)
+class PluginActivation:
+    """Immutable effective selection of one executable's plugin instance IDs."""
+
+    enabled_ids: frozenset[str] = frozenset()
+    disabled_ids: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "enabled_ids", frozenset(self.enabled_ids))
+        object.__setattr__(self, "disabled_ids", frozenset(self.disabled_ids))
+        if self.enabled_ids & self.disabled_ids:
+            raise ValueError("Enabled and disabled plugin IDs must be disjoint")
+
+    def is_enabled(self, plugin_id: str) -> bool:
+        return plugin_id in self.enabled_ids
+
+
+class PluginSharedState:
+    """Typed namespaced scratch shared within one Run, never exported or resumed."""
 
     def __init__(self) -> None:
+        self._values: dict[str, object] = {}
+
+    def write(self, namespace: str, value: object) -> None:
+        if not namespace.strip():
+            raise ValueError("Shared state namespace must not be blank")
+        self._values[namespace] = value
+
+    def read[T](self, namespace: str, expected_type: type[T]) -> T | None:
+        if namespace not in self._values:
+            return None
+        value = self._values[namespace]
+        if not isinstance(value, expected_type):
+            raise PluginError(
+                "Plugin shared state has an unexpected type.",
+                code="plugin_shared_state_type_mismatch",
+                details={"namespace": namespace},
+            )
+        return value
+
+
+class BoundPluginContext:
+    """Fixed activation, Run-local scratch, and atomically bound peer instances."""
+
+    def __init__(self, activation: PluginActivation | None = None) -> None:
+        self._activation = activation or PluginActivation()
+        self._shared = PluginSharedState()
         self._ordered: tuple[AbstractHarnessPlugin, ...] | None = None
         self._by_id: dict[str, AbstractHarnessPlugin] | None = None
+
+    @property
+    def activation(self) -> PluginActivation:
+        """Read the fixed selection, including while for_run is in progress."""
+        return self._activation
+
+    @property
+    def shared(self) -> PluginSharedState:
+        """Share typed values during binding and execution of this Run."""
+        return self._shared
 
     @property
     def ordered(self) -> tuple[AbstractHarnessPlugin, ...]:
@@ -158,10 +233,38 @@ class BoundPluginContext:
 
 
 def bind_agent_plugins(
-    plugins: Sequence[AbstractHarnessPlugin],
-) -> tuple[tuple[AbstractHarnessPlugin, ...], dict[str, tuple[AbstractCapability[AgentContext], ...]]]:
-    """Order and Agent-bind once, retaining exact contribution ownership."""
-    ordered = _order_plugins(plugins)
+    plugins: Sequence[AbstractHarnessPlugin | PluginSource],
+) -> tuple[
+    tuple[AbstractHarnessPlugin, ...],
+    dict[str, tuple[AbstractCapability[AgentContext], ...]],
+    PluginActivation,
+]:
+    """Select before construction, then order, bind and collect contributions once."""
+    sources = tuple(item if isinstance(item, PluginSource) else PluginSource.from_plugin(item) for item in plugins)
+    by_id: dict[str, PluginSource] = {}
+    for source in sources:
+        if source.plugin_id in by_id:
+            raise PluginError(
+                "Plugin IDs must be unique.", code="plugin_id_duplicate", details={"plugin_id": source.plugin_id}
+            )
+        by_id[source.plugin_id] = source
+    activation = PluginActivation(
+        enabled_ids=frozenset(source.plugin_id for source in sources if source.enabled),
+        disabled_ids=frozenset(source.plugin_id for source in sources if not source.enabled),
+    )
+    selected: list[AbstractHarnessPlugin] = []
+    for source in sources:
+        if not source.enabled:
+            continue
+        plugin = source.factory()
+        if not isinstance(plugin, AbstractHarnessPlugin) or plugin.plugin_id != source.plugin_id:
+            raise PluginError(
+                "Plugin source returned an invalid instance.",
+                code="plugin_factory_result_invalid",
+                details={"plugin_id": source.plugin_id},
+            )
+        selected.append(plugin)
+    ordered = _order_plugins(selected)
     bound: list[AbstractHarnessPlugin] = []
     contributions: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
     for plugin in ordered:
@@ -178,7 +281,7 @@ def bind_agent_plugins(
                 )
             capabilities.append(capability)
         contributions[replacement.plugin_id] = tuple(capabilities)
-    return tuple(bound), contributions
+    return tuple(bound), contributions, activation
 
 
 async def bind_run_plugins(

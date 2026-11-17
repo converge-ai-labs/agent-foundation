@@ -63,7 +63,7 @@ if TYPE_CHECKING:
         HarnessObservationContext,
         HarnessTraceContent,
     )
-    from a13n_harness.plugins import AbstractHarnessPlugin, PluginOrdering
+    from a13n_harness.plugins import AbstractHarnessPlugin, PluginActivation, PluginOrdering, PluginSource
     from a13n_harness.recovery import ContextRecoveryPolicy, ModelRecoveryPolicy, ToolRecoveryMode
     from a13n_harness.result import HarnessRunResult, SafeFailure
     from a13n_harness.spec import (
@@ -171,7 +171,9 @@ _EXPORTS = {
     ),
     "a13n_harness.plugins": (
         "AbstractHarnessPlugin",
+        "PluginActivation",
         "PluginOrdering",
+        "PluginSource",
     ),
     "a13n_harness.recovery": (
         "ContextRecoveryPolicy",

@@ -4,7 +4,7 @@
 
 A Harness plugin is trusted, code-first Python middleware around the complete process-local Harness run. It can transform semantic input, emit observations, short-circuit execution, replace a complete result candidate, and contribute ordinary Pydantic AI `AbstractCapability[AgentContext]` instances at Agent construction.
 
-Plugins always become concrete Python objects before Agent composition. A caller may supply them directly in `AgentDefinition.plugins`, or opt one `HarnessBuilder` into the Harness-owned plugin configuration boundary. That boundary reads a small versioned preferred YAML or supported JSON document, selects installed factory entry points, and appends freshly created plugin instances to every definition built by that builder. The Host need not understand plugin factories or perform this reconstruction itself.
+`AgentDefinition.plugins` accepts trusted concrete plugins and lazy `PluginSource` values. Harness selects enabled sources before invoking factories, ordering, binding, or collecting Capability contributions. A caller may also opt one `HarnessBuilder` into the Harness-owned configuration boundary: a small versioned YAML or JSON document selects installed factories and appends sources to every definition built by that builder. Hosts map their accepted selections into sources; Harness owns selection before materialization and retains the existing ordering, binding and contribution path.
 
 Automatic configuration is disabled by default. Importing the package never reads environment variables or files, scans package metadata, imports a plugin target, or enables middleware. A builder with no explicit `HarnessBuildContext` inspects only the enable environment variable; it performs further loading only when that switch explicitly enables the feature. An explicit context bypasses ambient discovery entirely.
 
@@ -12,13 +12,15 @@ This narrow document is not a serialized Agent definition, general object compil
 
 ```mermaid
 flowchart LR
-    Direct[AgentDefinition plugins] --> Merge[Direct then configured plugins]
+    Direct[AgentDefinition objects or sources] --> Merge[Direct then configured sources]
     Source[Explicit context or opted-in environment] --> Document[Versioned plugin document]
     Document --> Selected[Enabled factory keys]
     Selected --> Catalog[Builder-owned factory catalog]
-    Catalog --> Fresh[Fresh configured instances per definition]
-    Fresh --> Merge
-    Merge --> Order[Stable-ID ordering]
+    Catalog --> Configured[Lazy configured sources per definition]
+    Configured --> Merge
+    Merge --> Gate[Select enabled sources]
+    Gate --> Fresh[Construct selected instances]
+    Fresh --> Order[Stable-ID ordering]
     Order --> AgentBind[Agent-bound plugins]
     AgentBind --> Caps[Pydantic Capability contributions]
     AgentBind --> RunBind[Fresh run-bound plugins]
@@ -216,6 +218,13 @@ class HarnessPluginFactoryCatalog(
         context: HarnessPluginFactoryContext,
     ) -> AbstractHarnessPlugin: ...
 
+    def plugin_source(
+        self,
+        context: HarnessPluginFactoryContext,
+        *,
+        enabled: bool = True,
+    ) -> PluginSource: ...
+
 
 def discover_harness_plugin_factory_references(
 ) -> tuple[HarnessPluginFactoryReference, ...]: ...
@@ -248,9 +257,12 @@ The decision is fixed for the resulting executable graph. `run()` and `stream()`
 
 For every root or nested `AgentDefinition` recursively built by the builder:
 
-1. validate and normalize each enabled entry through its selected factory, then create a fresh concrete plugin in document order using a fresh detached `HarnessPluginFactoryContext`;
-2. append those values after the definition's direct `plugins` tuple;
-3. run the ordinary stable-ID validation, ordering, `for_agent()`, Capability contribution, and executable construction path.
+1. map all configured entries to lazy sources and append them after the definition's `plugins` tuple;
+2. validate unique non-blank IDs across all direct and configured sources, including disabled sources;
+3. capture immutable `PluginActivation` with enabled and disabled instance IDs;
+4. invoke only enabled source factories, validate each returned instance ID, then order, call `for_agent()`, collect Capabilities, and construct the executable.
+
+`HarnessPluginFactoryCatalog.plugin_source()` captures a detached accepted factory context and defers factory lookup and construction until Harness selects that source. Like `create_plugin()`, it consumes already normalized configuration and retains factory result validation. The automatic configuration adapter instead creates sources whose factories explicitly validate authored configuration before construction, once per selected build. This keeps normalization at the accepting boundary and preserves validators with input aliases or non-idempotent normalization. A disabled source may reference an uninstalled factory. A source factory runs once per build, not once per Run.
 
 A factory is therefore selected once per builder but invoked once per enabled entry per definition. Separate definitions never share the same factory-created plugin prototype. Direct plugins precede configured plugins only as the stable topological tie-breaker; explicit ordering constraints still determine the final middleware graph. An ID collision between direct and configured plugins fails through ordinary plugin validation. Any configuration, discovery, factory, or result failure aborts construction before the affected executable is returned.
 
@@ -295,6 +307,33 @@ A stable non-blank `plugin_id` identifies one configured middleware instance. It
 
 `for_agent()` returns the reentrant instance owned by the executable. `for_run()` returns the instance used by one invocation. An immutable reentrant plugin may return itself; mutable or scoped behavior returns a fresh replacement. Each replacement must preserve the exact concrete type, ID, and effective ordering of its source. This prevents a run from changing the built graph while allowing normal internal state binding.
 
+## Explicit Selection
+
+```python
+@dataclass(frozen=True, slots=True)
+class PluginSource:
+    plugin_id: str
+    factory: Callable[[], AbstractHarnessPlugin]
+    enabled: bool = True
+
+    @classmethod
+    def from_plugin(
+        cls, plugin: AbstractHarnessPlugin, *, enabled: bool = True
+    ) -> PluginSource: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PluginActivation:
+    enabled_ids: frozenset[str]
+    disabled_ids: frozenset[str]
+
+    def is_enabled(self, plugin_id: str) -> bool: ...
+```
+
+Direct objects normalize to enabled sources. `PluginSource.from_plugin()` allows explicit selection of an already constructed object; its prior import and construction are not undone. A disabled source receives no ordering, Agent binding, contribution, Run binding, middleware, or disable callback. Harness does not unload Python objects.
+
+Selection is per definition. A child's IDs and sources are independent of its parent; automatic builder configuration remains explicitly recursive. Hosts apply their own authority ceilings when constructing each definition's sources. Changing policy creates a new executable for the next Run. An existing Run retains its original activation through turns and internal recovery; resuming durable work under that same selection is a Host responsibility.
+
 ## Ordering
 
 The Harness orders plugins once at build time:
@@ -323,10 +362,16 @@ It must not retain a mutable Agent-bound plugin prototype for concurrent use. A 
 
 ## Run Binding and BoundPluginContext
 
-For each invocation the Harness creates one empty `BoundPluginContext`, places it on the fresh `AgentContext`, and sequentially calls plugin `for_run(context)` in final outer-to-inner order. Reads are unavailable during this phase, so no plugin can observe a partial mixture of Agent- and run-bound instances. After all replacements pass validation, the Harness atomically freezes the index.
+For each invocation Harness creates one `BoundPluginContext` with the executable's immutable activation and fresh `PluginSharedState`, places it on `AgentContext`, and sequentially calls `for_run(context)` in final outer-to-inner order. `activation` and `shared` are available during binding. Peer instance lookup remains unavailable until every replacement passes validation and Harness atomically freezes the complete index; no plugin observes a partial mixture of Agent- and Run-bound instances.
 
 ```python
 class BoundPluginContext:
+    @property
+    def activation(self) -> PluginActivation: ...
+
+    @property
+    def shared(self) -> PluginSharedState: ...
+
     @property
     def ordered(self) -> tuple[AbstractHarnessPlugin, ...]: ...
 
@@ -342,7 +387,9 @@ class BoundPluginContext:
     ) -> PluginT: ...
 ```
 
-Lookup checks both stable ID and expected public type. The context is not a service locator and contains no credentials, provider registry, cleanup callbacks, durable state, or stream control.
+Lookup checks both stable ID and expected public type. `PluginSharedState.write(namespace, value)` replaces one Run-local value; `read(namespace, expected_type)` returns the same typed object or `None` when absent, and rejects a type mismatch. Plugin authors own namespaced keys and mutation of shared values. Scratch values can be ordinary trusted Python objects and are neither serialized nor restored. Separate and concurrent Runs receive independent stores. Explicit persistence uses `AgentContext.state` instead.
+
+The context contains no provider registry, cleanup callbacks, durable state, or stream control.
 
 ## Middleware Contract
 

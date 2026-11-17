@@ -17,7 +17,7 @@ from a13n_harness.plugin_configuration import (
     _detach_json_object,
     _validate_identifier,
 )
-from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.plugins import AbstractHarnessPlugin, PluginSource
 
 HARNESS_PLUGIN_ENTRY_POINT_GROUP = "a13n_harness.plugins"
 _MAX_PLUGIN_KEY_LENGTH = 200
@@ -172,6 +172,21 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
                 code="plugin_factory_configuration_invalid",
                 details={"plugin_key": key},
             ) from None
+
+    def plugin_source(
+        self,
+        context: HarnessPluginFactoryContext,
+        *,
+        enabled: bool = True,
+    ) -> PluginSource:
+        """Defer creation from accepted configuration, with the same input contract as create_plugin."""
+        context = HarnessPluginFactoryContext(
+            plugin_key=context.plugin_key,
+            plugin_id=context.plugin_id,
+            configuration=context.configuration,
+            extensions=context.extensions,
+        )
+        return PluginSource(context.plugin_id, lambda: self.create_plugin(context), enabled)
 
     def create_plugin(
         self,

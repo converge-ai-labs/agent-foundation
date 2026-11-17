@@ -406,13 +406,13 @@ class _Host:
             capabilities=tuple(features),
             tool_search=definition.tool_search(config, sources, agent.connections),
             plugins=tuple(
-                self.plugins.create_plugin(
+                self.plugins.plugin_source(
                     HarnessPluginFactoryContext(
                         plugin_key=selected.plugin_key,
                         plugin_id=selected.instance_name,
                         configuration=selected.config,
                         extensions={},
-                    )
+                    ),
                 )
                 for selected in config.plugins
             ),
