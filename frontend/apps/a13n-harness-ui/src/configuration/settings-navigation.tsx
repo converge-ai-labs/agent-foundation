@@ -78,7 +78,7 @@ export function SettingsNavigation({ backTo }: { backTo: string }) {
           ? "/settings/models"
           : sourceKind === "agent"
             ? "/settings/agents"
-            : sourceKind === "harness_plugin"
+            : sourceKind === "harness_plugin" || sourceKind === "web_provider"
               ? "/settings/connections"
               : sourceKind === "environment_profile" ||
                   sourceKind === "device" ||

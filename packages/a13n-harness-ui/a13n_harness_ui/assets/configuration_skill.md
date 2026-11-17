@@ -1,6 +1,6 @@
 ---
 name: harness-ui-configuration
-description: Configure Harness UI models and authentication, agents and subagents, MCP servers, Skills, tools, environments, projects, and defaults. Use for changing Harness UI settings or diagnosing configuration problems.
+description: Configure Harness UI models and authentication, Web provider accounts, agents and subagents, MCP servers, Skills, tools, environments, projects, and defaults. Use for changing Harness UI settings or diagnosing configuration problems.
 ---
 
 # Configure Harness UI

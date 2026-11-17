@@ -1,3 +1,4 @@
+import { WebOptions } from "./web-options";
 import { useTranslation } from "react-i18next";
 import { ToolSearchFields } from "./tool-search";
 import { ModelIdentity } from "../shell/model-identity";
@@ -475,35 +476,6 @@ function CapabilityOptions({
       </FormField>
     );
   if (item.capability === "web")
-    return (
-      <details className={styles.details}>
-        <summary>
-          <span className={management.inlineLabel}>{t("Web options")}</span>
-        </summary>
-        <div className={styles.stack}>
-          <ChoiceField
-            label={t("Web search")}
-            value={config.search?.mode ?? "auto"}
-            options={[
-              { value: "auto", label: t("Automatic") },
-              { value: "host", label: t("Host search") },
-              { value: "native", label: t("Model-native search") },
-              { value: "off", label: t("Off") },
-            ]}
-            onValueChange={(mode) => set(["search", "mode"], mode)}
-          />
-          <SettingsToggle
-            label={t("Fetch web resources")}
-            checked={config.fetch?.enabled ?? true}
-            onCheckedChange={(checked) => set(["fetch", "enabled"], checked)}
-          />
-          <SettingsToggle
-            label={t("Download files")}
-            checked={config.download?.enabled ?? true}
-            onCheckedChange={(checked) => set(["download", "enabled"], checked)}
-          />
-        </div>
-      </details>
-    );
+    return <WebOptions source={source} index={index} onChange={onChange} />;
   return null;
 }

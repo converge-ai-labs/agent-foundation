@@ -48,7 +48,7 @@ Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；�
 
 ## Host Web Capability：所有内置提供方
 
-本流程使用已配置的 Model 创建一个网页阅读 Agent。内置 Host 提供方无须单独的 Web API 密钥。
+本流程使用已配置的 Model 创建一个网页阅读 Agent。本地默认服务无须单独的 Web API 密钥。需要其他搜索或抓取服务时，添加可复用的 [Web 服务商账号](#web-provider-accounts)。
 
 1. 运行 `a13n-harness-ui config path`，找到 `configuration_path` 指向的根 YAML。
 
@@ -108,7 +108,7 @@ download_concurrency: 4
 
 | `search.mode` | 效果                                                                                            |
 | ------------- | ----------------------------------------------------------------------------------------------- |
-| `host`        | 提供已绑定的 Host 搜索实现。标准 Harness UI 绑定 `default`。                                    |
+| `host`        | 提供所选 Host 搜索服务。Harness UI 保留本地 `default`，并绑定显式选择的账号。                   |
 | `off`         | 移除此 Capability 的搜索功能，适合搭配独立原生搜索条目。                                        |
 | `native`      | 注册上游原生 Web Search 工具。此快捷方式提供 `search_context_size` 和上游 `provider_settings`。 |
 | `auto`        | 注册原生搜索，并提供已绑定的 Host 搜索。不会探测兼容性，也不会在原生工具被拒后重试。            |
@@ -124,7 +124,48 @@ schema 默认值为 `auto`；设置向导会显式写入模式。抓取使用独
 
 移除整个 `web` Capability 会移除其 Host 工具集。修改搜索或抓取模式后，普通获取/下载仍按各自配置工作。
 
-`backend` 选择已绑定的实现。`backend_priority` 指定已绑定实现间的优先顺序，不能与 `backend` 同时使用。标准 Harness UI 只提供 `default`；在 YAML 中填写其他供应商名称不会安装提供方。自定义 Host 通过 `WebBinding` 提供实现，并负责其凭据和生命周期；见 [Harness Capability](../a13n-harness/capabilities.md)。不要在 Agent Capability 值中存放凭据。
+`backend` 选择一个账号 ID 或本地 `default`。`backend_priority` 对显式选择的账号排序，不能与 `backend` 同时使用；其他已绑定的本地服务排在列表之后。它不是允许列表。Harness UI 不会自动添加未选择的账号。不要在 Agent Capability 值中存放凭据，应在下方的可复用账号中定义其来源。
+
+限制域名的抓取必须通过单个 `backend` 选择支持此限制的服务。本地 HTML 抓取不支持该能力，因此受限抓取时 WebUI 只提供支持该限制的账号，且一次只能选择一个，不提供本地默认服务或回退。搜索和抓取的域名列表也会传给服务商适配器，在服务商支持时用于上游筛选。
+
+### Web 服务商账号
+
+在 WebUI 中打开 **设置 → 连接 → Web 服务商 → 添加 Web 服务商**。选择服务商，粘贴其 API 密钥，然后点击**添加**。WebUI 会先校验账号配置，再将密钥保存到密钥存储，最后保存只包含该密钥 `credential_ref` 的账号。保存不会测试凭据或发出服务商请求。在**更多选项**中，可改用服务器环境变量或已保存的密钥、填写可选凭据字段，或编辑可选的服务商配置。
+
+选择器来自已安装的 Harness 目录，目前包含 DuckDuckGo、Keenable、Brave Search、DeepSeek、Exa、Parallel、Tavily、Firecrawl、Jina、Perplexity、SerpApi、SpecStream 和 TinyFish。描述信息标明支持的搜索/抓取操作，并提供服务商设置链接。Keenable 可不配置凭据，以匿名方式访问。其他认证要求和配置字段来自各服务商的 schema。
+
+通过文件配置时，在所选根 YAML 旁创建：
+
+```yaml title="web_providers/research.yaml"
+schema_version: "1"
+kind: web_provider
+id: web-provider-research
+name: Research search
+type: tavily
+configuration: {}
+credential:
+  api_key: {env: TAVILY_API_KEY}
+```
+
+也可使用 `{credential_ref: key-research}`，引用已在 **模型 → 账号与 API 密钥** 中保存的密钥。不要将凭据值粘贴进 YAML。多字段凭据为每个顶层字符串字段配置一个来源，所有必填字段都必须存在。普通服务商配置放在 `configuration` 中，而不是 `credential` 中。
+
+打开 Agent 的 **Web 选项**。**服务**列出所有账号，并按服务商支持的操作显示**搜索**和**抓取**复选框；一个账号可同时用于两者。在你选择之前不会勾选任何账号，未选择服务的操作继续使用本地默认服务。只为某个账号勾选搜索时，等价于：
+
+```yaml
+capabilities:
+  - capability: web
+    configuration:
+      search: {mode: host, backend: web-provider-research}
+      scrape: {mode: host}
+```
+
+需要后备服务时，将 `backend` 替换为 `backend_priority: [web-provider-research, default]`。在 Web 选项中为同一操作勾选多个服务，或打开**回退顺序**并选择**失败时回退到本地默认服务**；在其中调整顺序即可修改优先级。仅添加账号而不选择它，不会改变 Agent 的本地默认行为，也不会新增付费请求。仅支持搜索的账号不会出现在抓取选项中。未声明受限抓取支持的服务商不能执行抓取域名限制。
+
+运行 `a13n-harness-ui config validate`，再测试一次小型搜索并检查工具结果。主机允许策略必须放行服务商 API 目的地和相关目标 URL。保存和校验不做网络探测。fresh Run 首次使用所选账号时读取凭据；同一 Run 的并发搜索/抓取共享该凭据。之后的新 Run 和恢复后的子代理执行段会重新读取，因此替换已保存密钥会在此边界生效。显式配置的来源缺失时会报错，不会静默改为匿名访问。
+
+账号编辑影响之后的 Run 捕获；活跃主代理和子代理保留已捕获配置。删除账号前先移除当前 Agent 引用。删除账号不会删除共享密钥。**账号与 API 密钥**会在移除密钥前列出关联的 Web 账号字段。
+
+### 原生服务商设置
 
 通过 `provider_settings` 传入提供方专用的原生搜索选项。例如，以下 Agent 片段选择 OpenRouter 原生 Exa 引擎，而非 Host 后端：
 

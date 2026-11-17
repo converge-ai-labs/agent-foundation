@@ -106,6 +106,14 @@ const curatedBrands: Record<string, Brand> = {
   jina: { icon: `${lobeIconsCdn}jina.svg` },
   perplexity: { icon: `${lobeIconsCdn}perplexity-color.svg` },
   serpapi: { icon: "https://serpapi.com/favicon.ico" },
+  keenable: {
+    icon: "https://framerusercontent.com/images/ltjNqddCBKH3F8nHENkzQKPac.png",
+    hosts: ["keenable.ai", "app.keenable.ai"],
+  },
+  specstream: {
+    icon: "https://specstream.ai/favicon.svg?v=mark-1",
+    hosts: ["specstream.ai", "api.specstream.ai"],
+  },
   tinyfish: {
     icon: "https://www.tinyfish.ai/favicon-for-app/icon0.svg",
     hosts: ["tinyfish.ai", "www.tinyfish.ai", "agent.tinyfish.ai"],

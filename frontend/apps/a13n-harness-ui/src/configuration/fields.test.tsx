@@ -48,6 +48,10 @@ vi.mock("../transport/context", () => ({
   useStatus: () => ({ data: { features: { host_files: false } } }),
   useSetup: () => ({ data: { suggested_project_path: "/srv" } }),
   useSources: () => ({ data: { sources: [] }, isPending: false }),
+  useWebProviders: () => ({
+    data: { types: [], accounts: [] },
+    isPending: false,
+  }),
   useSelectors: () => ({
     data: {
       agents: [

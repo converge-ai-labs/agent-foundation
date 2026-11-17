@@ -168,6 +168,7 @@ class RunCompositionService:
 def _resource_value(source: LoadedHarnessUiConfiguration, kind: str, resource_id: str) -> object:
     resources = {
         "model": source.models,
+        "web_provider": source.web_providers,
         "subscription_group": source.subscription_groups,
         "harness_plugin": source.harness_plugins,
         "environment_profile": source.environment_profiles,

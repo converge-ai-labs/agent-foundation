@@ -2,6 +2,7 @@ import { isMap, parseDocument, stringify } from "yaml";
 
 export type ResourceKind =
   | "model"
+  | "web_provider"
   | "agent"
   | "project"
   | "harness_plugin"
@@ -17,6 +18,12 @@ export const resourceKinds: {
   prefix: string;
 }[] = [
   { value: "model", label: "Model", directory: "models", prefix: "model" },
+  {
+    value: "web_provider",
+    label: "Web provider",
+    directory: "web_providers",
+    prefix: "web-provider",
+  },
   { value: "device", label: "Device", directory: "devices", prefix: "device" },
   { value: "agent", label: "Agent", directory: "agents", prefix: "agent" },
   {
@@ -56,6 +63,7 @@ export function template(kind: ResourceKind, id: string): string {
     return `---\nname: ${id.replace(/^subagent-/, "")}\nid: ${id}\ndescription: Describe when to delegate to this subagent.\n---\n\nWrite the subagent instructions here.\n`;
   const fields: Record<Exclude<ResourceKind, "subagent">, object> = {
     model: {},
+    web_provider: { type: "", configuration: {} },
     device: {
       device_id: "",
       transport: { kind: "http", configuration: { endpoint: "" } },

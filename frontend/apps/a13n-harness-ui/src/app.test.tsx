@@ -45,6 +45,7 @@ function json(body: unknown, code = 200) {
 }
 function fixture(request: Request): Response | Promise<Response> {
   const path = decodeURIComponent(new URL(request.url).pathname);
+  if (path === "/api/web-providers") return json({ types: [], accounts: [] });
   if (path === "/api/subscriptions")
     return json({
       accounts: [

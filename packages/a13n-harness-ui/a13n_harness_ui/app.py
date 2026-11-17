@@ -211,6 +211,7 @@ from a13n_harness_ui.model_accounts import (
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
 from a13n_harness_ui.shutdown import Shutdown
+from a13n_harness_ui.web_providers import WebProviderCatalogView, describe_web_providers
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -1069,6 +1070,11 @@ class HarnessUiApp:
                 content_plugin_root=self._content_plugin_root,
             )
             return await self._accept_mutation(result)
+
+    async def web_provider_catalog(self) -> WebProviderCatalogView:
+        async with self._operation():
+            source = await self._configurations.current()
+            return describe_web_providers(() if source is None else source.web_providers.values())
 
     async def list_catalog(self) -> tuple[CatalogReference, ...]:
         async with self._operation():

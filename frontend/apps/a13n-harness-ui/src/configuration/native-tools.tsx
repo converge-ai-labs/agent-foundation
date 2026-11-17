@@ -51,16 +51,17 @@ export function toggleNativeTool(source: string, tool: Tool, enabled: boolean) {
         }),
       );
     }
-    document.setIn(
-      [
-        "capabilities",
-        webIndex,
-        "configuration",
-        tool.replaces_host_operation,
-        "mode",
-      ],
-      enabled ? "off" : "host",
-    );
+    const operationPath = [
+      "capabilities",
+      webIndex,
+      "configuration",
+      tool.replaces_host_operation,
+    ];
+    document.setIn([...operationPath, "mode"], enabled ? "off" : "host");
+    if (enabled) {
+      document.deleteIn([...operationPath, "backend"]);
+      document.deleteIn([...operationPath, "backend_priority"]);
+    }
   }
   return document.toString();
 }
