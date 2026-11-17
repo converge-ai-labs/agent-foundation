@@ -4427,10 +4427,6 @@
   "Counts update as the analyst reads traces and publishes findings.": "计数会随分析者读取 Trace 和发布发现而更新。",
   "Analysis ended early": "分析提前结束",
   "Published findings remain available. The analysis run explains what happened.": "已发布的发现仍然可用。分析运行中说明了具体原因。",
-  "Initial targets": "初始目标",
-  "Read traces": "已读取的 Trace",
-  "Opened successfully": "已成功打开",
-  "Cited by findings": "被发现引用",
   "Published so far": "目前已发布",
   "Published": "已发布",
   "Found by analyst": "分析者自行发现",
@@ -4438,5 +4434,9 @@
   "Not read yet": "尚未读取",
   "Not read": "未读取",
   "Requested sessions": "请求的会话",
-  "Reviewer feedback": "审核反馈"
+  "Reviewer feedback": "审核反馈",
+  "Initial target traces": "初始目标 Trace",
+  "Traces opened successfully": "已成功打开的 Trace",
+  "Cited": "已引用",
+  "Traces cited as evidence": "作为证据引用的 Trace"
 }

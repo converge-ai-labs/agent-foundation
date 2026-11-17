@@ -244,7 +244,8 @@ export function AnalyzeDialog({
               </FormField>
             ) : (
               <>
-                <FormField label={t("Analyze")}>
+                <div className={styles.scopeSwitch}>
+                  <span aria-hidden="true">{t("Analyze")}</span>
                   <SegmentedControl
                     label={t("Analyze")}
                     size="default"
@@ -271,7 +272,7 @@ export function AnalyzeDialog({
                       setDays(value === "sessions" ? "all" : "1");
                     }}
                   />
-                </FormField>
+                </div>
                 {scope === "agent" && (
                   <>
                     <ErrorNotice

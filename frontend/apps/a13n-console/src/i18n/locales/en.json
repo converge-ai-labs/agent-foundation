@@ -4427,10 +4427,6 @@
   "Counts update as the analyst reads traces and publishes findings.": "Counts update as the analyst reads traces and publishes findings.",
   "Analysis ended early": "Analysis ended early",
   "Published findings remain available. The analysis run explains what happened.": "Published findings remain available. The analysis run explains what happened.",
-  "Initial targets": "Initial targets",
-  "Read traces": "Read traces",
-  "Opened successfully": "Opened successfully",
-  "Cited by findings": "Cited by findings",
   "Published so far": "Published so far",
   "Published": "Published",
   "Found by analyst": "Found by analyst",
@@ -4438,5 +4434,9 @@
   "Not read yet": "Not read yet",
   "Not read": "Not read",
   "Requested sessions": "Requested sessions",
-  "Reviewer feedback": "Reviewer feedback"
+  "Reviewer feedback": "Reviewer feedback",
+  "Initial target traces": "Initial target traces",
+  "Traces opened successfully": "Traces opened successfully",
+  "Cited": "Cited",
+  "Traces cited as evidence": "Traces cited as evidence"
 }

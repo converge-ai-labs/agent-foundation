@@ -372,6 +372,16 @@
 }
 
 /* Start dialog ---------------------------------------------------------- */
+/* The scope switch wraps beneath its label when the dialog is narrow. */
+.scopeSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
 .requestSummary {
   margin-right: auto;
   color: var(--a13n-secondary);
@@ -482,6 +492,9 @@
 }
 
 /* Analysis inspector ---------------------------------------------------- */
+.inspectorAction {
+  justify-self: start;
+}
 .inspector {
   display: grid;
   gap: 24px;
@@ -641,9 +654,21 @@
   }
   .traceList li {
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 6px 0;
+    gap: 0 12px;
+    min-height: 0;
+    padding: 8px 0;
   }
   .traceOrigin {
     grid-row: 2;
+  }
+  .inspectorAction {
+    justify-self: stretch;
+  }
+}
+
+/* Diagnosis leads on narrow screens; the summary rail follows the evidence. */
+@container (max-width: 900px) {
+  .findingDetail [data-folded-rail="above"] > aside {
+    order: 1;
   }
 }

@@ -251,7 +251,8 @@ it("reviews impact independently and sends the exact revision and evidence to Co
     data: { ...finding, ...options.body, version: 2 },
   }));
   const user = mount("/workspace/ws_test/findings/fnd_test");
-  await screen.findByText(/Critical.*Unconfirmed/);
+  // Severity leads the header and repeats in the summary rail.
+  expect(await screen.findAllByText(/Critical.*Unconfirmed/)).toHaveLength(2);
   await user.click(screen.getByRole("button", { name: "Add assessment" }));
   await user.click(screen.getByRole("combobox", { name: "Assessment" }));
   await user.click(await screen.findByRole("option", { name: "Confirmed" }));
@@ -375,10 +376,10 @@ it("switches collections without stacking tables and preserves analysis evidence
     within(details).getByText(label, { selector: "dt" }).nextElementSibling
       ?.textContent;
   expect(fact("Scope")).toBe("Workspace traces");
-  expect(fact("Selected traces")).toBe("2");
-  expect(fact("Read traces")).toBe("2");
+  expect(fact("Selected")).toBe("2");
+  expect(fact("trace.read")).toBe("2");
+  expect(fact("Cited")).toBe("1");
   expect(fact("Findings")).toBe("3");
-  expect(fact("Evidence-cited traces")).toBe("1");
   expect(
     within(details).getByText("Check unsupported success claims."),
   ).toBeTruthy();

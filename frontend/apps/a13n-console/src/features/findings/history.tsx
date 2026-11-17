@@ -267,11 +267,6 @@ function AnalysisInspector({
       dismissOnOutsidePress
       onClose={onClose}
       title={<strong>{scopeName(analysis)}</strong>}
-      actions={
-        <Button size="sm" render={<Link to={runPath(basePath, analysis)} />}>
-          {t("Open analysis run")}
-        </Button>
-      }
     >
       <div className={styles.inspector}>
         <dl className={styles.overview}>
@@ -328,6 +323,13 @@ function AnalysisInspector({
             </dd>
           </div>
         </dl>
+        <Button
+          className={styles.inspectorAction}
+          render={<Link to={runPath(basePath, analysis)} />}
+        >
+          {t("Open analysis run")}
+          <ArrowRightIcon aria-hidden="true" />
+        </Button>
         {active ? (
           <Alert variant="info">
             <InfoIcon aria-hidden="true" />
@@ -362,19 +364,19 @@ function AnalysisInspector({
           <h3 id={`${analysis.id}-evidence`}>{t("Evidence")}</h3>
           <dl className={styles.figures}>
             <div>
-              <dt>{t("Selected traces")}</dt>
+              <dt>{t("Selected")}</dt>
               <dd>{analysis.selected_traces.length}</dd>
-              <p>{t("Initial targets")}</p>
+              <p>{t("Initial target traces")}</p>
             </div>
             <div>
-              <dt>{t("Read traces")}</dt>
+              <dt>{t("trace.read")}</dt>
               <dd>{analysis.read_trace_ids.length}</dd>
-              <p>{t("Opened successfully")}</p>
+              <p>{t("Traces opened successfully")}</p>
             </div>
             <div>
-              <dt>{t("Evidence-cited traces")}</dt>
+              <dt>{t("Cited")}</dt>
               <dd>{analysis.cited_trace_count}</dd>
-              <p>{t("Cited by findings")}</p>
+              <p>{t("Traces cited as evidence")}</p>
             </div>
             <div>
               <dt>{t("Findings")}</dt>

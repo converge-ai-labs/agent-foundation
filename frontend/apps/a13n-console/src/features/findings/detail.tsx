@@ -128,11 +128,13 @@ export function FindingDetail() {
   };
   return (
     <DetailPage
+      className={styles.findingDetail}
       back={`${basePath}/findings`}
       backLabel={t("Findings")}
       header={
         <DetailHeader
           name={finding.title}
+          status={<Severity finding={finding} />}
           description={`${t(categoryLabels[finding.category])} · ${agent?.name ?? finding.agent_id}`}
           actions={
             <>
