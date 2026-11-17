@@ -19,11 +19,11 @@ Start with [guided setup](#guided-setup) for a new Agent, or the [Host Web recip
 ## Guided setup
 
 1. Run `a13n-harness-ui setup`, or open the first-launch setup screen.
-2. Choose a connection, authenticate, and select a Model. See [Models and authentication](models-and-authentication.md) if the connection is not ready.
-3. Review **Choose native Agent tools**. In the terminal, move with Up/Down, toggle with Space, and confirm with Enter. You can also enter comma-separated numbers or names, or `none`. Connections without native candidates skip this step.
-4. Supply resources for the tools you select: existing store IDs for File Search, a public server URL and label for Remote MCP, or a provider model ID for Advisor.
-5. Review and save the Agent. Esc returns to the preceding step; changing the connection or Model resets its tool suggestions and resource inputs.
-6. Select the saved Agent in a conversation and send a small task that uses one selected tool. Inspect the tool result, rather than judging configuration success from the answer alone.
+1. Choose a connection, authenticate, and select a Model. See [Models and authentication](models-and-authentication.md) if the connection is not ready.
+1. Review **Choose native Agent tools**. In the terminal, move with Up/Down, toggle with Space, and confirm with Enter. You can also enter comma-separated numbers or names, or `none`. Connections without native candidates skip this step.
+1. Supply resources for the tools you select: existing store IDs for File Search, a public server URL and label for Remote MCP, or a provider model ID for Advisor.
+1. Review and save the Agent. Esc returns to the preceding step; changing the connection or Model resets its tool suggestions and resource inputs.
+1. Select the saved Agent in a conversation and send a small task that uses one selected tool. Inspect the tool result, rather than judging configuration success from the answer alone.
 
 Selecting no native tools still gives the new Agent Host search, scraping, fetch, and download. Selecting native Web Search turns off only Host search; selecting native Web Fetch turns off only Host scraping. Fetch and download remain available in both cases.
 
@@ -52,7 +52,7 @@ This recipe creates a web-reading Agent using a Model you have already configure
 
 1. Run `a13n-harness-ui config path`. Locate the root YAML shown as `configuration_path`.
 
-2. Create `agents/web-reader.yaml` beside that root's `agents/` peers. Replace `model-primary` with your saved Model ID. This is a complete Agent file:
+1. Create `agents/web-reader.yaml` beside that root's `agents/` peers. Replace `model-primary` with your saved Model ID. This is a complete Agent file:
 
    ```yaml title="agents/web-reader.yaml"
    schema_version: "1"
@@ -68,7 +68,7 @@ This recipe creates a web-reading Agent using a Model you have already configure
          scrape: {mode: host, backend: default}
    ```
 
-3. Validate the selected configuration tree:
+1. Validate the selected configuration tree:
 
    ```bash
    a13n-harness-ui config validate
@@ -76,9 +76,9 @@ This recipe creates a web-reading Agent using a Model you have already configure
 
    If you use a custom root, put `--config /absolute/path/a13n-harness-ui.yaml` before both `config` commands and use that same root when starting Harness UI.
 
-4. Select **Web reader** in a new conversation. Ask: “Read https://example.com and report its page title.” Inspect the fetch or scrape result. Then try a search separately.
+1. Select **Web reader** in a new conversation. Ask: “Read https://example.com and report its page title.” Inspect the fetch or scrape result. Then try a search separately.
 
-5. To test downloads, ask the Agent to download a public file to its Thread `tmp/` and return the saved path. Open that file to check the result. Downloads require writable file authority in the selected Environment.
+1. To test downloads, ask the Agent to download a public file to its Thread `tmp/` and return the saved path. Open that file to check the result. Downloads require writable file authority in the selected Environment.
 
 For an existing Agent, merge the `web` entry into its `capabilities` list, or edit its existing `web` entry. Keep the other Capabilities. Accepted edits apply to subsequent Runs.
 
@@ -126,11 +126,11 @@ Removing the entire `web` Capability removes its Host toolset. Changing a search
 
 `backend` selects one account ID or local `default`. `backend_priority` orders explicitly selected accounts and cannot be combined with `backend`; remaining bound local backends follow that list. It is not an allowlist. Harness UI never adds unselected accounts automatically. Keep credentials out of Agent Capability values; define their sources on the reusable account below.
 
-Domain-restricted scrape requires a single `backend` whose definition supports those restrictions. Local HTML scraping does not, so WebUI disables local defaults and ordered fallback for restricted scrape. Search and scrape domain lists are also passed to provider adapters for vendor-side filtering where supported.
+Domain-restricted scrape requires a single `backend` whose definition supports those restrictions. Local HTML scraping does not, so WebUI offers only supporting accounts for restricted scrape, one at a time, without local default or fallback. Search and scrape domain lists are also passed to provider adapters for vendor-side filtering where supported.
 
 ### Web provider accounts
 
-In WebUI, open **Settings → Connections → Web providers → Add Web provider**. Choose a provider, name the account, and select each credential's source: a server environment variable, an existing saved key, or **Save a new credential**. Saving a credential writes the key store separately; **Create** then validates and saves the account recipe. It does not test credentials or issue a provider request.
+In WebUI, open **Settings → Connections → Web providers → Add Web provider**. Choose a provider, paste its API key, and select **Add**. WebUI validates the account recipe, saves the key in the key store, then saves the account with only a `credential_ref` to that key. It does not test credentials or issue a provider request. Under **More options**, use a server environment variable or an existing saved key instead, fill optional credential fields, or edit optional provider configuration.
 
 The picker reflects the installed Harness catalog, currently including DuckDuckGo, Keenable, Brave Search, DeepSeek, Exa, Parallel, Tavily, Firecrawl, Jina, Perplexity, SerpApi, SpecStream and TinyFish. The descriptor shows supported search/scrape operations and links to provider setup. Keenable can be saved without credentials for anonymous access. Other provider authentication requirements and configuration fields come from their schemas.
 
@@ -149,17 +149,17 @@ credential:
 
 Alternatively, use `{credential_ref: key-research}` for a key already saved in **Models → Accounts & API keys**. Do not paste secret values into YAML. Multi-field credentials use one source per top-level string field; required fields must all be present. Keep ordinary provider configuration in `configuration`, not inside `credential`.
 
-Open the Agent's **Web options**, choose **Host search** or **Host scraping**, then select the account. The equivalent Capability fragment is:
+Open the Agent's **Web options**. **Services** lists every account with **Search** and **Scrape** checkboxes for the operations its provider supports; one account can serve both. Nothing is checked until you choose it, and an operation without a chosen service keeps its local default. Checking only search for an account is equivalent to:
 
 ```yaml
 capabilities:
   - capability: web
     configuration:
       search: {mode: host, backend: web-provider-research}
-      scrape: {mode: host, backend: default}
+      scrape: {mode: host}
 ```
 
-For fallback, replace `backend` with `backend_priority: [web-provider-research, default]`. Reorder entries in Web options to change preference. Adding an account without selecting it does not change an Agent's local default or add paid traffic. A search-only account is not offered for scraping. Providers without restricted-scrape support cannot enforce an authored scrape-domain restriction.
+For fallback, replace `backend` with `backend_priority: [web-provider-research, default]`. In Web options, check several services for one operation, or open **Fallback order** and choose **Fall back to local default**; reorder entries there to change preference. Adding an account without selecting it does not change an Agent's local default or add paid traffic. A search-only account is not offered for scraping. Providers without restricted-scrape support cannot enforce an authored scrape-domain restriction.
 
 Run `a13n-harness-ui config validate`, then test one small search and inspect the tool result. Allowed-host policies must permit both the provider API destination and relevant target URLs. Saving and validation perform no network probe. A fresh Run resolves a selected account's credential on first use; concurrent search/scrape share it for that Run. Later Runs and resumed child segments resolve it again, so replacing a saved key takes effect at that boundary. A missing explicitly configured source fails rather than silently switching to anonymous access.
 
@@ -191,7 +191,7 @@ Use this recipe with a Model whose connection supports both tools. Start from a 
 
 1. Open the Agent file under `agents/` in the selected configuration tree.
 
-2. Add the two native entries below. Replace any existing `web` entry with the one shown, keeping the Agent's other Capabilities. This is an Agent fragment:
+1. Add the two native entries below. Replace any existing `web` entry with the one shown, keeping the Agent's other Capabilities. This is an Agent fragment:
 
    ```yaml
    capabilities:
@@ -211,13 +211,13 @@ Use this recipe with a Model whose connection supports both tools. Start from a 
          scrape: {mode: host}
    ```
 
-3. Run `a13n-harness-ui config validate`, using the same `--config` root if applicable.
+1. Run `a13n-harness-ui config validate`, using the same `--config` root if applicable.
 
-4. Select that Agent and send a new message asking for a small generated image. A completed generation should return a saved image path in the current Thread's `tmp/`.
+1. Select that Agent and send a new message asking for a small generated image. A completed generation should return a saved image path in the current Thread's `tmp/`.
 
-5. Open the image. Copy important output to a retained Project destination; Thread temporary files may be pruned.
+1. Open the image. Copy important output to a retained Project destination; Thread temporary files may be pruned.
 
-6. Test native search in a separate message. The Host `web` entry keeps page scraping and downloads available without a second search function.
+1. Test native search in a separate message. The Host `web` entry keeps page scraping and downloads available without a second search function.
 
 This recipe opts into image generation. Codex setup does not preselect it. Validation checks the configuration; the test request checks whether the provider and account accept the chosen tool combination.
 
@@ -286,9 +286,9 @@ X Search searches provider-side X content. Code Execution is also offered by oth
 
 1. Create a search store in the same provider account/project as the Model.
 
-2. Upload or import your files there and wait for indexing.
+1. Upload or import your files there and wait for indexing.
 
-3. Add the provider's store identifiers to the Agent:
+1. Add the provider's store identifiers to the Agent:
 
    ```yaml
    capabilities:
@@ -298,7 +298,7 @@ X Search searches provider-side X content. Code Execution is also offered by oth
          file_store_ids: [vs_your_store_id]
    ```
 
-4. Ask a question whose answer appears in one indexed file. Check that the result references that source.
+1. Ask a question whose answer appears in one indexed file. Check that the result references that source.
 
 Use vector-store IDs for Responses, file-search store names for Google, or collection IDs for xAI. The values identify provider resources, not local paths. The Google picker requires deselecting other native tools before File Search; Host Web can remain enabled. Consult the provider for indexing, retention, access, and charges.
 
