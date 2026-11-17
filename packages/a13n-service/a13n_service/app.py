@@ -186,6 +186,7 @@ async def open_runtime(
     executes: bool,
     maintains: bool = True,
     apps: tuple[InstalledApp, ...] = (),
+    app_heads: dict[str, tuple[str, ...]] | None = None,
 ) -> Runtime:
     from a13n_service.runs.search import initialize
 
@@ -198,7 +199,7 @@ async def open_runtime(
     if databases:
         async with asyncio.timeout(config.server.readiness_timeout):
             await check_schema(storage, heads(distribution))
-            await app_migrations.require_current(storage, databases)
+            await app_migrations.require_current(storage, databases, expected=app_heads)
     redis = Redis.from_url(
         config.redis.url.get_secret_value(),
         socket_timeout=config.redis.timeout,
@@ -347,15 +348,20 @@ def build_app(
     _registry(distribution, config)
     distribution.access()
     expected = heads(distribution)
+    databases = app_databases(apps)
+    app_heads = {database.app_id: app_migrations.heads(database) for database in databases}
     serves_api, executes = role != "worker", role != "control"
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
+            if config.database.auto_migrate_apps:
+                for database in databases:
+                    await run_sync(partial(app_migrations.upgrade, config.database, distribution, database))
         async with AsyncExitStack() as stack:
             runtime = await open_runtime(
-                stack, distribution, config, executes=executes, maintains=serves_api, apps=apps
+                stack, distribution, config, executes=executes, maintains=serves_api, apps=apps, app_heads=app_heads
             )
             app.state.app_assets = await asyncio.to_thread(open_assets, stack, runtime.apps) if serves_api else {}
             app.state.runtime = runtime
@@ -447,7 +453,7 @@ def build_app(
             dependency = "database"
             async with asyncio.timeout(config.server.readiness_timeout):
                 await check_schema(runtime.storage, expected)
-                await app_migrations.require_current(runtime.storage, app_databases(apps))
+                await app_migrations.require_current(runtime.storage, databases, expected=app_heads)
         except Exception:
             return JSONResponse({"status": "unavailable", "dependency": dependency}, status_code=503)
         body: dict[str, object] = {"status": "ready", "role": role}

@@ -1,7 +1,7 @@
 """Independent App histories over the Service database, with retained namespace ownership."""
 
 import asyncio
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from importlib.resources import as_file, files
 from pathlib import Path
@@ -11,7 +11,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import Connection, insert, select, text
+from sqlalchemy import Connection, delete, insert, select, text
 
 from a13n_service.app_database import AppDatabase, DatabaseRow
 from a13n_service.distribution import Distribution
@@ -83,14 +83,23 @@ def _owner(connection: Connection, database: AppDatabase, *, claim: bool) -> boo
     if row is not None:
         if row["app_id"] != database.app_id or row["prefix"] != database.prefix:
             raise ValueError(
-                f"App {database.app_id} database prefix conflicts with retained ownership; changing a prefix does not move data"
+                f"App {database.app_id} configured prefix {database.prefix} conflicts with retained ownership "
+                f"({row['app_id']}: {row['prefix']}); restore the original configuration; changing a prefix does not move data"
             )
         return True
     if not claim:
         return False
-    # Include relations, standalone types and functions. Never adopt an existing, unowned namespace.
-    occupied = connection.scalar(
-        text("""
+    if _occupied(connection, database):
+        raise ValueError(f"App {database.app_id} namespace is occupied without a retained owner")
+    connection.execute(insert(DatabaseRow).values(app_id=database.app_id, prefix=database.prefix))
+    return False
+
+
+def _occupied(connection: Connection, database: AppDatabase) -> bool:
+    # Include relations, standalone types and functions, including partially committed migration DDL.
+    return bool(
+        connection.scalar(
+            text("""
             SELECT EXISTS (
                 SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
                 WHERE n.nspname='public' AND starts_with(c.relname, :prefix)
@@ -102,14 +111,9 @@ def _owner(connection: Connection, database: AppDatabase, *, claim: bool) -> boo
                 WHERE n.nspname='public' AND starts_with(p.proname, :prefix)
             )
         """),
-        {"prefix": database.prefix},
+            {"prefix": database.prefix},
+        )
     )
-    if occupied:
-        raise ValueError(f"App {database.app_id} namespace is occupied without a retained owner")
-    connection.execute(insert(DatabaseRow).values(app_id=database.app_id, prefix=database.prefix))
-    # Preserve binding even when a revision uses autocommit or fails after partially committed DDL.
-    connection.commit()
-    return True
 
 
 @contextmanager
@@ -125,9 +129,18 @@ def upgrade(settings: Database, distribution: Distribution, database: AppDatabas
     with migration_connection(settings, distribution, database) as config:
         if not ScriptDirectory.from_config(config).get_heads():
             raise ValueError(f"App {database.app_id} has no migration revision; generate one before upgrade")
-        _owner(config.attributes["connection"], database, claim=True)
-        config.attributes["connection"].commit()
-        command.upgrade(config, "head")
+        connection = config.attributes["connection"]
+        existing = _owner(connection, database, claim=True)
+        # Retain ownership across reviewed autocommit blocks, including partially committed failures.
+        connection.commit()
+        try:
+            command.upgrade(config, "head")
+        except Exception:
+            connection.rollback()
+            if not existing and not _occupied(connection, database):
+                connection.execute(delete(DatabaseRow).where(DatabaseRow.app_id == database.app_id))
+                connection.commit()
+            raise
 
 
 def status(settings: Database, distribution: Distribution, database: AppDatabase) -> dict[str, Any]:
@@ -174,16 +187,42 @@ def check(settings: Database, distribution: Distribution, database: AppDatabase)
             command.check(config)
 
 
-async def require_current(storage: Storage, databases: Sequence[AppDatabase]) -> None:
+def check_live(settings: Database, distribution: Distribution, database: AppDatabase) -> None:
+    """Read-only parity against the deployment database; no scratch-database privilege required."""
+    with migration_connection(settings, distribution, database) as config:
+        connection = config.attributes["connection"]
+        bound = _owner(connection, database, claim=False)
+        expected = tuple(ScriptDirectory.from_config(config).get_heads())
+        actual = MigrationContext.configure(
+            connection, opts={"version_table": database.version_table}
+        ).get_current_heads()
+        if not bound or not expected or actual != expected:
+            raise ValueError(f"App {database.app_id} database is not current; run a13n-service migrate")
+        command.check(config)
+
+
+async def require_current(
+    storage: Storage,
+    databases: Sequence[AppDatabase],
+    *,
+    expected: Mapping[str, tuple[str, ...]] | None = None,
+) -> None:
     """Read-only startup/readiness gate; workers and organization enablement never run DDL."""
     if not databases:
         return
     # Extracted wheel resources stay outside SQL transactions and off the event loop.
-    expected = [(database, await asyncio.to_thread(heads, database)) for database in databases]
+    if expected is None:
+        expected = {database.app_id: await asyncio.to_thread(heads, database) for database in databases}
     async with short_session(storage) as session:
-        for database, required in expected:
+        for database in databases:
+            required = expected[database.app_id]
             prefix = await session.scalar(select(DatabaseRow.prefix).where(DatabaseRow.app_id == database.app_id))
-            if prefix != database.prefix or not required:
+            if prefix is not None and prefix != database.prefix:
+                raise RuntimeError(
+                    f"App {database.app_id} configured prefix {database.prefix} differs from retained prefix {prefix}; "
+                    "restore the original configuration; changing a prefix does not move data"
+                )
+            if prefix is None or not required:
                 raise RuntimeError(
                     f"App {database.app_id} schema is incompatible; run a13n-service apps db upgrade --app {database.app_id}"
                 )

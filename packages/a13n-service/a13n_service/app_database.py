@@ -5,10 +5,12 @@ These declarations do not open connections. Apps use ordinary SQLAlchemy models 
 
 import re
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import PurePosixPath
 
 from alembic import op
-from sqlalchemy import Enum, MetaData, PrimaryKeyConstraint, String, Table, UniqueConstraint
+from sqlalchemy import ARRAY, Enum, MetaData, PrimaryKeyConstraint, String, Table, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base
@@ -46,7 +48,8 @@ class AppDatabase:
     def __post_init__(self) -> None:
         if not _APP_ID.fullmatch(self.app_id) or len(self.app_id) > 255:
             raise ValueError(f"Invalid App database ID: {self.app_id}")
-        label = self.prefix if self.prefix is not None else re.sub(r"[._-]", "_", self.app_id)
+        slug = re.sub(r"[._-]", "_", self.app_id)[:11].rstrip("_")
+        label = self.prefix if self.prefix is not None else f"{slug}_{sha256(self.app_id.encode()).hexdigest()[:12]}"
         if not _LABEL.fullmatch(label) or len(label) > 24:
             raise ValueError("App database prefix must be lowercase snake case, start with a letter, and fit 24 bytes")
         package, separator, directory = self.migrations.partition(":")
@@ -109,16 +112,27 @@ class AppDatabase:
             if len(table.name.encode()) > 63:
                 raise ValueError(f"App table name exceeds 63 bytes: {table.name}")
             for constraint in table.constraints:
-                if isinstance(constraint, (PrimaryKeyConstraint, UniqueConstraint)) and constraint.name is not None:
+                if (
+                    isinstance(constraint, (PrimaryKeyConstraint, UniqueConstraint, ExcludeConstraint))
+                    and constraint.name is not None
+                ):
                     if not self.owns(str(constraint.name)):
                         raise ValueError(f"App key constraint must use its namespace: {constraint.name}")
             for column in table.columns:
-                if isinstance(column.type, Enum) and column.type.native_enum:
-                    if column.type.name is None or not self.owns(column.type.name):
-                        raise ValueError("App enum types must use their database namespace")
+                type_ = column.type
+                while isinstance(type_, ARRAY):
+                    type_ = type_.item_type
+                if isinstance(type_, Enum) and type_.native_enum:
+                    if type_.name is None or not self.owns(type_.name) or type_.schema is not None:
+                        raise ValueError("App enum types must use their public database namespace")
             for index in table.indexes:
                 if index.name is None or not self.owns(str(index.name)):
                     raise ValueError(f"App index must use its table namespace: {index.name}")
+        # SQLAlchemy registers column-bound and standalone sequences on MetaData. Alembic requires
+        # their DDL to be added to the generated draft, but their names follow the same contract.
+        for sequence in self.metadata._sequences.values():
+            if sequence.schema is not None or not self.owns(sequence.name):
+                raise ValueError("App sequences must use their public database namespace")
 
 
 def migration_name(local: str) -> str:

@@ -34,6 +34,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | --------------------------------------------- | --------------------------------------------------- | -------------- | ------------------------------------------------- |
 | `database.url`                                | `A13N_DATABASE__URL`                                | string         | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
 | `database.auto_migrate`                       | `A13N_DATABASE__AUTO_MIGRATE`                       | boolean        | default=true                                      |
+| `database.auto_migrate_apps`                  | `A13N_DATABASE__AUTO_MIGRATE_APPS`                  | boolean        | default=true                                      |
 | `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | integer        | minimum=1; maximum=1024; default=32               |
 | `database.connect_timeout`                    | `A13N_DATABASE__CONNECT_TIMEOUT`                    | integer        | minimum=1; maximum=60; default=5                  |
 | `database.statement_timeout`                  | `A13N_DATABASE__STATEMENT_TIMEOUT`                  | integer        | minimum=1; maximum=300; default=10                |
@@ -63,6 +64,14 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `objects.upload_bytes`                 | `A13N_OBJECTS__UPLOAD_BYTES`                 | integer                           | minimum=1; maximum=33554432; default=1048576      |
 | `objects.upload_limit`                 | `A13N_OBJECTS__UPLOAD_LIMIT`                 | integer                           | minimum=1; maximum=1000; default=60               |
 | `objects.upload_window_seconds`        | `A13N_OBJECTS__UPLOAD_WINDOW_SECONDS`        | integer                           | minimum=1; maximum=3600; default=60               |
+
+## `object_store`
+
+| Setting                              | Environment variable                       | Type / choices | Constraints and default           |
+| ------------------------------------ | ------------------------------------------ | -------------- | --------------------------------- |
+| `object_store.temporary_ttl_seconds` | `A13N_OBJECT_STORE__TEMPORARY_TTL_SECONDS` | number         | exclusiveMinimum=0; default=86400 |
+| `object_store.max_temporary_objects` | `A13N_OBJECT_STORE__MAX_TEMPORARY_OBJECTS` | integer        | minimum=1; default=32             |
+| `object_store.max_temporary_bytes`   | `A13N_OBJECT_STORE__MAX_TEMPORARY_BYTES`   | integer        | minimum=1; default=67108864       |
 
 ## `redis`
 
@@ -264,8 +273,6 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `memory.recall_seconds`       | `A13N_MEMORY__RECALL_SECONDS`                      | number         | maximum=30; exclusiveMinimum=0; default=2           |
 | `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                        | integer        | minimum=1; maximum=8000; default=8000               |
 | `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON field `record`) | string or null | maxLength=65536; default=null                       |
-
-For file memory, `memory.guide_bytes` bounds the combined UTF-8 size of the owner-authored System guide override and Custom guide. Built-in preset text is excluded, so smaller budgets still support every preset.
 
 ## `providers`
 

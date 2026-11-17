@@ -68,7 +68,7 @@ The entry-point name must match `AppDefinition.app_id`. Service loads every inst
 
 Use `AppDatabase` when an App needs tables in the host PostgreSQL database. Each App owns an independent migration history in `public`. App rows use ordinary SQLAlchemy models and the existing Runtime Storage, so queries can join native Service rows without a second database pool. Prefixes separate migration ownership; App code still enforces tenant scoping and authorization.
 
-Declare the database before models, then pass the same object to `AppDefinition(database=database)`:
+Declare the database and models in a module such as `models.py`, then import that module from `app.py` and pass the same database to `AppDefinition(database=database)`. Resolve deployment configuration before importing models:
 
 ```python
 import os
@@ -78,11 +78,11 @@ from a13n_service.tenancy.tables import WorkspaceRow
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-# Optional deployment override. Leave unset for app__acme_reports__.
+# Optional deployment override. Leave unset for a stable App-ID-derived prefix.
 database = AppDatabase(
     "acme.reports",
     migrations="acme_reports:migrations",
-    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX"),
+    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX") or None,
 )
 database.reference(WorkspaceRow.__table__)  # Read-only foreign-key target, never App-owned DDL.
 
@@ -99,7 +99,7 @@ class Note(Base):
     body: Mapped[str]
 ```
 
-The default physical table is `app__acme_reports__notes`. The optional label must be lowercase snake case, start with a letter and fit 24 bytes; for example `ACME_REPORTS_TABLE_PREFIX=reports_1` selects `app__reports_1__notes`. Set the same value in migration, control and worker processes before imports. Service rejects conflicting prefixes, including App IDs that normalize to the same label. After a database is initialized, its retained App ID/prefix binding prevents accidental retargeting. Changing the setting does not move existing data; moving a deployed namespace requires an explicit reviewed migration.
+The default physical table is `app__acme_report_8b627b7edb3d__notes`. Its label combines a readable slug with a stable digest of the full, exact App ID, so `acme.reports` and `acme_reports` get different namespaces regardless of installation order. Long App IDs work without configuration. An optional explicit label must be lowercase snake case, start with a letter and fit 24 bytes; for example `ACME_REPORTS_TABLE_PREFIX=reports_1` selects `app__reports_1__notes`. Use `database.name(...)` rather than hardcoding physical names. A deployment uses the same setting in migration, control and worker processes; authoring can use the default because generated identifiers are portable. Duplicate App IDs and conflicting explicit prefixes are rejected. After a database is initialized, its retained App ID/prefix binding prevents accidental retargeting. Changing the setting does not move existing data; moving a deployed namespace requires an explicit reviewed migration.
 
 1. Install your App editable in a Service-compatible development environment. Run these authoring commands from the App project root. `--app` is optional when one current-project App is unambiguous.
 
@@ -115,14 +115,14 @@ The default physical table is `app__acme_reports__notes`. The optional label mus
 
 2. Review the generated revision. Table, key, index and foreign-key identifiers use `migration_name("notes")` and related local suffixes, so one published history works with a deployment-selected prefix. Defaults and data literals retain their values. Review renames, drops, backfills, locks and rolling compatibility. Autogenerate cannot infer every schema object: write raw SQL, expression text, functions, triggers and other manual changes explicitly, using `migration_name` for owned SQL names. Core shared functions are already available; do not recreate them in an App base revision.
 
-3. Include `migrations/versions/*.py` in the App wheel and source distribution. Verify the installed artifact with `apps db check`, then install the same package on every Service process. Run the explicit operator upgrade before starting them:
+3. Include `migrations/versions/*.py` in the App wheel and source distribution. Verify the installed artifact with `apps db check`, then install the same package on every Service process. By default, `all` and `control` startup upgrade Core, then every installed App database. For a dedicated migration job, run:
 
    ```bash
-   a13n-service migrate --apps
+   a13n-service migrate
    a13n-service apps db status --app acme.reports
    ```
 
-   `migrate --apps` upgrades Core first, then all installed App histories. To apply one App after Core is current, use `a13n-service apps db upgrade --app acme.reports`. App histories are independent; they cannot depend on another App's install order. Service startup and readiness require every installed App at its packaged head, including organization-disabled Apps. Core auto migration does not apply App histories. Workers, readiness and organization enablement never execute App DDL. Uninstalling the package retains its tables, version table and ownership binding.
+   `migrate` upgrades Core first, then all installed App histories; `migrate --no-apps` prepares Core only. To apply one App after Core is current, use `a13n-service apps db upgrade --app acme.reports`. App histories remain independent of each other's installation order. Set `A13N_DATABASE__AUTO_MIGRATE=false` on serving replicas when a dedicated job owns migrations. To automate Core but manage App upgrades separately, keep the master switch enabled and set `A13N_DATABASE__AUTO_MIGRATE_APPS=false`. These switches affect startup only; explicit CLI commands still migrate. `migrate --check` checks live Core/App parity without DDL or `CREATE DATABASE` permission; `apps db check` is the disposable authoring/CI check. Startup and readiness require every installed App at its packaged head, including organization-disabled Apps. Workers, readiness and organization enablement never execute DDL. Uninstalling the package retains its tables, version table and ownership binding.
 
 Use `transaction(runtime.storage)` or `short_session(runtime.storage)` from `a13n_service.infra.db` for business queries. Keep the session around one short database operation. A native join uses the same ORM session:
 

@@ -89,11 +89,16 @@ main.add_command(apps_command)
 @main.command()
 @click.option("--generate", "message", help="Autogenerate a revision against a disposable database.")
 @click.option("--check", "check_only", is_flag=True, help="Verify migration/metadata parity without changing schema.")
-@click.option("--apps", "include_apps", is_flag=True, help="Also upgrade/check all installed App databases after Core.")
+@click.option(
+    "--apps/--no-apps",
+    "include_apps",
+    default=True,
+    help="Upgrade/check all installed App databases after Core (default: --apps). Core generation is separate.",
+)
 @click.pass_context
 def migrate(ctx: click.Context, message: str | None, check_only: bool, include_apps: bool) -> None:
     settings: Settings = ctx.obj
-    if message and include_apps:
+    if message and include_apps and ctx.get_parameter_source("include_apps") == click.core.ParameterSource.COMMANDLINE:
         raise click.UsageError("--apps cannot be combined with --generate; use apps db revision")
     if message and check_only:
         raise click.UsageError("--generate and --check are mutually exclusive")
@@ -103,11 +108,11 @@ def migrate(ctx: click.Context, message: str | None, check_only: bool, include_a
         check(settings.database, OSS)
     else:
         upgrade(settings.database, OSS)
-    if include_apps:
+    if include_apps and not message:
         with migration_errors():
             for database in app_databases(ctx.meta["app_plugins"]):
                 if check_only:
-                    app_migrations.check(settings.database, OSS, database)
+                    app_migrations.check_live(settings.database, OSS, database)
                 else:
                     app_migrations.upgrade(settings.database, OSS, database)
     if not message:
