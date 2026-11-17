@@ -38,7 +38,13 @@ def test_generate_independent_fullstack_project(tmp_path, context):
     assert manifest["project"]["entry-points"]["a13n_service.app_plugins"][app_id] == f"{module}.app:definition"
     assert "license" not in manifest["project"]
     assert not any("license" in path.name.lower() for path in project.rglob("*"))
-    compile((project / f"src/{module}/app.py").read_text(), "app.py", "exec")
+    app_source = (project / f"src/{module}/app.py").read_text()
+    compile(app_source, "app.py", "exec")
+    assert "database=" not in app_source
+    assert "AppDatabase" not in "".join(path.read_text() for path in (project / "src").rglob("*.py"))
+    assert not any(path.is_dir() for path in (project / "src").rglob("migrations"))
+    assert (project / "AGENTS.md").is_file()
+    assert app_id in (project / "AGENTS.md").read_text()
     compile((project / "tests/test_installed_app.py").read_text(), "test_installed_app.py", "exec")
     assert (project / "frontend/pnpm-lock.yaml").is_file()
     assert json.loads((project / "frontend/package.json").read_text())["private"] is True
