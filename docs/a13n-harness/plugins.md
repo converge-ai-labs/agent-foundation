@@ -101,6 +101,25 @@ The example selects `AuditPlugin("audit-primary")` through `build(plugins=...)`.
 
 Give every plugin a unique ID. Definition order is the default; `PluginOrdering` can add `wraps`, `wrapped_by`, or outermost/innermost constraints. `requires` checks presence without ordering the pair. Invalid references and cycles fail construction.
 
+### Select Plugins Before Construction
+
+Use `PluginSource` when a Host controls enablement. Harness checks `enabled` before calling the factory, binding the plugin, or collecting its tools and Capabilities. Disabling a source removes its entire contribution, not just its outer middleware.
+
+```python
+from a13n_harness import PluginSource
+
+source = PluginSource("audit-primary", lambda: AuditPlugin("audit-primary"), enabled=False)
+# Pass sources alongside direct objects through build(plugins=(source, ...)).
+```
+
+For an existing object, use `PluginSource.from_plugin(plugin, enabled=False)`. Previous imports and construction remain in effect. Change the sources and build a new executable for the next Run; an active Run keeps its original selection through internal recovery.
+
+Inside `for_run(context)` and middleware, `context.plugins.activation.is_enabled("audit-primary")` reads the fixed selection. `enabled_ids` and `disabled_ids` contain this executable's instance IDs, not package or factory keys. Peer objects become available through `context.plugins.require(id, PluginType)` after all Run binding completes.
+
+Plugins can exchange typed Run-local values with `context.plugins.shared.write("acme.audit", value)` and `context.plugins.shared.read("acme.audit", ExpectedType)`, including during binding. Each Run gets fresh scratch storage. Use `context.state` explicitly for portable persistent state.
+
+A package catalog can produce a lazy source with `catalog.plugin_source(factory_context, enabled=...)`. Like `catalog.create_plugin()`, it consumes configuration already normalized by `catalog.validate_configuration()` and defers construction without applying normalization again. Automatic builder configuration validates authored values only after selecting an enabled source. Hosts keep their root and child selections on each corresponding `AgentDefinition.plugins`; builder-level configuration applies recursively to every definition.
+
 ### Feature Capabilities and Current Provider Clients
 
 A feature such as Web has two inputs: the definition enables its tools, and each Run receives current clients and policy. This helper reuses `AuditPlugin` from `plugin_demo.py`; the application supplies its Model and Host-owned `WebBinding`.
@@ -131,6 +150,8 @@ Keep `WebCapability` on the definition, not in plugin contributions. The Host ow
 Use a factory when a Host should select this plugin by configuration. Move `AuditPlugin` and its imports into your package's `acme_harness/plugin.py` and add the following classes in the same module. The `label` field is included in the diagnostic payload; it changes real behavior.
 
 ```python
+from typing import cast
+
 from pydantic import BaseModel, ConfigDict, Field
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 
@@ -150,8 +171,8 @@ class AuditPluginFactory(HarnessPluginFactory):
         return "acme.audit"
 
     def create_plugin(self, context: HarnessPluginFactoryContext) -> AuditPlugin:
-        configuration = AuditConfiguration.model_validate(dict(context.configuration))
-        return AuditPlugin(context.plugin_id, label=configuration.label)
+        label = cast(str, context.configuration["label"])
+        return AuditPlugin(context.plugin_id, label=label)
 ```
 
 Register the no-argument factory class in that distribution’s `pyproject.toml`. The entry-point name must equal `plugin_key()`.
@@ -162,6 +183,29 @@ Register the no-argument factory class in that distribution’s `pyproject.toml`
 ```
 
 Factory validation and construction should perform no I/O. Allocate mutable per-Run state through `for_run()`, rather than storing it in the factory.
+
+### Create a Lazy Source from a Catalog
+
+A Host that manages plugin selections can validate authored configuration once, then pass the normalized result to a lazy source. This example uses the factory above directly; an installed factory can be selected with `plugin_keys=("acme.audit",)` instead.
+
+```python
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactoryContext,
+    build_harness_plugin_factory_catalog,
+)
+from acme_harness.plugin import AuditPluginFactory
+
+catalog = build_harness_plugin_factory_catalog(explicit_factories=(AuditPluginFactory(),))
+configuration = catalog.validate_configuration("acme.audit", {"label": "production"})
+context = HarnessPluginFactoryContext(
+    plugin_key="acme.audit", plugin_id="audit-primary",
+    configuration=configuration, extensions={},
+)
+source = catalog.plugin_source(context, enabled=True)
+# Pass source to HarnessBuilder.build(..., plugins=(source,)).
+```
+
+`plugin_source()` and `create_plugin()` consume normalized configuration. The factory reads that accepted configuration without running its validators again. A disabled source skips plugin creation; a Host that skips validation for disabled selections should validate them when enabling them.
 
 ### Describe Configuration for Editors
 

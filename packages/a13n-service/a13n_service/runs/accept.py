@@ -61,7 +61,9 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRo
 from a13n_service.runs.threads import lock_thread
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.access import principal_for, require_active_workspace
+from a13n_service.tenancy.app_plugins import policy as app_policy
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
+from a13n_service.tenancy.tables import OrganizationRow
 
 logger = get_logger(__name__)
 
@@ -480,6 +482,8 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     from a13n_service.runs.environments.contexts import prepare as prepare_context
 
     await prepare_context(session, thread)
+    organization = await session.get_one(OrganizationRow, thread.organization_id)
+    app_activation = runtime.apps.capture(app_policy(organization.settings), organization.version)
     current = await now(session)
     run = RunRow(
         id=run_id,
@@ -493,6 +497,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         principal_id=principal.id,
         authority=source.authority.model_dump(mode="json"),
         options=options.model_dump(mode="json", exclude_none=True),
+        app_activation=app_activation.model_dump(mode="json"),
         options_digest=source.options_digest,
         # Frozen here: the thread's headers apply to this run even if the thread is edited later.
         mcp_headers=thread.mcp_headers,

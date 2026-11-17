@@ -4,6 +4,7 @@ from typing import Protocol
 
 from redis.asyncio import Redis
 
+from a13n_service.app_plugins import AppCatalog
 from a13n_service.infra.crypto import KeyRing
 from a13n_service.infra.db import Storage
 from a13n_service.infra.objects.interface import ObjectStore
@@ -13,6 +14,9 @@ from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 
 class Runtime(Protocol):
+    @property
+    def apps(self) -> AppCatalog: ...
+
     @property
     def storage(self) -> Storage: ...
 

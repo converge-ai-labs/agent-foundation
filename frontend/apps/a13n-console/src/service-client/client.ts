@@ -36,6 +36,9 @@ export function createClient(options: ClientOptions) {
       );
       return response.blob();
     },
+    /** Runtime App endpoints share this client's auth, CSRF, retries and shutdown. */
+    request: (path: string, init: RequestInit = {}) =>
+      transport.fetch(new Request(`${transport.baseUrl}${path}`, init)),
     setCsrfToken: (token: string | undefined) => transport.setCsrfToken(token),
     streamSession: (
       workspaceId: string,

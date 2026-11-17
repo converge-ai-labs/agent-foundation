@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from functools import cache
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -176,7 +177,7 @@ def test_user_texts_excludes_runtime_context_without_losing_conversation_order(s
     assert user_texts({"body": {"messages": messages}}) == [contents[0], contents[4]]
 
 
-def collect_scenarios(*arguments: str) -> set[str]:
+def _collect_scenarios(*arguments: str) -> set[str]:
     result = subprocess.run(
         [sys.executable, "-m", "e2e.service", "--collect-only", "-qq", *arguments],
         cwd=ROOT,
@@ -189,7 +190,12 @@ def collect_scenarios(*arguments: str) -> set[str]:
     return {line for line in result.stdout.splitlines() if "::" in line}
 
 
-def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_journeys():
+@pytest.fixture(scope="module")
+def collect_scenarios():
+    return cache(_collect_scenarios)
+
+
+def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_journeys(collect_scenarios):
     environments = "e2e/service/test_environments.py"
     lifecycle = f"{environments}::test_a_run_uses_its_environment_across_its_lifecycle"
     default = collect_scenarios()
@@ -203,6 +209,25 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[kubernetes]" not in default
     assert f"{lifecycle}[kubernetes]" in kubernetes
     assert len(kubernetes) == 8
+    assert not {node for node in default if "e2b" in node or "modal" in node}
+    hosted = collect_scenarios("--hosted")
+    hosted_marker = collect_scenarios("-m", "hosted")
+    assert f"{lifecycle}[modal]" in hosted
+    assert f"{lifecycle}[modal]" in hosted_marker
+    assert f"{lifecycle}[boxd]" not in default
+    assert f"{lifecycle}[boxd]" in hosted
+    assert f"{lifecycle}[boxd]" in hosted_marker
+    assert collect_scenarios("-k", "boxd") == {f"{lifecycle}[boxd]"}
+    assert collect_scenarios("-k", "e2b") == {
+        f"{lifecycle}[e2b]",
+        f"{environments}::test_a_ready_e2b_sandbox_is_renewed_past_its_timeout",
+    }
+    # A selection that names no vendor type never pulls billable journeys in.
+    assert collect_scenarios("-k", "environment") == {f"{lifecycle}[local]", f"{lifecycle}[docker]"}
+
+
+def test_kubernetes_deployment_shard_coverage(collect_scenarios):
+    kubernetes = collect_scenarios("-m", "kubernetes")
     deployment = yaml.safe_load((ROOT / ".github/workflows/ci-deploy.yml").read_text())
     journeys = deployment["jobs"]["journeys"]
     [journey_step] = [step for step in journeys["steps"] if step.get("run", "").startswith("make service-e2e ")]
@@ -220,6 +245,11 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
         selected_kubernetes.update(nodes)
     assert selected_kubernetes == kubernetes
     assert deployment["jobs"]["kind"]["needs"] == ["chart", "helm", "journeys"]
+
+
+def test_service_e2e_workflow_shard_coverage(collect_scenarios):
+    lifecycle = "e2e/service/test_environments.py::test_a_run_uses_its_environment_across_its_lifecycle"
+    default = collect_scenarios()
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
     scenarios = workflow["jobs"]["scenarios"]
     shards = scenarios["strategy"]["matrix"]["include"]
@@ -239,19 +269,6 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     docker = collect_scenarios("--require-all", "-k", "docker")
     assert docker and not selected.intersection(docker)
     assert selected | docker == default
-    assert not {node for node in default if "e2b" in node or "modal" in node}
-    assert f"{lifecycle}[modal]" in collect_scenarios("--hosted")
-    assert f"{lifecycle}[modal]" in collect_scenarios("-m", "hosted")
-    assert f"{lifecycle}[boxd]" not in default
-    assert f"{lifecycle}[boxd]" in collect_scenarios("--hosted")
-    assert f"{lifecycle}[boxd]" in collect_scenarios("-m", "hosted")
-    assert collect_scenarios("-k", "boxd") == {f"{lifecycle}[boxd]"}
-    assert collect_scenarios("-k", "e2b") == {
-        f"{lifecycle}[e2b]",
-        f"{environments}::test_a_ready_e2b_sandbox_is_renewed_past_its_timeout",
-    }
-    # A selection that names no vendor type never pulls billable journeys in.
-    assert collect_scenarios("-k", "environment") == {f"{lifecycle}[local]", f"{lifecycle}[docker]"}
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Deployment CI uses Bash")

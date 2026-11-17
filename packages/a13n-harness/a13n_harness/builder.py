@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from dataclasses import fields as dataclass_fields
+from functools import partial
 from typing import Any, Literal, Self, cast, overload
 from uuid import uuid4
 
@@ -89,7 +90,11 @@ from a13n_harness.observation import (
     _compile_observation,
 )
 from a13n_harness.output_schema import structured_output_type
-from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
+from a13n_harness.plugin_configuration import (
+    HarnessBuildContext,
+    HarnessPluginConfiguration,
+    HarnessPluginConfigurationEntry,
+)
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryContext,
@@ -97,6 +102,7 @@ from a13n_harness.plugin_factories import (
 )
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
+    PluginSource,
     bind_agent_plugins,
 )
 from a13n_harness.pricing import (
@@ -223,7 +229,7 @@ class AgentDefinition[OutputT]:
     definition_id: str = field(default_factory=lambda: str(uuid4()))
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
-    plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    plugins: tuple[AbstractHarnessPlugin | PluginSource, ...] = ()
     tool_search: ToolSearchPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
@@ -514,7 +520,7 @@ class HarnessBuilder:
         definition_id: str | None = None,
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
+        plugins: Sequence[AbstractHarnessPlugin | PluginSource] = (),
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
@@ -532,7 +538,7 @@ class HarnessBuilder:
         definition_id: str | None = None,
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
+        plugins: Sequence[AbstractHarnessPlugin | PluginSource] = (),
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
@@ -549,7 +555,7 @@ class HarnessBuilder:
         definition_id: str | None = None,
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
+        plugins: Sequence[AbstractHarnessPlugin | PluginSource] = (),
         tool_search: ToolSearchPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
@@ -625,13 +631,15 @@ class HarnessBuilder:
         )
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
-        plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugins, contributions, activation = bind_agent_plugins((*definition.plugins, *configured_plugins))
         plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
         _validate_capability_source(plugin_capabilities, source="plugin")
         _validate_capability_source(definition.capabilities, source="definition")
         selected_capabilities = (*definition.capabilities, *plugin_capabilities)
         if definition.tool_search is not None:
-            selected_capabilities = definition.tool_search._compose(selected_capabilities, contributions)
+            selected_capabilities = definition.tool_search._compose(
+                selected_capabilities, contributions, disabled_plugins=activation.disabled_ids
+            )
         authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
             selected_capabilities,
@@ -752,6 +760,7 @@ class HarnessBuilder:
             system_prompt=system_prompt,
             output_adapter=output_adapter,
             plugins=plugins,
+            plugin_activation=activation,
             subagents=subagents,
             definition_reserved_capability_ids=definition_reserved_ids,
             model_inference=resolve_model,
@@ -759,7 +768,7 @@ class HarnessBuilder:
             model_cost=model_cost,
         )
 
-    def _create_configured_plugins(self) -> tuple[AbstractHarnessPlugin, ...]:
+    def _create_configured_plugins(self) -> tuple[PluginSource, ...]:
         catalog = self._plugin_factory_catalog
         if catalog is None:
             return ()
@@ -769,19 +778,20 @@ class HarnessBuilder:
                 "Enabled configured plugins require a configuration document.",
                 code="plugin_configuration_invalid",
             )
-        return tuple(
-            catalog.create_plugin(
+
+        def create(entry: HarnessPluginConfigurationEntry) -> AbstractHarnessPlugin:
+            return catalog.create_plugin(
                 HarnessPluginFactoryContext(
                     plugin_key=entry.plugin_key,
                     plugin_id=entry.plugin_id,
-                    configuration=catalog.validate_configuration(
-                        entry.plugin_key,
-                        entry.configuration,
-                    ),
+                    configuration=catalog.validate_configuration(entry.plugin_key, entry.configuration),
                     extensions=self._build_context.extensions,
                 )
             )
-            for entry in configuration.enabled_plugins
+
+        return tuple(
+            PluginSource(entry.plugin_id, partial(create, entry), enabled=entry.enabled)
+            for entry in configuration.plugins
         )
 
 

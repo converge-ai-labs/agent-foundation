@@ -30,7 +30,7 @@ class AgentDefinition[OutputT]:
     definition_id: str = <process-local UUID>
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
-    plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    plugins: tuple[AbstractHarnessPlugin | PluginSource, ...] = ()
     tool_search: ToolSearchPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
@@ -51,7 +51,7 @@ class AgentDefinition[OutputT]:
 | `definition_id`    | Non-blank logical correlation value; it grants no authority                                                                                       |
 | `model`            | Optional concrete native Model used instead of string selection in `AgentSpec`                                                                    |
 | `capabilities`     | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks                        |
-| `plugins`          | Trusted concrete Harness middleware instances supplied directly with this definition                                                              |
+| `plugins`          | Trusted concrete Harness middleware or lazy `PluginSource` selections owned by this definition                                                    |
 | `tool_search`      | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources                          |
 | `subagents`        | Named complete process-local child definitions and authored edge ceilings                                                                         |
 | `model_recovery`   | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                                          |

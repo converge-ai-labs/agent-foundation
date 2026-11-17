@@ -193,7 +193,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 - `toolset_instructions` is the effective per-run switch for Toolset-owned model guidance;
 - `events` emits bounded Harness-owned observations into the one canonical run stream;
 - `usage_attribution` maintains the latest mixed-source accounting snapshot in `a13n.usage` Context State, delivers detached snapshots to the Host reporter, and emits bounded changed-record observations;
-- `plugins` indexes the complete fresh run-bound plugin graph after binding;
+- `plugins` exposes fixed per-executable activation and fresh typed Run-local shared scratch from context creation, and indexes the complete fresh run-bound plugin graph after binding;
 - `subagents` is the immutable collection owned by the executable;
 - `metadata` is immutable non-authoritative correlation;
 - `model_context` is the optional fresh Host wrapper around this run's projection chain;

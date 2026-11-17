@@ -7,6 +7,9 @@ import {
   type SettingsScope,
 } from "../features/settings/navigation";
 
+import { useAppPlugins } from "../app-plugins/registry";
+import { appText, settingsKey } from "../app-plugins/types";
+
 const PRODUCT = "a13n";
 
 /** Destination names, keyed by the first segment of the in-workspace path. */
@@ -71,13 +74,29 @@ export function sectionName(pathname: string): string | undefined {
 export function usePageTitle(workspaceName?: string) {
   const { pathname } = useLocation();
   const { t, i18n } = useTranslation();
+  const { apps } = useAppPlugins();
+  const appRoute = pathname.match(/\/apps\/([^/]+)\/([^/]+)/);
+  const settingsSegment = pathname.split("/").at(-1);
+  const appPage = appRoute
+    ? apps
+        .find(({ app }) => app.app_id === appRoute[1])
+        ?.contribution?.pages?.find((page) => page.id === appRoute[2])
+    : apps
+        .flatMap(({ app, contribution }) =>
+          (contribution?.settings ?? []).map((section) => ({
+            ...section,
+            key: settingsKey(app.app_id, section.id),
+          })),
+        )
+        .find((section) => section.key === settingsSegment);
+  const appTitle = appPage
+    ? appText(appPage.label, i18n.resolvedLanguage ?? "en")
+    : undefined;
   useEffect(() => {
     const section = sectionName(pathname);
     const name = pageName(pathname);
-    document.title = section
-      ? t(section)
-      : name
-        ? t(name)
-        : (workspaceName ?? PRODUCT);
-  }, [pathname, workspaceName, t, i18n.resolvedLanguage]);
+    document.title =
+      appTitle ??
+      (section ? t(section) : name ? t(name) : (workspaceName ?? PRODUCT));
+  }, [pathname, workspaceName, appTitle, t, i18n.resolvedLanguage]);
 }

@@ -17,6 +17,7 @@ from a13n_harness import (
     HarnessRunResultEvent,
     PluginError,
     PluginOrdering,
+    PluginSource,
     RunBindings,
     RunCleanupError,
     RunError,
@@ -1001,3 +1002,72 @@ async def test_plugin_cannot_emit_reserved_run_start() -> None:
         and item.event.payload.get("type") == "run_started"
     ]
     assert len(starts) == 1
+
+
+async def test_selection_gates_all_hooks_and_shares_only_run_local_values() -> None:
+    from a13n_harness.plugins import PluginActivation
+
+    log: list[str] = []
+    contexts: list[AgentContext] = []
+
+    class DisabledPlugin(RecordingPlugin):
+        def get_ordering(self) -> PluginOrdering:
+            raise AssertionError("Disabled plugin must not participate in composition")
+
+    class PeerPlugin(RecordingPlugin):
+        async def for_run(self, context: AgentContext) -> PeerPlugin:
+            assert context.plugins.activation == PluginActivation(
+                enabled_ids=frozenset({"writer", "reader"}),
+                disabled_ids=frozenset({"direct-disabled", "lazy-disabled"}),
+            )
+            with pytest.raises(PluginError, match="not available"):
+                context.plugins.get("writer")
+            if self.plugin_id == "writer":
+                assert context.plugins.shared.read("example.peer", list) is None
+                context.plugins.shared.write("example.peer", [context.run_id])
+                contexts.append(context)
+            else:
+                assert context.plugins.shared.read("example.peer", list) == [context.run_id]
+                with pytest.raises(PluginError) as error:
+                    context.plugins.shared.read("example.peer", str)
+                assert error.value.code == "plugin_shared_state_type_mismatch"
+            return self
+
+    def forbidden_factory() -> AbstractHarnessPlugin:
+        raise AssertionError("Disabled source must not be constructed")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model(log),
+        plugins=(
+            PluginSource.from_plugin(DisabledPlugin("direct-disabled", log), enabled=False),
+            PluginSource("lazy-disabled", forbidden_factory, enabled=False),
+            PeerPlugin("writer", log),
+            PeerPlugin("reader", log),
+        ),
+    )
+    first, second = await asyncio.gather(executable.run("first"), executable.run("second"))
+    assert first.status == second.status == "completed"
+    assert not any("disabled" in entry for entry in log)
+    assert len(contexts) == 2
+    assert contexts[0].plugins.shared is not contexts[1].plugins.shared
+    assert all(context.plugins.get("direct-disabled") is None for context in contexts)
+    assert all(context.plugins.require("writer", PeerPlugin).plugin_id == "writer" for context in contexts)
+    assert first.state is not None
+    assert "example.peer" not in first.state.agent_context_state.entries
+
+
+def test_enabled_dependency_on_disabled_plugin_fails_before_binding() -> None:
+    log: list[str] = []
+    with pytest.raises(PluginError) as error:
+        HarnessBuilder().build(
+            AgentSpec(model="test"),
+            output_type=str,
+            plugins=(
+                RecordingPlugin("dependent", log, ordering=PluginOrdering(requires=("disabled",))),
+                PluginSource("disabled", lambda: RecordingPlugin("disabled", log), enabled=False),
+            ),
+        )
+    assert error.value.code == "plugin_order_unknown_reference"
+    assert log == []

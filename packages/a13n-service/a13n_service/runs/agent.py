@@ -68,6 +68,7 @@ from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_plugins import AppActivation, AppCatalog
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.model_settings import effective_settings
 from a13n_service.providers.registry import Registry
@@ -277,6 +278,8 @@ def build(
     instrumentation: HarnessInstrumentation | None,
     compaction: CompactionOperator | None = None,
     subagent_controls: bool = False,
+    app_activation: AppActivation | None = None,
+    apps: AppCatalog | None = None,
 ) -> ExecutableAgent[Any]:
     """The executable agent over the worker's attempt-bound parts; its run resolves models by `model_resolver`.
 
@@ -285,9 +288,15 @@ def build(
     child binds of its own, such as web backends and media understanding. `operators` returns the operator
     through which one async agent of the graph starts child runs over its own edges.
     """
-    root = _Host(capabilities, child_bindings, operators, plugins, tool_sources).compose(
-        agent, compaction=compaction, controls=subagent_controls
-    )
+    root = _Host(
+        capabilities,
+        child_bindings,
+        operators,
+        plugins,
+        app_activation or AppActivation(),
+        apps or AppCatalog(),
+        tool_sources,
+    ).compose(agent, compaction=compaction, controls=subagent_controls)
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
     prices = TokenPricingCapability({model.key: model.pricing for model in agent.models() if model.pricing is not None})
     return HarnessBuilder(instrumentation=instrumentation, configured_plugins_enabled=False).build(
@@ -341,6 +350,8 @@ class _Host:
     child_bindings: ChildBindings | None
     operators: Operators | None
     plugins: HarnessPluginFactoryCatalog
+    app_activation: AppActivation
+    apps: AppCatalog
     tool_sources: ToolSources | None = None
 
     def compose(
@@ -406,13 +417,14 @@ class _Host:
             capabilities=tuple(features),
             tool_search=definition.tool_search(config, sources, agent.connections),
             plugins=tuple(
-                self.plugins.create_plugin(
+                self.plugins.plugin_source(
                     HarnessPluginFactoryContext(
                         plugin_key=selected.plugin_key,
                         plugin_id=selected.instance_name,
                         configuration=selected.config,
                         extensions={},
-                    )
+                    ),
+                    enabled=self.app_activation.factory_enabled(selected.plugin_key, self.apps),
                 )
                 for selected in config.plugins
             ),

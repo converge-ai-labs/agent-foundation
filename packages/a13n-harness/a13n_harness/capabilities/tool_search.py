@@ -167,6 +167,8 @@ class ToolSearchPlan:
         self,
         capabilities: Sequence[AbstractCapability[AgentContext]],
         contributions: Mapping[str, tuple[AbstractCapability[AgentContext], ...]],
+        *,
+        disabled_plugins: frozenset[str] = frozenset(),
     ) -> tuple[AbstractCapability[AgentContext], ...]:
         memberships: dict[int, dict[str | None, _ToolGroup]] = {}
         plugin_memberships: dict[str, str] = {}
@@ -179,9 +181,11 @@ class ToolSearchPlan:
                     raise ValueError(
                         f"ToolSearch plugin {plugin_id!r} belongs to both {plugin_memberships[plugin_id]!r} and {name!r}"
                     )
+                plugin_memberships[plugin_id] = name
+                if plugin_id in disabled_plugins:
+                    continue
                 if plugin_id not in contributions:
                     raise ValueError(f"ToolSearch group {name!r} references unavailable plugin {plugin_id!r}")
-                plugin_memberships[plugin_id] = name
                 sources.extend(contributions[plugin_id])
             for source in sources:
                 if id(source) not in available:

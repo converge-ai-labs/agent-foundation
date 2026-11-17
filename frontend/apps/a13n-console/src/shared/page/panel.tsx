@@ -31,6 +31,7 @@ export function Panel({
   width,
   onWidthChange,
   inline = false,
+  dismissOnOutsidePress = false,
   label,
   children,
 }: {
@@ -46,6 +47,8 @@ export function Panel({
   onWidthChange?: (width: number) => void;
   /** Fills the surrounding layout slot instead of floating over the page. */
   inline?: boolean;
+  /** Close a floating inspector when pressing outside it and its overlays. */
+  dismissOnOutsidePress?: boolean;
   label?: string;
   children: ReactNode;
 }) {
@@ -124,6 +127,25 @@ export function Panel({
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [open, onClose]);
+  useEffect(() => {
+    if (!open || inline || !dismissOnOutsidePress) return;
+    const outsidePress = (event: PointerEvent) => {
+      if (
+        event.button !== 0 ||
+        !(event.target instanceof Node) ||
+        panel.current?.contains(event.target) ||
+        document.querySelector(
+          '[data-popup-open], [role="dialog"], [role="alertdialog"]',
+        )
+      )
+        return;
+      onClose();
+    };
+    // Capture before a nested popup handles the press and removes itself.
+    document.addEventListener("pointerdown", outsidePress, true);
+    return () =>
+      document.removeEventListener("pointerdown", outsidePress, true);
+  }, [open, inline, dismissOnOutsidePress, onClose]);
   if (!open) return null;
   return (
     <aside

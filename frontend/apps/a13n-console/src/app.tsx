@@ -12,6 +12,8 @@ import {
 } from "react-router";
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
+import { AppPluginsProvider } from "./app-plugins/registry";
+import { AppRoute, WorkspaceHome } from "./app-plugins/views";
 import { AuthPage } from "./auth/pages";
 import { ConnectionAuthorizationCallback } from "./features/connections/callback";
 import { AppearanceProvider } from "./layout/appearance";
@@ -228,7 +230,9 @@ function Authenticated() {
 function WorkspaceShell() {
   return (
     <WorkspaceProvider>
-      <Shell />
+      <AppPluginsProvider>
+        <Shell />
+      </AppPluginsProvider>
     </WorkspaceProvider>
   );
 }
@@ -307,7 +311,11 @@ function AppContent() {
                       path="/workspace/:workspaceId"
                       element={<WorkspaceShell />}
                     >
-                      <Route index element={<Navigate to="agents" replace />} />
+                      <Route index element={<WorkspaceHome />} />
+                      <Route
+                        path="apps/:appId/:pageId/*"
+                        element={<AppRoute />}
+                      />
                       <Route path="agents" element={<Agents />} />
                       <Route path="browsers" element={<BrowsersPage />} />
                       <Route path="agents/new" element={<CreateAgent />} />

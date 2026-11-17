@@ -37,6 +37,8 @@ source_modules =
 forbidden_modules =
     a13n_service.app
     a13n_service.distribution
+    a13n_service.app_definitions
+    a13n_service.app_plugin_runtime
     a13n_service.cli
     a13n_service.mcp
     a13n_service.api_tools

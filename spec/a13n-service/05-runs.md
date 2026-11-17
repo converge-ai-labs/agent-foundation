@@ -34,6 +34,10 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 [Browsers](14-browsers.md#resource-and-binding) owns the Thread's desired Browser binding and its frozen Run selection. Its [handback input contract](14-browsers.md#handback-input-and-durable-observation) uses this chapter's existing assignment, capacity and continuation mechanisms, with revocation checked before durable incorporation and any derived model summary.
 
+## App activation
+
+Every newly accepted Run freezes organization App policy and installed factory ownership in its immutable `app_activation` JSONB column. This field is separate from caller-authored options and Harness continuation. Same-Run recovery retains it; a new durable child, resume or result/handback successor captures current policy. [15: App plugins](15-app-plugins.md#accepted-run-activation) owns the snapshot schema, inventory checks, inline availability ceiling and disabled deferred-target semantics.
+
 ## Session display identity
 
 A Session optionally carries a caller-owned `title` and structured `origin`, independent of Thread execution lineage. Applications set these values in `POST /sessions` or in the optional `session` object of `POST /threads`, alongside Session labels, memory settings and the [primary environment recreation policy](06-environments.md#confirmed-loss-of-the-primary-environment). `session` and `session_id` are mutually exclusive; inline creation and the first input commit atomically under the existing idempotency key. Omitting `session` preserves the previous request digest and creation behavior.

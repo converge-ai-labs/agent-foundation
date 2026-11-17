@@ -576,7 +576,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _create_context(self, environment: BoundEnvironment) -> AgentContext:
         bindings = self._bindings
         agent_spec = self._executable.definition.agent
-        plugin_context = BoundPluginContext()
+        plugin_context = BoundPluginContext(self._executable.plugin_activation)
         storage = RunStorage(bindings.state_store)
         context_state = AgentContextState(await storage.resolve_context(self._previous_state.agent_context_state))
         usage_attribution = RunUsageLedger(
