@@ -124,7 +124,7 @@ Minimize database work across the complete application operation using the short
 
 ## Migrations
 
-Each a13n Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; a13n Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change migration contents.
+Each a13n Service build artifact supplies one final Core metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Core owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, organization state, and runtime edition selection never change Core migration contents. Installed Apps may declare independent public-schema metadata and packaged histories under the [App persistence contract](spec/a13n-service/15-app-plugins.md#app-persistence); each App has its own namespace, version table and at most one head. App metadata and revisions never merge into the Core graph.
 
 The OSS artifact resolves its registry from `a13n_service.distribution.OSS` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 
@@ -140,7 +140,7 @@ Autogenerate is only a draft. Review names, constraints, server defaults, nullab
 
 ### Auto migration and locking
 
-The shared image enables auto migration by default for `all` and `control`, with PostgreSQL advisory locking serializing concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `worker` role never migrates; a non-owner checks the composed schema head and fails closed when schema is incompatible.
+The shared image enables auto migration by default for `all` and `control`: Core first, then every installed App database, independently of organization enablement. `database.auto_migrate_apps=false` opts out of App startup migration; the master `database.auto_migrate=false` disables all startup migration. Plain `a13n-service migrate` includes installed Apps; `--no-apps` selects Core only. PostgreSQL advisory locking serializes concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `worker` role never migrates; a non-owner checks the composed schema head and fails closed when schema is incompatible.
 
 PostgreSQL migrations use a dedicated synchronous `NullPool` connection and a service-scoped session advisory lock. The same connection holds the lock across revision inspection, transactional DDL, reviewed autocommit blocks, and stamping. Advisory-lock waiting temporarily uses `lock_timeout=0` and its own bounded `statement_timeout`; after acquisition, the normal short DDL lock timeout is restored. This keeps replica serialization independent from table-lock safety.
 

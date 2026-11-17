@@ -14,6 +14,7 @@ from alembic.autogenerate import renderers
 from alembic.operations import ops
 from sqlalchemy import ForeignKeyConstraint
 
+from a13n_service.app_database import APP_PREFIX
 from a13n_service.infra.db import FUNCTIONS
 
 _FUNCTION = re.compile(r"CREATE FUNCTION (\w+)\(")
@@ -61,7 +62,13 @@ def _complete_revision(migration: Any, revision: Any, directives: list[Any]) -> 
     script.downgrade_ops.ops.extend(ops.ExecuteSQLOp(f"DROP FUNCTION {name}() CASCADE") for name in reversed(functions))
 
 
+def _include_name(name: str | None, type_: str, parents: Any) -> bool:
+    # The reserved family includes retained namespaces of Apps not installed in this process.
+    return type_ != "table" or name is None or not name.startswith(APP_PREFIX)
+
+
 context.configure(
+    include_name=_include_name,
     connection=context.config.attributes["connection"],
     target_metadata=context.config.attributes["metadata"],
     compare_type=True,

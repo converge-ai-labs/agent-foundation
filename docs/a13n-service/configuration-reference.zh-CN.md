@@ -34,6 +34,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | --------------------------------------------- | --------------------------------------------------- | ----------- | ------------------------------------------------- |
 | `database.url`                                | `A13N_DATABASE__URL`                                | 字符串      | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
 | `database.auto_migrate`                       | `A13N_DATABASE__AUTO_MIGRATE`                       | 布尔值      | default=true                                      |
+| `database.auto_migrate_apps`                  | `A13N_DATABASE__AUTO_MIGRATE_APPS`                  | 布尔值      | default=true                                      |
 | `database.pool_size`                          | `A13N_DATABASE__POOL_SIZE`                          | 整数        | minimum=1; maximum=1024; default=32               |
 | `database.connect_timeout`                    | `A13N_DATABASE__CONNECT_TIMEOUT`                    | 整数        | minimum=1; maximum=60; default=5                  |
 | `database.statement_timeout`                  | `A13N_DATABASE__STATEMENT_TIMEOUT`                  | 整数        | minimum=1; maximum=300; default=10                |
@@ -63,6 +64,14 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `objects.upload_bytes`                 | `A13N_OBJECTS__UPLOAD_BYTES`                 | 整数                              | minimum=1; maximum=33554432; default=1048576      |
 | `objects.upload_limit`                 | `A13N_OBJECTS__UPLOAD_LIMIT`                 | 整数                              | minimum=1; maximum=1000; default=60               |
 | `objects.upload_window_seconds`        | `A13N_OBJECTS__UPLOAD_WINDOW_SECONDS`        | 整数                              | minimum=1; maximum=3600; default=60               |
+
+## `object_store`
+
+| 设置                                 | 环境变量                                   | 类型 / 可选值 | 约束与默认值                      |
+| ------------------------------------ | ------------------------------------------ | ------------- | --------------------------------- |
+| `object_store.temporary_ttl_seconds` | `A13N_OBJECT_STORE__TEMPORARY_TTL_SECONDS` | 数值          | exclusiveMinimum=0; default=86400 |
+| `object_store.max_temporary_objects` | `A13N_OBJECT_STORE__MAX_TEMPORARY_OBJECTS` | 整数          | minimum=1; default=32             |
+| `object_store.max_temporary_bytes`   | `A13N_OBJECT_STORE__MAX_TEMPORARY_BYTES`   | 整数          | minimum=1; default=67108864       |
 
 ## `redis`
 
@@ -264,8 +273,6 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `memory.recall_seconds`       | `A13N_MEMORY__RECALL_SECONDS`                     | 数值          | maximum=30; exclusiveMinimum=0; default=2           |
 | `memory.record_chars`         | `A13N_MEMORY__RECORD_CHARS`                       | 整数          | minimum=1; maximum=8000; default=8000               |
 | `memory.default_guide.record` | `A13N_MEMORY__DEFAULT_GUIDE` (JSON 字段 `record`) | 字符串或 null | maxLength=65536; default=null                       |
-
-对文件型记忆，`memory.guide_bytes` 限制用户编写的 System guide 覆盖文本与 Custom guide 的 UTF-8 总字节数。内置预设文本不占用此预算，因此较小预算仍可使用全部预设。
 
 ## `providers`
 

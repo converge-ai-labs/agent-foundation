@@ -62,7 +62,85 @@ The entry-point name must match `AppDefinition.app_id`. Service loads every inst
 
 `AppDefinition.factory_keys` declares owned Harness factory keys. Register each factory under `a13n_harness.plugins`, as shown in [Plugins and extensions](../a13n-harness/plugins.md#publish-a-plugin-factory), and add its key to the definition, for example `factory_keys=frozenset({"acme.audit"})`. Configure named plugin instances on the agent as usual. Service loads owned factories at startup and gates their instances using the accepted run snapshot. Standalone factories are selected through `plugins.keys`.
 
-`OrganizationSweep` callbacks receive the existing Runtime and one enabled organization ID. Service selects organizations and closes SQL sessions before callbacks. Callbacks own bounded business work and replica-safe claims. Each organization gets the declared timeout; a failed callback leaves the rest of the batch running and marks the pass failed. Optional `startup(runtime, stack)` opens process resources and registers cleanup on the existing exit stack. Startup runs for each installed App, regardless of organization enablement. App definitions expose no tables or migrations; prepare business databases with your application's operator workflow.
+`OrganizationSweep` callbacks receive the existing Runtime and one enabled organization ID. Service selects organizations and closes SQL sessions before callbacks. Callbacks own bounded business work and replica-safe claims. Each organization gets the declared timeout; a failed callback leaves the rest of the batch running and marks the pass failed. Optional `startup(runtime, stack)` opens process resources and registers cleanup on the existing exit stack. Startup runs for each installed App, regardless of organization enablement. Apps can declare an optional database with independent migrations, as described below. Service validates installed App database heads before running any App startup callback.
+
+## Persist business data
+
+Use `AppDatabase` when an App needs tables in the host PostgreSQL database. Each App owns an independent migration history in `public`. App rows use ordinary SQLAlchemy models and the existing Runtime Storage, so queries can join native Service rows without a second database pool. Prefixes separate migration ownership; App code still enforces tenant scoping and authorization.
+
+Declare the database and models in a module such as `models.py`, then import that module from `app.py` and pass the same database to `AppDefinition(database=database)`. Resolve deployment configuration before importing models:
+
+```python
+import os
+
+from a13n_service.app_database import AppDatabase
+from a13n_service.tenancy.tables import WorkspaceRow
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Optional deployment override. Leave unset for a stable App-ID-derived prefix.
+database = AppDatabase(
+    "acme.reports",
+    migrations="acme_reports:migrations",
+    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX") or None,
+)
+database.reference(WorkspaceRow.__table__)  # Read-only foreign-key target, never App-owned DDL.
+
+
+class Base(DeclarativeBase):
+    metadata = database.metadata
+
+
+class Note(Base):
+    __tablename__ = database.name("notes")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    body: Mapped[str]
+```
+
+The default physical table is `app__acme_report_8b627b7edb3d__notes`. Its label combines a readable slug with a stable digest of the full, exact App ID, so `acme.reports` and `acme_reports` get different namespaces regardless of installation order. Long App IDs work without configuration. An optional explicit label must be lowercase snake case, start with a letter and fit 24 bytes; for example `ACME_REPORTS_TABLE_PREFIX=reports_1` selects `app__reports_1__notes`. Use `database.name(...)` rather than hardcoding physical names. A deployment uses the same setting in migration, control and worker processes; authoring can use the default because generated identifiers are portable. Duplicate App IDs and conflicting explicit prefixes are rejected. After a database is initialized, its retained App ID/prefix binding prevents accidental retargeting. Changing the setting does not move existing data; moving a deployed namespace requires an explicit reviewed migration.
+
+1. Install your App editable in a Service-compatible development environment. Run these authoring commands from the App project root. `--app` is optional when one current-project App is unambiguous.
+
+   ```bash
+   a13n-service apps db init --app acme.reports
+   a13n-service apps db revision --app acme.reports -m "create notes" \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   a13n-service apps db check --app acme.reports \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   ```
+
+   `init` creates only `acme_reports/migrations/versions/`; the template does not initialize persistence. `revision` and `check` each create a disposable database, replay Core and this App history, then remove it. Their PostgreSQL role needs `CREATE DATABASE` permission. Use a local/CI server. Without `--scratch-url`, these commands use the server from Service database settings, connecting to its `postgres` maintenance database. They never upgrade the configured business database.
+
+2. Review the generated revision. Table, key, index and foreign-key identifiers use `migration_name("notes")` and related local suffixes, so one published history works with a deployment-selected prefix. Defaults and data literals retain their values. Review renames, drops, backfills, locks and rolling compatibility. Autogenerate cannot infer every schema object: write raw SQL, expression text, functions, triggers and other manual changes explicitly, using `migration_name` for owned SQL names. Core shared functions are already available; do not recreate them in an App base revision.
+
+3. Include `migrations/versions/*.py` in the App wheel and source distribution. Verify the installed artifact with `apps db check`, then install the same package on every Service process. By default, `all` and `control` startup upgrade Core, then every installed App database. For a dedicated migration job, run:
+
+   ```bash
+   a13n-service migrate
+   a13n-service apps db status --app acme.reports
+   ```
+
+   `migrate` upgrades Core first, then all installed App histories; `migrate --no-apps` prepares Core only. To apply one App after Core is current, use `a13n-service apps db upgrade --app acme.reports`. App histories remain independent of each other's installation order. Set `A13N_DATABASE__AUTO_MIGRATE=false` on serving replicas when a dedicated job owns migrations. To automate Core but manage App upgrades separately, keep the master switch enabled and set `A13N_DATABASE__AUTO_MIGRATE_APPS=false`. These switches affect startup only; explicit CLI commands still migrate. `migrate --check` checks live Core/App parity without DDL or `CREATE DATABASE` permission; `apps db check` is the disposable authoring/CI check. Startup and readiness require every installed App at its packaged head, including organization-disabled Apps. Workers, readiness and organization enablement never execute DDL. Uninstalling the package retains its tables, version table and ownership binding.
+
+Use `transaction(runtime.storage)` or `short_session(runtime.storage)` from `a13n_service.infra.db` for business queries. Keep the session around one short database operation. A native join uses the same ORM session:
+
+```python
+from a13n_service.infra.db import short_session
+from sqlalchemy import select
+
+async with short_session(runtime.storage) as session:
+    rows = (
+        await session.execute(
+            select(Note.body, WorkspaceRow.name)
+            .join(WorkspaceRow, Note.workspace_id == WorkspaceRow.id)
+            .where(WorkspaceRow.id == authorized_workspace_id)
+        )
+    ).all()
+```
+
+For integration tests, reuse `a13n_service.migrations.scratch.scratch_database(development_database_settings)`. Inside that scope, call `runner.upgrade(scratch, OSS)` and `apps.upgrade(scratch, OSS, database)` from `a13n_service.migrations`, then open ordinary `Storage(scratch.url.get_secret_value())`. Close Storage before leaving the scope. This exercises the packaged history and drops the database after the test. Add `apps db check` to CI; `status` checks deployment revision state, while `check` proves migration/model parity on a fresh replay.
 
 ## Enable an organization
 
