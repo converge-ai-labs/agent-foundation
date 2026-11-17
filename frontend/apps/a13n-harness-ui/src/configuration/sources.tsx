@@ -514,7 +514,9 @@ export function SourceDocument({
           : kind === "environment_profile" ||
               kind === "environment_run_extension"
             ? ["/settings/environments?tab=profiles", "Environments"]
-            : kind === "mcp_server" || kind === "harness_plugin"
+            : kind === "mcp_server" ||
+                kind === "harness_plugin" ||
+                kind === "web_provider"
               ? ["/settings/connections", "Connections"]
               : ["/settings/resources", "Configuration files"];
   // Hidden MCP connections have an empty placeholder with no editable base.

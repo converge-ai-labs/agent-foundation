@@ -1,3 +1,4 @@
+import { CredentialSourceField } from "./credential-source";
 import { useTranslation } from "../i18n";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
@@ -9,12 +10,11 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Button,
   Checkbox,
   FormField,
-  Input,
   SearchPicker,
   Tabs,
   TabsList,
@@ -53,7 +53,6 @@ export function connectionId(
   );
 }
 
-/** Secrets never leave this memory-only component except for an explicit key save. */
 function CredentialField({
   connection,
   value,
@@ -63,167 +62,21 @@ function CredentialField({
   value: Recipe["authentication"] | undefined;
   onChange: (value: Recipe["authentication"]) => void;
 }) {
-  const { t } = useTranslation();
-  const { client } = useTransport();
-  const queries = useQueryClient();
-  const [secret, setSecret] = useState("");
-  const [expanded, setExpanded] = useState(
-    !value || value.kind !== "api_key" || !(value.env || value.credential_ref),
-  );
-  // Allocate once: a lost acknowledgement is reconciled against this same reference.
-  const [reference, setReference] = useState(
-    () => `key-${crypto.randomUUID().replaceAll("-", "")}`,
-  );
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
-  });
-  const active = useRef(true);
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
-  const latestAuth = useRef(JSON.stringify(value));
-  latestAuth.current = JSON.stringify(value);
-  const save = useMutation({
-    mutationFn: async () => {
-      const attempt = { reference, authentication: JSON.stringify(value) };
-      await result(
-        client.PUT("/api/auth/keys", {
-          body: { credential_ref: reference, key: secret },
-        }),
-      );
-      return attempt;
-    },
-    onSuccess: (attempt) => {
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-      if (!active.current || attempt.authentication !== latestAuth.current)
-        return;
-      setSecret("");
-      setExpanded(false);
-      onChange({ kind: "api_key", credential_ref: attempt.reference });
-      setReference(`key-${crypto.randomUUID().replaceAll("-", "")}`);
-    },
-    onError: () => {
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  const selected =
-    value?.kind === "api_key"
-      ? value.env != null
-        ? "env"
-        : (value.credential_ref ?? "")
-      : "";
-  const choices = [
-    { value: "", label: t("Save a new API key") },
-    ...(keys.data ?? []).map((key) => ({
-      value: key.credential_ref,
-      label: key.credential_ref,
-    })),
-    { value: "env", label: t("Server environment variable") },
-  ];
-  if (selected && !choices.some((item) => item.value === selected))
-    choices.push({
-      value: selected,
-      label: t("{{reference}} (saved reference)", { reference: selected }),
-    });
   return (
-    <fieldset disabled={save.isPending} className={styles.stack}>
-      {!expanded ? (
-        <SettingsRow
-          label={t("API key")}
-          description={
-            selected === "env" && value?.kind === "api_key"
-              ? t("Environment - {{name}}", { name: value.env })
-              : keys.data?.some((key) => key.credential_ref === selected)
-                ? t("Stored API key")
-                : t("API key reference")
-          }
-        >
-          <Button variant="ghost" onClick={() => setExpanded(true)}>
-            {t("Change credential")}
-          </Button>
-        </SettingsRow>
-      ) : (
-        <>
-          <ChoiceField
-            label={t("Credential source")}
-            value={selected}
-            options={choices}
-            onValueChange={(key) => {
-              setSecret("");
-              onChange(
-                key === "env"
-                  ? {
-                      kind: "api_key",
-                      env: connection.credential_env ?? "PROVIDER_API_KEY",
-                    }
-                  : { kind: "api_key", credential_ref: key },
-              );
-            }}
-          />
-          {selected === "env" ? (
-            <TextField
-              label={t("Environment variable")}
-              value={value?.kind === "api_key" ? (value.env ?? "") : ""}
-              onChange={(env) => onChange({ kind: "api_key", env })}
-              description={t("Read from the server environment.")}
-            />
-          ) : (
-            !selected && (
-              <>
-                <SettingsRow
-                  label={t("Provider API key")}
-                  description={t(
-                    "Shared by this server. Saved separately from the model.",
-                  )}
-                >
-                  <Input
-                    aria-label={t("Provider API key")}
-                    type="password"
-                    autoComplete="new-password"
-                    value={secret}
-                    onChange={(event) => setSecret(event.target.value)}
-                  />
-                </SettingsRow>
-                <div className={management.groupActions}>
-                  <Button
-                    variant="outline"
-                    loading={save.isPending}
-                    disabled={!secret.trim()}
-                    onClick={() => save.mutate()}
-                  >
-                    {t("Save API key")}
-                  </Button>
-                  {keys.data?.some(
-                    (key) => key.credential_ref === reference,
-                  ) && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setSecret("");
-                        onChange({
-                          kind: "api_key",
-                          credential_ref: reference,
-                        });
-                        setReference(
-                          `key-${crypto.randomUUID().replaceAll("-", "")}`,
-                        );
-                      }}
-                    >
-                      {t("Use saved key")}
-                    </Button>
-                  )}
-                </div>
-              </>
-            )
-          )}
-        </>
-      )}
-      <ErrorNotice error={save.error || keys.error} />
-    </fieldset>
+    <CredentialSourceField
+      suggestedEnv={connection.credential_env ?? undefined}
+      value={
+        value?.kind === "api_key"
+          ? {
+              env: value.env ?? undefined,
+              credential_ref: value.credential_ref ?? undefined,
+            }
+          : undefined
+      }
+      onChange={(next) =>
+        onChange({ kind: "api_key", ...(next ?? { credential_ref: "" }) })
+      }
+    />
   );
 }
 

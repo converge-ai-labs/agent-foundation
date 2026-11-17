@@ -133,6 +133,31 @@ Harness file `view` and direct URL `read_media_url` share native-first dispatch.
 
 Auxiliary inference uses the selected Model's own settings and normal Host credential/session-affinity resolution. Primary Model settings and operation thinking/fast overrides do not leak into it. The adapter reports per-kind availability from captured recipes and ambient configuration without resolving credentials. It is lazy and Run-local; neither validation nor reconstruction sends a provider request. There are no forced-proxy modes or per-Agent overrides, and composer attachment behavior is unchanged.
 
+## Web Provider Accounts
+
+A `web_providers/*.yaml` resource names one reusable Host search/scrape account. Its envelope contains `schema_version: "1"`, `kind: web_provider`, a `web-provider-`-prefixed `id`, a display `name`, the Harness provider `type`, ordinary `configuration` (default `{}`), and optional `credential` sources:
+
+```yaml
+schema_version: "1"
+kind: web_provider
+id: web-provider-research
+name: Research search
+type: tavily
+configuration: {}
+credential:
+  api_key: {env: TAVILY_API_KEY}
+```
+
+Provider types, configuration and credential schemas, authentication presence rules, setup metadata, operation support, and restricted-scrape support come from the installed Harness Web provider catalog. There is no separate Harness UI vendor registry. Credential mappings support top-level string fields, each with exactly one `{env: NAME}` or `{credential_ref: key-name}` source. Literal values, nested credentials and unknown credential fields are invalid. Optional authentication without sources is anonymous; configuration-dependent forbidden authentication rejects supplied sources. Validation checks the recipe and selected operation without reading credentials, constructing a network client, or probing the provider. Ordinary configuration is persisted as authored; it is not a secret-scrubbing boundary.
+
+An Agent's `web` Capability selects account IDs through `search.backend`, `scrape.backend`, or their mutually exclusive `backend_priority` lists. `default` retains local DuckDuckGo search and local HTML scraping. Only accounts explicitly named by that Agent node's Host operation are bound. Adding an account alone does not change existing routing or add a paid fallback. Exact selection uses one backend; priority orders the selected accounts and local backend under Harness fallback semantics. Fetch/download keep their existing local HTTP bindings. Native and disabled operations do not resolve account credentials. Domain-restricted scraping requires a backend declaring the corresponding Harness support; initial-target authorization alone does not establish enforcement inside a remote scraper.
+
+Each Run capture retains safe account recipes from its accepted generation, never resolved credentials or handles. Root and child reconstruction use captured recipes; linked child execution retains its captured dependency semantics. An absent/empty account collection preserves historical canonical serialization and the existing default backend. Changes or deletion cannot mutate an active capture, and deletion of an account referenced by the current Agent graph fails validation.
+
+The first use of an account in a fresh root or child Run resolves and validates its complete credential. Concurrent search/scrape share one successful resolution; failed or cancelled resolution does not cache partial values. An explicitly configured missing source fails safely rather than becoming anonymous. Later fresh Runs and resumed child segments resolve sources again. Provider operations use the existing Harness request options, result normalization, truncation, usage and fallback behavior. Vendor HTTP destinations obey the captured Run allowed-host policy through Harness endpoint authorization; user fetch/scrape targets retain the existing Web policy. Provider operation/transport ownership closes owned resources on completion, failure and cancellation.
+
+Authenticated `GET /api/web-providers` returns provider descriptors and safe accepted account recipes. Account create, validate, save and delete use the existing configuration-source APIs. Saved secrets use the existing key store and explicit key APIs; deleting an account never deletes a potentially shared key.
+
 ## MCP Servers
 
 Files under `mcp/` use lower-case `.yaml` or `.json`. New MCP resources, templates, and examples use schema version 2. Either format accepts one canonical reusable MCP server:

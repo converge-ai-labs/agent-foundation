@@ -31,6 +31,16 @@ export function useSources() {
       result(client.GET("/api/configuration/sources", { signal })),
   });
 }
+export function useWebProviders(enabled = true) {
+  const { client, shareId } = useTransport();
+  const sources = useSources();
+  return useQuery({
+    queryKey: ["web-providers", sources.data?.generation_digest],
+    enabled: !shareId && enabled,
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/web-providers", { signal })),
+  });
+}
 export function useSelectors() {
   const { client, shareId } = useTransport();
   return useQuery({

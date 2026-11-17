@@ -35,6 +35,7 @@ from .models import (
     ProjectResource,
     SourceDocument,
     SubscriptionGroupResource,
+    WebProviderResource,
     canonical_digest,
 )
 
@@ -49,9 +50,19 @@ _STABLE_READ_ATTEMPTS = 3
 # The final generation digest also covers normalized content, including defaults.
 _NORMALIZATION_VERSION = "2"
 logger = logging.getLogger(__name__)
-_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups")
+_YAML_DIRECTORIES = (
+    "models",
+    "extensions",
+    "mcp",
+    "agents",
+    "projects",
+    "devices",
+    "subscription_groups",
+    "web_providers",
+)
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
+    "web_providers": WebProviderResource,
     "subscription_groups": SubscriptionGroupResource,
     "mcp": McpServerResource,
     "agents": AgentResource,
@@ -269,6 +280,7 @@ def _parse_complete_tree(
         code="settings_invalid",
     )
     models: dict[str, ModelResource] = {}
+    web_providers: dict[str, WebProviderResource] = {}
     subscription_groups: dict[str, SubscriptionGroupResource] = {}
     plugins: dict[str, HarnessPluginResource] = {}
     profiles: dict[str, EnvironmentProfileResource] = {}
@@ -345,6 +357,7 @@ def _parse_complete_tree(
                 )
                 expected_kind = {
                     "models": "model",
+                    "web_providers": "web_provider",
                     "subscription_groups": "subscription_group",
                     "mcp": "mcp_server",
                     "agents": "agent",
@@ -359,6 +372,7 @@ def _parse_complete_tree(
                     )
                 target = {
                     "models": models,
+                    "web_providers": web_providers,
                     "subscription_groups": subscription_groups,
                     "mcp": mcp,
                     "agents": agents,
@@ -417,6 +431,7 @@ def _parse_complete_tree(
             content_plugins=content_plugins,
             content_plugin_diagnostics=tuple(plugin_diagnostics),
             models=models,
+            web_providers=web_providers,
             subscription_groups=subscription_groups,
             harness_plugins=plugins,
             environment_profiles=profiles,

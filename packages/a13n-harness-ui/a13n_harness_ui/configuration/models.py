@@ -489,6 +489,30 @@ class EnvironmentVariableSource(StrictModel):
         return value
 
 
+class CredentialReferenceSource(StrictModel):
+    credential_ref: ResourceId
+
+
+type CredentialFieldSource = EnvironmentVariableSource | CredentialReferenceSource
+
+
+class WebProviderResource(ConfigurationModel):
+    """Configured Web account with ordinary inputs and credential references only."""
+
+    schema_version: Literal["1"]
+    kind: Literal["web_provider"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    type: CatalogKey
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    credential: dict[str, CredentialFieldSource] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "web-provider-")
+        return self
+
+
 class ApiKeyAuthentication(StrictModel):
     kind: Literal["api_key"]
     env: str | None = Field(default=None, min_length=1, max_length=256)
@@ -1057,6 +1081,9 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     content_plugins: tuple[InstalledContentPlugin, ...] = Field(default=(), max_length=256)
     content_plugin_diagnostics: tuple[str, ...] = ()
     models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
+    web_providers: dict[ResourceId, WebProviderResource] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     subscription_groups: dict[ResourceId, SubscriptionGroupResource] = Field(
         default_factory=dict, exclude_if=lambda value: not value
     )
@@ -1155,6 +1182,20 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                     _require_reference(item, resources, f"{project.id}.defaults.{name}")
 
         for agent in self.agents.values():
+            for capability in agent.capabilities:
+                if capability.capability != "web":
+                    continue
+                for operation in ("search", "scrape"):
+                    options = capability.configuration.get(operation)
+                    if not isinstance(options, dict):
+                        continue
+                    backend = options.get("backend")
+                    priority = options.get("backend_priority", [])
+                    references = (backend,) if isinstance(backend, str) else priority
+                    if isinstance(references, (list, tuple)):
+                        for reference in references:
+                            if isinstance(reference, str) and reference != "default":
+                                _require_reference(reference, self.web_providers, f"{agent.id}.web.{operation}")
             if agent.model is not None and agent.model not in self.models:
                 path = next(
                     (item.relative_path for item in self.sources if agent.id in item.indexed_resource_ids),

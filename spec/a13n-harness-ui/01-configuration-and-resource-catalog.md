@@ -8,6 +8,8 @@ A stable valid read of the configuration tree plus usable optional Content Plugi
 
 [Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns Device definitions and Project/Thread directory bindings. They use the same accepted-generation rules; connection status stays process-local and credentials use references rather than literal values.
 
+[Web provider accounts](02-agent-composition-and-snapshots.md#web-provider-accounts) are reusable file-defined search/scrape recipes in `web_providers/`. They use the same accepted-generation and source-mutation rules; their credential fields contain environment or saved-key references, never resolved values.
+
 ## Configuration Tree
 
 An explicit `--config <path>` selects the root YAML. Otherwise Harness UI selects `~/.a13n-harness-ui/a13n-harness-ui.yaml`. The root file's parent owns fixed immediate resource directories:
@@ -19,6 +21,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
   models/
     <resource>.yaml
   subscription_groups/
+    <resource>.yaml
+  web_providers/
     <resource>.yaml
   extensions/
     <resource>.yaml

@@ -2,6 +2,7 @@ import { AppearanceSettings } from "./appearance";
 import type { RootSettingsGroup } from "./fields";
 import { ConnectorsSection } from "../connectors/connections";
 import { LanguageChoice } from "../i18n/language";
+import { WebProvidersSection } from "./web-provider-list";
 import { useTranslation } from "../i18n";
 import { SettingsRow, SettingsSection } from "../shell/settings";
 import { capabilityLabel } from "./capability-label";
@@ -226,6 +227,7 @@ export function ConnectionsPage() {
         description={t("Tools and services your agents can use.")}
       />
       <ConnectorsSection />
+      <WebProvidersSection />
       <SourcesPage
         kinds={["mcp_server"]}
         headingLevel={2}

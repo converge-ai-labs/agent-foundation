@@ -45,6 +45,7 @@ Paths in this table are relative to the root YAML's directory. Resource selectio
 | `a13n-harness-ui.yaml`       | Process settings, defaults, display, tool switches, and the root sections below                                        |
 | `models/*.yaml`              | [Provider connections, credential references, and request settings](models-and-authentication.md#model-file-reference) |
 | `agents/*.yaml`              | [Instructions, Model selection, Capabilities, and children](agents-and-subagents.md#agent-file-reference)              |
+| `web_providers/*.yaml`       | [Reusable Host search/scrape accounts and credential sources](native-and-web-tools.md#web-provider-accounts)           |
 | `subscription_groups/*.yaml` | [Ordered subscription accounts and selection policy](models-and-authentication.md#account-store-locations)             |
 | `projects/*.yaml`            | [Working roots, Device bindings, and creation defaults](environments-and-projects.md#project-file-reference)           |
 | `devices/*.yaml`             | [Remote Device connections](environments-and-projects.md#add-device-bindings)                                          |

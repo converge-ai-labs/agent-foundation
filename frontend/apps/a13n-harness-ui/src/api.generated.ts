@@ -2107,6 +2107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/web-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Web Providers */
+        get: operations["web_providers_api_web_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/configuration/sources": {
         parameters: {
             query?: never;
@@ -3708,6 +3725,27 @@ export interface components {
              */
             override_allowed?: boolean;
         };
+        /** Authentication */
+        Authentication: {
+            /** @default required */
+            mode?: components["schemas"]["CredentialMode"];
+            /**
+             * Cases
+             * @default []
+             */
+            cases?: components["schemas"]["AuthenticationCase"][];
+        };
+        /**
+         * AuthenticationCase
+         * @description Override credential presence for one declared configuration field value.
+         */
+        AuthenticationCase: {
+            /** Field */
+            field: string;
+            /** Equals */
+            equals: string | number | boolean | null;
+            mode: components["schemas"]["CredentialMode"];
+        };
         /** @enum {string} */
         AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
         /** AuthorizationStatus */
@@ -5064,6 +5102,16 @@ export interface components {
             /** Steal */
             steal?: number | null;
         };
+        CredentialFieldSource: components["schemas"]["EnvironmentVariableSource"] | components["schemas"]["CredentialReferenceSource"];
+        /**
+         * CredentialMode
+         * @enum {string}
+         */
+        CredentialMode: "required" | "optional" | "forbidden";
+        /** CredentialReferenceSource */
+        CredentialReferenceSource: {
+            credential_ref: components["schemas"]["ResourceId"];
+        };
         /** DaemonMetrics */
         DaemonMetrics: {
             /** Sessions */
@@ -5601,6 +5649,11 @@ export interface components {
              * @default https://a13n.dev/docs/a13n-envd/
              */
             documentation_url?: string;
+        };
+        /** EnvironmentVariableSource */
+        EnvironmentVariableSource: {
+            /** Env */
+            env: string;
         };
         /** EventDeclaration */
         EventDeclaration: {
@@ -9467,6 +9520,70 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /** WebProviderCatalogView */
+        WebProviderCatalogView: {
+            /** Types */
+            types: components["schemas"]["WebProviderType"][];
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts?: components["schemas"]["WebProviderResource"][];
+        };
+        /**
+         * WebProviderResource
+         * @description Configured Web account with ordinary inputs and credential references only.
+         */
+        WebProviderResource: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1";
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "web_provider";
+            id: components["schemas"]["ResourceId"];
+            /** Name */
+            name: string;
+            type: components["schemas"]["CatalogKey"];
+            /** Configuration */
+            configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Credential */
+            credential?: {
+                [key: string]: components["schemas"]["CredentialFieldSource"];
+            } | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
+        /** WebProviderType */
+        WebProviderType: {
+            /** Type */
+            type: string;
+            /** Display Name */
+            display_name: string;
+            /** Configuration Schema */
+            configuration_schema: {
+                [key: string]: unknown;
+            };
+            /** Credential Schema */
+            credential_schema: {
+                [key: string]: unknown;
+            } | null;
+            authentication: components["schemas"]["Authentication"];
+            /** Setup Url */
+            setup_url: string | null;
+            /** Setup Label */
+            setup_label: string | null;
+            /** Operations */
+            operations: ("search" | "scrape")[];
+            /** Supports Restricted Scrape */
+            supports_restricted_scrape: boolean;
         };
         /** WorkbenchPage */
         WorkbenchPage: {
@@ -14956,6 +15073,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    web_providers_api_web_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebProviderCatalogView"];
                 };
             };
         };

@@ -48,7 +48,7 @@ Changing an existing Agent's Model does not rewrite its tools. Review its Capabi
 
 ## Host Web Capability: every built-in provider
 
-This recipe creates a web-reading Agent using a Model you have already configured. The built-in Host providers need no separate web API key.
+This recipe creates a web-reading Agent using a Model you have already configured. The local default providers need no separate web API key. Add a reusable [Web provider account](#web-provider-accounts) when you want a different search or scrape service.
 
 1. Run `a13n-harness-ui config path`. Locate the root YAML shown as `configuration_path`.
 
@@ -108,7 +108,7 @@ Choose an explicit search mode for a hand-authored Agent:
 
 | `search.mode` | Effect                                                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `host`        | Exposes the bound Host search provider. Stock Harness UI binds `default`.                                                       |
+| `host`        | Exposes the selected Host search backend. Harness UI retains local `default` and binds explicitly selected accounts.            |
 | `off`         | Removes this Capability's search function; useful with a separate native search entry.                                          |
 | `native`      | Registers the upstream native Web Search tool. This shortcut exposes `search_context_size` and upstream `provider_settings`.    |
 | `auto`        | Registers native search and makes bound Host search available. It does not probe compatibility or retry a rejected native tool. |
@@ -124,7 +124,46 @@ The schema default is `auto`; guided setup writes explicit modes. Scraping has i
 
 Removing the entire `web` Capability removes its Host toolset. Changing a search or scrape mode leaves ordinary fetch/download independently configured.
 
-`backend` selects an already bound implementation. `backend_priority` specifies preferences among bound implementations and cannot be combined with `backend`. Stock Harness UI provides only `default`; naming another vendor in YAML does not install a provider. A custom Host supplies providers through `WebBinding` and owns their credentials and lifecycle; see [Harness Capabilities](../a13n-harness/capabilities.md). Keep credentials out of Agent Capability values.
+`backend` selects one account ID or local `default`. `backend_priority` orders explicitly selected accounts and cannot be combined with `backend`; remaining bound local backends follow that list. It is not an allowlist. Harness UI never adds unselected accounts automatically. Keep credentials out of Agent Capability values; define their sources on the reusable account below.
+
+### Web provider accounts
+
+In WebUI, open **Settings → Connections → Web providers → Add Web provider**. Choose a provider, name the account, and select each credential's source: a server environment variable, an existing saved key, or **Save a new credential**. Saving a credential writes the key store separately; **Create** then validates and saves the account recipe. It does not test credentials or issue a provider request.
+
+The picker reflects the installed Harness catalog, currently including DuckDuckGo, Keenable, Brave Search, DeepSeek, Exa, Parallel, Tavily, Firecrawl, Jina, Perplexity, SerpApi, SpecStream and TinyFish. The descriptor shows supported search/scrape operations and links to provider setup. Keenable can be saved without credentials for anonymous access. Other provider authentication requirements and configuration fields come from their schemas.
+
+For file-based setup, create this beside the selected root YAML:
+
+```yaml title="web_providers/research.yaml"
+schema_version: "1"
+kind: web_provider
+id: web-provider-research
+name: Research search
+type: tavily
+configuration: {}
+credential:
+  api_key: {env: TAVILY_API_KEY}
+```
+
+Alternatively, use `{credential_ref: key-research}` for a key already saved in **Models → Accounts & API keys**. Do not paste secret values into YAML. Multi-field credentials use one source per top-level string field; required fields must all be present. Keep ordinary provider configuration in `configuration`, not inside `credential`.
+
+Open the Agent's **Web options**, choose **Host search** or **Host scraping**, then select the account. The equivalent Capability fragment is:
+
+```yaml
+capabilities:
+  - capability: web
+    configuration:
+      search: {mode: host, backend: web-provider-research}
+      scrape: {mode: host, backend: default}
+```
+
+For fallback, replace `backend` with `backend_priority: [web-provider-research, default]`. Reorder entries in Web options to change preference. Adding an account without selecting it does not change an Agent's local default or add paid traffic. A search-only account is not offered for scraping. Providers without restricted-scrape support cannot enforce an authored scrape-domain restriction.
+
+Run `a13n-harness-ui config validate`, then test one small search and inspect the tool result. Allowed-host policies must permit both the provider API destination and relevant target URLs. Saving and validation perform no network probe. A fresh Run resolves a selected account's credential on first use; concurrent search/scrape share it for that Run. Later Runs and resumed child segments resolve it again, so replacing a saved key takes effect at that boundary. A missing explicitly configured source fails rather than silently switching to anonymous access.
+
+Account edits apply to later Run captures; active root and child work retain their captured recipe. Remove current Agent references before deleting an account. Deleting it does not remove a shared saved key. **Accounts & API keys** lists Web account field consumers before key removal.
+
+### Native provider settings
 
 Pass provider-specific native search options through `provider_settings`. For example, this Agent fragment selects OpenRouter's native Exa engine, not a Host backend:
 

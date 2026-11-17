@@ -1,0 +1,42 @@
+.identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.identity > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.actions {
+  padding-inline: 16px;
+}
+.actions > a {
+  padding-inline: 0;
+}
+.credential {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.note {
+  margin: 0;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+  padding-inline: 16px;
+}
+.priority {
+  display: grid;
+  gap: 8px;
+  padding: 8px 16px;
+}
+.priorityRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.priorityRow > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
