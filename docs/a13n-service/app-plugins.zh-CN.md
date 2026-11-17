@@ -62,7 +62,87 @@ def definition() -> AppDefinition:
 
 `AppDefinition.factory_keys` 声明所属 Harness factory key。按照[插件和扩展](../a13n-harness/plugins.md#publish-a-plugin-factory)将 factory 注册到 `a13n_harness.plugins`，再将 key 加入定义，例如 `factory_keys=frozenset({"acme.audit"})`。在 agent 配置中照常选择具名插件实例。Service 在启动时加载所属 factory，并根据已接受 run 的快照决定是否构造实例。独立 factory 通过 `plugins.keys` 选择。
 
-`OrganizationSweep` 回调接收已有 Runtime 和一个已启用的组织 ID。Service 选择组织，并在回调前关闭 SQL session。回调负责有界业务工作以及多副本安全的认领。每个组织使用声明的超时时间；某个回调失败后，同批其他组织继续执行，该轮扫描记为失败。可选的 `startup(runtime, stack)` 打开进程资源，并在已有退出栈上注册清理。每个已安装 App 都会运行 startup，与组织启用状态无关。App 定义不提供表或迁移；业务数据库应通过应用自身的运维流程准备。
+`OrganizationSweep` 回调接收已有 Runtime 和一个已启用的组织 ID。Service 选择组织，并在回调前关闭 SQL session。回调负责有界业务工作以及多副本安全的认领。每个组织使用声明的超时时间；某个回调失败后，同批其他组织继续执行，该轮扫描记为失败。可选的 `startup(runtime, stack)` 打开进程资源，并在已有退出栈上注册清理。每个已安装 App 都会运行 startup，与组织启用状态无关。App 可以声明带独立迁移的可选数据库，见下文。Service 在运行任何 App startup 回调前校验所有已安装 App 的数据库版本。
+
+## 持久化业务数据
+
+App 需要在宿主 PostgreSQL 数据库中建表时，使用 `AppDatabase`。每个 App 在 `public` 中拥有独立的迁移历史。App 使用普通 SQLAlchemy 模型和现有 Runtime Storage，可以直接关联查询原生 Service ORM 行，无需另建连接池。前缀划分迁移归属；App 代码仍需执行租户范围限制和授权。
+
+在 `models.py` 等模块中声明数据库和模型，再从 `app.py` 导入该模块，并将同一数据库对象传入 `AppDefinition(database=database)`。部署配置必须在导入模型前解析：
+
+```python
+import os
+
+from a13n_service.app_database import AppDatabase
+from a13n_service.tenancy.tables import WorkspaceRow
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Optional deployment override. Leave unset for a stable App-ID-derived prefix.
+database = AppDatabase(
+    "acme.reports",
+    migrations="acme_reports:migrations",
+    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX") or None,
+)
+database.reference(WorkspaceRow.__table__)  # Read-only foreign-key target, never App-owned DDL.
+
+
+class Base(DeclarativeBase):
+    metadata = database.metadata
+
+
+class Note(Base):
+    __tablename__ = database.name("notes")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    body: Mapped[str]
+```
+
+默认物理表名为 `app__acme_report_8b627b7edb3d__notes`。标签由可读短名和完整、精确 App ID 的稳定摘要组成，因此 `acme.reports` 与 `acme_reports` 获得不同命名空间，与安装顺序无关。长 App ID 也无需额外配置。可选显式标签须使用小写 snake case，以字母开头，且不超过 24 字节。例如，`ACME_REPORTS_TABLE_PREFIX=reports_1` 选择 `app__reports_1__notes`。通过 `database.name(...)` 获取名称，不要硬编码物理名称。同一部署的 migration、control 和 worker 进程须使用相同配置；编写迁移时可以使用默认前缀，因为生成的标识符支持跨前缀部署。Service 拒绝重复 App ID 和冲突的显式前缀。数据库初始化后，保留的 App ID/前缀绑定会阻止意外改指其他命名空间。修改配置不会搬迁现有数据；迁移已部署的命名空间需要显式审查的数据库迁移。
+
+1. 在兼容 Service 的开发环境中以 editable 方式安装 App。在 App 项目根目录执行以下编写命令。当前项目只有一个明确的 App 时，可省略 `--app`。
+
+   ```bash
+   a13n-service apps db init --app acme.reports
+   a13n-service apps db revision --app acme.reports -m "create notes" \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   a13n-service apps db check --app acme.reports \
+     --scratch-url "$APP_TEST_POSTGRES_URL"
+   ```
+
+`init` 只创建声明的包内迁移目录。`revision` 和 `check` 在新建的临时数据库中回放 Core 及目标 App 的历史，不会升级配置中的业务数据库。`--scratch-url` 可选择本地或 CI PostgreSQL 服务器；省略时使用 Service 配置中的服务器。所选角色须具有创建和删除临时数据库的权限。不要将开发检查指向生产服务器。
+
+审查生成的 Alembic 草稿，包括破坏性变更、锁、数据迁移和回滚行为。生成的标识符通过 `migration_name("notes")` 在执行时解析所选前缀，因此同一包内历史支持不同部署的前缀。默认值和数据字符串保持原样。手写 SQL、表达式和其他数据库对象需要显式使用 `migration_name`，并手动检查可移植性。将 `migrations/versions/*.py` 包含在 wheel 和源码包中；先运行 `apps db check`，再发布。
+
+部署时，在各进程安装相同的 App wheel 并配置相同前缀。默认情况下，`all` 和 `control` 启动时依次升级 Core 和所有已安装 App 的数据库。采用独立迁移任务时运行：
+
+```bash
+a13n-service migrate
+a13n-service apps db status --app acme.reports
+# Apply only this App after Core is current:
+a13n-service apps db upgrade --app acme.reports
+```
+
+`migrate` 先升级 Core，再逐个升级所有已安装 App；`migrate --no-apps` 只升级 Core。各 App 的历史与版本表相互独立。使用独立迁移任务时，在服务副本中设置 `A13N_DATABASE__AUTO_MIGRATE=false`。如果只自动升级 Core、单独管理 App 升级，则保持总开关开启并设置 `A13N_DATABASE__AUTO_MIGRATE_APPS=false`。这两个配置只影响启动，显式 CLI 命令仍执行迁移。`migrate --check` 对部署数据库执行只读 Core/App 一致性检查，不需要 `CREATE DATABASE` 权限；`apps db check` 用于临时数据库上的开发和 CI 回放。所有角色在 App 回调前校验已安装 App 的绑定和精确版本，包括组织尚未启用的 App。worker、readiness 和组织启用操作都不会执行 DDL。卸载包会保留数据、版本表和命名空间绑定。
+
+业务查询使用 `a13n_service.infra.db` 中的 `transaction(runtime.storage)` 或 `short_session(runtime.storage)`。每个会话只围绕一次短数据库操作。原生关联查询使用同一个 ORM 会话：
+
+```python
+from a13n_service.infra.db import short_session
+from sqlalchemy import select
+
+async with short_session(runtime.storage) as session:
+    rows = (
+        await session.execute(
+            select(Note.body, WorkspaceRow.name)
+            .join(WorkspaceRow, Note.workspace_id == WorkspaceRow.id)
+            .where(WorkspaceRow.id == authorized_workspace_id)
+        )
+    ).all()
+```
+
+测试中可复用 `a13n_service.migrations.scratch.scratch_database(development_database_settings)`：在其作用域内调用 `a13n_service.migrations` 中 Core 的 `runner.upgrade(scratch, OSS)` 和 App 的 `apps.upgrade(scratch, OSS, database)`，再打开普通 `Storage(scratch.url.get_secret_value())`。在退出作用域前关闭 Storage。这样测试会执行包内历史，并在结束后删除临时数据库。CI 加入 `apps db check`；`status` 检查部署中的版本状态，`check` 则从全新回放验证迁移与模型一致。
 
 ## 上报自定义指标
 

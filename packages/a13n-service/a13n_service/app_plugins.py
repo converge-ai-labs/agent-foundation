@@ -1,7 +1,7 @@
 """Installed App metadata and immutable accepted activation; discovery is explicit at assembly.
 
-Apps are trusted installed code. Their declarations contribute existing Service facilities, never tables or
-migrations. Tenant work enters through host-owned dispatch; process resources live on the host exit stack.
+Apps are trusted installed code. Business database histories remain independent of the Core graph.
+Tenant work enters through host-owned dispatch; process resources live on the host exit stack.
 """
 
 from __future__ import annotations

@@ -8,6 +8,7 @@ from types import MappingProxyType
 
 from fastapi import APIRouter
 
+from a13n_service.app_database import AppDatabase
 from a13n_service.app_plugins import AppManifest, Frontend
 from a13n_service.runs.runtime import Runtime
 from a13n_service.settings import Section
@@ -33,8 +34,13 @@ class AppDefinition:
     sweeps: tuple[OrganizationSweep, ...] = ()
     startup: Callable[[Runtime, AsyncExitStack], Awaitable[None]] | None = None
     frontend: Frontend | None = None
+    database: AppDatabase | None = None
 
     def __post_init__(self) -> None:
+        if self.database is not None:
+            if self.database.app_id != self.app_id:
+                raise ValueError("App database identity must match its AppDefinition")
+            self.database.validate()
         object.__setattr__(self, "factory_keys", frozenset(self.factory_keys))
         object.__setattr__(self, "settings", MappingProxyType(dict(self.settings)))
 
@@ -59,6 +65,17 @@ class InstalledApp:
             factory_keys=self.definition.factory_keys,
             frontend=self.definition.frontend,
         )
+
+
+def app_databases(apps: tuple[InstalledApp, ...]) -> tuple[AppDatabase, ...]:
+    databases = tuple(app.definition.database for app in apps if app.definition.database is not None)
+    prefixes: set[str | None] = set()
+    for database in databases:
+        database.validate()
+        if database.prefix in prefixes:
+            raise ValueError(f"Duplicate App database prefix: {database.prefix}")
+        prefixes.add(database.prefix)
+    return databases
 
 
 def discover_apps() -> tuple[InstalledApp, ...]:

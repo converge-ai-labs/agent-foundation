@@ -18,6 +18,8 @@ from a13n_harness.providers.web.builtins import built_in_web_providers
 from fastapi import APIRouter
 from sqlalchemy import MetaData, Table
 
+from a13n_service.app_database import APP_PREFIX
+from a13n_service.app_database import DatabaseRow as AppDatabaseRow
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import Base, schema_rules, table_rules
 from a13n_service.infra.ids import new_object_id
@@ -242,6 +244,8 @@ class Distribution:
             table = row.__table__
             if not isinstance(table, Table):
                 raise TypeError("Distribution rows must own concrete tables")
+            if table.name.startswith(APP_PREFIX):
+                raise ValueError(f"Distribution tables cannot use the reserved App namespace: {table.name}")
             if table.key in metadata.tables:
                 raise ValueError(f"Duplicate table: {table.key}")
             table.to_metadata(metadata)
@@ -389,6 +393,7 @@ OSS = Distribution(
     platform_tools=(platform_catalog,),
     name="oss",
     tables=(
+        AppDatabaseRow,
         OrganizationRow,
         WorkspaceRow,
         WorkspaceProvisioningRow,

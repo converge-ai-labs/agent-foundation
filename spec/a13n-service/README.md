@@ -30,7 +30,7 @@ Start with [00-overview.md](00-overview.md), [02-layout.md](02-layout.md) and th
 
 [Browsers](14-browsers.md) owns Browser resources/providers, frozen Thread bindings, exact tab ownership, browser-only human control, retention and handback input.
 
-[App plugins](15-app-plugins.md) owns installed App registration, organization enablement, immutable Run activation, guarded business dispatch and packaged frontend assets.
+[App plugins](15-app-plugins.md) owns installed App registration, independent business persistence, organization enablement, immutable Run activation, guarded business dispatch and packaged frontend assets.
 
 ## Rule ownership
 
