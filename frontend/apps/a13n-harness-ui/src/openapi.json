@@ -467,6 +467,65 @@
         }
       }
     },
+    "/api/bot/messages": {
+      "get": {
+        "summary": "Bot Messages",
+        "operationId": "bot_messages_api_bot_messages_get",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotMessagesPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bot/notes": {
       "get": {
         "summary": "Bot Notes",
@@ -11179,6 +11238,34 @@
         ],
         "title": "BotMessage"
       },
+      "BotMessagesPage": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/BotMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "BotMessagesPage"
+      },
       "BotNote": {
         "properties": {
           "thread_id": {
@@ -11306,36 +11393,6 @@
         ],
         "title": "BotNotesPage"
       },
-      "BotProse": {
-        "properties": {
-          "item_id": {
-            "type": "string",
-            "title": "Item Id"
-          },
-          "text": {
-            "type": "string",
-            "title": "Text"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "final": {
-            "type": "boolean",
-            "title": "Final",
-            "default": false
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "item_id",
-          "text",
-          "created_at"
-        ],
-        "title": "BotProse"
-      },
       "BotSnapshot": {
         "properties": {
           "thread_id": {
@@ -11423,14 +11480,6 @@
             },
             "type": "array",
             "title": "Messages",
-            "default": []
-          },
-          "prose": {
-            "items": {
-              "$ref": "#/components/schemas/BotProse"
-            },
-            "type": "array",
-            "title": "Prose",
             "default": []
           }
         },

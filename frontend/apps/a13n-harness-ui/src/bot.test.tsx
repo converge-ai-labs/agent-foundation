@@ -98,6 +98,9 @@ let botReadGate: Promise<void> | undefined;
 let historyGate: Promise<void> | undefined;
 let historyFailure: boolean;
 let historyPage: Schema<"TranscriptPage">;
+let publications: Schema<"BotMessage">[] | undefined;
+let publicationFailure: boolean;
+let publicationCursors: (string | null)[];
 let earlierHistoryFailure: boolean;
 let detailMissing: boolean;
 let rootSource: string;
@@ -183,6 +186,9 @@ beforeEach(() => {
   historyGate = undefined;
   historyFailure = false;
   historyPage = { entries: [], turns: [], total: 0 };
+  publications = undefined;
+  publicationFailure = false;
+  publicationCursors = [];
   earlierHistoryFailure = false;
   detailMissing = false;
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
@@ -260,6 +266,25 @@ beforeEach(() => {
         return Response.json(
           earlier ? { entries: [], turns: [], total: 0 } : historyPage,
         );
+      }
+      if (path === "/api/bot/messages") {
+        const params = new URL(request.url).searchParams;
+        const before = params.get("before");
+        publicationCursors.push(before);
+        if (publicationFailure)
+          return Response.json(
+            { error: { message: "Publications unavailable" } },
+            { status: 503 },
+          );
+        const rows = publications ?? snapshot.messages ?? [];
+        const end = before
+          ? rows.findIndex((row) => row.message_id === before)
+          : rows.length;
+        const start = Math.max(0, end - Number(params.get("limit") ?? 50));
+        return Response.json({
+          messages: rows.slice(start, end),
+          next_cursor: start > 0 ? rows[start].message_id : null,
+        });
       }
       if (path === "/api/bot" && botReadGate) await botReadGate;
       if (path === "/api/bot/pause") {
@@ -1599,4 +1624,144 @@ it("retains readable Bot publications when native detail is temporarily missing"
   await screen.findByText("Chat not found");
   expect(screen.queryByText("Loading messages…")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
+});
+
+function publicationHistory(count: number) {
+  return Array.from({ length: count }, (_, index): Schema<"BotMessage"> => ({
+    message_id: `notice-${String(index).padStart(3, "0")}`,
+    role: "assistant",
+    text: `Publication ${index}`,
+    created_at: "2026-11-12T00:00:00Z",
+    display_ids: [],
+  }));
+}
+
+it("pages more than 100 proactive publications after native history is exhausted", async () => {
+  publications = publicationHistory(125);
+  snapshot.thread = { thread_id: BOT_THREAD_ID } as Schema<"ThreadSummary">;
+  snapshot.messages = publications.slice(-100);
+  historyPage = {
+    entries: [
+      {
+        position: 0,
+        message_kind: "response",
+        timestamp: "2026-11-13T00:00:00Z",
+        parts: [{ kind: "assistant", text: "Only native row" }],
+      },
+    ],
+    turns: [],
+    total: 1,
+  };
+  mount();
+  await screen.findByText("Publication 124");
+  await screen.findByText("Only native row");
+  const reader = document.querySelector(`.${conversationStyles.reading}`)!;
+  await waitFor(() => expect(publicationCursors).toEqual([null]));
+  await waitFor(() =>
+    expect(queries.isFetching({ queryKey: ["bot-messages"] })).toBe(0),
+  );
+  fireEvent.scroll(reader);
+  await waitFor(() => expect(publicationCursors).toHaveLength(2));
+  await waitFor(() =>
+    expect(queries.isFetching({ queryKey: ["bot-messages"] })).toBe(0),
+  );
+  fireEvent.scroll(reader);
+  await screen.findByText("Publication 0");
+  expect(publicationCursors).toEqual([null, "notice-075", "notice-025"]);
+  expect(screen.getAllByText("Publication 124")).toHaveLength(1);
+  expect(screen.getAllByText("Publication 25")).toHaveLength(1);
+});
+
+it("retries publication-only pagination without a native Thread", async () => {
+  publications = publicationHistory(125);
+  snapshot.messages = publications.slice(-100);
+  mount();
+  await screen.findByText("Publication 124");
+  await waitFor(() => expect(publicationCursors).toEqual([null]));
+  await waitFor(() =>
+    expect(queries.isFetching({ queryKey: ["bot-messages"] })).toBe(0),
+  );
+  publicationFailure = true;
+  const reader = document.querySelector(`.${conversationStyles.reading}`)!;
+  fireEvent.scroll(reader);
+  await screen.findByRole("button", { name: "Retry loading" });
+  expect(screen.getByText("Publication 124")).toBeTruthy();
+  publicationFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Retry loading" })).toBeNull(),
+  );
+  fireEvent.scroll(reader);
+  await screen.findByText("Publication 0");
+});
+
+it("retries an initial publication failure while keeping the snapshot readable", async () => {
+  publications = publicationHistory(125);
+  snapshot.messages = publications.slice(-100);
+  publicationFailure = true;
+  mount();
+  await screen.findByText("Publication 124");
+  await screen.findByRole("button", { name: "Retry loading" });
+  publicationFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Retry loading" })).toBeNull(),
+  );
+  expect(publicationCursors).toEqual([null, null]);
+});
+
+it("retains older pages and the reading position across overlapping and disconnected snapshot heads", async () => {
+  publications = publicationHistory(125);
+  snapshot.messages = publications.slice(-100);
+  mount();
+  await screen.findByText("Publication 124");
+  const reader = document.querySelector(`.${conversationStyles.reading}`)!;
+  await waitFor(() => expect(publicationCursors).toHaveLength(1));
+  await waitFor(() =>
+    expect(queries.isFetching({ queryKey: ["bot-messages"] })).toBe(0),
+  );
+  fireEvent.scroll(reader);
+  await waitFor(() => expect(publicationCursors).toHaveLength(2));
+  await waitFor(() =>
+    expect(queries.isFetching({ queryKey: ["bot-messages"] })).toBe(0),
+  );
+  fireEvent.scroll(reader);
+  await screen.findByText("Publication 0");
+  Object.defineProperties(reader, {
+    scrollHeight: { configurable: true, value: 1000 },
+    clientHeight: { configurable: true, value: 200 },
+    scrollTop: { configurable: true, value: 400, writable: true },
+  });
+  fireEvent.wheel(reader, { deltaY: -1 });
+  fireEvent.scroll(reader);
+  publications = publicationHistory(126);
+  snapshot = { ...snapshot, messages: publications.slice(-100) };
+  await act(async () => {
+    queries.setQueryData(["bot"], snapshot);
+  });
+  await screen.findByText("Publication 125");
+  expect(screen.getByText("Publication 0")).toBeTruthy();
+  expect(reader.scrollTop).toBe(400);
+  expect(publicationCursors).toHaveLength(3);
+  // More than one snapshot window arrives while the reader is away. No old
+  // page is refetched or discarded; the next top-edge load fills the gap.
+  publications = publicationHistory(250);
+  snapshot = { ...snapshot, messages: publications.slice(-100) };
+  await act(async () => {
+    queries.setQueryData(["bot"], snapshot);
+  });
+  await screen.findByText("Publication 249");
+  expect(screen.getByText("Publication 0")).toBeTruthy();
+  expect(publicationCursors).toHaveLength(3);
+  // jsdom does not grow scrollHeight when rows arrive. Disable viewport-fill
+  // observation here so this gesture exercises exactly one earlier-page load.
+  Object.defineProperty(reader, "clientHeight", {
+    configurable: true,
+    value: 0,
+  });
+  reader.scrollTop = 0;
+  fireEvent.scroll(reader);
+  await screen.findByText("Publication 149");
+  expect(publicationCursors.at(-1)).toBe("notice-150");
+  expect(screen.getAllByText("Publication 0")).toHaveLength(1);
 });

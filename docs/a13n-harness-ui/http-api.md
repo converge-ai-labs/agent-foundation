@@ -264,9 +264,11 @@ Instance-key clients can use the shared [Bot](bot.md) without creating another T
 
 | Method and path        | Body                                                                   | Result                                                                                                                              |
 | ---------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/bot`         | None                                                                   | Snapshot with saved state, intentional messages, native saved prose, retained inputs, active operation, and pending-decision status |
+| `GET /api/bot`         | None                                                                   | Bounded snapshot with saved state, latest 100 intentional messages, latest 32 inputs, active operation, and pending-decision status |
 | `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | Retained input with native admission/steering outcome; acceptance is not completion                                                 |
 | `POST /api/bot/pause`  | `{ "paused": true }`                                                   | Updated snapshot; automatic delivery pauses while direct input remains usable                                                       |
+
+`GET /api/bot/messages?limit=50&before=<message_id>` returns chronological `messages` and nullable `next_cursor`. Omit `before` for the latest page; pass `next_cursor` as `before` to load earlier messages. Limits are 1–100, default 50. Timestamps use message identity as a stable tie-breaker; an unavailable cursor returns an error. Older messages, including proactive publications without native display items, remain available beyond the snapshot window. Status reads do not load native checkpoint history. `BotSnapshot.prose` is removed; clients use the ordinary Thread transcript endpoint for saved native work and the messages endpoint for intentional publications.
 
 `GET /api/bot/notes?limit=20&offset=0` lists read-only handoff summaries and `next_offset`. `GET /api/bot/notes/{thread_id}` reads an ordinary root's full Bot Note, including an empty slot. These routes provide no mutation actions. The existing Thread stream supplies live prose; saved prose uses native display item IDs to reconcile with final publications.
 

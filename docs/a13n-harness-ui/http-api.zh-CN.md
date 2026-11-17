@@ -262,11 +262,13 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 持实例密钥的客户端可使用共享 [Bot](bot.md)，无需再创建 Thread。受限分享访客无法访问这些路由。
 
-| 方法与路径             | 请求体                                                                 | 结果                                                                                 |
-| ---------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `GET /api/bot`         | 无                                                                     | 包含保存状态、有意发布的消息、原生保存文本、保留输入、当前操作及待回答决策状态的快照 |
-| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | 含原生接受或 steering 结果的保留输入；接受不代表完成                                 |
-| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | 更新后的快照；暂停自动投递，直接输入仍可使用                                         |
+| 方法与路径             | 请求体                                                                 | 结果                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET /api/bot`         | 无                                                                     | 有界快照，包含保存状态、最近 100 条有意发布的消息、最近 32 条输入、当前操作及待回答决策状态 |
+| `POST /api/bot/inputs` | `{ "input_id": "input-client-1", "text": "Follow the release work." }` | 含原生接受或 steering 结果的保留输入；接受不代表完成                                        |
+| `POST /api/bot/pause`  | `{ "paused": true }`                                                   | 更新后的快照；暂停自动投递，直接输入仍可使用                                                |
+
+`GET /api/bot/messages?limit=50&before=<message_id>` 返回按时间正序排列的 `messages` 和可空的 `next_cursor`。省略 `before` 获取最新一页；将返回的 `next_cursor` 作为 `before` 读取更早的消息。`limit` 为 1–100，默认 50；时间相同时以消息 ID 稳定排序，游标不存在时明确返回错误。快照窗口以外的旧消息仍可分页读取，包括没有原生 display item 的主动发布消息。状态查询不加载原生 checkpoint 历史。`BotSnapshot.prose` 已移除；客户端通过普通 Thread transcript 接口读取保存的原生执行内容，通过 messages 接口读取有意发布的消息。
 
 `GET /api/bot/notes?limit=20&offset=0` 返回只读交接摘要和 `next_offset`；`GET /api/bot/notes/{thread_id}` 读取普通根 Thread 的完整 Bot Note，也包括空 slot。这些路由没有修改操作。实时文本沿用现有 Thread 流；保存文本通过原生 display item ID 与最终发布结果对齐。
 

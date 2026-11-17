@@ -74,9 +74,10 @@ class BackgroundCompaction:
         finally:
             if holder.is_locked:
                 with CancelScope(shield=True):
-                    async with checkpoint_lock(self._data_root, thread_id):
-                        await to_thread.run_sync(holder.release)
-                        await to_thread.run_sync(lambda: Path(holder.lock_file).unlink(missing_ok=True))
+                    # Registration fences expiry; departure only removes protection.
+                    # A concurrent prune may conservatively observe the old token.
+                    await to_thread.run_sync(holder.release)
+                    await to_thread.run_sync(lambda: Path(holder.lock_file).unlink(missing_ok=True))
 
     def _has_users(self, thread_id: str) -> bool:
         # The caller holds the registration gate. Released locks prove process loss.
