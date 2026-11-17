@@ -54,12 +54,17 @@ class Kosa8Management(Kosa8Reference, NativeManagement[Kosa8EnvironmentConfigura
             body: dict[str, object] = {
                 "name": self.name,
                 "labels": self.labels,
-                "size": config.size,
                 # Every command runs in one long-lived container, so the whole filesystem lasts between commands.
                 "persistent": True,
                 # Idle sleep is off: a sleeping sandbox is a stopped Environment that only start() wakes.
                 "sleep_after_s": 0,
             }
+            if config.image is None and config.disk_gb is None and not config.docker:
+                # kosa8's universal template of this size: Ubuntu with python3, which the guest helper needs,
+                # restored from a snapshot. A bare size boots kosa8's minimal default image, without python3.
+                body["template"] = f"universal-{config.size}"
+            else:
+                body["size"] = config.size
             if config.image is not None:
                 body["image"] = config.image
             if config.disk_gb is not None:

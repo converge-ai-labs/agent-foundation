@@ -39,7 +39,10 @@ class Kosa8EnvironmentConfiguration(CommandConfiguration):
         default=None,
         min_length=1,
         max_length=256,
-        description="Boot image, such as a kosa8 template image. Omitted: kosa8's default image.",
+        description=(
+            "Boot image; it needs python3. Omitted: kosa8's universal Ubuntu template of the size,"
+            " or, with disk_gb or docker, kosa8's default image."
+        ),
     )
     disk_gb: int | None = Field(default=None, ge=8, le=200, description="Data disk in GB. Omitted: 32.")
     docker: bool = Field(default=False, description="Let the sandbox run its own dockerd.")

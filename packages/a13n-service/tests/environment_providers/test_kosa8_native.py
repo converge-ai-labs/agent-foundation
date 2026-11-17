@@ -240,6 +240,20 @@ def test_kosa8_recipe_options_reach_the_create_call(tmp_path, fake):
     asyncio.run(scenario())
 
 
+def test_kosa8_default_boots_the_universal_template_of_the_size(tmp_path, fake):
+    async def scenario():
+        definition, config = setup(tmp_path, size="8x16")
+        provider = await definition.open_provider(configuration={}, credential=CREDENTIAL)
+        await provider.create(config, environment_id="env-default", operation_id="op-create")
+        [created] = fake.created
+        # The guest helper needs python3: kosa8's minimal default image has none, its universal template does.
+        assert created["template"] == "universal-8x16"
+        assert "size" not in created and "image" not in created
+        await provider.close()
+
+    asyncio.run(scenario())
+
+
 def test_kosa8_interrupted_create_recovers_by_labels(tmp_path, fake):
     async def scenario():
         definition, config = setup(tmp_path)
