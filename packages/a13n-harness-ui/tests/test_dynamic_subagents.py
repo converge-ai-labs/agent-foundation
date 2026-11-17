@@ -326,6 +326,82 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             )
 
 
+@pytest.mark.parametrize("spawn", ["delegate", "spawn_subagent"])
+@pytest.mark.parametrize("wait_for_successor", [False, True])
+async def test_repeated_resume_returns_tool_error_without_failing_parent(
+    tmp_path, monkeypatch, spawn, wait_for_successor
+):
+    release = Event()
+    execution_ids, child_calls = [], []
+
+    async def model(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            child_calls.append(messages)
+            if len(child_calls) == 2 and not wait_for_successor:
+                await release.wait()
+            yield "child done"
+            return
+        results = returned(messages)
+        if not results:
+            arguments = (
+                {"subagent_name": "explorer", "prompt": "initial task"}
+                if spawn == "delegate"
+                else {"name": "worker", "instructions": "CHILD_ROLE", "prompt": "initial task"}
+            )
+            yield {0: DeltaToolCall(name=spawn, json_args=json.dumps(arguments))}
+        elif len(results) == 1:
+            execution_ids.append(results[0].content["execution_id"])
+            yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps({"execution_id": execution_ids[0]}))}
+        elif len(results) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="resume_subagent",
+                    json_args=json.dumps({"execution_id": execution_ids[0], "prompt": "accepted follow-up"}),
+                )
+            }
+        elif len(results) == 3:
+            execution_ids.append(results[2].content["execution_id"])
+            if wait_for_successor:
+                yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps({"execution_id": execution_ids[1]}))}
+            else:
+                yield {
+                    0: DeltaToolCall(
+                        name="resume_subagent",
+                        json_args=json.dumps({"execution_id": execution_ids[0], "prompt": "rejected follow-up"}),
+                    )
+                }
+        elif len(results) == 4 and wait_for_successor:
+            yield {
+                0: DeltaToolCall(
+                    name="resume_subagent",
+                    json_args=json.dumps({"execution_id": execution_ids[0], "prompt": "rejected follow-up"}),
+                )
+            }
+        else:
+            error = str(results[-1].content)
+            assert "child_execution_already_resumed" in error
+            assert execution_ids[1] in error
+            yield "Parent recovered."
+
+    async with await open_app(tmp_path, monkeypatch, model) as app:
+        app._tool_executions.deliver_subagent = None
+        try:
+            thread = await new_thread(app)
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+            result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+            assert result.status is RootOperationStatus.completed, result
+            release.set()
+            await app._subagent_operator.wait_executions(
+                parent_thread_id=thread.thread_id, execution_id=execution_ids[1], timeout_seconds=10
+            )
+            page = await app.query_child_executions(parent_thread_id=thread.thread_id)
+            assert page.total == 2
+            assert len(child_calls) == 2
+            assert "rejected follow-up" not in str(child_calls)
+        finally:
+            release.set()
+
+
 @pytest.mark.parametrize(
     "surface,role",
     [

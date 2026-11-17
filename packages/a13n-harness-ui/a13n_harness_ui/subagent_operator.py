@@ -99,7 +99,7 @@ from a13n_harness_ui.composition import (
 )
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
-from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
+from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreConflictError, StoreError
 from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
@@ -1276,13 +1276,18 @@ class HarnessUiSubagentOperator(SubagentOperator):
             )
             if before_accept is not None:
                 before_accept()
-            head = await self._store.child_executions.resume(
-                previous_execution_id=previous.execution_id,
-                execution_id=execution_id,
-                child_run_id=stream.run_id,
-                run_composition=published.reference,
-                automatic_completion=automatic_completion,
-            )
+            try:
+                head = await self._store.child_executions.resume(
+                    previous_execution_id=previous.execution_id,
+                    execution_id=execution_id,
+                    child_run_id=stream.run_id,
+                    run_composition=published.reference,
+                    automatic_completion=automatic_completion,
+                )
+            except StoreConflictError as exc:
+                if exc.code != "child_execution_already_resumed":
+                    raise
+                raise _SubagentRequestError(str(exc), code=exc.code) from exc
             prepared = _PreparedSegment(
                 head=head,
                 scope=scope,
