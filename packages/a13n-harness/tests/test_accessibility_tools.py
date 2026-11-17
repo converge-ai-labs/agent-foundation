@@ -23,7 +23,7 @@ from a13n_harness.environment.models import (
     EnvironmentOperationReceipt,
 )
 from a13n_harness.toolsets._accessibility_references import AccessibilityReferences
-from a13n_harness.toolsets.accessibility import _AX, _UIA, _Atspi, _Range
+from a13n_harness.toolsets.accessibility import _AX, _UIA, _Atspi, _Inspect, _Range
 from a13n_harness.toolsets.computer import ComputerToolset
 from pydantic import ValidationError
 
@@ -45,6 +45,20 @@ def test_reference_projection_keeps_native_ids_out_of_tool_schema_and_results():
     assert refs.remember(node) == reference
     with pytest.raises(EnvironmentError):
         validate({"ref": node.model_dump(), "request": {"op": "invoke"}})
+
+
+def test_projected_inspect_rebuilds_instead_of_reusing_original_model_validator():
+    refs = AccessibilityReferences()
+    node = _node()
+    reference = refs.remember(node)
+    _, validate = refs.arguments(_Inspect)
+    args = {"ref": reference, "projection_observation_id": "obs-one"}
+    parsed = validate(args)
+    assert isinstance(parsed, _Inspect)
+    assert parsed.ref == node
+    assert parsed.projection_observation_id == "obs-one"
+    with pytest.raises(ValidationError):
+        _Inspect.model_validate(args)
 
 
 def test_permissions_filter_grouped_literal_variants_and_runtime_validation():
@@ -361,7 +375,7 @@ async def test_screenshot_hit_test_and_projection_keep_original_mount_and_coordi
             ref=roots["nodes"][0]["reference"],
             projection_observation_id="obs-one",
         )
-        assert projected["ok"]
+        assert projected["ok"], projected
         assert projected["nodes"][0]["image_projection"]["source_observation_id"] == "obs-one"
         denied = await tools["computer_accessibility_roots"].function(
             alias="two",

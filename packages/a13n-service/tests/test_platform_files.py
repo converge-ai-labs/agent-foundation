@@ -18,6 +18,7 @@ from a13n_service.distribution import OSS
 from a13n_service.resources.agents.composer import configuration
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.toolsets import environment_configuration
+from a13n_service.resources.skills.builtin import PACKAGE_ROOT
 from a13n_service.runs.host import _environment
 from a13n_service.runs.platform_files import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_platform_files
 from a13n_service.settings import Settings
@@ -47,7 +48,10 @@ async def test_local_mounts_schema_references_and_permissions():
             assert [item.name for item in catalog.items] == ["platform-operations"]
             files = bound.files
             schema = await files.read_text(f"{ROOT}/schemas/agent-config.json", line_limit=10000)
-            assert json.loads(schema.text) == AgentConfig.model_json_schema()
+            # Contract generation validates the schema on the canonical build interpreter.
+            # This mount must expose the bundled bytes on every supported runtime.
+            bundled = PACKAGE_ROOT / "platform-operations/schemas/agent-config.json"
+            assert json.loads(schema.text) == json.loads(bundled.read_text())
             document = await files.read_text(f"{ROOT}/SKILL.md")
             for reference in re.findall(r"\]\(([^)]+)\)", document.text):
                 path = reference if reference.startswith("/") else f"{ROOT}/{reference}"
