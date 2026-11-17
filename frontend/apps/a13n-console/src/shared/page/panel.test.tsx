@@ -9,12 +9,19 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-function Inspector() {
+function Inspector({ dismissOnOutsidePress = false, inline = false } = {}) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button onClick={() => setOpen(true)}>Inspect</button>
-      <Panel open={open} title="Record details" onClose={() => setOpen(false)}>
+      <p>Page background</p>
+      <Panel
+        open={open}
+        title="Record details"
+        onClose={() => setOpen(false)}
+        dismissOnOutsidePress={dismissOnOutsidePress}
+        inline={inline}
+      >
         <input aria-label="Note" />
         <ModalFrame
           title="Nested details"
@@ -40,6 +47,49 @@ it("moves focus into the inspector, preserves editing on Escape, and returns foc
   await user.click(screen.getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("complementary")).toBeNull();
   expect(document.activeElement).toBe(trigger);
+});
+
+it.each([
+  [true, false, false],
+  [false, false, true],
+  [true, true, true],
+])(
+  "handles outside presses with dismissal=%s and inline=%s",
+  async (dismissOnOutsidePress, inline, staysOpen) => {
+    const user = userEvent.setup();
+    render(
+      <Inspector
+        dismissOnOutsidePress={dismissOnOutsidePress}
+        inline={inline}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    await user.click(screen.getByRole("textbox", { name: "Note" }));
+    expect(screen.getByRole("complementary")).toBeTruthy();
+    const handle = screen.getByRole("separator", { name: "Resize panel" });
+    await user.pointer([
+      { target: handle, keys: "[MouseLeft>]" },
+      { target: screen.getByText("Page background") },
+      { keys: "[/MouseLeft]" },
+    ]);
+    expect(screen.getByRole("complementary")).toBeTruthy();
+    await user.click(screen.getByText("Page background"));
+    expect(!!screen.queryByRole("complementary")).toBe(staysOpen);
+  },
+);
+
+it("keeps the inspector open while interacting with or dismissing a nested dialog", async () => {
+  const user = userEvent.setup();
+  render(<Inspector dismissOnOutsidePress />);
+  await user.click(screen.getByRole("button", { name: "Inspect" }));
+  await user.click(screen.getByRole("button", { name: "More details" }));
+  await user.click(await screen.findByText("Additional information"));
+  expect(screen.getByRole("complementary", { hidden: true })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Close dialog" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("complementary")).toBeTruthy();
+  await user.click(screen.getByText("Page background"));
+  expect(screen.queryByRole("complementary")).toBeNull();
 });
 
 it("lets a nested dialog consume Escape without closing the inspector", async () => {

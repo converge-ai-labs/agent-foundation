@@ -141,6 +141,7 @@ export function EnvironmentPanel({
   return (
     <Panel
       open={open}
+      dismissOnOutsidePress
       onClose={onClose}
       label={t("Environment details")}
       defaultWidth={420}
