@@ -268,7 +268,7 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
 
     with pytest.raises(ServiceError):
         await create_finding(
-            runtime.storage,
+            runtime,
             actor(service),
             service.tenant.workspace_id,
             FindingCreate.model_validate(finding(agent, run)),
@@ -487,11 +487,12 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     for evidence in (
         {"run_id": first_run["id"], "trace_id": "c" * 32},
         {"run_id": second_run["id"], "trace_id": "b" * 32},
+        {"run_id": first_run["id"], "trace_id": "b" * 32},
     ):
         submitted = {**finding(first, first_run), "source_key": "invalid-evidence", "evidence": [evidence]}
         with pytest.raises(ServiceError):
             await create_finding(
-                runtime.storage,
+                runtime,
                 actor(service),
                 service.tenant.workspace_id,
                 FindingCreate.model_validate(submitted),

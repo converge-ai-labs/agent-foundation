@@ -89,15 +89,19 @@ async def test_classification_uses_analysis_association_and_frozen_mode(
     assert content == ({"native": True} if analysis_origin and mode == "inline" else record.receipt())
 
 
-@pytest.mark.parametrize("value", ["plain", "null", "native", "retry"])
+@pytest.mark.parametrize("value", ["plain", "null", "native", "retry", "failed", "cancelled", "cancelled_default"])
 async def test_native_result_restoration_and_checkpoint_ack(service, scripted_model, runs_kit, value):
     runtime, created, lease, _, _ = await origin(service, scripted_model, runs_kit)
     store, record = Store(runtime), _record(lease)
     await _save(store, lease, StoredToolExecution(record))
+    failed = value in {"failed", "cancelled", "cancelled_default"}
+    status = "failed" if value in {"failed", "retry"} else "cancelled" if failed else "succeeded"
+    error = "The analysis must read a trace before citing it." if value == "failed" else "Stopped by the operator."
     record = record.model_copy(
         update={
-            "status": "succeeded",
-            "result_available": value != "retry",
+            "status": status,
+            "error": error if failed and value != "cancelled_default" else None,
+            "result_available": not failed and value != "retry",
             "completed_at": datetime.now(UTC),
             "foreground_released": True,
         }
@@ -127,7 +131,10 @@ async def test_native_result_restoration_and_checkpoint_ack(service, scripted_mo
     )
     restored = await restore(runtime, state, thread_id=lease.thread_id, origin_run_id=lease.run_id)
     returned = restored.message_history[-1].parts[0]
-    if value == "retry":
+    if failed:
+        assert isinstance(returned, ToolReturnPart) and returned.outcome == "failed"
+        assert returned.content == (error if value != "cancelled_default" else "Tool execution cancelled.")
+    elif value == "retry":
         assert isinstance(returned, ToolReturnPart) and returned.outcome == "retried"
         assert returned.content == "Correct the argument"
     else:
@@ -203,7 +210,10 @@ async def test_unavailable_admitted_result_never_becomes_a_replayed_call(service
     )
 
 
-async def test_takeover_keeps_finding_write_and_completion_in_one_run(service, scripted_model, runs_kit, monkeypatch):
+@pytest.mark.parametrize("accepted", [True, False])
+async def test_takeover_keeps_tool_outcome_and_completion_in_one_run(
+    service, scripted_model, runs_kit, monkeypatch, accepted
+):
     from a13n_service.runs.findings import service as findings
 
     runtime, created, lease, agent, run = await origin(service, scripted_model, runs_kit)
@@ -228,14 +238,19 @@ async def test_takeover_keeps_finding_write_and_completion_in_one_run(service, s
     async def paused(*args, **kwargs):
         nonlocal calls
         calls += 1
-        result = await create(*args, **kwargs)
-        entered.set()
-        await finish.wait()
-        return result
+        try:
+            return await create(*args, **kwargs)
+        finally:
+            entered.set()
+            await finish.wait()
 
     monkeypatch.setattr(findings, "create_finding", paused)
     scripted_model.call("get_trace", {"trace_id": TRACE}, call_id="read")
-    scripted_model.call("create_finding", finding(agent, run), call_id="write")
+    submitted = finding(agent, run)
+    if not accepted:
+        submitted["evidence"][0]["trace_id"] = "c" * 32
+    scripted_model.call("create_finding", submitted, call_id="write")
+    scripted_model.call("get_trace", {"trace_id": TRACE}, call_id="continue")
     scripted_model.say("Completed original analysis")
     async with runs_kit.platform_runtime(service, runtime) as served:
         running = asyncio.create_task(execute(served, lease, AttemptControl()))
@@ -264,13 +279,21 @@ async def test_takeover_keeps_finding_write_and_completion_in_one_run(service, s
             assert foreground_acks > 0
             assert calls == 1
             rows = (await service.client.get("/api/v1/findings")).json()["items"]
-            assert len(rows) == 1 and rows[0]["source_run_id"] == created.run_id
+            assert len(rows) == int(accepted)
+            assert not rows or rows[0]["source_run_id"] == created.run_id
+            if not accepted:
+                request = None
+                while not scripted_model.requests.empty():
+                    request = scripted_model.requests.get_nowait()
+                returned = next(message for message in request["messages"] if message.get("tool_call_id") == "write")
+                assert "must read a trace" in returned["content"]
             status = (
                 await analysis.list_analyses(
                     runtime, actor(service), service.tenant.workspace_id, limit=20, cursor=None
                 )
             ).items[0]
-            assert status.run_id == created.run_id and status.finding_count == status.cited_trace_count == 1
+            assert status.run_id == created.run_id
+            assert status.finding_count == status.cited_trace_count == int(accepted)
             async with transaction(runtime.storage) as session:
                 assert (
                     await session.scalar(

@@ -78,9 +78,7 @@ async def create_finding(
 ) -> Finding:
     """Record an unconfirmed finding with evidence and a suggestion; a stable source_key makes a retry safe.
     A Run's own submission names that Run as its source; an analysis cites traces it has read."""
-    return tagged(
-        response, await service.create_finding(runtime.storage, actor, workspace_id, body, source_run_id=origin)
-    )
+    return tagged(response, await service.create_finding(runtime, actor, workspace_id, body, source_run_id=origin))
 
 
 @router.get("/findings", response_model=FindingPage, openapi_extra=platform_operation("execution", "read"))

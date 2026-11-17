@@ -82,19 +82,37 @@ async def _inline(
         if execution is not None and not execution.record.terminal:
             # Existing bounded attempt release/backoff observes the same admission on the next claim.
             raise ServiceError("unavailable", "The original inline tool execution is still running.")
-        if execution is None or not (execution.record.result_available or execution.retry_prompt is not None):
+        if (
+            execution is None
+            or execution.record.status == "lost"
+            or not (
+                execution.record.result_available
+                or execution.retry_prompt is not None
+                or execution.record.status in {"failed", "cancelled"}
+            )
+        ):
             raise ServiceError(
                 "conflict",
                 "An admitted tool's result is unavailable; its effects will not be repeated.",
                 {"reason": "tool_result_unavailable"},
             )
-        if execution.retry_prompt is not None:
-            parts.append(ToolReturnPart(call.tool_name, execution.retry_prompt, call.tool_call_id, outcome="retried"))
-        else:
+        if execution.record.result_available:
             returned, content, _ = build_tool_return_part(execution.result, call=call, tool_kind="function")
             parts.append(returned)
             if content is not None:
                 parts.append(UserPromptPart(content))
+        elif execution.retry_prompt is not None:
+            parts.append(ToolReturnPart(call.tool_name, execution.retry_prompt, call.tool_call_id, outcome="retried"))
+        else:
+            parts.append(
+                ToolReturnPart(
+                    call.tool_name,
+                    execution.record.error or f"Tool execution {execution.record.status}.",
+                    call.tool_call_id,
+                    tool_kind=call.tool_kind,
+                    outcome="failed",
+                )
+            )
     return parts
 
 

@@ -13,6 +13,7 @@ from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.rows import audit_row, find_row, record_update
+from a13n_service.runs import traces
 from a13n_service.runs.findings.schemas import (
     Assessment,
     Category,
@@ -23,18 +24,53 @@ from a13n_service.runs.findings.schemas import (
     Severity,
 )
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
+from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import canonical_json
 from a13n_service.runs.threads import get_run
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, authorize
 
 
+async def _validate_analysis_evidence(
+    runtime: Runtime, actor: Principal, workspace_id: str, body: FindingCreate, source_run_id: str
+) -> None:
+    async with short_session(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        authorize(actor, scope, "read")
+        # A replay returns the saved Finding even when its original trace is no longer queryable.
+        existing = await session.scalar(
+            select(FindingRow.id).where(
+                FindingRow.workspace_id == scope.workspace_id,
+                FindingRow.created_by_id == actor.id,
+                FindingRow.source_key == body.source_key,
+            )
+        )
+        if existing is not None:
+            return
+        read_ids = await session.scalar(
+            select(AnalysisRow.read_trace_ids).where(
+                AnalysisRow.workspace_id == scope.workspace_id, AnalysisRow.run_id == source_run_id
+            )
+        )
+    if read_ids is None:
+        return
+    for evidence in body.evidence:
+        if evidence.trace_id not in read_ids:
+            raise invalid("evidence", "the analysis must read a trace before citing it")
+        # Resolve the authorized root outside a database transaction, including for child-only reads.
+        root = await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, evidence.trace_id)
+        if root.attributes.get("a13n.observation.metadata.service_run_id") != evidence.run_id:
+            raise invalid("evidence", "each cited trace must belong to the named Run")
+
+
 async def create_finding(
-    storage: Storage, actor: Principal, workspace_id: str, body: FindingCreate, *, source_run_id: str | None = None
+    runtime: Runtime, actor: Principal, workspace_id: str, body: FindingCreate, *, source_run_id: str | None = None
 ) -> Finding:
     # Content has the same credential masking as traces, also for external producers.
     body = FindingCreate.model_validate(redact_json(body.model_dump(mode="json")))
-    async with transaction(storage) as session:
+    if source_run_id is not None:
+        await _validate_analysis_evidence(runtime, actor, workspace_id, body, source_run_id)
+    async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         authorize(actor, scope, "read")
         await advisory_lock(session, "finding_submission", scope.workspace_id, actor.id, body.source_key)

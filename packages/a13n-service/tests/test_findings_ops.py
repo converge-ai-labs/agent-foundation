@@ -180,3 +180,59 @@ async def test_native_runtime_navigates_child_handles_search_and_continuation(se
             if not running.done():
                 running.cancel()
             await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.parametrize("same_agent", [True, False])
+async def test_native_submission_binds_read_trace_to_its_actual_run_and_replays_without_backend(
+    service, scripted_model, runs_kit, same_agent
+):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.findings.schemas import FindingCreate
+    from a13n_service.runs.findings.service import create_finding
+
+    await runs_kit.pause_sweeps(service)
+    agent, run = await target(service, scripted_model, runs_kit)
+    other = agent if same_agent else await runs_kit.add_agent(service, "Other target", "scripted")
+    scripted_model.say("Other run completed")
+    other_run = (await runs_kit.start_thread(service, other, "another task"))["run"]
+    await (await runs_kit.attempt(service))
+    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    service.app.state.runtime = runtime
+    created, _ = await analysis.start(
+        runtime, actor(service), service.tenant.workspace_id, AnalysisCreate(trace_id=TRACE), request_key="binding"
+    )
+    scripted_model.call("get_trace", {"trace_id": TRACE}, call_id="read")
+    forged = finding(other, other_run)
+    forged["source_key"] = "wrong-run"
+    scripted_model.call("create_finding", forged, call_id="forged")
+    valid = finding(agent, run)
+    scripted_model.call("create_finding", valid, call_id="corrected")
+    scripted_model.say("The corrected evidence belongs to the original run.")
+    async with runs_kit.platform_runtime(service, runtime) as served:
+        await (await runs_kit.attempt(service, runtime=served))
+    assert (await runs_kit.get_run(service, created.run_id))["status"] == "completed"
+    rows = (await service.client.get("/api/v1/findings")).json()["items"]
+    assert len(rows) == 1 and rows[0]["evidence"][0]["run_id"] == run["id"]
+    while not scripted_model.requests.empty():
+        request = scripted_model.requests.get_nowait()
+    returned = next(message for message in request["messages"] if message.get("tool_call_id") == "forged")
+    assert "trace must belong to the named Run" in returned["content"]
+    # An identical committed submission replays without a backend, but changed content still conflicts.
+    offline = replace(runtime, traces=None)
+    replay = await create_finding(
+        offline,
+        actor(service),
+        service.tenant.workspace_id,
+        FindingCreate.model_validate(valid),
+        source_run_id=created.run_id,
+    )
+    assert replay.id == rows[0]["id"]
+    with pytest.raises(ServiceError) as conflict:
+        await create_finding(
+            offline,
+            actor(service),
+            service.tenant.workspace_id,
+            FindingCreate.model_validate({**valid, "title": "Changed diagnosis"}),
+            source_run_id=created.run_id,
+        )
+    assert conflict.value.code == "conflict"
