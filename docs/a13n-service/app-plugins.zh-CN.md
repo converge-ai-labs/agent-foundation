@@ -7,6 +7,28 @@ App 插件为 Service 添加业务 API、组织范围后台工作、Harness fact
 
 App 插件在 Service 进程内运行，拥有进程权限。安装前应审查软件包。[MCP Apps](mcp-apps.md) 是用于交互式工具结果的另一套协议。
 
+## 创建独立 App
+
+[App 插件模板](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin)生成独立项目，包含 Python 后端、由 Host 挂载的 Console 前端、Makefile 和 GitHub Actions 检查。模板不包含许可证；分发项目前请自行选择许可条款。现有 [Reports 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin)仍是独立的全栈集成示例。
+
+安装 Git、uv、Make、Python 3.13、Node.js 24 和 pnpm 10.30.3，然后生成项目并回答提示：
+
+```bash
+uvx cookiecutter gh:converge-ai-labs/agent-foundation --checkout template/app-plugin
+```
+
+Cookiecutter 在选定的项目目录中生成本地文件。进入该目录后运行：
+
+```bash
+make setup
+make verify
+make dev
+```
+
+`make setup` 准备隔离环境并安装 `.service-ref` 固定的 Service 源码。`make verify` 构建前端、wheel 和源代码分发包，然后测试已安装的 wheel。验证后再次运行 `make setup`，恢复可编辑开发模式。`make dev` 监听并重新构建前端。如需实时查看更改，将 App 以可编辑模式安装到兼容的 Service Host，启用 App，并在每次重新构建后刷新页面。请另行启动 Service 和 Console；Host 配置和安装步骤见生成的 README。
+
+当前模板为 App 插件 API 固定了预发布 Service 源码提交。在支持该 API 的版本发布前，使用该修订版本的兼容 Host。生成项目不会创建远程仓库。如需远程仓库，先初始化并提交生成的项目，再通过 GitHub CLI 或 GitHub 创建仓库；生成的 README 包含具体步骤。可选的发布工作流在推送与项目版本匹配的 `vX.Y.Z` 标签时构建并验证分发包，再通过配置了 `PYPI_TOKEN` 的 `pypi` 环境发布。
+
 ## 注册软件包
 
 在 wheel 中声明一个无参数的定义函数：

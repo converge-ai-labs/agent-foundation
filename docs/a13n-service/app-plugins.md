@@ -7,6 +7,28 @@ App plugins add business APIs, organization-scoped background work, Harness fact
 
 App plugins run inside Service with its process permissions. Review packages before installation. [MCP Apps](mcp-apps.md) are a separate protocol for interactive tool results.
 
+## Start an independent App
+
+The [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) creates a standalone project with a Python backend, a host-mounted Console frontend, a Makefile, and GitHub Actions checks. It does not include a license; choose licensing terms before distributing your project. The existing [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) remains a separate full-stack integration example.
+
+Install Git, uv, Make, Python 3.13, Node.js 24, and pnpm 10.30.3. Generate a project and answer the prompts:
+
+```bash
+uvx cookiecutter gh:converge-ai-labs/agent-foundation --checkout template/app-plugin
+```
+
+Cookiecutter creates local files in the selected project directory. In that directory, run:
+
+```bash
+make setup
+make verify
+make dev
+```
+
+`make setup` prepares an isolated environment and installs the Service source pinned by `.service-ref`. `make verify` builds the frontend, wheel and source distribution, then tests the installed wheel. Run `make setup` again to restore editable development after verification. `make dev` watches and rebuilds the frontend. For live changes, install the App editable into a compatible Service host, enable it, and reload the App page after a rebuild. Start Service and Console separately; the generated README covers host setup and installation.
+
+The current template pins a prerelease Service source commit for the App plugin API. Use a compatible host at that revision until a release supports the API. Project generation does not create a remote repository. If you want one, initialize and commit the generated project, then create a repository with GitHub CLI or on GitHub; the generated README includes the steps. The optional release workflow builds and verifies artifacts for a matching `vX.Y.Z` tag, then publishes through a `pypi` environment configured with `PYPI_TOKEN`.
+
 ## Register a package
 
 Declare one zero-argument definition function in your wheel:
