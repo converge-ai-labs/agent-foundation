@@ -37,9 +37,10 @@ from a13n_harness.environment.errors import (
 from a13n_logging import exception_details, get_logger
 
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import lock, now, transaction
+from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
@@ -55,6 +56,11 @@ from a13n_service.tenancy.authorize import WorkspaceScope
 logger = get_logger(__name__)
 
 _MAX_BACKOFF = timedelta(minutes=10)
+RENEWALS = meter.create_counter(
+    "a13n.environment.renewals",
+    unit="{renewal}",
+    description="Committed renewal publications; limited/stopped are expected provider outcomes",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +144,21 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
         if environment is None or environment.renew_at != renewal.claim:
             return
         current = await now(session)
+        code = outcome.code if isinstance(outcome, EnvironmentProviderError) else None
+        result = (
+            "renewed"
+            if isinstance(outcome, datetime)
+            else "limited"
+            if code == "provider_keepalive_limit"
+            else "stopped"
+            if code == "provider_target_stopped"
+            else "failed"
+        )
+
+        async def recorded() -> None:
+            RENEWALS.add(1, {"result": result})
+
+        after_commit(session, recorded)
         if isinstance(outcome, datetime):
             environment.expires_at = outcome
             environment.renew_at = current + max(outcome - current, timedelta()) / 2

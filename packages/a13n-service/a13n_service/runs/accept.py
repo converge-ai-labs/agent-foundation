@@ -18,6 +18,7 @@ from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, To
 from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.sweeps import item
 from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride
@@ -523,7 +524,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     session.add(run)
     await session.flush()
     if source.entry is not None:
-        inbox.assign(source.entry, run)
+        inbox.assign(session, source.entry, run, at=current)
     thread.current_run_id = run.id
     if thread.purpose == "conversation":
         # The first accepted input names an untitled Session; the savepoint discards it with a refusal.
@@ -613,11 +614,12 @@ async def accept(
 async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False) -> None:
     """Successor acceptance in its own transaction after a seal or delivery; the sweep covers a lost call."""
     try:
-        async with transaction(runtime.storage) as session:
-            thread = await lock_thread(session, thread_id, skip_locked=skip_locked)
-            if thread is None:
-                return
-            await accept(session, runtime, thread)
+        with item("advance_threads"):
+            async with transaction(runtime.storage) as session:
+                thread = await lock_thread(session, thread_id, skip_locked=skip_locked)
+                if thread is None:
+                    return
+                await accept(session, runtime, thread)
     except Exception as error:
         # The preceding operation is already committed. The sweep retries this independent transaction.
         logger.warning(

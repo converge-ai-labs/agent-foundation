@@ -73,6 +73,11 @@ class Policy(BaseModel):
     backlog_alert_seconds: float = Field(default=300, gt=0, le=86400)
 
 
+SETTLEMENT_FAILURES = meter.create_counter(
+    "a13n.outbox.settlement_failures",
+    unit="{attempt}",
+    description="Failed settlements; the lease must expire before retry",
+)
 DELIVERIES = meter.create_counter(
     "a13n.outbox.deliveries", unit="{delivery}", description="Settled outbox delivery attempts by kind and result"
 )
@@ -430,6 +435,7 @@ class Delivery:
                 outcome = "dead" if dead else "retry"
                 await settle(session, claimed, outcome, error=reason, retry_after=backoff(claimed.attempts))
         except Exception as failure:
+            SETTLEMENT_FAILURES.add(1, {"kind": claimed.kind})
             logger.warning(
                 "Outbox settlement failed",
                 extra={

@@ -1,17 +1,28 @@
 {
   "uid": "a13n-service-operations",
   "title": "a13n Service operations",
-  "description": "Health, runs, execution and background work of a13n Service, from its Prometheus metrics.",
+  "description": "Optional operator dashboard. Process observations for diagnosis, not durable accounting. All queries preserve deployment identity. No samples is not healthy zero. See deploy/monitoring/README.md.",
   "tags": [
-    "a13n"
+    "a13n",
+    "operations"
   ],
   "editable": true,
   "schemaVersion": 39,
+  "version": 1,
+  "timezone": "utc",
   "time": {
-    "from": "now-6h",
+    "from": "now-1h",
     "to": "now"
   },
-  "refresh": "1m",
+  "refresh": "30s",
+  "timepicker": {
+    "refresh_intervals": [
+      "15s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
   "templating": {
     "list": [
       {
@@ -19,98 +30,179 @@
         "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus"
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(up, job)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "a13n-service",
+          "value": "a13n-service"
+        }
+      },
+      {
+        "name": "deployment",
+        "label": "Deployment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(up{job=~\"$job\"}, deployment)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       }
     ]
   },
   "panels": [
     {
-      "type": "row",
-      "title": "Requests",
       "id": 1,
+      "type": "row",
+      "title": "Overview \u2014 choose one deployment for diagnosis",
       "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
-      },
-      "panels": []
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
     },
     {
       "id": 2,
+      "type": "stat",
+      "title": "Scrape targets up",
+      "description": "Successful metrics scrapes by role. This is not /readyz. Missing targets are not healthy zeroes.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 6,
         "x": 0,
-        "y": 1
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "stat",
-      "title": "Targets up",
       "fieldConfig": {
         "defaults": {
-          "unit": "none"
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(up{job=\"a13n-service\"})"
+          "expr": "sum by (deployment,role) (up{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}} {{role}}",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
     },
     {
       "id": 3,
+      "type": "stat",
+      "title": "Due run age",
+      "description": "Oldest due accepted Run; waiting Runs and future backoff are excluded. Stale snapshots are omitted.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 1
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "stat",
-      "title": "5xx ratio (5m)",
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          }
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_request_duration_seconds_count{job=\"a13n-service\", http_response_status_code=~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{job=\"a13n-service\"}[5m]))"
+          "expr": "max by (deployment) (a13n_backlog_oldest_age_seconds{job=~\"$job\",deployment=~\"$deployment\",queue=\"runs\"} and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"} < 60))",
+          "legendFormat": "{{deployment}}",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
     },
     {
       "id": 4,
+      "type": "stat",
+      "title": "Worker slots",
+      "description": "Process-local slots summed across workers. Retained tools and background work may outlive an Attempt slot.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 1
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Requests by status",
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
@@ -118,32 +210,48 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{job=\"a13n-service\"}[$__rate_interval]))",
-          "legendFormat": "{{http_response_status_code}}"
+          "expr": "sum by (deployment,state) (a13n_worker_slots{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}} {{state}}",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
     },
     {
       "id": 5,
+      "type": "stat",
+      "title": "Business API 5xx ratio",
+      "description": "Non-stream API responses only, excluding probes/static content. No requests means no ratio; not zero errors.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 24,
         "x": 0,
-        "y": 9
+        "y": 6,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Request duration p95 by route",
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+          "unit": "percentunit",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
@@ -151,46 +259,48 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{job=\"a13n-service\"}[$__rate_interval])))",
-          "legendFormat": "{{http_route}}"
+          "expr": "(sum by (deployment) (rate(http_server_request_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\",http_response_status_code=~\"5..\"}[$__rate_interval])) or on (deployment) (0 * sum by (deployment) (rate(http_server_request_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval])))) / sum by (deployment) (rate(http_server_request_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}}",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         }
       ],
-      "description": "Streaming routes last as long as their stream."
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
     },
     {
-      "type": "row",
-      "title": "Runs",
       "id": 6,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 17
-      },
-      "panels": []
-    },
-    {
-      "id": 7,
+      "type": "stat",
+      "title": "Run throughput",
+      "description": "Rates are process observations, not exact durable business totals. Accepted and sealed populations are independent.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 18
+        "x": 8,
+        "y": 6,
+        "w": 8,
+        "h": 5
       },
-      "type": "timeseries",
-      "title": "Accepted runs by trigger",
       "fieldConfig": {
         "defaults": {
-          "unit": "reqpm",
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            }
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
@@ -198,149 +308,296 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "60 * sum by (trigger) (rate(a13n_runs_accepted_total{job=\"a13n-service\"}[$__rate_interval]))",
-          "legendFormat": "{{trigger}}"
-        }
-      ]
-    },
-    {
-      "id": 8,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 18
-      },
-      "type": "timeseries",
-      "title": "Sealed runs by status",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqpm",
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "60 * sum by (status) (rate(a13n_runs_sealed_total{job=\"a13n-service\"}[$__rate_interval]))",
-          "legendFormat": "{{status}}"
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 26
-      },
-      "type": "timeseries",
-      "title": "Failed and cancelled runs by reason",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqpm",
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "60 * sum by (reason) (rate(a13n_runs_sealed_total{job=\"a13n-service\", reason!=\"\"}[$__rate_interval]))",
-          "legendFormat": "{{reason}}"
-        }
-      ]
-    },
-    {
-      "type": "row",
-      "title": "Execution",
-      "id": 10,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 34
-      },
-      "panels": []
-    },
-    {
-      "id": 11,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 35
-      },
-      "type": "timeseries",
-      "title": "Queue wait before a claim",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": {
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(a13n_attempt_queue_wait_seconds_bucket{job=\"a13n-service\"}[$__rate_interval])))",
-          "legendFormat": "p50"
+          "expr": "sum by (deployment) (rate(a13n_runs_accepted_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} accepted",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(a13n_attempt_queue_wait_seconds_bucket{job=\"a13n-service\"}[$__rate_interval])))",
-          "legendFormat": "p95"
+          "expr": "sum by (deployment) (rate(a13n_runs_sealed_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} sealed",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Backlog snapshot age",
+      "description": "Maximum age across reporters/queues. Above 60s, cached values are excluded below; inspect report_backlog and storage.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (deployment) (time() - a13n_backlog_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}}",
+          "range": false,
+          "instant": true,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Ingress \u2014 probes and SSE do not dilute business API signals",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "API responses by status",
+      "description": "Completed non-stream API responses; 4xx, including 429, are separate from 5xx.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,http_response_status_code) (rate(http_server_request_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{http_response_status_code}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "API latency p95",
+      "description": "Receiving request through response end, by route template; SSE and probes excluded. Inspect logs for request IDs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,http_route) (rate(http_server_request_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"api\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} {{http_route}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "SSE response headers p95",
+      "description": "Request to SSE headers. This is not model TTFT or time to first meaningful output.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_http_response_start_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"stream\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 12,
+      "type": "timeseries",
+      "title": "Probe failures",
+      "description": "Probe failures stay visible without diluting API success ratios. Scrape success alone does not prove readiness.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 35
+        "y": 20,
+        "w": 12,
+        "h": 8
       },
-      "type": "timeseries",
-      "title": "Attempt duration p95 by status",
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "reqps",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -348,65 +605,69 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, status) (rate(a13n_attempt_duration_seconds_bucket{job=\"a13n-service\"}[$__rate_interval])))",
-          "legendFormat": "{{status}}"
+          "expr": "sum by (deployment,http_route) (rate(http_server_request_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\",a13n_request_kind=\"probe\",http_response_status_code=~\"5..\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{http_route}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 13,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
+      "type": "row",
+      "title": "Waiting and execution \u2014 distinguish input, Run and Attempt",
+      "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 43
-      },
-      "type": "timeseries",
-      "title": "Worker slots",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (state) (a13n_worker_slots{job=\"a13n-service\"})",
-          "legendFormat": "{{state}}"
-        }
-      ]
+        "y": 28,
+        "w": 24,
+        "h": 1
+      }
     },
     {
       "id": 14,
+      "type": "timeseries",
+      "title": "Due work count (bounded)",
+      "description": "Replicated database snapshots use max after filtering stale reporters. Inbox counts only idle/unpaused eligible threads. Scheduled queues are planning and due dispatch, not sleeping schedules.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
+        "x": 0,
+        "y": 29,
         "w": 12,
-        "x": 12,
-        "y": 43
+        "h": 8
       },
-      "type": "timeseries",
-      "title": "Model tokens by type",
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -414,80 +675,56 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "60 * sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{job=\"a13n-service\"}[$__rate_interval]))",
-          "legendFormat": "{{gen_ai_token_type}}"
+          "expr": "max by (deployment,queue) (a13n_backlog_size{job=~\"$job\",deployment=~\"$deployment\"} and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"} < 60))",
+          "legendFormat": "{{deployment}} {{queue}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
         }
       ],
-      "description": "Tokens per minute, as Pydantic AI reports them. Usage records in PostgreSQL are the authoritative counts."
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
-      "type": "row",
-      "title": "Backlog and background work",
       "id": 15,
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 51
-      },
-      "panels": []
-    },
-    {
-      "id": 16,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 52
-      },
       "type": "timeseries",
-      "title": "Due work by queue",
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "custom": {
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "max by (queue) (a13n_backlog_size{job=\"a13n-service\"})",
-          "legendFormat": "{{queue}}"
-        }
-      ],
-      "description": "Every control replica reports the same count; the panel takes the maximum."
-    },
-    {
-      "id": 17,
+      "title": "Due work oldest age",
+      "description": "Waiting age of currently due work, not historical completed latency. A zero means no due work in a fresh snapshot.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 52
+        "y": 29,
+        "w": 12,
+        "h": 8
       },
-      "type": "timeseries",
-      "title": "Oldest due item by queue",
       "fieldConfig": {
         "defaults": {
           "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -495,32 +732,180 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (queue) (a13n_backlog_oldest_age_seconds{job=\"a13n-service\"})",
-          "legendFormat": "{{queue}}"
+          "expr": "max by (deployment,queue) (a13n_backlog_oldest_age_seconds{job=~\"$job\",deployment=~\"$deployment\"} and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"} < 60))",
+          "legendFormat": "{{deployment}} {{queue}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Count at ceiling",
+      "description": "1 means the bounded count is a lower bound, not an exact inventory. 0 means below ceiling.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (deployment,queue) ((a13n_backlog_size{job=~\"$job\",deployment=~\"$deployment\"} and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"} < 60)) >= bool a13n_backlog_limit{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}} {{queue}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Inbox and due queue wait p95",
+      "description": "Inbox: entry creation to assignment, including deliberate business blocking. Queue: available_at to claim. Different populations; do not add their quantiles.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_inbox_wait_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} inbox assignment",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_attempt_queue_wait_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} due Run claim",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 18,
+      "type": "timeseries",
+      "title": "Worker claim scans",
+      "description": "Empty scans are normal. Failed scans with growing queue age suggest storage or claim problems, not lack of capacity.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 0,
-        "y": 60
+        "y": 45,
+        "w": 12,
+        "h": 8
       },
-      "type": "timeseries",
-      "title": "Outbox deliveries by kind and result",
       "fieldConfig": {
         "defaults": {
-          "unit": "reqpm",
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -528,32 +913,56 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "60 * sum by (kind, result) (rate(a13n_outbox_deliveries_total{job=\"a13n-service\"}[$__rate_interval]))",
-          "legendFormat": "{{kind}} {{result}}"
+          "expr": "sum by (deployment,result) (rate(a13n_worker_claim_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     },
     {
       "id": 19,
+      "type": "timeseries",
+      "title": "Attempt starts",
+      "description": "Initial, failure recovery and planned handoff. Rolling deployments may increase handoff without indicating failure.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 60
+        "y": 45,
+        "w": 12,
+        "h": 8
       },
-      "type": "timeseries",
-      "title": "Failed sweep passes",
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
-            "stacking": {
-              "mode": "none"
-            }
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -561,10 +970,1356 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (sweep) (increase(a13n_sweep_passes_total{job=\"a13n-service\", result=\"failed\"}[$__rate_interval]))",
-          "legendFormat": "{{sweep}}"
+          "expr": "sum by (deployment,reason) (rate(a13n_attempt_started_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Attempt and Run duration p95",
+      "description": "Attempt: claim to end. Run: creation to seal, including recovery/queueing. waiting seals before human approval; resume creates a successor Run.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_attempt_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} Attempt",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_run_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} Run lifetime",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Run outcomes",
+      "description": "Window of seals, not success rate of accepted cohort. waiting/cancelled are not failures.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 53,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,status) (rate(a13n_runs_sealed_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{status}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Run failure reasons",
+      "description": "Failed seal rate by reason. Find Run sealed logs, then attempt traces; no tenant or object identities are metric labels.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,reason) (rate(a13n_runs_sealed_total{job=~\"$job\",deployment=~\"$deployment\",status=\"failed\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Attempt endings",
+      "description": "Shows lease expiry and recovery hidden by a later successful Run. Handoff is planned, not an error.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 61,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,status,reason) (rate(a13n_attempt_ended_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{status}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Model dependencies \u2014 bounded global dimensions",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 69,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Model token throughput",
+      "description": "Provider token rate. Cached input is included in input totals; configured model names belong to durable Usage, not global labels.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "tps",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,gen_ai_provider_name,gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{gen_ai_provider_name}} {{gen_ai_token_type}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Model first chunk p95",
+      "description": "Streaming model request to first surfaced chunk, including non-text chunks. Not SSE response headers or guaranteed first meaningful token.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 70,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,gen_ai_provider_name) (rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} {{gen_ai_provider_name}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "row",
+      "title": "Live output and external work",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 78,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Open SSE connections",
+      "description": "Local active connections summed across processes. A long healthy connection is expected, not a slow API request.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 79,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment) (a13n_stream_active{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "SSE close outcomes",
+      "description": "A response can retain HTTP 200 after output fails. Cancellation can be shutdown/disconnect; inspect alongside drops and gaps.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 79,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,result) (rate(a13n_stream_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Live output dropped frames",
+      "description": "Counts output before checkpoint recovery: oversized frames, writer saturation or failed Redis append. Does not imply durable output loss.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 87,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,reason) (rate(a13n_stream_dropped_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Reader recovery and overflow",
+      "description": "Gaps are per reader, not unique missing frames. Slow consumers reconnect from the committed view.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 87,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment) (rate(a13n_stream_gaps_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} gap notifications",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (deployment) (rate(a13n_stream_slow_readers_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} slow-reader closes",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Schedule dispositions",
+      "description": "submitted means input committed, not Run started. Skips include overlap/missed deadlines; manual and scheduled triggers share the disposition counter.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 95,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,status,reason) (rate(a13n_schedule_dispositions_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{status}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (deployment) (rate(a13n_schedule_retries_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} dispatch retry",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Automatic schedule delay p95",
+      "description": "Scheduled fire to disposition, including dispatch retry wait. Manual dispatch excluded. No samples when no schedules fire.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 95,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,status) (rate(a13n_schedule_dispatch_delay_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} {{status}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Environment operation publications",
+      "description": "Committed current-claim results only. pending polls are not failures; certainty preserves unknown external effects.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 103,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,phase,result,certainty) (rate(a13n_environment_operation_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{phase}} {{result}} {{certainty}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Renewals and retained execution endings",
+      "description": "Retained tools are separate from Attempt slots. limited/stopped renewals can be expected provider outcomes; lost executions need diagnosis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 103,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,result) (rate(a13n_environment_renewals_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} renewal {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (deployment,status) (rate(a13n_execution_duration_seconds_count{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} execution {{status}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "row",
+      "title": "Persistence, delivery and sweep progress",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 111,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Checkpoint latency p95",
+      "description": "Successful checkpoint persistence latency. Failed writes appear in Run outcomes/logs, not successful checkpoint latency.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 112,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment) (rate(a13n_checkpoint_duration_seconds_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Run object size p95",
+      "description": "Size of written run objects, not total retained storage.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 112,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le,deployment,kind) (rate(a13n_run_object_bytes_bucket{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval])))",
+          "legendFormat": "{{deployment}} {{kind}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 39,
+      "type": "timeseries",
+      "title": "Outbox settled outcomes",
+      "description": "Committed delivery attempts. retry/deferred return to pending; dead requires operator attention.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 120,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,kind,result) (rate(a13n_outbox_deliveries_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{kind}} {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Retained dead deliveries",
+      "description": "Boolean retained dead state, filtered by snapshot freshness. Unlike increase(dead), retained faults remain visible until purged/reconciled.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 120,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (deployment,kind) (a13n_outbox_dead{job=~\"$job\",deployment=~\"$deployment\"} and on (job,deployment,instance) (time() - a13n_outbox_updated_seconds{job=~\"$job\",deployment=~\"$deployment\"} < 60))",
+          "legendFormat": "{{deployment}} {{kind}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Outbox settlement failures",
+      "description": "Handler failure could not be settled. The claim retries after lease expiry; inspect Outbox settlement failed logs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 128,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,kind) (rate(a13n_outbox_settlement_failures_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{kind}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Sweep pass outcomes",
+      "description": "succeeded only means the outer scan returned normally. Item faults are shown separately.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 128,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,sweep,result) (rate(a13n_sweep_passes_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{sweep}} {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Isolated item outcomes",
+      "description": "Counts isolated calls in advancement/expiry/maintenance/renewal. succeeded may be a lock-race no-op; not a durable work count.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 136,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (deployment,sweep,result) (rate(a13n_sweep_items_total{job=~\"$job\",deployment=~\"$deployment\"}[$__rate_interval]))",
+          "legendFormat": "{{deployment}} {{sweep}} {{result}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Sweep completion gap / allowance",
+      "description": "Per-reporter age divided by 3 \u00d7 (interval + deadline). Startup grants one allowance. Above 1 means no normally completed scan for too long.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 136,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "min": 0,
+          "noValue": "No samples",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (deployment,sweep) ((time() - a13n_sweep_last_success_seconds{job=~\"$job\",deployment=~\"$deployment\"}) / a13n_sweep_stale_after_seconds{job=~\"$job\",deployment=~\"$deployment\"})",
+          "legendFormat": "{{deployment}} {{sweep}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
-  ]
+  ],
+  "links": []
 }

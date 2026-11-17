@@ -12,6 +12,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.db import advisory_lock, after_commit, now, transaction
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, RETRY_AFTER, ServiceError, conflict
 from a13n_service.infra.http import require_match
+from a13n_service.infra.telemetry import meter
 from a13n_service.resources.agents import stored
 from a13n_service.runs.accept import accept
 from a13n_service.runs.runtime import Runtime
@@ -25,6 +26,9 @@ from a13n_service.tenancy.access import principal_for, require_active_workspace,
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize, execution_authority
 
 logger = get_logger(__name__)
+RETRIES = meter.create_counter(
+    "a13n.schedule.retries", unit="{attempt}", description="Committed dispatch retries, not model or run retries"
+)
 
 
 async def manual(
@@ -205,6 +209,11 @@ async def _failed_attempt(
                 5 * 2 ** (item.dispatch_attempts - 1), retry_after if isinstance(retry_after, (int, float)) else 0
             )
             item.next_attempt_at = current + timedelta(seconds=delay)
+
+            async def retried() -> None:
+                RETRIES.add(1)
+
+            after_commit(session, retried)
         elif retryable:
             await lifecycle.finish(
                 session, runtime, row, item, current, status="failed", reason="dispatch_attempts_exhausted"

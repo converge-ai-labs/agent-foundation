@@ -152,6 +152,25 @@ def test_every_service_pod_serves_metrics_on_its_own_port():
 
 
 @helm
+def test_podmonitor_labels_processes_by_shared_deployment_and_independent_role():
+    documents = render(*LOCAL, "--namespace", "beta", "--set", "metrics.podMonitor.enabled=true")
+    monitor = next(d for d in documents if d["kind"] == "PodMonitor")
+    assert monitor["spec"]["jobLabel"] == "app.kubernetes.io/name"
+    assert monitor["spec"]["selector"]["matchLabels"]["app.kubernetes.io/instance"] == "a13n"
+    endpoint = monitor["spec"]["podMetricsEndpoints"][0]
+    assert endpoint["port"] == "metrics" and endpoint["path"] == "/metrics"
+    assert endpoint["relabelings"] == [
+        {"targetLabel": "deployment", "replacement": "beta/a13n"},
+        {
+            "sourceLabels": ["__meta_kubernetes_pod_label_app_kubernetes_io_component"],
+            "targetLabel": "role",
+        },
+    ]
+    disabled = render(*LOCAL, "--set", "metrics.podMonitor.enabled=true", "--set", "metrics.enabled=false")
+    assert not any(d["kind"] == "PodMonitor" for d in disabled)
+
+
+@helm
 def test_service_containers_write_only_temporary_files_and_local_objects():
     for document in render(*LOCAL):
         if document["kind"] not in {"Deployment", "Job"}:

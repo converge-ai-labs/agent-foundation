@@ -21,6 +21,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import CallbackOptions, Observation
 from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -50,7 +51,7 @@ class Gauge:
         self._values: dict[frozenset[tuple[str, str]], float] = {}
         meter.create_observable_gauge(name, callbacks=[self._observe], unit=unit, description=description)
 
-    def set(self, value: float, attributes: Mapping[str, str]) -> None:
+    def set(self, value: float, attributes: Mapping[str, str] = {}) -> None:
         self._values[frozenset(attributes.items())] = value
 
     def _observe(self, options: CallbackOptions) -> list[Observation]:
@@ -69,7 +70,20 @@ def serve_metrics(host: str, port: int) -> None:
     Call once, at the executable boundary, like logging configuration: the meter provider is process-wide.
     """
     reader = PrometheusMetricReader(scope_info_enabled=False)
-    metrics.set_meter_provider(MeterProvider(metric_readers=[reader], resource=_resource()))
+    # Model names are tenant-configurable and provider response names are unbounded. Global operations
+    # aggregate by provider and token type; model-level analysis belongs to durable usage and traces.
+    metrics.set_meter_provider(
+        MeterProvider(
+            metric_readers=[reader],
+            resource=_resource(),
+            views=[
+                View(
+                    meter_name="pydantic-ai",
+                    attribute_keys={"gen_ai.operation.name", "gen_ai.provider.name", "gen_ai.token.type"},
+                )
+            ],
+        )
+    )
     start_http_server(port, addr=host)
 
 
