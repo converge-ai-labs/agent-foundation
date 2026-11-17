@@ -19,11 +19,11 @@ description: 为 Agent 配置网页访问、选择提供方原生工具，并检
 ## 设置向导
 
 1. 运行 `a13n-harness-ui setup`，或打开首次启动设置页面。
-1. 选择连接，完成身份验证，再选择 Model。连接尚未配置好时，先阅读 [Model 与身份验证](models-and-authentication.md)。
-1. 检查 **Choose native Agent tools**。终端中用上/下方向键移动，Space 切换勾选，Enter 确认。也可输入逗号分隔的编号或名称，或 `none`。没有原生候选的连接会跳过此步。
-1. 为选中的工具提供资源：File Search 需要已有存储 ID，Remote MCP 需要公开服务器 URL 和标签，Advisor 需要提供方模型 ID。
-1. 检查并保存 Agent。Esc 返回上一步；改变连接或 Model 会重置工具建议和资源输入。
-1. 在对话中选择已保存的 Agent，发送一个使用单项工具的小任务。查看工具结果，不要仅凭回答判断配置是否成功。
+2. 选择连接，完成身份验证，再选择 Model。连接尚未配置好时，先阅读 [Model 与身份验证](models-and-authentication.md)。
+3. 检查 **Choose native Agent tools**。终端中用上/下方向键移动，Space 切换勾选，Enter 确认。也可输入逗号分隔的编号或名称，或 `none`。没有原生候选的连接会跳过此步。
+4. 为选中的工具提供资源：File Search 需要已有存储 ID，Remote MCP 需要公开服务器 URL 和标签，Advisor 需要提供方模型 ID。
+5. 检查并保存 Agent。Esc 返回上一步；改变连接或 Model 会重置工具建议和资源输入。
+6. 在对话中选择已保存的 Agent，发送一个使用单项工具的小任务。查看工具结果，不要仅凭回答判断配置是否成功。
 
 不选原生工具时，新 Agent 仍有 Host 搜索、抓取、获取和下载。选择原生 Web Search 只关闭 Host 搜索；选择原生 Web Fetch 只关闭 Host 抓取。两种情况下都保留获取和下载。
 
@@ -52,7 +52,7 @@ Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；�
 
 1. 运行 `a13n-harness-ui config path`，找到 `configuration_path` 指向的根 YAML。
 
-1. 在该根目录的 `agents/` 下创建 `web-reader.yaml`。将 `model-primary` 替换为已保存的 Model ID。以下是完整 Agent 文件：
+2. 在该根目录的 `agents/` 下创建 `web-reader.yaml`。将 `model-primary` 替换为已保存的 Model ID。以下是完整 Agent 文件：
 
    ```yaml title="agents/web-reader.yaml"
    schema_version: "1"
@@ -68,7 +68,7 @@ Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；�
          scrape: {mode: host, backend: default}
    ```
 
-1. 验证所选配置树：
+3. 验证所选配置树：
 
    ```bash
    a13n-harness-ui config validate
@@ -76,9 +76,9 @@ Codex 和 Grok 订阅连接使用 Host Web 独立获取 URL 和下载文件；�
 
    使用自定义根目录时，在两个 `config` 命令前都加上 `--config /absolute/path/a13n-harness-ui.yaml`，启动 Harness UI 时也使用同一个根配置。
 
-1. 在新对话中选择 **Web reader**。发送“读取 https://example.com 并告诉我页面标题”，查看获取或抓取结果，再单独测试搜索。
+4. 在新对话中选择 **Web reader**。发送“读取 https://example.com 并告诉我页面标题”，查看获取或抓取结果，再单独测试搜索。
 
-1. 测试下载时，让 Agent 将一个公开文件下载到 Thread `tmp/` 并返回保存路径。打开文件检查结果。下载需要所选 Environment 提供可写文件权限。
+5. 测试下载时，让 Agent 将一个公开文件下载到 Thread `tmp/` 并返回保存路径。打开文件检查结果。下载需要所选 Environment 提供可写文件权限。
 
 修改已有 Agent 时，将 `web` 条目合并到其 `capabilities` 列表，或编辑已有的 `web` 条目。保留其他 Capability。接受后的修改用于后续 Run。
 
@@ -191,7 +191,7 @@ capabilities:
 
 1. 打开所选配置树 `agents/` 下的 Agent 文件。
 
-1. 添加下面两个原生条目。用示例中的 `web` 条目替换已有同名条目，并保留 Agent 的其他 Capability。以下是 Agent 片段：
+2. 添加下面两个原生条目。用示例中的 `web` 条目替换已有同名条目，并保留 Agent 的其他 Capability。以下是 Agent 片段：
 
    ```yaml
    capabilities:
@@ -211,13 +211,13 @@ capabilities:
          scrape: {mode: host}
    ```
 
-1. 运行 `a13n-harness-ui config validate`；使用自定义根配置时带上同一个 `--config`。
+3. 运行 `a13n-harness-ui config validate`；使用自定义根配置时带上同一个 `--config`。
 
-1. 选择该 Agent，发送新消息要求生成一张简单图像。生成完成后应返回当前 Thread `tmp/` 中的图像路径。
+4. 选择该 Agent，发送新消息要求生成一张简单图像。生成完成后应返回当前 Thread `tmp/` 中的图像路径。
 
-1. 打开图像。将重要结果复制到 Project 的保留位置；Thread 临时文件可能被清理。
+5. 打开图像。将重要结果复制到 Project 的保留位置；Thread 临时文件可能被清理。
 
-1. 用另一条消息测试原生搜索。Host `web` 条目保留网页抓取和下载，不再提供第二个搜索功能。
+6. 用另一条消息测试原生搜索。Host `web` 条目保留网页抓取和下载，不再提供第二个搜索功能。
 
 此流程显式开启图像生成；Codex 设置并不默认勾选它。配置验证检查声明，实际测试请求检查提供方和账户是否接受所选工具组合。
 
@@ -286,9 +286,9 @@ X Search 搜索提供方侧的 X 内容。其他兼容适配器也提供 Code Ex
 
 1. 在与 Model 相同的提供方账户/项目中创建搜索存储。
 
-1. 上传或导入文件，并等待索引完成。
+2. 上传或导入文件，并等待索引完成。
 
-1. 将提供方存储标识添加到 Agent：
+3. 将提供方存储标识添加到 Agent：
 
    ```yaml
    capabilities:
@@ -298,7 +298,7 @@ X Search 搜索提供方侧的 X 内容。其他兼容适配器也提供 Code Ex
          file_store_ids: [vs_your_store_id]
    ```
 
-1. 提出一个已索引文件中包含答案的问题，检查结果是否引用该来源。
+4. 提出一个已索引文件中包含答案的问题，检查结果是否引用该来源。
 
 Responses 使用向量存储 ID，Google 使用文件搜索存储名称，xAI 使用 Collection ID。这些值指向提供方资源，而非本地路径。Google 选择器要求先取消其他原生工具，再选择 File Search；Host Web 可保持开启。索引、保留、访问和费用规则以提供方为准。
 
