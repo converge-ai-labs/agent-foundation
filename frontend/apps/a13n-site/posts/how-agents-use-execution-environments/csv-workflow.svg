@@ -27,8 +27,6 @@
   <text class="pt" x="26" y="187.705" style="font-size: 12px">Input for each model call</text>
   <path class="pl" d="M175.5 325 L321.75 325 M315.9 321.75 L321.75 325 L315.9 328.25" />
   <text class="pt ink" x="188.5" y="308.93" style="font-size: 12px">2  Read / write</text>
-  <text class="pt ink" x="188.5" y="357.03" style="font-size: 12px">3  Run script</text>
-  <text class="pt acc" x="188.5" y="379.78" style="font-size: 12px">4  Follow run</text>
   <rect class="pf" x="734.5" y="97.5" width="175.5" height="390" />
   <text class="pt ink" x="747.5" y="124.254" style="font-size: 15.6px">Sandbox /</text>
   <text class="pt ink" x="747.5" y="145.704" style="font-size: 15.6px">environment</text>
