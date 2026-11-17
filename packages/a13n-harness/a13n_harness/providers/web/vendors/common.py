@@ -54,6 +54,7 @@ def scrape_result(
     canonical_url: object,
     title: object,
     request: WebScrapeRequest,
+    truncated: bool = False,
     usage: tuple[ProviderUsage, ...] = (),
 ) -> WebScrapeResult:
     try:
@@ -66,6 +67,7 @@ def scrape_result(
             source_url=request.url,
             canonical_url=canonical_url,
             title=title,
+            truncated=truncated,
             usage=usage,
         )
     except (ValueError, TypeError, KeyError) as error:
