@@ -1,0 +1,14 @@
+{
+  "name": "{{ cookiecutter.project_slug }}-frontend",
+  "version": "{{ cookiecutter.version }}",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "devDependencies": {
+    "vite": "8.2.2"
+  }
+}

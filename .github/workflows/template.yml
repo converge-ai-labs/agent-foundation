@@ -1,0 +1,64 @@
+name: Test App template
+on:
+  push:
+    branches: [template/app-plugin]
+  pull_request:
+    branches: [template/app-plugin]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  template:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [default, renamed]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.30.3'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: '{{cookiecutter.project_slug}}/frontend/pnpm-lock.yaml'
+      - name: Check template contracts
+        run: uv run --python 3.13 --no-project --with-requirements requirements-dev.txt pytest tests -q
+      - name: Generate project
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          if [ "$VARIANT" = renamed ]; then
+            uvx --python 3.13 cookiecutter . --no-input --output-dir .generated project_name='Orbit tools' project_slug=orbit-tools module_name=orbit_plugin app_id=orbit.tools version=2.3.4
+            echo 'PROJECT=.generated/orbit-tools' >> "$GITHUB_ENV"
+          else
+            uvx --python 3.13 cookiecutter . --no-input --output-dir .generated
+            echo 'PROJECT=.generated/my-service-app' >> "$GITHUB_ENV"
+          fi
+      - name: Build and verify generated project
+        run: |
+          make -C "$PROJECT" setup
+          make -C "$PROJECT" verify
+      - name: Rebuild and test source distribution
+        run: |
+          mkdir -p /tmp/app-sdist /tmp/app-rebuilt
+          tar -xzf "$PROJECT"/dist/*.tar.gz -C /tmp/app-sdist
+          uv build --python 3.13 --wheel --out-dir /tmp/app-rebuilt /tmp/app-sdist/*/
+          uv pip install --python "$PROJECT/.venv/bin/python" --no-deps --reinstall /tmp/app-rebuilt/*.whl
+          make -C "$PROJECT" test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: template-${{ matrix.variant }}-${{ github.sha }}
+          path: .generated/*/dist/*
+          if-no-files-found: error

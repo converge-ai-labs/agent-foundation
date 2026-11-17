@@ -1,0 +1,62 @@
+name: Release App
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-app
+  cancel-in-progress: false
+jobs:
+  build:
+    name: Build Python distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Require tag to match project version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Build and verify distributions
+        run: |
+          make setup
+          make verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-python-dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    name: Publish Python distributions
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-python-dist
+          path: dist
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --check-url https://pypi.org/simple/ dist/*

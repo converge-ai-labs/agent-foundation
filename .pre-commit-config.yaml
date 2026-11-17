@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-json
+        files: ^cookiecutter\.json$
+      - id: check-yaml
+        files: ^(\.github/|\.pre-commit-config\.yaml$)
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.3
+    hooks:
+      - id: ruff
+        files: ^tests/
+      - id: ruff-format
+        files: ^tests/

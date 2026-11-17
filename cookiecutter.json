@@ -1,0 +1,9 @@
+{
+  "project_name": "My Service App",
+  "project_slug": "my-service-app",
+  "module_name": "{{ cookiecutter.project_slug.replace('-', '_') }}",
+  "app_id": "example.my-app",
+  "version": "0.1.0",
+  "service_ref": "9e47871423a2efe2e4f8704d6aa8d77f8b5ff00c",
+  "_copy_without_render": [".github/workflows/*", "frontend/pnpm-lock.yaml"]
+}

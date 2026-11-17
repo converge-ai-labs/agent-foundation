@@ -1,0 +1,48 @@
+name: Build App
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Prepare compatible Service and plugin
+        run: make setup
+      - name: Build and verify installed wheel
+        run: make verify
+      - name: Rebuild wheel from source distribution without Node.js
+        run: |
+          mkdir -p /tmp/app-sdist /tmp/app-rebuilt
+          tar -xzf dist/*.tar.gz -C /tmp/app-sdist
+          uv build --python 3.13 --wheel --out-dir /tmp/app-rebuilt /tmp/app-sdist/*/
+          uv pip install --python .venv/bin/python --no-deps --reinstall /tmp/app-rebuilt/*.whl
+          make test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-distributions-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
