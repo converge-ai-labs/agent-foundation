@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from types import FunctionType, MethodType
 from typing import Literal
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
@@ -1211,13 +1212,15 @@ class AgentCompositionResolver:
         definition = provider.require(profile.provider_key)
         reference = self.catalog.provider_reference(profile.provider_key)
         adapter = self.catalog.adapter_reference(profile.adapter_key)
+        factory = definition.connector_factory
+        implementation = factory if isinstance(factory, FunctionType | MethodType | type) else type(factory)
         return (
             DependencyProvenance(
                 kind="environment_provider",
                 key=definition.type,
                 source=self.catalog.provider_source(profile.provider_key),
-                class_module=definition.connector_factory.__module__,
-                class_qualname=definition.connector_factory.__qualname__,
+                class_module=implementation.__module__,
+                class_qualname=implementation.__qualname__,
                 import_target=reference.import_target,
                 distribution_name=reference.distribution_name,
                 distribution_version=reference.distribution_version,

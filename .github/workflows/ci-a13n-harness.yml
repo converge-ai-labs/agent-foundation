@@ -82,7 +82,8 @@ jobs:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    # Cold Windows installs may compile dependencies before the bounded tests start.
+    timeout-minutes: ${{ matrix.name == 'Windows' && 25 || 10 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -818,6 +818,7 @@ def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
     job = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())["jobs"]["harness"]
     matrix = job["strategy"]["matrix"]
     assert matrix["name"] == ["tests-1", "tests-2", "checks", "browser", "Windows"]
+    assert job["timeout-minutes"] == "${{ matrix.name == 'Windows' && 25 || 10 }}"
     assert {entry["name"] for entry in matrix["include"]} == set(matrix["name"])
     for entry in matrix["include"]:
         assert "python-version" not in entry
@@ -831,3 +832,6 @@ def test_service_python_versions_cross_the_selected_tasks() -> None:
     tests = next(step for step in job["steps"] if step.get("name") == "Test a13n Service")
     assert tests["if"] == "startsWith(matrix.task.name, 'tests-')"
     assert tests["env"]["TEST_TARGETS"] == "${{ matrix.task.targets }}"
+    for name in ("Check Service contract export", "Test Service contract export"):
+        export = next(step for step in job["steps"] if step.get("name") == name)
+        assert export["if"] == "matrix.task.name == 'checks' && matrix.python-version == '3.13'"

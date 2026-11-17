@@ -216,12 +216,13 @@ jobs:
         if: matrix.task.name == 'checks'
         run: make service-boundaries
 
+      # Generated contracts use the canonical development/release interpreter.
       - name: Check Service contract export
-        if: matrix.task.name == 'checks'
+        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
         run: uv run --locked python scripts/export-a13n-service-openapi.py --check
 
       - name: Test Service contract export
-        if: matrix.task.name == 'checks'
+        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
         run: uv run --locked python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
 
       - name: Test logging
