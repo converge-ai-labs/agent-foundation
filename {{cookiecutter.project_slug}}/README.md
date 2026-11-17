@@ -47,9 +47,9 @@ The App is trusted installed code. It uses the host React tree, not its own root
 
 ## Add persistence when needed
 
-The generated project has no database declaration, models or migration scaffold. Add them only when your App needs durable business data. First update `.service-ref` to a compatible Service revision that includes `a13n_service.app_database.AppDatabase` and `apps db` commands, then run `make setup`. The default template pin predates this optional SDK. See the [App persistence guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/docs/a13n-service/app-plugins.md#persist-business-data) for the complete model, packaging and test workflow.
+The generated project has no database declaration, models or migration scaffold. Add them only when your App needs durable business data. First update `.service-ref` to a compatible Service revision that includes `a13n_service.app_database.AppDatabase` and `apps db` commands, then run `make setup HOST_SOURCE=/absolute/path/to/checkout-at-new-ref` using a checkout whose HEAD matches the new pin. Updating `.service-ref` alone does not update an existing `.host/agent-foundation` checkout. The default template pin predates this optional SDK. See the [App persistence guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/docs/a13n-service/app-plugins.md#persist-business-data) for the complete model, packaging and test workflow.
 
-Define an `AppDatabase` before declaring ordinary SQLAlchemy models, use its `metadata` on your declarative base, and pass the same database to `AppDefinition(database=database)`:
+Declare an `AppDatabase` and ordinary SQLAlchemy models in `models.py`, use its `metadata` on your declarative base, then import the module from `app.py` and pass the same database to `AppDefinition(database=database)`. Resolve deployment configuration before model imports:
 
 ```python
 import os
@@ -60,7 +60,7 @@ from sqlalchemy.orm import DeclarativeBase
 database = AppDatabase(
     "{{ cookiecutter.app_id }}",
     migrations="{{ cookiecutter.module_name }}:migrations",
-    prefix=os.environ.get("{{ cookiecutter.module_name | upper }}_TABLE_PREFIX"),
+    prefix=os.environ.get("{{ cookiecutter.module_name | upper }}_TABLE_PREFIX") or None,
 )
 
 
@@ -70,7 +70,7 @@ class Base(DeclarativeBase):
 # On each owned model: __tablename__ = database.name("notes")
 ```
 
-The optional prefix label can be selected at deployment before model imports. Leave it unset to normalize the App ID. A label is lowercase snake case, starts with a letter and fits 24 bytes; the physical namespace is `app__{label}__` in PostgreSQL `public`. Configure the same value in authoring, migration, control and worker processes. A retained App ID/prefix binding prevents changing an initialized deployment's identity: a different setting does not rename or move existing data.
+The optional prefix label can be selected at deployment before model imports. Leave it unset for a deterministic readable slug plus digest of the full exact App ID. IDs differing only in separators get different defaults; long IDs work without an override. Use `database.name(...)` rather than hardcoding names. A label is lowercase snake case, starts with a letter and fits 24 bytes; the physical namespace is `app__{label}__` in PostgreSQL `public`. Configure the same value in migration, control and worker processes for a deployment. Authoring may use the default because generated identifiers are portable. A retained App ID/prefix binding prevents changing an initialized deployment's identity: a different setting does not rename or move existing data.
 
 From this project root, after adding the declaration and models:
 
@@ -82,11 +82,11 @@ uv run --no-sync a13n-service apps db check --app {{ cookiecutter.app_id }} \
   --scratch-url "$APP_TEST_POSTGRES_URL"
 ```
 
-Use a local/CI PostgreSQL server whose role can create and drop temporary databases. Generation and checks replay Core plus this App in a new disposable database and leave the configured business database unchanged. Review the generated Alembic draft for locks, data changes, downgrade and rolling compatibility. Owned generated identifiers use `migration_name(...)` so one packaged history works with deployment-selected prefixes; raw SQL and expression text need explicit portable names and review. Include `migrations/versions/*.py` in the wheel and source distribution, and add `apps db check` to your CI when you opt in.
+Use a local/CI PostgreSQL server whose role can create and drop temporary databases. Generation and checks replay Core plus this App in a new disposable database and leave the configured business database unchanged. Review the generated Alembic draft for locks, data changes, downgrade and rolling compatibility. Owned generated identifiers use `migration_name(...)` so one packaged history works with deployment-selected prefixes; raw SQL and expression text need explicit portable names and review. This template's existing `src` package configuration already includes Python migration resources. Verify the built wheel with `make verify` followed by `apps db check`. For persistence CI, add a PostgreSQL service with `CREATE DATABASE` permission and run that parity check; the generated build workflow does not provision PostgreSQL.
 
 App rows use the host's `transaction(runtime.storage)` and `short_session(runtime.storage)` scopes. Native ORM rows can participate in the same session and joins. Use `database.reference(NativeRow.__table__)` for read-only native foreign-key targets, and keep App migrations confined to their own prefix. Reuse `a13n_service.migrations.scratch.scratch_database` for tests that replay Core and the App's packaged history; close Storage before the temporary database scope ends.
 
-For deployment, install the App wheel consistently and run `a13n-service migrate --apps` before restarting Service. Use `a13n-service apps db status --app {{ cookiecutter.app_id }}` to inspect applied and packaged heads, or `apps db upgrade --app {{ cookiecutter.app_id }}` to apply only this App after Core is current. Startup validates all installed App databases before callbacks, even for organization-disabled Apps. Core auto migration does not prepare App schemas; workers, readiness and organization enablement never run App DDL. Uninstalling the package retains its namespace and data.
+For deployment, install the App wheel consistently. By default, `all` and `control` startup migrate Core and every installed App database, even for organization-disabled Apps. Set `A13N_DATABASE__AUTO_MIGRATE_APPS=false` to manage App upgrades separately, or `A13N_DATABASE__AUTO_MIGRATE=false` to disable all startup migration and run `a13n-service migrate` in a dedicated job. Plain `migrate` includes installed Apps; `--no-apps` selects Core only. `migrate --check` checks live schema parity without creating a database. Use `a13n-service apps db status --app {{ cookiecutter.app_id }}` to inspect applied and packaged heads, or `apps db upgrade --app {{ cookiecutter.app_id }}` to apply only this App after Core is current. Startup validates every installed App database before callbacks. Workers, readiness and organization enablement never run DDL. Uninstalling the package retains its namespace and data.
 
 ## Create your GitHub repository
 
