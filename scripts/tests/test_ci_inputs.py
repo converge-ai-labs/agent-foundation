@@ -298,6 +298,7 @@ def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Pa
         not in {
             root / "test_environments_envd.py",
             root / "test_monitoring_collectors_live.py",
+            root / "test_monitoring_bundle_live.py",
             root / "test_browser_native_live.py",
             root / "test_browser_selfhost_live.py",
         }
@@ -327,6 +328,7 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
         "helper.py",
         "test_environments_envd.py",
         "test_monitoring_collectors_live.py",
+        "test_monitoring_bundle_live.py",
         "environment_providers/test_native.py",
     ]
     for name in included + excluded:
