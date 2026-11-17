@@ -151,10 +151,10 @@ async def test_pending_automatic_title_joins_app_shutdown_after_root_completion(
                 scopes[0].cancel()
             else:
                 stop.set()
-            # Rescue the old implementation's shielded task-group join so a
-            # failed regression exits cleanly instead of hanging the test suite.
+            # Bound title cancellation, not unrelated collaborator/storage teardown.
+            # Release the old implementation's shielded join if cancellation fails.
             with move_on_after(2) as shutdown_wait:
-                await closed.wait()
+                await cancelled.wait()
             release.set()
             await closed.wait()
     assert not shutdown_wait.cancel_called

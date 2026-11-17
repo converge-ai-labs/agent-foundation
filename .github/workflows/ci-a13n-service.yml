@@ -173,14 +173,17 @@ jobs:
           PY
 
   validation:
-    name: a13n Service Python (${{ matrix.name }})
+    name: a13n Service Python (${{ matrix.task.name }}, ${{ matrix.python-version }})
     needs: changes
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
+        python-version: ["3.13", "3.14", "3.15"]
+        task: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    runs-on: ${{ matrix.task.runner }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -191,7 +194,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -203,41 +206,42 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Type-check a13n Service Python packages
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         run: >-
           uv run --locked pyright
           packages/a13n-logging/a13n_logging
           packages/a13n-service/a13n_service
 
       - name: Check Service import boundaries
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         run: make service-boundaries
 
+      # Generated contracts use the canonical development/release interpreter.
       - name: Check Service contract export
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
         run: uv run --locked python scripts/export-a13n-service-openapi.py --check
 
       - name: Test Service contract export
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
         run: uv run --locked python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
 
       - name: Test logging
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         run: uv run --locked python -m pytest packages/a13n-logging/tests --junitxml=test-results/logging.xml
 
       - name: Check local Service development tools
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         run: make dev-state-check
 
       - name: Set up Chrome for Testing
-        if: startsWith(matrix.name, 'tests-') || matrix.name == 'native'
+        if: startsWith(matrix.task.name, 'tests-') || matrix.task.name == 'native'
         id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
 
       - name: Allow the test browser to create sandbox namespaces
-        if: startsWith(matrix.name, 'tests-') || matrix.name == 'native'
+        if: startsWith(matrix.task.name, 'tests-') || matrix.task.name == 'native'
         shell: bash
         env:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
@@ -253,12 +257,12 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/service-chrome-testing
 
       - name: Test a13n Service
-        if: startsWith(matrix.name, 'tests-')
+        if: startsWith(matrix.task.name, 'tests-')
         # Balanced runner shards preserve file-local fixtures and execute the complete suite.
         # Individual stalled tests still fail through faulthandler below.
         timeout-minutes: 6
         env:
-          TEST_TARGETS: ${{ matrix.targets }}
+          TEST_TARGETS: ${{ matrix.task.targets }}
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           targets=()
@@ -275,13 +279,13 @@ jobs:
             "${targets[@]}"
 
       - name: Install native Browser desktop dependencies
-        if: matrix.name == 'native'
+        if: matrix.task.name == 'native'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb openbox xauth x11vnc websockify x11-apps x11-utils
 
       - name: Test native Browser lifecycle and Service assets
-        if: matrix.name == 'native'
+        if: matrix.task.name == 'native'
         env:
           A13N_TEST_BROWSER_NATIVE_CHROMIUM: ${{ steps.chrome.outputs.chrome-path }}
         run: |
@@ -295,11 +299,11 @@ jobs:
           PY
 
       - name: Test native Environment management drivers
-        if: matrix.name == 'native'
+        if: matrix.task.name == 'native'
         run: uv run --locked python -m pytest packages/a13n-service/tests/environment_providers --junitxml=test-results/environment-providers.xml
 
       - name: Require Service execution without skips
-        if: startsWith(matrix.name, 'tests-')
+        if: startsWith(matrix.task.name, 'tests-')
         run: |
           python - <<'PYCODE'
           import xml.etree.ElementTree as ET
@@ -313,18 +317,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: service-${{ matrix.name }}-${{ github.run_attempt }}
+          name: service-${{ matrix.task.name }}-py${{ matrix.python-version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 
       - name: Set up pnpm
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         uses: pnpm/action-setup@v4
         with:
           package_json_file: frontend/package.json
 
       - name: Set up Node.js
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -332,7 +336,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Build a13n Service Python distributions
-        if: matrix.name == 'checks'
+        if: matrix.task.name == 'checks'
         run: |
           make a13n-service-assets
           uv build --package a13n-logging --out-dir dist/a13n-service

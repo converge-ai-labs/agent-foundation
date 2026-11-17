@@ -334,12 +334,28 @@ async def test_semantic_observation_and_fill_never_write_to_previous_focus(nativ
 
         async def ref(name):
             observation = await call("browser_observe", name=name)
-            return next(
+            references = [
                 line.strip().split("]")[0][1:] for line in observation.splitlines() if line.strip().startswith("[e")
-            )
+            ]
+            assert references, observation
+            return references[0]
 
         await call("browser_navigate", url=workflow_site)
+        # Main-document readiness does not imply that either iframe has loaded.
+        for label in ("Same", "Cross"):
+            ready = json.loads(
+                await call(
+                    "browser_wait",
+                    condition={
+                        "kind": "element",
+                        "target": {"kind": "locator", "name": label + " input"},
+                        "state": "visible",
+                    },
+                )
+            )
+            assert ready["verification"] == "passed", ready
         empty = await call("browser_observe", name="Name")
+        assert any(line.strip().startswith("[e") for line in empty.splitlines()), empty
         assert "value=" not in empty
         original = await ref("Name")
         assert original == await ref("Name")

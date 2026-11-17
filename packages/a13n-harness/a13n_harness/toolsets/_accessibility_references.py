@@ -6,6 +6,7 @@ import secrets
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from inspect import signature
 from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
@@ -123,5 +124,10 @@ class AccessibilityReferences:
             return result
 
         schema = project(TypeAdapter(model).core_schema)
-        validator = SchemaValidator(schema)
+        # Reusing the original model validator would discard the projected references.
+        # Older core versions already rebuild the root schema and lack this option.
+        if "_use_prebuilt" in signature(SchemaValidator).parameters:
+            validator = SchemaValidator(schema, _use_prebuilt=False)
+        else:
+            validator = SchemaValidator(schema)
         return GenerateJsonSchema().generate(schema), validator.validate_python
