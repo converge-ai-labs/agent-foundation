@@ -766,7 +766,7 @@
         "defaults": {
           "unit": "currencyUSD",
           "noValue": "Unavailable",
-          "decimals": 6,
+          "decimals": 4,
           "min": 0
         },
         "overrides": [
@@ -786,7 +786,7 @@
               },
               {
                 "id": "decimals",
-                "value": 6
+                "value": 4
               }
             ]
           },

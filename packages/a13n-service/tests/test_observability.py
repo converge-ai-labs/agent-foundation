@@ -780,3 +780,73 @@ async def test_backlog_expired_tool_leases_exclude_shell_completed_and_live(serv
     values = await report_backlog(service.runtime.storage)
     assert values["execution_lease_expired"][0] == 1
     assert 60 <= values["execution_lease_expired"][1] < 90
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("commit", [False, True])
+async def test_deliveries_created_dead_are_observed_only_after_insertion_commits(
+    runtime, reader, logged, monkeypatch, batch, commit
+):
+    labels = {"kind": "email", "result": "dead"}
+    before = measured(reader, "a13n.outbox.deliveries", labels)
+    monkeypatch.setattr(outbox, "_BATCH_ROWS", 1)
+
+    async def stage(session):
+        if batch:
+            rows = [
+                outbox.prepare(
+                    organization_id=None, workspace_id=None, kind="email", target={}, payload={}, dead=reason
+                )
+                for reason in ("unusable", None, "unusable")
+            ]
+            await outbox.enqueue_batch(session, iter(rows))
+        else:
+            for reason in ("unusable", None, "unusable"):
+                enqueue(
+                    session, organization_id=None, workspace_id=None, kind="email", target={}, payload={}, dead=reason
+                )
+        await session.flush()
+        assert measured(reader, "a13n.outbox.deliveries", labels) == before
+
+    if commit:
+        async with transaction(runtime.storage) as session:
+            await stage(session)
+    else:
+        with pytest.raises(RuntimeError, match="rollback"):
+            async with transaction(runtime.storage) as session:
+                await stage(session)
+                raise RuntimeError("rollback")
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
+    assert len(messages(logged, "Outbox delivery dead")) == (2 if commit else 0)
+    async with short_session(runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(outbox.OutboxRow)) == (3 if commit else 0)
+    # Dead-at-insert rows are not claimed or counted a second time.
+    await outbox.claim(runtime.storage, "email", owner="test", limit=10, lease_seconds=60, max_attempts=1)
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
+
+
+@pytest.mark.parametrize("batch", [False, True])
+async def test_missing_webhook_signing_secrets_count_new_dead_deliveries(service, runs_kit, reader, batch):
+    from a13n_service.resources.subscriptions.delivery import Subject, Transition, prepare_webhooks, stage_webhooks
+    from a13n_service.resources.subscriptions.tables import SubscriptionRow
+
+    from .test_subscriptions import subscribe
+
+    await runs_kit.pause_sweeps(service)
+    broken = await subscribe(service, "http://127.0.0.1:9/hook", ["run.accepted"])
+    healthy = await subscribe(service, "http://127.0.0.1:9/hook", ["run.accepted"])
+    runtime = service.runtime
+    async with transaction(runtime.storage) as session:
+        source = await session.get_one(SubscriptionRow, healthy["id"])
+        (await session.get_one(SubscriptionRow, broken["id"])).signing_secret = dict(source.signing_secret)
+    labels = {"kind": "webhook", "result": "dead"}
+    before = measured(reader, "a13n.outbox.deliveries", labels)
+    subject = Subject(service.tenant.workspace_id, "agent", "session", "thread")
+    async with transaction(runtime.storage) as session:
+        if batch:
+            rows = await prepare_webhooks(session, runtime.keys, [Transition(subject, ["run.accepted"], {})], limit=32)
+            await outbox.enqueue_batch(session, rows)
+        else:
+            await stage_webhooks(session, runtime.keys, subject, ["run.accepted"], {}, limit=32)
+        assert measured(reader, "a13n.outbox.deliveries", labels) == before
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + 1

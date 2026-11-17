@@ -27,6 +27,12 @@ def test_cost_precision_keeps_headlines_readable_and_tables_exact():
         for prop in override["properties"]
         if prop["id"] == "decimals"
     ] == [2]
+    chart = next(p for p in dashboard("usage")["panels"] if p["id"] == 11)
+    assert chart["fieldConfig"]["defaults"]["decimals"] == 4
+    cost_override = next(
+        override for override in chart["fieldConfig"]["overrides"] if override["matcher"]["options"] == "known_cost_usd"
+    )
+    assert {prop["id"]: prop["value"] for prop in cost_override["properties"]}["decimals"] == 4
     for panel in dashboard("usage")["panels"]:
         if panel["type"] == "table":
             for override in panel["fieldConfig"]["overrides"]:
