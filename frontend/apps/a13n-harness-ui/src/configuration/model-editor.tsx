@@ -212,7 +212,7 @@ function LoadedModelEditor({
     effectiveUrl,
     value?.base_model,
   ] as const;
-  const options = useQuery({
+  const options = useQuery<Schema<"ModelOptions">>({
     queryKey: ["model-options", ...optionsIdentity, value?.settings],
     // Keep the current choices mounted while refreshing the same model's settings.
     placeholderData: (previous, query) =>
