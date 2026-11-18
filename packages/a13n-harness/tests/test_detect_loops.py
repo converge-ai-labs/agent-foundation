@@ -5,9 +5,10 @@ from collections.abc import AsyncIterator
 import pytest
 from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from pydantic_ai.capabilities import AbstractCapability, Capability
-from pydantic_ai.messages import ModelMessage, SystemPromptPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai_harness import DetectLoops
+from pydantic_ai_harness.detect_loops import LoopNudgePart
 
 pytestmark = pytest.mark.anyio
 
@@ -65,14 +66,10 @@ async def test_detect_loops_repeated_results_reach_model_or_end_run(action: str)
         assert requests == 4
         assert len(model_nudges) == 1
         nudges = [
-            part
-            for message in result.all_messages()
-            for part in message.parts
-            if isinstance(part, SystemPromptPart)
-            and part.metadata.get("origin") == "pydantic-ai-harness.detect_loops.nudge.v1"
+            part for message in result.all_messages() for part in message.parts if isinstance(part, LoopNudgePart)
         ]
         assert len(nudges) == 1
-        assert nudges[0].metadata["pattern"] == "repeated_result"
+        assert nudges[0].pattern == "repeated_result"
     else:
         assert result.status == "failed"
         assert result.failure is not None
