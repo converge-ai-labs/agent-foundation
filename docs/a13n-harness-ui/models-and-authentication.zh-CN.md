@@ -66,7 +66,7 @@ TUI 和 WebUI 都会自动向每个 Agent 提供当前 Thread ID 和提供方模
    kind: model
    id: model-codex
    name: Codex
-   route: openai-codex:gpt-6.1-sol
+   route: openai-codex:gpt-6.2-sol
    authentication:
      kind: codex_subscription
    settings:

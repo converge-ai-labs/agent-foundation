@@ -88,8 +88,8 @@ SUBSCRIPTION_CONNECTIONS = (
         models=tuple(
             ModelChoice(value=value, label=model_name("codex", value))
             for value in (
-                "gpt-6.1-sol",
                 "gpt-6.2-sol",
+                "gpt-6.1-sol",
                 "gpt-6.2-astra",
                 "gpt-6-astra",
                 "gpt-5.6-terra",
@@ -99,7 +99,7 @@ SUBSCRIPTION_CONNECTIONS = (
                 "gpt-5.6-luna",
             )
         ),
-        default_model="gpt-6.1-sol",
+        default_model="gpt-6.2-sol",
     ),
     ModelConnection(
         id="grok-subscription",

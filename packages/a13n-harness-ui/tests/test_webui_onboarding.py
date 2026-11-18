@@ -110,7 +110,7 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
 @pytest.mark.parametrize(
     ("connection", "model_id", "authentication", "model_file"),
     [
-        ("codex", "gpt-6.1-sol", "codex_subscription", "codex"),
+        ("codex", "gpt-6.2-sol", "codex_subscription", "codex"),
         ("grok-subscription", "grok-4.7", "grok_subscription", "grok"),
         ("copilot-subscription", "synthetic-chat-model", "copilot_subscription", "copilot"),
     ],
@@ -140,6 +140,9 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
         choices = await client.get("/api/models/choices")
         assert choices.status_code == 200
         assert choices.json() == ModelChoices().model_dump(mode="json")
+        if connection == "codex":
+            codex = next(choice for choice in choices.json()["connections"] if choice["id"] == "codex")
+            assert codex["default_model"] == model_id
         catalog = await client.get("/api/models/catalog")
         assert catalog.status_code == 200 and catalog.json()["items"]
         request = {"connection": connection, "model_id": model_id}
