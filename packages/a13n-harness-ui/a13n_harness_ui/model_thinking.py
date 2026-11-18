@@ -17,7 +17,6 @@ from pydantic_ai.profiles.google import GOOGLE_THINKING_LEVEL_SCALE, google_mode
 from pydantic_ai.profiles.openai import openai_model_profile
 
 from a13n_harness_ui.errors import CompositionError
-from a13n_harness_ui.model_presets import OPENAI_NATIVE_EFFORT_MODELS
 
 type ThinkingSelection = bool | Literal["minimal", "low", "medium", "high", "xhigh", "max"]
 
@@ -75,7 +74,9 @@ def _label(value: ThinkingSelection) -> str:
 def _choices(route: str) -> tuple[_Choice, ...]:
     provider, _, name = route.partition(":")
     if provider in _OPENAI_ROUTES:
-        if name in OPENAI_NATIVE_EFFORT_MODELS:
+        # GPT-6.1 Sol is not recognized by the bundled SDK profile yet.
+        # Its documented efforts exclude none/minimal and include max.
+        if name in {"gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"}:
             return tuple(
                 _Choice(effort, "Reasoning effort", {"openai_reasoning_effort": effort})
                 for effort in ("low", "medium", "high", "xhigh", "max")

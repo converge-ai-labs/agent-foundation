@@ -152,12 +152,6 @@ class SetupWizard:
             else subscription_connection(provider).id
         )
 
-    @property
-    def codex_window(self) -> int | None:
-        from a13n_harness_ui.model_authoring import CODEX_MODEL_WINDOWS
-
-        return CODEX_MODEL_WINDOWS.get(self.values.get("model", "")) if self.connection_id == "codex" else None
-
     def presets(self) -> tuple[SettingsPreset, ...]:
         from a13n_harness_ui.model_authoring import authoring_presets, model_connection
 
@@ -274,12 +268,6 @@ class SetupWizard:
                 return Question(
                     "preset", question.text, self.values.get("preset", presets[0].key), tuple(p.key for p in presets)
                 )
-        if question.key == "context" and self.codex_window:
-            return Question(
-                "context",
-                "Working context budget (tokens, editable)",
-                self.values.get("context", str(self.codex_window)),
-            )
         if question.key == "context":
             return replace(question, default=default, choices=tuple(p.label.lower() for p in CODEX_CONTEXT_CHOICES))
         if question.key == "thinking":
@@ -591,7 +579,7 @@ class SetupWizard:
             selected = str(resolve_choice(selected, question.choices))
             if not question.allow_custom and selected not in question.choices:
                 raise ValueError(f"Choose one of: {', '.join(question.choices)}")
-        if question.key == "context" and (self.values.get("provider") == "api" or self.codex_window):
+        if question.key == "context" and self.values.get("provider") == "api":
             tokens = selected.lower()
             multiplier = 1000 if tokens.endswith("k") else 1
             digits = tokens[:-1] if multiplier == 1000 else tokens
@@ -823,10 +811,10 @@ class SetupWizard:
                     }
                 }
             )
-        if recipe.model_characteristics is not None and provider in {"api", "codex"} and "context" in self.values:
+        if recipe.model_characteristics is not None and provider in {"api", "codex"}:
             context = (
                 int(self.values["context"])
-                if provider == "api" or self.codex_window
+                if provider == "api"
                 else next(
                     p.value for p in CODEX_CONTEXT_CHOICES if p.label.lower() == self.values.get("context", "balanced")
                 )

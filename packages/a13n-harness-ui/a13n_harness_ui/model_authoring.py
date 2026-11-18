@@ -21,7 +21,6 @@ from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_presets import (
     API_MODEL_SUGGESTIONS,
     API_PROVIDERS,
-    OPENAI_NATIVE_EFFORT_MODELS,
     SettingsPreset,
     known_context_window,
     known_model_capabilities,
@@ -47,8 +46,6 @@ class ContextChoice(StrictModel):
     label: str
     description: str
 
-
-CODEX_MODEL_WINDOWS = {"gpt-6.2-sol": 500000, "gpt-6.2-astra": 272000}
 
 CODEX_CONTEXT_CHOICES = (
     ContextChoice(value=272000, label="Standard", description="Conservative working budget"),
@@ -320,12 +317,7 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
                     "default", "Subscription defaults", "Use native settings for this model", {"openai_store": False}
                 ),
             )
-        native_effort = model_id in OPENAI_NATIVE_EFFORT_MODELS
-        efforts = ("high", "medium", "low", "xhigh")
-        if model_id in CODEX_MODEL_WINDOWS:
-            efforts = ("low", "medium", "high", "xhigh", "max")
-        elif native_effort:
-            efforts = (*efforts, "max")
+        native_effort = model_id in {"gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"}
         return tuple(
             SettingsPreset(
                 effort,
@@ -337,7 +329,9 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
                     "openai_store": False,
                 },
             )
-            for effort in efforts
+            for effort in (
+                ("high", "medium", "low", "xhigh", "max") if native_effort else ("high", "medium", "low", "xhigh")
+            )
         )
     if connection.authentication in {"grok_subscription", "copilot_subscription"}:
         return (SettingsPreset("default", "Subscription defaults", "Keep native subscription behavior", {}),)
@@ -410,8 +404,6 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         if known_context
         else 350000
     )
-    if connection.id == "codex":
-        context = CODEX_MODEL_WINDOWS.get(request.model_id, context)
     characteristics = HarnessModelCharacteristics(
         context_window_tokens=context,
         capabilities=known_capabilities or frozenset(),

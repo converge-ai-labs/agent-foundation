@@ -36,26 +36,6 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets(model_i
     assert grok.model_characteristics.context_window_tokens is None
 
 
-@pytest.mark.parametrize(("model_id", "window"), [("gpt-6.2-sol", 500000), ("gpt-6.2-astra", 272000)])
-def test_codex_62_static_defaults(model_id: str, window: int) -> None:
-    from a13n_harness_ui.model_authoring import model_connection
-    from a13n_harness_ui.model_thinking import describe_thinking
-
-    assert model_id in {m.value for m in model_connection("codex").models}
-    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id=model_id))
-    assert recipe.settings["openai_reasoning_effort"] == "low"
-    assert recipe.model_characteristics.context_window_tokens == window
-    assert recipe_document(recipe)["model_characteristics"]["capabilities"] == ["image_understanding"]
-    assert [option.value for option in describe_thinking(recipe.route, recipe.settings).options] == [
-        None,
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    ]
-
-
 @pytest.mark.anyio
 async def test_codex_sol_preset_reaches_native_request(monkeypatch: pytest.MonkeyPatch) -> None:
     effort = "high"

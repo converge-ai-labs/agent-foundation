@@ -206,21 +206,15 @@ function LoadedModelEditor({
       result(client.GET("/api/models/catalog", { signal })),
     enabled: api,
   });
-  const optionsIdentity = [
-    connection,
-    effectiveId,
-    effectiveUrl,
-    value?.base_model,
-  ] as const;
-  const options = useQuery<Schema<"ModelOptions">>({
-    queryKey: ["model-options", ...optionsIdentity, value?.settings],
-    // Keep the current choices mounted while refreshing the same model's settings.
-    placeholderData: (previous, query) =>
-      optionsIdentity.every(
-        (part, index) => part === query?.queryKey[index + 1],
-      )
-        ? previous
-        : undefined,
+  const options = useQuery({
+    queryKey: [
+      "model-options",
+      connection,
+      effectiveId,
+      effectiveUrl,
+      value?.base_model,
+      value?.settings,
+    ],
     queryFn: ({ signal }) =>
       result(
         client.POST("/api/models/options", {
@@ -294,16 +288,6 @@ function LoadedModelEditor({
       mounted.current = false;
     };
   }, []);
-  // Carry explicit edits across model changes. A fresh creation draft can
-  // still use the new model's presets until those defaults have been edited.
-  const generated = useRef<Recipe | null>(null);
-  const freshCodexSelection =
-    connection === "codex" &&
-    value &&
-    generated.current &&
-    value.route !== `openai-codex:${effectiveId}` &&
-    value.settings === generated.current.settings &&
-    value.model_characteristics === generated.current.model_characteristics;
   const prepare = useMutation({
     mutationFn: async (reset: boolean) => ({
       revision,
@@ -314,7 +298,7 @@ function LoadedModelEditor({
             model_id: effectiveId,
             base_url: effectiveUrl,
             base_model: value?.base_model,
-            ...(!reset && value && !freshCodexSelection
+            ...(!reset && value
               ? {
                   settings: value.settings ?? {},
                   model_characteristics: value.model_characteristics ?? {},
@@ -329,8 +313,6 @@ function LoadedModelEditor({
     }),
     onSuccess: (prepared) => {
       if (!mounted.current || prepared.revision !== latest.current) return;
-      generated.current =
-        !value || freshCodexSelection ? prepared.recipe : null;
       setModelId(
         prepared.recipe.route.slice(prepared.recipe.route.indexOf(":") + 1),
       );

@@ -400,18 +400,6 @@ models:
       capabilities:
       - image_understanding
     source_url: https://platform.claude.com/docs/en/models/sonnet-4-5/overview
-  openai:gpt-6.2-sol:
-    characteristics:
-      capabilities:
-      - image_understanding
-      context_window_tokens: 1050000
-    source_url: https://developers.openai.com/api/docs/models/gpt-6.2-sol
-  openai:gpt-6.2-astra:
-    characteristics:
-      capabilities:
-      - image_understanding
-      context_window_tokens: 1050000
-    source_url: https://developers.openai.com/api/docs/models/gpt-6.2-astra
   openai:gpt-6.1-sol:
     characteristics:
       capabilities:
