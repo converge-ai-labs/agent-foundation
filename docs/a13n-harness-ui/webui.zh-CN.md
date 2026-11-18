@@ -76,6 +76,8 @@ flowchart TB
 
 **Home** 和 Project 的 **+** 共用一个浏览器本地新对话草稿。切换 Project 保留文字和显式选择。重载保留文字及设置，但需重新附加本地文件字节。**Send** 创建 Thread，接受成功后清除草稿。提交结果不确定时保留恢复信息，并锁定 Project 选择直到完成检查。
 
+使用 **Search**，或按 Apple 平台上的 Command+F（其他平台为 Ctrl+F）搜索已保存的聊天，即使侧边栏折叠后也可使用。重复按快捷键会选中当前查询；按 Escape 关闭搜索，并将焦点恢复到打开搜索前的位置。获得焦点的文件编辑器和终端输出保留各自的 Find 控件。Files、Changes、Browser 及其他打开的对话框保留局部或浏览器原生搜索，而不会打开聊天搜索。
+
 ### 发送、引导与检查
 
 | 操作                    | 结果                               |
@@ -93,7 +95,7 @@ flowchart TB
 
 实时输出在保存历史到达前属于临时显示。加载替代历史时，原有保存历史仍可见。失败显示简短原因和可展开详情。**Retry** 开始新轮次，发送 `Continue completing the previous task.`，后接当前草稿文字和附件。重试前先检查草稿。接受后移除已提交快照，保留并发编辑；不会恢复失败 Run。提交待处理或结果不确定时不可使用。
 
-展开 **Execution details**、**Explored**、Shell、浏览或 **File changes**，检查参数、结果和观测到的编辑。**Awaiting result** 表示缺少结果；**Requested replacement** 表示请求的修改，而非已应用 diff。已省略的历史内容仍不可用。**Open on host** 打开服务器或容器的绝对路径并保留未保存缓冲区；当前磁盘内容可能不同于记录结果。
+展开 **Execution details**、**Explored**、Shell、浏览或 **File changes**，检查参数、结果和观测到的编辑。**Awaiting result** 表示缺少结果；**Requested replacement** 表示请求的修改，而非已应用 diff。已省略的历史内容仍不可用。**Open on host** 在只读预览中打开服务器或容器的绝对路径；当前磁盘内容可能不同于记录结果。
 
 打开 **Details** 查看操作状态、子执行、任务、笔记、用量和配置。执行、续接保存和 Environment 清理各自报告结果。子控件对应准确的父执行。应用 Project 默认值需要审阅前后差异；发生竞争修改时保留编辑，重新审阅。
 
