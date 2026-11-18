@@ -903,7 +903,7 @@
   "Thinking controls are not known for this model/adapter. Model settings remain unchanged.": "इस मॉडल/एडैप्टर के लिए थिंकिंग कंट्रोल की जानकारी नहीं है। मॉडल सेटिंग्स में कोई बदलाव नहीं हुआ।",
   "Fast controls are not available for this model connection.": "इस मॉडल कनेक्शन के लिए फ़ास्ट कंट्रोल उपलब्ध नहीं हैं।",
   "Fast is controlled by extra_body or extra_headers. Edit the Model configuration first.": "फ़ास्ट extra_body या extra_headers से नियंत्रित होता है। पहले मॉडल कॉन्फ़िगरेशन संपादित करें।",
-  "Ultrafast requires GPT-6 Astra through a Codex subscription connection.": "अल्ट्राफ़ास्ट के लिए Codex सब्सक्रिप्शन कनेक्शन के ज़रिए GPT-6 Astra ज़रूरी है।",
+  "Ultrafast requires a supported model on an OpenAI Responses or Codex subscription connection.": "अल्ट्राफ़ास्ट के लिए OpenAI Responses या Codex सब्सक्रिप्शन कनेक्शन पर समर्थित मॉडल ज़रूरी है।",
   "Reasoning mode is not available for this model connection.": "इस मॉडल कनेक्शन के लिए रीज़निंग मोड उपलब्ध नहीं है।",
   "Reasoning mode is controlled by extra_body. Edit the Model configuration first.": "रीज़निंग मोड extra_body से नियंत्रित होता है। पहले मॉडल कॉन्फ़िगरेशन संपादित करें।",
   "Adaptive - {{level}}": "अडैप्टिव - {{level}}",
