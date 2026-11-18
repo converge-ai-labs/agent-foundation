@@ -7,6 +7,19 @@ App plugins add business APIs, organization-scoped background work, Harness fact
 
 App plugins run inside Service with its process permissions. Review packages before installation. [MCP Apps](mcp-apps.md) are a separate protocol for interactive tool results.
 
+## Deploy App plugins
+
+Use the same App packages and versions in every `control` and `worker` process, including Apps that only add Console pages or management APIs. An `all` process uses the same package set and serves both roles. You can install multiple App packages in the same Service Python environment.
+
+- **Custom Service image:** Install the selected App wheels and their dependencies into the Service Python environment during the image build. Use the same image for `control` and `worker`. If an App ships a frontend, its wheel includes the prebuilt assets; you do not need to rebuild Console.
+- **Local Service:** Install the selected wheels into the Python environment that starts Service. For example, put the wheels in `./app-wheels/` and run `uv pip install --python /path/to/service/.venv/bin/python ./app-wheels/*.whl`.
+
+Restart Service to discover the installed packages. Installation makes Apps available to the deployment; an organization administrator enables each App separately. New Apps start disabled.
+
+`control` serves App APIs and Console assets, runs organization sweeps, and performs automatic migrations when configured. `worker` runs agents and their App-provided Harness extensions. It checks App database revisions at startup but does not migrate databases or run organization sweeps. For Apps with database migrations, bring the schema up to date through `control`, `all`, or a migration job before starting workers that need the new schema.
+
+An App's `startup` callback runs in each Service process, regardless of organization enablement. Use it to initialize per-process resources. Put organization-scoped background work in a sweep, not in `startup`.
+
 ## Start an independent App
 
 The [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) creates a standalone project with a Python backend, a host-mounted Console frontend, a Makefile, and GitHub Actions checks. It does not include a license; choose licensing terms before distributing your project. The existing [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) remains a separate full-stack integration example.
