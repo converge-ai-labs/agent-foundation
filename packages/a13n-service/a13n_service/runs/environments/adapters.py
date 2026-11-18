@@ -20,6 +20,7 @@ from pydantic import JsonValue, SecretStr
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.providers import envd
+from a13n_service.providers.environment.cloudflare import Account as CloudflareAccount
 from a13n_service.providers.environment.management import EnvironmentProvider
 from a13n_service.providers.environment.websocket import WebSocketBootstrap
 from a13n_service.providers.registry import Registry
@@ -83,6 +84,7 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
     if isinstance(
         connection,
         (
+            CloudflareAccount,
             DockerConnectionConfiguration,
             E2BConnectionConfiguration,
             KubernetesConnectionConfiguration,
@@ -131,6 +133,7 @@ async def execution_connector(
     if isinstance(
         connection,
         (
+            CloudflareAccount,
             DockerConnectionConfiguration,
             E2BConnectionConfiguration,
             KubernetesConnectionConfiguration,

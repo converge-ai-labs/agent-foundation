@@ -1,0 +1,14 @@
+{
+  "name": "a13n-environment",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-18",
+  "compatibility_flags": ["enable_request_signal"],
+  "preview_urls": false,
+  "containers": [{
+    "class_name": "Environment",
+    "scheduling_policy": "durable_object",
+    "images": { "base": { "dockerfile": "./Dockerfile" } }
+  }],
+  "durable_objects": { "bindings": [{ "name": "ENVIRONMENTS", "class_name": "Environment" }] },
+  "exports": { "Environment": { "type": "durable-object", "storage": "sqlite" } }
+}

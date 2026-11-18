@@ -1,8 +1,10 @@
 # Environment Management Providers
 
+Cloudflare uses an operator-deployed Worker gateway to own one short-lived container per Environment ID. Its Provider account selects the gateway HTTPS origin and a write-only gateway credential. Envd is image-owned; the gateway forwards HTTP EIP (`envd_http`, default) or relays managed outbound WS (`envd_ws`) to the configured Service origin. `network_egress` is `public` by default or `disabled` for no workload Internet access; the latter preserves the private Envd path. Both choices freeze with the instance recipe. Cloudflare instances support renewal and deletion, not stop/resume or persistent workspaces. Only create may start the container; inspection, execution and retries never replace a lost incarnation.
+
 ## Outbound execution connection
 
-The [managed outbound contract](06-environments.md#managed-outbound-execution) defines `envd_ws` for Docker, E2B, Daytona, Modal, Sprites and Vercel. Their Envd prerequisites and native lifecycle remain the same as `envd_http`; bootstrap selects reverse WebSocket with a private environment-bound credential instead of an HTTP listener. Docker publishes no Envd port, Modal/Vercel expose no Envd HTTP port, and E2B/Daytona/Sprites skip HTTP/TCP readiness probes in this mode. Service waits for Control admission and EIP initialization instead. Existing native and HTTP defaults and saved fingerprints remain compatible. Sprites accepts both headless and desktop Envd recipes.
+The [managed outbound contract](06-environments.md#managed-outbound-execution) defines `envd_ws` for Docker, E2B, Daytona, Modal, Sprites, Vercel and Cloudflare. Their Envd prerequisites and native lifecycle remain the same as `envd_http`; bootstrap selects reverse WebSocket with a private environment-bound credential instead of an HTTP listener. Docker publishes no Envd port, Modal/Vercel expose no Envd HTTP port, and E2B/Daytona/Sprites skip HTTP/TCP readiness probes in this mode. Service waits for Control admission and EIP initialization instead. Existing native and HTTP defaults and saved fingerprints remain compatible. Sprites accepts both headless and desktop Envd recipes.
 
 ## Design Position
 
