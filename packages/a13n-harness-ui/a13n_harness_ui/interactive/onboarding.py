@@ -474,6 +474,11 @@ async def run_setup(
                         await _ensure_account(app, wizard.values["provider"], ask_user, emit)
                         checked_provider = wizard.values["provider"]
                         wizard.account_models = ()
+                        if checked_provider == "codex":
+                            try:
+                                wizard.codex_models = await app.codex_models()
+                            except HarnessUiError:
+                                wizard.codex_models = ()
                         connection = subscription_connection(checked_provider)
                         if connection.account is not None and connection.account.model_discovery:
                             account = await app.inspect_model_account(checked_provider)

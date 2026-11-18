@@ -32,6 +32,8 @@ Start with an installed Harness UI and credentials for one supported connection.
 
 6. Save. The saved Model now appears in conversation selectors. Select it for a new Run and send a short prompt. In the TUI, use `/model`, then `/status` to check the selection.
 
+Codex subscription setup reads visible models from the first available account in the selected group. Selecting a discovered model prefills its supported reasoning efforts, default effort and working context window. You can edit the budget before or after saving. If discovery is unavailable, bundled suggestions and manual IDs remain available.
+
 A saved/validated Model proves configuration validity; the prompt verifies credentials and inference access. Saving does not change an active Run. To make the Model an Agent's permanent choice, edit that Agent's `model` field or use its Model selector. Choose native tools on the **Agent**; a Model change does not rewrite its tools.
 
 `setup` and the new-Model path in `add agent` use the same connection preparation. You can configure a subscription before login, but authenticate before its first request. Cancelling a draft does not undo an already saved key, login, or independently saved inline Model.

@@ -82,6 +82,7 @@ function CredentialField({
 
 /** Shared draft editor. Preparing a connection never publishes configuration. */
 type ModelEditorProps = {
+  creating?: boolean;
   nameField?: ReactNode;
   value: Recipe | null;
   onChange: (recipe: Recipe, suggestedName?: string) => void;
@@ -110,6 +111,7 @@ export function ModelEditor(props: ModelEditorProps) {
 }
 
 function LoadedModelEditor({
+  creating,
   nameField,
   choices,
   value,
@@ -173,8 +175,6 @@ function LoadedModelEditor({
     onDraftChange?.({ connection, modelId, baseUrl, authentication });
   }, [connection, modelId, baseUrl, authentication, onDraftChange]);
   const selected = choices.connections?.find((item) => item.id === connection);
-  const effectiveId =
-    modelId || (!value ? (selected?.default_model ?? "") : "");
   const effectiveUrl = baseUrl || (!value ? (selected?.base_url ?? "") : "");
   const api = selected?.authentication === "api_key";
   const nativeProvider =
@@ -200,6 +200,41 @@ function LoadedModelEditor({
         item.authentication.availability === "available",
     ),
   );
+  const codexCatalog = useQuery({
+    queryKey: [
+      "codex-models",
+      groupId,
+      nativeGroup?.accounts,
+      subscriptions.data?.adoption.codex?.group_created,
+      subscriptions.data?.accounts
+        .filter((item) => item.account.provider === "codex")
+        .map((item) => [
+          item.account.id,
+          item.account.login_revision,
+          item.account.enabled,
+          item.authentication.availability,
+        ]),
+    ],
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/models/codex", {
+          params: { query: { group: groupId } },
+          signal,
+        }),
+      ),
+    enabled: nativeProvider === "codex" && !!subscriptions.data,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const codexModels =
+    nativeProvider === "codex" ? codexCatalog.data : undefined;
+  const effectiveId =
+    modelId || codexModels?.[0]?.slug || selected?.default_model || "";
+  const codexModel = codexModels?.find((item) => item.slug === effectiveId);
+  const waitingForCodex =
+    nativeProvider === "codex" &&
+    (subscriptions.isPending ||
+      (!!subscriptions.data && codexCatalog.isPending));
   const catalog = useQuery({
     queryKey: ["model-directory"],
     queryFn: ({ signal }) =>
@@ -213,6 +248,7 @@ function LoadedModelEditor({
       effectiveId,
       effectiveUrl,
       value?.base_model,
+      codexModel,
       value?.settings,
     ],
     queryFn: ({ signal }) =>
@@ -221,6 +257,7 @@ function LoadedModelEditor({
           body: {
             connection,
             model_id: effectiveId,
+            codex_model: codexModel,
             base_url: effectiveUrl,
             base_model: value?.base_model,
             settings: value?.settings,
@@ -228,7 +265,7 @@ function LoadedModelEditor({
           signal,
         }),
       ),
-    enabled: !!selected && !!effectiveId,
+    enabled: !!selected && !!effectiveId && !waitingForCodex,
   });
   const presets = options.data?.presets ?? [];
   const presetKeys = [
@@ -277,6 +314,8 @@ function LoadedModelEditor({
     effectiveId,
     effectiveUrl,
     authentication,
+    codexModel,
+    waitingForCodex,
     value,
   ]);
   const latest = useRef(revision);
@@ -296,9 +335,16 @@ function LoadedModelEditor({
           body: {
             connection,
             model_id: effectiveId,
+            codex_model: codexModel,
             base_url: effectiveUrl,
             base_model: value?.base_model,
-            ...(!reset && value
+            ...(!reset &&
+            value &&
+            !(
+              creating &&
+              codexModel &&
+              value.route !== `openai-codex:${effectiveId}`
+            )
               ? {
                   settings: value.settings ?? {},
                   model_characteristics: value.model_characteristics ?? {},
@@ -333,7 +379,14 @@ function LoadedModelEditor({
     },
   });
   useEffect(() => {
-    if (matches || !selected || !effectiveId || (api && !authReady)) return;
+    if (
+      waitingForCodex ||
+      matches ||
+      !selected ||
+      !effectiveId ||
+      (api && !authReady)
+    )
+      return;
     const timer = setTimeout(() => prepare.mutate(false), 200);
     return () => clearTimeout(timer);
   }, [revision, matches, authReady]);
@@ -371,12 +424,20 @@ function LoadedModelEditor({
     (item) => item.connection === connection,
   );
   const candidates = new Map(
-    (selected?.models ?? []).map((item) => [
+    (codexModels?.length
+      ? codexModels.map((item) => ({
+          value: item.slug,
+          label: item.display_name,
+        }))
+      : (selected?.models ?? [])
+    ).map((item) => [
       item.value,
       {
         value: item.value,
         label: item.label,
-        description: t("Release recommendation"),
+        description: codexModels?.length
+          ? item.value
+          : t("Release recommendation"),
       },
     ]),
   );
@@ -484,7 +545,7 @@ function LoadedModelEditor({
                   (item) => item.id === id,
                 )!;
                 setConnection(id);
-                setModelId(next.default_model);
+                setModelId(id === "codex" ? "" : next.default_model);
                 setBaseUrl(next.base_url ?? "");
                 setAuthentication(undefined);
                 setAccountReady(false);
@@ -1014,6 +1075,7 @@ export function ModelFields({
     typeof raw?.route === "string" && raw.route && raw?.authentication
       ? {
           route: raw.route,
+          reasoning_efforts: raw.reasoning_efforts,
           base_model: raw.base_model,
           authentication: raw.authentication,
           settings: raw.settings,

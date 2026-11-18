@@ -227,6 +227,7 @@ from a13n_harness_ui.connectors.models import Instance, SetupCommand, SetupSnaps
 from a13n_harness_ui.connectors.runtime import Connectors
 from a13n_harness_ui.connectors.sdk import Definition as ConnectorDefinition
 from a13n_harness_ui.dictation import DictationInput, DictationResult, transcribe_audio, transcribe_subscription
+from a13n_harness_ui.model_accounts.catalog import CodexCatalogModel
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -3291,6 +3292,35 @@ class HarnessUiApp:
                     code="model_discovery_failed",
                 ) from None
             return tuple(ModelChoice(value=model_id, label=model_id) for model_id in ids)
+
+    async def codex_models(self, group: str = "codex-default") -> tuple[CodexCatalogModel, ...]:
+        from a13n_harness_ui.model_accounts.catalog import discover_codex_models
+        from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
+
+        async with self._operation():
+            source = await self._configurations.current()
+            selected = source.subscription_groups.get(group) if source else None
+            if selected and selected.provider == "codex":
+                members = tuple(member.account for member in selected.accounts)
+            elif selected is None and group == "codex-default":
+                adoption = (await self.subscription_accounts.adoption()).get("codex")
+                members = ("acct-codex-default",) if adoption and not adoption.group_created else ()
+            else:
+                return ()
+            accounts = {account.id: account for account in await self.subscription_accounts.list()}
+            for member in members:
+                account = accounts.get(member)
+                if account is None or not account.enabled or account.provider != "codex":
+                    continue
+                store = self.subscription_accounts.store(account)
+                if isinstance(store, CodexAccountStore) and (await store.inspect()).usable:
+                    try:
+                        return await discover_codex_models(
+                            BoundCodexCredentialSource(store, account_id=account.upstream_account_id)
+                        )
+                    except Exception:
+                        raise AppStateError("Codex model discovery failed.", code="model_discovery_failed") from None
+            return ()
 
     async def model_catalog(self) -> ModelCatalogSnapshot:
         async with self._operation():

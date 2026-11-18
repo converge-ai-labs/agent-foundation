@@ -1504,6 +1504,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/models/codex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Codex Models */
+        get: operations["codex_models_api_models_codex_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/models/catalog": {
         parameters: {
             query?: never;
@@ -4674,6 +4691,23 @@ export interface components {
             arguments?: components["schemas"]["JsonValue"] | null;
             result?: components["schemas"]["JsonValue"] | null;
         };
+        /** CodexCatalogModel */
+        CodexCatalogModel: {
+            /** Slug */
+            slug: string;
+            /** Display Name */
+            display_name: string;
+            /** Reasoning Efforts */
+            reasoning_efforts: components["schemas"]["CodexEffort"][];
+            default_effort?: components["schemas"]["CodexEffort"] | null;
+            /** Context Window */
+            context_window?: number | null;
+            /**
+             * Image Input
+             * @default false
+             */
+            image_input?: boolean;
+        };
         /** CodexDictationConfiguration */
         CodexDictationConfiguration: {
             group?: components["schemas"]["ResourceId"] | null;
@@ -4687,6 +4721,7 @@ export interface components {
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
+        CodexEffort: string;
         /** CodexSubscriptionAuthentication */
         CodexSubscriptionAuthentication: {
             /**
@@ -6733,6 +6768,8 @@ export interface components {
         };
         /** ModelRecipe */
         ModelRecipe: {
+            /** Reasoning Efforts */
+            reasoning_efforts?: components["schemas"]["CodexEffort"][] | null;
             /** Route */
             route: string;
             /** Base Model */
@@ -8399,7 +8436,7 @@ export interface components {
             /** Disabled Reason */
             disabled_reason?: string | null;
         };
-        ThinkingSelection: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh" | "max");
+        ThinkingSelection: boolean | components["schemas"]["CodexEffort"];
         /** ThreadActivityPage */
         ThreadActivityPage: {
             /** Project Id */
@@ -10617,6 +10654,7 @@ export interface components {
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
+            codex_model?: components["schemas"]["CodexCatalogModel"] | null;
             /** Base Model */
             base_model?: string | null;
             /** Connection */
@@ -10643,6 +10681,7 @@ export interface components {
         VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
+            codex_model?: components["schemas"]["CodexCatalogModel"] | null;
             /** Base Model */
             base_model?: string | null;
             /** Connection */
@@ -13899,6 +13938,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelChoices"];
+                };
+            };
+        };
+    };
+    codex_models_api_models_codex_get: {
+        parameters: {
+            query?: {
+                group?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodexCatalogModel"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

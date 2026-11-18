@@ -3931,6 +3931,50 @@
         }
       }
     },
+    "/api/models/codex": {
+      "get": {
+        "summary": "Codex Models",
+        "operationId": "codex_models_api_models_codex_get",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "codex-default",
+              "title": "Group"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CodexCatalogModel"
+                  },
+                  "title": "Response Codex Models Api Models Codex Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/models/catalog": {
       "get": {
         "summary": "Model Catalog",
@@ -13446,6 +13490,63 @@
         ],
         "title": "ChildToolCallView"
       },
+      "CodexCatalogModel": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "maxLength": 480,
+            "pattern": "^[^\\s:]+$",
+            "title": "Slug"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "reasoning_efforts": {
+            "items": {
+              "$ref": "#/components/schemas/CodexEffort"
+            },
+            "type": "array",
+            "title": "Reasoning Efforts"
+          },
+          "default_effort": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexEffort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "image_input": {
+            "type": "boolean",
+            "title": "Image Input",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "display_name",
+          "reasoning_efforts"
+        ],
+        "title": "CodexCatalogModel"
+      },
       "CodexDictationConfiguration": {
         "properties": {
           "group": {
@@ -13484,6 +13585,12 @@
         },
         "type": "object",
         "title": "CodexDictationConfiguration"
+      },
+      "CodexEffort": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_-]*$",
+        "type": "string"
       },
       "CodexSubscriptionAuthentication": {
         "properties": {
@@ -19340,6 +19447,20 @@
       },
       "ModelRecipe": {
         "properties": {
+          "reasoning_efforts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CodexEffort"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Efforts"
+          },
           "route": {
             "type": "string",
             "maxLength": 512,
@@ -24005,15 +24126,7 @@
             "type": "boolean"
           },
           {
-            "enum": [
-              "minimal",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/CodexEffort"
           }
         ]
       },
@@ -29663,6 +29776,16 @@
       },
       "ModelOptionsRequest": {
         "properties": {
+          "codex_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexCatalogModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "base_model": {
             "anyOf": [
               {
@@ -29743,6 +29866,16 @@
       },
       "ModelRecipeRequest": {
         "properties": {
+          "codex_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexCatalogModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "base_model": {
             "anyOf": [
               {

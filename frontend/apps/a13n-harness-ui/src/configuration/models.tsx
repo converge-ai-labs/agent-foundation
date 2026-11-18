@@ -474,6 +474,7 @@ function AddModelDialog({
           }
         />
         <ModelEditor
+          creating
           nameField={
             <TextField
               label={t("Model name")}

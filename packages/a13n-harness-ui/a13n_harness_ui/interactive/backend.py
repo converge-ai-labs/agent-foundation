@@ -221,7 +221,7 @@ class SessionBackend:
             self.status.context_window = None
             return False
         self.status.model = model.route
-        controls = describe_model_controls(model.route, model.settings)
+        controls = describe_model_controls(model.route, model.settings, model.reasoning_efforts)
         self.fast_control = controls.fast
         self.reasoning_mode_control = controls.reasoning_mode
         default_mode = controls.reasoning_mode.state
@@ -262,7 +262,7 @@ class SessionBackend:
         self.status.service_tier = tier if isinstance(tier, str) else None
         self.thinking_control = controls.thinking
         try:
-            effective = apply_thinking(model.route, model.settings, self.overrides.thinking)
+            effective = apply_thinking(model.route, model.settings, self.overrides.thinking, model.reasoning_efforts)
             self.status.thinking = summarize_thinking(model.route, effective)
             if self.overrides.thinking is None and self.status.thinking != "Provider default":
                 self.status.thinking += " (default)"

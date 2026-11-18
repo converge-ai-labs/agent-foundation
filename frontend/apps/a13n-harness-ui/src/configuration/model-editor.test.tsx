@@ -98,11 +98,13 @@ const mocks = vi.hoisted(() => ({
               },
             ],
           }
-        : path === "/api/subscriptions"
-          ? { accounts: [], groups: mocks.groups, adoption: {} }
-          : path === "/api/auth/keys"
-            ? [{ credential_ref: "key-saved" }]
-            : { items: [], status: "unavailable" },
+        : path === "/api/models/codex"
+          ? []
+          : path === "/api/subscriptions"
+            ? { accounts: [], groups: mocks.groups, adoption: {} }
+            : path === "/api/auth/keys"
+              ? [{ credential_ref: "key-saved" }]
+              : { items: [], status: "unavailable" },
   })),
 }));
 vi.mock("../transport/context", () => ({

@@ -647,7 +647,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         recipe = self._compositions.resolve_model(source, model)
         if thinking is not None:
             try:
-                settings = apply_thinking(recipe.route, recipe.settings, thinking)
+                settings = apply_thinking(recipe.route, recipe.settings, thinking, recipe.reasoning_efforts)
             except HarnessUiError as exc:
                 raise _SubagentRequestError(str(exc), code="subagent_thinking_invalid") from exc
             recipe = recipe.model_copy(update={"settings": settings, "thinking_override": thinking})

@@ -532,7 +532,9 @@ class AgentCompositionResolver:
             raise CompositionError("The selected model is unavailable.", code="model_missing")
         resource = source.models[selected_model]
         if model_overrides is not None:
-            effective = apply_model_controls(resource.route, resource.settings, model_overrides)
+            effective = apply_model_controls(
+                resource.route, resource.settings, model_overrides, resource.reasoning_efforts
+            )
             if model_overrides.service_tier is not None:
                 # Preserve the existing raw tier override; it is exclusive with Fast.
                 effective.pop(service_tier_setting(resource.route), None)
@@ -848,6 +850,7 @@ class AgentCompositionResolver:
             model_id=item.id,
             subscription_group=group,
             route=normalized.route,
+            reasoning_efforts=item.reasoning_efforts,
             base_model=item.base_model,
             authentication=item.authentication,
             settings=normalized.settings,

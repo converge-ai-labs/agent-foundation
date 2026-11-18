@@ -25,6 +25,7 @@ from .selection import Choice, Selection, resolve_choice
 
 if TYPE_CHECKING:
     from a13n_harness_ui.configuration.models import ModelResource
+    from a13n_harness_ui.model_accounts.catalog import CodexCatalogModel
     from a13n_harness_ui.model_catalog import CatalogModel
 
 
@@ -137,6 +138,13 @@ class SetupWizard:
     catalog_status: str = "bundled"
     saved_credentials: tuple[str, ...] = ()
     account_models: tuple[str, ...] = ()
+    codex_models: tuple[CodexCatalogModel, ...] = ()
+
+    @property
+    def codex_model(self) -> CodexCatalogModel | None:
+        if self.connection_id != "codex":
+            return None
+        return next((m for m in self.codex_models if m.slug == self.values.get("model")), None)
 
     def __post_init__(self) -> None:
         self._skip_irrelevant()
@@ -155,7 +163,7 @@ class SetupWizard:
     def presets(self) -> tuple[SettingsPreset, ...]:
         from a13n_harness_ui.model_authoring import authoring_presets, model_connection
 
-        return authoring_presets(model_connection(self.connection_id), self.values.get("model", ""))
+        return authoring_presets(model_connection(self.connection_id), self.values.get("model", ""), self.codex_model)
 
     @property
     def existing_model_id(self) -> str | None:
@@ -268,6 +276,12 @@ class SetupWizard:
                 return Question(
                     "preset", question.text, self.values.get("preset", presets[0].key), tuple(p.key for p in presets)
                 )
+        if question.key == "context" and self.codex_model and self.codex_model.context_window:
+            return Question(
+                "context",
+                "Working context budget (tokens, editable)",
+                self.values.get("context", str(self.codex_model.context_window)),
+            )
         if question.key == "context":
             return replace(question, default=default, choices=tuple(p.label.lower() for p in CODEX_CONTEXT_CHOICES))
         if question.key == "thinking":
@@ -279,6 +293,9 @@ class SetupWizard:
             connection = model_connection(self.connection_id)
             selected = self.values.get("model", connection.default_model)
             choices = tuple(dict.fromkeys((*tuple(item.value for item in connection.models), *self.account_models)))
+            if self.connection_id == "codex" and self.codex_models:
+                choices = tuple(m.slug for m in self.codex_models)
+                selected = self.values.get("model", choices[0])
             return Question(
                 "model",
                 "Choose a subscription model or enter its ID",
@@ -579,7 +596,9 @@ class SetupWizard:
             selected = str(resolve_choice(selected, question.choices))
             if not question.allow_custom and selected not in question.choices:
                 raise ValueError(f"Choose one of: {', '.join(question.choices)}")
-        if question.key == "context" and self.values.get("provider") == "api":
+        if question.key == "context" and (
+            self.values.get("provider") == "api" or (self.codex_model and self.codex_model.context_window)
+        ):
             tokens = selected.lower()
             multiplier = 1000 if tokens.endswith("k") else 1
             digits = tokens[:-1] if multiplier == 1000 else tokens
@@ -637,6 +656,7 @@ class SetupWizard:
         ):
             self.context_window_hint = None
             self.values.pop("context", None)
+            self.values.pop("thinking", None)
             self.values.pop("review_model", None)
             for key in ("tools", "file_stores", "mcp_url", "mcp_id", "advisor_model"):
                 self.values.pop(key, None)
@@ -800,6 +820,7 @@ class SetupWizard:
                 else {},
             )
         elif provider == "codex":
+            request["codex_model"] = self.codex_model
             request["preset"] = self.values.get("thinking", self.presets()[0].key)
         recipe = prepare_model(ModelRecipeRequest.model_validate(request))
         if provider == "codex":
@@ -815,6 +836,8 @@ class SetupWizard:
             context = (
                 int(self.values["context"])
                 if provider == "api"
+                else int(self.values.get("context", str(self.codex_model.context_window)))
+                if self.codex_model and self.codex_model.context_window
                 else next(
                     p.value for p in CODEX_CONTEXT_CHOICES if p.label.lower() == self.values.get("context", "balanced")
                 )

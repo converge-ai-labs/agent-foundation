@@ -135,6 +135,7 @@ from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationT
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
+from a13n_harness_ui.model_accounts.catalog import CodexCatalogModel
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
@@ -1637,6 +1638,10 @@ def create_webui(
     @server.get("/api/models/choices", response_model=ModelChoices)
     async def model_choices() -> ModelChoices:
         return await app().model_choices()
+
+    @server.get("/api/models/codex", response_model=tuple[CodexCatalogModel, ...])
+    async def codex_models(group: str = "codex-default") -> tuple[CodexCatalogModel, ...]:
+        return await app().codex_models(group)
 
     @server.get("/api/models/catalog", response_model=ModelCatalogSnapshot)
     async def model_catalog() -> ModelCatalogSnapshot:

@@ -41,6 +41,7 @@ from a13n_harness_ui.environment_bindings import (
 )
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.mcp_apps.origins import origin
+from a13n_harness_ui.model_accounts.catalog import CodexEffort
 from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit, ObjectStoreSettings
 from a13n_harness_ui.subagents import BuiltinSubagentName
 
@@ -602,6 +603,7 @@ class SubscriptionGroupResource(ConfigurationModel):
 
 
 class ModelResource(ConfigurationModel):
+    reasoning_efforts: tuple[CodexEffort, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     schema_version: Literal["1"]
     kind: Literal["model"]
     id: ResourceId

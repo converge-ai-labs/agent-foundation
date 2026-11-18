@@ -545,3 +545,44 @@ async def test_anthropic_defaults_send_block_cache_controls_not_automatic_cachin
     assert payload["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert payload["tools"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert payload["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+
+
+def test_discovered_codex_model_uses_account_defaults_and_captures_supported_controls() -> None:
+    from a13n_harness_ui.model_accounts.catalog import parse_models
+    from a13n_harness_ui.model_thinking import apply_thinking, describe_thinking
+
+    (model,) = parse_models(
+        {
+            "models": [
+                {"visibility": "hide", "slug": "private"},
+                {
+                    "visibility": "list",
+                    "slug": "future-model",
+                    "display_name": "New model",
+                    "context_window": 500000,
+                    "max_context_window": 872000,
+                    "input_modalities": ["text", "image"],
+                    "default_reasoning_level": "low",
+                    "supported_reasoning_levels": [{"effort": e} for e in ("high", "low", "max", "ultra")],
+                },
+            ]
+        }
+    )
+    request = ModelRecipeRequest(connection="codex", model_id=model.slug, codex_model=model)
+    recipe = prepare_model(request)
+    assert recipe.settings["openai_reasoning_effort"] == "low"
+    assert recipe.model_characteristics.context_window_tokens == 500000
+    assert recipe_document(recipe)["model_characteristics"]["capabilities"] == ["image_understanding"]
+    control = describe_thinking(recipe.route, recipe.settings, recipe.reasoning_efforts)
+    assert [item.value for item in control.options] == [None, "high", "low", "max", "ultra"]
+    assert (
+        apply_thinking(recipe.route, recipe.settings, "max", recipe.reasoning_efforts)["openai_reasoning_effort"]
+        == "max"
+    )
+    settings = apply_thinking(recipe.route, recipe.settings, "ultra", recipe.reasoning_efforts)
+    assert settings["openai_reasoning_effort"] == "ultra"
+    assert "thinking" not in settings
+    edited = prepare_model(
+        request.model_copy(update={"model_characteristics": HarnessModelCharacteristics(context_window_tokens=99000)})
+    )
+    assert edited.model_characteristics.context_window_tokens == 99000

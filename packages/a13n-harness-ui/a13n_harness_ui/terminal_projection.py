@@ -528,7 +528,7 @@ class TerminalProjectionService:
                     model_id=item.id,
                     name=item.name,
                     route=item.route,
-                    **describe_model_controls(item.route, item.settings).model_dump(),
+                    **describe_model_controls(item.route, item.settings, item.reasoning_efforts).model_dump(),
                     media_capabilities=item.media_capabilities(),
                 )
                 for item in sorted(source.models.values(), key=lambda item: (item.name.casefold(), item.id))

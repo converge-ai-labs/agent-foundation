@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from a13n_harness_ui.model_accounts.catalog import CodexEffort
 from a13n_harness_ui.model_fast import FastControl, FastSelection, apply_fast, describe_fast
 from a13n_harness_ui.model_reasoning_mode import (
     ReasoningMode,
@@ -33,9 +34,12 @@ class ModelControlSelection(BaseModel):
 
 
 def apply_model_controls(
-    route: str, settings: Mapping[str, JsonValue], selection: ModelControlSelection
+    route: str,
+    settings: Mapping[str, JsonValue],
+    selection: ModelControlSelection,
+    efforts: tuple[CodexEffort, ...] | None = None,
 ) -> dict[str, JsonValue]:
-    effective = apply_thinking(route, settings, selection.thinking)
+    effective = apply_thinking(route, settings, selection.thinking, efforts)
     effective = apply_fast(route, effective, selection.fast)
     return apply_reasoning_mode(route, effective, selection.reasoning_mode)
 
@@ -48,9 +52,11 @@ class ModelControls(BaseModel):
     reasoning_mode: ReasoningModeControl
 
 
-def describe_model_controls(route: str, settings: Mapping[str, JsonValue]) -> ModelControls:
+def describe_model_controls(
+    route: str, settings: Mapping[str, JsonValue], efforts: tuple[CodexEffort, ...] | None = None
+) -> ModelControls:
     return ModelControls(
-        thinking=describe_thinking(route, settings),
+        thinking=describe_thinking(route, settings, efforts),
         fast=describe_fast(route, settings),
         reasoning_mode=describe_reasoning_mode(route, settings),
     )

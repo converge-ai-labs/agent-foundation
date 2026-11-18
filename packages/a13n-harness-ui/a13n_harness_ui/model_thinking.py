@@ -17,8 +17,9 @@ from pydantic_ai.profiles.google import GOOGLE_THINKING_LEVEL_SCALE, google_mode
 from pydantic_ai.profiles.openai import openai_model_profile
 
 from a13n_harness_ui.errors import CompositionError
+from a13n_harness_ui.model_accounts.catalog import CodexEffort
 
-type ThinkingSelection = bool | Literal["minimal", "low", "medium", "high", "xhigh", "max"]
+type ThinkingSelection = bool | CodexEffort
 
 
 class ThinkingOption(BaseModel):
@@ -71,8 +72,12 @@ def _label(value: ThinkingSelection) -> str:
     return ("On" if value else "Off") if isinstance(value, bool) else value.capitalize()
 
 
-def _choices(route: str) -> tuple[_Choice, ...]:
+def _choices(route: str, codex_efforts: tuple[CodexEffort, ...] | None = None) -> tuple[_Choice, ...]:
     provider, _, name = route.partition(":")
+    if provider == "openai-codex" and codex_efforts is not None:
+        return tuple(
+            _Choice(effort, "Reasoning effort", {"openai_reasoning_effort": effort}) for effort in codex_efforts
+        )
     if provider in _OPENAI_ROUTES:
         # GPT-6.1 Sol is not recognized by the bundled SDK profile yet.
         # Its documented efforts exclude none/minimal and include max.
@@ -227,9 +232,11 @@ def _disabled(route: str, settings: Mapping[str, JsonValue], choice: _Choice) ->
     return None
 
 
-def describe_thinking(route: str, settings: Mapping[str, JsonValue]) -> ThinkingControl:
+def describe_thinking(
+    route: str, settings: Mapping[str, JsonValue], efforts: tuple[CodexEffort, ...] | None = None
+) -> ThinkingControl:
     """Publish choices and configured defaults without exposing raw settings."""
-    choices = _choices(route)
+    choices = _choices(route, efforts)
     summary = summarize_thinking(route, settings)
     reason = _conflict(settings)
     status: Literal["supported", "unsupported", "unknown"] = "supported" if choices else "unknown"
@@ -279,13 +286,16 @@ def describe_thinking(route: str, settings: Mapping[str, JsonValue]) -> Thinking
 
 
 def apply_thinking(
-    route: str, settings: Mapping[str, JsonValue], selection: ThinkingSelection | None
+    route: str,
+    settings: Mapping[str, JsonValue],
+    selection: ThinkingSelection | None,
+    efforts: tuple[CodexEffort, ...] | None = None,
 ) -> dict[str, JsonValue]:
     """Apply a validated selection to a detached copy; None inherits verbatim."""
     result = dict(settings)
     if selection is None:
         return result
-    choice = next((c for c in _choices(route) if c.value == selection), None)
+    choice = next((c for c in _choices(route, efforts) if c.value == selection), None)
     if choice is None:
         raise CompositionError(
             "The selected thinking option is not supported by this Model.", code="thinking_selection_invalid"
@@ -297,7 +307,7 @@ def apply_thinking(
         result.pop("anthropic_effort", None)
     # Retain a supported unified intent for existing consumers and resume. Native
     # fields below are authoritative; 'max' has no unified SDK representation.
-    if selection != "max":
+    if isinstance(selection, bool) or selection in ("minimal", "low", "medium", "high", "xhigh"):
         result["thinking"] = selection
     for key, value in choice.patch.items():
         if key in _CONTROL_KEYS and isinstance(value, dict):
@@ -316,6 +326,14 @@ def summarize_thinking(route: str, settings: Mapping[str, JsonValue]) -> str:
         return "Custom (extra_body)"
     provider = route.partition(":")[0]
     if provider in _OPENAI_ROUTES and (effort := settings.get("openai_reasoning_effort")) is not None:
+        if (
+            provider == "openai-codex"
+            and isinstance(effort, str)
+            and effort.isascii()
+            and effort.isalnum()
+            and len(effort) <= 64
+        ):
+            return "Off" if effort == "none" else effort.capitalize()
         return "Off" if effort == "none" else _safe_effort(effort)
     if provider == "anthropic":
         native = settings.get("anthropic_thinking")

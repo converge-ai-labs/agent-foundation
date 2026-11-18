@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import Literal
+from typing import Literal, Self
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
 from a13n_harness.pricing import get_current_pricing_catalog
-from a13n_harness.spec import HarnessModelCharacteristics
+from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from a13n_harness_ui.configuration.models import ModelAuthentication, ModelCharacteristics, StrictModel
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.model_accounts.catalog import CodexCatalogModel, CodexEffort
 from a13n_harness_ui.model_presets import (
     API_MODEL_SUGGESTIONS,
     API_PROVIDERS,
@@ -201,6 +202,7 @@ class ModelChoices(StrictModel):
 
 
 class ModelRecipe(StrictModel):
+    reasoning_efforts: tuple[CodexEffort, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     route: str = Field(min_length=3, max_length=512)
     base_model: str | None = Field(
         default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
@@ -222,6 +224,14 @@ class ModelRecipe(StrictModel):
 
 
 class ModelOptionsRequest(StrictModel):
+    codex_model: CodexCatalogModel | None = None
+
+    @model_validator(mode="after")
+    def _matching_codex_model(self) -> Self:
+        if self.codex_model and (self.connection != "codex" or self.codex_model.slug != self.model_id):
+            raise ValueError("Codex catalog entry must match the selected Model.")
+        return self
+
     base_model: str | None = Field(
         default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
     )
@@ -305,10 +315,28 @@ def _base_url(connection: ModelConnection, value: str | None) -> str:
     return base_url
 
 
-def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[SettingsPreset, ...]:
+def authoring_presets(
+    connection: ModelConnection, model_id: str, codex_model: CodexCatalogModel | None = None
+) -> tuple[SettingsPreset, ...]:
     if connection.authentication == "codex_subscription":
         # Only reviewed subscription IDs receive effort recommendations. An old
         # or custom saved Model remains editable without guessed support.
+        if codex_model is not None:
+            presets = [
+                SettingsPreset(
+                    effort,
+                    f"{effort.title()} reasoning",
+                    "Codex reasoning effort",
+                    {"openai_reasoning_effort": effort, "openai_reasoning_summary": "detailed", "openai_store": False},
+                )
+                for effort in codex_model.reasoning_efforts
+            ]
+            if codex_model.default_effort:
+                return tuple(sorted(presets, key=lambda preset: preset.key != codex_model.default_effort))
+            return (
+                SettingsPreset("default", "Subscription defaults", "Use native settings", {"openai_store": False}),
+                *presets,
+            )
         if model_id not in {item.value for item in connection.models}:
             return (
                 SettingsPreset(
@@ -402,6 +430,11 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         if known_context
         else 350000
     )
+    if request.codex_model:
+        context = request.codex_model.context_window or context
+        known_capabilities = (
+            frozenset({ModelCapability.IMAGE_UNDERSTANDING}) if request.codex_model.image_input else frozenset()
+        )
     characteristics = HarnessModelCharacteristics(
         context_window_tokens=context,
         capabilities=known_capabilities or frozenset(),
@@ -415,7 +448,7 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         route=route,
         presets=tuple(
             ModelSettingsChoice(value=p.key, label=p.label, description=p.description, settings=p.settings)
-            for p in authoring_presets(connection, request.model_id)
+            for p in authoring_presets(connection, request.model_id, request.codex_model)
         ),
         context_window=context,
         known_context_window=known_context,
@@ -450,6 +483,7 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
             model_id=request.model_id,
             base_model=request.base_model,
             base_url=effective_url,
+            codex_model=request.codex_model,
         )
     )
     authentication = request.authentication
@@ -476,6 +510,7 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
         raise HarnessUiError("This connection does not accept a base URL.", code="model_base_url_unsupported")
     return ModelRecipe(
         route=options.route,
+        reasoning_efforts=request.codex_model.reasoning_efforts if request.codex_model else None,
         base_model=request.base_model,
         authentication=authentication,
         settings=settings,

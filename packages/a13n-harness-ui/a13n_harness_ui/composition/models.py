@@ -22,6 +22,7 @@ from a13n_harness_ui.configuration.models import (
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.mcp_oauth.models import OAuthBinding
+from a13n_harness_ui.model_accounts.catalog import CodexEffort
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -59,6 +60,7 @@ class DependencyProvenance(CompositionModel):
 
 
 class ResolvedModelRecipe(CompositionModel):
+    reasoning_efforts: tuple[CodexEffort, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     model_id: str = Field(min_length=1, max_length=128)
     route: str = Field(min_length=3, max_length=512)
     base_model: str | None = Field(

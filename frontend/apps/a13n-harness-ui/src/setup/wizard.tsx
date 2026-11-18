@@ -402,6 +402,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 {draft.step === 0 && (
                   <div className={styles.stack}>
                     <ModelEditor
+                      creating
                       draft={draft.modelDraft}
                       onDraftChange={changeModelDraft}
                       value={selection.model ?? null}
