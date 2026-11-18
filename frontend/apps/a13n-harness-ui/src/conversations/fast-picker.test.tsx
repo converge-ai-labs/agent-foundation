@@ -152,7 +152,7 @@ it("disables an unsupported Ultrafast selection without misrepresenting it as Fa
   const user = userEvent.setup();
   const change = vi.fn();
   const reason =
-    "Ultrafast requires GPT-6 Astra through a Codex subscription connection.";
+    "Ultrafast requires a supported model on an OpenAI Responses or Codex subscription connection.";
   const view = render(
     <FastPicker model={astra} value="ultrafast" onChange={change} />,
   );
