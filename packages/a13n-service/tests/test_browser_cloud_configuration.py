@@ -32,7 +32,7 @@ def test_cloud_credentials_preserve_environment(monkeypatch: pytest.MonkeyPatch)
 
 def test_cloud_credentials_fail_for_missing_selection_or_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A13N_CLOUD_BROWSER_TEST", "invalid")
-    with pytest.raises(pytest.UsageError, match="browserbase, kernel or browser_use"):
+    with pytest.raises(pytest.UsageError, match="browserbase, kernel, browser_use or cloudflare"):
         conftest.cloud_browser_credentials.__wrapped__()
     monkeypatch.setenv("A13N_CLOUD_BROWSER_TEST", "kernel")
     monkeypatch.delenv("KERNEL_API_KEY", raising=False)
@@ -46,7 +46,7 @@ def test_cloud_definitions_available_without_local_browser_root() -> None:
     from a13n_service.settings import Browsers
 
     definitions = {definition.type: definition for definition in builtins(Browsers(root=None))}
-    assert set(definitions) == {"browserbase", "kernel", "browser_use"}
+    assert set(definitions) == {"browserbase", "kernel", "browser_use", "cloudflare"}
     for definition in definitions.values():
         definition.validate_domain()
         assert definition.credential_model is not None

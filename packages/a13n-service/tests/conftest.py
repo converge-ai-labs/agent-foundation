@@ -80,22 +80,30 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         config.hook.pytest_deselected(items=deselected)
 
 
-@pytest.fixture(scope="session")
-def cloud_browser_credentials() -> tuple[str, SecretStr]:
-    """Load only the selected provider's credential from this checkout, without changing the environment."""
+def cloud_test_setting(key: str) -> str:
     from dotenv import dotenv_values
 
-    provider = os.environ.get("A13N_CLOUD_BROWSER_TEST")
-    keys = {"browserbase": "BROWSERBASE_API_KEY", "kernel": "KERNEL_API_KEY", "browser_use": "BROWSER_USE_API_KEY"}
-    if provider not in keys:
-        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase, kernel or browser_use to run cloud tests")
-    key = keys[provider]
     value = os.environ.get(key)
     if value is None:
         value = dotenv_values(Path(__file__).resolve().parents[3] / ".env", interpolate=False).get(key)
     if not value:
         raise pytest.UsageError(f"Set {key} in the environment or this checkout's .env for cloud tests")
-    return provider, SecretStr(value)
+    return value
+
+
+@pytest.fixture(scope="session")
+def cloud_browser_credentials() -> tuple[str, SecretStr]:
+    """Load only the selected provider's credential without changing the environment."""
+    provider = os.environ.get("A13N_CLOUD_BROWSER_TEST")
+    keys = {
+        "browserbase": "BROWSERBASE_API_KEY",
+        "kernel": "KERNEL_API_KEY",
+        "browser_use": "BROWSER_USE_API_KEY",
+        "cloudflare": "CLOUDFLARE_API_TOKEN",
+    }
+    if provider not in keys:
+        raise pytest.UsageError("Set A13N_CLOUD_BROWSER_TEST to browserbase, kernel, browser_use or cloudflare")
+    return provider, SecretStr(cloud_test_setting(keys[provider]))
 
 
 TEMPLATE = "a13n_template"
