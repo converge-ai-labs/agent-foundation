@@ -128,14 +128,13 @@ export class Environment extends DurableObject {
         A13N_ENVD_HTTP_BIND: `0.0.0.0:${port}`,
         A13N_ENVD_HTTP_PLAINTEXT_SCOPE: 'provider_private_link',
         A13N_ENVD_HTTP_CREDENTIAL_FILE: '/var/lib/a13n-envd/http-token',
-        A13N_CLOUDFLARE_HTTP_TOKEN: record.localToken,
+        A13N_ENVD_HTTP_BOOTSTRAP_TOKEN: record.localToken,
       }),
     };
     // Persist dispatch before starting: a crash here can lose an allocation,
     // but cannot relaunch an already lost workspace under the same identity.
     await this.ctx.storage.put('environment', { ...record, phase: 'started' });
     c.start({ image: c.images.base, instance: 'lite', enableInternet: record.egress === 'public', env,
-      entrypoint: ['/usr/bin/tini', '--', '/usr/local/bin/a13n-cloudflare-launch', 'a13n-envd'],
       labels: { 'a13n.operation': record.operation } });
     await c.setInactivityTimeout(idleMilliseconds);
     return Response.json({ status: 'pending' });

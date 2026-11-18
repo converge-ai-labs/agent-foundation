@@ -7,7 +7,7 @@
   "containers": [{
     "class_name": "Environment",
     "scheduling_policy": "durable_object",
-    "images": { "base": { "dockerfile": "./Dockerfile" } }
+    "images": { "base": { "image": "registry.cloudflare.com/<ACCOUNT_ID>/a13n-sandbox@sha256:<DIGEST>" } }
   }],
   "durable_objects": { "bindings": [{ "name": "ENVIRONMENTS", "class_name": "Environment" }] },
   "exports": { "Environment": { "type": "durable-object", "storage": "sqlite" } }

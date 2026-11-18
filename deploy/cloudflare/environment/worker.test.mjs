@@ -61,6 +61,8 @@ for (const [mode, policy] of [['envd_http', 'public'], ['envd_ws', 'disabled']])
     assert.equal((await (await call('PUT', path, { body })).json()).status, 'running');
     assert.equal(starts.length, 1);
     assert.equal(starts[0].enableInternet, policy === 'public');
+    assert.equal(starts[0].image, 'base');
+    assert.equal(starts[0].entrypoint, undefined);
     assert.ok(!JSON.stringify(starts[0]).includes('fake-outbound-token'));
     assert.equal((await call('POST', `${path}/renew`)).status, 200);
     container.running = false;
@@ -74,13 +76,14 @@ for (const [mode, policy] of [['envd_http', 'public'], ['envd_ws', 'disabled']])
 }
 
 test('HTTP binary forwarding uses only the per-container credential', async () => {
-  const { call, forwarded } = fixture();
+  const { call, forwarded, starts } = fixture();
   const body = JSON.stringify({ operation: 'op-test', mode: 'envd_http', network_egress: 'public' });
   await call('PUT', path, { body });
   const bytes = Uint8Array.of(255, 0, 128, 1, 2);
   const response = await call('POST', '/eip/transfer?cursor=abc', { body: bytes });
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
-  assert.match(forwarded[0].get('authorization'), /^Bearer [a-f0-9-]+$/);
+  assert.equal(forwarded[0].get('authorization'),
+    `Bearer ${starts[0].env.A13N_ENVD_HTTP_BOOTSTRAP_TOKEN}`);
   assert.equal(forwarded[0].has('x-a13n-environment'), false);
 });
 
