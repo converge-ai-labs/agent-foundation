@@ -41,7 +41,8 @@ class AssetsCapability(AbstractCapability[AgentContext]):
     id = "a13n.service.assets"
 
     def __init__(self, runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority):
-        self.runtime, self.lease, self.principal, self.authority = runtime, lease, principal, authority
+        self.runtime, self.lease, self.principal = runtime, lease, principal
+        self._execution_authority = authority
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tool = HarnessTool(
@@ -73,10 +74,10 @@ class AssetsCapability(AbstractCapability[AgentContext]):
         name = filename or posixpath.basename(path)
         with tool_failures():
             principal = await prove(runtime, lease)
-            authorize(principal, scope, "write", authority=self.authority)
+            authorize(principal, scope, "write", authority=self._execution_authority)
             content = await _read(ctx.deps.environment, path, runtime.settings.objects.max_bytes)
             principal = await prove(runtime, lease)
-            authorize(principal, scope, "write", authority=self.authority)
+            authorize(principal, scope, "write", authority=self._execution_authority)
             upload = await uploads.store(
                 runtime.storage,
                 runtime.objects,

@@ -6,7 +6,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
-from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.agent.spec import get_capability_registry
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
 
 from a13n_harness.context import AgentContext
@@ -132,9 +132,9 @@ class CapabilityTypeCatalog(Mapping[str, CapabilityTypeRegistration]):
 
         custom_types = tuple(item.capability_type for item in registrations)
         try:
-            # Native schema construction validates collisions with built-ins and confirms
-            # that each exact type can participate in deterministic AgentSpec decoding.
-            AgentSpec.model_json_schema_with_capabilities(custom_types)
+            # Validate the same registry used to decode AgentSpec. JSON Schema generation
+            # is separate from reconstruction and need not succeed to load a capability.
+            get_capability_registry(custom_types)
         except Exception as exc:
             raise DefinitionError(
                 "Capability type catalog is incompatible with native AgentSpec reconstruction.",
