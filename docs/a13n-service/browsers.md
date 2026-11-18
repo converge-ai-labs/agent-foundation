@@ -7,18 +7,19 @@ Give an agent a browser to navigate websites, read pages, fill forms and take sc
 
 ## Choose a browser
 
-Use **Docker** for self-hosting, **Browserbase, Kernel, or Browser Use Cloud** to run browsers in the cloud, or **external CDP** to connect a browser you already operate. **Native** is for debugging on the Service host.
+Use **Docker** for self-hosting, **Browserbase, Kernel, Browser Use Cloud, or Cloudflare Browser Run** to run browsers in the cloud, or **external CDP** to connect a browser you already operate. **Native** is for debugging on the Service host.
 
-All six options support the same core agent browser tools. The table shows the additional capabilities integrated into Service.
+All seven options support the same core agent browser tools. The table shows the additional capabilities integrated into Service.
 
-| Option            | Browser runs on                 | Stop/start, keeping profile | Console viewer and takeover | Upload/download |
-| ----------------- | ------------------------------- | --------------------------- | --------------------------- | --------------- |
-| Docker            | Your Linux host, in a container | Yes                         | Yes                         | Yes             |
-| Native            | Your Linux Service host         | Yes                         | Yes                         | Yes             |
-| Browserbase       | Browserbase cloud               | No                          | No                          | No              |
-| Kernel            | Kernel cloud                    | No                          | No                          | No              |
-| Browser Use Cloud | Browser Use cloud               | No                          | No                          | No              |
-| External CDP      | An existing Chromium instance   | Managed externally          | No                          | No              |
+| Option                 | Browser runs on                 | Stop/start, keeping profile | Console viewer and takeover | Upload/download |
+| ---------------------- | ------------------------------- | --------------------------- | --------------------------- | --------------- |
+| Docker                 | Your Linux host, in a container | Yes                         | Yes                         | Yes             |
+| Native                 | Your Linux Service host         | Yes                         | Yes                         | Yes             |
+| Browserbase            | Browserbase cloud               | No                          | No                          | No              |
+| Kernel                 | Kernel cloud                    | No                          | No                          | No              |
+| Browser Use Cloud      | Browser Use cloud               | No                          | No                          | No              |
+| Cloudflare Browser Run | Cloudflare cloud                | No                          | No                          | No              |
+| External CDP           | An existing Chromium instance   | Managed externally          | No                          | No              |
 
 Docker and Native keep cookies and login state when stopped. The cloud integrations use temporary profiles that end with the supplier session. External CDP leaves browser lifetime and profile management to you.
 
@@ -41,7 +42,7 @@ The following sections cover provider setup, direct HTTP integration and lifecyc
 
 ### Configure cloud browsers
 
-Browserbase, Kernel, and Browser Use Cloud run the browser for you; none requires Docker or Chromium on the Service host. Create an account through Console or `POST /api/v1/browser-providers`. Store the API key in `credential`, and allow the supplier API and secure browser endpoint through Service's outbound policy.
+Browserbase, Kernel, Browser Use Cloud, and Cloudflare Browser Run run the browser for you; none requires Docker or Chromium on the Service host. Create an account through Console or `POST /api/v1/browser-providers`. Store the API key in `credential`, and allow the supplier API and secure browser endpoint through Service's outbound policy.
 
 | Account field            | Browserbase                       | Kernel                                                               |
 | ------------------------ | --------------------------------- | -------------------------------------------------------------------- |
@@ -54,6 +55,8 @@ Browserbase, Kernel, and Browser Use Cloud run the browser for you; none require
 For a project-scoped Kernel key, replace `project_id: null` with its effective project ID. Service verifies the key's organization and project before using the session. Kernel's recipe also accepts `headless`, which defaults to `true`.
 
 For Browser Use Cloud, select type `browser_use`, set `config` to `{"project_id": "..."}` and `credential` to `{"api_key": "..."}`. Its recipe accepts `timeout_minutes` (1–240, default 5); this is a supplier session timeout. Service verifies the key's project before lifecycle operations.
+
+For [Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/cdp/), select `cloudflare`, set `config` to `{"account_id": "..."}` and put a `Browser Rendering - Edit` API token in `credential.api_key`. Allow outbound access to `api.cloudflare.com`; no Worker deployment is required. Its recipe accepts `keep_alive_seconds` (10–1200, default 60), the supplier idle timeout. Service does not integrate Cloudflare Live View with its viewer and takeover controls.
 
 The supplier timeout and Service's [idle retention](#choose-preparation-and-retention) are separate. Setting Service retention to a longer duration does not extend the supplier session. Keep API keys and browser connection URLs out of agent messages.
 
@@ -160,11 +163,11 @@ Reading browser metadata never starts a browser. `reserved` means the browser is
 
 #### Retention
 
-| Source                                   | Default when idle                                      | Profile after that action         |
-| ---------------------------------------- | ------------------------------------------------------ | --------------------------------- |
-| Docker / Native                          | Stop after 1800 seconds; retain until explicit release | Kept                              |
-| Browserbase / Kernel / Browser Use Cloud | Release after 1800 seconds                             | Removed with the supplier session |
-| External CDP                             | Keep Service access until explicit release             | Managed externally                |
+| Source                                                            | Default when idle                                      | Profile after that action         |
+| ----------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------- |
+| Docker / Native                                                   | Stop after 1800 seconds; retain until explicit release | Kept                              |
+| Browserbase / Kernel / Browser Use Cloud / Cloudflare Browser Run | Release after 1800 seconds                             | Removed with the supplier session |
+| External CDP                                                      | Keep Service access until explicit release             | Managed externally                |
 
 For Docker and Native, set `stop_after_seconds` and `delete_after_seconds` independently. Each accepts 60–604800 seconds or `null` and measures time since last authorized use. Stopping does not reset the deletion clock; when both actions are due, deletion wins.
 
@@ -230,7 +233,7 @@ For `protocol: "vnc"`, use the returned same-origin WebSocket URL and password, 
 
 Read the browser's `status`, `control`, `expires_at` and `failure` before choosing a recovery action.
 
-- **Cloud creation has an unknown outcome.** Service retries creation only after confirming that the earlier request was not sent or was definitively rejected without creating a session. Otherwise, inspect the supplier account before creating a replacement: the original session may still be running and incurring charges. Kernel cannot automatically find or release it without the returned session ID. Browserbase and Browser Use Cloud can search exact allocation metadata, but no match leaves cleanup unresolved.
+- **Cloud creation has an unknown outcome.** Service retries creation only after confirming that the earlier request was not sent or was definitively rejected without creating a session. Otherwise, inspect the supplier account before creating a replacement: the original session may still be running and incurring charges. Kernel and Cloudflare Browser Run cannot automatically find or release it without the returned session ID. Browserbase and Browser Use Cloud can search exact allocation metadata, but no match leaves cleanup unresolved.
 - **An external connection fails.** `browser_connection_failed` does not by itself mark the browser lost. Reconnect to the same instance and observe again. A gateway that silently substitutes another browser cannot preserve continuity. Failed or uncertain actions are never replayed automatically.
 - **Takeover stays in `draining`.** Previously admitted work has not settled. A timeout does not prove completion. Handback can cancel a takeover before any possible viewer grant once active work permits it; this cancellation does not announce browser availability or clear unknown calls.
 - **Handback stays in `returning`.** Viewer revocation or tab synchronization has not completed, so browser tools remain blocked. Provider disablement, lost controller authority or viewer expiry can also trigger handback. After runs and active operations finish, a workspace writer may release the managed browser instead. Failed termination remains `deleting` and can be retried.
