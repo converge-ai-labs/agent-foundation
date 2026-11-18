@@ -89,6 +89,8 @@ SUBSCRIPTION_CONNECTIONS = (
             ModelChoice(value=value, label=model_name("codex", value))
             for value in (
                 "gpt-6.1-sol",
+                "gpt-6.2-sol",
+                "gpt-6.2-astra",
                 "gpt-6-astra",
                 "gpt-5.6-terra",
                 "gpt-6-sol",
@@ -315,7 +317,7 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
                     "default", "Subscription defaults", "Use native settings for this model", {"openai_store": False}
                 ),
             )
-        native_effort = model_id == "gpt-6.1-sol"
+        native_effort = model_id in {"gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"}
         return tuple(
             SettingsPreset(
                 effort,

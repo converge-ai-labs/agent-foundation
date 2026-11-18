@@ -218,6 +218,8 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
     assert wizard.question.key == "model"
     assert wizard.question.choices == (
         "gpt-6.1-sol",
+        "gpt-6.2-sol",
+        "gpt-6.2-astra",
         "gpt-6-astra",
         "gpt-5.6-terra",
         "gpt-6-sol",
