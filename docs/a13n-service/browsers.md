@@ -67,7 +67,7 @@ The supplier timeout and Service's [idle retention](#choose-preparation-and-rete
 
 First [enable Kubernetes Browsers in Helm](configuration.md#kubernetes-browsers). In Console, open **Providers → Browser providers** and create a Kubernetes Browser provider. Set `cluster` to `in-cluster`, use the namespace printed by Helm, and leave credentials empty. Create a browser with the empty recipe `{}`, prepare it, then bind it to a thread.
 
-The official image `ghcr.io/converge-ai-labs/a13n-browser` includes Chromium and VNC. The published chart defaults to its own `appVersion` as the image tag. Stop removes the Pod but keeps the profile PVC; release removes the PVC. Use Console takeover instead of exposing CDP or VNC ports. This provider does not support Service browser file transfer.
+The official image `ghcr.io/converge-ai-labs/a13n-browser` includes Chromium and VNC. The published chart defaults to its own `appVersion` as the image tag. Image changes apply to newly created browsers; upgrading the chart or stopping and restarting an existing browser does not change its image. Stop removes the Pod but keeps the profile PVC; release removes the PVC. Use Console takeover instead of exposing CDP or VNC ports. This provider does not support Service browser file transfer.
 
 #### Docker
 

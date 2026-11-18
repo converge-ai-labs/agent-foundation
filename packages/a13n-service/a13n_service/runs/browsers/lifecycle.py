@@ -307,7 +307,7 @@ async def reconcile(
     inspect_ready: bool = False,
     policy: EndpointPolicy | None = None,
 ) -> Literal[True] | None:
-    """Claim one lifecycle step. A timed-out create is inspected, never resubmitted."""
+    """Claim one lifecycle step. A timed-out create enters provider reconciliation."""
     claim_id = new_object_id("bclaim")
     async with transaction(runtime.storage) as session:
         row = await find(session, workspace_id, browser_id, lock=True)

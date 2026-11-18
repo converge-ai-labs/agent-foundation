@@ -109,7 +109,8 @@ async def journey(api: Workspace, model: ScriptedModel, namespace: str) -> None:
         assert run["status"] == "completed", run["failure"]
         assert "kind-chromium-proof" in tool_results((await model.requests())[-1])[-1]
 
-        await command("takeover", {"thread_id": thread_id})
+        takeover = await command("takeover", {"thread_id": thread_id})
+        assert takeover["control"] == "human", (takeover["control"], takeover.get("failure"))
         grant = expect(await client.post(f"{path}/viewer"), 200)
         assert grant["protocol"] == "vnc" and grant["password"]
         viewer_path = urlsplit(grant["url"]).path

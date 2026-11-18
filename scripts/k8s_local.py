@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLUSTER = os.environ.get("K8S_CLUSTER", "a13n-local")
 CONTEXT = f"kind-{CLUSTER}"
 NAMESPACE = "a13n-service"
+BROWSER_NAMESPACE = "a13n-browsers"
 PORT = int(os.environ.get("K8S_PORT", "8080"))
 CONSOLE_URL = f"http://127.0.0.1:{PORT}"
 CONTROL = "deployment/a13n-a13n-control"
@@ -260,6 +261,11 @@ def start(state: Path, *, environments: bool = False, browsers: bool = False) ->
         raise ValueError(f"Existing kind cluster lacks 127.0.0.1:{PORT} -> 30080 mapping; no cluster was deleted")
     if not kubectl("get", "namespace", NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip():
         kubectl("create", "namespace", NAMESPACE)
+    if (
+        browsers
+        and not kubectl("get", "namespace", BROWSER_NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip()
+    ):
+        kubectl("create", "namespace", BROWSER_NAMESPACE)
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
     # The sandbox is first consumed by smoke runs, not migration or Service startup.
@@ -274,7 +280,7 @@ def start(state: Path, *, environments: bool = False, browsers: bool = False) ->
         sandbox_image = sandbox.result() if sandbox is not None else None
     deployment = {"service_image": image, "sandbox_image": sandbox_image}
     if browser_image:
-        deployment.update(browser_image=browser_image, browser_namespace=NAMESPACE)
+        deployment.update(browser_image=browser_image, browser_namespace=BROWSER_NAMESPACE)
     (state / "deployment.json").write_text(json.dumps(deployment))
 
 
@@ -294,6 +300,7 @@ def deploy(
             "-f",
             "deploy/kubernetes/helm/values-browsers-smoke.yaml",
             "--set-string",
+            f"kubernetesBrowsers.namespace={BROWSER_NAMESPACE},"
             f"kubernetesBrowsers.image.repository={repository},kubernetesBrowsers.image.tag={browser_tag}",
         )
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)

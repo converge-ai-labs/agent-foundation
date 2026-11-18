@@ -876,3 +876,13 @@ def test_kubernetes_browser_chart_is_independent_and_private():
         spec = objects[kind, "a13n-a13n-" + component]["spec"]["template"]["spec"]
         assert spec["automountServiceAccountToken"] is False
         assert any(volume["name"] == "kubernetes-api" for volume in spec["volumes"]) == (kind == "Deployment")
+
+
+@helm
+def test_kubernetes_browser_chart_requires_supported_kubernetes_only_when_enabled():
+    assert not any(
+        item["metadata"]["name"].endswith("-browsers") for item in render(*LOCAL, "--kube-version", "1.31.0")
+    )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        render(*LOCAL, "--kube-version", "1.31.0", "--set", "kubernetesBrowsers.enabled=true")
+    assert "kubernetesBrowsers requires Kubernetes 1.32 or newer" in refused.value.stderr

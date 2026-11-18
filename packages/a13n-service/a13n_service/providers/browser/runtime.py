@@ -24,7 +24,7 @@ from pathlib import Path
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
-from websockets.exceptions import WebSocketException
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
 
 def desktop_module(path: Path):
@@ -186,6 +186,8 @@ class Runtime:
                     else:
                         result = {"error": "invalid_operation_or_runtime"}
                     await connection.send(json.dumps(result))
+                except ConnectionClosed:
+                    pass
                 except (ValueError, OSError, TimeoutError):
                     await connection.close(1011)
                 return

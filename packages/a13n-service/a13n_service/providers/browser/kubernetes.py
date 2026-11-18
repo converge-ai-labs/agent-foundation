@@ -221,6 +221,9 @@ class Kubernetes:
         )
 
     async def create(self, allocation_id: str, recipe: BaseModel) -> BrowserCheckpoint:
+        return await self.create_inert(allocation_id)
+
+    async def create_inert(self, allocation_id: str) -> BrowserCheckpoint:
         obj = await self.call("sets", "POST", body=self.manifest(allocation_id))
         self.check(obj, allocation_id)
         return BrowserCheckpoint(State(allocation_id=allocation_id, uid=obj["metadata"]["uid"]).model_dump())
@@ -271,6 +274,10 @@ class Kubernetes:
     async def reconcile_create(self, allocation_id: str, state: dict | None) -> BrowserCheckpoint | LiveBrowser:
         record = State.model_validate(state) if state is not None else None
         obj = await self.read_set(allocation_id, record)
+        if obj is None and record is None:
+            # The deterministic name makes retry safe: at most one inert set can exist.
+            # A concurrent or delayed POST can win; the next reconciliation reads its UID.
+            return await self.create_inert(allocation_id)
         if obj is None or self.terminal(obj):
             raise BrowserProviderError("kubernetes_create_unresolved")
         if record is None:
@@ -295,9 +302,11 @@ class Kubernetes:
         return f"[{ip}]" if ip.version == 6 else str(ip)
 
     async def control(self, host: str, token: str, payload: dict) -> dict:
+        # Mutations call guest IPC, which can take up to 20 seconds.
+        timeout = 5 if payload["operation"] == "describe" else 25
         # Use only the Kubernetes-observed IP. Do not follow proxies or redirects.
         async with (
-            asyncio.timeout(5),
+            asyncio.timeout(timeout),
             _ControlSocket(
                 f"ws://{host}:9222/control",
                 additional_headers={"Authorization": f"Bearer {token}"},
@@ -408,8 +417,9 @@ class Kubernetes:
         record = State.model_validate(state) if state is not None else None
         obj = await self.read_set(allocation_id, record)
         if obj is None and record is None:
-            # The one initial POST might still be in flight. A 404 cannot fence it.
-            raise BrowserProviderError("kubernetes_create_unresolved")
+            # A late POST can leave an inert set, but cannot activate without a
+            # durable UID checkpoint. No credentials, Pod, or PVC can exist yet.
+            return None
         if record is None:
             assert obj is not None
             return BrowserCheckpoint(State(allocation_id=allocation_id, uid=obj["metadata"]["uid"]).model_dump())

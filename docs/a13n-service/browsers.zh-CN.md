@@ -67,7 +67,7 @@ Browserbase、Kernel、Browser Use Cloud 和 Cloudflare Browser Run 负责运行
 
 先按[部署指南](configuration.md#kubernetes-browsers)在 Helm 中启用 `kubernetesBrowsers`。在 Console 的 **Providers → Browser providers** 创建 Kubernetes Browser provider：`cluster` 填 `in-cluster`，`namespace` 填 Helm 输出的命名空间，不填写凭据。创建浏览器时使用空 recipe `{}`，准备浏览器后将它绑定到线程。
 
-官方镜像 `ghcr.io/converge-ai-labs/a13n-browser` 自带 Chromium 和 VNC。默认 tag 与已发布的 Service chart 的 `appVersion` 一致。停止会移除运行中的 Pod 并保留 profile 的 PVC；释放会删除 PVC。浏览器的桌面通过 Console 接管，不需要公开 CDP 或 VNC 端口。此 provider 不支持 Service 浏览器文件传输。
+官方镜像 `ghcr.io/converge-ai-labs/a13n-browser` 自带 Chromium 和 VNC。默认 tag 与已发布的 Service chart 的 `appVersion` 一致。镜像变更仅对新建浏览器生效；升级 chart 或停止后重新启动已有浏览器，都不会更换其镜像。停止会移除运行中的 Pod 并保留 profile 的 PVC；释放会删除 PVC。浏览器的桌面通过 Console 接管，不需要公开 CDP 或 VNC 端口。此 provider 不支持 Service 浏览器文件传输。
 
 #### Docker
 

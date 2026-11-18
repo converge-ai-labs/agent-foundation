@@ -558,3 +558,33 @@ async def test_docker_pull_failure_does_not_create(tmp_path):
     with pytest.raises(RuntimeError, match="registry unavailable"):
         await provider.provision(allocation)
     client.containers.create.assert_not_called()
+
+
+async def test_private_gateway_requires_credential_and_current_runtime(starting_runtime, tmp_path):
+    from argparse import Namespace
+
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import InvalidStatus
+
+    instance, _, _ = starting_runtime
+    credential = tmp_path / "credential"
+    token = "test-credential" * 3
+    credential.write_text(token)
+    instance.args = Namespace(credential_file=credential, listen="127.0.0.1", cdp_port=0)
+    instance.nonce = "current"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with instance.gateway(0, {"viewer_generation": "viewer"}) as port:
+        url = f"ws://127.0.0.1:{port}"
+        for path, supplied, status in [("/control", None, 401), ("/cdp/old", headers, 404)]:
+            with pytest.raises(InvalidStatus) as refused:
+                async with connect(url + path, additional_headers=supplied, proxy=None):
+                    pytest.fail("Private gateway accepted the connection")
+            assert refused.value.response.status_code == status
+        async with connect(url + "/control", additional_headers=headers, proxy=None) as socket:
+            await socket.send(json.dumps({"operation": "ensure", "runtime_id": "old"}))
+            assert json.loads(await socket.recv()) == {"error": "invalid_operation_or_runtime"}
+            instance.guest.call.assert_not_awaited()
+        async with connect(url + "/control", additional_headers=headers, proxy=None) as socket:
+            await socket.send(json.dumps({"operation": "ensure", "runtime_id": instance.nonce}))
+            assert json.loads(await socket.recv()) == {"result": {"generation": "viewer"}}
+            instance.guest.call.assert_awaited_once_with(tmp_path / "desktop", {"operation": "ensure"})
