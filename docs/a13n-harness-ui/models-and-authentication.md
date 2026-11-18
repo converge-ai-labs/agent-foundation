@@ -32,6 +32,8 @@ Start with an installed Harness UI and credentials for one supported connection.
 
 6. Save. The saved Model now appears in conversation selectors. Select it for a new Run and send a short prompt. In the TUI, use `/model`, then `/status` to check the selection.
 
+The built-in Codex presets for GPT-6.2 Sol and Astra start at low reasoning effort and offer levels through max. Sol prefills a 500,000-token working budget and Astra prefills 272,000. Both budgets are editable.
+
 A saved/validated Model proves configuration validity; the prompt verifies credentials and inference access. Saving does not change an active Run. To make the Model an Agent's permanent choice, edit that Agent's `model` field or use its Model selector. Choose native tools on the **Agent**; a Model change does not rewrite its tools.
 
 `setup` and the new-Model path in `add agent` use the same connection preparation. You can configure a subscription before login, but authenticate before its first request. Cancelling a draft does not undo an already saved key, login, or independently saved inline Model.

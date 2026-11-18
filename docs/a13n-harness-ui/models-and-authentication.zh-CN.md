@@ -53,6 +53,8 @@ description: 连接提供方、选择已保存 Model，并区分请求、连接�
 
 TUI 和 WebUI 都会自动向每个 Agent 提供当前 Thread ID 和提供方模型名。Agent 无需查询配置或询问你，就能确认所用 Model 或为工作署名。这里使用当前 Run 实际解析的 Model，不使用本地资源 ID 或下一轮选择。子 Agent 收到各自的模型名。
 
+内置的 Codex 预设支持 GPT-6.2 Sol 和 Astra，默认推理档位为 low，最高可选 max。Sol 的工作上下文预算预填 500,000 tokens，Astra 预填 272,000，两者都可手动修改。
+
 ## Codex Model 示例
 
 此例向已有配置添加一个 Codex 订阅 Model。

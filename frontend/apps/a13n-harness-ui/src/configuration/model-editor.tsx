@@ -288,6 +288,16 @@ function LoadedModelEditor({
       mounted.current = false;
     };
   }, []);
+  // Carry explicit edits across model changes. A fresh creation draft can
+  // still use the new model's presets until those defaults have been edited.
+  const generated = useRef<Recipe | null>(null);
+  const freshCodexSelection =
+    connection === "codex" &&
+    value &&
+    generated.current &&
+    value.route !== `openai-codex:${effectiveId}` &&
+    value.settings === generated.current.settings &&
+    value.model_characteristics === generated.current.model_characteristics;
   const prepare = useMutation({
     mutationFn: async (reset: boolean) => ({
       revision,
@@ -298,7 +308,7 @@ function LoadedModelEditor({
             model_id: effectiveId,
             base_url: effectiveUrl,
             base_model: value?.base_model,
-            ...(!reset && value
+            ...(!reset && value && !freshCodexSelection
               ? {
                   settings: value.settings ?? {},
                   model_characteristics: value.model_characteristics ?? {},
@@ -313,6 +323,8 @@ function LoadedModelEditor({
     }),
     onSuccess: (prepared) => {
       if (!mounted.current || prepared.revision !== latest.current) return;
+      generated.current =
+        !value || freshCodexSelection ? prepared.recipe : null;
       setModelId(
         prepared.recipe.route.slice(prepared.recipe.route.indexOf(":") + 1),
       );

@@ -58,8 +58,11 @@ API_PROVIDER_BY_ROUTE = {provider.route: provider for provider in API_PROVIDERS}
 
 # Starter suggestions, not a live inventory or an account entitlement claim.
 # Model IDs are case-sensitive and custom endpoints can use other identifiers.
+OPENAI_NATIVE_EFFORT_MODELS = frozenset({"gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"})
 _OPENAI_MODELS = (
     "gpt-6.1-sol",
+    "gpt-6.2-sol",
+    "gpt-6.2-astra",
     "gpt-6-astra",
     "gpt-6-luna",
     "gpt-5.6-terra",
@@ -323,7 +326,7 @@ def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]
     """Materialize paired thinking/output recommendations as editable native settings."""
     if provider == "openai-chatgpt":
         provider = "openai-responses"
-    if provider in {"openai", "openai-responses", "openai-chat"} and model_id == "gpt-6.1-sol":
+    if provider in {"openai", "openai-responses", "openai-chat"} and model_id in OPENAI_NATIVE_EFFORT_MODELS:
         defaults: dict[str, JsonValue] = (
             {"openai_reasoning_summary": "detailed", "openai_store": False} if provider != "openai-chat" else {}
         )
