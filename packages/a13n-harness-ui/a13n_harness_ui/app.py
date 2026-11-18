@@ -856,7 +856,6 @@ class HarnessUiApp:
 
     async def status(self) -> AppStatus:
         async with self._operation():
-            current_digest = await self._store.configurations.current_digest()
             configuration = await self._configurations.current()
             return AppStatus(
                 content_plugin_diagnostics=(() if configuration is None else configuration.content_plugin_diagnostics),
@@ -864,7 +863,7 @@ class HarnessUiApp:
                 memory_organization=self._memory_organizer.status(configuration),
                 state=self._state,
                 object_count=await self._store.object_count(),
-                accepted_generation_digest=current_digest,
+                accepted_generation_digest=configuration.source_digest if configuration is not None else None,
                 candidate_error_code=(None if self._candidate_error is None else self._candidate_error.code),
                 candidate_error_message=(None if self._candidate_error is None else str(self._candidate_error)),
             )

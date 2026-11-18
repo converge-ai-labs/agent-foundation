@@ -52,6 +52,19 @@ async def create_link(client, scope, target_id, permission="view"):
     return f"/api/shared/{created['grant']['share_id']}", {"Authorization": f"Bearer {created['key']}"}
 
 
+async def test_guest_access_reuses_authentication_only_within_the_current_request(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    async with shared_server(tmp_path) as (_, app, client):
+        target = await app.create_thread(title="Shared")
+        prefix, headers = await create_link(client, "thread", target.thread_id)
+        auth = AsyncMock(wraps=app.sharing.authenticate)
+        monkeypatch.setattr(app.sharing, "authenticate", auth)
+        for expected_calls in (1, 2):
+            assert (await client.get(prefix + "/access", headers=headers)).status_code == 200
+            assert auth.await_count == expected_calls
+
+
 async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
     async with shared_server(tmp_path) as (_, app, client):
         thread = await app.create_thread(title="Shared design")

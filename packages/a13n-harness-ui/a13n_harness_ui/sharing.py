@@ -24,7 +24,8 @@ class Sharing:
 
     async def _target_title(self, scope: ShareScope, target_id: str) -> str:
         if scope == "project":
-            project = next((p for p in await self._app.projects() if p.project_id == target_id), None)
+            configuration = await self._app.current_configuration()
+            project = configuration.projects.get(target_id) if configuration is not None else None
             if project is not None:
                 return project.name
         else:
@@ -68,6 +69,10 @@ class Sharing:
 
     async def thread(self, share_id: str, thread_id: str, *, prompt: bool = False) -> ThreadDetail:
         grant = await self.active(share_id, prompt=prompt)
+        return await self.scoped_thread(grant, thread_id)
+
+    async def scoped_thread(self, grant: ShareGrant, thread_id: str) -> ThreadDetail:
+        """Resolve the requested thread within an already validated grant."""
         try:
             detail = await self._app.get_thread(thread_id)
             root = detail.thread

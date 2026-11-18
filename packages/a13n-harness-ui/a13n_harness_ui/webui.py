@@ -2609,11 +2609,15 @@ def create_webui(
         except* (WebSocketDisconnect, TimeoutError):
             pass
 
-    async def require_guest(request: Request, share_id: str) -> None:
+    async def authenticate_guest(request: Request, share_id: str) -> ShareAccess:
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer ") or len(authorization) > 4096:
             raise unavailable()
-        await app().sharing.authenticate(share_id, authorization[7:])
+        return await app().sharing.authenticate(share_id, authorization[7:])
+
+    authenticated_guest = Depends(authenticate_guest)
+
+    async def require_guest(request: Request, access: ShareAccess = authenticated_guest) -> ThreadDetail | None:
         thread_id = request.path_params.get("thread_id")
         receipt_id = request.path_params.get("receipt_id")
         if isinstance(receipt_id, str):
@@ -2622,27 +2626,30 @@ def create_webui(
             except HarnessUiError:
                 raise unavailable() from None
         if isinstance(thread_id, str):
-            await app().sharing.thread(share_id, thread_id)
+            return await app().sharing.scoped_thread(access.grant, thread_id)
+        return None
 
     async def require_prompt(share_id: str) -> None:
         await app().sharing.active(share_id, prompt=True)
 
-    guest = APIRouter(prefix="/api/shared/{share_id}", dependencies=[Depends(require_guest)])
+    guest_scope = Depends(require_guest)
+    guest = APIRouter(prefix="/api/shared/{share_id}", dependencies=[guest_scope])
 
     @guest.get("/access", response_model=ShareAccess)
-    async def shared_access(share_id: str, request: Request) -> ShareAccess:
-        return await app().sharing.authenticate(share_id, request.headers["authorization"][7:])
+    async def shared_access(share_id: str, access: ShareAccess = authenticated_guest) -> ShareAccess:
+        return access
 
     @guest.get("/threads", response_model=ThreadPage)
     async def shared_threads(
         share_id: str,
+        access: ShareAccess = authenticated_guest,
         query: Annotated[str | None, Query(max_length=500)] = None,
         cursor: Annotated[str | None, Query(max_length=4096)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 30,
     ) -> ThreadPage:
-        grant = await app().sharing.active(share_id)
+        grant = access.grant
         if grant.scope == "thread":
-            detail = await app().sharing.thread(share_id, grant.target_id)
+            detail = await app().sharing.scoped_thread(grant, grant.target_id)
             return ThreadPage(threads=(detail.thread,), total=1)
         return await app().list_threads(project_id=grant.target_id, query=query, cursor=cursor, limit=limit)
 
@@ -2657,8 +2664,8 @@ def create_webui(
         return await app().sharing.create_thread(share_id, thread_id=command.thread_id, title=command.title)
 
     @guest.get("/threads/{thread_id}", response_model=ThreadDetail)
-    async def shared_thread(share_id: str, thread_id: str) -> ThreadDetail:
-        return await app().sharing.thread(share_id, thread_id)
+    async def shared_thread(share_id: str, thread_id: str, detail: ThreadDetail = guest_scope) -> ThreadDetail:
+        return detail
 
     @guest.post(
         "/threads/{thread_id}/submit",
@@ -2744,9 +2751,14 @@ def create_webui(
     )
     server.include_router(guest)
 
+    schema_bytes: bytes | None = None
+
     @server.get("/api/openapi.json", include_in_schema=False)
-    async def schema() -> JSONResponse:
-        return JSONResponse(openapi_document(server))
+    async def schema() -> Response:
+        nonlocal schema_bytes
+        if schema_bytes is None:
+            schema_bytes = bytes(JSONResponse(openapi_document(server)).body)
+        return Response(schema_bytes, media_type="application/json")
 
     @server.get("/{path:path}", include_in_schema=False, response_model=None)
     async def static(path: str) -> FileResponse | JSONResponse:

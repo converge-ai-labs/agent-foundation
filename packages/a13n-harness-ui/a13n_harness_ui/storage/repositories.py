@@ -165,10 +165,16 @@ class ConfigurationRepository:
 
     async def current_reference(self) -> ObjectRef | None:
         async with short_session(self._sessions) as session:
-            current = await session.get(CurrentConfigurationRecord, 1)
-            if current is None:
+            row = (
+                await session.execute(
+                    select(CurrentConfigurationRecord, AcceptedConfigurationRecord)
+                    .outerjoin(AcceptedConfigurationRecord)
+                    .where(CurrentConfigurationRecord.singleton_id == 1)
+                )
+            ).one_or_none()
+            if row is None:
                 return None
-            record = await session.get(AcceptedConfigurationRecord, current.generation_digest)
+            _, record = row
             if record is None:
                 raise StoreIntegrityError("Current configuration generation is missing.", code="configuration_missing")
             return _configuration_reference(record)
@@ -484,10 +490,16 @@ class ThreadRepository:
 
     async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:
-            record = await session.get(ThreadRecord, thread_id)
-            if record is None:
+            row = (
+                await session.execute(
+                    select(ThreadRecord, ThreadConfigurationRecord)
+                    .outerjoin(ThreadConfigurationRecord)
+                    .where(ThreadRecord.thread_id == thread_id)
+                )
+            ).one_or_none()
+            if row is None:
                 return None
-            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            record, configuration = row
             if configuration is None:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
