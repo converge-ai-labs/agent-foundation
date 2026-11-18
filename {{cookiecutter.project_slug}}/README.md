@@ -43,7 +43,7 @@ For live frontend development, install this project editable into the prepared h
 - `pyproject.toml`: entry point and asset packaging. Both wheel and sdist include the built frontend; rebuilding a wheel from the sdist needs no Node.js.
 - `tests/test_installed_app.py`: installed distribution discovery, assets and the example handler. Host authentication and activation are Service's integration-test responsibility.
 
-The App is trusted installed code. It uses the host React tree, not its own root or providers, and does not override workspace home. See the \[App authoring guide\](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/docs/a13n-service/app-plugins.md) for settings, business tools and lifecycle APIs.
+The App is trusted installed code. It uses the host React tree, not its own root or providers, and does not override workspace home. See the [App authoring guide](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/docs/a13n-service/app-plugins.md) for settings, business tools and lifecycle APIs.
 
 ## Add persistence when needed
 

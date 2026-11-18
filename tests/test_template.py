@@ -47,6 +47,7 @@ def test_generate_independent_fullstack_project(tmp_path, context):
     assert app_id in (project / "AGENTS.md").read_text()
     readme_text = (project / "README.md").read_text()
     assert "[local development guide](https://github.com/converge-ai-labs/agent-foundation/blob/" in readme_text
+    assert "[App authoring guide](https://github.com/converge-ai-labs/agent-foundation/blob/" in readme_text
     compile((project / "tests/test_installed_app.py").read_text(), "test_installed_app.py", "exec")
     assert (project / "frontend/pnpm-lock.yaml").is_file()
     assert json.loads((project / "frontend/package.json").read_text())["private"] is True
