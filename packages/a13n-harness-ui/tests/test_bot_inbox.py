@@ -221,7 +221,11 @@ async def test_settlement_failure_is_supervised_and_does_not_stop_bot_loops(tmp_
         monkeypatch.setattr(app._store.bot, "save_input", fail_once)
         await bot.submit(BotSubmit(input_id="fault", text="Complete this work"))
         assert (await consumed(app, "fault")).state == "interrupted"
-        assert bot._owned and (await bot.snapshot()).state.paused
+        # The supervisor records the interrupted input before it persists the pause.
+        with fail_after(5):
+            while not (await bot.snapshot()).state.paused:
+                await sleep(0.01)
+        assert bot._owned
         await bot.submit(BotSubmit(input_id="after-fault", text="Inspect and continue explicitly"))
         assert (await consumed(app, "after-fault")).state == "completed"
 
