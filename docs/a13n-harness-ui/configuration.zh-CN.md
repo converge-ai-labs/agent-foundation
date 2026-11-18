@@ -85,7 +85,7 @@ a13n-harness-ui --config /path/to/a13n-harness-ui.yaml config validate
 | 长文本传递策略                                                 | 开始新根 Run；后续 steering 输入使用该 Run 的策略 |
 | 交互超时                                                       | 打开新的 TUI 交互，或受理新的 WebUI Run           |
 
-App 异步接受稳定、完整的配置修改。无效或只保存了一部分的配置树会保留上一版有效配置，并报告诊断。保存所有关联文件后再验证。活动 Run 保留捕获的配置；不要通过删除对话状态来重载。启动时，缺少 Agent 或实际审查器引用的 Model 会阻止启动：修复错误中指明的引用后再重启。
+App 异步接受稳定、完整的配置修改。启动时使用新加载的有效配置，包括当前安装版本的默认值，不会因为较早已接受的快照不同而拒绝新配置。历史 Run 捕获保持不变。无效或只保存了一部分的配置树会保留上一版有效配置，并报告诊断。保存所有关联文件后再验证。活动 Run 保留捕获的配置；不要通过删除对话状态来重载。启动时，缺少 Agent 或实际审查器引用的 Model 会阻止启动：修复错误中指明的引用后再重启。
 
 **TUI 选择。** `/agent` 修改 Thread Agent。`/model` 记住按 Project 的选择；`/model default` 清除该选择。两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。TUI 恢复会按 Project → Agent → 全局顺序重新应用当前 MCP 默认值；其他已保存资源选择保留。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。
 
