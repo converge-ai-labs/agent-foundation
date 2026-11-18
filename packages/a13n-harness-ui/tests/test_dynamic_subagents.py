@@ -57,13 +57,24 @@ async def test_dynamic_model_references_are_validated(tmp_path):
     assert "subagents.dynamic.allowed_models" in str(error.value)
 
 
-async def open_app(tmp_path, monkeypatch, model, *, enabled=True, limit=8, include=("explorer",), dynamic=None):
+async def open_app(
+    tmp_path,
+    monkeypatch,
+    model,
+    *,
+    enabled=True,
+    limit=8,
+    include=("explorer",),
+    dynamic=None,
+    steering_mode="immediate",
+):
     path = _source(tmp_path, include)
     (tmp_path / "AGENTS.md").write_text("GLOBAL_GUIDANCE")
     path.write_text(
         yaml.safe_dump(
             {
                 "schema_version": "1",
+                "input": {"steering_mode": steering_mode},
                 "subagents": {
                     "include": list(include),
                     "max_concurrent": limit,
@@ -249,6 +260,7 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
         assert receipts[0]["source"] == "host"
+        assert "arrives here automatically" in receipts[0]["message"]
         execution_id = receipts[0]["execution_id"]
         page = await app.query_child_executions(parent_thread_id=thread.thread_id, execution_id=execution_id)
         model_info = page.executions[0].model
@@ -537,6 +549,64 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
             assert len(await app._subagent_operator.active_execution_ids()) == 1
         finally:
             release.set()
+
+
+@pytest.mark.parametrize("single", [True, False], ids=["exact", "fan-in"])
+@pytest.mark.parametrize("mode", ["immediate", "queued"])
+async def test_user_message_during_subagent_wait(tmp_path, monkeypatch, single, mode):
+    finish_child, waiting, user_seen, result_seen = Event(), Event(), Event(), Event()
+    wait_results = []
+
+    async def model(messages, info):
+        if "send_parent_message" in {tool.name for tool in info.function_tools}:
+            await finish_child.wait()
+            yield "CHILD_FINISHED"
+            return
+        results = returned(messages)
+        if not results:
+            yield {0: DeltaToolCall(name="delegate", json_args='{"subagent_name":"explorer","prompt":"inspect"}')}
+        elif results[-1].tool_name == "delegate":
+            args = {"timeout_seconds": 180}
+            if single:
+                args["execution_id"] = results[-1].content["execution_id"]
+            yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps(args))}
+        else:
+            wait_results.append(results[-1].content)
+            if "NEW_USER_INPUT" in str(messages):
+                user_seen.set()
+            if "CHILD_FINISHED" in str(messages):
+                result_seen.set()
+            yield "Received."
+
+    async with await open_app(tmp_path, monkeypatch, model, steering_mode=mode) as app:
+        restart = app._subagent_operator._restart
+        wait_child = restart.wait_child
+
+        async def observe_wait(event, timeout):
+            waiting.set()
+            await wait_child(event, timeout)
+
+        monkeypatch.setattr(restart, "wait_child", observe_wait)
+        thread = await new_thread(app)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+        try:
+            with fail_after(10):
+                await waiting.wait()
+                response = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="NEW_USER_INPUT")
+                assert response.accepted
+                if mode == "immediate":
+                    await user_seen.wait()
+                    assert wait_results[0]["executions"][0]["status"] == "running"
+                    assert len(await app._subagent_operator.active_execution_ids()) == 1
+                else:
+                    assert not user_seen.is_set()
+                finish_child.set()
+                await user_seen.wait()
+                await result_seen.wait()
+                if mode == "queued":
+                    assert wait_results[0]["executions"][0]["status"] == "succeeded"
+        finally:
+            finish_child.set()
 
 
 async def test_plain_agent_has_no_subagent_surface_or_parent_prompt(tmp_path, monkeypatch):

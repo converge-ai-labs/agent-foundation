@@ -144,6 +144,95 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop(grouped):
     )
 
 
+@pytest.mark.parametrize(
+    "grouped,behind_barrier", [(False, False), (True, False), (False, True)], ids=["direct", "proxy", "ordered"]
+)
+async def test_browser_wait_yields_to_steering_without_replaying_the_observation(grouped, behind_barrier, monkeypatch):
+    import asyncio
+
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    waiting, drained = asyncio.Event(), asyncio.Event()
+    backend = AsyncMock(spec=BrowserBackend)
+
+    async def wait(*args, **kwargs):
+        waiting.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            drained.set()
+
+    backend.wait.side_effect = wait
+
+    async def model(messages, info):
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if returns:
+            assert drained.is_set() is (not behind_barrier)
+            assert "change of plan" in str(messages)
+            assert json.loads(returns[-1].content) == {
+                "verification": "unverified",
+                "dispatch": "not_dispatched",
+                "reason": "steering",
+            }
+            yield "done"
+        else:
+            name = "browser_wait"
+            args = {"condition": {"kind": "text", "text": "ready"}, "timeout": 60}
+            if grouped:
+                args = {"group": "browser", "tool": name, "arguments": args}
+                name = "call_tool"
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id="wait")}
+
+    browser = BrowserUseCapability()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(browser, ToolExecutionCapability()),
+        tool_search=ToolSearchPlan(groups={"browser": ToolSearchSelection("Browser", capabilities=(browser,))})
+        if grouped
+        else None,
+    )
+    runtime = ToolExecutionRuntime()
+    if behind_barrier:
+        inline = runtime.inline
+
+        async def ordered(operation, *, thread_id, sequential):
+            runtime.admit(
+                asyncio.Event().wait,
+                thread_id=thread_id,
+                run_id="earlier",
+                tool_name="shell_exec",
+                tool_call_id="earlier-call",
+                sequential=True,
+            )
+            waiting.set()
+            return await inline(operation, thread_id=thread_id, sequential=sequential)
+
+        monkeypatch.setattr(runtime, "inline", ordered)
+    bindings = RunBindings.embedded(browser_backend=backend, tool_execution=runtime)
+    try:
+        async with asyncio.timeout(5), executable.stream("start", bindings=bindings) as stream:
+
+            async def steer():
+                await waiting.wait()
+                await stream.steer("change of plan", immediate=True)
+
+            async with asyncio.TaskGroup() as group:
+                group.create_task(steer())
+                async for _ in stream:
+                    pass
+            assert stream.result.output_or_raise() == "done"
+            assert backend.wait.await_count == (0 if behind_barrier else 1)
+    finally:
+        await runtime.close()
+
+
 async def test_restrictive_host_policy_cannot_be_bypassed_by_browser_traffic():
     from types import SimpleNamespace
 

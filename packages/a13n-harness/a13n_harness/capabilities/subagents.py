@@ -31,6 +31,10 @@ _INLINE_SUBAGENT_STATE_VERSION = "2"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
+_ASYNC_RESULT_GUIDANCE = (
+    "The final result arrives here automatically, even after your turn ends. "
+    "Continue other work. Wait only if your next step needs the result."
+)
 
 
 type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
@@ -186,6 +190,10 @@ class AsyncExecutionView(BaseModel):
     child_run_id: str | None = Field(default=None, min_length=1, max_length=256)
     segment_index: int | None = Field(default=None, ge=0)
 
+    def receipt(self) -> dict[str, JsonValue]:
+        """Project an asynchronous admission for the model."""
+        return {**self.model_dump(mode="json"), "message": _ASYNC_RESULT_GUIDANCE}
+
 
 class SubagentExecutionView(AsyncExecutionView):
     """Bounded current execution view returned by info or wait."""
@@ -224,6 +232,12 @@ class SubagentSteerResult(BaseModel):
     execution_id: str = Field(min_length=1, max_length=256)
     accepted: bool
     enqueue_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+    def receipt(self) -> dict[str, JsonValue]:
+        value = self.model_dump(mode="json")
+        if self.accepted:
+            value["message"] = _ASYNC_RESULT_GUIDANCE
+        return value
 
 
 class SubagentCancelResult(BaseModel):

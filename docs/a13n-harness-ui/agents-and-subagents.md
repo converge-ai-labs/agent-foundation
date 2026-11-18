@@ -139,6 +139,8 @@ Dynamic creation is off when `enabled` is missing or false. The main Agent recei
 
 The running-child limit applies to dynamic, configured and built-in helpers, including resumed segments. The Agent receives a clear error at the limit and can wait for existing work. Use `subagent_info`, `wait_subagent`, `steer_subagent`, `resume_subagent` and cancellation with the returned execution ID.
 
+With the default `input.steering_mode: immediate`, sending a message during `wait_subagent` ends the wait and gives the main Agent the current child status. The child keeps working. With `queued`, the main Agent receives your message when the wait returns.
+
 Final results arrive as parent input automatically, including after the parent turn ends. Every child can call `send_parent_message` while continuing to work. A child that needs an answer to continue ends with its question; the main Agent can resume it with an answer. Messages and results identify the child name, execution ID and state. Repeated results with the same ID are possible.
 
 An active parent receives steering. An idle parent can start a new Run after normal completion, which adds Model use. Stop, failure, suspension, interruption, pending user decisions and archival prevent automatic restart. The TUI shows marked parent and completion inputs as Activity.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -14,6 +16,7 @@ from a13n_harness import (
     RunBindings,
     SubagentDefinition,
 )
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.capabilities import (
     AsyncDelegateRequest,
     AsyncExecutionView,
@@ -34,15 +37,20 @@ from a13n_harness.capabilities import (
     SubagentWaitResult,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
+from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+from a13n_harness.context import AgentContext
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
+from a13n_harness.tool_execution import ToolExecutionRuntime
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     InvocationPolicyCapability,
     InvocationPolicyDecision,
 )
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from pydantic_ai import RunContext, Tool
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import UsageLimits
 
@@ -293,6 +301,64 @@ async def test_subagent_modes_expose_mutually_exclusive_standard_tools(
     assert observed == expected
 
 
+async def test_retained_runner_keeps_nested_subagent_wait(monkeypatch):
+    operator = RecordingSubagentOperator()
+    waiting, finish = asyncio.Event(), asyncio.Event()
+    original_wait = operator.wait
+
+    async def wait(*args, **kwargs):
+        waiting.set()
+        await finish.wait()
+        return await original_wait(*args, **kwargs)
+
+    monkeypatch.setattr(operator, "wait", wait)
+
+    async def runner(ctx: RunContext[AgentContext]):
+        return await ctx.tool_manager.handle_call(
+            ToolCallPart("wait_subagent", {"execution_id": "execution-1", "timeout_seconds": 180}, "nested")
+        )
+
+    async def model(messages, info):
+        if not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield {0: DeltaToolCall(name="runner", json_args="{}", tool_call_id="outer")}
+        else:
+            assert "change of plan" in str(messages)
+            yield "continued"
+
+    definition = _definition(
+        FunctionModel(stream_function=model), SubagentCapability(async_enabled=True, operator=operator)
+    )
+    runtime = ToolExecutionRuntime()
+    tool = Tool(runner, metadata={TOOL_EXECUTION_METADATA_KEY: "owned"})
+    executable = HarnessBuilder().build(
+        replace(
+            definition, capabilities=(*definition.capabilities, ToolExecutionCapability(), Capability(tools=[tool]))
+        )
+    )
+    bindings = replace(_bindings(), tool_execution=runtime)
+    try:
+        async with asyncio.timeout(5), executable.stream("start", bindings=bindings) as stream:
+
+            async def steer():
+                await waiting.wait()
+                await stream.steer("change of plan", immediate=True)
+
+            async with asyncio.TaskGroup() as group:
+                group.create_task(steer())
+                async for _ in stream:
+                    pass
+            assert stream.result.output_or_raise() == "continued"
+            (record,) = await runtime.summarize(stream.thread_id)
+            assert record.foreground_released and not record.terminal
+            finish.set()
+            completed = await runtime.wait(stream.thread_id, record.execution_id)
+            assert completed.result["executions"][0]["status"] == "succeeded"
+            assert operator.calls == ["wait"]
+    finally:
+        finish.set()
+        await runtime.close()
+
+
 async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> None:
     operator = RecordingSubagentOperator()
     steps = (
@@ -327,6 +393,9 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
             }
             return
         for returned in returns:
+            if returned.tool_name in {"delegate", "steer_subagent", "resume_subagent"}:
+                assert "arrives here automatically" in returned.content["message"]
+                assert "Wait only if your next step needs the result" in returned.content["message"]
             if returned.tool_name in {"subagent_info", "wait_subagent"}:
                 assert returned.content["executions"][0]["reply_tool"] == "resume_subagent"
                 assert returned.content["executions"][0]["header"] == (

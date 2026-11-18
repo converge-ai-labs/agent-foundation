@@ -234,4 +234,4 @@ class SpawnCapability(AbstractCapability[AgentContext]):
             ),
             ctx.tool_call_id,
         )
-        return result.model_dump(mode="json")
+        return result.receipt()
