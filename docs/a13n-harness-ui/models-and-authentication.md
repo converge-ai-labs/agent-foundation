@@ -66,7 +66,7 @@ This example adds a Codex subscription Model to an existing configuration.
    kind: model
    id: model-codex
    name: Codex
-   route: openai-codex:gpt-6.1-sol
+   route: openai-codex:gpt-6.2-sol
    authentication:
      kind: codex_subscription
    settings:

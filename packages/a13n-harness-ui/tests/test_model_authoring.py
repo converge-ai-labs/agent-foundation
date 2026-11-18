@@ -217,8 +217,8 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
     wizard.accept("codex")
     assert wizard.question.key == "model"
     assert wizard.question.choices == (
-        "gpt-6.1-sol",
         "gpt-6.2-sol",
+        "gpt-6.1-sol",
         "gpt-6.2-astra",
         "gpt-6-astra",
         "gpt-5.6-terra",
@@ -227,12 +227,12 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
         "gpt-6-luna",
         "gpt-5.6-luna",
     )
-    assert wizard.question.default == "gpt-6.1-sol"
+    assert wizard.question.default == "gpt-6.2-sol"
     wizard.accept("")
     while wizard.question is not None:
         wizard.accept("")
     recipe = wizard.selection("/tmp")["model"]
-    assert recipe["route"] == "openai-codex:gpt-6.1-sol"
+    assert recipe["route"] == "openai-codex:gpt-6.2-sol"
     assert recipe["settings"]["openai_reasoning_effort"] == "high"
     assert "max_tokens" not in recipe["settings"]
 

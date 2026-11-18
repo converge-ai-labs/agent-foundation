@@ -519,7 +519,7 @@ class SetupWizard:
         descriptions = {
             **self.provider_descriptions,
             "gpt-6-astra": "Most capable · complex, end-to-end work",
-            "gpt-6.1-sol": "Recommended · strong coding and reasoning",
+            "gpt-6.2-sol": "Recommended · strong coding and reasoning",
             "gpt-6-sol": "Previous generation · coding and reasoning",
             "gpt-5.6-sol": "Earlier generation · coding and reasoning",
             "gpt-5.6-terra": "Lighter · balance capability and cost",
