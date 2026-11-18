@@ -14,6 +14,8 @@ Service reads the default mount's working-directory `AGENTS.md` and discovers pr
 
 ## Execution route
 
+For Cloudflare Containers, `execution` defaults to `envd_http` and can select `envd_ws`. `network_egress` defaults to `public`; `disabled` blocks workload Internet without removing Envd control connectivity. Configure idle deletion for these ephemeral workspaces.
+
 Native Execution provides Files & Shell through Local direct access, Docker containerization, or E2B remote sandboxes for quick deployment and basic applications. Envd is the general execution path for OS sandbox and Egress policy enforcement, Computer use, and Device metrics. Each vendor's Environment Provider retains resource management and connection preparation.
 
 ## HTTPS credentials

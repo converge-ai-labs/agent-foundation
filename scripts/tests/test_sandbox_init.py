@@ -153,6 +153,33 @@ def test_http_bootstrap_creates_or_reuses_protected_credential(tmp_path, monkeyp
             credential.parent.chmod(0o700)
 
 
+@pytest.mark.parametrize("existing", [False, True])
+def test_http_bootstrap_uses_supplied_token_only_when_file_is_absent(tmp_path, monkeypatch, existing):
+    credential = tmp_path / "token"
+    if existing:
+        credential.write_text("mounted-test-credential")
+        credential.chmod(0o400)
+    init = tmp_path / "a13n-sandbox-init"
+    init.write_text('#!/bin/sh\ntest "${A13N_ENVD_HTTP_BOOTSTRAP_TOKEN+x}" != x\n')
+    init.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("A13N_ENVD_TRANSPORT", "http")
+    monkeypatch.setenv("A13N_ENVD_HTTP_CREDENTIAL_FILE", str(credential))
+    monkeypatch.setenv("A13N_ENVD_HTTP_BOOTSTRAP_TOKEN", "gateway-test-credential")
+
+    result = subprocess.run(
+        [str(ENTRYPOINT), "sh", "-c", 'test "${A13N_ENVD_HTTP_BOOTSTRAP_TOKEN+x}" != x'],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    assert credential.read_text() == ("mounted-test-credential" if existing else "gateway-test-credential")
+    assert credential.stat().st_mode & 0o777 == (0o400 if existing else 0o600)
+
+
 @pytest.mark.parametrize("transport", ["http", "reverse_websocket"])
 def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, transport):
     commands = tmp_path / "commands"
