@@ -28,7 +28,9 @@ class Observation(BaseModel):
 
 
 class Management(ManagementBackend):
-    provider_key = KEY
+    @property
+    def provider_key(self) -> str:
+        return KEY
 
     def __init__(
         self,
