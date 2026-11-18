@@ -75,6 +75,26 @@ kubernetesEnvironments:
   # trusted private network; bearer authentication does not encrypt traffic.
   # Kept false until the operator explicitly accepts that network trust boundary.
   allowPlaintextEnvd: false
+# Optional Kubernetes Browser provider, independent of Kubernetes Environments.
+# Use a private, NetworkPolicy-enforcing cluster and a StorageClass supporting the selected mode.
+kubernetesBrowsers:
+  enabled: false
+  namespace: "" # Empty uses the Helm release namespace; otherwise create it first.
+  image:
+    repository: ghcr.io/converge-ai-labs/a13n-browser
+    tag: "" # Empty uses the chart's appVersion.
+    digest: "" # When set, repository@digest takes precedence.
+    pullPolicy: IfNotPresent
+  storage:
+    className: null # null uses the cluster default; an empty string disables dynamic provisioning.
+    size: 2Gi
+    accessMode: ReadWriteOncePod
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []

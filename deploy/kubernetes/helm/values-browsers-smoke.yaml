@@ -1,0 +1,13 @@
+# kind's default local-path volume provisioner supports ReadWriteOnce, not ReadWriteOncePod.
+kubernetesBrowsers:
+  enabled: true
+  storage:
+    accessMode: ReadWriteOnce
+  image:
+    repository: a13n-browser
+    tag: local
+    pullPolicy: Never
+# The scripted model runs on the private test cluster; do not use this allowlist in production.
+extraConfig: |
+  [providers]
+  http_origins = ["http://a13n-scripted-model:8000"]

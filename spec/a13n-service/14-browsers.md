@@ -74,6 +74,14 @@ Native is an explicitly enabled Linux debugging provider requiring operator-inst
 
 Both built-ins use the same finite input-grant boundary. Expiry and revocation terminate already connected viewer input without requiring Service to remain online. Provider `close` only releases borrowed adapter resources. Durable allocation records contain exact host/runtime identity and terminal fencing, while Service remains the owner of Browser policy and lifecycle intent. Operators retain the configured provider storage directory across Service restarts; moving that directory to another host does not transfer runtime ownership.
 
+### Kubernetes Browser
+
+The Kubernetes Browser is independent of Kubernetes Environments. A Provider account selects an operator-configured cluster profile and allowed namespace. The operator controls runtime image, compute resources, storage and the private network; Browser recipes cannot supply Kubernetes manifests, credentials or upstream endpoints. The Browser image supplies Chromium and desktop access. Service connects directly to the private authenticated Browser runtime; human input uses the existing Service viewer relay and finite, revocable grants. Kubernetes Browsers do not expose Service file transfer.
+
+One allocation owns one StatefulSet and one profile claim. The first native create submits an inert StatefulSet with zero replicas. The Service records its immutable identity before activating it. Recovery of an uncertain create only observes the original key; absence does not allow a second create or prove release. Once identity is confirmed, activation and restart reconcile that identity without reallocating it. A fresh Pod or runtime changes the runtime identity, not the Browser or its profile.
+
+Stop waits for the controller to observe scale-down and for the Pod to disappear before reporting `stopped`. A start reuses the exact retained claim. Release fences activation or restart on the native allocation before removing it and confirms disappearance of the Pod, claim and credential before reporting `deleted`. An object with a different native identity is never adopted or deleted in place of a recorded allocation. Kubernetes API credentials belong to Service runtime roles, not Browser Pods.
+
 ## Tab access and ownership
 
 Both access modes share one browser profile, cookies and login state. Thread mode restricts native browser-tool targets, not account identity or the human viewer's visibility.

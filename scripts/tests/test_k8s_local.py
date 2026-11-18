@@ -845,3 +845,34 @@ def test_checkout_binary_is_selected_only_for_sandbox_build(monkeypatch):
     service, sandbox = commands
     assert "--build-arg" not in service
     assert sandbox[sandbox.index("--build-arg") + 1] == "ENVD_BINARY_SOURCE=prebuilt"
+
+
+@helm
+def test_kubernetes_browser_chart_is_independent_and_private():
+    resources = render(
+        *LOCAL,
+        "--namespace",
+        "service",
+        "--kube-version",
+        "1.34.0",
+        "--set",
+        "kubernetesBrowsers.enabled=true,kubernetesBrowsers.namespace=browsers",
+    )
+    objects = {(item["kind"], item["metadata"]["name"]): item for item in resources}
+    config = tomllib.loads(objects["ConfigMap", "a13n-a13n-config"]["data"]["service.toml"])
+    assert "environments" not in config
+    profile = config["browsers"]["kubernetes_clusters"]["in-cluster"]
+    assert profile["namespaces"] == ["browsers"]
+    assert profile["image"] == "ghcr.io/converge-ai-labs/a13n-browser:dev"
+    name = "a13n-a13n-browsers"
+    assert objects["Role", name]["metadata"]["namespace"] == "browsers"
+    binding = objects["RoleBinding", name]
+    assert binding["subjects"][0]["namespace"] == "service"
+    assert objects["Service", name]["spec"]["clusterIP"] == "None"
+    policy = objects["NetworkPolicy", name]["spec"]
+    assert policy["podSelector"]["matchLabels"]["browsers.a13n.dev/owner"] == profile["ownership_id"]
+    assert [entry["ports"][0]["port"] for entry in policy["ingress"]] == [9222, 6081]
+    for kind, component in [("Deployment", "control"), ("Deployment", "worker"), ("Job", "migrate-1")]:
+        spec = objects[kind, "a13n-a13n-" + component]["spec"]["template"]["spec"]
+        assert spec["automountServiceAccountToken"] is False
+        assert any(volume["name"] == "kubernetes-api" for volume in spec["volumes"]) == (kind == "Deployment")

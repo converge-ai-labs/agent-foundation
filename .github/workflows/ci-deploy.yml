@@ -50,6 +50,7 @@ jobs:
     timeout-minutes: 20
     env:
       K8S_ENVIRONMENTS: "1"
+      K8S_BROWSERS: "1"
       K8S_BUILD_CACHE: gha
       K8S_SANDBOX_IMAGE: a13n-sandbox:ci
     steps:
@@ -148,7 +149,8 @@ jobs:
         run: |
           K8S_SERVICE_IMAGE=$(jq -r .service_image "$K8S_STATE_DIR/deployment.json")
           K8S_SANDBOX_IMAGE=$(jq -r .sandbox_image "$K8S_STATE_DIR/deployment.json")
-          export K8S_SERVICE_IMAGE K8S_SANDBOX_IMAGE
+          K8S_BROWSER_IMAGE=$(jq -r .browser_image "$K8S_STATE_DIR/deployment.json")
+          export K8S_SERVICE_IMAGE K8S_SANDBOX_IMAGE K8S_BROWSER_IMAGE
           make k8s-up k8s-smoke
 
       - name: Require the upgraded revision and its migration
@@ -159,7 +161,7 @@ jobs:
       - name: Show the deployment on failure
         if: failure()
         run: |
-          kubectl --context kind-a13n-local -n a13n-service get pods,jobs,pvc,events || true
+          kubectl --context kind-a13n-local -n a13n-service get pods,jobs,pvc,statefulsets,events || true
           kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-control --all-containers --tail 200 || true
           kubectl --context kind-a13n-local -n a13n-service logs deployment/a13n-a13n-worker --all-containers --tail 200 || true
           kubectl --context kind-a13n-local -n a13n-service logs job/a13n-a13n-migrate-2 --all-containers --tail 200 || true

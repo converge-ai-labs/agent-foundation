@@ -1,0 +1,10 @@
+{{- if .Values.kubernetesBrowsers.enabled }}
+Kubernetes Browsers are enabled. In Console, create a shared Browser provider:
+  Type: Kubernetes Browser
+  Cluster: in-cluster
+  Namespace: {{ default .Release.Namespace .Values.kubernetesBrowsers.namespace }}
+  Credentials: none
+The official Browser image includes Chromium and the desktop viewer. Do not
+expose its CDP or VNC ports. Use the Console's existing Browser takeover action.
+Release Browsers before disabling this feature or uninstalling this release.
+{{- end }}

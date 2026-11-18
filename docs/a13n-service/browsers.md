@@ -62,6 +62,12 @@ The supplier timeout and Service's [idle retention](#choose-preparation-and-rete
 
 ### Configure self-hosted browsers
 
+#### Kubernetes
+
+Enable `kubernetesBrowsers` in the Service Helm chart (Kubernetes 1.32 or later). The chart configures the in-cluster provider profile and the official Browser image with Chromium and VNC; no Docker socket or Kubernetes Environment is needed. Select **Kubernetes Browser** in Console and use cluster `in-cluster`, the workload namespace printed by Helm, and no credential. Create a Browser with the empty recipe, bind it to a thread, then use takeover and handback in Console.
+
+Stop keeps the persistent Chromium profile; start uses the same claim. Release removes the claim and its runtime resources. Kubernetes Browsers support desktop input but do not support Service Browser file transfer. For the chart values, networking requirements and local smoke, see the [Kubernetes deployment guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/kubernetes/README.md#kubernetes-browsers).
+
 #### Docker
 
 Run Service and a local Docker Engine on the same Linux host. Set a persistent, private directory that the Service account can write:

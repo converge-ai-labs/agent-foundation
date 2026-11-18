@@ -54,6 +54,28 @@ For an explicit no-Python headless bootstrap, use [headless-bootstrap-recipe.yam
 
 Native Pod authors can reference namespace Secrets and workload identities and request native privileges. Restrict template authoring and enforce Pod Security/admission policy on the sandbox namespace; namespace RBAC alone does not make arbitrary recipes safe. Place sandboxes in a separate namespace from Service credentials for production. Helm manages the access configuration, while Service owns instance Pods and supporting resources; uninstalling the chart does not retire those instances. Delete instances through Service first, inspect retained PVC receipts, and explicitly decide whether retained data should be removed.
 
+### Kubernetes Browsers
+
+Enable this feature independently of Kubernetes Environments. Use Kubernetes 1.32 or newer, a CNI that enforces NetworkPolicy, and a StorageClass suitable for retained profiles. Pre-create the workload namespace if it differs from the Helm release namespace; a dedicated namespace is recommended because the Service Role can read Secrets and create StatefulSets there.
+
+```yaml
+kubernetesBrowsers:
+  enabled: true
+  namespace: agent-browsers
+  storage:
+    className: browser-profiles
+    size: 2Gi
+    accessMode: ReadWriteOncePod
+```
+
+Omit `className` to use the cluster default. `ReadWriteOncePod` requires a compatible CSI driver; for a single-node kind installation, set `accessMode: ReadWriteOnce`. The official `a13n-browser` image includes Chromium, Xvfb and VNC; a published chart selects the matching image tag. Set `kubernetesBrowsers.image.tag` or `.digest` explicitly when using a checkout chart or a mirrored image. CPU and memory requests and limits are configurable per Browser.
+
+In Console, create a **Kubernetes Browser** provider with cluster `in-cluster`, the workload namespace, and no credentials. Create and prepare a Browser with the empty recipe, bind it to a thread, and use Console takeover for the desktop. The Helm release notes print the exact provider settings.
+
+Keep ports 9222 and 6081 private. The chart allows direct CDP/control from its Control and Worker Pods and viewer traffic from Control only. Authentication does not encrypt in-cluster Browser traffic. The chart does not restrict Browser egress: enforce your cluster's DNS, internet and internal-network access policy for Browser Pods, including blocking cloud metadata and administrative services where applicable. Do not give untrusted users permission to launch workloads or alter policy in either namespace. Browser Pods do not mount a Kubernetes API token.
+
+Stop removes the runtime Pod and retains its PVC; release removes the StatefulSet, Pod, credential and PVC. The StorageClass reclaim policy determines physical volume deletion. Release all Browsers before uninstalling, changing the workload namespace, or disabling the provider; Helm does not own runtime allocations. To troubleshoot a pending Browser, inspect scheduling events, PVC binding, and Browser Pod logs in its workload namespace. An unconfirmed create stays unresolved rather than allocating a second profile.
+
 ### Service metadata
 
 `service.labels` and `service.annotations` customize only the control Service's metadata. Labels do not change Deployment selectors, Pod labels, resource names or Secret selection. Configure platform-specific integrations in an environment-owned values file according to that platform's contract.
@@ -173,6 +195,14 @@ This opt-in path builds and loads both current-source images under a fresh tag, 
 The smoke journey mounts `dev/fixtures/scripted_model.py` into a temporary fixture Pod. It signs in, creates a separate workspace, submits a fresh-environment Run, and verifies that the deployed Worker writes a file through `shell_exec` and reads it through `view`. It checks native diagnostics, logs, the sandbox ServiceAccount and exact resource disappearance after retirement. Worker-to-model and Worker-to-Envd traffic stays inside the cluster; only fixture controls use a local port-forward. Fixture resources are removed after the journey. The Service deployment and its smoke workspace remain available for inspection.
 
 Use this overlay only for local development and CI. Production should use a separate sandbox namespace, admission policy and an explicitly trusted Envd network path.
+
+### Kubernetes Browser deployment smoke
+
+```sh
+K8S_BROWSERS=1 make k8s-up k8s-smoke
+```
+
+The launcher builds and loads the official Browser image from the checkout. The smoke exercises deployed Worker CDP, Control's viewer relay and handback, stop/start with the same profile claim, and resource cleanup on release. `K8S_BROWSER_IMAGE` can point at an existing local checkout image. Combine with `K8S_ENVIRONMENTS=1` to exercise both independent providers.
 
 ### Manual startup
 

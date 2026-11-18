@@ -2,9 +2,9 @@
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from docker import DockerClient
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from a13n_service.providers.browser import cloud, docker, native
+from a13n_service.providers.browser import cloud, docker, kubernetes, native
 from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.browser.selfhost import Recipe, blocking
 from a13n_service.settings import Browsers
@@ -76,6 +76,32 @@ def builtins(settings: Browsers, response_bytes: int = 16777216) -> tuple[Browse
             provider_factory=open_kernel,
         ),
     ]
+    clusters = settings.kubernetes_clusters
+    if clusters:
+
+        class Configuration(kubernetes.Configuration):
+            @model_validator(mode="after")
+            def allowed(self):
+                cluster = clusters.get(self.cluster)
+                if cluster is None or self.namespace not in cluster.namespaces:
+                    raise ValueError("Select an operator-configured Browser cluster and its allowed workload namespace")
+                return self
+
+        async def open_kubernetes(config: Configuration, credential: BaseModel | None, policy: EndpointPolicy):
+            return await kubernetes.open_provider(config, clusters)
+
+        definitions.append(
+            BrowserProviderDefinition(
+                type="kubernetes",
+                display_name="Kubernetes Browser",
+                configuration_model=Configuration,
+                recipe_model=kubernetes.Recipe,
+                backend_identity=lambda config: kubernetes.identity(config, clusters),
+                provider_factory=open_kubernetes,
+                supports_stop=True,
+                supports_viewer=True,
+            )
+        )
     if settings.root is None:
         return tuple(definitions)
     root = settings.root

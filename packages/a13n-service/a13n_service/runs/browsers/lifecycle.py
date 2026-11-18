@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Literal
 
 import anyio
 from a13n_harness import RunConfiguration
@@ -19,7 +20,13 @@ from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbound import validate_cdp_endpoint
-from a13n_service.providers.browser.definition import BrowserProvider, BrowserProviderError, LiveBrowser
+from a13n_service.providers.browser.definition import (
+    BrowserCheckpoint,
+    BrowserProvider,
+    BrowserProviderError,
+    LiveBrowser,
+    StagedBrowserProvider,
+)
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import BrowserProviderRow
 from a13n_service.runs.browsers.tables import (
@@ -286,7 +293,10 @@ async def prepare(
     async with transaction(runtime.storage) as session:
         row = await find(session, workspace_id, browser_id, lock=True)
         await prepare_intent(session, row)
-    await reconcile(runtime, workspace_id, browser_id, policy=policy, inspect_ready=inspect_ready)
+    if await reconcile(runtime, workspace_id, browser_id, policy=policy, inspect_ready=inspect_ready):
+        # A staged allocation is inert until its identity is durably recorded.
+        # Continue inline so first-use callers can still get a ready Browser.
+        await reconcile(runtime, workspace_id, browser_id, policy=policy, inspect_ready=inspect_ready)
 
 
 async def reconcile(
@@ -296,7 +306,7 @@ async def reconcile(
     *,
     inspect_ready: bool = False,
     policy: EndpointPolicy | None = None,
-) -> None:
+) -> Literal[True] | None:
     """Claim one lifecycle step. A timed-out create is inspected, never resubmitted."""
     claim_id = new_object_id("bclaim")
     async with transaction(runtime.storage) as session:
@@ -319,7 +329,7 @@ async def reconcile(
             row.create_dispatched = True
         elif phase == "starting":
             row.start_dispatched = True
-    live: LiveBrowser | None = None
+    result: LiveBrowser | BrowserCheckpoint | None = None
     failure: str | None = None
     not_dispatched = False
     rejected = False
@@ -331,28 +341,30 @@ async def reconcile(
                     browser = await connect_external(runtime, selected.state, policy or runtime.endpoint_policy)
                     with anyio.CancelScope(shield=True), anyio.move_on_after(5):
                         await browser.close()
-                live = LiveBrowser(selected.state)
+                result = LiveBrowser(selected.state)
         else:
             async with open_provider(runtime, selected.account) as provider:
                 with anyio.fail_after(runtime.settings.browsers.operation_seconds):
                     if phase == "deleting":
-                        await provider.delete(browser_id, selected.state)
+                        result = await provider.delete(browser_id, selected.state)
                     elif phase == "stopping":
                         assert selected.state is not None
-                        live = await provider.stop(browser_id, selected.state)
-                    elif start:
+                        result = await provider.stop(browser_id, selected.state)
+                    elif start or (phase == "starting" and isinstance(provider, StagedBrowserProvider)):
                         assert selected.state is not None
-                        live = await provider.start(browser_id, selected.state, generation=selected.generation)
+                        result = await provider.start(browser_id, selected.state, generation=selected.generation)
                     elif create:
                         recipe = runtime.registry.get("browser", selected.account.type).recipe_model.model_validate(
                             selected.recipe
                         )
-                        live = await provider.create(browser_id, recipe)
+                        result = await provider.create(browser_id, recipe)
+                    elif phase == "creating" and isinstance(provider, StagedBrowserProvider):
+                        result = await provider.reconcile_create(browser_id, selected.state)
                     else:
-                        live = await provider.inspect(browser_id, selected.state)
-                        if live is None and phase in {"creating", "starting"}:
+                        result = await provider.inspect(browser_id, selected.state)
+                        if result is None and phase in {"creating", "starting"}:
                             failure = f"browser_{'create' if phase == 'creating' else 'start'}_unresolved"
-                        elif phase == "starting" and live is not None and live.status == "stopped":
+                        elif phase == "starting" and result is not None and result.status == "stopped":
                             failure = "browser_start_unresolved"
     except BrowserProviderError as error:
         # Provider codes are internal categories, never upstream exception text.
@@ -367,6 +379,10 @@ async def reconcile(
             return
         row.claim_id = row.claim_until = None
         row.failure = failure
+        if isinstance(result, BrowserCheckpoint):
+            row.handle = protect(runtime, row, "handle", result.state)
+            return True
+        live = result
         if failure is not None and not (
             phase == "starting"
             and failure == "browser_start_unresolved"
@@ -400,6 +416,7 @@ async def reconcile(
             if phase in {"creating", "starting"} and failure is None:
                 row.last_used_at = await now(session)
             await expire(session, row)
+    return None
 
 
 async def ready_target(

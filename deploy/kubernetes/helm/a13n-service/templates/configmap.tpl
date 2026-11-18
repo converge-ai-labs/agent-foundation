@@ -48,6 +48,32 @@ data:
     sandbox_service_account = {{ printf "%s-sandbox" (include "a13n.name" .) | toJson }}
     allow_plaintext_envd = {{ .Values.kubernetesEnvironments.allowPlaintextEnvd }}
     {{- end }}
+    {{- if .Values.kubernetesBrowsers.enabled }}
+    {{- $browser := .Values.kubernetesBrowsers }}
+    [browsers.kubernetes_clusters.in-cluster]
+    namespaces = [{{ default .Release.Namespace $browser.namespace | toJson }}]
+    ownership_id = {{ include "a13n.browserOwner" . | toJson }}
+    service_name = {{ include "a13n.browserService" . | toJson }}
+    {{- if $browser.image.digest }}
+    image = {{ printf "%s@%s" $browser.image.repository $browser.image.digest | toJson }}
+    {{- else }}
+    image = {{ printf "%s:%s" $browser.image.repository (default .Chart.AppVersion $browser.image.tag) | toJson }}
+    {{- end }}
+    image_pull_policy = {{ $browser.image.pullPolicy | toJson }}
+    {{- if kindIs "string" $browser.storage.className }}
+    storage_class = {{ $browser.storage.className | toJson }}
+    {{- end }}
+    storage_size = {{ $browser.storage.size | toJson }}
+    access_mode = {{ $browser.storage.accessMode | toJson }}
+    [browsers.kubernetes_clusters.in-cluster.requests]
+    {{- range $key, $value := $browser.requests }}
+    {{ $key | toJson }} = {{ $value | toJson }}
+    {{- end }}
+    [browsers.kubernetes_clusters.in-cluster.limits]
+    {{- range $key, $value := $browser.limits }}
+    {{ $key | toJson }} = {{ $value | toJson }}
+    {{- end }}
+    {{- end }}
     {{- with .Values.extraConfig }}
     {{- . | nindent 4 }}
     {{- end }}
