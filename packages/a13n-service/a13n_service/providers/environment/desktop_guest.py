@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import resource
 import secrets
 import signal
 import socket
@@ -42,6 +43,15 @@ def parent_death_signal(parent: int) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0 or os.getppid() != parent:
         os._exit(1)
+
+
+def prepare_child(parent: int, command: str) -> None:
+    parent_death_signal(parent)
+    if command == "x11vnc":
+        # LibVNCServer scans every FD up to the soft limit before accepting a client.
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft == resource.RLIM_INFINITY or soft > 4096:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (4096, hard))
 
 
 def private_directory(root: Path) -> None:
@@ -126,7 +136,7 @@ class Supervisor:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            preexec_fn=partial(parent_death_signal, os.getpid()),
+            preexec_fn=partial(prepare_child, os.getpid(), command[0]),
         )
 
     async def terminate(self, process: asyncio.subprocess.Process) -> None:
