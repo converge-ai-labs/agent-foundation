@@ -336,6 +336,7 @@ class Supervisor:
             "-rfbport",
             str(port),
             "-no6",
+            "-nolookup",  # The VNC backend only accepts loopback clients.
             "-noshm",
             "-forever",
             "-shared",
