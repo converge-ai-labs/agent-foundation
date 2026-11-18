@@ -24,8 +24,9 @@ class BotInboxRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
-    async def heartbeat(self, *, policy: BotConfiguration, now: datetime, text: str) -> None:
+    async def heartbeat(self, *, policy: BotConfiguration, now: datetime, text: str) -> bool:
         """Retain/coalesce a due opportunity and advance its clock in one transaction."""
+        due = False
         async with transaction(self._sessions) as session:
             row = await session.get(BotStateRecord, 1)
             state = BotState() if row is None else BotState.model_validate_json(row.payload)
@@ -38,6 +39,7 @@ class BotInboxRepository:
             elif next_at is None or interval != policy.interval_seconds:
                 next_at, interval = now + timedelta(seconds=policy.interval_seconds), policy.interval_seconds
             elif next_at <= now:
+                due = True
                 await session.execute(
                     insert(BotInboxRecord)
                     .values(
@@ -58,6 +60,8 @@ class BotInboxRepository:
                     session.add(BotStateRecord(singleton_id=1, payload=updated.model_dump_json()))
                 else:
                     row.payload = updated.model_dump_json()
+
+        return due
 
     async def thread_message(
         self, *, source_thread_id: str, source_thread_title: str | None, text: str, kind: Literal["task", "report"]

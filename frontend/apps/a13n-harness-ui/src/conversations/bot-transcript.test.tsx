@@ -316,6 +316,88 @@ it.each(
   },
 );
 
+it("shows a new publication on a hidden-only latest page without a human message", () => {
+  render(
+    <ConversationTranscript
+      threadId="thread_bot"
+      hasEarlier
+      localInputs={[]}
+      blocks={[]}
+      entries={[
+        {
+          position: 1,
+          message_kind: "request",
+          timestamp: time,
+          parts: [
+            {
+              kind: "user",
+              text: "Private thread report",
+              metadata: { display: false },
+            },
+          ],
+        },
+      ]}
+      publications={[
+        {
+          ...publications[2],
+          text: "Before the loaded page",
+          created_at: new Date(Date.parse(time) - 1000).toISOString(),
+        },
+        publications[1],
+      ]}
+    />,
+  );
+  expect(screen.getByText("Verified.")).toBeTruthy();
+  expect(screen.queryByText("Before the loaded page")).toBeNull();
+  expect(screen.queryByText("Private thread report")).toBeNull();
+});
+
+it("keeps intermediate Bot prose outside the work fold after checkpoint", () => {
+  render(
+    <ConversationTranscript
+      threadId="thread_bot"
+      localInputs={[]}
+      blocks={[]}
+      entries={[
+        entries[0],
+        {
+          ...entries[1],
+          parts: [
+            {
+              kind: "assistant",
+              text: "Investigating.",
+              display_id: "progress",
+            },
+            ...entries[1].parts,
+          ],
+        },
+        entries[2],
+      ]}
+      publications={[
+        {
+          ...publications[1],
+          message_id: "progress-msg",
+          text: "Investigating.",
+          display_ids: ["progress"],
+        },
+      ]}
+      turns={[
+        {
+          turn_id: "turn-human",
+          input_position: 0,
+          end_position: 3,
+          final_position: 2,
+          output_position: 2,
+          preview: "Check the result",
+        },
+      ]}
+    />,
+  );
+  expect(screen.getAllByText("Investigating.")).toHaveLength(1);
+  expect(screen.getByText("Verified.")).toBeTruthy();
+  expect(screen.queryByText("Working reasoning")).toBeNull();
+});
+
 it("folds automatic work without a visible human input and retains prose after silent completion", () => {
   const view = render(
     <ConversationTranscript
