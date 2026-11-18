@@ -16,6 +16,10 @@ type FastSelection = bool | Literal["ultrafast"]
 type FastState = Literal["on", "off", "ultrafast", "default"]
 
 
+_ULTRAFAST_PROVIDERS = {"openai", "openai-responses", "openai-codex"}
+_ULTRAFAST_MODELS = {"gpt-6-astra", "gpt-6.1-sol", "gpt-6.2-astra", "gpt-6.2-sol"}
+
+
 class FastControl(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
@@ -84,8 +88,11 @@ def describe_fast(route: str, settings: Mapping[str, JsonValue]) -> FastControl:
     elif _conflict(settings):
         reason = "Fast is controlled by extra_body or extra_headers. Edit the Model configuration first."
     ultrafast_reason = reason
-    if ultrafast_reason is None and route != "openai-codex:gpt-6-astra":
-        ultrafast_reason = "Ultrafast requires GPT-6 Astra through a Codex subscription connection."
+    provider, _, model = route.partition(":")
+    if ultrafast_reason is None and (provider not in _ULTRAFAST_PROVIDERS or model not in _ULTRAFAST_MODELS):
+        ultrafast_reason = (
+            "Ultrafast requires a supported model on an OpenAI Responses or Codex subscription connection."
+        )
     return FastControl(
         supported=reason is None,
         state=fast_state(route, settings),

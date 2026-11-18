@@ -391,21 +391,21 @@ New Codex setup defaults to **Fast**, saving `openai_service_tier: priority`; **
 
 ### Temporary: use `/fast`
 
-| TUI command       | Requested tier                    |
-| ----------------- | --------------------------------- |
-| `/fast`           | Toggle effective priority         |
-| `/fast on`        | `priority`                        |
-| `/fast off`       | `default`                         |
-| `/fast ultrafast` | `ultrafast` for Codex GPT-6 Astra |
-| `/fast reset`     | Inherit the Model file            |
+| TUI command       | Requested tier            |
+| ----------------- | ------------------------- |
+| `/fast`           | Toggle effective priority |
+| `/fast on`        | `priority`                |
+| `/fast off`       | `default`                 |
+| `/fast ultrafast` | `ultrafast`               |
+| `/fast reset`     | Inherit the Model file    |
 
 Off and reset differ when the file specifies priority. The override lasts through `/new` and `/resume` until exit or Agent/Model selection. It leaves thinking unchanged, affects inheriting Markdown children, and leaves independent/auxiliary Models alone. YAML and saved Thread configuration stay unchanged.
 
 Fast is a request setting, not a speed guarantee. The status shows the requested tier; provider support, quota, and charges determine fulfillment. Unsupported tiers follow native behavior without a silent retry at another tier.
 
-### Ultrafast for Codex GPT-6 Astra
+### Ultrafast for OpenAI Responses and Codex
 
-For route `openai-codex:gpt-6-astra`, use `/fast ultrafast` or **Ultrafast** beside **Fast** in WebUI Agent & Model settings. The buttons are mutually exclusive; clicking the active one requests Standard, while **Use default** restores the file. HTTP operations use `fast: "ultrafast"`; boolean/null values retain their existing meaning.
+The OpenAI Responses API (`openai`, `openai-responses`) and Codex subscriptions (`openai-codex`) can request Ultrafast for `gpt-6.2-sol`, `gpt-6.2-astra`, `gpt-6.1-sol`, and `gpt-6-astra`. Use `/fast ultrafast` or **Ultrafast** beside **Fast** in WebUI Agent & Model settings. The buttons are mutually exclusive; clicking the active one requests Standard, while **Use default** restores the file. HTTP operations use `fast: "ultrafast"`; boolean/null values retain their existing meaning.
 
 Harness UI restricts this control to the supported connection, not account eligibility. Confirm access and usage terms with the provider before selecting it. The request changes neither thinking effort nor reasoning mode. To persist it, save `settings.openai_service_tier: ultrafast` in that Model.
 

@@ -42,7 +42,7 @@ export const modelControlMessages = new Set([
   "Thinking controls are not known for this model/adapter. Model settings remain unchanged.",
   "Fast controls are not available for this model connection.",
   "Fast is controlled by extra_body or extra_headers. Edit the Model configuration first.",
-  "Ultrafast requires GPT-6 Astra through a Codex subscription connection.",
+  "Ultrafast requires a supported model on an OpenAI Responses or Codex subscription connection.",
   "Reasoning mode is not available for this model connection.",
   "Reasoning mode is controlled by extra_body. Edit the Model configuration first.",
 ]);

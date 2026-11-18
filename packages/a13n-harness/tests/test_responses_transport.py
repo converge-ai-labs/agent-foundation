@@ -101,7 +101,9 @@ async def consume(model, messages, settings=None):
 async def test_actual_transport_event_without_instrumentation(transport):
     async with endpoint() as (model, _sockets, requests, http_requests):
         executable = HarnessBuilder(instrumentation=None).build(
-            AgentSpec(model_settings={"openai_transport": transport}), model=model, output_type=str
+            AgentSpec(model_settings={"openai_transport": transport, "service_tier": "ultrafast"}),
+            model=model,
+            output_type=str,
         )
         extensions, terminal = await _collect_extensions(executable, "Say OK")
         assert terminal.result.status == "completed"
@@ -117,6 +119,7 @@ async def test_actual_transport_event_without_instrumentation(transport):
         ]
         assert len(requests) == (transport == "websocket")
         assert len(http_requests) == (transport == "http")
+        assert (requests or http_requests)[0]["service_tier"] == "ultrafast"
 
 
 async def test_native_auto_continuation_reuses_socket_with_store_false():

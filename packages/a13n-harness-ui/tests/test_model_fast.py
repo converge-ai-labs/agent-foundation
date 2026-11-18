@@ -118,13 +118,21 @@ def test_codex_ultrafast_selection_replaces_native_tier_without_changing_other_c
     assert fast_state(route, settings) == "ultrafast"
 
 
+@pytest.mark.parametrize("provider", ["openai", "openai-responses", "openai-codex"])
+@pytest.mark.parametrize("model", ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.2-astra", "gpt-6.2-sol"])
+def test_ultrafast_is_available_for_supported_openai_routes(provider, model):
+    route = f"{provider}:{model}"
+    assert describe_fast(route, {}).ultrafast_supported
+    assert apply_fast(route, {}, "ultrafast") == {"service_tier": "ultrafast"}
+
+
 @pytest.mark.parametrize(
     "route",
     [
-        "openai:gpt-6-astra",
-        "openai-responses:gpt-6-astra",
+        "openai:gpt-6-sol",
+        "openai-responses:gpt-6.2-sol-custom",
+        "openai-chat:gpt-6.2-sol",
         "openai-codex:gpt-6-sol",
-        "openai-codex:gpt-6.1-sol",
         "openai-codex:gpt-5.5",
         "anthropic:claude-opus-4-8",
         "google-gla:gemini-2.5-pro",
@@ -140,8 +148,8 @@ def test_ultrafast_is_not_a_generic_fast_or_gpt_prefix_capability(route):
     assert apply_fast(route, {}, True)
 
 
-def test_ultrafast_respects_conflicts_and_strict_override_validation():
-    route = "openai-codex:gpt-6-astra"
+@pytest.mark.parametrize("route", ["openai-responses:gpt-6.2-sol", "openai-codex:gpt-6.2-sol"])
+def test_ultrafast_respects_conflicts_and_strict_override_validation(route):
     settings = {"extra_body": {"service_tier": "priority"}}
     assert not describe_fast(route, settings).ultrafast_supported
     with pytest.raises(CompositionError):
@@ -156,7 +164,8 @@ def test_ultrafast_respects_conflicts_and_strict_override_validation():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("selected,tier", [("ultrafast", "ultrafast"), (True, "priority"), (False, "default")])
-async def test_codex_native_request_serializes_speed_and_routing_hint(selected, tier):
+@pytest.mark.parametrize("provider", ["openai-responses", "openai-codex"])
+async def test_openai_native_request_serializes_speed(provider, selected, tier):
     import json
     from types import SimpleNamespace
     from typing import cast
@@ -166,6 +175,8 @@ async def test_codex_native_request_serializes_speed_and_routing_hint(selected, 
     from a13n_harness.models.codex import CodexRequestModel
     from a13n_harness_ui.model_controls import ModelControlSelection, apply_model_controls
     from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
     from pydantic_ai.settings import ModelSettings
 
@@ -173,7 +184,7 @@ async def test_codex_native_request_serializes_speed_and_routing_hint(selected, 
     response = {
         "id": "resp_fixture",
         "created_at": 1,
-        "model": "gpt-6-astra",
+        "model": "gpt-6.2-sol",
         "object": "response",
         "output": [],
         "parallel_tool_calls": True,
@@ -202,22 +213,28 @@ async def test_codex_native_request_serializes_speed_and_routing_hint(selected, 
         save=AsyncMock(),
     )
     settings = apply_model_controls(
-        "openai-codex:gpt-6-astra",
+        f"{provider}:gpt-6.2-sol",
         {"openai_service_tier": "ultrafast", "openai_reasoning_summary": "detailed"},
         ModelControlSelection(fast=selected, thinking="high"),
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        model = CodexRequestModel(
-            "gpt-6-astra", credential_source=source, http_client=client, thread_id="thread-fixture"
-        )
+        if provider == "openai-codex":
+            model = CodexRequestModel(
+                "gpt-6.2-sol", credential_source=source, http_client=client, thread_id="thread-fixture"
+            )
+        else:
+            model = OpenAIResponsesModel("gpt-6.2-sol", provider=OpenAIProvider(api_key="test", http_client=client))
         async with model.request_stream([], cast(ModelSettings, settings), ModelRequestParameters()) as stream:
             async for _ in stream:
                 pass
     assert len(requests) == 1
     body = json.loads(requests[0].content)
     assert body["service_tier"] == tier
-    assert body["model"] == "gpt-6-astra"
+    assert body["model"] == "gpt-6.2-sol"
     assert body["reasoning"]["effort"] == "high"
     assert body["reasoning"]["summary"] == "detailed"
-    assert requests[0].headers["x-codex-routing-hint"] == f"model=gpt-6-astra;tier={tier}"
+    if provider == "openai-codex":
+        assert requests[0].headers["x-codex-routing-hint"] == f"model=gpt-6.2-sol;tier={tier}"
+    else:
+        assert requests[0].url.path == "/v1/responses"
     source.save.assert_not_called()

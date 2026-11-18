@@ -902,7 +902,7 @@
   "Thinking controls are not known for this model/adapter. Model settings remain unchanged.": "此模型或适配器的思考选项尚不明确。模型设置保持不变。",
   "Fast controls are not available for this model connection.": "此模型连接不支持快速模式。",
   "Fast is controlled by extra_body or extra_headers. Edit the Model configuration first.": "快速模式由 extra_body 或 extra_headers 控制。请先编辑模型配置。",
-  "Ultrafast requires GPT-6 Astra through a Codex subscription connection.": "超快模式需要通过 Codex 订阅连接使用 GPT-6 Astra。",
+  "Ultrafast requires a supported model on an OpenAI Responses or Codex subscription connection.": "超快模式需要通过 OpenAI Responses 或 Codex 订阅连接使用受支持的模型。",
   "Reasoning mode is not available for this model connection.": "此模型连接不支持推理模式。",
   "Reasoning mode is controlled by extra_body. Edit the Model configuration first.": "推理模式由 extra_body 控制。请先编辑模型配置。",
   "Adaptive - {{level}}": "自适应 - {{level}}",
