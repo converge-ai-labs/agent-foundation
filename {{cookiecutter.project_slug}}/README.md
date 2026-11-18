@@ -28,7 +28,7 @@ The GitHub Actions workflow runs these build/test steps on pushes and pull reque
 
 ## Open the App in Console
 
-1. Prepare and start a Service checkout at `.service-ref` using its \[local development guide\](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/dev/service/README.md). Use `make dev-status` in that checkout to discover its URL.
+1. Prepare and start a Service checkout at `.service-ref` using its [local development guide](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/dev/service/README.md). Use `make dev-status` in that checkout to discover its URL.
 2. Install this plugin into that checkout's Service environment with `make install HOST_PYTHON=/absolute/path/to/host/.venv/bin/python`.
 3. Restart Service using that prepared environment. For the source development launcher, run `PATH="$PWD/.venv/bin:$PATH" make dev TRACES=none` from the host checkout so dependency synchronization does not remove the additional plugin.
 4. In Console, open **Settings → Organization → App plugins**, enable this App, and then open it under **Apps** in a workspace. Its route is `/workspace/{workspaceId}/apps/{{ cookiecutter.app_id }}/overview`.
