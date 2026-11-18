@@ -96,6 +96,22 @@ async def test_thread_repository_keyset_is_stable_when_newer_threads_arrive(tmp_
         assert total == 4
 
 
+@pytest.mark.parametrize("sort", ["updated", "activity", "touched"])
+async def test_project_pages_keep_tied_threads_in_id_order(tmp_path, sort):
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        for thread_id, project in (("t2", "p"), ("t4", "other"), ("t1", "p"), ("t3", "p")):
+            await store.threads.create(
+                thread_id=thread_id, configuration=_configuration(project), initial_state=_initial(), created_at=now
+            )
+        first, total = await store.threads.list(project_id="p", sort=sort, limit=2)
+        assert [item.thread_id for item in first] == ["t3", "t2"]
+        assert total == 3
+        second, total = await store.threads.list(project_id="p", sort=sort, limit=2, before=(now, "t2"))
+        assert [item.thread_id for item in second] == ["t1"]
+        assert total == 3
+
+
 async def test_child_execution_repository_has_parent_scoped_keyset_pages(tmp_path: Path) -> None:
     start = datetime(2026, 1, 1, tzinfo=UTC)
     composition = ObjectRef(

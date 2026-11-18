@@ -348,8 +348,7 @@ class ImmutableObjectStore:
                     "Staged immutable object did not verify to its source envelope.",
                     code="object_staging_mismatch",
                 )
-            del staged
-            return self._publish_stage(stage, envelope)
+            return self._publish_stage(stage, staged)
         finally:
             stage.unlink(missing_ok=True)
 
@@ -369,18 +368,11 @@ class ImmutableObjectStore:
         try:
             os.link(stage, target)
         except FileExistsError:
-            published = self._read_ref(reference)
-        else:
-            if os.name != "nt":
-                target.chmod(0o600)
-            published = self._read_path(target)
-        if published.ref != reference:
-            raise ObjectIntegrityError(
-                "Published immutable object does not match its expected reference.",
-                code="object_publication_mismatch",
-                details={"logical_digest": reference.logical_digest},
-            )
-        return published
+            return self._read_ref(reference)
+        # The new hard link names the very inode verified before publication.
+        if os.name != "nt":
+            target.chmod(0o600)
+        return envelope
 
     def _read_ref(self, reference: ObjectRef) -> ObjectEnvelope:
         envelope = self._read_path(self._path_for(reference))

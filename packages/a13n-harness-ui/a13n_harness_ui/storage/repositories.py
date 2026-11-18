@@ -610,7 +610,7 @@ class ThreadRepository:
             "touched": func.coalesce(ThreadRecord.touched_at, ThreadRecord.created_at),
         }[sort]
         async with short_session(self._sessions) as session:
-            statement = select(ThreadRecord)
+            statement = select(ThreadRecord.thread_id)
             count_statement = select(func.count()).select_from(ThreadRecord)
             if project_id is not None or project_ids is not None or projectless:
                 statement = statement.join(
@@ -671,30 +671,17 @@ class ThreadRepository:
                         ),
                     )
                 )
-            records = tuple(
-                (
-                    await session.execute(
-                        statement.order_by(order_time.desc(), ThreadRecord.thread_id.desc()).limit(limit)
-                    )
-                ).scalars()
+            # Sort and limit narrow keys before fetching transcript excerpts and JSON.
+            order = (order_time.desc(), ThreadRecord.thread_id.desc())
+            page = statement.order_by(*order).limit(limit)
+            rows = await session.execute(
+                select(ThreadRecord, ThreadConfigurationRecord)
+                .outerjoin(ThreadConfigurationRecord, ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id)
+                .where(ThreadRecord.thread_id.in_(page))
+                .order_by(*order)
             )
-            configuration_rows = (
-                ()
-                if not records
-                else tuple(
-                    (
-                        await session.execute(
-                            select(ThreadConfigurationRecord).where(
-                                ThreadConfigurationRecord.thread_id.in_(tuple(record.thread_id for record in records))
-                            )
-                        )
-                    ).scalars()
-                )
-            )
-            configurations = {row.thread_id: row for row in configuration_rows}
             values: list[Thread] = []
-            for record in records:
-                configuration = configurations.get(record.thread_id)
+            for record, configuration in rows:
                 if configuration is None:
                     raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
                 values.append(_thread_value(record, _configuration_value(configuration)))

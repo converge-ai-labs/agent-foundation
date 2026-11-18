@@ -65,6 +65,19 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
         assert paths[0].stat().st_mode & 0o777 == 0o600
 
 
+async def test_publish_verifies_the_winning_inode_after_a_link_collision(tmp_path, monkeypatch):
+    store, layout = _object_store(tmp_path)
+
+    def lose_race(stage, target):
+        target.write_bytes(b"corrupt competing object")
+        raise FileExistsError
+
+    monkeypatch.setattr(os, "link", lose_race)
+    with pytest.raises(ObjectIntegrityError):
+        await store.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload={})
+    assert not list(layout.staging.iterdir())
+
+
 @pytest.mark.parametrize("codec", ["1", "2"])
 async def test_object_verification_encodes_payload_once_and_preserves_canonical_identity(tmp_path, monkeypatch, codec):
     import hashlib
@@ -91,7 +104,7 @@ async def test_object_verification_encodes_payload_once_and_preserves_canonical_
     envelope = await store.publish(
         object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version=codec
     )
-    assert payload_encodes == 3  # Source, verified staging file, verified published file.
+    assert payload_encodes == 2  # Source and verified staging inode.
     path = next(layout.objects.rglob("*.json.zst"))
     raw = zstandard.ZstdDecompressor().decompress(path.read_bytes())
     dumped = envelope.model_dump(mode="json")
