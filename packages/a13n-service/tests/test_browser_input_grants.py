@@ -70,9 +70,9 @@ async def test_startup_delay_does_not_extend_absolute_input_deadline(supervisor,
     monkeypatch.setattr(guest.time, "time", lambda: wall[0])
     original = instance.wait_ready
 
-    async def delayed(*args):
+    async def delayed(*args, **kwargs):
         wall[0], clock[0] = 1010, 110
-        await original(*args)
+        await original(*args, **kwargs)
 
     monkeypatch.setattr(instance, "wait_ready", delayed)
     with pytest.raises(guest.Refused, match="grant_expired"):

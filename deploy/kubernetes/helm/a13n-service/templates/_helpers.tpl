@@ -75,7 +75,7 @@ volumeMounts:
   - name: monitoring
     mountPath: /var/lib/a13n-monitoring
   {{- end }}
-  {{- if and .kubernetesManagement .Values.kubernetesEnvironments.enabled }}
+  {{- if and .kubernetesManagement (or .Values.kubernetesEnvironments.enabled (and (not .environmentOnly) .Values.kubernetesBrowsers.enabled)) }}
   - name: kubernetes-api
     mountPath: /var/run/secrets/kubernetes.io/serviceaccount
     readOnly: true

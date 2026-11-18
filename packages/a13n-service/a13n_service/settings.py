@@ -27,6 +27,7 @@ from pydantic_ai.exceptions import UserError
 from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
 
 from a13n_service.infra.outbox import OutboxKind, Policy
+from a13n_service.providers.browser.kubernetes import Cluster as BrowserCluster
 from a13n_service.providers.collectors import Configuration as CollectorConfiguration
 from a13n_service.providers.collectors import Kind as CollectorKind
 from a13n_service.providers.metrics import Endpoint as MetricsEndpoint
@@ -431,6 +432,7 @@ class Browsers(Section):
     root: Path | None = None
     native_enabled: bool = False
     native_chromium: str = "chromium"
+    kubernetes_clusters: dict[str, BrowserCluster] = Field(default_factory=dict)
     docker_host: str | None = None
 
     @model_validator(mode="after")

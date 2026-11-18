@@ -329,6 +329,22 @@ allow_port_forward = true
 
 实例存在期间，保持 `ownership_id`、集群配置名称、命名空间和沙箱身份稳定。移除集群配置或权限前，通过 Service 删除实例，并保留数据库及加密密钥环以便恢复。移除部署资源不会删除实例 Pod 或保留的存储卷。原生配方、存储处置、诊断和调试保留见 [Kubernetes 沙箱](environments.md#kubernetes-sandboxes)。
 
+## Kubernetes 浏览器
+
+Kubernetes 浏览器与 Kubernetes 环境独立启用。生产集群需要 Kubernetes 1.32 或更新版本、执行 NetworkPolicy 的 CNI，以及支持所选访问模式的 StorageClass。先创建专用的浏览器命名空间，再在部署 Service 时加入以下 Helm values：
+
+```yaml
+kubernetesBrowsers:
+  enabled: true
+  namespace: agent-browsers
+```
+
+默认镜像为 `ghcr.io/converge-ai-labs/a13n-browser:<chart-appVersion>`，内置 Chromium 和 VNC。不填 tag 时，已发布的 Helm chart 使用同版本的 Browser 镜像，不追踪 `latest`。源码 checkout 的 `appVersion` 是 `dev`；在 kind 本地构建并加载镜像时，使用 `K8S_BROWSERS=1 make k8s-up k8s-smoke`。镜像仓库可通过 `kubernetesBrowsers.image.repository` 覆盖，`digest` 优先于 `tag`。
+
+默认使用 `ReadWriteOncePod` 与集群默认 StorageClass。可用 `kubernetesBrowsers.storage.className` 指定 StorageClass；kind 的 local-path 存储应改用 `ReadWriteOnce`。保持 CDP 和 VNC 端口私有，并按部署策略限制浏览器出站网络。Helm 输出 Console 的 provider 配置；见[浏览器使用指南](browsers.md#kubernetes)。
+
+如浏览器无法准备完成，在工作负载命名空间检查 `kubectl -n agent-browsers get pods,pvc,statefulsets` 和 Pod 事件。禁用功能或卸载 chart 前，先在 Service 中释放浏览器。完整 values、权限和回收约束见[部署说明](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/kubernetes/README.md#kubernetes-browsers)。
+
 ## 工作空间自动配置
 
 - [配置工作空间自动资源](workspace-provisioning.md)

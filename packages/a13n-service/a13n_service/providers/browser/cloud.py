@@ -167,8 +167,9 @@ async def _connect_cdp(policy: EndpointPolicy, url: str, *, headers: dict[str, s
     except (EndpointPolicyError, ValueError):
         raise BrowserProviderError("cloud_endpoint_denied", certainty="not_dispatched") from None
     try:
-        options = {"headers": headers} if headers is not None else {}
-        return await Chromium.connect(url, timeout=15, discover=False, **options)
+        if headers is None:
+            return await Chromium.connect(url, timeout=15, discover=False)
+        return await Chromium.connect(url, timeout=15, discover=False, headers=headers)
     except Exception:
         # Native transport errors can include the credential-bearing URL.
         raise BrowserProviderError("cloud_connect_failed") from None

@@ -188,6 +188,8 @@ def kind_smoke() -> None:
         subprocess.run(
             ["uv", "run", "--locked", "python", "-m", "e2e.service.deployed_kubernetes"], cwd=ROOT, check=True
         )
+    if os.environ.get("K8S_BROWSERS") == "1":
+        subprocess.run(["uv", "run", "--locked", "python", "-m", "e2e.service.deployed_browser"], cwd=ROOT, check=True)
 
 
 def main() -> None:

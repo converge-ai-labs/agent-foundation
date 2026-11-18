@@ -47,7 +47,7 @@ subjects:
 
 {{/* Native projected credentials rotate in place; only runtime Service containers mount them. */}}
 {{- define "a13n.kubernetesVolumes" -}}
-{{- if .Values.kubernetesEnvironments.enabled }}
+{{- if or .Values.kubernetesEnvironments.enabled (and (not .environmentOnly) .Values.kubernetesBrowsers.enabled) }}
 - name: kubernetes-api
   projected:
     defaultMode: 0440

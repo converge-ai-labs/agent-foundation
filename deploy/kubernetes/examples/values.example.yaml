@@ -71,3 +71,16 @@ resources:
     memory: 2Gi
 # Increase with Service shutdown_timeout or worker drain_seconds settings.
 terminationGracePeriodSeconds: 60
+
+# Optional Chromium and VNC workloads. If enabled, first create this namespace
+# and select a suitable StorageClass. Kubernetes 1.32+ and NetworkPolicy enforcement are required.
+kubernetesBrowsers:
+  enabled: false
+  namespace: agent-browsers
+  image:
+    repository: ghcr.io/converge-ai-labs/a13n-browser
+    tag: "" # Use the matching published chart appVersion; set explicitly for checkout charts.
+  storage:
+    className: null # Use the cluster default; select a class that supports ReadWriteOncePod.
+    accessMode: ReadWriteOncePod
+    size: 2Gi
