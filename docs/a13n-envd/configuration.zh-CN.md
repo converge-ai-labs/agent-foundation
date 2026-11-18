@@ -46,7 +46,7 @@ export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits"
 a13n-envd
 ```
 
-标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS` 和 `A13N_ENVD_MAX_LIFETIME_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
+标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS`、`A13N_ENVD_MAX_LIFETIME_MS` 和 `A13N_ENVD_VM_STARTUP_TIMEOUT_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
 
 ## 连接 Service
 
@@ -316,6 +316,7 @@ a13n-envd --version
 | `default_working_directory`                  | 未设置时使用启动 cwd                                                                                                 |
 | `directory_discovery`                        | `true`                                                                                                               |
 | `idle_timeout_ms`                            | 默认会话空闲寿命：`3600000`（一小时）                                                                                |
+| `vm_startup_timeout_ms`                      | `120000`；设备级 VM 启动准入预算，必须为正数，单位为毫秒                                                             |
 | `max_lifetime_ms`                            | 可选正数最大会话寿命；省略表示无限                                                                                   |
 | `execution.uid`, `execution.gid`             | 可选、成对的 Linux 原生 ID；省略时保留启动者身份，包括 root                                                          |
 | `execution.allow_sudo`                       | `true`；原生 sudoers 仍控制授权                                                                                      |
@@ -326,6 +327,8 @@ a13n-envd --version
 | `computer_use_permission_timeout_ms`         | `120000`；开始任何 EIP 传输前，等待 macOS 权限或 X11/Windows 桌面就绪的正数启动期限                                  |
 | `trusted_executable_roots`, `shell_profiles` | 空；除非启用 Full Control，否则命令方法禁用                                                                          |
 | `limits`                                     | 设备总限制和逐会话限制                                                                                               |
+
+`vm_startup_timeout_ms` 默认为 `120000`，必须为正数。它设置一个设备级 VM 准入预算，覆盖准备、镜像获取、VM 启动和 worker 连接。冷缓存镜像拉取较慢时，使用更大的值，例如在 `--config` 文件中设置 `{"vm_startup_timeout_ms":600000}`，或设置 `A13N_ENVD_VM_STARTUP_TIMEOUT_MS=600000`。将客户端打开 Session 的就绪超时设置为高于此预算，以接收守护进程按阶段区分的超时错误。超时后，正在进行的 SDK 调用仍保持受管理状态；清理完成后才释放容量。此设置不改变原生 Session 准入或 Session 生命周期。
 
 `session.open.configuration.lifecycle` 省略或为 null 时，使用 `idle_timeout_ms` 和 `max_lifetime_ms` 默认值。显式会话生命周期覆盖这些默认值，并在该会话内保持不变。
 
