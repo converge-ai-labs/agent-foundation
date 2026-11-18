@@ -2,7 +2,10 @@
 
 import httpx2
 import pytest
+from a13n_service.providers.browser.cloud import CloudflareConfiguration
 from pydantic import SecretStr
+
+from .conftest import cloud_test_setting
 
 
 @pytest.mark.anyio
@@ -11,6 +14,10 @@ async def test_cloud_list_sessions(cloud_browser_credentials: tuple[str, SecretS
     if provider == "browserbase":
         url = "https://api.browserbase.com/v1/sessions"
         headers = {"X-BB-API-Key": credential.get_secret_value()}
+    elif provider == "cloudflare":
+        account = CloudflareConfiguration(account_id=cloud_test_setting("CLOUDFLARE_ACCOUNT_ID")).account_id
+        url = f"https://api.cloudflare.com/client/v4/accounts/{account}/browser-rendering/devtools/session?limit=1"
+        headers = {"Authorization": f"Bearer {credential.get_secret_value()}"}
     else:
         url = "https://api.onkernel.com/browsers?limit=1"
         headers = {"Authorization": f"Bearer {credential.get_secret_value()}"}

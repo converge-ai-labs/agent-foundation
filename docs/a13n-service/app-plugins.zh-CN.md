@@ -7,6 +7,19 @@ App 插件为 Service 添加业务 API、组织范围后台工作、Harness fact
 
 App 插件在 Service 进程内运行，拥有进程权限。安装前应审查软件包。[MCP Apps](mcp-apps.md) 是用于交互式工具结果的另一套协议。
 
+## 部署 App 插件
+
+所有 `control` 和 `worker` 进程都使用相同的一组 App 包和版本，包括只提供 Console 页面或管理 API 的 App。`all` 进程使用同一组包，同时承担两种角色的职责。一个 Service Python 环境可以安装多个 App 包。
+
+- **自定义 Service 镜像：** 构建镜像时，将选定的 App wheel 及其依赖安装到 Service 使用的 Python 环境。`control` 和 `worker` 使用同一个镜像。如果 App 提供前端，预构建的资源随 wheel 一起分发，无需重新构建 Console。
+- **本地 Service：** 将选定的 wheel 安装到启动 Service 的 Python 环境。例如，将 wheel 放入 `./app-wheels/`，再运行 `uv pip install --python /path/to/service/.venv/bin/python ./app-wheels/*.whl`。
+
+重启 Service，发现已安装的包。安装后，App 在整个部署中可用；组织管理员仍需逐个启用。新安装的 App 默认禁用。
+
+`control` 提供 App API 和 Console 资源、运行组织级后台扫描，并按配置执行自动迁移。`worker` 执行 agent 及其使用的 App Harness 扩展。它在启动时检查 App 数据库版本，但不执行迁移或组织级后台扫描。对于带数据库迁移的 App，在启动依赖新 schema 的 worker 前，先由 `control`、`all` 或专用迁移任务完成迁移。
+
+无论组织是否启用 App，其 `startup` 回调都会在每个 Service 进程中运行。用它初始化进程级资源；组织级后台工作应放在 sweep 中，而不是 `startup` 中。
+
 ## 创建独立 App
 
 [App 插件模板](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin)生成独立项目，包含 Python 后端、由 Host 挂载的 Console 前端、Makefile 和 GitHub Actions 检查。模板不包含许可证；分发项目前请自行选择许可条款。现有 [Reports 示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin)仍是独立的全栈集成示例。

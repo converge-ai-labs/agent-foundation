@@ -7,18 +7,19 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 
 ## 选择浏览器
 
-自托管选 **Docker**；希望浏览器运行在云端，选 **Browserbase、Kernel 或 Browser Use Cloud**；已有自行运维的浏览器，使用**外部 CDP** 接入。**Native** 用于在 Service 主机上调试。
+自托管选 **Docker**；希望浏览器运行在云端，选 **Browserbase、Kernel、Browser Use Cloud 或 Cloudflare Browser Run**；已有自行运维的浏览器，使用**外部 CDP** 接入。**Native** 用于在 Service 主机上调试。
 
-六种方式都支持相同的核心 agent 浏览器工具。下表列出 Service 已集成的附加能力。
+七种方式都支持相同的核心 agent 浏览器工具。下表列出 Service 已集成的附加能力。
 
-| 方案              | 浏览器运行位置          | 停止后启动，保留 profile | Console 查看与接管 | 上传/下载 |
-| ----------------- | ----------------------- | ------------------------ | ------------------ | --------- |
-| Docker            | 自有 Linux 主机的容器内 | 支持                     | 支持               | 支持      |
-| Native            | 自有 Linux Service 主机 | 支持                     | 支持               | 支持      |
-| Browserbase       | Browserbase 云端        | 不支持                   | 不支持             | 不支持    |
-| Kernel            | Kernel 云端             | 不支持                   | 不支持             | 不支持    |
-| Browser Use Cloud | Browser Use 云端        | 不支持                   | 不支持             | 不支持    |
-| 外部 CDP          | 已有 Chromium 实例      | 由外部管理               | 不支持             | 不支持    |
+| 方案                   | 浏览器运行位置          | 停止后启动，保留 profile | Console 查看与接管 | 上传/下载 |
+| ---------------------- | ----------------------- | ------------------------ | ------------------ | --------- |
+| Docker                 | 自有 Linux 主机的容器内 | 支持                     | 支持               | 支持      |
+| Native                 | 自有 Linux Service 主机 | 支持                     | 支持               | 支持      |
+| Browserbase            | Browserbase 云端        | 不支持                   | 不支持             | 不支持    |
+| Kernel                 | Kernel 云端             | 不支持                   | 不支持             | 不支持    |
+| Browser Use Cloud      | Browser Use 云端        | 不支持                   | 不支持             | 不支持    |
+| Cloudflare Browser Run | Cloudflare 云端         | 不支持                   | 不支持             | 不支持    |
+| 外部 CDP               | 已有 Chromium 实例      | 由外部管理               | 不支持             | 不支持    |
 
 Docker 和 Native 停止后保留 cookie 和登录状态。云浏览器集成使用临时 profile，随供应商会话结束而删除。外部 CDP 的浏览器生命周期和 profile 由你管理。
 
@@ -41,7 +42,7 @@ Run 完成后，浏览器可以继续复用，保留时间取决于保留策略�
 
 ### 配置云浏览器
 
-Browserbase、Kernel 和 Browser Use Cloud 负责运行浏览器，Service 主机无需安装 Docker 或 Chromium。通过 Console 或 `POST /api/v1/browser-providers` 创建账号，将 API 密钥保存在 `credential` 中，并在 Service 出站策略中允许供应商 API 和安全浏览器端点。
+Browserbase、Kernel、Browser Use Cloud 和 Cloudflare Browser Run 负责运行浏览器，Service 主机无需安装 Docker 或 Chromium。通过 Console 或 `POST /api/v1/browser-providers` 创建账号，将 API 密钥保存在 `credential` 中，并在 Service 出站策略中允许供应商 API 和安全浏览器端点。
 
 | 账号字段                 | Browserbase              | Kernel                                           |
 | ------------------------ | ------------------------ | ------------------------------------------------ |
@@ -54,6 +55,8 @@ Browserbase、Kernel 和 Browser Use Cloud 负责运行浏览器，Service 主�
 使用项目范围的 Kernel 密钥时，将 `project_id: null` 替换为密钥实际所属的项目 ID。Service 在使用会话前验证密钥的组织和项目。Kernel 的 recipe 还接受 `headless`，默认值为 `true`。
 
 使用 Browser Use Cloud 时，选择类型 `browser_use`，将 `config` 设为 `{"project_id": "..."}`，将 `credential` 设为 `{"api_key": "..."}`。recipe 的 `timeout_minutes` 为供应商会话超时（1–240 分钟，默认 5 分钟）。Service 在生命周期操作前验证密钥所属项目。
+
+使用 Cloudflare Browser Run 时，选择类型 `cloudflare`，将 `config` 设为 `{"account_id": "..."}`，将 `credential` 设为 `{"api_key": "..."}`，填入具有 `Browser Rendering - Edit` 权限的 API Token。允许访问 `api.cloudflare.com`，无需部署 Worker。recipe 的 `keep_alive_seconds` 是供应商空闲超时（10–1200 秒，默认 60 秒）。Cloudflare 的 Live View 不接入 Service 的查看和人工接管。
 
 供应商超时与 Service 的[空闲保留策略](#choose-preparation-and-retention)相互独立。延长 Service 保留时间不会延长供应商会话。不要将 API 密钥或浏览器连接 URL 放入 agent 消息。
 
@@ -160,11 +163,11 @@ Service 加密保存端点和请求头，普通读取不会返回它们。更换
 
 #### 保留策略
 
-| 来源                                     | 默认空闲处理                        | 处理后的 profile |
-| ---------------------------------------- | ----------------------------------- | ---------------- |
-| Docker / Native                          | 1800 秒后停止；保留至显式释放       | 保留             |
-| Browserbase / Kernel / Browser Use Cloud | 1800 秒后释放                       | 随供应商会话删除 |
-| 外部 CDP                                 | 保留 Service 访问权限，直到显式释放 | 由外部管理       |
+| 来源                                                              | 默认空闲处理                        | 处理后的 profile |
+| ----------------------------------------------------------------- | ----------------------------------- | ---------------- |
+| Docker / Native                                                   | 1800 秒后停止；保留至显式释放       | 保留             |
+| Browserbase / Kernel / Browser Use Cloud / Cloudflare Browser Run | 1800 秒后释放                       | 随供应商会话删除 |
+| 外部 CDP                                                          | 保留 Service 访问权限，直到显式释放 | 由外部管理       |
 
 Docker 和 Native 可分别设置 `stop_after_seconds` 与 `delete_after_seconds`。两者都接受 60–604800 秒或 `null`，从最后一次获准使用开始计时。停止不会重置删除计时；两项操作同时到期时，优先删除。
 
@@ -230,7 +233,7 @@ browser_control_seconds = 300
 
 选择恢复操作前，先查看浏览器的 `status`、`control`、`expires_at` 和 `failure`。
 
-- **云端创建结果未知。** 只有确认原请求未发送，或已被明确拒绝且未创建会话时，Service 才会重试创建。否则，在创建替代浏览器前先检查供应商账号：原会话可能仍在运行并产生费用。未收到会话 ID 时，Kernel 无法自动定位或释放会话。Browserbase 和 Browser Use Cloud 可按精确分配 metadata 查找，但没有匹配结果时，清理仍无法确认。
+- **云端创建结果未知。** 只有确认原请求未发送，或已被明确拒绝且未创建会话时，Service 才会重试创建。否则，在创建替代浏览器前先检查供应商账号：原会话可能仍在运行并产生费用。未收到会话 ID 时，Kernel 和 Cloudflare Browser Run 无法自动定位或释放会话。Browserbase 和 Browser Use Cloud 可按精确分配 metadata 查找，但没有匹配结果时，清理仍无法确认。
 - **外部连接失败。** `browser_connection_failed` 本身不会将浏览器标记为丢失。重连同一实例，再重新观察。网关若静默替换浏览器，就无法保持连续性。失败或结果未知的操作不会自动重放。
 - **接管停留在 `draining`。** 此前获准的工作尚未结束，超时不能证明操作已完成。在能够确认尚未发生任何 viewer 授权、且活跃工作允许的情况下，可通过归还取消接管；取消不会宣告浏览器可用，也不会清除结果未知的调用。
 - **归还停留在 `returning`。** Viewer 撤销或标签页同步尚未完成，因此浏览器工具继续被阻止。Provider 禁用、控制方失权或 viewer 到期也可能触发归还。Run 和活跃操作结束后，具有工作空间写入权限的用户可改为释放托管浏览器。终止失败时保持 `deleting`，可重试释放。

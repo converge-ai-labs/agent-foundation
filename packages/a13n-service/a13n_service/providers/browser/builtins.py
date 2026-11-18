@@ -29,7 +29,22 @@ def builtins(settings: Browsers, response_bytes: int = 16777216) -> tuple[Browse
         assert credential is not None
         return cloud.BrowserUse(config, cloud.CloudAPI("browser_use", credential, policy, max_bytes=response_bytes))
 
+    async def open_cloudflare(
+        config: cloud.CloudflareConfiguration, credential: cloud.CloudCredential | None, policy: EndpointPolicy
+    ):
+        assert credential is not None
+        return cloud.Cloudflare(config, cloud.CloudAPI("cloudflare", credential, policy, max_bytes=response_bytes))
+
     definitions: list[BrowserProviderDefinition] = [
+        BrowserProviderDefinition(
+            type="cloudflare",
+            display_name="Cloudflare Browser Run",
+            configuration_model=cloud.CloudflareConfiguration,
+            credential_model=cloud.CloudCredential,
+            recipe_model=cloud.CloudflareRecipe,
+            backend_identity=lambda config: {"account_id": config.account_id},
+            provider_factory=open_cloudflare,
+        ),
         BrowserProviderDefinition(
             type="browserbase",
             display_name="Browserbase",

@@ -18,6 +18,7 @@ from a13n_service.providers.registry import Registry
 from a13n_service.runs.browsers import execution, lifecycle
 from a13n_service.settings import Browsers
 
+from .conftest import cloud_test_setting
 from .test_browsers import bound_run, command
 
 pytestmark = pytest.mark.anyio
@@ -30,11 +31,13 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
         "browserbase": "https://api.browserbase.com",
         "kernel": "https://api.onkernel.com",
         "browser_use": "https://api.browser-use.com",
+        "cloudflare": "https://api.cloudflare.com",
     }[kind]
     headers = {
         "browserbase": {"X-BB-API-Key": key},
         "kernel": {"Authorization": f"Bearer {key}"},
         "browser_use": {"X-Browser-Use-API-Key": key},
+        "cloudflare": {"Authorization": f"Bearer {key}"},
     }[kind]
     async with httpx2.AsyncClient(base_url=base, headers=headers, timeout=30, follow_redirects=False) as api:
         if kind == "browserbase":
@@ -49,6 +52,11 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
             assert result.status_code == 200
             config = {"project_id": result.json()["projectId"]}
             recipe = {"timeout_minutes": 1}
+        elif kind == "cloudflare":
+            account = cloud.CloudflareConfiguration(account_id=cloud_test_setting("CLOUDFLARE_ACCOUNT_ID")).account_id
+            config = {"account_id": account}
+            recipe = {"keep_alive_seconds": 60}
+            devtools = f"/client/v4/accounts/{account}/browser-rendering/devtools"
         else:
             result = await api.get("/auth/context")
             assert result.status_code == 200
@@ -64,12 +72,14 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
         captured = {}
         request = cloud.CloudAPI.request
 
+        create_path = (
+            f"{devtools}/browser"
+            if kind == "cloudflare"
+            else {"browserbase": "/v1/sessions", "kernel": "/browsers", "browser_use": "/api/v4/browsers"}[kind]
+        )
+
         async def observe_request(self, method, path, **kwargs):
-            is_create = (
-                method == "POST"
-                and path
-                == {"browserbase": "/v1/sessions", "kernel": "/browsers", "browser_use": "/api/v4/browsers"}[kind]
-            )
+            is_create = method == "POST" and path == create_path
             if is_create:
                 if kind == "browser_use":
                     allocation = kwargs["body"]["metadata"]["a13n_allocation"]
@@ -85,7 +95,7 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
             response = await request(self, method, path, **kwargs)
             if is_create:
                 data = response.json()
-                captured["id"] = data["session_id" if kind == "kernel" else "id"]
+                captured["id"] = data[{"kernel": "session_id", "cloudflare": "sessionId"}.get(kind, "id")]
             return response
 
         monkeypatch.setattr(cloud.CloudAPI, "request", observe_request)
@@ -161,8 +171,12 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
             assert (await runs_kit.get_run(service, lease.run_id))["status"] == "completed"
             stage = "release"
             await command(service, runs_kit, browser["id"], "release")
-            await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
-            current = (await service.client.get(f"{service.api}/browsers/{browser['id']}")).json()
+            for _ in range(20 if kind == "cloudflare" else 1):
+                await lifecycle.reconcile(service.runtime, browser["workspace_id"], browser["id"])
+                current = (await service.client.get(f"{service.api}/browsers/{browser['id']}")).json()
+                if current["status"] != "deleting" or kind != "cloudflare":
+                    break
+                await asyncio.sleep(1)
             assert current["status"] == "deleted", current.get("failure")
         except Exception as exc:
             exc.add_note(f"live test stage: {stage}")
@@ -193,12 +207,21 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
                     cleanup_error = f"metadata lookup failed: {type(exc).__name__}"
             try:
                 if session_id:
-                    path = {"browserbase": "/v1/sessions/", "kernel": "/browsers/", "browser_use": "/api/v4/browsers/"}[
-                        kind
-                    ] + session_id
+                    if kind == "cloudflare":
+                        session_id = cloud.Cloudflare._id(session_id)
+                        path = f"{devtools}/session/{session_id}"
+                    else:
+                        path = f"{create_path}/{session_id}"
                     for _ in range(20):
                         result = await api.get(path, params={"include_deleted": "true"} if kind == "kernel" else None)
-                        assert result.status_code == 200, "exact supplier cleanup inspection failed"
+                        # Cloudflare can remove the session detail after a confirmed release.
+                        # A bare 404 does not establish cleanup if the release flow failed.
+                        if kind == "cloudflare" and result.status_code == 404 and primary_error is None:
+                            terminal = True
+                            break
+                        assert result.status_code == 200, (
+                            f"exact supplier cleanup inspection returned HTTP {result.status_code}"
+                        )
                         data = result.json()
                         if kind == "browser_use":
                             assert data.get("metadata", {}).get("a13n_allocation") == captured.get("allocation"), (
@@ -209,11 +232,19 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
                             if kind == "kernel"
                             else data.get("status") == "stopped"
                             if kind == "browser_use"
+                            else data is None or (data.get("sessionId") == session_id and bool(data.get("endTime")))
+                            if kind == "cloudflare"
                             else data.get("status") in {"ERROR", "TIMED_OUT", "COMPLETED"}
                         )
                         if terminal:
                             break
-                        if kind == "kernel":
+                        if kind == "cloudflare":
+                            assert data.get("sessionId") == session_id, "cleanup identity mismatch"
+                            closed = await api.delete(f"{create_path}/{session_id}")
+                            if closed.status_code == 200 and closed.json().get("status") == "closed":
+                                terminal = True
+                                break
+                        elif kind == "kernel":
                             await api.delete(path)
                         elif kind == "browser_use":
                             await api.patch(path, json={"action": "stop"})
@@ -224,7 +255,10 @@ async def test_cloud_service_harness_adapter(service, runs_kit, scripted_model, 
                 elif captured.get("dispatched"):
                     cleanup_error = cleanup_error or "supplier create outcome unresolved; manual investigation required"
             except Exception as exc:
-                cleanup_error = f"supplier cleanup failed: {type(exc).__name__}"
+                detail = (
+                    str(exc).splitlines()[0] if isinstance(exc, AssertionError) and str(exc) else type(exc).__name__
+                )
+                cleanup_error = f"supplier cleanup failed: {detail}"
             if cleanup_error:
                 if primary_error is not None:
                     primary_error.add_note(cleanup_error)
