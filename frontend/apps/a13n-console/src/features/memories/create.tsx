@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorNotice, InlineLoading } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
@@ -108,12 +108,13 @@ function CreateForm({
       onCreated(memory);
     },
   });
+  const canCreate = record ? !!provider : validGuidance(draft.guidance);
   return (
     <form
       className={shared.form}
       onSubmit={(event) => {
         event.preventDefault();
-        create.mutate();
+        if (canCreate && !create.isPending) create.mutate();
       }}
     >
       <div className={styles.kind}>
@@ -158,7 +159,9 @@ function CreateForm({
             error={providers.error}
             retry={() => void providers.refetch()}
           />
-          {providers.data && !providers.data.length ? (
+          {providers.isPending ? (
+            <InlineLoading width="12rem" />
+          ) : providers.data?.length === 0 ? (
             <div className={styles.missingProvider}>
               <p className={styles.note}>
                 {t(
@@ -167,24 +170,22 @@ function CreateForm({
               </p>
               <ManageProvidersLink category="memory" />
             </div>
-          ) : (
+          ) : providers.data ? (
             <ChoiceField
               label={t("Memory provider")}
               description={t(
                 "The backend account that keeps the records. It cannot change later.",
               )}
-              placeholder={
-                providers.isPending ? t("Loading…") : t("Select provider")
-              }
+              placeholder={t("Select provider")}
               required
-              value={providerId}
+              value={provider?.id}
               onValueChange={setProviderId}
-              options={(providers.data ?? []).map((item) => ({
+              options={providers.data.map((item) => ({
                 value: item.id,
                 label: `${item.name} · ${typeName(item.type)}`,
               }))}
             />
-          )}
+          ) : null}
           <DisclosureSection
             title={t("Existing namespace")}
             summary={namespace.trim() || t("New namespace")}
@@ -246,7 +247,7 @@ function CreateForm({
       <FormActions
         onCancel={onCancel}
         pending={create.isPending}
-        disabled={record ? !provider : !validGuidance(draft.guidance)}
+        disabled={!canCreate}
         label={t("Create collection")}
       />
     </form>

@@ -901,6 +901,51 @@ it("creates a desktop preset without exposing image or execution controls", asyn
   });
 });
 
+it("distinguishes loading and failure from no matching enabled provider", async () => {
+  const get = state.GET.getMockImplementation()!;
+  let rejectLookup!: (reason: Error) => void;
+  const first = new Promise<never>((_, reject) => {
+    rejectLookup = reject;
+  });
+  let attempts = 0;
+  state.GET.mockImplementation(async (path: string) => {
+    if (path !== "/api/v1/environment-providers") return get(path);
+    if (++attempts === 1) return first;
+    return {
+      data: {
+        items: [
+          {
+            id: "eprov_disabled",
+            name: "Disabled E2B",
+            type: "e2b",
+            enabled: false,
+          },
+          { id: "eprov_other", name: "Docker", type: "docker", enabled: true },
+        ],
+        next_cursor: null,
+      },
+    };
+  });
+  mountCreationPage();
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "Draft");
+  await user.click(await screen.findByRole("button", { name: "E2B" }));
+  const empty = /No enabled provider for this runtime yet/;
+  expect(screen.getByText("Loading…")).toBeTruthy();
+  expect(screen.queryByText(empty)).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Provider" })).toBeNull();
+  rejectLookup(new Error("Provider lookup failed"));
+  const retry = await screen.findByRole("button", { name: "Reload" });
+  expect(screen.queryByText(empty)).toBeNull();
+  await user.click(retry);
+  await screen.findByText(empty);
+  expect(screen.queryByRole("combobox", { name: "Provider" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Manage providers" })).toBeTruthy();
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value,
+  ).toBe("Draft");
+});
+
 it("manages connections in place without losing the template draft", async () => {
   mountCreationPage();
   const user = userEvent.setup();

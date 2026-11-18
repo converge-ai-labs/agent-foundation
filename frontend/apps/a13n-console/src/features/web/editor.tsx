@@ -15,7 +15,7 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
-import { credentialMode } from "../../shared/provider-authentication";
+import { webCredentialState } from "./credential-state";
 import { useCredentialSection } from "../../shared/use-credential-section";
 import {
   FormActions,
@@ -150,14 +150,7 @@ export function WebProviderEditor({
         (readOnly ? (
           <ProviderReadOnly
             enabled={resource.data.value.enabled}
-            credentials={
-              credentialMode(definition, resource.data.value.config) !==
-              "required"
-                ? "not_required"
-                : resource.data.value.credential_configured
-                  ? "configured"
-                  : "not_configured"
-            }
+            credentials={webCredentialState(definition, resource.data.value)}
             onClose={() => state.setOpen(false)}
           />
         ) : (

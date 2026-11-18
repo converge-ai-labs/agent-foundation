@@ -283,6 +283,9 @@ it("points to provider settings when no memory provider is enabled", async () =>
     ),
   ).toBeTruthy();
   expect(
+    within(dialog).queryByRole("combobox", { name: "Memory provider" }),
+  ).toBeNull();
+  expect(
     within(dialog)
       .getByRole("link", { name: "Manage providers" })
       .getAttribute("href"),

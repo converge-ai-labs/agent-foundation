@@ -107,7 +107,7 @@ it("shows workspace providers without offering mutations to a read-only member",
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });
 
-it("localizes built-in browser type labels without refetching or rewriting cached definitions", async () => {
+it("localizes built-in browser and environment type labels without refetching or rewriting cached definitions", async () => {
   const cache = new QueryClient();
   const catalog = {
     items: [
@@ -117,7 +117,13 @@ it("localizes built-in browser type labels without refetching or rewriting cache
     ],
   };
   cache.setQueryData(["browser-provider-types"], catalog);
-  cache.setQueryData(["environment-provider-types"], catalog);
+  const environmentCatalog = {
+    items: [
+      { type: "local", display_name: "Local directory (development only)" },
+      { type: "custom", display_name: "Custom environment" },
+    ],
+  };
+  cache.setQueryData(["environment-provider-types"], environmentCatalog);
   const { result } = renderHook(
     () => ({
       browser: useProviderTypes("browser", false),
@@ -138,7 +144,12 @@ it("localizes built-in browser type labels without refetching or rewriting cache
   expect(
     result.current.browser.data?.items.map((item) => item.display_name),
   ).toEqual(["Docker 浏览器", "本机浏览器", "Custom provider"]);
-  expect(result.current.environment.data).toEqual(catalog);
+  expect(
+    result.current.environment.data?.items.map((item) => item.display_name),
+  ).toEqual(["本地目录（仅用于开发）", "Custom environment"]);
+  expect(cache.getQueryData(["environment-provider-types"])).toEqual(
+    environmentCatalog,
+  );
   expect(cache.getQueryData(["browser-provider-types"])).toEqual(catalog);
   expect(state.GET).not.toHaveBeenCalled();
 });
