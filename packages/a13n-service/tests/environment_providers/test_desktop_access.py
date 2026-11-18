@@ -51,7 +51,9 @@ def supervisor(tmp_path, monkeypatch):
 
     monkeypatch.setattr(instance, "spawn", spawn)
     monkeypatch.setattr(instance, "settle", AsyncMock())
-    monkeypatch.setattr(guest.asyncio, "open_connection", AsyncMock(return_value=(None, Writer())))
+    reader = AsyncMock()
+    reader.readexactly.return_value = b"RFB 003.008\n"
+    monkeypatch.setattr(guest.asyncio, "open_connection", AsyncMock(return_value=(reader, Writer())))
     return instance, clock, commands
 
 
@@ -134,7 +136,8 @@ async def test_out_of_order_absolute_renewal_never_shortens_or_revives(superviso
 async def test_grant_deadline_includes_backend_startup_and_is_capped(supervisor, monkeypatch):
     instance, clock, _ = supervisor
 
-    async def ready(process, port):
+    async def ready(process, port, *, rfb):
+        assert rfb
         clock[0] += 5
 
     monkeypatch.setattr(instance, "wait_ready", ready)
@@ -185,6 +188,18 @@ async def test_stale_generation_and_invalid_inputs_never_dispatch(supervisor):
         with pytest.raises(guest.Refused, match="invalid_grant_id"):
             await grant(instance, identity)
     assert commands == []
+
+
+async def test_grant_rejects_a_listener_that_does_not_speak_rfb(supervisor, monkeypatch):
+    instance, _, _ = supervisor
+    _, writer = await guest.asyncio.open_connection("127.0.0.1", 5900)
+    reader = AsyncMock()
+    reader.readexactly.return_value = b"not RFB data"
+    monkeypatch.setattr(guest.asyncio, "open_connection", AsyncMock(return_value=(reader, writer)))
+
+    with pytest.raises(guest.Refused, match="desktop_endpoint_failed"):
+        await grant(instance)
+    assert not instance.grants
 
 
 async def test_cancellation_during_startup_closes_backend(supervisor, monkeypatch):

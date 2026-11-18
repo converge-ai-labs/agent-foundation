@@ -141,7 +141,7 @@ jobs:
         run: make sync
 
       - name: Install the Service, bootstrap and verify a native run
-        # Image imports overlap; k8s-up joins both before publishing deployment.json.
+        # Image imports overlap; k8s-up joins them before publishing deployment.json.
         run: make k8s-up k8s-smoke
 
       # A new rollout annotation upgrades the release: a new migration Job, then rolling Deployments.
@@ -151,7 +151,9 @@ jobs:
           K8S_SANDBOX_IMAGE=$(jq -r .sandbox_image "$K8S_STATE_DIR/deployment.json")
           K8S_BROWSER_IMAGE=$(jq -r .browser_image "$K8S_STATE_DIR/deployment.json")
           export K8S_SERVICE_IMAGE K8S_SANDBOX_IMAGE K8S_BROWSER_IMAGE
-          make k8s-up k8s-smoke
+          make k8s-up
+          # Exercise the full Chromium/VNC journey once; the upgrade still keeps Browser enabled.
+          K8S_BROWSERS=0 make k8s-smoke
 
       - name: Require the upgraded revision and its migration
         run: |

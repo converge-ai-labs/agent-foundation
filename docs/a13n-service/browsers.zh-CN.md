@@ -7,12 +7,13 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 
 ## 选择浏览器
 
-自托管选 **Docker**；希望浏览器运行在云端，选 **Browserbase、Kernel、Browser Use Cloud 或 Cloudflare Browser Run**；已有自行运维的浏览器，使用**外部 CDP** 接入。**Native** 用于在 Service 主机上调试。
+在 Kubernetes 上部署 Service 时，选 **Kubernetes** 在集群内运行浏览器；在 Linux 主机上自托管时选 **Docker**；希望浏览器运行在云端，选 **Browserbase、Kernel、Browser Use Cloud 或 Cloudflare Browser Run**；已有自行运维的浏览器，使用**外部 CDP** 接入。**Native** 用于在 Service 主机上调试。
 
-七种方式都支持相同的核心 agent 浏览器工具。下表列出 Service 已集成的附加能力。
+这些方式都支持相同的核心 agent 浏览器工具。下表列出 Service 已集成的附加能力。
 
 | 方案                   | 浏览器运行位置          | 停止后启动，保留 profile | Console 查看与接管 | 上传/下载 |
 | ---------------------- | ----------------------- | ------------------------ | ------------------ | --------- |
+| Kubernetes             | 你的 Kubernetes 集群    | 支持                     | 支持               | 不支持    |
 | Docker                 | 自有 Linux 主机的容器内 | 支持                     | 支持               | 支持      |
 | Native                 | 自有 Linux Service 主机 | 支持                     | 支持               | 支持      |
 | Browserbase            | Browserbase 云端        | 不支持                   | 不支持             | 不支持    |
@@ -21,7 +22,7 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 | Cloudflare Browser Run | Cloudflare 云端         | 不支持                   | 不支持             | 不支持    |
 | 外部 CDP               | 已有 Chromium 实例      | 由外部管理               | 不支持             | 不支持    |
 
-Docker 和 Native 停止后保留 cookie 和登录状态。云浏览器集成使用临时 profile，随供应商会话结束而删除。外部 CDP 的浏览器生命周期和 profile 由你管理。
+Kubernetes、Docker 和 Native 停止后保留 cookie 和登录状态。云浏览器集成使用临时 profile，随供应商会话结束而删除。外部 CDP 的浏览器生命周期和 profile 由你管理。
 
 Docker 浏览器需要 Linux 宿主和[host-network 部署配置](#deployment-and-network)。仅能连接 Docker Engine，并不代表 bridge 网络中的 Service 容器能访问宿主回环端口。
 
@@ -32,9 +33,9 @@ Docker 浏览器需要 Linux 宿主和[host-network 部署配置](#deployment-an
 3. **绑定 thread。** 打开 thread 的 **Browser** 操作，选择浏览器并保存。访问该 thread 创建的标签页时保留 `thread`；需要访问已有标签页时选择 `global`。
 4. **提交任务。** 默认的 `first_use` 在首次调用浏览器工具时准备浏览器。让 agent 打开或选择标签页，观察页面，再执行任务。
 
-使用 Docker 或 Native 时，还可以选择 **Take control**，等待进入人工控制状态，再打开 viewer 亲自操作。完成后选择 **Return control**。仅关闭 viewer 不会归还控制权。
+使用 Kubernetes、Docker 或 Native 时，还可以选择 **Take control**，等待进入人工控制状态，再打开 viewer 亲自操作。完成后选择 **Return control**。仅关闭 viewer 不会归还控制权。
 
-Run 完成后，浏览器可以继续复用，保留时间取决于保留策略和供应商超时。需要暂停 Docker 或 Native 并保留 profile 时使用 **stop**；不再需要浏览器时使用 **release**。
+Run 完成后，浏览器可以继续复用，保留时间取决于保留策略和供应商超时。需要暂停 Kubernetes、Docker 或 Native 并保留 profile 时使用 **stop**；不再需要浏览器时使用 **release**。
 
 ## 配置与 API 细节
 
@@ -61,6 +62,12 @@ Browserbase、Kernel、Browser Use Cloud 和 Cloudflare Browser Run 负责运行
 供应商超时与 Service 的[空闲保留策略](#choose-preparation-and-retention)相互独立。延长 Service 保留时间不会延长供应商会话。不要将 API 密钥或浏览器连接 URL 放入 agent 消息。
 
 ### 配置自托管浏览器
+
+#### Kubernetes
+
+先按[部署指南](configuration.md#kubernetes-browsers)在 Helm 中启用 `kubernetesBrowsers`。在 Console 的 **Providers → Browser providers** 创建 Kubernetes Browser provider：`cluster` 填 `in-cluster`，`namespace` 填 Helm 输出的命名空间，不填写凭据。创建浏览器时使用空 recipe `{}`，准备浏览器后将它绑定到线程。
+
+官方镜像 `ghcr.io/converge-ai-labs/a13n-browser` 自带 Chromium 和 VNC。默认 tag 与已发布的 Service chart 的 `appVersion` 一致。停止会移除运行中的 Pod 并保留 profile 的 PVC；释放会删除 PVC。浏览器的桌面通过 Console 接管，不需要公开 CDP 或 VNC 端口。此 provider 不支持 Service 浏览器文件传输。
 
 #### Docker
 
@@ -169,7 +176,7 @@ Service 加密保存端点和请求头，普通读取不会返回它们。更换
 | Browserbase / Kernel / Browser Use Cloud / Cloudflare Browser Run | 1800 秒后释放                       | 随供应商会话删除 |
 | 外部 CDP                                                          | 保留 Service 访问权限，直到显式释放 | 由外部管理       |
 
-Docker 和 Native 可分别设置 `stop_after_seconds` 与 `delete_after_seconds`。两者都接受 60–604800 秒或 `null`，从最后一次获准使用开始计时。停止不会重置删除计时；两项操作同时到期时，优先删除。
+Kubernetes、Docker 和 Native 可分别设置 `stop_after_seconds` 与 `delete_after_seconds`。两者都接受 60–604800 秒或 `null`，从最后一次获准使用开始计时。停止不会重置删除计时；两项操作同时到期时，优先删除。
 
 `idle_seconds` 则选择空闲后永久释放。云浏览器默认值为 1800，外部 CDP 默认为 `null`。不要将它与停止/删除设置混用。即使 Service 认为云浏览器仍在使用，供应商超时也可能终止会话。
 
@@ -179,7 +186,7 @@ Docker 和 Native 可分别设置 `stop_after_seconds` 与 `delete_after_seconds
 
 调用 `POST /api/v1/browsers/{id}/stop` 或 `POST /api/v1/browsers/{id}/release`，并在 `If-Match` 中携带当前浏览器 ETag。
 
-- **停止**保留 Docker 或 Native 浏览器的 ID、绑定和 profile。下次获准使用或调用 `prepare` 时重新启动。Runtime 重启会推进 generation，并清除旧引用和标签页归属；恢复的标签页不会按 URL 或标题重新分配。
+- **停止**保留 Kubernetes、Docker 或 Native 浏览器的 ID、绑定和 profile。下次获准使用或调用 `prepare` 时重新启动。Runtime 重启会推进 generation，并清除旧引用和标签页归属；恢复的标签页不会按 URL 或标题重新分配。
 - **释放**请求终结资源：Service 删除托管浏览器的 runtime 和 profile，或断开与外部浏览器的连接。仍有活跃使用、无法安全释放时，Service 会拒绝请求。托管浏览器的清理可能一直保持 `deleting`，直到供应商确认会话已终止；释放请求不保证立即完成。
 
 `lost` 或 `deleted` 的浏览器无法重新启动。向 thread 提交更多工作前，先解除绑定或绑定替代浏览器。
@@ -198,7 +205,7 @@ Docker 和 Native 支持 `browser_files`。上传时，`paths` 使用 `asset:<as
 
 ### 接管并归还控制权
 
-Docker 和 Native 的接管流程可直接在 Console 中完成。接入应用可使用以下 HTTP 调用；这些调用不进入 MCP 发现。
+Kubernetes、Docker 和 Native 的接管流程可直接在 Console 中完成。接入应用可使用以下 HTTP 调用；这些调用不进入 MCP 发现。
 
 1. 携带当前浏览器 `If-Match` 和 `{"thread_id": "<bound-thread-id>", "lease_seconds": 300}`，调用 `POST /api/v1/browsers/{id}/takeover`。
 2. 等待 `control: "human"`。处于 `draining` 时，Service 阻止新的浏览器调用，并等待已获准的工作完成。
@@ -233,6 +240,7 @@ browser_control_seconds = 300
 
 选择恢复操作前，先查看浏览器的 `status`、`control`、`expires_at` 和 `failure`。
 
+- **Kubernetes 浏览器一直在准备中。** 先检查浏览器命名空间里的 Pod 事件、PVC 绑定和镜像拉取状态。参见[部署指南](configuration.md#kubernetes-browsers)。
 - **云端创建结果未知。** 只有确认原请求未发送，或已被明确拒绝且未创建会话时，Service 才会重试创建。否则，在创建替代浏览器前先检查供应商账号：原会话可能仍在运行并产生费用。未收到会话 ID 时，Kernel 和 Cloudflare Browser Run 无法自动定位或释放会话。Browserbase 和 Browser Use Cloud 可按精确分配 metadata 查找，但没有匹配结果时，清理仍无法确认。
 - **外部连接失败。** `browser_connection_failed` 本身不会将浏览器标记为丢失。重连同一实例，再重新观察。网关若静默替换浏览器，就无法保持连续性。失败或结果未知的操作不会自动重放。
 - **接管停留在 `draining`。** 此前获准的工作尚未结束，超时不能证明操作已完成。在能够确认尚未发生任何 viewer 授权、且活跃工作允许的情况下，可通过归还取消接管；取消不会宣告浏览器可用，也不会清除结果未知的调用。

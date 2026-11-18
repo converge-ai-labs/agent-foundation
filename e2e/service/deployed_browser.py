@@ -68,6 +68,7 @@ async def journey(api: Workspace, model: ScriptedModel, namespace: str) -> None:
 
         return await eventually(activate, timeout=150)
 
+    failure: BaseException | None = None
     try:
         first = await prepare()
         claim_name = f"profile-{name}-0"
@@ -139,19 +140,29 @@ async def journey(api: Workspace, model: ScriptedModel, namespace: str) -> None:
             "Kubernetes Browser: deployed Worker read real Chromium; VNC relay closed on handback; stop/start retained the exact profile claim.",
             flush=True,
         )
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        current = expect(await client.get(path), 200)
-        if current["status"] not in {"deleted", "deleting"}:
-            await command("release")
-        await state("deleted")
-        for kind, identifier in [
-            ("pod", name + "-0"),
-            ("persistentvolumeclaim", f"profile-{name}-0"),
-            ("secret", name),
-            ("statefulset", name),
-        ]:
-            assert native(kind, identifier) is None
-        print("Kubernetes Browser: release reclaimed the Pod, claim, credential, and StatefulSet.", flush=True)
+        try:
+            current = expect(await client.get(path), 200)
+            if current["control"] != "automation":
+                await command("handback")
+            if current["status"] not in {"deleted", "deleting"}:
+                await command("release")
+            await state("deleted")
+            for kind, identifier in [
+                ("pod", name + "-0"),
+                ("persistentvolumeclaim", f"profile-{name}-0"),
+                ("secret", name),
+                ("statefulset", name),
+            ]:
+                assert native(kind, identifier) is None
+            print("Kubernetes Browser: release reclaimed the Pod, claim, credential, and StatefulSet.", flush=True)
+        except Exception as cleanup_error:
+            if failure is None:
+                raise
+            failure.add_note(f"Browser cleanup also failed: {cleanup_error}")
 
 
 async def main() -> None:

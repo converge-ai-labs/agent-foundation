@@ -353,7 +353,7 @@ class Supervisor:
         process = await self.spawn(*command)
 
         try:
-            await self.wait_ready(process, port)
+            await self.wait_ready(process, port, rfb=True)
             if absolute_expiry is None:
                 deadline, expires_at = self.deadline(request)
             else:
@@ -383,17 +383,24 @@ class Supervisor:
             password_file.unlink(missing_ok=True)
             raise
 
-    async def wait_ready(self, process: asyncio.subprocess.Process, port: int) -> None:
+    async def wait_ready(self, process: asyncio.subprocess.Process, port: int, *, rfb: bool = False) -> None:
         async def listening() -> None:
             while True:
                 if process.returncode is not None:
                     raise Refused("desktop_endpoint_failed")
                 try:
-                    _, writer = await asyncio.open_connection("127.0.0.1", port)
-                    writer.close()
-                    await writer.wait_closed()
+                    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+                    try:
+                        if rfb:
+                            # x11vnc must be serving the display, not just listening.
+                            greeting = await reader.readexactly(12)
+                            if not greeting.startswith(b"RFB 003."):
+                                raise Refused("desktop_endpoint_failed")
+                    finally:
+                        writer.close()
+                        await writer.wait_closed()
                     return
-                except OSError:
+                except (OSError, asyncio.IncompleteReadError):
                     await asyncio.sleep(0.05)
 
         await asyncio.wait_for(listening(), 8)

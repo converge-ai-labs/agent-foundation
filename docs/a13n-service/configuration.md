@@ -329,6 +329,22 @@ Use **Check connection** to verify the profile policy, authentication and namesp
 
 Keep `ownership_id`, profile names, namespace and sandbox identity stable while instances exist. Retire instances through Service before removing a profile or its permissions, and preserve the database and encryption key ring for recovery. Removing deployment resources does not retire instance Pods or retained claims. See [Kubernetes sandboxes](environments.md#kubernetes-sandboxes) for native recipes, storage disposition, diagnostics and debug holds.
 
+## Kubernetes Browsers
+
+Kubernetes Browsers are independent of Kubernetes Environments. Use Kubernetes 1.32 or newer, a CNI that enforces NetworkPolicy, and a StorageClass that supports the chosen access mode. Create a dedicated workload namespace, then add these values to your Service Helm deployment:
+
+```yaml
+kubernetesBrowsers:
+  enabled: true
+  namespace: agent-browsers
+```
+
+The default image is `ghcr.io/converge-ai-labs/a13n-browser:<chart-appVersion>`, with Chromium and VNC built in. A published chart selects the Browser image at the same release version, not the `latest` tag. A source checkout uses `dev` as its `appVersion`; to build and load the checkout images into kind, run `K8S_BROWSERS=1 make k8s-up k8s-smoke`. Set `kubernetesBrowsers.image.repository` for a mirror. An explicit `digest` takes precedence over `tag`.
+
+Storage defaults to `ReadWriteOncePod` and the cluster's default StorageClass. Set `kubernetesBrowsers.storage.className` to select a different class. Use `ReadWriteOnce` with kind's local-path provisioner. Keep CDP and VNC private and restrict browser egress according to cluster policy. Helm prints the Console provider settings; see the [browser guide](browsers.md#kubernetes).
+
+If a browser stays in preparation, inspect `kubectl -n agent-browsers get pods,pvc,statefulsets` and the Pod events. Release browsers in Service before disabling the feature or uninstalling the chart. See the [deployment guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/kubernetes/README.md#kubernetes-browsers) for all Helm settings, permissions, and cleanup boundaries.
+
 ## Workspace provisioning
 
 - [Configure workspace provisioning](workspace-provisioning.md)
