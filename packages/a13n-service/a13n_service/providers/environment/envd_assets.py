@@ -6,7 +6,7 @@ from typing import Literal
 from .envd_release import download_command
 
 Profile = Literal["headless", "desktop"]
-SOURCE_REVISION = "9ebba1ed2c754a2f59a2a3799897eff5008472e6"
+SOURCE_REVISION = "dc8b2060933d99f82e73118c2aaf663a941887d5"
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 HEADLESS_FILES = (
     (
@@ -29,7 +29,7 @@ DESKTOP_FILES = (
     (
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "/opt/a13n-desktop-access.py",
-        "9686b8d43f4fe8e4ca70d15fd85a98a85c0323cf974ce6e485c70c540abab94a",
+        "7dd4c408650c1540b2139675e0e5bee10120135b75653c8cbd9bf93e93017f0c",
     ),
 )
 
