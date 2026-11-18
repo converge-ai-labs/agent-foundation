@@ -71,13 +71,20 @@ export function LanguageChoice({
       label={t("Display language")}
       value={preference}
       onValueChange={(value) => {
-        if (value !== "system" && value !== "en" && value !== "zh-CN") return;
+        if (
+          value !== "system" &&
+          value !== "en" &&
+          value !== "zh-CN" &&
+          value !== "hi"
+        )
+          return;
         select(value);
       }}
       options={[
         { value: "system", label: t("System") },
         { value: "en", label: "English" },
         { value: "zh-CN", label: "简体中文" },
+        { value: "hi", label: "हिन्दी" },
       ]}
     />
   );

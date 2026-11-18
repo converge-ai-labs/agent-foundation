@@ -40,7 +40,7 @@ class PushSubscriptionInput(BaseModel):
     keys: PushKeys
     origin: str = Field(max_length=512)
     scope: Literal["all", "bot"] = "all"
-    language: Literal["en", "zh-CN"] = "en"
+    language: Literal["en", "zh-CN", "hi"] = "en"
 
     @field_validator("endpoint")
     @classmethod

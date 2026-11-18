@@ -320,7 +320,10 @@ async def test_activity_cutoff_is_strict_server_time_and_reconciliation_is_not_a
         assert await repository.get(devices[2].subscription_id) is None
 
 
-@pytest.mark.parametrize("language,title", [("en", "New message from Bot"), ("zh-CN", "Bot 给你发了消息")])
+@pytest.mark.parametrize(
+    "language,title",
+    [("en", "New message from Bot"), ("zh-CN", "Bot 给你发了消息"), ("hi", "Bot से नया संदेश")],
+)
 def test_bot_message_payload_identifies_the_message_and_preserves_preview(language, title):
     from a13n_harness_ui.bot_models import BOT_THREAD_ID
     from a13n_harness_ui.web_push import notice_payload
@@ -340,7 +343,14 @@ def test_bot_message_payload_identifies_the_message_and_preserves_preview(langua
         RootOperationNotice(receipt_id="decision", status="suspended", brief="Approve changes?"),
         language=language,
     )
-    assert attention["title"] == ("Bot 需要你的回应" if language == "zh-CN" else "Bot needs your response")
+    assert (
+        attention["title"]
+        == {
+            "en": "Bot needs your response",
+            "zh-CN": "Bot 需要你的回应",
+            "hi": "Bot को आपके जवाब की ज़रूरत है",
+        }[language]
+    )
     assert attention["path"] == f"/threads/{BOT_THREAD_ID}"
 
 
@@ -405,3 +415,16 @@ async def test_push_scope_is_per_device_and_rechecked_for_queued_delivery(tmp_pa
             assert (await push.repository.get(changed.subscription_id)).scope == "bot"
             assert not await push._deliver(all_device, {"path": f"/threads/{ordinary.thread_id}", "tag": "stale"})
             assert len(sent) == 3
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN", "hi", "fr"])
+def test_execution_payload_titles_are_localized_with_english_fallback(language):
+    from a13n_harness_ui.web_push import notice_payload
+
+    notice = RootOperationNotice(receipt_id="receipt", status="failed", brief="Stopped")
+    payload = notice_payload("thread", None, notice, language=language)
+    assert payload["title"] == {
+        "en": "Task failed · Conversation",
+        "zh-CN": "任务失败 · 聊天",
+        "hi": "टास्क विफल · चैट",
+    }.get(language, "Task failed · Conversation")
