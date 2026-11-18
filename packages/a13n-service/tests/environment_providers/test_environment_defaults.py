@@ -16,6 +16,7 @@ INPUTS = {
     "modal": {"image": "im-custom", "startup_command": ["/usr/local/bin/start-envd"]},
     "runloop": {},
     "boxd": {},
+    "cloudflare": {},
     "sprites": {},
     "vercel": {},
 }
