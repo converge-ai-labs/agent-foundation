@@ -206,15 +206,21 @@ function LoadedModelEditor({
       result(client.GET("/api/models/catalog", { signal })),
     enabled: api,
   });
+  const optionsIdentity = [
+    connection,
+    effectiveId,
+    effectiveUrl,
+    value?.base_model,
+  ] as const;
   const options = useQuery({
-    queryKey: [
-      "model-options",
-      connection,
-      effectiveId,
-      effectiveUrl,
-      value?.base_model,
-      value?.settings,
-    ],
+    queryKey: ["model-options", ...optionsIdentity, value?.settings],
+    // Keep the current choices mounted while refreshing the same model's settings.
+    placeholderData: (previous, query) =>
+      optionsIdentity.every(
+        (part, index) => part === query?.queryKey[index + 1],
+      )
+        ? previous
+        : undefined,
     queryFn: ({ signal }) =>
       result(
         client.POST("/api/models/options", {
