@@ -11,7 +11,7 @@ from a13n_harness_ui.connector_models import ConnectorConfiguration, ConnectorIn
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.storage.bot_inbox import serialize_batch
 from a13n_harness_ui.surfaces import RootControlResult
-from anyio import Event, fail_after
+from anyio import Event, fail_after, sleep
 
 from .test_app import _CompletedReconstructor, _settings, _SlowReconstructor
 from .test_app import _write_configuration as base_configuration
@@ -79,13 +79,11 @@ async def test_heartbeat_policy_arms_independently_and_first_due_tick_needs_no_c
         assert due and due > datetime.now(UTC)
         assert not snapshot.thread and not snapshot.inputs and not snapshot.state.activated
         await bot.tick(now=due)
-        batch = await app._store.bot_inbox.pending()
-        assert len(batch) == 1 and batch[0].source == "heartbeat"
-        await bot.tick(now=due + timedelta(days=10))
-        assert await app._store.bot_inbox.pending() == batch
-        await bot.deliver_automatic_inputs()
-        item = (await bot.snapshot()).inputs[-1]
-        assert item.source == "automatic" and batch[0].input_id in item.text
+        with fail_after(5):
+            while not (items := await app._store.bot.inputs()):
+                await sleep(0.01)
+        item = items[-1]
+        assert item.source == "automatic" and "heartbeat" in item.text
         assert (await consumed(app, item.input_id)).state == "completed"
         snapshot = await bot.snapshot()
         assert [message.text for message in snapshot.messages] == ["root complete"]
@@ -105,6 +103,7 @@ async def test_busy_run_retains_ticks_and_fair_mixed_batch_steers_exact_receipt(
         await configure(app)
         for index in range(40):
             await retain(app, "connector-example", (event(str(index)),))
+        monkeypatch.setattr(bot, "signal_inputs", lambda: None)  # Drive delivery attempts explicitly.
         await bot.tick(now=due)
         batch = await app._store.bot_inbox.pending()
         assert len(batch) == 32 and batch[0].source == "heartbeat"
@@ -222,7 +221,11 @@ async def test_settlement_failure_is_supervised_and_does_not_stop_bot_loops(tmp_
         monkeypatch.setattr(app._store.bot, "save_input", fail_once)
         await bot.submit(BotSubmit(input_id="fault", text="Complete this work"))
         assert (await consumed(app, "fault")).state == "interrupted"
-        assert bot._owned and (await bot.snapshot()).state.paused
+        # The supervisor records the interrupted input before it persists the pause.
+        with fail_after(5):
+            while not (await bot.snapshot()).state.paused:
+                await sleep(0.01)
+        assert bot._owned
         await bot.submit(BotSubmit(input_id="after-fault", text="Inspect and continue explicitly"))
         assert (await consumed(app, "after-fault")).state == "completed"
 
