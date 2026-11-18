@@ -95,6 +95,7 @@ export function ConnectorProviders() {
         nextCursor={query.data?.next_cursor}
         action={manage ? <AddConnectorProvider /> : undefined}
         canActivateRow={(item) => manage || item.enabled}
+        rowActionLabel={manage ? "Edit" : "View"}
         onRowActivate={rows.activate}
         row={(item) => ({
           id: item.id,

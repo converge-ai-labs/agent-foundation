@@ -77,6 +77,35 @@
     }
   },
   "properties": {
+    "kubernetesBrowsers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "namespace": { "type": "string", "maxLength": 63, "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string" },
+            "digest": { "type": "string" },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "className": { "type": ["string", "null"] },
+            "size": { "type": "string", "minLength": 1 },
+            "accessMode": { "enum": ["ReadWriteOnce", "ReadWriteOncePod"] }
+          }
+        },
+        "requests": { "type": "object", "additionalProperties": { "type": "string" } },
+        "limits": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
     "kubernetesEnvironments": {
       "type": "object",
       "additionalProperties": false,

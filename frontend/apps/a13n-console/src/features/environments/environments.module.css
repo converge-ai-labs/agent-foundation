@@ -278,7 +278,7 @@
   gap: 12px;
   align-items: flex-end;
 }
-.connectionRow > :first-child {
+.connectionRow > :not(button) {
   flex: 1;
   min-width: 0;
 }

@@ -248,13 +248,16 @@ jobs:
           retention-days: 7
 
   tests:
-    name: UI Python tests (${{ matrix.shard }}/3)
+    name: UI Python tests (${{ matrix.shard }}/3, Python ${{ matrix.python-version }})
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
+        python-version: ["3.13", "3.14", "3.15"]
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -266,7 +269,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -295,7 +298,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-python-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: ui-python-${{ matrix.shard }}-py${{ matrix.python-version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 

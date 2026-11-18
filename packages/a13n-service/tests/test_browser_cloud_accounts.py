@@ -17,6 +17,7 @@ pytestmark = pytest.mark.anyio
         ("browserbase", {"project_id": "project"}),
         ("kernel", {"organization_id": "org"}),
         ("browser_use", {"project_id": "project"}),
+        ("cloudflare", {"account_id": "a" * 32}),
     ],
 )
 async def test_cloud_account_registration(service, kind, config):
@@ -26,7 +27,13 @@ async def test_cloud_account_registration(service, kind, config):
     assert response.status_code == 200
     definition = next(item for item in response.json()["items"] if item["type"] == kind)
     assert definition["supports_stop"] is False
-    timeout_field = {"browserbase": "timeout", "kernel": "timeout_seconds", "browser_use": "timeout_minutes"}[kind]
+    assert definition["supports_viewer"] is False
+    timeout_field = {
+        "browserbase": "timeout",
+        "kernel": "timeout_seconds",
+        "browser_use": "timeout_minutes",
+        "cloudflare": "keep_alive_seconds",
+    }[kind]
     assert timeout_field in definition["browser_recipe_schema"]["properties"]
     response = await service.client.post(
         f"{service.api}/browser-providers",

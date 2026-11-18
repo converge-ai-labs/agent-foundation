@@ -98,7 +98,11 @@ resume_subagent(execution_id: str, prompt: str)
 
 The two surfaces use distinct internal Toolset identities and never register duplicate external names in one Agent. Tool descriptions state whether `delegate` blocks for completion or returns after admission. `timeout_seconds` bounds one wait call and never implies cancellation.
 
+Async admission receipts for `delegate`, Host `spawn_subagent` and `resume_subagent`, and accepted `steer_subagent` acknowledgements carry a model-facing `message`. It explains automatic final-result delivery after the turn and directs the Agent to continue independent work. Only a dependency on the result requires waiting. A steering acknowledgement confirms input admission.
+
 An async `execution_id` is a bounded public Host execution reference. It is not a provider resource ID, credential, Environment reference, or necessarily a Harness-generated value. Standard results never expose Host-private storage IDs, raw child state, raw business output, credentials, or native exceptions. A single-execution info and wait return the same bounded execution view; no-ID list and fan-in return bounded summaries. Harness output policy still bounds the serialized view.
+
+During a top-level `wait_subagent`, [immediate steering](06-execution-context-and-lifecycle.md#immediate-steering) releases the observation and returns a fresh view of the requested execution or page. The child continues and its final result follows ordinary Host delivery. Queued input preserves the original wait, as do nested waits inside a retained runner.
 
 ## Harness-Resolved Async Authority
 

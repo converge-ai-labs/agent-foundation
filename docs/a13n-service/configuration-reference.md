@@ -235,13 +235,14 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `browsers`
 
-| Setting                      | Environment variable               | Type / choices | Constraints and default                       |
-| ---------------------------- | ---------------------------------- | -------------- | --------------------------------------------- |
-| `browsers.operation_seconds` | `A13N_BROWSERS__OPERATION_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=120 |
-| `browsers.root`              | `A13N_BROWSERS__ROOT`              | string or null | format="path"; default=null                   |
-| `browsers.native_enabled`    | `A13N_BROWSERS__NATIVE_ENABLED`    | boolean        | default=false                                 |
-| `browsers.native_chromium`   | `A13N_BROWSERS__NATIVE_CHROMIUM`   | string         | default="chromium"                            |
-| `browsers.docker_host`       | `A13N_BROWSERS__DOCKER_HOST`       | string or null | default=null                                  |
+| Setting                        | Environment variable                 | Type / choices | Constraints and default                       |
+| ------------------------------ | ------------------------------------ | -------------- | --------------------------------------------- |
+| `browsers.operation_seconds`   | `A13N_BROWSERS__OPERATION_SECONDS`   | number         | maximum=3600; exclusiveMinimum=0; default=120 |
+| `browsers.root`                | `A13N_BROWSERS__ROOT`                | string or null | format="path"; default=null                   |
+| `browsers.native_enabled`      | `A13N_BROWSERS__NATIVE_ENABLED`      | boolean        | default=false                                 |
+| `browsers.native_chromium`     | `A13N_BROWSERS__NATIVE_CHROMIUM`     | string         | default="chromium"                            |
+| `browsers.kubernetes_clusters` | `A13N_BROWSERS__KUBERNETES_CLUSTERS` | object         | —                                             |
+| `browsers.docker_host`         | `A13N_BROWSERS__DOCKER_HOST`         | string or null | default=null                                  |
 
 ## `provisioning`
 

@@ -36,6 +36,11 @@ class BrowserUseConfiguration(BaseModel):
     project_id: str = Field(min_length=1, max_length=256)
 
 
+class CloudflareConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    account_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class CloudCredential(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     api_key: SecretStr
@@ -57,12 +62,17 @@ class BrowserUseRecipe(BaseModel):
     timeout_minutes: int = Field(default=5, ge=1, le=240)
 
 
+class CloudflareRecipe(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    keep_alive_seconds: int = Field(default=60, ge=10, le=1200)
+
+
 class CloudAPI:
     """One authenticated client for one supplier and account."""
 
     def __init__(
         self,
-        supplier: Literal["browserbase", "kernel", "browser_use"],
+        supplier: Literal["browserbase", "kernel", "browser_use", "cloudflare"],
         credential: CloudCredential,
         policy: EndpointPolicy,
         *,
@@ -75,12 +85,14 @@ class CloudAPI:
             "browserbase": "https://api.browserbase.com",
             "kernel": "https://api.onkernel.com",
             "browser_use": "https://api.browser-use.com",
+            "cloudflare": "https://api.cloudflare.com",
         }[supplier]
         key = credential.api_key.get_secret_value()
         headers = {
             "browserbase": {"X-BB-API-Key": key},
             "kernel": {"Authorization": f"Bearer {key}"},
             "browser_use": {"X-Browser-Use-API-Key": key},
+            "cloudflare": {"Authorization": f"Bearer {key}"},
         }[supplier]
 
         async def check_response(response: httpx2.Response) -> None:
@@ -143,15 +155,21 @@ async def _connect(api: CloudAPI, state: dict[str, JsonValue]) -> Chromium:
     url = state.get("cdp_url")
     if not isinstance(url, str):
         raise BrowserProviderError("cloud_invalid_response")
+    return await _connect_cdp(api.policy, url)
+
+
+async def _connect_cdp(policy: EndpointPolicy, url: str, *, headers: dict[str, str] | None = None) -> Chromium:
     try:
         parsed = urlsplit(url)
         if parsed.scheme != "wss":
             raise EndpointPolicyError("cloud CDP requires secure WebSocket")
-        await validate_cdp_endpoint(api.policy, url)
+        await validate_cdp_endpoint(policy, url)
     except (EndpointPolicyError, ValueError):
         raise BrowserProviderError("cloud_endpoint_denied", certainty="not_dispatched") from None
     try:
-        return await Chromium.connect(url, timeout=15, discover=False)
+        if headers is None:
+            return await Chromium.connect(url, timeout=15, discover=False)
+        return await Chromium.connect(url, timeout=15, discover=False, headers=headers)
     except Exception:
         # Native transport errors can include the credential-bearing URL.
         raise BrowserProviderError("cloud_connect_failed") from None
@@ -529,6 +547,95 @@ class BrowserUse(CloudUnsupportedOperations):
 
     async def connect(self, state: dict[str, JsonValue]) -> Chromium:
         return await _connect(self.api, state)
+
+    async def close(self) -> None:
+        await self.api.close()
+
+
+class Cloudflare(CloudUnsupportedOperations):
+    """Manage Browser Run sessions by the exact supplier-issued session ID."""
+
+    def __init__(self, config: CloudflareConfiguration, api: CloudAPI):
+        self.api = api
+        account = f"/client/v4/accounts/{config.account_id}"
+        self.browsers = f"{account}/browser-rendering/devtools/browser"
+        self.sessions = f"{account}/browser-rendering/devtools/session"
+        self.cdp = f"wss://api.cloudflare.com{account}/browser-run/devtools/browser"
+
+    @staticmethod
+    def _json(response: httpx2.Response, *, allow_null: bool = False) -> dict | None:
+        try:
+            item = response.json()
+        except ValueError:
+            raise BrowserProviderError("cloud_invalid_response") from None
+        if item is None and allow_null:
+            return None
+        if not isinstance(item, dict):
+            raise BrowserProviderError("cloud_invalid_response")
+        return item
+
+    @staticmethod
+    def _id(value: object) -> str:
+        if not isinstance(value, str) or not re.fullmatch(
+            r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", value
+        ):
+            raise BrowserProviderError("cloud_invalid_response")
+        return value
+
+    async def create(self, allocation_id: str, recipe: BaseModel) -> LiveBrowser:
+        if not isinstance(recipe, CloudflareRecipe):
+            raise BrowserProviderError("cloud_recipe_invalid", certainty="not_dispatched")
+        response = await self.api.request(
+            "POST", self.browsers, params={"keep_alive": recipe.keep_alive_seconds * 1000}, create=True
+        )
+        item = self._json(response)
+        assert item is not None
+        session_id = self._id(item.get("sessionId"))
+        return LiveBrowser({"id": session_id}, runtime_id=session_id)
+
+    async def _ended(self, session_id: str) -> bool:
+        item = self._json(await self.api.request("GET", f"{self.sessions}/{session_id}"), allow_null=True)
+        if item is None:
+            return True
+        if item.get("sessionId") != session_id:
+            raise BrowserProviderError("cloud_identity_mismatch")
+        ended = item.get("endTime")
+        if ended is None:
+            return False
+        if type(ended) not in (int, float) or not ended >= 0:
+            raise BrowserProviderError("cloud_invalid_response")
+        return ended > 0
+
+    async def inspect(self, allocation_id: str, state: dict[str, JsonValue] | None) -> LiveBrowser | None:
+        if state is None:
+            # There is no supplier lookup by caller allocation identity.
+            raise BrowserProviderError("cloud_inspect_unresolved")
+        session_id = self._id(state.get("id"))
+        if await self._ended(session_id):
+            return None
+        return LiveBrowser({"id": session_id}, runtime_id=session_id)
+
+    async def delete(self, allocation_id: str, state: dict[str, JsonValue] | None) -> None:
+        if state is None:
+            raise BrowserProviderError("cloud_delete_unresolved")
+        session_id = self._id(state.get("id"))
+        if await self._ended(session_id):
+            return
+        item = self._json(await self.api.request("DELETE", f"{self.browsers}/{session_id}"))
+        assert item is not None
+        status = item.get("status")
+        if status == "closed" or (status == "closing" and await self._ended(session_id)):
+            return
+        raise BrowserProviderError("cloud_delete_unresolved")
+
+    async def connect(self, state: dict[str, JsonValue]) -> Chromium:
+        session_id = self._id(state.get("id"))
+        # Never forward the account token to a URL supplied by the session response.
+        return await _connect_cdp(
+            self.api.policy,
+            f"{self.cdp}/{session_id}",
+            headers={"Authorization": self.api.client.headers["Authorization"]},
+        )
 
     async def close(self) -> None:
         await self.api.close()

@@ -256,6 +256,31 @@ async def test_reconstruction_run_defaults_for_root_and_children(tmp_path: Path)
         assert executable._agent._max_output_retries == 3
 
 
+@pytest.mark.parametrize("callable_instance", [False, True])
+async def test_environment_provenance_identifies_function_and_callable_factories(tmp_path: Path, callable_instance):
+    class Factory:
+        def __call__(self, **kwargs):
+            raise AssertionError("Composition must not construct connectors")
+
+    factory = Factory() if callable_instance else LOCAL_ENVD.connector_factory
+    provider = replace(LOCAL_ENVD, type="fixture_envd", connector_factory=factory)
+    catalog = HarnessUiExtensionCatalog(
+        host_providers=(provider,),
+        host_plugin_factories=(_MemoryFactory(),),
+    )
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    selection = replace(_selection(), environment_profile_id=SANDBOX_PROFILE_ID)
+    resolver = AgentCompositionResolver(catalog)
+    profile = resolver.resolve_run(source, selection).environment_profile.model_copy(
+        update={"provider_key": provider.type}
+    )
+    dependencies = resolver._environment_dependencies(source, profile)
+    dependency = next(item for item in dependencies if item.kind == "environment_provider")
+    implementation = Factory if callable_instance else factory
+    assert dependency.class_module == implementation.__module__
+    assert dependency.class_qualname == implementation.__qualname__
+
+
 async def test_resolves_release_owned_sandbox_profile_without_configuration_resource(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     selection = replace(_selection(), environment_profile_id=SANDBOX_PROFILE_ID)

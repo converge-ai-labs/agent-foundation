@@ -1036,6 +1036,11 @@ class ChildExecutionRepository:
                         "Child completion authority changed during preparation.",
                         code="tool_completion_authority_changed",
                     )
+            successor = await session.scalar(
+                select(ChildExecutionRecord.execution_id).where(
+                    ChildExecutionRecord.resumed_from == previous_execution_id
+                )
+            )
             planned = False
             if restart_batch_id is not None:
                 from a13n_harness_ui.restart_models import RestartBatch
@@ -1053,15 +1058,16 @@ class ChildExecutionRepository:
                         for item in batch.items
                     )
                 )
-                successor = await session.scalar(
-                    select(ChildExecutionRecord.execution_id).where(
-                        ChildExecutionRecord.resumed_from == previous_execution_id
-                    )
-                )
                 if not planned or successor is not None:
                     raise StoreIntegrityError(
                         "The child update handoff is stale or already used.", code="restart_conflict"
                     )
+            elif successor is not None:
+                raise StoreConflictError(
+                    f"Child execution {previous_execution_id} has already been resumed as {successor}. "
+                    "Use that execution ID for further inspection or continuation.",
+                    code="child_execution_already_resumed",
+                )
             if (previous.status != "succeeded" and not planned) or previous.selected_checkpoint_digest is None:
                 raise StoreIntegrityError(
                     "Previous child execution is not resumable.", code="child_execution_not_resumable"

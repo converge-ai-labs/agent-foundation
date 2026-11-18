@@ -202,20 +202,27 @@ async def open_runtime(*, configuration: BaseModel, credential: BaseModel | None
     profile = configuration._cluster
     if profile is None or configuration.namespace not in profile.namespaces:
         raise provider_error(KEY, "kubernetes_cluster_not_allowed", Category.DENIED)
-    from kubernetes_asyncio import client, config
     from kubernetes_asyncio.config.config_exception import ConfigException
 
-    settings = client.Configuration()
     try:
-        if profile.authentication == "in_cluster":
-            await run_sync(lambda: config.load_incluster_config(client_configuration=settings))
-        else:
-            await config.load_kube_config(
-                config_file=str(profile.kubeconfig),
-                context=profile.context,
-                client_configuration=settings,
-                persist_config=False,
-            )
+        api = await open_cluster_client(profile)
     except (ConfigException, OSError):
         raise provider_error(KEY, "kubernetes_authentication_unavailable", Category.UNAVAILABLE) from None
-    return KubernetesRuntime(configuration, client.ApiClient(settings))
+    return KubernetesRuntime(configuration, api)
+
+
+async def open_cluster_client(profile: ClusterProfile) -> Any:
+    """Load refreshable Kubernetes SDK authentication from a trusted Host profile."""
+    from kubernetes_asyncio import client, config
+
+    settings = client.Configuration()
+    if profile.authentication == "in_cluster":
+        await run_sync(lambda: config.load_incluster_config(client_configuration=settings))
+    else:
+        await config.load_kube_config(
+            config_file=str(profile.kubeconfig),
+            context=profile.context,
+            client_configuration=settings,
+            persist_config=False,
+        )
+    return client.ApiClient(settings)

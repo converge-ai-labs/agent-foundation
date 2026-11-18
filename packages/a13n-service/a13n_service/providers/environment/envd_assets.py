@@ -6,13 +6,13 @@ from typing import Literal
 from .envd_release import download_command
 
 Profile = Literal["headless", "desktop"]
-SOURCE_REVISION = "3674db454385101566bc4fd50644edf4f3dda03a"
+SOURCE_REVISION = "dc8b2060933d99f82e73118c2aaf663a941887d5"
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 HEADLESS_FILES = (
     (
         "deploy/docker/images/sandbox/entrypoint.sh",
         "/usr/local/bin/a13n-sandbox-entrypoint",
-        "c7de2019e091a38fbb335c1c2c9e29c9218dbf7a49019056cc47fbaf5fd27eab",
+        "55a8422a2a02767bd83ebb05508cb9d086599523285c626af325ed9807378cad",
     ),
 )
 DESKTOP_FILES = (
@@ -29,7 +29,7 @@ DESKTOP_FILES = (
     (
         "packages/a13n-service/a13n_service/providers/environment/desktop_guest.py",
         "/opt/a13n-desktop-access.py",
-        "68f4ed23ac4729b57262738a3390e239c79db90a1010ae08bf41ed5a1e81ffb4",
+        "7dd4c408650c1540b2139675e0e5bee10120135b75653c8cbd9bf93e93017f0c",
     ),
 )
 

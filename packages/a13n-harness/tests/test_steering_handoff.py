@@ -318,7 +318,8 @@ async def test_control_wait_handoff_does_not_change_nested_runner_results(owned)
     assert timeouts == ([30] if owned else [0])
 
 
-async def test_control_wait_polls_after_handoff_drains_observer():
+@pytest.mark.parametrize("cleanup_error", [False, True], ids=["cancelled", "cleanup-error"])
+async def test_control_wait_polls_after_handoff_drains_observer(cleanup_error):
     from a13n_harness._tool_execution import RunToolExecutions
 
     state = RunToolExecutions()
@@ -333,8 +334,11 @@ async def test_control_wait_polls_after_handoff_drains_observer():
         waiting.set()
         try:
             await asyncio.Event().wait()
-        finally:
+        except asyncio.CancelledError:
             drained = True
+            if cleanup_error:
+                raise RuntimeError("observer cleanup failed") from None
+            raise
 
     async with asyncio.timeout(5):
         task = asyncio.create_task(state.wait_control(observe, timeout_seconds=30))

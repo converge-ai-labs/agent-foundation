@@ -10,6 +10,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.capabilities.subagents import (
     AsyncDelegateRequest,
     AsyncExecutionView,
@@ -88,6 +89,7 @@ class AsyncSubagentToolset:
                 {"read", "execute"},
                 "read_only",
                 output_policy=_WAIT_OUTPUT_POLICY,
+                metadata={TOOL_EXECUTION_METADATA_KEY: "control"},
             ),
             self._tool(self.steer_subagent, "subagents.async.steer", {"write"}, "none"),
             self._tool(self.cancel_subagent, "subagents.async.cancel", {"write"}, "none"),
@@ -120,7 +122,7 @@ class AsyncSubagentToolset:
             await self._operator.delegate(plan, request, tool_call=_tool_call_context(ctx)),
         )
         _validate_execution(result, child, resumed_from=None)
-        return result.model_dump(mode="json")
+        return result.receipt()
 
     async def subagent_info(
         self,
@@ -158,13 +160,19 @@ class AsyncSubagentToolset:
             execution_offset=execution_offset,
             execution_limit=execution_limit,
         )
-        result = _validate_model(
-            SubagentWaitResult,
-            await self._operator.wait(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
+
+        async def wait() -> JsonValue:
+            result = _validate_model(
+                SubagentWaitResult,
+                await self._operator.wait(self._operator_context(), request, tool_call=_tool_call_context(ctx)),
+            )
+            if execution_id is not None:
+                _require_exact_execution(result.executions, execution_id)
+            return _execution_page(result)
+
+        return await ctx.deps._tool_executions.wait_or_inspect(
+            wait, lambda: self.subagent_info(ctx, execution_id, execution_offset, execution_limit)
         )
-        if execution_id is not None:
-            _require_exact_execution(result.executions, execution_id)
-        return _execution_page(result)
 
     async def steer_subagent(
         self,
@@ -181,7 +189,7 @@ class AsyncSubagentToolset:
         )
         if result.execution_id != execution_id:
             raise TypeError("subagent operator retargeted a steering request")
-        return result.model_dump(mode="json")
+        return result.receipt()
 
     async def cancel_subagent(
         self,
@@ -227,7 +235,7 @@ class AsyncSubagentToolset:
                 or result.execution_id == execution_id
             ):
                 raise TypeError("subagent operator returned incompatible Host continuation")
-            return result.model_dump(mode="json")
+            return result.receipt()
         child = self._require_child(previous.subagent_name)
         result = _validate_model(
             AsyncExecutionView,
@@ -243,7 +251,7 @@ class AsyncSubagentToolset:
             resumed_from=execution_id,
             allow_definition_replacement=True,
         )
-        return result.model_dump(mode="json")
+        return result.receipt()
 
     def _plan(
         self,
@@ -304,9 +312,11 @@ class AsyncSubagentToolset:
         idempotency: IdempotencySemantics,
         *,
         output_policy: ToolOutputPolicy = _STATUS_OUTPUT_POLICY,
+        metadata: dict[str, Any] | None = None,
     ) -> HarnessTool:
         return HarnessTool(
             function,
+            metadata=metadata,
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),

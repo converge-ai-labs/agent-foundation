@@ -1,5 +1,5 @@
 import { MenuItem } from "a13n-ui";
-import { PencilSimpleIcon, PlugsIcon } from "@phosphor-icons/react";
+import { EyeIcon, PencilSimpleIcon, PlugsIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,7 +29,7 @@ export interface ProviderRow {
   definition?: string | null;
   /** Brand identity for the tile. */
   type: string;
-  credentials: CredentialState;
+  credentials?: CredentialState;
   /** Domain state for the status pill (`enabled`, `disabled`, …). */
   state: string;
   stateLabel?: string;
@@ -151,7 +151,10 @@ export function ProviderTable<T extends { id: string }>({
           },
           {
             label: t("Credentials"),
-            render: (item) => <CredentialsPill state={row(item).credentials} />,
+            render: (item) => {
+              const state = row(item).credentials;
+              return state ? <CredentialsPill state={state} /> : "—";
+            },
           },
           {
             label: t("Status"),
@@ -190,7 +193,11 @@ function ProviderRowMenu({
     <>
       {edit && (
         <MenuItem onClick={(event) => edit(event.currentTarget as HTMLElement)}>
-          <PencilSimpleIcon aria-hidden="true" />
+          {label === "View" ? (
+            <EyeIcon aria-hidden="true" />
+          ) : (
+            <PencilSimpleIcon aria-hidden="true" />
+          )}
           {t(label)}
         </MenuItem>
       )}

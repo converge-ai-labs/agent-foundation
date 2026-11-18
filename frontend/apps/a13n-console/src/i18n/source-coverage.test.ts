@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import ts from "typescript";
 import { expect, it } from "vitest";
 import { metrics } from "../features/monitoring/labels";
+import { providerCategories } from "../features/providers/categories";
 import { navigationGroups } from "../layout/navigation";
 import en from "./locales/en.json";
 
@@ -528,6 +529,14 @@ it("keeps static navigation and dynamic application keys in the catalogs", () =>
   const applicationKeys = [
     ...navigationKeys,
     ...settingsKeys,
+    ...providerCategories.flatMap(
+      ({ label, description, emptyTitle, empty }) => [
+        label,
+        description,
+        emptyTitle,
+        empty,
+      ],
+    ),
     ...metrics.map((metric) => `metric.${metric}`),
   ].filter(Boolean);
   expect(applicationKeys.length).toBeGreaterThan(0);

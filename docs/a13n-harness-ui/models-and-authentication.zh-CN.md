@@ -66,7 +66,7 @@ TUI 和 WebUI 都会自动向每个 Agent 提供当前 Thread ID 和提供方模
    kind: model
    id: model-codex
    name: Codex
-   route: openai-codex:gpt-6.1-sol
+   route: openai-codex:gpt-6.2-sol
    authentication:
      kind: codex_subscription
    settings:
@@ -391,21 +391,21 @@ settings:
 
 ### 临时设置：使用 `/fast`
 
-| TUI 命令          | 请求层级                         |
-| ----------------- | -------------------------------- |
-| `/fast`           | 切换实际优先处理                 |
-| `/fast on`        | `priority`                       |
-| `/fast off`       | `default`                        |
-| `/fast ultrafast` | Codex GPT-6 Astra 的 `ultrafast` |
-| `/fast reset`     | 继承 Model 文件                  |
+| TUI 命令          | 请求层级         |
+| ----------------- | ---------------- |
+| `/fast`           | 切换实际优先处理 |
+| `/fast on`        | `priority`       |
+| `/fast off`       | `default`        |
+| `/fast ultrafast` | `ultrafast`      |
+| `/fast reset`     | 继承 Model 文件  |
 
 文件指定 priority 时，Off 与 reset 不同。覆盖跨 `/new` 和 `/resume` 保留，直到退出或选择 Agent/Model。推理不变，继承的 Markdown 子级受影响，独立/辅助 Model 不变。YAML 和已保存 Thread 配置不改动。
 
 Fast 是请求设置，不是速度保证。状态显示请求层级，提供方支持、额度和费用决定实际服务。不支持层级按原生行为处理，不静默换层级重试。
 
-### Codex GPT-6 Astra 的 Ultrafast
+### OpenAI Responses 和 Codex 的 Ultrafast
 
-路由 `openai-codex:gpt-6-astra` 可使用 `/fast ultrafast`，或 WebUI Agent & Model 设置中 **Fast** 旁的 **Ultrafast**。按钮互斥，点击已选按钮请求 Standard，**Use default** 恢复文件值。HTTP 操作使用 `fast: "ultrafast"`；布尔/null 保留原含义。
+OpenAI Responses API（`openai`、`openai-responses`）和 Codex 订阅（`openai-codex`）均可为 `gpt-6.2-sol`、`gpt-6.2-astra`、`gpt-6.1-sol` 和 `gpt-6-astra` 请求 Ultrafast。使用 `/fast ultrafast`，或 WebUI Agent & Model 设置中 **Fast** 旁的 **Ultrafast**。按钮互斥，点击已选按钮请求 Standard，**Use default** 恢复文件值。HTTP 操作使用 `fast: "ultrafast"`；布尔/null 保留原含义。
 
 Harness UI 将此控件限制到支持的连接，不检查账户资格。选择前向提供方确认访问和用量条款。请求不改变推理强度或模式。永久设置可在该 Model 保存 `settings.openai_service_tier: ultrafast`。
 

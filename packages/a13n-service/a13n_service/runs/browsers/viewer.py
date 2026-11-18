@@ -5,6 +5,7 @@ is offline. Only a currently authorized, published grant can enter this relay.
 """
 
 import secrets
+from contextlib import suppress
 from urllib.parse import parse_qs, urlsplit
 
 import anyio
@@ -112,5 +113,5 @@ async def relay(socket: WebSocket, browser_id: str) -> None:
         pass
     finally:
         if socket.application_state is not WebSocketState.DISCONNECTED:
-            with anyio.move_on_after(1, shield=True):
+            with anyio.move_on_after(1, shield=True), suppress(WebSocketDisconnect):
                 await socket.close(code=1008)

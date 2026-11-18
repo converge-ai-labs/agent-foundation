@@ -486,6 +486,7 @@ export function AgentEditor({
           target={reviewPanel.target}
           validation={reviewPanel.validation}
           models={choices.data?.models ?? []}
+          modelLookup={choices.models}
           settingsSchemas={Object.assign(
             {},
             ...(definitions.data?.items.map(
@@ -497,7 +498,7 @@ export function AgentEditor({
           onClose={() => setReviewPanel(undefined)}
         />
       )}
-      <ErrorToast error={error ?? choices.error} />
+      <ErrorToast error={error} />
     </form>
   );
 }

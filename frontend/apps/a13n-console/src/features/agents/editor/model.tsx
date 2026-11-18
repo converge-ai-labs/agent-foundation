@@ -61,7 +61,12 @@ export function ModelSection({
       title={t("Model")}
       titleActions={
         <OptionsRefresh
-          onRefresh={() => choices.refetch({ throwOnError: true })}
+          onRefresh={() =>
+            Promise.all([
+              choices.models.refetch({ throwOnError: true }),
+              choices.providers.refetch({ throwOnError: true }),
+            ])
+          }
         />
       }
       titleLink={{ href: `${basePath}/models`, label: t("Manage models") }}
@@ -70,6 +75,15 @@ export function ModelSection({
       )}
       actions={mark}
     >
+      {!readOnly && (
+        <ErrorNotice
+          error={choices.models?.error ?? choices.providers?.error}
+          retry={() => {
+            if (choices.models.error) void choices.models.refetch();
+            if (choices.providers.error) void choices.providers.refetch();
+          }}
+        />
+      )}
       {readOnly ? (
         <ReadOnlyField label={t("Model")} hideLabel>
           <span className={styles.readOnlyModel}>
@@ -82,7 +96,11 @@ export function ModelSection({
           label={t("Model")}
           placeholder={t("Choose a model…")}
           emptyMessage={t(
-            "No models available. Configure a provider and model first.",
+            choices.models?.isPending
+              ? "Loading…"
+              : choices.models?.error
+                ? "Could not load resource choices."
+                : "No models available. Configure a provider and model first.",
           )}
           popupClassName={modelPopupWidth}
           value={draft.model}

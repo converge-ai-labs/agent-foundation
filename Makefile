@@ -123,6 +123,7 @@ k8s-check: ## Test the chart and local Kubernetes launcher without building imag
 	@helm lint deploy/kubernetes/helm/a13n-service --strict
 	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml --strict
 	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml -f deploy/kubernetes/helm/values-environments-smoke.yaml --strict
+	@helm lint deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml -f deploy/kubernetes/helm/values-browsers-smoke.yaml --kube-version 1.34.0 --strict
 
 k8s-smoke: ## Check the running local kind deployment: Console, administrator sign-in and credential storage
 	@python3 scripts/deploy_smoke.py kind

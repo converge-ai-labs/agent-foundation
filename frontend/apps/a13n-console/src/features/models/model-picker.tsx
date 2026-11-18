@@ -40,6 +40,10 @@ export function ModelPicker({
       ) : (
         <CatalogPicker
           entries={model.catalog.data?.items ?? []}
+          unavailable={
+            !!model.catalog.error ||
+            model.catalog.data?.status === "unavailable"
+          }
           channels={model.channels}
           allowCompatible={model.selectedProvider?.type === "openai"}
           providerName={model.definition?.display_name}

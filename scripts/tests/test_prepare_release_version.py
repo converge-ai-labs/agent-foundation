@@ -47,7 +47,7 @@ def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> 
         if re.match(r"pydantic-ai(?:-slim)?(?:\[|[<>=!~;\s]|$)", requirement)
     ]
     assert len(requirements) == 1
-    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.68\.\*", requirements[0])
+    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.70\.\*", requirements[0])
 
 
 def copy_release_files(destination: Path) -> None:
@@ -222,9 +222,9 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.8.3"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.37.2"),
-        ("a13n-harness-ui", "0.37.3"),
-        ("a13n-service", "0.0.104"),
+        ("a13n-harness", "0.38.0"),
+        ("a13n-harness-ui", "0.38.0"),
+        ("a13n-service", "0.1.0"),
     )
     for component, version in releases:
         prepared = run_script(PREPARER, tmp_path, component, version)
@@ -561,8 +561,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.0.104", "==0.37.2"),
-        ("a13n-harness-ui", "0.37.3", "==0.37.2"),
+        ("a13n-service", "0.1.0", "==0.38.0"),
+        ("a13n-harness-ui", "0.38.0", "==0.38.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

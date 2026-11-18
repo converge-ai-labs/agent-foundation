@@ -47,6 +47,7 @@ export function BrowsersPage() {
   const { workspace, can } = useWorkspace();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string>();
+  const hasSearch = Boolean(search.trim());
   const page = useCursor({ search });
   const query = useQuery({
     queryKey: ["browsers", workspace.id, "list", page.cursor, search],
@@ -61,7 +62,7 @@ export function BrowsersPage() {
             })
             .then(data),
         page.cursor,
-        search.trim()
+        hasSearch
           ? (item) =>
               matchesSearch(search.trim().toLowerCase(), item.name, item.id)
           : undefined,
@@ -141,12 +142,14 @@ export function BrowsersPage() {
         !query.error && (
           <Empty
             icon={<GlobeIcon />}
-            title={t(search ? "No matching browsers" : "No browsers yet")}
+            title={t(hasSearch ? "No matching browsers" : "No browsers yet")}
             description={t(
-              "Create a browser, then select it from Browser in your session.",
+              hasSearch
+                ? "Try a different search."
+                : "Create a browser, then select it from Browser in your session.",
             )}
             action={
-              !search && can("write") ? (
+              !hasSearch && can("write") ? (
                 <CreateBrowser onCreated={(item) => setSelected(item.id)} />
               ) : undefined
             }
@@ -216,8 +219,9 @@ function CreateBrowserForm({
           .then(data),
       ),
   });
-  const types = useProviderTypes("browser");
-  const provider = providers.data?.find((item) => item.id === providerId);
+  const enabledProviders = providers.data?.filter((item) => item.enabled) ?? [];
+  const provider = enabledProviders.find((item) => item.id === providerId);
+  const types = useProviderTypes("browser", enabledProviders.length > 0);
   const definition = types.data?.items.find(
     (item) => item.type === provider?.type,
   );
@@ -254,12 +258,30 @@ function CreateBrowserForm({
       close();
     },
   });
+  if (providers.isPending) return <Loading variant="form" rows={2} />;
+  if (!providers.data)
+    return (
+      <ErrorNotice
+        error={providers.error}
+        retry={() => void providers.refetch()}
+      />
+    );
+  if (!enabledProviders.length)
+    return (
+      <div className="flex flex-col items-start gap-4">
+        <p>
+          {t("Add or enable a browser provider before creating a browser.")}
+        </p>
+        <ManageProvidersLink category="browsers" />
+      </div>
+    );
+  const canCreate = Boolean(name.trim() && definition && !save.isPending);
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        save.mutate();
+        if (canCreate) save.mutate();
       }}
     >
       <FormField label={t("Name")}>
@@ -273,19 +295,17 @@ function CreateBrowserForm({
       </FormField>
       <ChoiceField
         label={t("Provider")}
-        value={providerId}
+        placeholder={t("Select a provider")}
+        value={provider?.id}
         onValueChange={(value) => {
           setProviderId(String(value));
           setRecipe({});
         }}
-        options={(providers.data ?? [])
-          .filter((item) => item.enabled)
-          .map((item) => ({ value: item.id, label: item.name }))}
+        options={enabledProviders.map((item) => ({
+          value: item.id,
+          label: item.name,
+        }))}
       />
-      {!providers.isPending &&
-        !providers.data?.some((item) => item.enabled) && (
-          <ManageProvidersLink category="browsers" />
-        )}
       {definition?.browser_recipe_schema && (
         <SchemaFields
           key={providerId}
@@ -310,26 +330,30 @@ function CreateBrowserForm({
           />
         </FormField>
       )}
-      <FormField
-        label={t("Delete after idle (seconds)")}
-        description={t(
-          definition?.supports_stop
-            ? "Deleting removes the profile. Blank keeps it until you delete it."
-            : "Deletes the browser. Default: 30 minutes.",
-        )}
-      >
-        <Input
-          type="number"
-          min={60}
-          max={604800}
-          value={remove}
-          onChange={(event) => setRemove(event.target.value)}
-        />
-      </FormField>
-      <ErrorNotice error={save.error ?? providers.error ?? types.error} />
+      {definition && (
+        <FormField
+          label={t("Delete after idle (seconds)")}
+          description={t(
+            definition.supports_stop
+              ? "Deleting removes the profile. Blank keeps it until you delete it."
+              : "Deletes the browser. Default: 30 minutes.",
+          )}
+        >
+          <Input
+            type="number"
+            min={60}
+            max={604800}
+            value={remove}
+            onChange={(event) => setRemove(event.target.value)}
+          />
+        </FormField>
+      )}
+      {provider && types.isPending && <Loading />}
+      <ErrorNotice error={types.error} retry={() => void types.refetch()} />
+      <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}
-        disabled={!name.trim() || !providerId || !definition}
+        disabled={!canCreate}
         onCancel={close}
         label={t("Create browser")}
       />

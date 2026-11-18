@@ -135,6 +135,7 @@ class Chromium:
         headers: Mapping[str, str] | None = None,
         timeout: float = 10,
         discover: bool = True,
+        use_proxy: bool = True,
     ) -> Chromium:
         from cdp_use import CDPClient
 
@@ -154,6 +155,7 @@ class Chromium:
                 client.ws = await _DirectWebSocket(
                     url,
                     additional_headers=headers,
+                    proxy=True if use_proxy else None,
                     open_timeout=timeout,
                     close_timeout=5,
                     max_size=client.max_ws_frame_size,

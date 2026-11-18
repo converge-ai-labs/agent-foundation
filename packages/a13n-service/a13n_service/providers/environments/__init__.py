@@ -13,6 +13,7 @@ from pathlib import PurePosixPath
 from a13n_harness.providers.environment.kubernetes.configuration import ClusterProfile
 
 from a13n_service.providers.environments.boxd import BOXD
+from a13n_service.providers.environments.cloudflare import CLOUDFLARE
 from a13n_service.providers.environments.daytona import DAYTONA
 from a13n_service.providers.environments.docker import DOCKER, docker
 from a13n_service.providers.environments.e2b import E2B
@@ -24,7 +25,19 @@ from a13n_service.providers.environments.sprites import SPRITES
 from a13n_service.providers.environments.vercel import VERCEL
 from a13n_service.providers.registry import RegisteredProvider
 
-BUILT_IN_ENVIRONMENT_PROVIDERS = (DOCKER, E2B, DAYTONA, MODAL, VERCEL, SPRITES, RUNLOOP, BOXD, LOCAL, KUBERNETES)
+BUILT_IN_ENVIRONMENT_PROVIDERS = (
+    DOCKER,
+    E2B,
+    DAYTONA,
+    MODAL,
+    VERCEL,
+    SPRITES,
+    RUNLOOP,
+    BOXD,
+    LOCAL,
+    KUBERNETES,
+    CLOUDFLARE,
+)
 
 
 def offered(

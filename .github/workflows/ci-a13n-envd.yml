@@ -235,7 +235,13 @@ jobs:
         run: uv run --locked pyright scripts/eip_codegen
 
   client:
-    name: a13n-envd client
+    name: a13n-envd client (Python ${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14", "3.15"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
     runs-on: ubuntu-24.04
@@ -249,7 +255,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -270,7 +276,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: envd-client-${{ github.run_attempt }}
+          name: envd-client-py${{ matrix.python-version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 

@@ -518,9 +518,10 @@ class BotController:
     async def reconcile_policy(self, *, now: datetime | None = None) -> None:
         if self._owned:
             async with self._lock:
-                await self._store.bot_inbox.heartbeat(
+                if await self._store.bot_inbox.heartbeat(
                     policy=await self._policy(), now=now or datetime.now(UTC), text=_HEARTBEAT
-                )
+                ):
+                    self.signal_inputs()
 
     async def _automatic_loop(self) -> None:
         while True:

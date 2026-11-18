@@ -16,6 +16,66 @@ from sqlalchemy.pool import AsyncAdaptedQueuePool
 pytestmark = pytest.mark.anyio
 
 
+async def test_child_resume_has_one_successor_across_database_connections(tmp_path: Path) -> None:
+    from a13n_harness_ui.errors import StoreConflictError
+    from a13n_harness_ui.storage import ObjectKind, ObjectRef, open_local_store
+    from a13n_harness_ui.storage.repositories import ChildExecutionRepository
+
+    from .test_thread_repository import _configuration, _initial
+
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        await store.threads.create(thread_id="parent", configuration=_configuration(), initial_state=_initial())
+        await store.threads.create(
+            thread_id="child", parent_thread_id="parent", configuration=_configuration(), initial_state=_initial()
+        )
+        composition = ObjectRef(
+            object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="2" * 64
+        )
+        checkpoint = ObjectRef(
+            object_kind=ObjectKind.child_checkpoint, object_schema_version="1", logical_digest="3" * 64
+        )
+        await store.child_executions.create(
+            execution_id="original",
+            parent_thread_id="parent",
+            child_thread_id="child",
+            child_run_id="run-original",
+            run_composition=composition,
+        )
+        previous = await store.child_executions.finish(
+            execution_id="original", status="succeeded", expected_checkpoint=None, checkpoint=checkpoint
+        )
+        accepted, rejected = [], []
+
+        async def resume(repository, execution_id):
+            try:
+                accepted.append(
+                    await repository.resume(
+                        previous_execution_id="original",
+                        execution_id=execution_id,
+                        child_run_id=f"run-{execution_id}",
+                        run_composition=composition,
+                    )
+                )
+            except StoreConflictError as error:
+                rejected.append(error)
+
+        async with open_database(store.layout.database, store.settings) as other:
+            async with create_task_group() as tasks:
+                tasks.start_soon(resume, store.child_executions, "first")
+                tasks.start_soon(resume, ChildExecutionRepository(other.sessions), "second")
+        assert len(accepted) == len(rejected) == 1
+        winner = accepted[0]
+        assert winner.resumed_from == "original" and winner.segment_index == 1
+        assert rejected[0].code == "child_execution_already_resumed"
+        assert winner.execution_id in str(rejected[0])
+        assert await store.child_executions.get("original") == previous
+        assert await store.child_executions.get("second" if winner.execution_id == "first" else "first") is None
+        await resume(store.child_executions, "retry")
+        assert len(accepted) == 1 and len(rejected) == 2
+        assert rejected[1].code == "child_execution_already_resumed"
+        assert await store.child_executions.get("retry") is None
+
+
 async def test_pending_writers_leave_connections_available_for_reads(tmp_path: Path) -> None:
     async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
         repository = ProjectModelPreferenceRepository(database.sessions)

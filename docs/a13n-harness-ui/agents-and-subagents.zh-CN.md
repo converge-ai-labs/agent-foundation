@@ -139,6 +139,8 @@ subagents:
 
 运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 会收到明确错误，可以等待现有工作结束。通过返回的执行 ID 使用 `subagent_info`、`wait_subagent`、`steer_subagent`、`resume_subagent` 以及取消操作。
 
+默认配置为 `input.steering_mode: immediate`。主 Agent 调用 `wait_subagent` 期间，你发来新消息，等待就会提前返回当前子任务状态，主 Agent 随即处理消息。子任务会继续运行。设为 `queued` 时，主 Agent 会在等待返回后处理你的消息。
+
 最终结果会自动投递给父级，包括父级结束本轮之后。所有子级都可以用 `send_parent_message` 发送消息并继续工作。必须得到答复才能继续时，子级以问题结束本轮，主 Agent 可以带着答案恢复它。消息和结果包含子级名称、执行 ID 和状态。同一 ID 的结果可能重复出现。
 
 活动父级通过 steering 接收输入。父级正常完成后空闲时，可以启动新 Run，这会增加 Model 用量。停止、失败、挂起、中断、待处理用户决策和归档都会阻止自动重启。TUI 将有来源标记的父级输入和完成通知显示为 Activity。

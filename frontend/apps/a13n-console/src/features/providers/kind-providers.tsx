@@ -76,22 +76,24 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
         })
         .then(data),
     // Translate the observer's presentation without changing cached server data.
-    select: (catalog) =>
-      kind === "browser"
-        ? {
-            ...catalog,
-            items: catalog.items.map((definition) => ({
-              ...definition,
-              display_name:
-                definition.display_name === "Docker browser"
-                  ? t("Docker browser")
-                  : definition.display_name ===
-                      "Native browser (Linux debugging)"
-                    ? t("Native browser (Linux debugging)")
-                    : definition.display_name,
-            })),
-          }
-        : catalog,
+    select: (catalog) => ({
+      ...catalog,
+      items: catalog.items.map((definition) => {
+        const name = definition.display_name;
+        const label =
+          kind === "browser" && name === "Docker browser"
+            ? t("Docker browser")
+            : kind === "browser" && name === "Native browser (Linux debugging)"
+              ? t("Native browser (Linux debugging)")
+              : kind === "environment" &&
+                  name === "Local directory (development only)"
+                ? t("Local directory (development only)")
+                : name;
+        return label === name
+          ? definition
+          : { ...definition, display_name: label };
+      }),
+    }),
   });
 }
 
@@ -165,20 +167,32 @@ export function KindProviders({
         rowActionLabel={manage ? "Edit" : "View"}
         canActivateRow={() => kind === "environment" || manage}
         onRowActivate={rows.activate}
-        notice={notice}
-        row={(item) => ({
-          id: item.id,
-          name: item.name,
-          type: item.type,
-          definition: definitionFor(item.type)?.display_name ?? item.type,
-          credentials:
-            definitionFor(item.type)?.credential_schema == null
-              ? ("not_required" as const)
-              : item.credential_configured
-                ? ("configured" as const)
-                : ("not_configured" as const),
-          state: item.enabled ? "enabled" : "disabled",
-        })}
+        notice={
+          <>
+            {notice}
+            <ErrorNotice
+              error={providerTypes.error}
+              retry={() => void providerTypes.refetch()}
+            />
+          </>
+        }
+        row={(item) => {
+          const definition = definitionFor(item.type);
+          return {
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            definition: definition?.display_name ?? item.type,
+            credentials: item.credential_configured
+              ? "configured"
+              : !definition
+                ? undefined
+                : definition.credential_schema == null
+                  ? "not_required"
+                  : "not_configured",
+            state: item.enabled ? "enabled" : "disabled",
+          };
+        }}
       />
     </>
   );

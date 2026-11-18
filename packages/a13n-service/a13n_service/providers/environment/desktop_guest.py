@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import resource
 import secrets
 import signal
 import socket
@@ -42,6 +43,15 @@ def parent_death_signal(parent: int) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0 or os.getppid() != parent:
         os._exit(1)
+
+
+def prepare_child(parent: int, command: str) -> None:
+    parent_death_signal(parent)
+    if command == "x11vnc":
+        # LibVNCServer scans every FD up to the soft limit before accepting a client.
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft == resource.RLIM_INFINITY or soft > 4096:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (4096, hard))
 
 
 def private_directory(root: Path) -> None:
@@ -126,7 +136,7 @@ class Supervisor:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            preexec_fn=partial(parent_death_signal, os.getpid()),
+            preexec_fn=partial(prepare_child, os.getpid(), command[0]),
         )
 
     async def terminate(self, process: asyncio.subprocess.Process) -> None:
@@ -336,6 +346,7 @@ class Supervisor:
             "-rfbport",
             str(port),
             "-no6",
+            "-nolookup",  # The VNC backend only accepts loopback clients.
             "-noshm",
             "-forever",
             "-shared",
@@ -353,7 +364,7 @@ class Supervisor:
         process = await self.spawn(*command)
 
         try:
-            await self.wait_ready(process, port)
+            await self.wait_ready(process, port, rfb=True)
             if absolute_expiry is None:
                 deadline, expires_at = self.deadline(request)
             else:
@@ -383,17 +394,24 @@ class Supervisor:
             password_file.unlink(missing_ok=True)
             raise
 
-    async def wait_ready(self, process: asyncio.subprocess.Process, port: int) -> None:
+    async def wait_ready(self, process: asyncio.subprocess.Process, port: int, *, rfb: bool = False) -> None:
         async def listening() -> None:
             while True:
                 if process.returncode is not None:
                     raise Refused("desktop_endpoint_failed")
                 try:
-                    _, writer = await asyncio.open_connection("127.0.0.1", port)
-                    writer.close()
-                    await writer.wait_closed()
+                    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+                    try:
+                        if rfb:
+                            # x11vnc must be serving the display, not just listening.
+                            greeting = await reader.readexactly(12)
+                            if not greeting.startswith(b"RFB 003."):
+                                raise Refused("desktop_endpoint_failed")
+                    finally:
+                        writer.close()
+                        await writer.wait_closed()
                     return
-                except OSError:
+                except (OSError, asyncio.IncompleteReadError):
                     await asyncio.sleep(0.05)
 
         await asyncio.wait_for(listening(), 8)

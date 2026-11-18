@@ -76,7 +76,7 @@ def _choices(route: str) -> tuple[_Choice, ...]:
     if provider in _OPENAI_ROUTES:
         # GPT-6.1 Sol is not recognized by the bundled SDK profile yet.
         # Its documented efforts exclude none/minimal and include max.
-        if name == "gpt-6.1-sol":
+        if name in {"gpt-6.1-sol", "gpt-6.2-sol", "gpt-6.2-astra"}:
             return tuple(
                 _Choice(effort, "Reasoning effort", {"openai_reasoning_effort": effort})
                 for effort in ("low", "medium", "high", "xhigh", "max")

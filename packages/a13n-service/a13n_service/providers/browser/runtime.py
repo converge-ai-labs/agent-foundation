@@ -17,11 +17,14 @@ import secrets
 import signal
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from functools import partial
+from http import HTTPStatus
 from pathlib import Path
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import WebSocketException
+from websockets.asyncio.server import serve
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
 
 def desktop_module(path: Path):
@@ -135,6 +138,81 @@ class Runtime:
             writer.close()
             if upstream is not None:
                 upstream.close()
+
+    @asynccontextmanager
+    async def gateway(self, port: int, info: dict):
+        if self.args.credential_file is None:
+            async with await asyncio.start_server(
+                partial(self.proxy, port=port), self.args.listen, self.args.cdp_port
+            ) as server:
+                try:
+                    yield server.sockets[0].getsockname()[1]
+                finally:
+                    # wait_closed includes accepted CDP connections.
+                    server.close()
+                    server.close_clients()
+            return
+
+        token = Path(self.args.credential_file).read_text().strip()
+        if len(token) < 32:
+            raise RuntimeError("Invalid Browser runtime credential")
+
+        def authorize(connection, request):
+            if request.path == "/ready":
+                return connection.respond(HTTPStatus.OK, "ready\n")
+            value = request.headers.get("Authorization", "")
+            if not secrets.compare_digest(value.encode(), f"Bearer {token}".encode()):
+                return connection.respond(HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
+            if request.path not in {"/control", f"/cdp/{self.nonce}"}:
+                return connection.respond(HTTPStatus.NOT_FOUND, "Not found\n")
+            return None
+
+        async def relay(source, destination):
+            async for message in source:
+                await destination.send(message)
+
+        async def handle(connection):
+            if connection.request.path == "/control":
+                try:
+                    request = json.loads(await asyncio.wait_for(connection.recv(), 5))
+                    if request == {"operation": "describe"}:
+                        result = {"runtime_id": self.nonce, "viewer_generation": info["viewer_generation"]}
+                    elif (
+                        isinstance(request, dict)
+                        and request.pop("runtime_id", None) == self.nonce
+                        and request.get("operation") in {"ensure", "revoke_browser"}
+                    ):
+                        result = await self.guest.call(self.root / "desktop", request)
+                    else:
+                        result = {"error": "invalid_operation_or_runtime"}
+                    await connection.send(json.dumps(result))
+                except ConnectionClosed:
+                    pass
+                except (ValueError, OSError, TimeoutError):
+                    await connection.close(1011)
+                return
+            assert self.cdp_url is not None
+            async with connect(self.cdp_url, proxy=None, max_size=64 * 1024 * 1024) as upstream:
+                tasks = [
+                    asyncio.create_task(relay(connection, upstream)),
+                    asyncio.create_task(relay(upstream, connection)),
+                ]
+                try:
+                    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+        async with serve(
+            handle,
+            self.args.listen,
+            self.args.cdp_port,
+            process_request=authorize,
+            max_size=64 * 1024 * 1024,
+            close_timeout=2,
+        ) as server:
+            yield next(iter(server.sockets)).getsockname()[1]
 
     async def serve(self) -> None:
         self.guest.private_directory(self.root)
@@ -264,30 +342,22 @@ class Runtime:
         chromium = self.chromium = await self.spawn(*command, env=environment)
         critical = (display, window_manager, viewer, chromium)
         port, path, description = await self.wait_ready(endpoint, critical)
-        async with await asyncio.start_server(
-            partial(self.proxy, port=int(port)), self.args.listen, self.args.cdp_port
-        ) as server:
+        info["viewer_generation"] = description["result"]["generation"]
+        async with self.gateway(int(port), info) as cdp_port:
             info.update(
                 ready=True,
-                cdp_port=server.sockets[0].getsockname()[1],
+                cdp_port=cdp_port,
                 cdp_path=path,
                 viewer_port=self.args.viewer_port,
-                viewer_generation=description["result"]["generation"],
             )
             self.guest.publish(self.root / "runtime.json", json.dumps(info))
-            try:
-                while not self.stop.is_set():
-                    if any(child.returncode is not None for child in critical):
-                        raise RuntimeError("A required Browser runtime process exited")
-                    try:
-                        await asyncio.wait_for(self.stop.wait(), 0.1)
-                    except TimeoutError:
-                        pass
-            finally:
-                # wait_closed also waits for accepted CDP connections. End them before
-                # leaving this server scope so clients cannot block owned-child cleanup.
-                server.close()
-                server.close_clients()
+            while not self.stop.is_set():
+                if any(child.returncode is not None for child in critical):
+                    raise RuntimeError("A required Browser runtime process exited")
+                try:
+                    await asyncio.wait_for(self.stop.wait(), 0.1)
+                except TimeoutError:
+                    pass
 
 
 def main() -> None:
@@ -300,6 +370,7 @@ def main() -> None:
     parser.add_argument("--viewer-port", type=int, required=True)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=800)
+    parser.add_argument("--credential-file")
     parser.add_argument("--parent", type=int)
     parser.add_argument("--gate-fd", type=int)
     parser.add_argument("--no-sandbox", action="store_true")

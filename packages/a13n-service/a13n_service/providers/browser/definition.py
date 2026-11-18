@@ -8,7 +8,7 @@ connections, not merely prevent opening a new viewer.
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import ClassVar, Literal, Protocol
+from typing import ClassVar, Literal, Protocol, runtime_checkable
 
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_harness.providers.definition import ProviderDefinition
@@ -27,6 +27,24 @@ class LiveBrowser:
 
 
 @dataclass(frozen=True, slots=True)
+class BrowserCheckpoint:
+    """Persist supplier identity without advancing the Service lifecycle phase."""
+
+    state: dict[str, JsonValue] = field(repr=False)
+
+
+@runtime_checkable
+class StagedBrowserProvider(Protocol):
+    async def reconcile_create(
+        self, allocation_id: str, state: dict[str, JsonValue] | None
+    ) -> LiveBrowser | BrowserCheckpoint: ...
+
+    async def start(self, allocation_id: str, state: dict[str, JsonValue], *, generation: int) -> LiveBrowser:
+        """Safely replay activation of this generation, never create a new allocation."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
 class ViewerGrant:
     url: str = field(repr=False)
     state: dict[str, JsonValue] = field(repr=False)
@@ -34,7 +52,7 @@ class ViewerGrant:
 
 
 class BrowserProvider(Protocol):
-    async def create(self, allocation_id: str, recipe: BaseModel) -> LiveBrowser: ...
+    async def create(self, allocation_id: str, recipe: BaseModel) -> LiveBrowser | BrowserCheckpoint: ...
 
     async def inspect(self, allocation_id: str, state: dict[str, JsonValue] | None) -> LiveBrowser | None:
         """Find the same live allocation, never allocate or restart it.
@@ -45,7 +63,7 @@ class BrowserProvider(Protocol):
         """
         ...
 
-    async def delete(self, allocation_id: str, state: dict[str, JsonValue] | None) -> None:
+    async def delete(self, allocation_id: str, state: dict[str, JsonValue] | None) -> BrowserCheckpoint | None:
         """Idempotently confirm termination, including an uncertain or delayed create.
 
         Successful deletion permanently fences the allocation identity: an earlier

@@ -12,6 +12,8 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolic
 from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
 from pydantic import BaseModel
 
+from a13n_service.providers.environment.cloudflare import Account as CloudflareAccount
+
 # A remote Docker engine's scheme, and the one its API is spoken over.
 _REMOTE_ENGINE = {"tcp": "http", "https": "https"}
 
@@ -41,6 +43,8 @@ def dialed_endpoint(configuration: BaseModel) -> str | None:
     """The URL an account names: a Docker engine other than the operator's."""
     if isinstance(configuration, DockerConnectionConfiguration) and "docker_host" in configuration.model_fields_set:
         return engine_endpoint(configuration.docker_host)
+    if isinstance(configuration, CloudflareAccount):
+        return configuration.endpoint
     return None
 
 

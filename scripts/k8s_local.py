@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLUSTER = os.environ.get("K8S_CLUSTER", "a13n-local")
 CONTEXT = f"kind-{CLUSTER}"
 NAMESPACE = "a13n-service"
+BROWSER_NAMESPACE = "a13n-browsers"
 PORT = int(os.environ.get("K8S_PORT", "8080"))
 CONSOLE_URL = f"http://127.0.0.1:{PORT}"
 CONTROL = "deployment/a13n-a13n-control"
@@ -181,14 +182,17 @@ def bootstrap(admin: dict[str, str]) -> bool:
 
 def prepare_image(component: str, destination: str) -> str:
     """Build locally by default; CI can supply its already-built checkout image."""
-    variable = "K8S_SERVICE_IMAGE" if component == "a13n-service" else "K8S_SANDBOX_IMAGE"
+    variable, scope = {
+        "a13n-service": ("K8S_SERVICE_IMAGE", "ci-service"),
+        "browser": ("K8S_BROWSER_IMAGE", "ci-browser"),
+        "sandbox": ("K8S_SANDBOX_IMAGE", "service-e2e-sandbox"),
+    }[component]
     source = os.environ.get(variable)
     cached = os.environ.get("K8S_BUILD_CACHE") == "gha"
     if not source:
         print(f"Building {destination}...", flush=True)
         build = ("build",)
         if cached:
-            scope = "ci-service" if component == "a13n-service" else "service-e2e-sandbox"
             build = (
                 "buildx",
                 "build",
@@ -228,7 +232,7 @@ def prepare_and_load_image(component: str, destination: str) -> str:
     return image
 
 
-def start(state: Path, *, environments: bool = False) -> None:
+def start(state: Path, *, environments: bool = False, browsers: bool = False) -> None:
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):
             raise RuntimeError(f"Install {tool} before running make k8s-up")
@@ -257,21 +261,48 @@ def start(state: Path, *, environments: bool = False) -> None:
         raise ValueError(f"Existing kind cluster lacks 127.0.0.1:{PORT} -> 30080 mapping; no cluster was deleted")
     if not kubectl("get", "namespace", NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip():
         kubectl("create", "namespace", NAMESPACE)
+    if (
+        browsers
+        and not kubectl("get", "namespace", BROWSER_NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip()
+    ):
+        kubectl("create", "namespace", BROWSER_NAMESPACE)
     admin = prepare(state)
     tag = "local-" + secrets.token_hex(6)
     # The sandbox is first consumed by smoke runs, not migration or Service startup.
     # Join both image operations before returning, including on deployment failure.
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         service = pool.submit(prepare_and_load_image, "a13n-service", f"a13n-service:{tag}")
         sandbox = pool.submit(prepare_and_load_image, "sandbox", f"a13n-sandbox:{tag}") if environments else None
+        browser = pool.submit(prepare_and_load_image, "browser", f"a13n-browser:{tag}") if browsers else None
         image = service.result()
-        deploy(state, image, tag, admin, environments=environments)
+        browser_image = browser.result() if browser is not None else None
+        deploy(state, image, tag, admin, environments=environments, browser_image=browser_image)
         sandbox_image = sandbox.result() if sandbox is not None else None
-    (state / "deployment.json").write_text(json.dumps({"service_image": image, "sandbox_image": sandbox_image}))
+    deployment = {"service_image": image, "sandbox_image": sandbox_image}
+    if browser_image:
+        deployment.update(browser_image=browser_image, browser_namespace=BROWSER_NAMESPACE)
+    (state / "deployment.json").write_text(json.dumps(deployment))
 
 
-def deploy(state: Path, image: str, tag: str, admin: dict[str, str] | None, *, environments: bool) -> None:
+def deploy(
+    state: Path,
+    image: str,
+    tag: str,
+    admin: dict[str, str] | None,
+    *,
+    environments: bool,
+    browser_image: str | None = None,
+) -> None:
     overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml") if environments else ()
+    if browser_image:
+        repository, browser_tag = browser_image.rsplit(":", 1)
+        overlay += (
+            "-f",
+            "deploy/kubernetes/helm/values-browsers-smoke.yaml",
+            "--set-string",
+            f"kubernetesBrowsers.namespace={BROWSER_NAMESPACE},"
+            f"kubernetesBrowsers.image.repository={repository},kubernetesBrowsers.image.tag={browser_tag}",
+        )
     print("Deploying; Helm waits for migration and readiness (up to 20 minutes)...", flush=True)
     try:
         run(
@@ -329,7 +360,11 @@ def main() -> None:
     with (state / "operation.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            start(state, environments=os.environ.get("K8S_ENVIRONMENTS") == "1")
+            start(
+                state,
+                environments=os.environ.get("K8S_ENVIRONMENTS") == "1",
+                browsers=os.environ.get("K8S_BROWSERS") == "1",
+            )
         except (OSError, ValueError, RuntimeError) as error:
             parser.exit(1, f"{error}\n")
 

@@ -179,6 +179,7 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
   ).toBe("Add an enabled, configured Web Provider to enable this tool.");
   await user.click(screen.getByRole("button", { name: "Configure search" }));
   expect(screen.getByText("Web Provider")).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Web Provider" })).toBeNull();
   await user.hover(
     screen.getByRole("button", { name: "Include domains help" }),
   );

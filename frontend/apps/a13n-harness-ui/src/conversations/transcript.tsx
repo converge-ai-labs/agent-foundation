@@ -850,6 +850,7 @@ function publishedRows(
   messages: PublishedMessage[],
   hasEarlier: boolean,
   hasLater: boolean,
+  entries: Schema<"TranscriptEntry">[],
 ): Row[] {
   const rows = [...native];
   const local: Row[] = [];
@@ -859,7 +860,10 @@ function publishedRows(
   const displayIds = new Set(
     native.map((row) => row.displayId).filter(Boolean),
   );
-  const oldest = native.find((row) => row.timestamp !== undefined)?.timestamp;
+  const oldest =
+    timestampMilliseconds(
+      entries.find((entry) => entry.timestamp)?.timestamp ?? undefined,
+    ) ?? native.find((row) => row.timestamp !== undefined)?.timestamp;
   const newest = native.findLast(
     (row) => row.timestamp !== undefined,
   )?.timestamp;
@@ -888,8 +892,7 @@ function publishedRows(
       if (!hasLater) local.push(row);
       continue;
     }
-    if (hasEarlier && (oldest === undefined || row.timestamp! < oldest))
-      continue;
+    if (hasEarlier && oldest !== undefined && row.timestamp! < oldest) continue;
     if (hasLater && (newest === undefined || row.timestamp! > newest)) continue;
     const next = rows.findIndex(
       (item) => item.timestamp !== undefined && item.timestamp > row.timestamp!,
@@ -988,7 +991,7 @@ export function ConversationTranscript({
           connectorOffers={connectorOffers}
           rows={
             publications.length
-              ? publishedRows(rows, publications, hasEarlier, hasLater)
+              ? publishedRows(rows, publications, hasEarlier, hasLater, entries)
               : rows
           }
           entries={entries}
@@ -1431,7 +1434,10 @@ function TurnSegments({
       !row.subagentRunId &&
       (row.kind === "input" ||
         (row.kind === "assistant" &&
-          (!complete || row.publication || row.position === outputPosition)) ||
+          (threadId === BOT_THREAD_ID ||
+            !complete ||
+            row.publication ||
+            row.position === outputPosition)) ||
         row.kind === "failure" ||
         row.kind === "app" ||
         row.kind === "question")
@@ -1458,7 +1464,7 @@ function TurnSegments({
       segments.push({
         id:
           kind === "execution"
-            ? ((complete
+            ? ((complete && threadId !== BOT_THREAD_ID
                 ? [...mountedExecution.current].find((key) =>
                     key.startsWith(`${boundary}:execution:`),
                   )
