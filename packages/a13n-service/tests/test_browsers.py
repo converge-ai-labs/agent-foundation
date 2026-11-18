@@ -8,11 +8,17 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl
+from a13n_harness.capabilities.browser.actions import TextCondition
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_service.distribution import OSS
 from a13n_service.infra import outbox
 from a13n_service.infra.db import now, transaction
-from a13n_service.providers.browser.definition import BrowserProviderDefinition, LiveBrowser, ViewerGrant
+from a13n_service.providers.browser.definition import (
+    BrowserProviderDefinition,
+    BrowserProviderError,
+    LiveBrowser,
+    ViewerGrant,
+)
 from a13n_service.providers.registry import Registry
 from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.browsers import admission, control, execution, lifecycle, maintenance
@@ -435,8 +441,6 @@ async def test_permits_read_durable_selection_and_allow_other_pages(service, run
 
 
 async def test_cancelled_condition_wait_releases_page_permit(service, runs_kit, scripted_model, invocation):
-    from a13n_harness.capabilities.browser.actions import TextCondition
-
     _, browser = await setup(service, runs_kit)
     lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
     async with execution.open_backend(
@@ -457,6 +461,28 @@ async def test_cancelled_condition_wait_releases_page_permit(service, runs_kit, 
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert len(await backend.tabs("list")) == 1
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [BrowserError("connection lost", dispatch="unknown"), BrowserProviderError("connection_lost"), TimeoutError()],
+    ids=["browser", "provider", "unexpected"],
+)
+async def test_condition_wait_with_unknown_dispatch_keeps_page_permit(
+    service, runs_kit, scripted_model, invocation, failure
+):
+    _, browser = await setup(service, runs_kit)
+    lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
+    async with execution.open_backend(
+        service.runtime, lease, binding, invocation, frozenset({"tabs", "wait"})
+    ) as backend:
+        await backend.tabs("new")
+        backend.native.wait = AsyncMock(side_effect=failure)
+        with pytest.raises(BrowserError) as caught:
+            await backend.wait(TextCondition(kind="text", text="ready"))
+        assert caught.value.dispatch == "unknown"
+        async with transaction(service.runtime.storage) as session:
+            assert await lifecycle.unsettled(session, browser["id"])
 
 
 async def test_unknown_native_creation_is_owned_and_never_timeout_drained(

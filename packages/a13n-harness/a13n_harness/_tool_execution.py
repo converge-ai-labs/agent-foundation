@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
+from inspect import iscoroutinefunction
 from typing import Any
 
 from pydantic_ai import ToolReturn
@@ -16,6 +17,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.tools import ToolDefinition
 
 from a13n_harness.tool_execution import (
     _OWNED_TOOL_EXECUTION,
@@ -26,20 +28,19 @@ from a13n_harness.tool_execution import (
 )
 
 TOOL_EXECUTION_METADATA_KEY = "a13n.tool-execution"
+INSPECT_ON_HANDOFF_KEY = "a13n.inspect-on-handoff"
 
 
-@dataclass(frozen=True)
-class InterruptibleObservation:
-    """An ordered read-only wait with a known result when steering ends the observation."""
-
-    interrupted_result: str
-
-    async def on_handoff(self) -> str:
-        return self.interrupted_result
-
-
-def supports_tool_handoff(mode: object) -> bool:
-    return isinstance(mode, InterruptibleObservation) or mode in {"owned", "owned_auto", "control", "process"}
+def tool_handoff_mode(tool: ToolDefinition, arguments: dict[str, Any]) -> str | Callable[[], Awaitable[Any]] | None:
+    """Resolve a supported execution mode or the inspection callback of an ordered observation."""
+    metadata = tool.metadata or {}
+    inspect = metadata.get(INSPECT_ON_HANDOFF_KEY)
+    if iscoroutinefunction(inspect):
+        return inspect
+    mode = metadata.get(TOOL_EXECUTION_METADATA_KEY)
+    if callable(mode):
+        mode = mode(arguments)
+    return mode if isinstance(mode, str) and mode in {"owned", "owned_auto", "control", "process"} else None
 
 
 class RunToolExecutions:
@@ -154,7 +155,7 @@ class RunToolExecutions:
             await asyncio.gather(waiter, handoff, return_exceptions=True)
         # Poll after draining the cancelled observer so final output and a
         # completion racing with handoff are not replaced by a stale snapshot.
-        if not waiter.cancelled():
+        if not waiter.cancelled() and waiter.exception() is None:
             return waiter.result()
         return await inspect()
 

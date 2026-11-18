@@ -169,7 +169,7 @@ async def test_spawn_tool_client_tool_wait_resume_and_leaf_boundary(service, scr
         if message.get("tool_call_id") == "spawn"
     )
     assert spawn_receipt["execution_id"] == child_id
-    assert "delivered to this conversation automatically" in spawn_receipt["message"]
+    assert "arrives here automatically" in spawn_receipt["message"]
     child_request = requests[-1]
     names = {item["function"]["name"] for item in child_request["tools"]}
     assert "review_invoice" in names and not {"spawn_subagent", "delegate", "resume_subagent"} & names

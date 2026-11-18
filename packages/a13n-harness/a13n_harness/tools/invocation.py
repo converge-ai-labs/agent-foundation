@@ -10,6 +10,7 @@ from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, Self, cast
 from uuid import uuid4
 
@@ -43,7 +44,7 @@ from a13n_harness._json import (
 )
 from a13n_harness._retained_scope import RetainedScope
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
-from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY, InterruptibleObservation, supports_tool_handoff
+from a13n_harness._tool_execution import tool_handoff_mode
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.session_recovery import envd_session_notifications
@@ -531,11 +532,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             ctx.usage_limits.check_before_tool_call(projected)
         state.usage_pending += 1
         call_id = ctx.tool_call_id or name
-        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
-        if callable(mode):
-            mode = mode(tool_args)
+        mode = tool_handoff_mode(tool.tool_def, tool_args)
         unsupported = not _OWNED_TOOL_EXECUTION.get() and (
-            not supports_tool_handoff(mode) or (mode in {"owned", "owned_auto"} and self._scope is None)
+            mode is None or (mode in {"owned", "owned_auto"} and self._scope is None)
         )
         if unsupported:
             ctx.deps._tool_executions.block_handoff(call_id)
@@ -743,9 +742,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         runtime = ctx.deps.tool_execution
         state = ctx.deps._tool_executions
-        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
-        if callable(mode):
-            mode = mode(tool_args)
+        mode = tool_handoff_mode(tool.tool_def, tool_args)
         if mode in {"control", "process"}:
             state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
         # A tool's native sequential declaration orders its model-response batch.
@@ -762,12 +759,10 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         ):
             return await operation()
         if self._scope is None or mode not in {"owned", "owned_auto"}:
-            if isinstance(mode, InterruptibleObservation):
-                return await state.wait_or_inspect(
-                    lambda: runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential),
-                    mode.on_handoff,
-                )
-            return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
+            run_inline = partial(runtime.inline, operation, thread_id=ctx.deps.thread_id, sequential=sequential)
+            if callable(mode):
+                return await state.wait_or_inspect(run_inline, mode)
+            return await run_inline()
         assert ctx.tool_call_id is not None
         resources = AsyncExitStack()
         resources.push_async_callback(state.retain())

@@ -251,8 +251,7 @@ class Backend:
 
                     native.check_access = exact_selection
                     exact_selection()
-                # Cancelling a read-only condition wait leaves no dispatched page action.
-                known = tool == "wait"
+                known = False
                 result = await call(native)
                 known = not (
                     tool in {"act", "navigate", "wait"}
@@ -261,6 +260,10 @@ class Backend:
                     and json.loads(result).get("dispatch") == "unknown"
                 )
                 return result
+            except asyncio.CancelledError:
+                # Cancelling a read-only wait leaves no dispatched page action.
+                known = known or tool == "wait"
+                raise
             except BrowserError as error:
                 known = known or error.dispatch != "unknown"
                 raise

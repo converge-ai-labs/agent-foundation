@@ -260,7 +260,7 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
         assert receipts[0]["source"] == "host"
-        assert "delivered to this conversation automatically" in receipts[0]["message"]
+        assert "arrives here automatically" in receipts[0]["message"]
         execution_id = receipts[0]["execution_id"]
         page = await app.query_child_executions(parent_thread_id=thread.thread_id, execution_id=execution_id)
         model_info = page.executions[0].model

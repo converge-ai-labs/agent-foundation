@@ -32,8 +32,8 @@ _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
 _ASYNC_RESULT_GUIDANCE = (
-    "The subagent's final result is delivered to this conversation automatically, even after your turn ends. "
-    "Continue other work. Use wait_subagent only when your next step needs the result now."
+    "The final result arrives here automatically, even after your turn ends. "
+    "Continue other work. Wait only if your next step needs the result."
 )
 
 
