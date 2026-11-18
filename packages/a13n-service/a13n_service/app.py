@@ -38,6 +38,7 @@ from a13n_service.infra.ingress import BodyLimit
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.objects.local import LocalObjects
 from a13n_service.infra.objects.s3 import open_s3
+from a13n_service.infra.openapi_precision import preserve_integer_schema_bounds
 from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
@@ -119,6 +120,12 @@ def contract(app: FastAPI, *, locally_authenticated: Sequence[APIRouter]) -> dic
     if app.openapi_schema is not None:
         return app.openapi_schema
     document = FastAPI.openapi(app)  # FastAPI's own document, which it caches; completed in place
+    try:
+        preserve_integer_schema_bounds(app, document)
+    except Exception:
+        # FastAPI cached the intermediate document before bounds were restored.
+        app.openapi_schema = None
+        raise
     ids = [operation["operationId"] for operations in document["paths"].values() for operation in operations.values()]
     if duplicates := sorted({name for name in ids if ids.count(name) > 1}):
         raise ValueError(f"Operation names must be unique: {', '.join(duplicates)}")
