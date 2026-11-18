@@ -4,7 +4,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
 import { useResourceRows } from "../../shared/dialogs";
-import { credentialMode } from "../../shared/provider-authentication";
+import { webCredentialState } from "./credential-state";
 import { ProviderTable } from "../providers";
 import { webProviderApi } from "./api";
 import { AddWebProvider, WebProviderEditor } from "./editor";
@@ -51,18 +51,14 @@ export function WebProviders() {
         page={page}
         nextCursor={query.data?.next_cursor}
         action={add}
+        rowActionLabel={manage ? "Edit" : "View"}
         onRowActivate={rows.activate}
         row={(item) => ({
           id: item.id,
           name: item.name,
           type: item.type,
           definition: definitionFor(item.type)?.display_name,
-          credentials:
-            credentialMode(definitionFor(item.type), item.config) !== "required"
-              ? "not_required"
-              : item.credential_configured
-                ? "configured"
-                : "not_configured",
+          credentials: webCredentialState(definitionFor(item.type), item),
           state: item.enabled ? "enabled" : "disabled",
         })}
       />
