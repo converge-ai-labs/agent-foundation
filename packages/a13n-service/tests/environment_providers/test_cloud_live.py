@@ -13,7 +13,7 @@ from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 
 pytestmark = pytest.mark.anyio
-KEYS = ("daytona", "modal", "vercel", "sprites", "runloop", "boxd")
+KEYS = ("daytona", "modal", "vercel", "sprites", "runloop", "boxd", "kosa8")
 
 
 @pytest.fixture

@@ -19,6 +19,7 @@ const ownInfrastructure = new Set([
 ]);
 const cloudServices = new Set([
   "boxd",
+  "kosa8",
   "e2b",
   "daytona",
   "modal",

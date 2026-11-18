@@ -83,6 +83,10 @@ For setup and backend limits, see [Runloop](cloud-providers.md#runloop).
 
 For setup and backend limits, see [boxd](cloud-providers.md#boxd).
 
+### kosa8
+
+For setup and backend limits, see [kosa8](cloud-providers.md#kosa8).
+
 ## Remote HTTP / WebSocket Envd
 
 1. Register or select the externally managed Device. `RemoteEnvdStateData.device_id` identifies it.

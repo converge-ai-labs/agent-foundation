@@ -23,6 +23,7 @@ ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
     "sprites": ({"organization": "fly-org"}, {"api_key": SECRET}, {"privileged": True}),
     "runloop": ({"organization": "runloop-org"}, {"api_key": SECRET}, {"resource_size": "HUGE"}),
     "boxd": ({"region": "nyc"}, {"api_key": SECRET}, {"size": "3x12"}),
+    "kosa8": ({"region": "us"}, {"api_key": SECRET}, {"disk_gb": 4}),
 }
 
 
@@ -38,6 +39,7 @@ async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # typ
         "sprites": {"organization"},
         "runloop": {"organization"},
         "boxd": {"region", "organization"},
+        "kosa8": {"region"},
     }
     collection = f"{service.api}/environment-providers"
     for config in ({"domain": "https://sandboxes.example"}, {"api_url": "https://10.0.0.1"}):

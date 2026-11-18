@@ -23,8 +23,9 @@ description: 从模型生成的 Harness 执行输入、Service 管理 recipe、�
 | Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesRecipe](#spritesrecipe)                                     | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | boxd           | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdEnvironmentConfiguration](#boxdenvironmentconfiguration)       | [BoxdConnectionConfiguration](#boxdconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| kosa8          | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration)     | [Kosa8EnvironmentConfiguration](#kosa8environmentconfiguration)     | [Kosa8ConnectionConfiguration](#kosa8connectionconfiguration)     | [TokenCredential](#tokencredential) |
 
-Runloop 和 boxd 的执行与管理使用同一配置模型，没有独立的 Service 桌面 recipe。
+Runloop、boxd 和 kosa8 的执行与管理使用同一配置模型，没有独立的 Service 桌面 recipe。
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -610,6 +611,24 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
 | `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
 
+## `Kosa8EnvironmentConfiguration`
+
+| Field                     | Required | Type / choices                | Constraints and default                                |
+| ------------------------- | -------- | ----------------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables          | —; default from model factory                          |
+| `root`                    | false    | string                        | default="/workspace"                                   |
+| `python`                  | false    | string                        | default="python3"                                      |
+| `shell`                   | false    | string                        | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                        | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                       | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `size`                    | false    | "2x4", "4x8", "8x16", "16x32" | default="2x4"                                          |
+| `image`                   | false    | string or null                | minLength=1; maxLength=256; default=null               |
+| `disk_gb`                 | false    | integer or null               | minimum=8; maximum=200; default=null                   |
+| `docker`                  | false    | boolean                       | default=false                                          |
+| `ttl_seconds`             | false    | integer or null               | minimum=60; maximum=7776000; default=null              |
+
 ## `RemoteEnvdEnvironmentConfiguration`
 
 | 字段                | 必填  | 类型 / 可选值                   | 约束与默认值                             |
@@ -701,6 +720,12 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | -------------- | -------- | -------------- | ---------------------------------------- |
 | `region`       | true     | "fra", "nyc"   | —                                        |
 | `organization` | false    | string or null | minLength=1; maxLength=128; default=null |
+
+## `Kosa8ConnectionConfiguration`
+
+| Field    | Required | Type / choices                           | Constraints and default |
+| -------- | -------- | ---------------------------------------- | ----------------------- |
+| `region` | false    | "us", "eu", "us-ash1", "eu-hel1" or null | default=null            |
 
 ## `TokenCredential`
 

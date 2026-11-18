@@ -13,6 +13,7 @@ from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment.boxd.shared import BoxdEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
+from a13n_harness.providers.environment.kosa8.shared import Kosa8EnvironmentConfiguration
 from a13n_harness.providers.environment.native.commands import NativeCommands
 from a13n_harness.providers.environment.runloop.shared import RunloopEnvironmentConfiguration
 from a13n_harness.providers.environment.sprites.shared import SpritesEnvironmentConfiguration
@@ -73,6 +74,7 @@ async def test_local_defaults_override_unset_children_and_host_isolation(tmp_pat
         RunloopEnvironmentConfiguration,
         VercelEnvironmentConfiguration,
         BoxdEnvironmentConfiguration,
+        Kosa8EnvironmentConfiguration,
     ],
 )
 async def test_native_guest_defaults_are_literal_and_command_scoped(tmp_path, model):

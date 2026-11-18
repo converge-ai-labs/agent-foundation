@@ -150,6 +150,28 @@ def test_boxd_journey_uses_its_explicit_account(monkeypatch, pytestconfig, envir
     asyncio.run(check())
 
 
+@pytest.mark.parametrize("region", [None, "eu"])
+def test_kosa8_journey_uses_its_explicit_account(monkeypatch, pytestconfig, environment_journeys, region):
+    from a13n_harness.providers.environment.kosa8.shared import (
+        Kosa8ConnectionConfiguration,
+        Kosa8EnvironmentConfiguration,
+    )
+
+    monkeypatch.setenv("KOSA8_API_KEY", "fixture-key")
+    if region is None:
+        monkeypatch.delenv("KOSA8_REGION", raising=False)
+    else:
+        monkeypatch.setenv("KOSA8_REGION", region)
+
+    async def check():
+        async with environment_journeys.hosted_account("kosa8", pytestconfig) as (config, credential, recipe):
+            assert Kosa8ConnectionConfiguration.model_validate(config).region == region
+            assert credential == {"api_key": "fixture-key"}
+            assert Kosa8EnvironmentConfiguration.model_validate(recipe).size == "2x4"
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize("structured", [False, True])
 def test_user_texts_excludes_runtime_context_without_losing_conversation_order(structured):
     contents = [
@@ -218,6 +240,10 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[boxd]" in hosted
     assert f"{lifecycle}[boxd]" in hosted_marker
     assert collect_scenarios("-k", "boxd") == {f"{lifecycle}[boxd]"}
+    assert f"{lifecycle}[kosa8]" not in default
+    assert f"{lifecycle}[kosa8]" in hosted
+    assert f"{lifecycle}[kosa8]" in hosted_marker
+    assert collect_scenarios("-k", "kosa8") == {f"{lifecycle}[kosa8]"}
     assert collect_scenarios("-k", "e2b") == {
         f"{lifecycle}[e2b]",
         f"{environments}::test_a_ready_e2b_sandbox_is_renewed_past_its_timeout",

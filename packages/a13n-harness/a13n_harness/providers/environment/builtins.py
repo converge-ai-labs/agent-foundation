@@ -8,6 +8,7 @@ from a13n_harness.providers.environment.definition import EnvironmentProviderDef
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.docker.provider import DOCKER
 from a13n_harness.providers.environment.e2b.provider import E2B
+from a13n_harness.providers.environment.kosa8.provider import KOSA8
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.modal.provider import MODAL
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
@@ -27,6 +28,7 @@ BUILT_IN_ENVIRONMENT_PROVIDERS: tuple[EnvironmentProviderDefinition, ...] = (
     SPRITES,
     RUNLOOP,
     BOXD,
+    KOSA8,
     HTTP_ENVD,
     WEBSOCKET_ENVD,
 )

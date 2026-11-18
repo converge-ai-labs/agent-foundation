@@ -8,7 +8,7 @@ Choose a backend in the [Environment overview](index.md#choose-a-backend). This 
 
 ## Cloud Providers
 
-Prepare the selected account and recipe before creating a billable target. Daytona and Modal use Envd. E2B, Vercel, and Sprites offer Native Files & Shell and an explicit Envd path. Runloop and boxd provide Native Files & Shell; Envd, Computer, and human desktop access are not integrated.
+Prepare the selected account and recipe before creating a billable target. Daytona and Modal use Envd. E2B, Vercel, and Sprites offer Native Files & Shell and an explicit Envd path. Runloop, boxd, and kosa8 provide Native Files & Shell; Envd, Computer, and human desktop access are not integrated.
 
 | Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                        |
 | -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -19,6 +19,7 @@ Prepare the selected account and recipe before creating a billable target. Dayto
 | Fly.io Sprites | `organization`                                                                                   | `api_key` (Sprites token)       | `region`                                                                                                                      |
 | Runloop        | `organization`                                                                                   | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                                       |
 | boxd           | `region` (`fra` or `nyc`), optional `organization`                                               | `api_key` (boxd API key)        | `size`, `from_snapshot`, `auto_suspend_timeout_seconds`, `auto_hibernate_timeout_seconds`                                     |
+| kosa8          | optional `region` (`us`, `eu`, `us-ash1`, or `eu-hel1`)                                          | `api_key` (kosa8 API key)       | `size`, `image`, `disk_gb`, `docker`, `ttl_seconds`                                                                           |
 
 Store credentials outside recipes and reconnect state. Organization/team fields name backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a label. Service E2B connections select E2B cloud or a compatible backend by domain; see [Service providers](../a13n-service/environments.md#providers).
 
@@ -44,6 +45,7 @@ Use this sequence around every managed target:
 | Fly.io Sprites | No explicit stop API; idle Sprites sleep and wake on exec                       | Not promised              | Durable filesystem survives native automatic sleep. The Provider does not support `stop()`, so do not schedule an explicit stop; destruction is separate.                                                                                         |
 | Runloop        | Native suspend/resume preserves disk                                            | Not preserved             | Idle policy suspends the Devbox. Keepalive acknowledges a new idle interval; it cannot start a suspended target.                                                                                                                                  |
 | boxd           | Native hibernate/wake preserves disk and memory                                 | Preserved by hibernation  | Machines have no expiry and need no keepalive. Idle hibernation is off by default; when `auto_hibernate_timeout_seconds` is set, an idle machine hibernates and stays stopped until `start()`. Optional idle standby resumes on the next command. |
+| kosa8          | Native sleep/wake preserves disk and memory                                     | Preserved by sleep        | Sandboxes need no keepalive and have no expiry unless `ttl_seconds` is set. Idle sleep is off, so a sandbox sleeps only on `stop()` and stays stopped until `start()`.                                                                            |
 
 For Modal, `start()` restores the saved filesystem snapshot and returns the new reference. `open()` neither restores nor cleans up snapshots. Snapshot deletion requires matching native ownership tags. An externally registered state supplies connection information, not destruction authority.
 
@@ -266,6 +268,10 @@ Use `/home/user` as the default root and guest-PATH `python3`. See Runloop's [de
 
 Use `/home/boxd` as the default root and guest-PATH `python3`. Each Environment gets one [boxd](https://boxd.sh?ref=agent-foundation) machine. The machine is created isolated: it never joins the organization's private network. `size` selects vCPU and memory (`1x4`, `2x8`, `4x16`, or `8x32`); omit it to use the organization default or the snapshot's size. `from_snapshot` starts the machine from a prepared boxd snapshot. `stop()` hibernates the machine with its memory and processes; `start()` wakes it. Destruction deletes the exact recorded machine and waits for confirmed absence. Install the SDK with the `boxd` extra, `a13n-harness[boxd]`. Create an API key with `boxd auth keys create <name>`; a key acts in one organization.
 
+### kosa8
+
+Use `/workspace` as the default root and guest-PATH `python3`; the kosa8 files API reaches any path in the sandbox, so `root` can point elsewhere. Each Environment gets one [kosa8](https://kosa8.com) sandbox, a microVM with its own kernel, booted at `size` (`2x4`, `4x8`, `8x16`, or `16x32`, vCPU x GiB) from `image` with a `disk_gb` data disk (32 GB when omitted). With no `image`, `disk_gb` or `docker`, it boots kosa8's `universal-<size>` template (Ubuntu with `python3`) from a snapshot. The sandbox is persistent: the whole filesystem and background processes last between commands, and `docker: true` lets it run its own dockerd. `stop()` puts the sandbox to sleep with its memory and processes; `start()` wakes it. Idle sleep is off, so a sandbox never stops on its own. `ttl_seconds` has kosa8 delete the sandbox that long after creation; omitted, it has no expiry. Destruction deletes the exact recorded sandbox and waits for confirmed absence. The Provider calls the kosa8 Cloud REST API through the Harness HTTP client and needs no extra. Create an API key in the kosa8 dashboard; a key acts in one organization.
+
 ### Embedded configuration
 
 To attach from your own Host, first obtain `saved_state` from management and `api_key` from your credential store. This asynchronous integration fragment selects the built-in Daytona definition and reads a bounded directory listing:
@@ -296,6 +302,6 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
   PYTHON_TEST_DIRS=packages/a13n-service/tests/environment_providers/test_cloud_live.py
 ```
 
-Modal, Vercel, Sprites, Runloop, and boxd use their corresponding uppercase prefixes. Override the recipe with `A13N_TEST_<PROVIDER>_RECIPE_JSON` when needed. The fixture creates billable targets and attempts deletion even after failure. Keep credential JSON private. Missing opt-in or credentials causes a skip, not a live pass.
+Modal, Vercel, Sprites, Runloop, boxd, and kosa8 use their corresponding uppercase prefixes. Override the recipe with `A13N_TEST_<PROVIDER>_RECIPE_JSON` when needed. The fixture creates billable targets and attempts deletion even after failure. Keep credential JSON private. Missing opt-in or credentials causes a skip, not a live pass.
 
-Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html), and [boxd Python SDK](https://docs.boxd.sh/reference/python-sdk?ref=agent-foundation).
+Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html), [boxd Python SDK](https://docs.boxd.sh/reference/python-sdk?ref=agent-foundation), and [kosa8 Cloud](https://docs.kosa8.com/guides/cloud/).
