@@ -251,7 +251,8 @@ class Backend:
 
                     native.check_access = exact_selection
                     exact_selection()
-                known = False
+                # Cancelling a read-only condition wait leaves no dispatched page action.
+                known = tool == "wait"
                 result = await call(native)
                 known = not (
                     tool in {"act", "navigate", "wait"}

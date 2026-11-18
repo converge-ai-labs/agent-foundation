@@ -344,16 +344,14 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
     original_validator = tool.args_validator_func
 
     async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
-        from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+        from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY, supports_tool_handoff
         from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
 
         mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
         if callable(mode):
             mode = mode(args)
         unsupported = (
-            tool.tool_def.kind != "external"
-            and not _OWNED_TOOL_EXECUTION.get()
-            and mode not in {"owned", "owned_auto", "control", "process"}
+            tool.tool_def.kind != "external" and not _OWNED_TOOL_EXECUTION.get() and not supports_tool_handoff(mode)
         )
         call_id = ctx.tool_call_id or tool.tool_def.name
         if unsupported:

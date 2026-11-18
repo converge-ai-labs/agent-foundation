@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic_ai import ToolReturn
@@ -26,6 +26,20 @@ from a13n_harness.tool_execution import (
 )
 
 TOOL_EXECUTION_METADATA_KEY = "a13n.tool-execution"
+
+
+@dataclass(frozen=True)
+class InterruptibleObservation:
+    """An ordered read-only wait with a known result when steering ends the observation."""
+
+    interrupted_result: str
+
+    async def on_handoff(self) -> str:
+        return self.interrupted_result
+
+
+def supports_tool_handoff(mode: object) -> bool:
+    return isinstance(mode, InterruptibleObservation) or mode in {"owned", "owned_auto", "control", "process"}
 
 
 class RunToolExecutions:
@@ -115,18 +129,20 @@ class RunToolExecutions:
         return await runtime.result(thread_id, execution_id)
 
     async def wait_control[T](self, observe: Callable[[float], Awaitable[T]], *, timeout_seconds: float) -> T:
-        """Release a top-level observation wait, never its underlying operation."""
+        if timeout_seconds == 0:
+            return await observe(0)
+        return await self.wait_or_inspect(lambda: observe(timeout_seconds), lambda: observe(0))
+
+    async def wait_or_inspect[T](self, wait: Callable[[], Awaitable[T]], inspect: Callable[[], Awaitable[T]]) -> T:
+        """On immediate steering, drain the observer and read its current state."""
         # Nested controls belong to the retained runner. Only its outer waiter
         # yields to steering; changing nested results would alter that program.
-        if _OWNED_TOOL_EXECUTION.get() or timeout_seconds == 0:
-            return await observe(timeout_seconds)
+        if _OWNED_TOOL_EXECUTION.get():
+            return await wait()
         if self.handoff_requested.is_set():
-            return await observe(0)
+            return await inspect()
 
-        async def wait() -> T:
-            return await observe(timeout_seconds)
-
-        waiter = asyncio.create_task(wait())
+        waiter = asyncio.ensure_future(wait())
         handoff = asyncio.create_task(self.handoff_requested.wait())
         try:
             await asyncio.wait((waiter, handoff), return_when=asyncio.FIRST_COMPLETED)
@@ -138,7 +154,9 @@ class RunToolExecutions:
             await asyncio.gather(waiter, handoff, return_exceptions=True)
         # Poll after draining the cancelled observer so final output and a
         # completion racing with handoff are not replaced by a stale snapshot.
-        return await observe(0)
+        if not waiter.cancelled():
+            return waiter.result()
+        return await inspect()
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
         value = record.receipt()

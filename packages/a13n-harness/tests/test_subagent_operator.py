@@ -327,6 +327,9 @@ async def test_async_subagent_toolset_dispatches_complete_host_use_cases() -> No
             }
             return
         for returned in returns:
+            if returned.tool_name in {"delegate", "steer_subagent", "resume_subagent"}:
+                assert "delivered to this conversation automatically" in returned.content["message"]
+                assert "only when your next step needs the result" in returned.content["message"]
             if returned.tool_name in {"subagent_info", "wait_subagent"}:
                 assert returned.content["executions"][0]["reply_tool"] == "resume_subagent"
                 assert returned.content["executions"][0]["header"] == (

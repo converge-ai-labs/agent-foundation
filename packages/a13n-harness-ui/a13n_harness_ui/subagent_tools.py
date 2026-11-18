@@ -78,16 +78,10 @@ class SubagentTools(AbstractModelContextCapability):
             parent_agent_instance_id=ctx.deps.instance.agent_instance_id,
             host_refs=ctx.deps.instance.host_refs,
         )
-        return (
-            await self.operator.spawn(
-                context,
-                name=name,
-                instructions=instructions,
-                prompt=prompt,
-                model=model,
-                thinking=thinking,
-            )
-        ).model_dump(mode="json")
+        execution = await self.operator.spawn(
+            context, name=name, instructions=instructions, prompt=prompt, model=model, thinking=thinking
+        )
+        return execution.receipt()
 
     async def send_parent_message(
         self, ctx: RunContext[AgentContext], message: Annotated[str, Field(min_length=1, max_length=1024 * 1024)]

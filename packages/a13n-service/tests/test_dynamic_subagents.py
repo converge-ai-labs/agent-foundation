@@ -162,6 +162,14 @@ async def test_spawn_tool_client_tool_wait_resume_and_leaf_boundary(service, scr
     assert json.loads(waiting["input"]["content"][0]["text"])["delegated_task"] == "Invoice 42"
     assert "parent_history" not in waiting["input"]["content"][0]["text"]
     requests = [await scripted_model.request() for _ in range(scripted_model.requests.qsize())]
+    spawn_receipt = next(
+        json.loads(message["content"])
+        for request in requests
+        for message in request["messages"]
+        if message.get("tool_call_id") == "spawn"
+    )
+    assert spawn_receipt["execution_id"] == child_id
+    assert "delivered to this conversation automatically" in spawn_receipt["message"]
     child_request = requests[-1]
     names = {item["function"]["name"] for item in child_request["tools"]}
     assert "review_invoice" in names and not {"spawn_subagent", "delegate", "resume_subagent"} & names

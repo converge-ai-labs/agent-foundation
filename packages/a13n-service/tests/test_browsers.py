@@ -434,6 +434,31 @@ async def test_permits_read_durable_selection_and_allow_other_pages(service, run
     await admission.settle(service.runtime, second)
 
 
+async def test_cancelled_condition_wait_releases_page_permit(service, runs_kit, scripted_model, invocation):
+    from a13n_harness.capabilities.browser.actions import TextCondition
+
+    _, browser = await setup(service, runs_kit)
+    lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
+    async with execution.open_backend(
+        service.runtime, lease, binding, invocation, frozenset({"tabs", "wait"})
+    ) as backend:
+        await backend.tabs("new")
+        waiting = asyncio.Event()
+
+        async def wait(*args, **kwargs):
+            waiting.set()
+            await asyncio.Event().wait()
+
+        backend.native.wait = wait
+        async with asyncio.timeout(5):
+            task = asyncio.create_task(backend.wait(TextCondition(kind="text", text="ready"), timeout=60))
+            await waiting.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert len(await backend.tabs("list")) == 1
+
+
 async def test_unknown_native_creation_is_owned_and_never_timeout_drained(
     service, runs_kit, scripted_model, invocation
 ):

@@ -10,6 +10,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import InstructionPart
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY, InterruptibleObservation
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.guidance import TOOL_GUIDANCE_KEY
@@ -409,7 +410,14 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             self._screenshot = None
             return result
 
-        @tools.tool_plain(metadata=metadata("wait", True))
+        @tools.tool_plain(
+            metadata={
+                **metadata("wait", True),
+                TOOL_EXECUTION_METADATA_KEY: InterruptibleObservation(
+                    '{"verification":"unverified","dispatch":"not_dispatched","reason":"steering"}'
+                ),
+            }
+        )
         async def browser_wait(
             condition: Condition,
             timeout: Annotated[float, Field(gt=0, le=60)] = 10,
