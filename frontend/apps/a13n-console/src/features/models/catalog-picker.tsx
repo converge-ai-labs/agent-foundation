@@ -40,6 +40,7 @@ export function CatalogPicker({
   channels,
   allowCompatible,
   providerName,
+  unavailable = false,
   value,
   onSelect,
 }: {
@@ -47,6 +48,7 @@ export function CatalogPicker({
   channels: readonly string[];
   allowCompatible: boolean;
   providerName?: string;
+  unavailable?: boolean;
   value: Ref | null;
   /** `null` chooses a custom model with no catalog identity. */
   onSelect: (entry: Entry | null) => void;
@@ -196,7 +198,7 @@ export function CatalogPicker({
             {other.map(rows)}
           </DirectoryGroup>
         )}
-        {!visible.length && (
+        {!visible.length && !unavailable && (
           <DirectoryEmpty>
             {t("No models found. You can still add a model manually.")}
           </DirectoryEmpty>

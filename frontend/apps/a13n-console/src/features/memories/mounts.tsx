@@ -12,7 +12,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ListRow, ListRows, ListRowsEmpty } from "../../shared/collection";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorNotice, InlineLoading } from "../../shared/feedback";
 import { FormActions, SwitchField, useSuggestedName } from "../../shared/forms";
 import { memoryQueries } from "./api";
 
@@ -79,8 +79,8 @@ export function MountForm({
   const available = (choices.data ?? []).filter(
     (memory) => !mounts.some((mount) => mount.memory_id === memory.id),
   );
-  const record =
-    available.find((memory) => memory.id === memoryId)?.kind === "record";
+  const selected = available.find((memory) => memory.id === memoryId);
+  const record = selected?.kind === "record";
   return (
     <form
       className="flex flex-col gap-4"
@@ -88,7 +88,7 @@ export function MountForm({
         // The form may sit in a dialog whose owner is itself a form.
         event.preventDefault();
         event.stopPropagation();
-        if (memoryId && !taken)
+        if (selected && !taken && !pending)
           onSubmit({
             name,
             memory_id: memoryId,
@@ -99,66 +99,82 @@ export function MountForm({
       }}
     >
       <ErrorNotice error={choices.error} retry={() => void choices.refetch()} />
-      <ChoiceField
-        label={t("Memory")}
-        placeholder={choices.isPending ? t("Loading…") : t("Select memory")}
-        required
-        value={memoryId}
-        onValueChange={(value) => {
-          setMemoryId(value);
-          const memory = available.find((item) => item.id === value);
-          if (memory) suggestName(mountName(memory.name));
-        }}
-        options={available.map((memory) => ({
-          value: memory.id,
-          label: `${memory.name} (${memory.id})`,
-        }))}
-      />
-      <FormField
-        label={t("Mount name")}
-        description={t(
-          "The model addresses the memory by this name, such as prefs.",
-        )}
-        error={
-          taken ? t("A memory is already mounted under this name.") : undefined
-        }
-      >
-        <Input
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          pattern={MOUNT_NAME_PATTERN}
-          maxLength={63}
-          autoComplete="off"
-        />
-      </FormField>
-      <ChoiceField
-        label={t("Access")}
-        description={t(
-          "Read offers viewing and searching; write offers every memory tool.",
-        )}
-        value={access}
-        onValueChange={(value) =>
-          setAccess(value === "read" ? "read" : "write")
-        }
-        options={accessOptions(t)}
-      />
-      {record && (
-        <SwitchField
-          label={t("Recall")}
-          description={t(
-            "Each run starts with the records closest to its input. Agents can still search.",
+      {choices.isPending ? (
+        <InlineLoading width="12rem" />
+      ) : available.length ? (
+        <>
+          <ChoiceField
+            label={t("Memory")}
+            placeholder={t("Select memory")}
+            required
+            value={selected?.id}
+            onValueChange={(value) => {
+              setMemoryId(value);
+              const memory = available.find((item) => item.id === value);
+              if (memory) suggestName(mountName(memory.name));
+            }}
+            options={available.map((memory) => ({
+              value: memory.id,
+              label: `${memory.name} (${memory.id})`,
+            }))}
+          />
+          <FormField
+            label={t("Mount name")}
+            description={t(
+              "The model addresses the memory by this name, such as prefs.",
+            )}
+            error={
+              taken
+                ? t("A memory is already mounted under this name.")
+                : undefined
+            }
+          >
+            <Input
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              pattern={MOUNT_NAME_PATTERN}
+              maxLength={63}
+              autoComplete="off"
+            />
+          </FormField>
+          <ChoiceField
+            label={t("Access")}
+            description={t(
+              "Read offers viewing and searching; write offers every memory tool.",
+            )}
+            value={access}
+            onValueChange={(value) =>
+              setAccess(value === "read" ? "read" : "write")
+            }
+            options={accessOptions(t)}
+          />
+          {record && (
+            <SwitchField
+              label={t("Recall")}
+              description={t(
+                "Each run starts with the records closest to its input. Agents can still search.",
+              )}
+              checked={recall}
+              onCheckedChange={setRecall}
+            />
           )}
-          checked={recall}
-          onCheckedChange={setRecall}
-        />
-      )}
+        </>
+      ) : choices.data ? (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            choices.data.length
+              ? "All available memories are already mounted."
+              : "No memories yet",
+          )}
+        </p>
+      ) : null}
       <ErrorNotice error={error} />
       <FormActions
         pending={pending}
         onCancel={onCancel}
         label={label}
-        disabled={!memoryId || taken}
+        disabled={!selected || taken}
       />
     </form>
   );

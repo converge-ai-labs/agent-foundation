@@ -2458,6 +2458,8 @@
   "No file at this path yet": "No file at this path yet",
   "No files are always loaded. Agents start from the index.": "No files are always loaded. Agents start from the index.",
   "No files yet": "No files yet",
+  "All available memories are already mounted.": "All available memories are already mounted.",
+  "Could not load resource choices.": "Could not load resource choices.",
   "No memories yet": "No memories yet",
   "No retained changes match these filters.": "No retained changes match these filters.",
   "Path": "Path",

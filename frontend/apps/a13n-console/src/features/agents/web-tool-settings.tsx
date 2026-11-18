@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorNotice, InlineLoading } from "../../shared/feedback";
 import { ProviderIcon } from "../../shared/identity";
 import { providersPath } from "../providers/navigation";
 import {
@@ -30,6 +30,8 @@ export function WebToolSettings({
   providers,
   types,
   providerError,
+  providersPending,
+  retryProviders,
   config,
   onChange,
   readOnly,
@@ -39,6 +41,8 @@ export function WebToolSettings({
   providers: WebProvider[];
   types: WebProviderMetadata[];
   providerError: Error | null;
+  providersPending: boolean;
+  retryProviders: () => void;
   config: Config;
   onChange: (config: Config) => void;
   readOnly: boolean;
@@ -70,14 +74,20 @@ export function WebToolSettings({
   return (
     <>
       <div className={styles.webProviderField}>
-        <ChoiceField
-          readOnly={readOnly}
-          label={t("Web Provider")}
-          value={displayedProviderId}
-          placeholder={t("Select a provider")}
-          onValueChange={(id) => onChange({ ...config, provider_id: id })}
-          options={options}
-        />
+        {providersPending ? (
+          <InlineLoading width="12rem" />
+        ) : options.length ? (
+          <ChoiceField
+            readOnly={readOnly}
+            label={t("Web Provider")}
+            value={displayedProviderId}
+            placeholder={t("Select a provider")}
+            onValueChange={(id) => onChange({ ...config, provider_id: id })}
+            options={options}
+          />
+        ) : (
+          <p className="text-sm font-medium">{t("Web Provider")}</p>
+        )}
         {can("write") && (
           <a
             href={providersPath("web", workspace)}
@@ -107,7 +117,9 @@ export function WebToolSettings({
                 : t("Use the search provider")}
             </Button>
           )}
-        {providerId &&
+        {!providersPending &&
+          !providerError &&
+          providerId &&
           (!selected || !eligibleWebProvider(selected, types, operation)) && (
             <p role="alert" className="text-sm text-destructive">
               {t(
@@ -115,7 +127,7 @@ export function WebToolSettings({
               )}
             </p>
           )}
-        <ErrorNotice error={providerError} />
+        <ErrorNotice error={providerError} retry={retryProviders} />
       </div>
       <FormField
         readOnly={readOnly}

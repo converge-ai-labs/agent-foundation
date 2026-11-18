@@ -400,6 +400,16 @@ export function AgentToolsets({
                                 providerError={
                                   webProviders.error ?? webProviderTypes.error
                                 }
+                                providersPending={
+                                  webProviders.isPending ||
+                                  webProviderTypes.isPending
+                                }
+                                retryProviders={() => {
+                                  if (webProviders.error)
+                                    void webProviders.refetch();
+                                  if (webProviderTypes.error)
+                                    void webProviderTypes.refetch();
+                                }}
                                 config={selection?.config ?? {}}
                                 reuseProviderId={
                                   value.web?.tools?.[

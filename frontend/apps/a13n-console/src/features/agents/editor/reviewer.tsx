@@ -180,6 +180,7 @@ export function ReviewerSettings({
   initial,
   target,
   models,
+  modelLookup,
   readOnly,
   settingsSchemas,
   onApply,
@@ -189,6 +190,7 @@ export function ReviewerSettings({
   initial: AgentDraft["reviewer"];
   target?: ReviewTarget;
   models: Schema["Model"][];
+  modelLookup?: ReturnType<typeof useAgentChoices>["models"];
   readOnly: boolean;
   settingsSchemas: Record<string, Record<string, Schema["JsonValue"]>>;
   onApply: (reviewer: Reviewer) => void;
@@ -283,6 +285,10 @@ export function ReviewerSettings({
         </SheetHeader>
         <SheetPanel>
           <ErrorNotice error={error} />
+          <ErrorNotice
+            error={modelLookup?.error}
+            retry={() => void modelLookup?.refetch()}
+          />
           <div className="grid gap-5">
             <FormField label={t("Review model")}>
               <SearchPicker
@@ -290,7 +296,11 @@ export function ReviewerSettings({
                 label={t("Review model")}
                 placeholder={t("Choose a model…")}
                 emptyMessage={t(
-                  "No models available. Configure a provider and model first.",
+                  modelLookup?.isPending
+                    ? "Loading…"
+                    : modelLookup?.error
+                      ? "Could not load resource choices."
+                      : "No models available. Configure a provider and model first.",
                 )}
                 value={value.model}
                 onValueChange={(model) => patch({ model })}

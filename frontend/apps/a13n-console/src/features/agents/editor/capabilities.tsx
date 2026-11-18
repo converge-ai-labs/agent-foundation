@@ -75,7 +75,7 @@ export function SkillsSection({
         <OptionsRefresh
           onRefresh={() =>
             Promise.all([
-              choices.refetch({ throwOnError: true }),
+              choices.skills.refetch({ throwOnError: true }),
               ...revisions.map((revision) =>
                 revision.refetch({ throwOnError: true }),
               ),
@@ -95,8 +95,12 @@ export function SkillsSection({
             label={t("Add skill")}
 
             searchLabel={t("Search skills")}
-            emptyLabel={t("No skills in this workspace yet.")}
-            loading={choices.isPending}
+            emptyLabel={t(
+              choices.skills?.error
+                ? "Could not load resource choices."
+                : "No skills in this workspace yet.",
+            )}
+            loading={choices.skills?.isPending}
             manageHref={`${basePath}/skills`}
             manageLabel={t("Manage skills")}
             // Archived skills cannot be added; a selected one can still be removed.
@@ -241,7 +245,7 @@ export function ConnectionsSection({
         <OptionsRefresh
           onRefresh={() =>
             Promise.all([
-              choices.refetch({ throwOnError: true }),
+              choices.connections.refetch({ throwOnError: true }),
               ...draft.connections.map((selection) =>
                 cache.invalidateQueries(
                   {
@@ -272,8 +276,12 @@ export function ConnectionsSection({
             label={t("Add connection")}
 
             searchLabel={t("Search connections")}
-            emptyLabel={t("No connections in this workspace yet.")}
-            loading={choices.isPending}
+            emptyLabel={t(
+              choices.connections?.error
+                ? "Could not load resource choices."
+                : "No connections in this workspace yet.",
+            )}
+            loading={choices.connections?.isPending}
             manageHref={`${basePath}/connections`}
             manageLabel={t("Manage connections")}
             items={available.map((connection) => {

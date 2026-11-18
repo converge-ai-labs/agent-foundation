@@ -210,6 +210,10 @@ export function TemplateConfig({
       ? save.error.message
       : undefined;
   const loadError = providers.error ?? types.error;
+  function retryProviderLookup() {
+    if (providers.error) void providers.refetch();
+    if (types.error) void types.refetch();
+  }
   const readyToCreate =
     provider?.enabled &&
     provider.type === definition?.type &&
@@ -234,14 +238,16 @@ export function TemplateConfig({
   if (choosing && !standalone)
     return (
       <div className={styles.stack}>
-        <ErrorNotice error={loadError} />
-        <ProviderCatalog
-          providers={providers.data}
-          definitions={types.data?.items}
-          loading={providers.isPending || types.isPending}
-          current={providerId}
-          onChoose={chooseProvider}
-        />
+        <ErrorNotice error={loadError} retry={retryProviderLookup} />
+        {(!loadError || (providers.data && types.data)) && (
+          <ProviderCatalog
+            providers={providers.data}
+            definitions={types.data?.items}
+            loading={providers.isPending || types.isPending}
+            current={providerId}
+            onChoose={chooseProvider}
+          />
+        )}
         {providerId && (
           <FormActions
             pending={false}
@@ -262,7 +268,7 @@ export function TemplateConfig({
           if (!readOnly) save.mutate();
         }}
       >
-        <ErrorNotice error={loadError} />
+        <ErrorNotice error={loadError} retry={retryProviderLookup} />
         <fieldset
           disabled={save.isPending}
           className={editorStyles.templateFields}
@@ -308,18 +314,19 @@ export function TemplateConfig({
             >
               {types.isPending ? (
                 <InlineLoading width="12rem" />
-              ) : (
+              ) : types.data ? (
                 <EnvironmentRuntimeCatalog
-                  definitions={types.data?.items ?? []}
+                  definitions={types.data.items}
                   selected={runtimeType}
                   onChoose={chooseRuntime}
                 />
-              )}
+              ) : null}
               {definition && (
                 <TemplateConnection
                   key={definition.type}
                   definition={definition}
-                  providers={providers.data ?? []}
+                  providers={providers.data}
+                  pending={providers.isPending}
                   value={providerId}
                   onChange={chooseProvider}
                 />

@@ -34,6 +34,9 @@ export function DynamicSubagentsSettings({
   const update = (changes: Partial<typeof policy>) =>
     draft.setDynamicSubagents({ ...policy, ...changes });
   const allowed = policy.allowed_models ?? [];
+  const modelLookupError = choices.models?.error ?? choices.providers?.error;
+  const modelLookupPending =
+    choices.models?.isPending || choices.providers?.isPending;
   const models = choices.data?.models ?? [];
   const provider = (id: string) =>
     choices.data?.providers.find((item) => item.id === id);
@@ -122,7 +125,13 @@ export function DynamicSubagentsSettings({
                 <SearchPicker
                   label={t("Default subagent model")}
                   placeholder={t("Parent model")}
-                  emptyMessage={t("No models available.")}
+                  emptyMessage={t(
+                    modelLookupPending
+                      ? "Loading…"
+                      : modelLookupError
+                        ? "Could not load resource choices."
+                        : "No models available.",
+                  )}
                   popupClassName={modelPopupWidth}
                   value={policy.default_model ?? ""}
                   onValueChange={(value) =>
@@ -185,7 +194,13 @@ export function DynamicSubagentsSettings({
                   <SearchPicker
                     label={t("Add allowed model")}
                     placeholder={t("Add model")}
-                    emptyMessage={t("No additional models available.")}
+                    emptyMessage={t(
+                      modelLookupPending
+                        ? "Loading…"
+                        : modelLookupError
+                          ? "Could not load resource choices."
+                          : "No additional models available.",
+                    )}
                     popupClassName={modelPopupWidth}
                     value=""
                     groups={[
@@ -249,7 +264,14 @@ export function DynamicSubagentsSettings({
               {t("Dynamic subagents require Async mode.")}
             </p>
           )}
-          <ErrorNotice error={choices.error ?? definitions.error} />
+          <ErrorNotice
+            error={modelLookupError ?? definitions.error}
+            retry={() => {
+              if (choices.models?.error) void choices.models.refetch();
+              if (choices.providers?.error) void choices.providers.refetch();
+              if (definitions.error) void definitions.refetch();
+            }}
+          />
         </>
       )}
     </div>
