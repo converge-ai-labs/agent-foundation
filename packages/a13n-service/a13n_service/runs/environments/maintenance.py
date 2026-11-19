@@ -21,6 +21,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
+from a13n_service.resources.providers.service import MANUAL_CLOUDFLARE_UNSUPPORTED, manual_cloudflare_provider
 from a13n_service.runs.environments import vercel_snapshots
 from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.lifecycle import (
@@ -54,6 +55,8 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
     due = select(EnvironmentRow.id).where(
         # Literal, so the partial index on unfinished operations applies.
         text(f"environments.status IN {OPERATIONS}"),
+        # Keep historical outcomes, but this provider cannot dispatch or reconcile them anymore.
+        EnvironmentRow.failure["code"].astext.is_distinct_from(MANUAL_CLOUDFLARE_UNSUPPORTED),
         # Settled preparation failures wait for retirement, not another dispatch.
         # Exclude them before LIMIT so retained/debug-held failures cannot starve other work.
         or_(
@@ -131,6 +134,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
         select(EnvironmentRow)
         .where(
             EnvironmentRow.template_id.is_not(None),
+            ~manual_cloudflare_provider(EnvironmentRow.provider_id),
             or_(
                 EnvironmentRow.provider_identity.is_(None),
                 EnvironmentRow.provider_identity["type"].astext.in_(capable),

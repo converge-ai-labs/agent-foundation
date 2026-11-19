@@ -50,7 +50,9 @@ from a13n_service.resources.environment_instances.access import require_usable_s
 from a13n_service.resources.environment_instances.access import unusable as unusable
 from a13n_service.resources.environment_templates.service import read_template, resolve_template
 from a13n_service.resources.providers.service import (
+    MANUAL_CLOUDFLARE_UNSUPPORTED,
     ResolvedProvider,
+    manual_cloudflare_provider,
     read_provider,
     rejection_reason,
     resolve_provider,
@@ -279,6 +281,7 @@ async def reserve(
                 EnvironmentRow.template_id.is_not(None),
                 EnvironmentRow.status != "deleted",
                 ~superseded(EnvironmentRow.id),
+                ~manual_cloudflare_provider(EnvironmentRow.provider_id),
             )
         )
         if (held or 0) >= limit:
@@ -567,6 +570,8 @@ async def claim_locked(
         return None
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
+    if failure.get("code") == MANUAL_CLOUDFLARE_UNSUPPORTED:
+        return None
     unresolved = not settled(environment)
     if (
         phase in {"creating", "starting"}
@@ -621,12 +626,20 @@ async def claim_locked(
             if build is not None and build.phase == "failed":
                 return None
     # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
-    if provider is None:
-        provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
-    if (fault := await _refusal(session, runtime, environment, provider)) is not None:
+    try:
+        if provider is None:
+            provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
+    except ServiceError as error:
+        if error.details.get("reason") != MANUAL_CLOUDFLARE_UNSUPPORTED:
+            raise
+        fault = Fault(MANUAL_CLOUDFLARE_UNSUPPORTED, error.message, "not_dispatched", permanent=True)
+    else:
+        fault = await _refusal(session, runtime, environment, provider)
+    if fault is not None:
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         record_failure(environment, fault, current, unresolved=unresolved)
         return None
+    assert provider is not None
     token = secrets.token_urlsafe(32)
     environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
     deadline = current + timedelta(seconds=seconds)
