@@ -15,6 +15,9 @@ on:
       - "deploy/monitoring/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
+      - "frontend/apps/a13n-console/**"
+      - "frontend/packages/a13n-ui/**"
+      - "frontend/pnpm-lock.yaml"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -45,6 +48,9 @@ on:
       - "deploy/monitoring/**"
       - "packages/a13n-service/**"
       - "docs/a13n-service/**"
+      - "frontend/apps/a13n-console/**"
+      - "frontend/packages/a13n-ui/**"
+      - "frontend/pnpm-lock.yaml"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -346,11 +352,13 @@ jobs:
           import json
           import sys
           from pathlib import Path
+          from tempfile import TemporaryDirectory
           from importlib.metadata import distribution
           from importlib.resources import files
 
           wheel = next(Path("dist/a13n-service").glob("a13n_service-*.whl")).resolve()
           sys.path.insert(0, str(wheel))
+          from a13n_service.console_sdk import main as export_console_sdk
           from a13n_service.documentation import Documents
           from a13n_service.resources.agents.schemas import AgentConfig
 
@@ -359,6 +367,13 @@ jobs:
           assert json.loads(skills.joinpath("schemas/agent-config.json").read_text()) == AgentConfig.model_json_schema()
           assert str(files("a13n_service")).startswith(str(wheel))
           assert str(distribution("a13n-service").locate_file("a13n_service/documentation.json")).startswith(str(wheel))
+          sdk = files("a13n_service").joinpath("static/console-sdk/index.d.ts").read_bytes()
+          assert b"AppContribution" in sdk and b"bridgeVersion" in sdk
+          with TemporaryDirectory() as temp:
+              destination = Path(temp) / "sdk" / "index.d.ts"
+              sys.argv = ["a13n_service.console_sdk", str(destination)]
+              export_console_sdk()
+              assert destination.read_bytes() == sdk
           docs = Documents()
           assert docs.search("upload")["results"]
           assert docs.search("上传", language="zh-CN")["results"]

@@ -16,7 +16,10 @@ class CustomBuildHook(BuildHookInterface):
         # can be installed into a fresh filesystem without running this hook.
         if version == "editable":
             build_data["force_include"] = {str(bundle): "a13n_service/documentation.json"}
-        if version != "editable" and not (Path(self.root) / "a13n_service" / "static" / "index.html").is_file():
+        static = Path(self.root) / "a13n_service" / "static"
+        if version != "editable" and not all(
+            (static / name).is_file() for name in ("index.html", "console-sdk/index.d.ts")
+        ):
             raise RuntimeError(
-                "The Console build is missing; run `make a13n-service-assets` before building a13n-service"
+                "The Console build or SDK is missing; run `make a13n-service-assets` before building a13n-service"
             )
