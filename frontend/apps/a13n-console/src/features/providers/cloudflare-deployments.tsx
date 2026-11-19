@@ -1,12 +1,6 @@
-import {
-  Button,
-  FormField,
-  Input,
-  SegmentedControl,
-  StatusPill,
-} from "a13n-ui";
+import { Button, FormField, Input, StatusPill } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../auth/context";
@@ -66,53 +60,7 @@ export function useCloudflareDeployments(enabled: boolean) {
   return { query, http, refresh };
 }
 
-export function CloudflareSetup({
-  available,
-  external,
-  close,
-}: {
-  available: boolean;
-  external: ReactNode;
-  close: () => void;
-}) {
-  const { t } = useTranslation();
-  const [mode, setMode] = useState<"managed" | "existing">(
-    available ? "managed" : "existing",
-  );
-  return (
-    <div className={styles.cloudflareSetup}>
-      <SegmentedControl
-        label={t("Cloudflare setup method")}
-        value={mode}
-        onValueChange={(value) =>
-          setMode(value === "managed" ? "managed" : "existing")
-        }
-        options={[
-          {
-            value: "managed",
-            label: t("Deploy automatically"),
-            disabled: !available,
-          },
-          { value: "existing", label: t("Use existing gateway") },
-        ]}
-      />
-      {mode === "existing" ? (
-        <>
-          <p className={styles.cloudflareDescription}>
-            {t(
-              "Enter the HTTPS URL and token for your deployed a13n Cloudflare gateway. Do not use a Cloudflare API token here.",
-            )}
-          </p>
-          {external}
-        </>
-      ) : (
-        <ManagedForm close={close} />
-      )}
-    </div>
-  );
-}
-
-function ManagedForm({ close }: { close: () => void }) {
+export function CloudflareDeploymentForm({ close }: { close: () => void }) {
   const { t } = useTranslation();
   const { http, refresh } = useCloudflareDeployments(false);
   const [name, setName] = useState("");
@@ -142,11 +90,6 @@ function ManagedForm({ close }: { close: () => void }) {
         setToken("");
       }}
     >
-      <p className={styles.cloudflareDescription}>
-        {t(
-          "Service deploys a dedicated gateway into your Cloudflare account and verifies it before adding the provider.",
-        )}
-      </p>
       <ProviderName
         value={name}
         onChange={(value) => {
@@ -190,7 +133,7 @@ function ManagedForm({ close }: { close: () => void }) {
       </FormSection>
       <ErrorNotice error={deploy.error} />
       <FormActions
-        label={t("Deploy gateway")}
+        label={t("Deploy provider")}
         pending={deploy.isPending}
         disabled={!name.trim() || !token.trim()}
         onCancel={close}
@@ -209,16 +152,16 @@ const deploymentState = {
 const stages: Record<string, string> = {
   preflight: "Checking Cloudflare account",
   image: "Copying sandbox image",
-  worker: "Deploying Worker and Container application",
+  worker: "Deploying Cloudflare resources",
   smoke: "Checking container connectivity",
   remove_smoke: "Removing the verification container",
   publish: "Adding the environment provider",
 };
 const cleanupStages: Record<string, string> = {
   smoke: "Removing the verification container",
-  application: "Removing the Container application",
-  namespace: "Removing the Durable Object namespace",
-  worker: "Removing the Worker",
+  application: "Removing Cloudflare compute resources",
+  namespace: "Removing environment state",
+  worker: "Removing Cloudflare routing",
   image: "Removing the registry tag",
   finish: "Removing the environment provider",
 };
@@ -230,7 +173,7 @@ const failures: Record<string, string> = {
   deployment_tool_unavailable:
     "The Service operator must install and configure the deployment tools before retrying.",
   worker_ownership_mismatch:
-    "The Worker no longer matches this deployment. Check the resource in Cloudflare before retrying.",
+    "A Cloudflare resource no longer matches this deployment. Check the resource in Cloudflare before retrying.",
   image_ownership_mismatch:
     "The registry tag no longer matches this deployment. Check the resource in Cloudflare before retrying.",
 };
@@ -251,9 +194,9 @@ export function CloudflareDeployments({
       {items.length > 0 && (
         <section
           className={styles.cloudflareDeployments}
-          aria-label={t("Managed Cloudflare gateways")}
+          aria-label={t("Cloudflare deployments")}
         >
-          <h2>{t("Managed Cloudflare gateways")}</h2>
+          <h2>{t("Cloudflare deployments")}</h2>
           <ul>
             {items.map((item) => (
               <DeploymentItem
@@ -315,7 +258,7 @@ function DeploymentItem({
         </div>
         <p>
           {item.status === "ready"
-            ? t("Verified gateway and sandbox connectivity")
+            ? t("Verified sandbox connectivity")
             : t(description ?? "Waiting for Service")}
         </p>
         {item.error && item.status === "needs_attention" && (
@@ -363,8 +306,8 @@ function DeploymentItem({
         )}
         {canRetire && (
           <Confirm
-            title={t("Remove gateway")}
-            trigger={t("Remove gateway")}
+            title={t("Remove deployment")}
+            trigger={t("Remove deployment")}
             triggerVariant="ghost"
             danger
             subject={item.name}

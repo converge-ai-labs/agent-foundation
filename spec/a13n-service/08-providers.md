@@ -57,6 +57,8 @@ Connections use the registry through `type` too: `mcp` is the built-in Remote MC
 | `setup_url`, `setup_label`                  | where an operator obtains credentials, when the type names a place                                          |
 | `supports_test`                             | whether a resource test makes a non-billable probe ([04](04-resources.md#provider-resources))               |
 
+Cloudflare Containers type discovery exposes the Environment recipe and lifecycle capabilities. [Cloudflare Containers deployments](#cloudflare-containers-deployments) own the connection and credential inputs.
+
 Model types additionally expose nullable `oauth_scheme`. `openai_chatgpt` declares `openai-chatgpt`, rejects user-supplied access tokens and tenant endpoint overrides, and builds the official `OpenAIResponsesModel` with `OpenAIChatGPTProvider` with an explicit Service credential source. Its workspace authorization lifecycle is owned by [Model Provider OAuth](04-resources.md#model-provider-oauth), separate from resource metadata and personal Connections. Calling APIs remain native; ordinary requests collect the required stream through the native Model lifecycle.
 
 Each kind adds its own fields:
@@ -147,9 +149,9 @@ An entry is `{key, name, description, url, auth, header_names, documentation_url
 
 Environment definitions are reached only through the registry; business packages never import `providers.environments` ([02](02-layout.md#import-direction)). The registry also owns the check of the endpoint an environment account names (`check_environment_endpoint`: a Docker engine other than the operator's, which `providers/endpoints.py` extracts). External envd targets are no registered type: `providers/envd.py` normalizes their endpoint and token, checks the endpoint with the same policy, reads the device a daemon states, and builds the Harness `http_envd` Environment connector from a target's values and portable state ([06](06-environments.md#external-targets)). Durable lifecycle is owned by [Environments](06-environments.md), driver operations and composition by [Environment Management](06a-environment-management.md), and the test probe by [Provider Resources](04-resources.md#provider-resources).
 
-### Cloudflare gateways
+### Cloudflare Containers deployments
 
-A Cloudflare Environment Provider connects to an a13n HTTPS gateway and authenticates with a gateway token. An external gateway is attached through the ordinary Provider flow; its account owner operates the Cloudflare resources. Service never uses a Cloudflare API token as an Environment credential.
+Service creates Cloudflare Environment Providers only through automatic deployment. The gateway is internal to the integration. The ordinary Provider API rejects new `cloudflare` Providers and changes to their gateway configuration or credential. Type discovery exposes the Environment recipe rather than connection inputs for `cloudflare`. Existing saved Providers remain usable and retain their references; Service does not take ownership of or delete any previously configured external resources.
 
 When the operator enables managed Cloudflare provisioning, a workspace administrator can create a deployment with a Cloudflare Account ID, an account-scoped API token, a Provider name, and a client request UUID. The `/api/v1/cloudflare-deployments` collection accepts the request asynchronously. Reusing its UUID and identity fields returns the deployment already accepted in that workspace. The deployment holds the deployment authority and its own gateway token encrypted with distinct locations; the published Provider holds only the gateway credential. These workspace administration operations are outside MCP.
 

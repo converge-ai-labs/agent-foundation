@@ -1,6 +1,6 @@
 # Environment Management Providers
 
-Cloudflare uses an operator-deployed Worker gateway to own one short-lived container per Environment ID. Its Provider account selects the gateway HTTPS origin and a write-only gateway credential. Envd is image-owned; the gateway forwards HTTP EIP (`envd_http`, default) or relays managed outbound WS (`envd_ws`) to the configured Service origin. `network_egress` is `public` by default or `disabled` for no workload Internet access; the latter preserves the private Envd path. Both choices freeze with the instance recipe. Cloudflare instances support renewal and deletion, not stop/resume or persistent workspaces. Only create may start the container; inspection, execution and retries never replace a lost incarnation.
+Cloudflare uses an internal Worker gateway to own one short-lived container per Environment ID. [Cloudflare Containers deployments](08-providers.md#cloudflare-containers-deployments) provision the gateway and its credential before publishing the Provider. Envd is image-owned; the gateway forwards HTTP EIP (`envd_http`, default) or relays managed outbound WS (`envd_ws`) to the configured Service origin. `network_egress` is `public` by default or `disabled` for no workload Internet access; the latter preserves the private Envd path. Both choices freeze with the instance recipe. Cloudflare instances support renewal and deletion, not stop/resume or persistent workspaces. Only create may start the container; inspection, execution and retries never replace a lost incarnation.
 
 ## Outbound execution connection
 

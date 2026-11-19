@@ -184,15 +184,6 @@
   margin-top: 4px;
 }
 
-.cloudflareSetup {
-  display: grid;
-  gap: 16px;
-}
-.cloudflareDescription {
-  margin: 0;
-  color: var(--a13n-secondary);
-  line-height: 1.6;
-}
 .cloudflareDeployments {
   display: grid;
   gap: 8px;

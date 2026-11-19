@@ -4,10 +4,14 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_service.infra.db import short_session
+from a13n_service.infra.db import short_session, transaction
+from a13n_service.resources.providers.schemas import ProviderCreate
+from a13n_service.resources.providers.service import insert_provider
+from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.cloudflare import reconcile
 from a13n_service.runs.cloudflare.remote import IMAGE_MARKER, Cloud, CloudFailure
 from a13n_service.settings import CloudflareProvisioning
+from a13n_service.tenancy.authorize import WorkspaceScope
 from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 
 pytestmark = pytest.mark.anyio
@@ -16,7 +20,7 @@ PROVIDERS = "/api/v1/environment-providers"
 INPUT = {"name": "Workspace sandbox", "account_id": "a" * 32, "api_token": "deployment-secret-fixture"}
 
 
-async def test_disabled_service_keeps_external_attachment(service):
+async def test_disabled_service_has_no_manual_cloudflare_fallback(service):
     client = service.client
     assert (await client.get(COLLECTION)).json() == {"available": False, "items": []}
     create = await client.post(COLLECTION, json={**INPUT, "request_id": str(uuid4())})
@@ -30,13 +34,50 @@ async def test_disabled_service_keeps_external_attachment(service):
             "credential": {"api_key": "gateway-only-secret"},
         },
     )
-    assert external.status_code == 201, external.text
-    assert external.json()["managed_deployment"] is False
+    assert external.status_code == 400, external.text
+    assert external.json()["error"]["details"]["field"] == "type"
     assert "gateway-only-secret" not in external.text
-    response = await client.delete(
-        f"{PROVIDERS}/{external.json()['id']}", headers={"If-Match": external.headers["etag"]}
+    assert (await client.get(PROVIDERS)).json()["items"] == []
+
+
+async def test_type_discovery_keeps_recipe_without_manual_connection_inputs(service):
+    response = await service.client.get("/api/v1/provider-types/environment")
+    definition = next(item for item in response.json()["items"] if item["type"] == "cloudflare")
+    assert definition["configuration_schema"] == {}
+    assert definition["credential_schema"] is None
+    assert definition["authentication"]["mode"] == "forbidden"
+    assert "network_egress" in definition["environment_schema"]["properties"]
+
+
+async def test_saved_external_provider_stays_available_to_templates(service):
+    runtime, tenant, client = service.runtime, service.tenant, service.client
+    async with transaction(runtime.storage) as session:
+        legacy = await insert_provider(
+            session,
+            None,
+            EnvironmentProviderRow,
+            WorkspaceScope(tenant.organization_id, tenant.workspace_id),
+            ProviderCreate(
+                type="cloudflare",
+                name="Existing",
+                config={"endpoint": "https://gateway.example.com"},
+                credential={"api_key": "gateway-only-secret"},
+            ),
+            registry=runtime.registry,
+            keys=runtime.keys,
+        )
+    path = f"{PROVIDERS}/{legacy.id}"
+    saved = await client.get(path)
+    assert saved.json()["managed_deployment"] is False
+    assert saved.json()["enabled"] is True
+    headers = {"If-Match": saved.headers["etag"]}
+    changed = await client.patch(path, json={"credential": {"api_key": "replacement"}}, headers=headers)
+    assert changed.status_code == 409
+    template = await client.post(
+        "/api/v1/environment-templates", json={"name": "Legacy template", "provider_id": legacy.id}
     )
-    assert response.status_code == 204
+    assert template.status_code == 201, template.text
+    assert (await client.delete(path, headers=headers)).status_code == 409
 
 
 @pytest.fixture

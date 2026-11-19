@@ -11,6 +11,7 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
+from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -109,6 +110,8 @@ async def create_provider[R: ProviderRow](
 ) -> Provider:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
+        if row_type.PROVIDER_KIND == "environment" and body.type == "cloudflare":
+            raise invalid("type", "Cloudflare providers are created through /api/v1/cloudflare-deployments")
         row = await insert_provider(session, actor, row_type, scope, body, registry=registry, keys=keys)
         return provider_view(row)
 
@@ -211,12 +214,9 @@ async def update_provider[R: ProviderRow](
         managed = None
         if isinstance(row, EnvironmentProviderRow) and row.type == "cloudflare":
             managed = await session.scalar(select(DeploymentRow.status).where(DeploymentRow.provider_id == row.id))
-            if managed is not None and (
-                body.config is not None
-                or replaces_credential
-                or body.extra_headers
-                or (body.enabled is True and managed != "ready")
-            ):
+            if body.config is not None or replaces_credential or body.extra_headers:
+                raise conflict(row.KIND, row.id, "cloudflare_connection_is_read_only")
+            if managed is not None and body.enabled is True and managed != "ready":
                 raise conflict(row.KIND, row.id, "managed_cloudflare_provider")
         headers = _updated_headers(keys, row, body.extra_headers)
         config = row.config if body.config is None else body.config
@@ -446,6 +446,11 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))
     elif isinstance(definition, EnvironmentManagementDefinition):
+        if definition.type == "cloudflare":
+            # Deployment owns these inputs; clients only need the Environment recipe.
+            described.configuration_schema = {}
+            described.credential_schema = None
+            described.authentication = Authentication(mode=CredentialMode.forbidden)
         described.environment_schema = model_schema(definition.environment_model)
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy

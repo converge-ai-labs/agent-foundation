@@ -22,7 +22,6 @@ ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
     "vercel": ({"team_id": "team_1", "project_id": "prj_1"}, {"api_key": SECRET}, {"vcpus": 1}),
     "sprites": ({"organization": "fly-org"}, {"api_key": SECRET}, {"privileged": True}),
     "runloop": ({"organization": "runloop-org"}, {"api_key": SECRET}, {"resource_size": "HUGE"}),
-    "cloudflare": ({"endpoint": "https://cloudflare.example"}, {"api_key": SECRET}, {"network_egress": "allowlist"}),
     "boxd": ({"region": "nyc"}, {"api_key": SECRET}, {"size": "3x12"}),
 }
 
@@ -38,7 +37,6 @@ async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # typ
         "vercel": {"team_id", "project_id"},
         "sprites": {"organization"},
         "runloop": {"organization"},
-        "cloudflare": {"endpoint"},
         "boxd": {"region", "organization"},
     }
     collection = f"{service.api}/environment-providers"
