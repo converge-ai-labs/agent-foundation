@@ -6,7 +6,8 @@ The control sweeps are paused, so each test runs attempts and outbox deliveries 
 import asyncio
 import json
 from collections.abc import Iterable
-from datetime import timedelta
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -19,13 +20,141 @@ from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.children import FULL_INBOX_SECONDS, child_results
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
-from a13n_service.runs.subagents import ChildRuns
+from a13n_service.runs.subagents import ChildRuns, _activity_projection
 from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_stream_protocol.display import Item, ItemKind, ItemState
 from sqlalchemy import func, select, update
 
 pytestmark = pytest.mark.anyio
 
 DELEGATE = {"subagent_name": "helper", "prompt": "compute"}
+
+
+def _item(ordinal: int, kind: ItemKind, state: ItemState, content: dict) -> Item:
+    return Item(
+        id=f"item-{ordinal}",
+        ordinal=ordinal,
+        kind=kind,
+        state=state,
+        first_stream_id=f"{ordinal}-1",
+        last_stream_id=f"{ordinal}-2",
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        content=content,
+    )
+
+
+def test_activity_projection_uses_only_closed_visible_items() -> None:
+    activity = _activity_projection(
+        [
+            _item(1, "text_message", "completed", {"text": "saved answer"}),
+            _item(2, "reasoning_message", "completed", {"text": "private reasoning"}),
+            _item(3, "text_message", "in_progress", {"text": "provisional answer"}),
+            _item(
+                4,
+                "tool_call",
+                "completed",
+                {
+                    "toolCallId": "call-closed",
+                    "toolCallName": "view",
+                    "arguments": {"file_path": "/private/input"},
+                    "result": "private result",
+                },
+            ),
+            _item(
+                5,
+                "tool_call",
+                "in_progress",
+                {"toolCallId": "call-live", "toolCallName": "view", "arguments": {"file_path": "/live"}},
+            ),
+        ]
+    )
+
+    assert activity is not None
+    assert activity.sequence == 4
+    assert activity.output_preview == "saved answer"
+    assert activity.active_tool_calls == ()
+    assert len(activity.recent_tool_calls) == 1
+    call = activity.recent_tool_calls[0]
+    assert (call.tool_call_id, call.tool_name, call.status) == ("call-closed", "view", "success")
+    assert call.arguments is None and call.result is None
+    assert "reasoning" not in activity.output_preview and "provisional" not in activity.output_preview
+
+
+def test_activity_projection_marks_truncation_and_bounds_tool_history() -> None:
+    activity = _activity_projection(
+        [
+            _item(1, "text_message", "completed", {"text": "x" * 400}),
+            *[
+                _item(
+                    ordinal,
+                    "tool_call",
+                    "completed",
+                    {"toolCallId": f"call-{ordinal}", "toolCallName": "view"},
+                )
+                for ordinal in range(2, 27)
+            ],
+        ]
+    )
+
+    assert activity is not None
+    assert activity.output_truncated is True
+    assert len(activity.output_preview) == 300
+    assert len(activity.recent_tool_calls) == 20
+    assert activity.recent_tool_calls[0].tool_call_id == "call-7"
+    assert activity.recent_tool_calls[-1].tool_call_id == "call-26"
+    assert activity.dropped_tool_calls == 5
+
+
+def test_activity_projection_bounds_item_work(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+    preview = subagents_module._text_preview
+
+    def counted(item: Item):
+        nonlocal calls
+        calls += 1
+        return preview(item)
+
+    monkeypatch.setattr(subagents_module, "_text_preview", counted)
+    activity = _activity_projection(
+        [_item(ordinal, "text_message", "completed", {"text": "saved"}) for ordinal in range(1, 71)]
+    )
+
+    assert activity is not None
+    assert calls == 64
+    assert activity.sequence == 70
+    assert activity.output_truncated is True
+
+
+async def test_activity_read_budget_omits_projection(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def get_one(*args) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    @asynccontextmanager
+    async def session(storage):
+        yield SimpleNamespace(get_one=get_one)
+
+    async def authorize(*args) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    started = asyncio.Event()
+    blocker = asyncio.Event()
+
+    async def items(*args, **kwargs) -> None:
+        started.set()
+        await blocker.wait()
+
+    monkeypatch.setattr(subagents_module, "short_session", session)
+    monkeypatch.setattr(subagents_module, "authorize_execution", authorize)
+    monkeypatch.setattr(subagents_module.run_reads, "items", items)
+    monkeypatch.setattr(subagents_module, "_ACTIVITY_SECONDS", 0.01)
+    operator = SimpleNamespace(
+        runtime=SimpleNamespace(storage=object(), access=object()),
+        lease=SimpleNamespace(run_id="parent", workspace_id="workspace"),
+    )
+    execution = SimpleNamespace(run=SimpleNamespace(id="child"))
+
+    assert await ChildRuns._activities(operator, [execution]) == {}
+    assert started.is_set()
 
 
 async def _deliver(service) -> list[outbox.Claim]:  # type: ignore[no-untyped-def]
@@ -267,7 +396,17 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
         elapsed += seconds
         await asyncio.sleep(0)
 
-    monkeypatch.setattr(subagents_module, "asyncio", SimpleNamespace(get_running_loop=lambda: clock, sleep=poll_sleep))
+    monkeypatch.setattr(
+        subagents_module,
+        "asyncio",
+        SimpleNamespace(
+            get_running_loop=lambda: clock,
+            sleep=poll_sleep,
+            Semaphore=asyncio.Semaphore,
+            timeout=asyncio.timeout,
+            gather=asyncio.gather,
+        ),
+    )
 
     async def paged(operator: ChildRuns, execution_id: str | None, offset: int, limit: int) -> tuple[list, int]:
         reads.append("page")
@@ -289,8 +428,13 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     assert [(item["execution_id"], item["status"], json.loads(item["input"])) for item in info["executions"]] == [
         (first, "succeeded", {"delegated_task": "compute"})
     ]
+    activity = info["executions"][0]["activity"]
+    assert activity["output_preview"] == "one"
+    assert activity["sequence"] >= 1
+    assert activity["active_tool_calls"] == [] and activity["recent_tool_calls"] == []
     assert (waited["total"], waited["next_offset"]) == (2, None)
     assert [(item["execution_id"], item["status"]) for item in waited["executions"]] == [(second, "running")]
+    assert waited["executions"][0]["activity"] is None
     # The info call and the wait each read their page once; the wait then polls only its runs' statuses.
     assert reads == ["page", "page", "statuses", "statuses"], reads
 

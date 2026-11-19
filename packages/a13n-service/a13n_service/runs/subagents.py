@@ -14,7 +14,7 @@ attempt.
 """
 
 import asyncio
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from a13n_harness import RunInputValue
@@ -36,16 +36,25 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
-from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.capabilities.subagents import (
+    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
+    SubagentActivitySnapshot,
+    SubagentStatus,
+    SubagentToolCallSnapshot,
+    SubagentToolCallStatus,
+)
 from a13n_harness.tool_execution import current_execution
+from a13n_stream_protocol.display import Item
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from a13n_service.infra import reads
 from a13n_service.infra.db import lock, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.resources.agents import stored
 from a13n_service.runs import definitions, inbox
+from a13n_service.runs import runs as run_reads
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, authorize_execution
@@ -81,6 +90,12 @@ _STATUS: dict[str, SubagentStatus] = {
 }
 _TEXT_CHARS = 65536
 _WAIT_SECONDS, _MAX_WAIT_SECONDS, _POLL_SECONDS = 30.0, 300.0, 0.25
+_ACTIVITY_ITEMS, _ACTIVITY_SECONDS, _ACTIVITY_CONCURRENCY = 64, 5.0, 4
+_CLOSED_TOOL_STATUS: dict[str, SubagentToolCallStatus] = {
+    "completed": "success",
+    "failed": "failed",
+    "interrupted": "interrupted",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,8 +260,9 @@ class ChildRuns(SubagentOperator):
             executions, total = await self._page(
                 request.execution_id, request.execution_offset, request.execution_limit
             )
+            projections = await self._projections(executions)
         return SubagentInfoResult(
-            executions=tuple(_full(item) for item in executions),
+            executions=projections,
             execution_offset=request.execution_offset,
             total=total,
             next_offset=_next(request.execution_offset, len(executions), total),
@@ -278,8 +294,9 @@ class ChildRuns(SubagentOperator):
                 statuses = await self._statuses(statuses)
             if any(item.run.status != statuses[item.run.id] for item in executions):
                 executions = await self._reread(executions)
+            projections = await self._projections(executions)
         return SubagentWaitResult(
-            executions=tuple(_full(item) for item in executions),
+            executions=projections,
             execution_offset=request.execution_offset,
             total=total,
             next_offset=_next(request.execution_offset, len(executions), total),
@@ -439,6 +456,37 @@ class ChildRuns(SubagentOperator):
             rows = await session.execute(select(RunRow.id, RunRow.status).where(RunRow.id.in_(list(run_ids))))
             return dict(rows.tuples().all())
 
+    async def _projections(self, executions: list[_Execution]) -> tuple[SubagentExecutionView, ...]:
+        activities = await self._activities(executions)
+        return tuple(_full(item, activity=activities.get(item.run.id)) for item in executions)
+
+    async def _activities(self, executions: list[_Execution]) -> dict[str, SubagentActivitySnapshot | None]:
+        """Read only committed display through the parent's current authority, with one finite budget for the page."""
+        if not executions:
+            return {}
+        try:
+            async with asyncio.timeout(_ACTIVITY_SECONDS):
+                async with short_session(self.runtime.storage) as session:
+                    parent = await session.get_one(RunRow, self.lease.run_id)
+                    actor = await authorize_execution(session, self.runtime.access, parent)
+                semaphore = asyncio.Semaphore(_ACTIVITY_CONCURRENCY)
+
+                async def read(execution: _Execution) -> tuple[str, SubagentActivitySnapshot | None]:
+                    async with semaphore:
+                        page = await run_reads.items(
+                            self.runtime,
+                            actor,
+                            self.lease.workspace_id,
+                            execution.run.id,
+                            limit=_ACTIVITY_ITEMS,
+                        )
+                    return execution.run.id, _activity_projection(page.items)
+
+                return dict(await asyncio.gather(*(read(item) for item in executions)))
+        except TimeoutError:
+            # Observation has its own bounded budget; exhausting it changes no execution fact.
+            return {}
+
     async def _reread(self, executions: list[_Execution]) -> list[_Execution]:
         """The page's executions with their runs read again."""
         async with short_session(self.runtime.storage) as session:
@@ -468,8 +516,48 @@ def _view(execution: _Execution) -> AsyncExecutionView:
     )
 
 
-def _full(execution: _Execution) -> SubagentExecutionView:
-    return SubagentExecutionView(**_view(execution).model_dump(), input=execution.input)
+def _activity_projection(items: Sequence[Item]) -> SubagentActivitySnapshot | None:
+    window = items[-_ACTIVITY_ITEMS:]
+    closed = [item for item in window if item.state in _CLOSED_TOOL_STATUS]
+    if not closed:
+        return None
+    output_parts = [_text_preview(item) for item in closed if item.kind == "text_message"]
+    output_parts = [part for part in output_parts if part.text]
+    output = "\n\n".join(part.text for part in output_parts)
+    preview = output[-MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS:]
+    tools = [item for item in closed if item.kind == "tool_call"]
+    recent = tools[-20:]
+    return SubagentActivitySnapshot(
+        sequence=closed[-1].ordinal,
+        output_preview=preview,
+        output_truncated=(
+            closed[0].ordinal > 1 or len(output) > len(preview) or any(part.truncated for part in output_parts)
+        ),
+        recent_tool_calls=tuple(
+            SubagentToolCallSnapshot(
+                tool_call_id=_identity(item.content.get("toolCallId"), item.id),
+                tool_name=_identity(item.content.get("toolCallName"), "unknown"),
+                status=_CLOSED_TOOL_STATUS[item.state],
+            )
+            for item in recent
+        ),
+        dropped_tool_calls=len(tools) - len(recent),
+    )
+
+
+def _text_preview(item: Item) -> reads.Preview:
+    ref = item.content_refs.get("text")
+    if ref is not None:
+        return reads.Preview(text=reads.preview(ref.preview).text, truncated=True)
+    return reads.preview(item.content.get("text"))
+
+
+def _identity(value: object, fallback: str) -> str:
+    return (value if isinstance(value, str) and value else fallback)[:256]
+
+
+def _full(execution: _Execution, *, activity: SubagentActivitySnapshot | None = None) -> SubagentExecutionView:
+    return SubagentExecutionView(**_view(execution).model_dump(), input=execution.input, activity=activity)
 
 
 def _payload(value: RunInputValue, fallback: str) -> MessagePayload:
