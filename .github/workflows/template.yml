@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        variant: [default, renamed]
+        variant: [default, renamed, backend-only]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -26,9 +26,11 @@ jobs:
         with:
           enable-cache: true
       - uses: pnpm/action-setup@v4
+        if: matrix.variant != 'backend-only'
         with:
           version: '10.30.3'
       - uses: actions/setup-node@v6
+        if: matrix.variant != 'backend-only'
         with:
           node-version: '24'
           cache: pnpm
@@ -39,7 +41,10 @@ jobs:
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
-          if [ "$VARIANT" = renamed ]; then
+          if [ "$VARIANT" = backend-only ]; then
+            uvx --python 3.13 cookiecutter . --no-input --output-dir .generated surface=backend-only
+            echo 'PROJECT=.generated/my-service-app' >> "$GITHUB_ENV"
+          elif [ "$VARIANT" = renamed ]; then
             uvx --python 3.13 cookiecutter . --no-input --output-dir .generated project_name='Orbit tools' project_slug=orbit-tools module_name=orbit_plugin app_id=orbit.tools version=2.3.4
             echo 'PROJECT=.generated/orbit-tools' >> "$GITHUB_ENV"
           else
