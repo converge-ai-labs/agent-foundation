@@ -280,6 +280,8 @@ pnpm --dir examples/service-app-plugin/frontend build
 
 桥接模块还导出 `useAuth`、`useAccess`、`useWorkspace`、`useAppearance`、`useTranslation`、`useMutation`、`useQueryClient` 等 hook，以及 `Page`、`Empty`、`Loading`、`ErrorPage` 等选定 UI 组件。Console 负责 React 根节点和 provider。
 
+使用 `ChoiceField` 提供带标签的选择字段，使用 `SearchPicker` 提供可搜索的选项，或使用 `SegmentedControl` 在原位切换模式。用 `Field` 及其配套组件组合自定义字段，用 `Select` 搭配 `SelectTrigger`、`SelectValue`、`SelectPopup` 和 `SelectItem` 组合自定义下拉菜单。使用 `ReadOnlyField` 显示带标签的只读值。
+
 ## 打包浏览器资源
 
 软件包包含预构建 ESM 资源树时，在定义中添加 `Frontend`：

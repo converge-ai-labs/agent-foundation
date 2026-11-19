@@ -11,6 +11,8 @@ import {
   useWorkspace,
   useTranslation,
 } from "../src/app-plugins/bridge";
+import { controlsPage } from "./app-plugin-controls";
+
 function Overview() {
   const app = useApp();
   const cache = useQueryClient();
@@ -62,6 +64,7 @@ function Failure(): never {
 export default {
   bridge: 1,
   pages: [
+    controlsPage,
     { id: "overview", label: "Reports", component: Overview },
     { id: "failure", label: "Failure", component: Failure },
     { id: "stateful", label: "Stateful", component: Stateful },
