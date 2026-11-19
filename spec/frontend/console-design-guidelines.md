@@ -26,7 +26,7 @@ System sans-serif uses 13px interface text and 14px prose at 1.6 line height. Re
 | Rail and group headings    | 11px / 500    | secondary |
 | Identifiers, keys, URLs    | 12px / 400    | secondary |
 
-`StatePill` maps domain states to semantic variants: a 6px dot and 12px medium label, settled states untinted and attention states at 10–12% tint. Tables and identity headers retain pills. Markdown links use signal color, medium weight and persistent underline; hover strengthens it. Interface resource links stay neutral.
+`StatePill` maps domain states to semantic variants: a 6px dot and 12px medium label, settled states untinted and attention states at 10–12% tint. Tables and identity headers retain pills. Markdown links use signal color, medium weight and persistent underline; hover strengthens it. Same-origin Agent and Run detail links in Markdown use compact neutral resource references: a 14px type icon, 13px medium name, 12px trailing chevron, surface fill, inset hairline and 6px corners. They are at least 26px high, wrap long names within the reading column, deepen their fill on hover and retain the signal focus ring. Plain `Agent:` and `Run:` label prefixes become the type icon visually and remain available to assistive technology. These references navigate within Console, preserving query parameters and fragments. Findings explanations, suggestions, limitations and reviewer notes use the same compact treatment for every Markdown link, including explicit image-opening links; other destinations use a globe and external-link arrow while keeping their existing navigation behavior. Outside Findings, other Markdown destinations retain ordinary link treatment. Interface resource links stay neutral.
 
 ## Page Anatomy
 

@@ -28,6 +28,42 @@
   outline-offset: 3px;
   border-radius: 2px;
 }
+.markdown a.resourceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 2px 7px;
+  border-radius: var(--a13n-radius-chip);
+  background: var(--a13n-surface);
+  box-shadow: inset 0 0 0 1px var(--a13n-border-soft);
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  line-height: 22px;
+  text-decoration: none;
+  vertical-align: baseline;
+  transition: background 150ms var(--a13n-ease);
+}
+.markdown a.resourceLink:hover {
+  background: var(--a13n-hover);
+}
+.markdown a.resourceLink:focus-visible {
+  border-radius: var(--a13n-radius-chip);
+}
+.resourceLink > svg {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.resourceLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown a.resourceLink {
+    transition: none;
+  }
+}
 .markdown h1,
 .markdown h2,
 .markdown h3 {

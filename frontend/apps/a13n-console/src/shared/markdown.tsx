@@ -1,31 +1,114 @@
 import { useTranslation } from "react-i18next";
-import { memo } from "react";
+import { memo, type ComponentPropsWithoutRef } from "react";
+import {
+  ArrowUpRightIcon,
+  CaretRightIcon,
+  GlobeIcon,
+  PlayCircleIcon,
+  RobotIcon,
+} from "@phosphor-icons/react";
+import { Link } from "react-router";
+import { markdownResourceLink } from "./markdown-links";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import styles from "./markdown.module.css";
 import { CodeBlock } from "./forms";
 
+function MarkdownLink({
+  href,
+  children,
+  title,
+  compact = false,
+}: ComponentPropsWithoutRef<"a"> & { compact?: boolean }) {
+  const { t } = useTranslation();
+  const resource =
+    typeof window === "undefined"
+      ? null
+      : markdownResourceLink(href, window.location.href);
+  if (!resource && (!compact || !href))
+    return (
+      <a href={href} title={title} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  const Icon = !resource
+    ? GlobeIcon
+    : resource.kind === "agent"
+      ? RobotIcon
+      : PlayCircleIcon;
+  // The analyst's plain-text type prefix is represented by the icon instead.
+  const label =
+    resource && typeof children === "string"
+      ? children.replace(
+          resource.kind === "agent" ? /^Agent:\s+/i : /^Run:\s+/i,
+          "",
+        ) || children
+      : children;
+  const content = (
+    <>
+      <Icon size={14} aria-hidden="true" />
+      <span className={styles.resourceLabel}>
+        {resource && (
+          <>
+            <span className="sr-only">
+              {resource.kind === "agent" ? t("Agent") : t("Run")}:
+            </span>{" "}
+          </>
+        )}
+        {label}
+      </span>
+      {resource ? (
+        <CaretRightIcon size={12} aria-hidden="true" />
+      ) : (
+        <ArrowUpRightIcon size={12} aria-hidden="true" />
+      )}
+    </>
+  );
+  return resource ? (
+    <Link to={resource.to} title={title} className={styles.resourceLink}>
+      {content}
+    </Link>
+  ) : (
+    <a
+      href={href}
+      title={title}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={styles.resourceLink}
+    >
+      {content}
+    </a>
+  );
+}
+
+function ImageLink({
+  src,
+  alt,
+  compact = false,
+}: ComponentPropsWithoutRef<"img"> & { compact?: boolean }) {
+  const { t } = useTranslation();
+  // Remote content can contain tracking URLs; loading media is an explicit user action.
+  return typeof src === "string" && /^https?:\/\//i.test(src) ? (
+    <MarkdownLink href={src} compact={compact}>
+      {alt || t("Open image")}
+    </MarkdownLink>
+  ) : (
+    <span>{alt || t("Image")}</span>
+  );
+}
+
 // Stable renderers preserve code-block state as a streamed answer grows.
 const components: Components = {
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
   table: ({ children }) => <table className="a13n-scrollbar">{children}</table>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
-  img: function ImageLink({ src, alt }) {
-    const { t } = useTranslation();
-    // Remote content can contain tracking URLs; loading media is an explicit user action.
-    return typeof src === "string" && /^https?:\/\//i.test(src) ? (
-      <a href={src} target="_blank" rel="noopener noreferrer">
-        {alt || t("Open image")}
-      </a>
-    ) : (
-      <span>{alt || t("Image")}</span>
-    );
-  },
+  a: MarkdownLink,
+  img: ImageLink,
+};
+const compactComponents: Components = {
+  ...components,
+  a: (props) => <MarkdownLink {...props} compact />,
+  img: (props) => <ImageLink {...props} compact />,
 };
 
 /** Unchanged messages do not parse Markdown again when their Thread updates. */
@@ -33,10 +116,12 @@ export const MarkdownContent = memo(function MarkdownContent({
   text,
   literalHtml = false,
   highlight = true,
+  compactLinks = false,
 }: {
   text: string;
   literalHtml?: boolean;
   highlight?: boolean;
+  compactLinks?: boolean;
 }) {
   return (
     <div className={styles.markdown}>
@@ -48,7 +133,7 @@ export const MarkdownContent = memo(function MarkdownContent({
             ? [[rehypeHighlight, { detect: false }]]
             : []
         }
-        components={components}
+        components={compactLinks ? compactComponents : components}
       >
         {text}
       </Markdown>
