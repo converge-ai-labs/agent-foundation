@@ -70,9 +70,48 @@ export {
   type SegmentedControlOption,
   type SegmentedControlProps,
 } from "a13n-ui";
-export { Page } from "../shared/page";
-export { Empty } from "../shared/collection";
-export { Loading, ErrorPage, ErrorToast } from "../shared/feedback";
+export {
+  DetailHeader,
+  DetailLayout,
+  DetailPage,
+  Page,
+  Panel,
+  Rail,
+  RailNote,
+  RailRow,
+  RailSection,
+  SaveBar,
+  Section,
+  SectionGroup,
+  Sections,
+  type DetailTab,
+} from "../shared/page";
+export {
+  CollectionFooter,
+  Empty,
+  ListRow,
+  ListRows,
+  Pagination,
+  ResourceTable,
+  SortButton,
+  Toolbar,
+  type ResourceColumn,
+} from "../shared/collection";
+export {
+  FieldHelp,
+  FormActions,
+  FormSection,
+  TextAreaField,
+} from "../shared/forms";
+export { Confirm } from "../shared/dialogs";
+export {
+  ErrorNotice,
+  ErrorPage,
+  ErrorToast,
+  InlineLoading,
+  Loading,
+  Timestamp,
+} from "../shared/feedback";
 export { ApiError, ProtocolError } from "../service-client";
 export { useAuth } from "../auth/context";
 export { useAccess, useWorkspace } from "../layout/workspace";

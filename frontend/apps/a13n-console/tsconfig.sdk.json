@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "rootDir": "../../..",
+    "paths": { "a13n-ui": ["../../packages/a13n-ui/src/index.ts"] }
+  },
+  "include": ["src/app-plugins/bridge.ts", "src/**/*.d.ts"]
+}

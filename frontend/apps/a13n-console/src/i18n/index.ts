@@ -1,11 +1,11 @@
-import { createInstance } from "i18next";
+import { createInstance, type i18n as I18n } from "i18next";
 import { initReactI18next } from "react-i18next";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
 
 import { readLanguage } from "./preferences";
 
-export const i18n = createInstance();
+export const i18n: I18n = createInstance();
 
 await i18n.use(initReactI18next).init({
   lng: readLanguage(),

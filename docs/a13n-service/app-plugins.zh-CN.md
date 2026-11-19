@@ -282,6 +282,20 @@ pnpm --dir examples/service-app-plugin/frontend build
 
 使用 `ChoiceField` 提供带标签的选择字段，使用 `SearchPicker` 提供可搜索的选项，或使用 `SegmentedControl` 在原位切换模式。用 `Field` 及其配套组件组合自定义字段，用 `Select` 搭配 `SelectTrigger`、`SelectValue`、`SelectPopup` 和 `SelectItem` 组合自定义下拉菜单。使用 `ReadOnlyField` 显示带标签的只读值。
 
+### 为独立 App 启用类型检查
+
+Service 从 0.2.2 起随 Console 提供 TypeScript 声明。App 模板的 `make setup` 安装锁定版本的 Service 并导出声明，供编辑器补全使用。`make typecheck` 针对该版本检查 App；`make verify` 和生产前端构建也执行同一检查。
+
+已有独立 App 可在安装或升级 Service 后，在 App 的 Python 环境中运行：
+
+```bash
+python -m a13n_service.console_sdk frontend/.console-sdk/index.d.ts
+```
+
+在 `frontend/tsconfig.json` 的 `compilerOptions.paths` 中将 `@a13n/console` 映射到 `./.console-sdk/index.d.ts`，不要提交生成的声明，并使用模板中的前端开发依赖解析声明引用的类型。打包时仍需将 `@a13n/console` 保持为外部依赖。不需要安装 Console SDK npm 包，也不应在 App bundle 中引入第二套 React 运行时。使用较新的桥接导出时，请锁定构建与测试所用的 Service 版本。
+
+列表使用 `Page`、`Toolbar` 和 `ResourceTable`，详情使用 `DetailPage` 和 `DetailHeader`，编辑表单使用 `FormSection`、`FormField` 和 `FormActions`。模板展示了这些组件的组合，并继承宿主的浅色和深色主题。
+
 ## 打包浏览器资源
 
 软件包包含预构建 ESM 资源树时，在定义中添加 `Frontend`：

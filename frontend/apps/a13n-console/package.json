@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node build-app-sdk.mjs",
     "generate": "node generate-service-client.mjs",
     "generate:check": "node generate-service-client.mjs --check",
     "check": "pnpm run typecheck",
@@ -24,6 +24,8 @@
     "@types/react-dom": "^19.2.7",
     "jsdom": "^29.1.1",
     "openapi-typescript": "7.13.0",
+    "rollup": "^4.68.7",
+    "rollup-plugin-dts": "^6.5.1",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
