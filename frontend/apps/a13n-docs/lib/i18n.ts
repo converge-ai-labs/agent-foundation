@@ -27,6 +27,7 @@ export const messages = {
     description:
       "The open-source, self-hosted foundation for AI agents: the Harness library, the managed Service, and the Harness UI workbench.",
     home: "a13n docs home",
+    website: "a13n website",
     language: "Choose a language",
     theme: "Toggle dark theme",
     github: "GitHub repository",
@@ -51,6 +52,7 @@ export const messages = {
     description:
       "开源、可自托管的 AI agent 基础：用 Harness 在应用中运行 agent，用 Service 管理执行，或通过 Harness UI 交互式工作。",
     home: "a13n 文档首页",
+    website: "a13n 官网",
     language: "选择语言",
     theme: "切换深色模式",
     github: "GitHub 仓库",

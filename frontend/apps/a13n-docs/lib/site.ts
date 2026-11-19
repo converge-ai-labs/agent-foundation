@@ -4,6 +4,7 @@ export { basePath };
 
 export const site = {
   name: "a13n",
+  website: "https://a13n.dev/",
   description:
     "The open-source, self-hosted foundation for AI agents: the Harness library, the managed Service, and the Harness UI workbench.",
   url: `https://a13n.dev${basePath}`,
