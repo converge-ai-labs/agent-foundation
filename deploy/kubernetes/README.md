@@ -82,7 +82,7 @@ Stop removes the runtime Pod and retains its PVC; release removes the StatefulSe
 
 ### Schema migration
 
-Every install and upgrade creates the Job `a13n-a13n-migrate-<revision>`, which runs `a13n-service migrate` under the Service's PostgreSQL advisory lock. Replicas never migrate: the Chart configures `auto_migrate = false`, and each Control and Worker Pod first runs a `wait-for-schema` init container that repeats `a13n-service migrate --check` every five seconds until the database matches its image. A rolling update can leave old Pods running during migration. Their readiness checks require the old schema, so they can become unready before the replacement Pods start serving. A Helm rollback rolls back Kubernetes resources, not the database schema. Finished Jobs are deleted after one day.
+Every install and upgrade creates the Job `a13n-a13n-migrate-<revision>`, which runs `a13n-service migrate` under the Service's PostgreSQL advisory lock. Replicas never migrate: the Chart configures `auto_migrate = false`, and each Control and Worker Pod first runs a `wait-for-schema` init container that repeats `a13n-service migrate --check` every five seconds until the database matches its image. Old Pods can remain running during migration, but their readiness checks fail once the schema no longer matches their build. New Pods may not be ready yet. Plan for a service interruption when the upgrade changes the schema. Finished Jobs are deleted after one day.
 
 ### Objects
 
@@ -264,7 +264,7 @@ The Chart creates no per-agent Pods, Docker daemon, privileged container or Dock
 
 ## Upgrades and backups
 
-Choose the target release, review its [Service upgrade notes](../../docs/a13n-service/upgrade-notes.md), and back up before upgrading. Plan a maintenance window for schema-changing upgrades, and follow any instructions for draining old workers or stopping admission before applying the new Chart. Carry over your deployment values:
+Complete the preparation in [Operate the Service](../../docs/a13n-service/operations.md) before applying the target chart. Keep a copy of the current chart version and values, then upgrade with your deployment values:
 
 ```sh
 helm upgrade a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service --version NEW_VERSION \
@@ -272,7 +272,7 @@ helm upgrade a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service --version N
   -f /absolute/private/path/values.yaml --wait --timeout 20m
 ```
 
-During the upgrade, the migration Job and Deployment rollout can overlap. New Pods wait for the matching schema and compatible stored run objects before starting Service ([schema migration](#schema-migration)). If the rollout stalls, check `job/a13n-a13n-migrate-<revision>` and the new Pods' `wait-for-schema` init container logs. Check migration state before attempting a rollback: a failed upgrade can leave the schema changed and old Pods unready. `helm rollback` restores Kubernetes resources only. To return to the previous image after the schema changes, restore the pre-upgrade database and any affected objects from the same recovery point.
+If the rollout stalls, inspect the logs of `job/a13n-a13n-migrate-<revision>` and the `wait-for-schema` init container on a replacement Pod. The Job can fail after applying a migration, so check the database state before attempting to roll back. `helm rollback` restores Kubernetes resources only. If the old build cannot read the new schema or stored objects, restore the pre-upgrade data and keys before restarting it. After a successful rollout, verify each replica and test historical reads and a new run before reopening any paused traffic.
 
 Back up three things together and restore them from the same point in time:
 

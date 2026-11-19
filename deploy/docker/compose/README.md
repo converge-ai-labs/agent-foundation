@@ -111,8 +111,9 @@ export COMPOSE_FILE=deploy/docker/compose/a13n-service.yaml
 docker compose stop service
 docker compose exec -T postgres pg_dump -U a13n_service -Fc a13n_service > a13n-service.dump
 docker compose run --rm --no-deps -v "$PWD:/backup" --entrypoint tar service -czf /backup/a13n-service-data.tgz -C /app/var .
-docker compose start service
 ```
+
+For a backup without an upgrade, restart Service with `docker compose start service`. For an upgrade, leave it stopped and continue below. Keep the backup files and the deployment configuration in private storage; the data archive contains the encryption key.
 
 Restore into a new stack before its Service first starts: load both backups, then start everything.
 
@@ -123,7 +124,7 @@ docker compose run --rm --no-deps -v "$PWD:/backup" --entrypoint tar service -xz
 docker compose up -d --wait
 ```
 
-To upgrade, back up, then run `docker compose up -d --wait` with the new image: from a checkout, after rebuilding it; with a release's file, after replacing it with the new release's and carrying over your `environment` changes. Compose recreates the Service, which migrates the schema at startup. A migrated schema stops older images at startup; to return to one, restore the backup taken before the upgrade.
+For an upgrade, complete the preparation in [Operate the Service](../../../docs/a13n-service/operations.md). Keep the old Compose file and image version. Use the target release's Compose file with your existing project, volumes, and settings. If you build from a checkout, point the configuration at the image you intend to run. Start with `docker compose up -d --wait`; Service migrates at startup. Verify a historical run and a new one before reopening any paused traffic. If the upgrade fails, inspect `docker compose logs service` before restarting with an older image. If the schema or stored objects are no longer compatible with that image, restore the pre-upgrade backup with the old version.
 
 ## Local quickstart
 

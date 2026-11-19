@@ -5,7 +5,12 @@ description: Check deployment health, upgrade safely, preserve data, and diagnos
 
 Operate Service with the same configuration and credentials used by its running processes. The examples below assume `a13n-service` is installed in that environment and `service.toml` names the deployment's [configuration](configuration.md). For containers, run operator commands inside the configured container or migration Job.
 
-Before upgrading, choose a target release and read its release notes and the [Service upgrade notes](upgrade-notes.md). Back up the deployment, migrate with the target build, replace the processes, then verify readiness and a real run. Follow any cutover instructions for pausing admission or draining work before migration.
+For an upgrade, follow the steps below and use your deployment guide for the Compose or Helm commands:
+
+1. Choose the target release. Read its release notes and the [Service upgrade notes](upgrade-notes.md) for any required cutovers. Plan a maintenance window for schema changes. If the cutover requires pausing new work or draining active runs, do that before migration.
+2. Take a [consistent backup](#backups) of the database, objects, and encryption keys. Keep the old deployment configuration and version so you can restore them together.
+3. Apply the target release's [schema migrations](#schema-migrations) and start the replacement processes.
+4. [Check each replica](#health-and-readiness), open a historical run, and submit a new one that exercises the dependencies your deployment needs. If you paused new work, reopen it after these checks pass.
 
 ## Process roles
 
@@ -83,7 +88,7 @@ a13n-service --config service.toml migrate --check
 
 A successful check confirms the schema expected by this build and the absence of legacy unpaged run pointers. If the command reports legacy objects, follow [object conversion](upgrade-notes.md#convert-legacy-run-objects) before starting replicas.
 
-Startup and readiness checks require the exact schema expected by each build. During a rolling upgrade, old processes may keep running after migration, but their readiness checks fail once the schema head differs. Plan for a service interruption on schema-changing upgrades; check migration compatibility and load-balancer behavior before choosing a rolling rollout. Replace old processes, check each new replica, then verify historical reads and execution.
+Startup and readiness checks require the exact schema expected by each build. A migration can make old replicas unready before replacements are ready, even if the old processes are still running. If an upgrade fails, inspect the migration result before switching images: a failed rollout does not mean the database is unchanged. If you must return to the old release after data has changed, restore the pre-upgrade backup as a consistent recovery point. Writes after that point will not be present in the restored deployment.
 
 ## Logs and metrics
 
@@ -121,7 +126,7 @@ parallel = 2
 
 Use `outbox.defaults` for shared policy and `outbox.by_kind` for overrides. Each kind inherits unspecified fields. Environment overrides `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` take whole JSON objects; they replace the corresponding TOML field. Restart processes after changing configuration. The [configuration reference](configuration-reference.md) lists limits and defaults.
 
-For `a13n_outbox_backlog_alert` and `a13n_outbox_dead`, [exclude stale samples before taking the maximum](monitoring.md#metrics) across `all` and `control` replicas. Restore destination availability first, then adjust delivery capacity if producers still outpace consumers. Shorter retention cannot clear pending work.
+Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across `all` and `control` replicas. Restore destination availability first, then adjust delivery capacity if producers still outpace consumers. Shorter retention cannot clear pending work.
 
 ## Environment monitoring collectors
 
