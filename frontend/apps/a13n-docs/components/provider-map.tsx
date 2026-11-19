@@ -8,8 +8,10 @@ type Hotspot = {
   label: string;
   chinese?: string;
   href: string;
+  artworkText?: { title: string; subtitle: string };
   // Coordinates on the original artwork, normalized to a 2000 × 1250 canvas.
-  bounds: readonly [x: number, y: number, width: number, height: number];
+  // A null width fits the provider's artwork label instead of a fixed region.
+  bounds: readonly [x: number, y: number, width: number | null, height: number];
 };
 
 type Region = {
@@ -29,14 +31,24 @@ function gridLinks(
   rows: Entry[][],
   columns: number[],
   top: number,
-  width: number,
   defaultHref: string,
 ): Hotspot[] {
   return rows.flatMap((row, y) =>
     row.map((entry, x): Hotspot => {
       const [label, href] =
         typeof entry === "string" ? [entry, defaultHref] : entry;
-      return { label, href, bounds: [columns[x], top + y * 62.5, width, 58] };
+      const artworkText =
+        label === "Vercel AI Gateway"
+          ? { title: "Vercel", subtitle: "AI Gateway" }
+          : label === "Alibaba Cloud"
+            ? { title: label, subtitle: "Model Studio / Qwen" }
+            : undefined;
+      return {
+        label,
+        href,
+        artworkText,
+        bounds: [columns[x], top + y * 62.5, null, 58],
+      };
     }),
   );
 }
@@ -72,7 +84,6 @@ const regions: Region[] = [
         ],
         leftColumns,
         400,
-        173,
         modelGuide,
       ),
       {
@@ -100,7 +111,6 @@ const regions: Region[] = [
         ],
         leftColumns,
         962,
-        173,
         connectionGuide,
       ),
       {
@@ -141,7 +151,6 @@ const regions: Region[] = [
         ],
         [1282, 1497, 1711],
         400,
-        170,
         environmentGuide,
       ),
       {
@@ -173,7 +182,6 @@ const regions: Region[] = [
         ],
         [1282, 1603],
         712,
-        230,
         webGuide,
       ),
       {
@@ -238,7 +246,13 @@ export function ProviderMap({
                 </svg>
               )}
               {region.links.map(
-                ({ label, chinese, href, bounds: [x, y, width, height] }) => {
+                ({
+                  label,
+                  chinese,
+                  href,
+                  artworkText,
+                  bounds: [x, y, width, height],
+                }) => {
                   const name =
                     locale === "zh-CN" && chinese
                       ? `${label} · ${chinese}`
@@ -253,10 +267,22 @@ export function ProviderMap({
                       style={{
                         left: `${x / 20}%`,
                         top: `${y / 12.5}%`,
-                        width: `${width / 20}%`,
+                        width:
+                          width === null ? "max-content" : `${width / 20}%`,
                         height: `${height / 12.5}%`,
                       }}
-                    />
+                    >
+                      {width === null && (
+                        <span className={styles.labelSizer} aria-hidden="true">
+                          {artworkText?.title ?? label}
+                          {artworkText && (
+                            <span className={styles.subtitle}>
+                              {artworkText.subtitle}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </Link>
                   );
                 },
               )}
