@@ -54,7 +54,7 @@ To roll back to the old unpaged reader, stop replicas and restore the backed-up 
 
 ## Internal platform tools
 
-Before Service 0.1, Service may introduce breaking changes and developers are responsible for migrating their own existing data. This internal-tool replacement is one such change: all previously normalized Agents may need complete reauthoring, including Agents whose removed tool entries were disabled. No compatibility layer, mixed-version Control/Worker operation or recovery of old Runs is promised. Before deployment, stop new admission and scheduled/manual dispatch, drain active Runs, and resolve pending approvals, waiting Runs and uncertain external-operation outcomes. Shut down the old deployment, update Control and Workers together, migrate or reauthor data, then resume admission.
+This cutover applies to deployments that used the old API-projected internal platform tools. Previously normalized agent configurations may need to be rewritten in full, even if the removed tool entries were disabled. No compatibility layer, mixed-version Control/Worker operation or recovery of old Runs is promised. Before deployment, stop new admission and scheduled/manual dispatch, drain active Runs, and resolve pending approvals, waiting Runs and uncertain external-operation outcomes. Shut down the old deployment, update Control and Workers together, migrate or reauthor data, then resume admission.
 
 ## Tool-discovery selectors
 

@@ -5,7 +5,12 @@ description: Check deployment health, upgrade safely, preserve data, and diagnos
 
 Operate Service with the same configuration and credentials used by its running processes. The examples below assume `a13n-service` is installed in that environment and `service.toml` names the deployment's [configuration](configuration.md). For containers, run operator commands inside the configured container or migration Job.
 
-A routine upgrade follows four steps: back up the deployment, migrate with the new build, replace its processes, then verify readiness and a real run. The sections below explain each step and the recovery signals to watch.
+For an upgrade, follow the steps below and use your deployment guide for the Compose or Helm commands:
+
+1. Choose the target release. Read its release notes and the [Service upgrade notes](upgrade-notes.md) for any required cutovers. Plan a maintenance window for schema changes. If the cutover requires pausing new work or draining active runs, do that before migration.
+2. Take a [consistent backup](#backups) of the database, objects, and encryption keys. Keep the old deployment configuration and version so you can restore them together.
+3. Apply the target release's [schema migrations](#schema-migrations) and start the replacement processes.
+4. [Check each replica](#health-and-readiness), open a historical run, and submit a new one that exercises the dependencies your deployment needs. If you paused new work, reopen it after these checks pass.
 
 ## Process roles
 
@@ -83,7 +88,7 @@ a13n-service --config service.toml migrate --check
 
 A successful check confirms the schema expected by this build and the absence of legacy unpaged run pointers. If the command reports legacy objects, follow [object conversion](upgrade-notes.md#convert-legacy-run-objects) before starting replicas.
 
-Every process requires its build's exact schema at startup. During a rolling upgrade, an already-running old process can continue working against the changed schema, but its readiness becomes unavailable when the schema head differs. Review migration compatibility and load-balancer behavior before choosing a rolling rollout. Replace old processes, check each new replica, then verify historical reads and execution.
+Startup and readiness checks require the exact schema expected by each build. A migration can make old replicas unready before replacements are ready, even if the old processes are still running. If an upgrade fails, inspect the migration result before switching images: a failed rollout does not mean the database is unchanged. If you must return to the old release after data has changed, restore the pre-upgrade backup as a consistent recovery point. Writes after that point will not be present in the restored deployment.
 
 ## Logs and metrics
 

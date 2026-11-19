@@ -71,7 +71,7 @@ docker compose -f a13n-service.yaml down
 docker compose -f a13n-service.yaml up -d --wait
 ```
 
-Keep the same Compose project and volumes. To upgrade, follow the [backup and upgrade procedure](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades), then add `--pull always` when starting to refresh images.
+Keep the same Compose project and volumes. For an upgrade, choose a target release and follow the [Compose backup and upgrade procedure](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades).
 
 For a reset, first [delete managed environments](environments.md#stop-rename-and-delete) through Service. Their containers live outside the Compose stack; Service needs its records to clean them up. Then run `docker compose -f a13n-service.yaml down --volumes` to **permanently delete all stack data**. The next start requires a new administrator registration.
 
