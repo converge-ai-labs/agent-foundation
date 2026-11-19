@@ -63,15 +63,6 @@
   line-height: 16px;
   color: var(--a13n-secondary);
 }
-.scopeName {
-  display: block;
-  margin-top: 2px;
-  font-size: var(--a13n-text-xs);
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .outline nav a {
   display: flex;
   gap: 8px;
