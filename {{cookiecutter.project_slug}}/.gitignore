@@ -3,6 +3,7 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+frontend/.console-sdk/
 frontend/node_modules/
 src/*/static/
 dist/

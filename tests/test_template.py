@@ -36,6 +36,8 @@ def test_generate_independent_fullstack_project(tmp_path, context):
     assert manifest["project"]["name"] == slug
     assert manifest["project"]["description"] == context.get("project_name", "My Service App")
     assert manifest["project"]["entry-points"]["a13n_service.app_plugins"][app_id] == f"{module}.app:definition"
+    default_service = json.loads((ROOT / "cookiecutter.json").read_text())["service_version"]
+    assert manifest["project"]["dependencies"] == [f"a13n-service=={default_service}"]
     assert "license" not in manifest["project"]
     assert not any("license" in path.name.lower() for path in project.rglob("*"))
     app_source = (project / f"src/{module}/app.py").read_text()
@@ -111,6 +113,13 @@ def test_surface_generates_only_its_dependencies_and_contributions(tmp_path, sur
     assert ("frontend=Frontend" in app_source) == has_frontend
     assert ("routers=(router,)" in app_source) == has_backend
     assert ("pnpm " in (project / "Makefile").read_text()) == has_frontend
+    assert ("a13n_service.console_sdk" in (project / "Makefile").read_text()) == has_frontend
+    if has_frontend:
+        config = json.loads((project / "frontend/tsconfig.json").read_text())
+        assert config["compilerOptions"]["paths"]["@a13n/console"] == ["./.console-sdk/index.d.ts"]
+        frontend_source = (project / "frontend/src/index.tsx").read_text()
+        assert "satisfies AppContribution" in frontend_source
+        assert ('app.request("/summary"' in frontend_source) == has_backend
     compose = yaml.safe_load((project / "compose.dev.yaml").read_text())
     assert set(compose["services"]) == {"postgres", "redis", "s3"}
     assert all(service["ports"][0].startswith("127.0.0.1::") for service in compose["services"].values())

@@ -26,7 +26,7 @@ packages = ["src/{{ cookiecutter.module_name }}"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", {% if cookiecutter.surface != 'backend-only' %}"frontend", {% endif %}"tests", "scripts", "README.md", "Makefile", ".python-version", "compose.dev.yaml", "service.dev.toml"]
-exclude = ["frontend/node_modules"]
+exclude = ["frontend/node_modules", "frontend/.console-sdk"]
 
 [tool.uv.workspace]
 members = []
