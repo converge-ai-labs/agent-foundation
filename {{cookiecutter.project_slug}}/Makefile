@@ -1,48 +1,70 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-HOST_SOURCE ?= $(CURDIR)/.host/agent-foundation
-PYTHON := $(CURDIR)/.venv/bin/python
+PYTHON := .venv/bin/python
+PORT ?= 8080
+RELOAD ?= 1
+INSTANCE := app-$(shell printf '%s' "$(CURDIR)" | cksum | cut -d ' ' -f 1)
+COMPOSE := docker compose -p $(INSTANCE) -f compose.dev.yaml
 WHEEL = $(shell "$(PYTHON)" scripts/wheel_path.py)
-
-.PHONY: help host setup frontend build check test verify dev install
+WATCH := $(if $(filter 0,$(RELOAD)),,--watch src)
+{% if cookiecutter.surface != 'backend-only' %}
+FRONTEND := --frontend frontend --assets .a13n-dev/assets
+{% endif %}
+.PHONY: help setup frontend build check verify test-wheel dev dev-down install
 help: ## Show local development commands
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-host: ## Check out the compatible Service source (override HOST_SOURCE to reuse a checkout)
-	@if [ ! -d "$(HOST_SOURCE)" ]; then \
-		mkdir -p "$$(dirname "$(HOST_SOURCE)")"; \
-		git clone --filter=blob:none --no-checkout https://github.com/converge-ai-labs/agent-foundation.git "$(HOST_SOURCE)"; \
-		git -C "$(HOST_SOURCE)" checkout --detach "$$(cat .service-ref)"; \
-	fi
-	@test "$$(git -C "$(HOST_SOURCE)" rev-parse HEAD)" = "$$(cat .service-ref)" || { echo 'HOST_SOURCE must match .service-ref'; exit 1; }
-
-setup: host ## Prepare an isolated Python environment and locked frontend dependencies
-	UV_PROJECT_ENVIRONMENT="$(CURDIR)/.venv" uv sync --project "$(HOST_SOURCE)" --package a13n-service --no-dev --locked --python 3.13
-	uv pip install --python "$(PYTHON)" 'pytest>=8,<10' 'ruff>=0.11,<1'
+setup: ## Install the pinned Service and this App editable
+	uv sync
+{%- if cookiecutter.surface != 'backend-only' %}
 	pnpm --dir frontend install --frozen-lockfile
-	$(MAKE) frontend
-	uv pip install --python "$(PYTHON)" --no-deps -e .
+{%- endif %}
 
-frontend: ## Build the host-mounted ESM frontend into the Python package
+{% if cookiecutter.surface != 'backend-only' -%}
+frontend: ## Build the App's production frontend
 	pnpm --dir frontend build
 
-build: frontend ## Build wheel and source distribution with prebuilt frontend assets
-	uv build --python 3.13 --wheel --sdist
+{% endif %}
+build:{% if cookiecutter.surface != 'backend-only' %} frontend{% endif %} ## Build a wheel and source distribution
+	uv build --wheel --sdist
 
 check: ## Check Python formatting and lint
-	"$(PYTHON)" -m ruff check src tests scripts
-	"$(PYTHON)" -m ruff format --check src tests scripts
+	uv run --no-sync ruff check src tests scripts
+	uv run --no-sync ruff format --check src tests scripts
 
-test: ## Test the installed plugin, discovery, API and packaged assets
-	"$(PYTHON)" -m pytest tests -q
+verify: setup ## Build and test the wheel in a separate environment
+	$(MAKE) build check
+	$(MAKE) test-wheel
 
-verify: build check ## Test the wheel installed in the development environment
-	uv pip install --python "$(PYTHON)" --no-deps --reinstall "$(WHEEL)"
-	$(MAKE) test
+test-wheel: ## Test a built wheel without changing the editable environment (WHEEL=...)
+	@set -e; env_dir=$$(mktemp -d); trap 'rm -rf "$$env_dir"' EXIT; \
+	uv venv --python 3.13 "$$env_dir"; \
+	uv pip install --python "$$env_dir/bin/python" "$(WHEEL)" 'pytest>=8,<10'; \
+	"$$env_dir/bin/python" -m pytest tests -q
 
-dev: ## Rebuild frontend on changes; reload the App page after each build
-	pnpm --dir frontend dev
+dev: setup ## Run Service and watch this App's sources (PORT=8080 RELOAD=1)
+	@for name in $${!A13N_@}; do unset "$$name"; done; \
+	.venv/bin/a13n-service apps --help | grep -qE '^  dev[[:space:]]' || { echo 'Upgrade the pinned a13n-service to a release that provides apps dev.'; exit 1; }
+	@mkdir -p .a13n-dev
+{%- if cookiecutter.surface != 'backend-only' %}
+	pnpm --dir frontend build --mode app-dev
+{%- endif %}
+	$(COMPOSE) up -d --wait --wait-timeout 60
+	@set -e; \
+	pg=$$($(COMPOSE) port postgres 5432); \
+	redis=$$($(COMPOSE) port redis 6379); \
+	s3=$$($(COMPOSE) port s3 9000); \
+	for name in $${!A13N_@}; do unset "$$name"; done; \
+	A13N_SERVER__HOST=127.0.0.1 A13N_SERVER__PORT=$(PORT) \
+	A13N_SERVER__PUBLIC_URL=http://$(INSTANCE).localhost:$(PORT) \
+	A13N_SERVER__CONTROL_URL=http://127.0.0.1:$(PORT) \
+	A13N_DATABASE__URL=postgresql+psycopg://app_dev:app_dev@$$pg/app_dev \
+	A13N_REDIS__URL=redis://$$redis/0 A13N_OBJECTS__ENDPOINT_URL=http://$$s3 \
+	exec .venv/bin/a13n-service --config service.dev.toml apps dev {{ cookiecutter.app_id }} $(WATCH) $(FRONTEND)
 
-install: build ## Install wheel into an existing compatible host (HOST_PYTHON=/path/to/python)
+dev-down: ## Stop development containers without deleting their data
+	$(COMPOSE) down
+
+install: build ## Install the wheel into an existing compatible host (HOST_PYTHON=/path/to/python)
 	@test -n "$(HOST_PYTHON)" || { echo 'Set HOST_PYTHON to the Service environment Python'; exit 1; }
 	uv pip install --python "$(HOST_PYTHON)" --no-deps --reinstall "$(WHEEL)"

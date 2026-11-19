@@ -1,0 +1,43 @@
+# Local development only. Docker assigns separate loopback ports to each checkout.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: app_dev
+      POSTGRES_USER: app_dev
+      POSTGRES_PASSWORD: app_dev
+    ports: ["127.0.0.1::5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1::6379"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  s3:
+    image: cgr.dev/chainguard/minio@sha256:83b4a2d9f21bbf5127ef8b8bbe456d371cd35c8d03ec72262866ceee889c9a88
+    entrypoint: ["sh", "-ec"]
+    command: ["mkdir -p /data/app-dev && exec minio server --console-address :9001 /data"]
+    environment:
+      MINIO_ROOT_USER: app_dev
+      MINIO_ROOT_PASSWORD: app-dev-local-secret
+    ports: ["127.0.0.1::9000"]
+    volumes: ["objects:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres:
+  redis:
+  objects:

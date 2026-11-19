@@ -4,7 +4,10 @@ version = {{ cookiecutter.version | tojson }}
 description = {{ cookiecutter.project_name | tojson }}
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["a13n-service"]
+dependencies = ["a13n-service=={{ cookiecutter.service_version }}"]
+
+[dependency-groups]
+dev = ["ruff>=0.11,<1"]
 
 [project.entry-points."a13n_service.app_plugins"]
 {{ cookiecutter.app_id | tojson }} = "{{ cookiecutter.module_name }}.app:definition"
@@ -13,18 +16,17 @@ dependencies = ["a13n-service"]
 requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
+{% if cookiecutter.surface != 'backend-only' -%}
+[tool.hatch.build]
+artifacts = ["src/{{ cookiecutter.module_name }}/static/**"]
+
+{% endif -%}
 [tool.hatch.build.targets.wheel]
 packages = ["src/{{ cookiecutter.module_name }}"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/{{ cookiecutter.module_name }}/static" = "{{ cookiecutter.module_name }}/static"
-
 [tool.hatch.build.targets.sdist]
-include = ["src", "frontend", "tests", "scripts", "README.md", "Makefile", ".python-version", ".service-ref"]
+include = ["src", {% if cookiecutter.surface != 'backend-only' %}"frontend", {% endif %}"tests", "scripts", "README.md", "Makefile", ".python-version", "compose.dev.yaml", "service.dev.toml"]
 exclude = ["frontend/node_modules"]
-
-[tool.hatch.build.targets.sdist.force-include]
-"src/{{ cookiecutter.module_name }}/static" = "src/{{ cookiecutter.module_name }}/static"
 
 [tool.uv.workspace]
 members = []
