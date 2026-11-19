@@ -19,6 +19,7 @@ from a13n_service.app import build_app, check_schema, compose_apps, open_objects
 from a13n_service.app_database_cli import apps as apps_command
 from a13n_service.app_database_cli import migration_errors
 from a13n_service.app_definitions import app_databases, discover_apps
+from a13n_service.app_dev import develop, require_local
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
@@ -39,6 +40,7 @@ def main(ctx: click.Context, config: Path | None) -> None:
     try:
         apps = discover_apps()
         ctx.meta["app_plugins"] = apps
+        ctx.meta["config"] = config
         ctx.obj = load_settings(config, extensions=compose_apps(OSS, apps).settings)
     except (ValueError, OSError) as error:
         # Validation errors can contain input values, including deployment secrets.
@@ -61,13 +63,17 @@ def main(ctx: click.Context, config: Path | None) -> None:
 
 @main.command()
 @click.option("--role", type=click.Choice(get_args(ProcessRole)), default="all")
+@click.option("--dev-app", hidden=True)
+@click.option("--dev-assets", type=click.Path(exists=True, file_okay=False, path_type=Path), hidden=True)
 @click.pass_context
-def run(ctx: click.Context, role: ProcessRole) -> None:
+def run(ctx: click.Context, role: ProcessRole, dev_app: str | None, dev_assets: Path | None) -> None:
     settings: Settings = ctx.obj
+    if dev_app is not None:
+        require_local(settings)
     if settings.telemetry.metrics_port is not None:
         serve_metrics(settings.server.host, settings.telemetry.metrics_port)
     uvicorn.run(
-        build_app(role=role, settings=settings, apps=ctx.meta["app_plugins"]),
+        build_app(role=role, settings=settings, apps=ctx.meta["app_plugins"], dev_app=dev_app, dev_assets=dev_assets),
         host=settings.server.host,
         port=settings.server.port,
         timeout_graceful_shutdown=settings.server.shutdown_timeout,
@@ -81,6 +87,27 @@ def run(ctx: click.Context, role: ProcessRole) -> None:
         proxy_headers=bool(settings.server.trusted_proxies),
         forwarded_allow_ips=list(settings.server.trusted_proxies),
     )
+
+
+@apps_command.command("dev")
+@click.argument("app_id")
+@click.option("--watch", type=click.Path(exists=True, file_okay=False, path_type=Path), help="Watch Python sources.")
+@click.option("--frontend", type=click.Path(exists=True, file_okay=False, path_type=Path), help="Run pnpm dev here.")
+@click.option(
+    "--assets", type=click.Path(exists=True, file_okay=False, path_type=Path), help="Serve development assets here."
+)
+@click.pass_context
+def app_dev(ctx: click.Context, app_id: str, watch: Path | None, frontend: Path | None, assets: Path | None) -> None:
+    """Migrate, bootstrap and run a local Service with an installed App."""
+    config = ctx.meta["config"]
+    if config is None:
+        raise click.UsageError("Pass an explicit development configuration with a13n-service --config.")
+    if not any(app.definition.app_id == app_id for app in ctx.meta["app_plugins"]):
+        raise click.ClickException(f"App {app_id} is not installed in this Python environment.")
+    try:
+        develop(ctx.obj, config, app_id, watch, frontend, assets)
+    except KeyboardInterrupt:
+        pass
 
 
 main.add_command(apps_command)

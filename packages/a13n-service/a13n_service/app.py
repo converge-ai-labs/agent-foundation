@@ -344,6 +344,8 @@ def build_app(
     role: ProcessRole = "all",
     settings: Settings | None = None,
     console: Path = CONSOLE,
+    dev_app: str | None = None,
+    dev_assets: Path | None = None,
     apps: tuple[InstalledApp, ...] | None = None,
 ) -> FastAPI:
     apps = discover_apps() if apps is None else apps
@@ -370,7 +372,10 @@ def build_app(
             runtime = await open_runtime(
                 stack, distribution, config, executes=executes, maintains=serves_api, apps=apps, app_heads=app_heads
             )
-            app.state.app_assets = await asyncio.to_thread(open_assets, stack, runtime.apps) if serves_api else {}
+            app.state.app_assets = (
+                await asyncio.to_thread(open_assets, stack, runtime.apps, dev_app, dev_assets) if serves_api else {}
+            )
+            app.state.dev_app = dev_app
             app.state.runtime = runtime
             app.state.started = False
             app.state.background = runtime.tasks.services

@@ -220,6 +220,34 @@ async def test_packaged_assets_keep_chunks_css_real_404_and_immutable_cache(apps
     assert (await service.client.get(frontend["entry"])).status_code == 200
 
 
+async def test_development_assets_override_only_the_selected_app(serve, monkeypatch, tmp_path):
+    for name, content in (("dev", "updated source"), ("packaged", "packaged source")):
+        package = tmp_path / name
+        package.mkdir()
+        (package / "__init__.py").touch()
+        (package / "static").mkdir()
+        (package / "static" / "index.js").write_text(content)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    apps = (
+        InstalledApp(AppDefinition(APP_ID, "Dev", frontend=Frontend("dev", "missing")), "dev", "1.0"),
+        InstalledApp(AppDefinition("other.app", "Other", frontend=Frontend("packaged", "static")), "other", "1.0"),
+    )
+    monkeypatch.setattr(assembly, "discover_apps", lambda: apps)
+
+    def build(distribution, **kwargs):
+        return assembly.build_app(distribution, dev_app=APP_ID, dev_assets=tmp_path / "dev/static", **kwargs)
+
+    async with serve(service_app=build) as service:
+        for app, cache, content in (
+            (apps[0], "no-store", "updated source"),
+            (apps[1], "public, max-age=31536000, immutable", "packaged source"),
+        ):
+            response = await service.client.get(app.manifest.asset_url("index.js"))
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == cache
+            assert response.text == content
+
+
 async def test_acceptance_freezes_policy_new_runs_refresh_and_snapshot_is_immutable(
     apps_service, runs_kit, scripted_model
 ):

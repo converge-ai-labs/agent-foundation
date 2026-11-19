@@ -38,13 +38,20 @@ def app_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
     return tuple(routers)
 
 
-def open_assets(stack: AsyncExitStack, catalog: AppCatalog) -> dict[str, Path]:
+def open_assets(
+    stack: AsyncExitStack, catalog: AppCatalog, dev_app: str | None = None, dev_assets: Path | None = None
+) -> dict[str, Path]:
     roots = {}
     for app in catalog.apps:
         frontend = app.frontend
         if frontend is None:
             continue
-        root = stack.enter_context(as_file(files(frontend.package).joinpath(frontend.directory))).resolve()
+        directory = (
+            dev_assets
+            if app.app_id == dev_app and dev_assets is not None
+            else stack.enter_context(as_file(files(frontend.package).joinpath(frontend.directory)))
+        )
+        root = directory.resolve()
         for path in (frontend.entry, *frontend.styles):
             asset = (root / path).resolve()
             if not asset.is_relative_to(root) or not asset.is_file():
@@ -76,7 +83,9 @@ async def app_asset(request: Request, app_id: str, version: str, path: str) -> F
     return FileResponse(
         asset,
         headers={
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": (
+                "no-store" if app_id == request.app.state.dev_app else "public, max-age=31536000, immutable"
+            ),
             "X-Content-Type-Options": "nosniff",
         },
     )
