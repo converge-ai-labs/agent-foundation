@@ -226,7 +226,7 @@ export function useSettingsNavigation() {
           {
             scope: "workspace" as const,
             label: "Workspace",
-            name: workspace.name,
+            name: undefined,
             path: `${workspacePath(workspace)}/settings`,
             sections: [
               ...sections.workspace.filter(
