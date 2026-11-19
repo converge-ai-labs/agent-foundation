@@ -3,6 +3,7 @@ import { modelControlMessage } from "./model-control-messages";
 import type { Schema } from "../transport/client";
 import { SettingsRow, useComposerSettings } from "./composer-settings";
 import { ThinkingPicker } from "./thinking-picker";
+import { thinkingDetailLabel } from "./thinking-label";
 import {
   ReasoningModePicker,
   reasoningModeLabel,
@@ -85,16 +86,7 @@ export function ModelControlPanel({
     <div className={styles.modelControls}>
       <SettingsRow
         label={t("Thinking")}
-        value={
-          controls.thinking == null
-            ? t("Default")
-            : modelControlMessage(
-                model?.thinking?.options.find(
-                  (item) => item.value === controls.thinking,
-                )?.label ?? "Unavailable selection",
-                t,
-              )
-        }
+        value={thinkingDetailLabel(model?.thinking, controls.thinking, t)}
         disabled={disabled}
         onClick={() => settings.navigate("thinking")}
       />
