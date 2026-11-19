@@ -5,6 +5,10 @@ description: Check version-specific cutovers and convert retained data before re
 
 Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
+## Asynchronous child messages
+
+Stop new admission, drain active attempts, and stop all old `control`, `worker`, and `all` replicas before applying the migration. Start the upgraded replicas together. A new asynchronous child can send a parent message immediately; older binaries cannot interpret the new inbox kind and Run trigger. Update clients that exhaustively match either enum before reopening admission. Disabling or rolling back the binaries does not convert stored messages; use a forward repair if the database already contains child messages.
+
 ## Composable memory guidance rollout
 
 Default and preset-following file guidance omit the optional `modules` key in stored configuration, and frozen memory mounts retain their previous shape. Existing memory-mounted Runs remain readable during a rolling upgrade. Upgrade every control and worker replica before saving an explicit module selection or launching the new organization workflows. Older processes cannot interpret explicit module configuration or execute newly introduced tools.

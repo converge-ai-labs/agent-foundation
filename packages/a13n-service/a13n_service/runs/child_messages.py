@@ -41,8 +41,6 @@ def _payload(sender: RunRow, child: ThreadRow, body: str | None, deadline: datet
 
 
 async def send(runtime: Runtime, lease: Lease, tool_call_id: str | None, message: str) -> dict[str, JsonValue]:
-    if not runtime.settings.worker.child_messages_enabled:
-        raise invalid("message", "Child messages are not enabled")
     if not tool_call_id:
         raise invalid("tool_call_id", "A stable tool-call ID is required")
     body = message.strip()

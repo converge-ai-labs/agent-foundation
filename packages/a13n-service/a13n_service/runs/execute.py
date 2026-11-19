@@ -277,7 +277,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
-        child_messages = runtime.settings.worker.child_messages_enabled and thread.origin == "child"
+        child_messages = thread.origin == "child"
         subagent_controls = (
             await session.scalar(
                 select(ThreadRow.id)

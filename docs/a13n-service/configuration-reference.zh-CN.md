@@ -158,7 +158,6 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 | 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值                                     |
 | -------------------------------- | -------------------------------------- | ----------- | ------------------------------------------------ |
-| `worker.child_messages_enabled`  | `A13N_WORKER__CHILD_MESSAGES_ENABLED`  | 布尔值      | default=false                                    |
 | `worker.slots`                   | `A13N_WORKER__SLOTS`                   | 整数        | minimum=1; maximum=1024; default=128             |
 | `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | 整数        | minimum=1; maximum=20; default=3                 |
 | `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | 整数        | minimum=3; maximum=300; default=30               |

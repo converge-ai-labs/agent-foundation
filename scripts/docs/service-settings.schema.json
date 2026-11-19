@@ -2292,11 +2292,6 @@
     "Worker": {
       "additionalProperties": false,
       "properties": {
-        "child_messages_enabled": {
-          "default": false,
-          "title": "Child Messages Enabled",
-          "type": "boolean"
-        },
         "slots": {
           "default": 128,
           "maximum": 1024,

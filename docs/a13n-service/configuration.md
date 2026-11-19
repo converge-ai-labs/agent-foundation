@@ -210,8 +210,6 @@ Each worker process can run up to 128 attempts concurrently by default. Set `wor
 | Tune target preparation and maintenance | `environments.*`.                                                                                    |
 | Limit retained tools                    | `tool_executions.max_active`, retention and shutdown settings.                                       |
 
-To let asynchronous subagents send messages to their immediate parent, set `A13N_WORKER__CHILD_MESSAGES_ENABLED=true` on executing replicas after upgrading all Service components and any clients that consume inbox kinds or Run triggers. The option is off by default. Turning it off stops new admissions; it does not remove messages already accepted or make them readable by older releases.
-
 Retained calls default to 64 active executions per worker and a five-second foreground wait. That wait is the deployment fallback for [execution policy](execution-options.md#execution-policy), not a deadline; agent, thread or single-run choices can override it. Results remain for at most 24 hours after completion. First delivery acknowledgement starts a shorter one-hour reread window without extending the maximum age.
 
 Plan shutdown time for all phases: worker attempts drain, retained calls get `shutdown_grace_seconds` (300 by default), then cancellation gets `finalization_seconds` (10) for cleanup and publication. Unfinished records become lost through lease reconciliation after the process exits. Set the platform's termination grace accordingly; see [operations](operations.md).

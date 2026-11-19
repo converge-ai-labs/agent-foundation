@@ -58,19 +58,7 @@ async def _child_run(service, parent_run_id: str) -> RunRow:  # type: ignore[no-
         return await session.get_one(RunRow, child.current_run_id)
 
 
-@pytest.fixture
-async def child_message_service(serve, settings):
-    enabled = settings.model_copy(
-        update={"worker": settings.worker.model_copy(update={"child_messages_enabled": True})}
-    )
-    async with serve(settings=enabled) as service:
-        yield service
-
-
-async def test_a_child_can_message_its_parent_separately_from_its_result(
-    child_message_service, scripted_model, runs_kit
-):
-    service = child_message_service
+async def test_a_child_can_message_its_parent_separately_from_its_result(service, scripted_model, runs_kit):
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async")
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
@@ -113,8 +101,7 @@ async def test_a_child_can_message_its_parent_separately_from_its_result(
     ]
 
 
-async def test_child_message_replay_order_and_expiry(child_message_service, scripted_model, runs_kit):
-    service = child_message_service
+async def test_child_message_replay_order_and_expiry(service, scripted_model, runs_kit):
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async", user_questions=True)
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
