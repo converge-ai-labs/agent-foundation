@@ -6,6 +6,8 @@ description: Build an agent in Console, share it with your team, and run it from
 
 Service runs agents on your infrastructure and manages access, execution, and conversation history. In Console, its browser interface, configure an agent and test it in a conversation. Call the same agent from your application through a Service SDK or the HTTP API. Return to Console to inspect the run, its tool calls, and its usage. Service keeps accepted work running when a client disconnects.
 
+**Service entered beta with 0.1.0.** You can try it in your product workflows. We aim to keep existing workflows stable during beta, though some details may change. We'll explain changes that affect those workflows in the release notes. Before upgrading a deployment, check the [upgrade notes](upgrade-notes.md).
+
 ## Start here
 
 Choose the path that matches what you already have:

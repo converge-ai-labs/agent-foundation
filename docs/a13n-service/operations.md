@@ -5,7 +5,7 @@ description: Check deployment health, upgrade safely, preserve data, and diagnos
 
 Operate Service with the same configuration and credentials used by its running processes. The examples below assume `a13n-service` is installed in that environment and `service.toml` names the deployment's [configuration](configuration.md). For containers, run operator commands inside the configured container or migration Job.
 
-A routine upgrade follows four steps: back up the deployment, migrate with the new build, replace its processes, then verify readiness and a real run. The sections below explain each step and the recovery signals to watch.
+Before upgrading, choose a target release and read its release notes and the [Service upgrade notes](upgrade-notes.md). Back up the deployment, migrate with the target build, replace the processes, then verify readiness and a real run. Follow any cutover instructions for pausing admission or draining work before migration.
 
 ## Process roles
 
@@ -83,7 +83,7 @@ a13n-service --config service.toml migrate --check
 
 A successful check confirms the schema expected by this build and the absence of legacy unpaged run pointers. If the command reports legacy objects, follow [object conversion](upgrade-notes.md#convert-legacy-run-objects) before starting replicas.
 
-Every process requires its build's exact schema at startup. During a rolling upgrade, an already-running old process can continue working against the changed schema, but its readiness becomes unavailable when the schema head differs. Review migration compatibility and load-balancer behavior before choosing a rolling rollout. Replace old processes, check each new replica, then verify historical reads and execution.
+Startup and readiness checks require the exact schema expected by each build. During a rolling upgrade, old processes may keep running after migration, but their readiness checks fail once the schema head differs. Plan for a service interruption on schema-changing upgrades; check migration compatibility and load-balancer behavior before choosing a rolling rollout. Replace old processes, check each new replica, then verify historical reads and execution.
 
 ## Logs and metrics
 
@@ -121,7 +121,7 @@ parallel = 2
 
 Use `outbox.defaults` for shared policy and `outbox.by_kind` for overrides. Each kind inherits unspecified fields. Environment overrides `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` take whole JSON objects; they replace the corresponding TOML field. Restart processes after changing configuration. The [configuration reference](configuration-reference.md) lists limits and defaults.
 
-Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across `all` and `control` replicas. Restore destination availability first, then adjust delivery capacity if producers still outpace consumers. Shorter retention cannot clear pending work.
+For `a13n_outbox_backlog_alert` and `a13n_outbox_dead`, [exclude stale samples before taking the maximum](monitoring.md#metrics) across `all` and `control` replicas. Restore destination availability first, then adjust delivery capacity if producers still outpace consumers. Shorter retention cannot clear pending work.
 
 ## Environment monitoring collectors
 

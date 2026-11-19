@@ -71,7 +71,7 @@ docker compose -f a13n-service.yaml down
 docker compose -f a13n-service.yaml up -d --wait
 ```
 
-保持相同的 Compose 项目和数据卷。升级时，先按照[备份和升级流程](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)操作，再在启动命令中添加 `--pull always` 更新镜像。
+保持相同的 Compose 项目和数据卷。升级时，先选择目标版本，阅读[升级说明](upgrade-notes.md)，再遵循 [Compose 备份和升级流程](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)。使用目标版本的 Compose 文件，并保留现有部署设置。
 
 重置前，先通过 Service [删除托管环境](environments.md#stop-rename-and-delete)。这些容器位于 Compose 服务之外，Service 需要保留的记录来清理它们。然后运行 `docker compose -f a13n-service.yaml down --volumes`，**永久删除整套服务的数据**。下次启动需要重新注册管理员。
 

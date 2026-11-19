@@ -2,12 +2,14 @@
 
 [![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n.dev/docs/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE) [![Slack](https://img.shields.io/badge/Slack-Join%20the%20community-4A154B)](https://join.slack.com/t/a13n/shared_invite/zt-4embv13zr-JfXjmJQop4Y9y6K3NH0kDQ)
 
-**Build, run, and manage AI agents at scale on your own infrastructure.**
+**Build, run, and manage AI agents on your own infrastructure.**
 
 a13n Service is an open-source runtime for managing and running agents. Use Console, its web interface, to configure an agent, try it in a conversation, and debug its tool calls. Your application can then call that same agent through the [HTTP API](docs/a13n-service/connect-application.md) or a [Python, TypeScript, Go, or Rust SDK](docs/a13n-service/sdks.md). Service handles execution and recovery for those requests.
 
-- **Long-running tasks:** Agents keep working when clients disconnect.
-- **Durable execution:** Interrupted runs can resume from saved checkpoints after worker failures.
+**Service entered beta with 0.1.0.** You can try it in your product workflows. We aim to keep existing workflows stable during beta, though some details may change. We'll explain changes that affect those workflows in the release notes.
+
+- **Long-running tasks:** Accepted work does not depend on the client staying connected.
+- **Worker recovery:** A replacement worker can continue a run from a saved checkpoint after a worker failure.
 - **Run visibility:** Inspect runs from your application in Console and track workspace usage and cost.
 
 Choose your [providers](#providers-and-integrations) for models, sandboxes, web search, and memory. Bring your own keys.
@@ -48,9 +50,9 @@ Call the agent from your application through the [HTTP API](docs/a13n-service/co
 
 The stack runs Service, Console, PostgreSQL, and Redis. Agent environments use your host Docker Engine. See the [Compose guide](deploy/docker/compose/README.md) for configuration.
 
-### Production on Kubernetes
+### Shared deployments on Kubernetes
 
-Deploy to Kubernetes with our [Helm chart](deploy/kubernetes/README.md#other-clusters). Configure API and worker replicas and shared storage for [high availability](docs/a13n-service/operations.md#process-roles).
+Deploy a specific Service release with its [Helm chart](deploy/kubernetes/README.md#other-clusters). Scale API and worker replicas separately and configure the [stores they share](docs/a13n-service/operations.md#process-roles). Before upgrading, check the [Service upgrade notes](docs/a13n-service/upgrade-notes.md).
 
 ## Providers and integrations
 

@@ -6,6 +6,8 @@ description: 在 Console 中构建 agent，与团队共享，并从应用中运�
 
 Service 在你的基础设施上运行 agent，管理访问权限、执行过程和对话历史。通过 Service 的浏览器界面 Console 配置 agent，发起对话并测试回复。应用通过 Service SDK 或 HTTP API 调用同一个 agent。回到 Console，可以检查这次运行、工具调用和用量。即使客户端断开，Service 也会继续处理已接受的任务。
 
+**Service 从 0.1.0 开始进入 beta。** 你可以在实际产品流程中试用。Beta 期间，细节可能会有调整，我们会尽量保持现有用法稳定，并在发布说明中说明会影响现有用法的变更。升级部署前，请查阅[升级说明](upgrade-notes.md)。
+
 ## 从这里开始
 
 根据已有条件选择路径：

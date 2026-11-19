@@ -23,7 +23,11 @@ History automation requires an explicit Session allowlist and starting seal time
 
 For upgrades that introduce run search, the migration adds an empty-default search column and builds its GIN index concurrently. It does not backfill historical content. Column and trigger changes still need brief table locks; configured migration timeouts bound the work. A failed index build can be rerun: invalid indexes are removed and completed valid indexes are retained.
 
-Upgrade all control processes and readers before enabling new workers. Current workers write checkpoint format 4 and read formats 1–4; older workers skip formats they cannot continue. After new-format writes, keep compatible readers, Console and workers during rollback. Database downgrade drops derived search data but does not convert saved objects.
+Downgrading the run search migration drops derived search data.
+
+## Checkpoint format 4 rollout
+
+Format 4 adds references to original MCP App resources. Upgrade all control processes and readers before enabling workers that write format 4. These workers read formats 1–4; older workers skip formats they cannot continue. After new-format writes, keep compatible readers, Console, and workers during rollback. Downgrading the database schema does not convert saved objects.
 
 ## Convert legacy run objects
 
@@ -54,7 +58,9 @@ To roll back to the old unpaged reader, stop replicas and restore the backed-up 
 
 ## Internal platform tools
 
-Before Service 0.1, Service may introduce breaking changes and developers are responsible for migrating their own existing data. This internal-tool replacement is one such change: all previously normalized Agents may need complete reauthoring, including Agents whose removed tool entries were disabled. No compatibility layer, mixed-version Control/Worker operation or recovery of old Runs is promised. Before deployment, stop new admission and scheduled/manual dispatch, drain active Runs, and resolve pending approvals, waiting Runs and uncertain external-operation outcomes. Shut down the old deployment, update Control and Workers together, migrate or reauthor data, then resume admission.
+This cutover applies when upgrading a deployment that used the old API-projected internal platform tools. Previously normalized agents may need full reauthoring, even if their removed tool entries were disabled. Service has no compatibility layer for those configurations; do not run mixed versions of control and worker or rely on recovery of old runs across this cutover.
+
+Before upgrading, stop accepting new work and suspend scheduled and manual dispatch. Drain active runs and resolve pending approvals, waiting runs, and uncertain external-operation outcomes. Shut down the old deployment, update control and workers together, and migrate data or reauthor configurations before reopening admission.
 
 ## Tool-discovery selectors
 
