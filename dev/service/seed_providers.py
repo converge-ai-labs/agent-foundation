@@ -1,4 +1,4 @@
-"""A fictional account for every provider type the Service offers, so every provider editor has data.
+"""Example accounts for provider types that can be created through the generic Provider API.
 
 Credentials are placeholders that no backend accepts, and nothing here calls a provider. Each fictional model
 provider serves one disabled model.
@@ -12,6 +12,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from dev.service.api import Api, Json
 
 KINDS = ("model", "web", "connector", "environment")
+# These still appear in discovery, but creating an account would deploy real cloud resources.
+DEPLOYMENT_ONLY_TYPES = {("environment", "cloudflare")}
 FICTIONAL_KEY = "fictional-not-a-real-key"
 # Configuration a type requires; other types need none.
 CONFIG: dict[tuple[str, str], Json] = {
@@ -22,7 +24,6 @@ CONFIG: dict[tuple[str, str], Json] = {
     ("model", "ollama"): {"base_url": "http://127.0.0.1:11434"},
     ("model", "alibaba_model_studio"): {"region": "cn-beijing", "domain_type": "mainland_china"},
     ("environment", "boxd"): {"region": "nyc"},
-    ("environment", "cloudflare"): {"endpoint": "https://northstar-cloudflare.example.invalid"},
     ("environment", "daytona"): {"organization_id": "northstar-fictional"},
     ("environment", "modal"): {"workspace": "northstar-fictional", "app_name": "a13n-fictional"},
     ("environment", "runloop"): {"organization": "northstar-fictional"},
@@ -55,7 +56,8 @@ def seed_providers(api: Api) -> dict[str, dict[str, Json]]:
     accounts: dict[str, dict[str, Json]] = {kind: {} for kind in KINDS}
     for kind in KINDS:
         for described in api.items(f"/api/v1/provider-types/{kind}"):
-            if (kind, described["type"]) == ("environment", "local"):
+            key = (kind, described["type"])
+            if key == ("environment", "local") or key in DEPLOYMENT_ONLY_TYPES:
                 continue
             provider = _account(api, kind, described)
             if kind == "model":
