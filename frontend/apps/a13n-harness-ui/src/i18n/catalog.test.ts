@@ -22,10 +22,11 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
       .map((m) => m[1].trim())
       .sort();
   const source = catalogs.en;
+  const sourceKeys = new Set(Object.keys(source).map(logical));
   for (const [locale, catalog] of Object.entries(catalogs)) {
     const categories = new Intl.PluralRules(locale).resolvedOptions()
       .pluralCategories;
-    for (const key of new Set(Object.keys(source).map(logical))) {
+    for (const key of sourceKeys) {
       const plural = `${key}_other` in source;
       for (const suffix of plural ? categories.map((c) => `_${c}`) : [""]) {
         const entry = key + suffix;
@@ -40,11 +41,7 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
       }
     }
     for (const key of Object.keys(catalog))
-      if (
-        !Object.keys(source).some(
-          (sourceKey) => logical(sourceKey) === logical(key),
-        )
-      )
+      if (!sourceKeys.has(logical(key)))
         errors.push(`${locale}: unknown ${key}`);
   }
   return errors;
