@@ -187,6 +187,31 @@ async def append_child_result(
     return entry
 
 
+async def append_child_message(
+    session: AsyncSession, thread: ThreadRow, origin: RunRow, message_id: str, payload: dict[str, JsonValue]
+) -> InboxEntryRow:
+    """Append one durable intermediate message under the destination thread lock."""
+    entry = InboxEntryRow(
+        id=message_id,
+        organization_id=thread.organization_id,
+        workspace_id=thread.workspace_id,
+        thread_id=thread.id,
+        kind="child_message",
+        delivery="steer",
+        position=await _next_position(session, thread.id),
+        principal_id=origin.principal_id,
+        authority=origin.authority,
+        payload=payload,
+        size=payload_size(payload),
+        options={},
+        origin_run_id=origin.id,
+        status="pending",
+    )
+    session.add(entry)
+    await session.flush()
+    return entry
+
+
 async def append_tool_result(
     session: AsyncSession, thread: ThreadRow, origin: RunRow, payload: dict[str, JsonValue]
 ) -> InboxEntryRow:
@@ -331,6 +356,17 @@ async def pending_entries(session: AsyncSession, thread_id: str, *, limit: int) 
     return (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit).with_for_update())).all()
 
 
+def expire_child_message(entry: InboxEntryRow, at: datetime) -> bool:
+    if entry.kind != "child_message" or entry.status != "pending":
+        return False
+    deadline = entry.payload["deadline"]
+    assert isinstance(deadline, str)
+    if datetime.fromisoformat(deadline) > at:
+        return False
+    fail(entry, Failure(code="child_message_expired", message="The subagent message expired before assignment"), at=at)
+    return True
+
+
 def fail(entry: InboxEntryRow, failure: Failure, *, at: datetime) -> None:
     entry.status, entry.failure, entry.finished_at = "failed", failure.model_dump(), at
 
@@ -377,7 +413,7 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
                 and entry.payload["mount"] in run.environment_mounts
             )
         )
-    if entry.kind in {"child_result", "tool_result"}:
+    if entry.kind in {"child_result", "child_message", "tool_result"}:
         # The origin must be this run or a sealed one this run continues: its spawning call was committed before the
         # child could exist, so it is in the origin's last checkpoint.
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
@@ -411,7 +447,7 @@ async def assign_steers(
     size = 0
     current = await now(session)
     for entry in candidates:
-        if not steers_into(entry, run, origins.get(entry.origin_run_id or "")):
+        if expire_child_message(entry, current) or not steers_into(entry, run, origins.get(entry.origin_run_id or "")):
             continue
         if len(chosen) == max_count or size + entry.size > max_bytes:
             break

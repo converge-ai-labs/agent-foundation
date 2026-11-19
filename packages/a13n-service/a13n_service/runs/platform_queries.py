@@ -150,7 +150,7 @@ async def list_inbox(
     *,
     thread_id: str,
     status: Annotated[list[EntryStatus] | None, Query()] = None,
-    kind: Literal["message", "child_result"] | None = None,
+    kind: Literal["message", "child_result", "child_message"] | None = None,
     limit: Annotated[int | None, Query(ge=1, le=100)] = None,
     cursor: str | None = None,
 ) -> EntryPage | read_views.EntrySummaryPage:

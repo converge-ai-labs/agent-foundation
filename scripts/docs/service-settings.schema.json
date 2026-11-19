@@ -183,6 +183,36 @@
       "title": "ClientEnvironments",
       "type": "object"
     },
+    "CloudflareProvisioning": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "wrangler": {
+          "default": "/usr/local/bin/wrangler",
+          "format": "path",
+          "title": "Wrangler",
+          "type": "string"
+        },
+        "regctl": {
+          "default": "/usr/local/bin/regctl",
+          "format": "path",
+          "title": "Regctl",
+          "type": "string"
+        },
+        "image": {
+          "default": "ghcr.io/converge-ai-labs/a13n-sandbox@sha256:8a114d8a5651c507580634b76dcd005908457558c0eded13e74da28afcbdae5c",
+          "pattern": "^ghcr\\.io/converge-ai-labs/a13n-sandbox@sha256:[0-9a-f]{64}$",
+          "title": "Image",
+          "type": "string"
+        }
+      },
+      "title": "CloudflareProvisioning",
+      "type": "object"
+    },
     "Cluster": {
       "additionalProperties": false,
       "description": "Trusted operator defaults; tenants cannot supply Pod or storage settings.",
@@ -1608,6 +1638,7 @@
       "enum": [
         "webhook",
         "child_result",
+        "child_message",
         "tool_result",
         "browser_handback",
         "desktop_handback",
@@ -1823,6 +1854,9 @@
         },
         "docker": {
           "$ref": "#/$defs/DockerProvisioning"
+        },
+        "cloudflare": {
+          "$ref": "#/$defs/CloudflareProvisioning"
         }
       },
       "title": "Provisioning",
@@ -2258,6 +2292,11 @@
     "Worker": {
       "additionalProperties": false,
       "properties": {
+        "child_messages_enabled": {
+          "default": false,
+          "title": "Child Messages Enabled",
+          "type": "boolean"
+        },
         "slots": {
           "default": 128,
           "maximum": 1024,

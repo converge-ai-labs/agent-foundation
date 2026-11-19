@@ -210,6 +210,8 @@ HTTPS Envd 连接使用这些变量；明文本地或 provider 私有 Envd HTTP 
 | 调整目标准备和维护   | `environments.*`。                                                                                    |
 | 限制保留工具调用     | `tool_executions.max_active`、保留和关闭设置。                                                        |
 
+若要让异步子代理向直属父代理发送消息，请先升级所有 Service 组件以及读取收件箱类型或 Run 触发类型的客户端，再为执行副本设置 `A13N_WORKER__CHILD_MESSAGES_ENABLED=true`。该选项默认关闭。关闭后不再接收新消息，但不会删除已接收的消息，也不会让旧版本能够读取这些消息。
+
 保留调用默认每个 worker 最多 64 个活跃执行，前台等待五秒。该等待是[执行策略](execution-options.md#execution-policy)的部署回退值，不是截止时间；agent、线程或单次运行可以覆盖。结果在完成后最多保留 24 小时。首次交付确认会启动较短的一小时重读窗口，不延长最大保留期限。
 
 为关闭流程的所有阶段预留时间：先等待 worker 尝试交接，保留调用再获得 `shutdown_grace_seconds`（默认 300 秒），随后取消流程获得 `finalization_seconds`（默认 10 秒）用于清理和结果发布。进程退出后，租约协调将未完成记录标记为 lost。按这些阶段设置平台的终止宽限期，参阅[运维指南](operations.md)。

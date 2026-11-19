@@ -198,6 +198,7 @@ async def content(
     entry: Offered,
     *,
     configuration: RunConfiguration,
+    steering: bool = False,
 ) -> tuple[UserContent, ...]:
     """The entry's model-visible content, its files placed in the run's primary `environment`. Assets are read with
     the run principal's access."""
@@ -241,6 +242,17 @@ async def content(
                     "notice_kind": "tool_execution.completion",
                     "execution_ids": [payload["execution_id"]],
                 },
+            ),
+        )
+    if entry.kind == "child_message":
+        payload = {key: value for key, value in entry.payload.items() if key != "deadline"}
+        metadata = {"source_id": entry.id}
+        if steering:
+            metadata["a13n.steering-source"] = "child_message"
+        return (
+            TextContent(
+                "Message from a delegated subagent (not a human reply):\n" + json.dumps(payload, ensure_ascii=False),
+                metadata=metadata,
             ),
         )
     return _child_result(entry)

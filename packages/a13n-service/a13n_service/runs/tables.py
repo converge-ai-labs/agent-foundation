@@ -358,6 +358,34 @@ class ThreadCodeActRow(Base):
     values: Mapped[dict] = mapped_column(JSONB)
 
 
+class ChildMessageRow(Base):
+    """Durable admission and replay identity, independent of retained outbox rows."""
+
+    __tablename__ = "child_messages"
+    __table_args__ = (
+        UniqueConstraint("child_run_id", "tool_call_id"),
+        UniqueConstraint("child_run_id", "ordinal"),
+        CheckConstraint("ordinal BETWEEN 1 AND 8", name="ordinal"),
+        CheckConstraint("disposition IN ('appended', 'expired', 'suppressed')", name="disposition"),
+        Index(
+            "ix_child_messages_expiry",
+            "deadline",
+            "id",
+            postgresql_where=text("disposition IS NULL OR disposition = 'appended'"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    child_run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    tool_call_id: Mapped[str] = mapped_column(String)
+    ordinal: Mapped[int]
+    # Provenance is validated from the sender thread. No destination FK that would lock the parent on send.
+    parent_thread_id: Mapped[str] = mapped_column(String(72))
+    digest: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str | None] = mapped_column(String)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    disposition: Mapped[str | None] = mapped_column(String)
+
+
 class InboxEntryRow(Base):
     __tablename__ = "inbox_entries"
     __table_args__ = (
@@ -408,7 +436,8 @@ class InboxEntryRow(Base):
         Index("ix_inbox_entries_pending", "thread_id", "position", postgresql_where=text("status = 'pending'")),
         Index("ix_inbox_entries_assigned", "assigned_run_id", postgresql_where=text("status = 'assigned'")),
         CheckConstraint(
-            "kind IN ('message', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback')", name="kind"
+            "kind IN ('message', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback')",
+            name="kind",
         ),
         CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
         CheckConstraint("status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')", name="status"),
@@ -577,7 +606,7 @@ class RunRow(Stamped, Base):
             "revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')", name="revision_selection"
         ),
         CheckConstraint(
-            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
             name="trigger",
         ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),

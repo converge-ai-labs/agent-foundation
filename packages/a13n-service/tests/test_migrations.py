@@ -27,7 +27,8 @@ UNION ALL
 SELECT 'trigger', t.tgname || ' ON ' || t.tgrelid::regclass::text, pg_get_triggerdef(t.oid)
 FROM pg_trigger t WHERE NOT t.tgisinternal
 UNION ALL
-SELECT 'check', c.conname || ' ON ' || c.conrelid::regclass::text, pg_get_constraintdef(c.oid)
+SELECT 'check', c.conname || ' ON ' || c.conrelid::regclass::text,
+       regexp_replace(pg_get_constraintdef(c.oid), ' NOT VALID$', '')
 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = 'public' AND c.contype = 'c'
 ORDER BY 1, 2
 """
@@ -91,6 +92,7 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     upgrade(empty_database, OSS)
     # Alembic compares tables, columns, indexes and keys; rules and CHECK expressions are compared directly.
     check(empty_database, OSS)
+    # These broadened CHECKs enforce the same expression without a blocking scan of rows the old CHECK already covered.
     migrated = rows(empty_database, RULES)
     assert migrated == rows(database, RULES)
     assert len(migrated) >= len(OSS.rules())

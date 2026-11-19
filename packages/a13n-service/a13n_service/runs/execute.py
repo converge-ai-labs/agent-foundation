@@ -73,6 +73,7 @@ from a13n_service.runs.attempts import (
 from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
+from a13n_service.runs.child_messages import ParentMessageCapability
 from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.compaction_model import CompactionRun, Selection
 from a13n_service.runs.contents import Contents
@@ -123,6 +124,7 @@ class _Plan:
     app_activation: AppActivation
     retain_tools: bool
     subagent_controls: bool
+    child_messages: bool
     background_compaction: bool
     compaction_result: CompactionResult | None
     configuration: RunConfiguration
@@ -275,6 +277,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
+        child_messages = runtime.settings.worker.child_messages_enabled and thread.origin == "child"
         subagent_controls = (
             await session.scalar(
                 select(ThreadRow.id)
@@ -367,6 +370,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
         subagent_controls=subagent_controls,
+        child_messages=child_messages,
         configuration=options.configuration or RunConfiguration(),
         request_context=RequestContext(options.context.headers if options.context else {}),
         source_entry_id=source_entry_id,
@@ -616,6 +620,12 @@ class _Attempt:
                         self.boundaries,
                         *([self.client_recovery] if self.client_recovery is not None else []),
                         InputBoundary(self.boundaries, self.offers.pending_notice),
+                        *(
+                            [ParentMessageCapability(runtime, lease)]
+                            if self.plan.child_messages
+                            and not any(tool.name == "send_parent_message" for tool in node.config.client_tools)
+                            else []
+                        ),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *(
                             [SpawnCapability(self._operator(node).spawn, node.config)]
@@ -937,7 +947,8 @@ class _Attempt:
                     await stream.steer(
                         content,
                         input_id=entry.id,
-                        immediate=entry.kind == "message" and self.plan.host.execution.steering == "immediate",
+                        immediate=entry.kind in {"message", "child_message"}
+                        and self.plan.host.execution.steering == "immediate",
                         best_effort=True,
                     )
                 except RunError as error:
@@ -983,6 +994,7 @@ class _Attempt:
                 environment,
                 entry,
                 configuration=self.plan.configuration,
+                steering=entry.id != self.plan.source_entry_id,
             )
         except ServiceError as error:
             if error.code == "unavailable" or entry.id == self.plan.source_entry_id:

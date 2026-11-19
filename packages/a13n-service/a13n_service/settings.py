@@ -330,6 +330,8 @@ class ToolExecutions(Section):
 
 
 class Worker(Section):
+    # Enable only after all Service components understand the new inbox and Run kinds.
+    child_messages_enabled: bool = False
     slots: int = Field(default=128, ge=1, le=1024)
     max_attempts: int = Field(default=3, ge=1, le=20)
     lease_seconds: int = Field(default=30, ge=3, le=300)

@@ -61,6 +61,25 @@ it("reads an asynchronous child's result as prose, not as its envelope", () => {
   });
 });
 
+it("attributes an intermediate child message without marking the child complete", () => {
+  expect(
+    runRequest(
+      run({
+        trigger: "child_message",
+        input: {
+          subagent: "reviewer",
+          message: "Should I include older records?",
+        },
+      }),
+      thread("new"),
+    ),
+  ).toEqual({
+    kind: "subagent_message",
+    subagent: "reviewer",
+    text: "Should I include older records?",
+  });
+});
+
 it("reports an unsuccessful child result without inventing a payload", () => {
   expect(
     runRequest(

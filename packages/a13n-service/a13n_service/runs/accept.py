@@ -7,7 +7,7 @@ the revision and the options it runs with. Both are SQL-only and run under the c
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Literal
+from typing import Literal, cast
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_logging import exception_details, get_logger
@@ -391,7 +391,8 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     # Forks start a separate scope; children receive their initial parent snapshot.
     if thread.last_run_id is not None and (
         options.context is None
-        or source.trigger in {"resume", "tool_result", "child_result", "browser_handback", "desktop_handback"}
+        or source.trigger
+        in {"resume", "tool_result", "child_result", "child_message", "browser_handback", "desktop_handback"}
     ):
         latest = await session.get_one(RunRow, thread.last_run_id)
         context = stored.require(RunOptions, latest.options, kind="run", id=latest.id).context
@@ -601,9 +602,8 @@ async def _source(
         )
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
-    return await Source.inherited(
-        session, runtime, origin, "tool_result" if entry.kind == "tool_result" else "child_result", entry=entry
-    )
+    assert entry.kind in {"tool_result", "child_result", "child_message"}
+    return await Source.inherited(session, runtime, origin, cast(Trigger, entry.kind), entry=entry)
 
 
 async def accept(
@@ -624,6 +624,9 @@ async def accept(
     else:
         entries = await inbox.pending_entries(session, thread.id, limit=SCAN)
     for entry in entries:
+        if entry.kind == "child_message" and inbox.expire_child_message(entry, await now(session)):
+            await session.flush()
+            continue
         try:
             source = await _source(session, runtime, thread, entry, explicit)
             if isinstance(source, Source):

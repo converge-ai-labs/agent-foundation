@@ -45,6 +45,10 @@ export function requestLabel(request: RunRequest, t: TFunction): string {
       return t("Feedback");
     case "tool_result":
       return t("trigger.tool_result");
+    case "subagent_message":
+      return request.subagent
+        ? t("Subagent message · {{name}}", { name: request.subagent })
+        : t("trigger.child_message");
     case "subagent_result":
       return request.subagent
         ? t("Subagent result · {{name}}", { name: request.subagent })
@@ -73,6 +77,8 @@ export function RequestContent({ request }: { request: RunRequest }) {
         )}
       </>
     );
+  if (request.kind === "subagent_message")
+    return <MarkdownContent text={request.text} />;
   if (request.kind === "subagent_result")
     return (
       <>
@@ -117,7 +123,11 @@ export function GuidanceMessage({
     <div className={styles.userTurn}>
       {!steeringSource && <MessageAuthor entryId={sourceId} />}
       <article className={`${styles.userMessage} ${styles.guidanceMessage}`}>
-        <span className={styles.guidanceLabel}>{t("Guidance")}</span>
+        <span className={styles.guidanceLabel}>
+          {steeringSource === "child_message"
+            ? t("trigger.child_message")
+            : t("Guidance")}
+        </span>
         <div className={styles.prose}>
           {itemId ? (
             <StoredContent itemId={itemId} field="text" value={text} />

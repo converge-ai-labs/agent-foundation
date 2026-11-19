@@ -104,7 +104,13 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
     case "reply":
       return { name: t("Reply"), mono: false };
     case "guidance":
-      return { name: t("Guidance"), mono: false };
+      return {
+        name:
+          entry.steeringSource === "child_message"
+            ? t("trigger.child_message")
+            : t("Guidance"),
+        mono: false,
+      };
     case "hidden":
       return {
         name:

@@ -12,15 +12,17 @@ from types import SimpleNamespace
 import pytest
 from a13n_service.infra import outbox
 from a13n_service.infra.db import transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import accept as accept_module
 from a13n_service.runs import subagents as subagents_module
 from a13n_service.runs.attempts import AttemptControl
+from a13n_service.runs.child_messages import child_messages, expire_child_messages, send
 from a13n_service.runs.children import FULL_INBOX_SECONDS, child_results
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
 from a13n_service.runs.subagents import ChildRuns
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import ChildMessageRow, InboxEntryRow, RunRow, ThreadRow
 from sqlalchemy import func, select, update
 
 pytestmark = pytest.mark.anyio
@@ -54,6 +56,116 @@ async def _child_run(service, parent_run_id: str) -> RunRow:  # type: ignore[no-
     async with transaction(service.runtime.storage) as session:
         child = (await session.scalars(select(ThreadRow).where(ThreadRow.origin_run_id == parent_run_id))).one()
         return await session.get_one(RunRow, child.current_run_id)
+
+
+@pytest.fixture
+async def child_message_service(serve, settings):
+    enabled = settings.model_copy(
+        update={"worker": settings.worker.model_copy(update={"child_messages_enabled": True})}
+    )
+    async with serve(settings=enabled) as service:
+        yield service
+
+
+async def test_a_child_can_message_its_parent_separately_from_its_result(
+    child_message_service, scripted_model, runs_kit
+):
+    service = child_message_service
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.say("Delegated", to="Role: coordinator")
+    parent = await runs_kit.start_thread(service, coordinator, "delegate")
+    await (await runs_kit.attempt(service))
+    child = await _child_run(service, parent["run"]["id"])
+    scripted_model.call(
+        "send_parent_message", {"message": "Which plan should I use?"}, call_id="call_message", to="Role: worker"
+    )
+    scripted_model.say("Child finished", to="Role: worker")
+    await (await runs_kit.attempt(service))
+    assert (result := await runs_kit.get_run(service, child.id))["status"] == "completed", result["failure"]
+    receipt = json.loads(_tool_results(scripted_model)["call_message"])
+    assert receipt["admission"] == "persisted" and receipt["child_run_id"] == child.id
+    claims = await outbox.claim(
+        service.runtime.storage, "child_message", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    assert len(claims) == 1
+    await child_messages(service.runtime)(claims[0])
+    await child_messages(service.runtime)(claims[0])
+    entries = await runs_kit.inbox(service, parent["thread"]["id"])
+    assert [(entry["kind"], entry["status"]) for entry in entries] == [
+        ("message", "consumed"),
+        ("child_message", "assigned"),
+    ]
+    assert entries[1]["id"] == receipt["message_id"]
+    resumed = await runs_kit.get_run(service, entries[1]["assigned_run_id"])
+    assert resumed["trigger"] == "child_message"
+    assert resumed["input"]["message"] == "Which plan should I use?"
+    scripted_model.say("Use the simpler plan", to="Role: coordinator")
+    await (await runs_kit.attempt(service))
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    assert any("Message from a delegated subagent (not a human reply)" in str(r["messages"]) for r in requests)
+    assert len(await _deliver(service)) == 1
+    assert [entry["kind"] for entry in await runs_kit.inbox(service, parent["thread"]["id"])] == [
+        "message",
+        "child_message",
+        "child_result",
+    ]
+
+
+async def test_child_message_replay_order_and_expiry(child_message_service, scripted_model, runs_kit):
+    service = child_message_service
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async", user_questions=True)
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.call(
+        "ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_question", to="Role: coordinator"
+    )
+    parent = await runs_kit.start_thread(service, coordinator, "delegate and wait for me")
+    await (await runs_kit.attempt(service))
+    (lease,) = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    first = await send(service.runtime, lease, "one", "First")
+    second = await send(service.runtime, lease, "two", "Second")
+    assert await send(service.runtime, lease, "one", " First ") == first
+    with pytest.raises(ServiceError, match="tool call message changed"):
+        await send(service.runtime, lease, "one", "Changed")
+    claims = await outbox.claim(
+        service.runtime.storage, "child_message", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    by_id = {item.payload["message_id"]: item for item in claims}
+    deliver = child_messages(service.runtime)
+    await deliver(by_id[second["message_id"]])
+    await deliver(by_id[first["message_id"]])
+    async with transaction(service.runtime.storage) as session:
+        outbox_row = await session.get_one(OutboxRow, by_id[first["message_id"]].id)
+        await session.delete(outbox_row)
+        one = await session.get_one(ChildMessageRow, first["message_id"])
+        two = await session.get_one(ChildMessageRow, second["message_id"])
+        assert (one.disposition, two.disposition) == ("appended", None)
+        entry = await session.get_one(InboxEntryRow, one.id)
+        assert entry.status == "pending"
+        one.deadline = two.deadline = (await session.scalar(select(func.now()))) - timedelta(seconds=1)
+        entry.payload = {**entry.payload, "deadline": one.deadline.isoformat()}
+    assert await send(service.runtime, lease, "one", "First") == first
+    await expire_child_messages(service.runtime, limit=10)
+    async with transaction(service.runtime.storage) as session:
+        assert (await session.get_one(ChildMessageRow, first["message_id"])).disposition == "expired"
+        assert (await session.get_one(ChildMessageRow, second["message_id"])).disposition == "expired"
+        entry = await session.get_one(InboxEntryRow, first["message_id"])
+        assert entry.status == "failed" and entry.failure["code"] == "child_message_expired"
+        assert await session.get(InboxEntryRow, second["message_id"]) is None
+    third = await send(service.runtime, lease, "three", "Cannot be delivered")
+    fourth = await send(service.runtime, lease, "four", "Can still be delivered")
+    claims = await outbox.claim(
+        service.runtime.storage, "child_message", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    by_id = {item.payload["message_id"]: item for item in claims}
+    async with transaction(service.runtime.storage) as session:
+        assert await outbox.settle(session, by_id[third["message_id"]], "dead", error="attempts_exhausted")
+    await deliver(by_id[fourth["message_id"]])
+    async with transaction(service.runtime.storage) as session:
+        assert (await session.get_one(InboxEntryRow, fourth["message_id"])).status == "pending"
+    assert (await runs_kit.get_thread(service, parent["thread"]["id"]))["current_run_id"] is None
 
 
 async def test_a_question_response_keeps_queued_child_results(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
