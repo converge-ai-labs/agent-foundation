@@ -134,7 +134,7 @@ it("translates saved transcript chrome while preserving model content, backend p
   expect(
     screen.getByText("Saved preview truncated by the server."),
   ).toBeTruthy();
-  expect(screen.getByText("System updates - 2")).toBeTruthy();
+  expect(screen.getByText("2 background notices")).toBeTruthy();
   expect(screen.getByText(/Content omitted by the server\./)).toBeTruthy();
 
   await act(() => i18n.changeLanguage("zh-CN"));
@@ -145,7 +145,7 @@ it("translates saved transcript chrome while preserving model content, backend p
   expect(screen.getByText("Visible reply")).toBe(reply);
   expect(screen.getByText("用时 3s")).toBeTruthy();
   expect(screen.getByText("服务端已截断已保存的预览。")).toBeTruthy();
-  expect(screen.getByText("系统更新 - 2")).toBeTruthy();
+  expect(screen.getByText("2 条后台通知")).toBeTruthy();
   expect(screen.getByText(/服务端已省略内容。/)).toBeTruthy();
   // Backend part kinds and notice text stay verbatim in both languages.
   expect(screen.getAllByText("other").length).toBeGreaterThan(0);
@@ -436,6 +436,11 @@ it("translates an incomplete saved execution preview without changing its open r
         tool_call_id: "read-one",
         value: { file_path: "/tmp/Read" },
       },
+      {
+        kind: "other",
+        text: "Background tool completed",
+        metadata: { "a13n.steering-source": "tool_execution" },
+      },
     ],
   } as Schema<"TranscriptEntry">;
   render(
@@ -450,14 +455,14 @@ it("translates an incomplete saved execution preview without changing its open r
     />,
   );
   const heading = screen.getByRole("button", {
-    name: /Read 1 file.*Work log/,
+    name: /Read 1 file, 1 background notice.*Work log/,
   });
   fireEvent.click(heading);
   expect(heading.getAttribute("aria-expanded")).toBe("true");
   await act(() => i18n.changeLanguage("zh-CN"));
   expect(
     screen.getByRole("button", {
-      name: /读取 1 个文件.*工作日志/,
+      name: /读取 1 个文件, 1 条后台通知.*工作日志/,
     }),
   ).toBe(heading);
   expect(heading.getAttribute("aria-expanded")).toBe("true");

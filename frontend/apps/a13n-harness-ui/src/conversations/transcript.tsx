@@ -1654,7 +1654,7 @@ function executionSummary(
     t(action, { count: members.size }),
   );
   labels.push(...otherActivities);
-  if (notices) labels.push(t("System update count", { count: notices }));
+  if (notices) labels.push(t("Background notice count", { count: notices }));
   const preview = labels.length
     ? labels.join(", ")
     : thinking
