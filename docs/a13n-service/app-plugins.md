@@ -22,25 +22,21 @@ An App's `startup` callback runs in each Service process, regardless of organiza
 
 ## Start an independent App
 
-The [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) creates a standalone project with a Python backend, a host-mounted Console frontend, a Makefile, and GitHub Actions checks. It does not include a license; choose licensing terms before distributing your project. The existing [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) remains a separate full-stack integration example.
+The [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) generates an independent full-stack, frontend-only, or backend-only project with a Makefile and GitHub Actions checks. The existing [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) remains a separate integration example.
 
-Install Git, uv, Make, Python 3.13, Node.js 24, and pnpm 10.30.3. Generate a project and answer the prompts:
+Install Git, uv, Make, Python 3.13, and Docker Compose v2. Frontend projects also need Node.js 24 and pnpm 10.30.3. Generate a project, enter its directory, and start it:
 
 ```bash
 uvx cookiecutter gh:converge-ai-labs/agent-foundation --checkout template/app-plugin
-```
-
-Cookiecutter creates local files in the selected project directory. In that directory, run:
-
-```bash
-make setup
-make verify
+cd my-service-app
 make dev
 ```
 
-`make setup` prepares an isolated environment and installs the Service source pinned by `.service-ref`. `make verify` builds the frontend, wheel and source distribution, then tests the installed wheel. Run `make setup` again to restore editable development after verification. `make dev` watches and rebuilds the frontend. For live changes, install the App editable into a compatible Service host, enable it, and reload the App page after a rebuild. Start Service and Console separately; the generated README covers host setup and installation.
+`make dev` uses the project's pinned `a13n-service` wheel and its bundled Console, installs the App editable, and starts local PostgreSQL, Redis, and S3. It migrates the database and initializes a development administrator and workspace on first start. Sign in to the printed Console URL, open **Settings → Organization → App plugins**, and enable your App. If it has a Console page, open it from the workspace sidebar. An older generated project that still has `.service-ref` uses its original README and setup workflow.
 
-The current template pins a prerelease Service source commit for the App plugin API. Use a compatible host at that revision until a release supports the API. Project generation does not create a remote repository. If you want one, initialize and commit the generated project, then create a repository with GitHub CLI or on GitHub; the generated README includes the steps. The optional release workflow builds and verifies artifacts for a matching `vX.Y.Z` tag, then publishes through a `pypi` environment configured with `PYPI_TOKEN`.
+Python edits restart the local Service. Use `make dev RELOAD=0` when attaching a debugger without restarts. For TSX or CSS edits, wait for the build and reload the App page; the development bundle has sourcemaps and bypasses production asset caching. Ctrl+C stops the local Service and watcher. `make dev-down` stops the containers and keeps their volumes.
+
+`make verify` builds and tests the installed wheel without replacing the editable installation. To change Service versions, edit the dependency in `pyproject.toml` and update the project's lockfile. Generation does not create a remote repository or choose a license. The generated README covers creating a repository and publishing independent App `vX.Y.Z` releases.
 
 ## Register a package
 
