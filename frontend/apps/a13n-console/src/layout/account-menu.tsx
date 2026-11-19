@@ -3,8 +3,11 @@ import {
   Button,
   Menu,
   MenuGroup,
+  MenuGroupLabel,
   MenuItem,
   MenuPopup,
+  MenuPrimitive,
+  MenuRadioGroup,
   MenuSeparator,
   MenuTrigger,
 } from "a13n-ui";
@@ -19,6 +22,7 @@ import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
 import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
+import { useAppearance } from "./appearance";
 import { useAccess } from "./workspace";
 import { workspacePath } from "../shared/paths";
 import styles from "./layout.module.css";
@@ -34,6 +38,7 @@ export function AccountMenu({
     auth = useAuth(),
     navigate = useNavigate();
   const { workspace } = useAccess();
+  const { theme, setTheme } = useAppearance();
   const user = auth.data!.user.value;
   const logout = useMutation({
     mutationFn: auth.logout,
@@ -92,6 +97,35 @@ export function AccountMenu({
               <small title={user.email ?? undefined}>{user.email}</small>
             </span>
           </div>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>{t("Appearance")}</MenuGroupLabel>
+            <MenuRadioGroup
+              aria-label={t("Color theme")}
+              className={styles.themeOptions}
+              value={theme}
+              onValueChange={(value) => {
+                if (value === "light" || value === "dark" || value === "system")
+                  setTheme(value);
+              }}
+            >
+              {[
+                { value: "light", label: t("Light") },
+                { value: "dark", label: t("Dark") },
+                { value: "system", label: t("Follow system") },
+              ].map(({ value, label }) => (
+                <MenuPrimitive.RadioItem
+                  key={value}
+                  value={value}
+                  closeOnClick={false}
+                  className={styles.themeOption}
+                >
+                  {label}
+                </MenuPrimitive.RadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuGroup>
+          <MenuSeparator />
           <MenuGroup>
             <MenuItem
               onClick={() =>

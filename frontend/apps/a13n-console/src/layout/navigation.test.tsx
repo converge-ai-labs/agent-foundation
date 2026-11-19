@@ -1,10 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render as renderUI,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SettingsLayout } from "../features/settings/layout";
 import { Shell } from "./shell";
+import { AppearanceProvider } from "./appearance";
+
+function render(ui: ReactNode) {
+  return renderUI(<AppearanceProvider>{ui}</AppearanceProvider>);
+}
 
 vi.mock("../auth/context", () => ({
   useAuth: () => ({
@@ -42,14 +53,17 @@ beforeEach(() =>
 );
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
+  localStorage.removeItem("a13n-console-theme");
 });
 afterEach(() => {
   cleanup();
+  localStorage.removeItem("a13n-console-theme");
+  document.documentElement.classList.remove("dark");
   access.organizationAdmin = false;
   vi.unstubAllGlobals();
 });
 
-it("opens unified settings from the account menu and restores navigation on return", async () => {
+it("changes appearance in place and opens settings without losing navigation", async () => {
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -57,7 +71,15 @@ it("opens unified settings from the account menu and restores navigation on retu
         <Routes>
           <Route path="/workspace/:workspaceId" element={<Shell />}>
             <Route path="agents" element={<h1>Agent directory</h1>} />
-            <Route path="api-keys" element={<h1>Workspace keys</h1>} />
+            <Route
+              path="api-keys"
+              element={
+                <>
+                  <h1>Workspace keys</h1>
+                  <input aria-label="Key name" />
+                </>
+              }
+            />
             <Route
               path="settings/:section?"
               element={
@@ -97,7 +119,32 @@ it("opens unified settings from the account menu and restores navigation on retu
   expect(
     screen.getByRole("complementary", { name: "Main navigation" }),
   ).toBeTruthy();
+  await user.type(
+    screen.getByRole("textbox", { name: "Key name" }),
+    "Draft key",
+  );
   await user.click(screen.getByRole("button", { name: /Alex$/ }));
+  await user.click(await screen.findByRole("menuitemradio", { name: "Dark" }));
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  expect(localStorage.getItem("a13n-console-theme")).toBe("dark");
+  expect(
+    screen
+      .getByRole("menuitemradio", { name: "Dark" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    (screen.getByRole("textbox", { name: "Key name" }) as HTMLInputElement)
+      .value,
+  ).toBe("Draft key");
+  await user.keyboard("{ArrowDown}{Enter}");
+  expect(
+    screen
+      .getByRole("menuitemradio", { name: "Follow system" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(localStorage.getItem("a13n-console-theme")).toBe("system");
+  expect(document.documentElement.classList.contains("dark")).toBe(false);
+  expect(screen.getByRole("heading", { name: "Workspace keys" })).toBeTruthy();
   expect(screen.queryByRole("menuitem", { name: "Profile" })).toBeNull();
   expect(screen.queryByRole("menuitem", { name: "Preferences" })).toBeNull();
   await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
