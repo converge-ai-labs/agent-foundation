@@ -399,7 +399,7 @@ it("keeps history and an expanded summary through saved cutover and later contin
   expect(screen.getByText("Earlier answer")).toBe(earlier);
 });
 
-it("keeps inputs and final text visible while folding completed progress into execution segments", () => {
+it("keeps steering and all assistant prose visible between completed execution segments", () => {
   const entries = [
     saved(
       previewInput("round", ["Original input"]) as Schema<"TranscriptPart">[],
@@ -453,6 +453,7 @@ it("keeps inputs and final text visible while folding completed progress into ex
   );
   for (const text of [
     "Original input",
+    "Progress update",
     "Change direction",
     "Final part one",
     "Final part two",
@@ -464,11 +465,7 @@ it("keeps inputs and final text visible while folding completed progress into ex
   }
   expect(screen.queryByText("Internal plan")).toBeNull();
   expect(screen.queryByText("Final reasoning")).toBeNull();
-  expect(screen.queryByText("Progress update")).toBeNull();
   fireEvent.click(toggles[0]);
-  expect(
-    screen.getByText("Progress update").closest("[data-execution-reader]"),
-  ).toBeTruthy();
   expect(screen.getByText("Internal plan").closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Final reasoning")).toBeNull();
   view.rerender(transcript("new-head"));

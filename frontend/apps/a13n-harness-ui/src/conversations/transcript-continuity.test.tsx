@@ -472,12 +472,15 @@ it.each([true, false])(
       />,
     );
     const oldAnswer = screen.getByText("Visible reply");
+    const oldCommentary = screen.getByText("Old commentary");
     const prompt = screen.getByText("Second prompt");
     const answer = screen.getByText("Second reply");
     expect(prompt.closest("[data-turn-id]")?.getAttribute("data-turn-id")).toBe(
       "second-attempt",
     );
-    expect(screen.queryByText("Old commentary")).toBeNull();
+    expect(oldCommentary.closest("[data-turn-id]")).toBe(
+      oldAnswer.closest("[data-turn-id]"),
+    );
     const logs = screen.getAllByRole("button", { name: /Work log/ });
     fireEvent.click(logs[1]);
     const reader = screen.getByRole("region", { name: "Work log" });
@@ -511,7 +514,7 @@ it.each([true, false])(
     expect(screen.getByText("Second reply")).toBe(answer);
     expect(screen.getByText("Visible reply")).toBe(oldAnswer);
     expect(screen.getByRole("region", { name: "Work log" })).toBe(reader);
-    expect(screen.queryByText("Old commentary")).toBeNull();
+    expect(screen.getByText("Old commentary")).toBe(oldCommentary);
   },
 );
 
