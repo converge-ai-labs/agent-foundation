@@ -14,6 +14,19 @@ The command installs the Service version in `pyproject.toml` and this App's edit
 
 Open the printed **Console** URL and sign in with the local credentials printed in the terminal. Then open the **App plugins** URL and enable **{{ cookiecutter.project_name }}**.
 {% if cookiecutter.surface != 'backend-only' %}Open the App under **Apps** in the workspace sidebar.{% else %}This backend-only App has no Console page; its workspace-scoped endpoint is `GET /api/v1/apps/{{ cookiecutter.app_id }}/summary`.{% endif %}
+{% if cookiecutter.surface == 'backend-only' %}
+Create a workspace API key with **read** access, then use the URL printed by `make dev` to call the App:
+
+```bash
+export SERVICE_URL=http://127.0.0.1:8080  # Replace with the URL printed by make dev.
+export A13N_API_KEY=your-workspace-api-key
+curl --fail-with-body \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  "$SERVICE_URL/api/v1/apps/{{ cookiecutter.app_id }}/summary"
+```
+
+The API key selects its workspace, so no `X-Workspace-ID` header is needed.
+{%- endif %}
 
 - **Python:** Edit `src/`; the launcher restarts Service on save. To attach your IDE without restarts, run `make dev RELOAD=0`. Run `make dev` again after dependency or migration changes.
 {% if cookiecutter.surface != 'backend-only' -%}
