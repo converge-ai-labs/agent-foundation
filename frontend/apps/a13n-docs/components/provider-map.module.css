@@ -15,6 +15,7 @@
 .canvas {
   position: relative;
   isolation: isolate;
+  container-type: inline-size;
 }
 
 .artwork {
@@ -49,6 +50,24 @@
 
 .hotspot:focus-visible {
   outline-color: #5145cd;
+}
+
+/* Match the raster artwork's type and icon spacing on its 2000px canvas.
+   Invisible text measures each label; container units keep it scaled with the image. */
+.labelSizer {
+  display: block;
+  visibility: hidden;
+  padding-inline: 2.7cqw 0.6cqw;
+  font:
+    400 0.9cqw Arial,
+    sans-serif;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
+.subtitle {
+  display: block;
+  font-size: 0.6cqw;
 }
 
 .connection {
