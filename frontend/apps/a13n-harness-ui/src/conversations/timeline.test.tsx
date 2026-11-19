@@ -630,7 +630,7 @@ it("groups only adjacent notifications in order across saved/live cutover", () =
     />,
   );
   const check = () => {
-    const group = screen.getByText("System updates - 2").closest("details")!;
+    const group = screen.getByText("2 background notices").closest("details")!;
     expect(group.open).toBe(false);
     expect(group.querySelectorAll("details")).toHaveLength(0);
     expect(
@@ -647,7 +647,7 @@ it("groups only adjacent notifications in order across saved/live cutover", () =
     ).not.toBe(screen.getByText("Last process update").closest("details"));
     expect(
       [...view.container.querySelectorAll("details > summary")].filter((node) =>
-        /^(System updates|Process update|Subagent update)/.test(
+        /^(2 background notices|Process update|Subagent update)/.test(
           node.textContent ?? "",
         ),
       ),

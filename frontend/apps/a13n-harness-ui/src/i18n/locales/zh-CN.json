@@ -1241,7 +1241,7 @@
   "Subagent output": "子智能体输出",
   "Saved preview truncated by the server.": "服务端已截断已保存的预览。",
   "Content omitted by the server.": "服务端已省略内容。",
-  "System update count_other": "系统更新 - {{count, number}}",
+  "Background notice count_other": "{{count, number}} 条后台通知",
   "Thought": "思考",
   "Thinking_active": "思考中",
   "Thought content": "思考内容",

@@ -32,7 +32,9 @@ export function useNoticeLabel() {
   return (text: string, source: string, count = 1) => {
     const kind = labels[executionHeaders(text)[0]?.kind];
     if (count > 1)
-      return kind ? `${kind} · ${count}` : t("System update count", { count });
+      return kind
+        ? `${kind} · ${count}`
+        : t("Background notice count", { count });
     return (
       kind ??
       (source === "tool_execution"
