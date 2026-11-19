@@ -278,7 +278,7 @@ Agent Composer is an ordinary visible, duplicable builtin Agent under [resources
 
 ## Experience and Accessibility
 
-English and Simplified Chinese are supported, with English as the fallback. Date/time pickers follow the selected display language and show the browser time zone while converting selections to UTC API timestamps. Relative timestamps retain exact date/time in their title; security/audit views show exact timestamps. Shared tokens, primitives, menus, forms and disclosure indicators keep presentation consistent. The brand SVG is bundled locally.
+English, Simplified Chinese and Hindi are supported, with English as the fallback. Hindi text keeps the product terms Agent, Run, Thread, Session and Skill in English. Date/time pickers follow the selected display language and show the browser time zone while converting selections to UTC API timestamps. Relative timestamps retain exact date/time in their title; security/audit views show exact timestamps. Shared tokens, primitives, menus, forms and disclosure indicators keep presentation consistent. The brand SVG is bundled locally.
 
 Collections emphasize names, descriptions and status. Search/filter controls retain visible borders and form a compact row; primary actions sit beside the title without duplicate shell headings. Models use flat rows showing name/key, Provider and status; authorized rows open editors by pointer or keyboard. Resource sections stack on narrow screens; settings navigation collapses behind an accessible control and closes after selection. Long content uses shared scrolling rules. Loading, empty, error, forbidden, unavailable and stale-data states are distinct.
 
