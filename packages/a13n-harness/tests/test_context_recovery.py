@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 
 import pytest
-from a13n_harness import ContextRecoveryPolicy, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness import ContextRecoveryPolicy, HarnessBuilder, HarnessModelCharacteristics, HarnessState, RunBindings
 from a13n_harness._context_recovery import DEFAULT_RECOVERY_CHARS, WARNING, mark_input, reconstruct
 from a13n_harness.capabilities.context import CompactionCapability
 from a13n_harness.content import content_items, input_request, merge_request_history
@@ -125,6 +126,78 @@ async def test_legacy_run_recovers_with_a_long_retained_reference(monkeypatch: p
     assert state is not None and isinstance(state.data, dict)
     assert state.data["after_chars"] <= 2048
     assert state.data["outcome"] == "resumed"
+
+
+@pytest.mark.anyio
+async def test_persisted_history_recovers_after_switching_to_a_smaller_context_model() -> None:
+    from a13n_harness._context_recovery import CONTEXT_RECOVERY_STATE_ID
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.function import DeltaToolCall
+
+    executions = 0
+
+    async def work() -> dict[str, str]:
+        nonlocal executions
+        executions += 1
+        return {"execution_id": "exec-large", "path": "/result.txt", "evidence": "x" * 50_000}
+
+    large_calls = 0
+
+    async def large_stream(messages, info):
+        nonlocal large_calls
+        large_calls += 1
+        if large_calls == 1:
+            yield {0: DeltaToolCall(name="work", json_args="{}", tool_call_id="work-once")}
+        else:
+            yield "Use the second option."
+
+    large = await (
+        HarnessBuilder()
+        .build(
+            HarnessAgentSpec(model_characteristics=HarnessModelCharacteristics(context_window_tokens=128_000)),
+            output_type=str,
+            model=FunctionModel(stream_function=large_stream),
+            capabilities=[Capability(id="work", tools=[work])],
+        )
+        .run("Compare the options", bindings=RunBindings.embedded(context_recovery_scope_id="model-switch"))
+    )
+    assert large.output_or_raise() == "Use the second option."
+    persisted = HarnessState.model_validate_json(large.state.model_dump_json())
+
+    small_calls: list[list[ModelMessage]] = []
+
+    async def small_stream(messages, info):
+        small_calls.append(deepcopy(messages))
+        if len(small_calls) <= 2:
+            raise ModelContextWindowExceededError("small-model", "request exceeds 8000 tokens")
+        yield "Resumed with the second option"
+
+    recovered = await (
+        HarnessBuilder()
+        .build(
+            HarnessAgentSpec(model_characteristics=HarnessModelCharacteristics(context_window_tokens=8_000)),
+            output_type=str,
+            model=FunctionModel(stream_function=small_stream),
+            capabilities=[CompactionCapability(), Capability(id="work", tools=[work])],
+            context_recovery=ContextRecoveryPolicy(max_history_chars=4096, preserve_history=False),
+        )
+        .run(
+            "Use the second option",
+            previous_state=persisted,
+            bindings=RunBindings.embedded(context_recovery_scope_id="model-switch"),
+        )
+    )
+
+    assert recovered.output_or_raise() == "Resumed with the second option"
+    assert len(small_calls) == 3  # The primary and summary requests overflow before deterministic recovery.
+    assert executions == 1
+    resumed = str(small_calls[-1])
+    assert "Compare the options" in resumed and "Use the second option" in resumed
+    assert "exec-large" in resumed and "/result.txt" in resumed
+    assert "x" * 50_000 not in resumed
+    marker = recovered.state.agent_context_state.get(CONTEXT_RECOVERY_STATE_ID)
+    assert marker is not None and marker.data["outcome"] == "resumed"
+    assert marker.data["after_chars"] <= 4096
 
 
 @pytest.mark.anyio
