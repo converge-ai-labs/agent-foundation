@@ -28,7 +28,7 @@ Cookiecutter creates a local directory; the generated README explains how to bui
 
 ## Development and compatibility
 
-From the generated project, run `make dev`, open the printed Console URL, and enable the App in organization settings. The local Service wheel hosts Console and loads the App editable; Compose provides PostgreSQL, Redis and S3. Frontend variants watch TSX/CSS; every variant watches Python sources. `make verify` builds wheel/sdist and tests the installed wheel without replacing the editable install.
+From the generated project, run `make dev`, open the printed Console URL, and enable the App in organization settings. The local Service wheel hosts Console and loads the App editable; Compose provides PostgreSQL, Redis and S3. Frontend variants include a searchable sample list and an editable detail view built with native Console components. They watch TSX/CSS and export the pinned Service wheel’s TypeScript declaration for editor completion and `make typecheck`. Every variant watches Python sources; backend-only projects need no Node.js. `make verify` builds wheel/sdist and tests the installed wheel without replacing the editable install.
 
 The pinned dependency lives in the generated `pyproject.toml`. Stable Service releases advance the Cookiecutter default for new projects; existing projects upgrade their dependency and lockfile explicitly. Generated projects can publish independently via their `vX.Y.Z` tag workflow.
 
@@ -42,4 +42,4 @@ Run template contract tests:
 uv run --python 3.13 --no-project --with-requirements requirements-dev.txt pytest tests -q
 ```
 
-The branch workflow runs those tests, generates default and renamed projects, and executes each project's setup, build, installed-wheel tests and source-distribution rebuild. Keep existing examples unchanged unless a separate change requests otherwise.
+The branch workflow runs those tests, generates default, renamed, frontend-only and backend-only projects, and executes each project's setup, build, installed-wheel tests and source-distribution rebuild. Keep existing examples unchanged unless a separate change requests otherwise.

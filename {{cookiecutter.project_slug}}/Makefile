@@ -10,7 +10,7 @@ WATCH := $(if $(filter 0,$(RELOAD)),,--watch src)
 {% if cookiecutter.surface != 'backend-only' %}
 FRONTEND := --frontend frontend --assets .a13n-dev/assets
 {% endif %}
-.PHONY: help setup frontend build check verify test-wheel dev dev-down install
+.PHONY: help setup frontend console-sdk typecheck build check verify test-wheel dev dev-down install
 help: ## Show local development commands
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -18,10 +18,17 @@ setup: ## Install the pinned Service and this App editable
 	uv sync
 {%- if cookiecutter.surface != 'backend-only' %}
 	pnpm --dir frontend install --frozen-lockfile
+	$(MAKE) console-sdk
 {%- endif %}
 
 {% if cookiecutter.surface != 'backend-only' -%}
-frontend: ## Build the App's production frontend
+console-sdk: ## Refresh editor types from the installed Service
+	$(PYTHON) -m a13n_service.console_sdk frontend/.console-sdk/index.d.ts
+
+typecheck: console-sdk ## Check the App against the installed Console bridge
+	pnpm --dir frontend typecheck
+
+frontend: typecheck ## Build the App's production frontend
 	pnpm --dir frontend build
 
 {% endif %}

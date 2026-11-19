@@ -35,6 +35,14 @@ The API key selects its workspace, so no `X-Workspace-ID` header is needed.
 - **Lifecycle:** Ctrl+C stops Service and the watch process. `make dev-down` also stops the infrastructure without deleting volumes. Set `PORT=8081` when another checkout uses the default Console port 8080. Reuse the printed hostname so browser sessions stay separate across checkouts.
 - **Upgrade Service:** Edit the pinned `a13n-service` dependency in `pyproject.toml` and rerun `make dev`. Commit the resulting `uv.lock` with your project.
 
+{% if cookiecutter.surface != 'backend-only' -%}
+## Develop the Console UI
+
+Run `make setup` once for editor completions without starting Docker. It exports types from the installed Service to `frontend/.console-sdk/`, which is ignored by Git. `make typecheck` refreshes the declaration and runs TypeScript; `make verify` checks types before packaging. The dev watcher rebuilds TSX and CSS without waiting for a full type check.
+
+Import components and React from `@a13n/console`. This module is external in Vite: the Console supplies React, routing, queries and the light/dark theme at runtime. Keep your own styles in CSS Modules. When upgrading Service, update the Python pin and rerun `make setup` to refresh the types before making frontend changes.
+
+{% endif -%}
 ## Build and distribute
 
 `make verify` lints the source, builds wheel and sdist and tests the wheel in a temporary environment. Your editable install remains in place. `make install HOST_PYTHON=/path/to/host/.venv/bin/python` installs the wheel into a compatible Service environment; restart the host afterward. {% if cookiecutter.surface != 'backend-only' %}Bump the App package version when changing shipped frontend bytes, because production asset URLs are immutable within a package version.{% endif %}
@@ -45,7 +53,7 @@ GitHub Actions builds and verifies artifacts on pushes and pull requests. A sepa
 
 - `src/{{ cookiecutter.module_name }}/app.py`: App definition{% if cookiecutter.surface != 'frontend-only' %} and the workspace-scoped `GET /summary` route{% endif %}. Service owns authentication, App activation and initial workspace admission; the App owns further business permissions.
 {% if cookiecutter.surface != 'backend-only' -%}
-- `frontend/src/index.tsx` and `app.css`: Console page and scoped styles. `@a13n/console` provides the host React tree and workspace-aware API. The wheel and sdist carry prebuilt assets; a wheel rebuilt from the sdist does not require Node.js.
+- `frontend/src/index.tsx` and `frontend/src/app.module.css`: sample list, search, detail and edit flows using Console components. The reports are sample data; edits live in React state, not in the backend. The full-stack variant also demonstrates a workspace-scoped `useApp().request()` to `/summary`. The wheel and sdist carry prebuilt assets; a wheel rebuilt from the sdist does not require Node.js.
 {% endif -%}
 - `tests/test_installed_app.py`: installed entry-point discovery and the selected App surface.
 

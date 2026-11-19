@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react",
+    "strict": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@a13n/console": ["./.console-sdk/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

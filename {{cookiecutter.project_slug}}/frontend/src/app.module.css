@@ -1,0 +1,10 @@
+.form {
+  width: 100%;
+  max-width: 680px;
+}
+
+.reportLink {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
