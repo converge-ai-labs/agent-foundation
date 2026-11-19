@@ -270,6 +270,61 @@
       "title": "ChildEnvironmentPolicy",
       "type": "object"
     },
+    "ClientOutputAlternative": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "kind": {
+          "const": "client_tool",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        },
+        "schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Schema",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "schema",
+        "kind"
+      ],
+      "title": "ClientOutputAlternative",
+      "type": "object"
+    },
     "ClientToolDefinition": {
       "additionalProperties": false,
       "description": "Portable model guidance for one externally executed client tool.",
@@ -736,10 +791,52 @@
       "title": "NativeToolSearch",
       "type": "object"
     },
+    "OutputAlternative": {
+      "discriminator": {
+        "mapping": {
+          "client_tool": "#/$defs/ClientOutputAlternative",
+          "server_tool": "#/$defs/ServerOutputAlternative",
+          "structured": "#/$defs/StructuredOutputAlternative",
+          "text": "#/$defs/TextOutputAlternative"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextOutputAlternative"
+        },
+        {
+          "$ref": "#/$defs/StructuredOutputAlternative"
+        },
+        {
+          "$ref": "#/$defs/ServerOutputAlternative"
+        },
+        {
+          "$ref": "#/$defs/ClientOutputAlternative"
+        }
+      ]
+    },
     "OutputSpec": {
       "additionalProperties": false,
       "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
       "properties": {
+        "alternatives": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/OutputAlternative"
+              },
+              "maxItems": 32,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alternatives"
+        },
         "description": {
           "anyOf": [
             {
@@ -1033,6 +1130,27 @@
       "title": "SecretReference",
       "type": "object"
     },
+    "ServerOutputAlternative": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "server_tool",
+          "title": "Kind",
+          "type": "string"
+        },
+        "ref": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "title": "ServerOutputAlternative",
+      "type": "object"
+    },
     "SessionConfiguration": {
       "additionalProperties": false,
       "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
@@ -1278,6 +1396,61 @@
       ],
       "type": "string"
     },
+    "StructuredOutputAlternative": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "kind": {
+          "const": "structured",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        },
+        "schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Schema",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "schema",
+        "kind"
+      ],
+      "title": "StructuredOutputAlternative",
+      "type": "object"
+    },
     "SubagentSelection": {
       "additionalProperties": false,
       "properties": {
@@ -1365,6 +1538,21 @@
         }
       },
       "title": "Subagents",
+      "type": "object"
+    },
+    "TextOutputAlternative": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "TextOutputAlternative",
       "type": "object"
     },
     "ToolExecutionOverride": {

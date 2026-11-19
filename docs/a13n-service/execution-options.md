@@ -5,6 +5,26 @@ description: Import history, forward business context, and configure tool handof
 
 Use these options when your application needs imported history, business context headers, or control over tool handoff and steering. Start with a working [application integration](connect-application.md); preserve the accepted policy and inspect uncertain tool outcomes before retrying.
 
+## Choose how a Run can finish
+
+For a heartbeat that should reply only when there is something to report, put this in the Run request:
+
+```json
+{
+  "options": {
+    "overrides": {
+      "output_spec": {
+        "alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "builtin.finish_silently"}]
+      }
+    }
+  }
+}
+```
+
+This replaces the Agent's output contract for this Run only. If the model selects `finish_silently`, the Run completes with `output: null` and no final chat reply. Check `status` before interpreting `null`; a waiting or failed Run is not a quiet success. Tell the model in your input or instructions when to use the tool.
+
+To let your application supply the final value, add a `client_tool` alternative with `name`, optional `description`, and an object parameter `schema`. When `pending.calls` shows `terminal: true`, return the receipt through `POST /runs/{run}/resume`, using the exact `tool_call_id` as the key in `calls` and `"approvals": {}`. A `returned` receipt completes the successor with its `value`; a `failed` receipt fails it. No second model request occurs. Send any follow-up text as a separate message.
+
 ## Import conversation context
 
 To continue an external conversation, put completed history beside the new message in `POST /threads`. Replace the agent placeholder:

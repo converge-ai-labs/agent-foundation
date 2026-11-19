@@ -390,6 +390,7 @@ class PendingCall(_Frozen):
     tool_name: str
     arguments: dict[str, JsonValue]
     presentation: dict[str, JsonValue] | None = None
+    terminal: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class Pending(_Frozen):

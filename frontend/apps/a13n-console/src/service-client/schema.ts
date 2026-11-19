@@ -6914,6 +6914,28 @@ export interface components {
        */
       permission_ceiling?: components["schemas"]["EnvironmentPermissionSet-Output"];
     };
+    /** ClientOutputAlternative */
+    ClientOutputAlternative: {
+      /** Description */
+      description?: string | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "client_tool";
+      /** Name */
+      name: string;
+      /** Resources */
+      resources?: {
+        [key: string]: {
+          [key: string]: components["schemas"]["JsonValue"];
+        };
+      };
+      /** Schema */
+      schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
     /**
      * ClientToolDefinition
      * @description Portable model guidance for one externally executed client tool.
@@ -11658,6 +11680,11 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    OutputAlternative:
+      | components["schemas"]["TextOutputAlternative"]
+      | components["schemas"]["StructuredOutputAlternative"]
+      | components["schemas"]["ServerOutputAlternative"]
+      | components["schemas"]["ClientOutputAlternative"];
     /** OutputPreview */
     OutputPreview: {
       /** Observation Closed */
@@ -11676,6 +11703,8 @@ export interface components {
      *     `resources` are the schemas `$ref`s may name besides the schema's own definitions.
      */
     OutputSpec: {
+      /** Alternatives */
+      alternatives?: components["schemas"]["OutputAlternative"][] | null;
       /** Description */
       description?: string | null;
       /** Name */
@@ -11883,6 +11912,11 @@ export interface components {
       presentation?: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
+      /**
+       * Terminal
+       * @default false
+       */
+      terminal?: boolean;
       tool_call_id: components["schemas"]["ToolCallId"];
       /** Tool Name */
       tool_name: string;
@@ -13426,6 +13460,16 @@ export interface components {
       /** Points */
       points: [number, number, number, number][];
     };
+    /** ServerOutputAlternative */
+    ServerOutputAlternative: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "server_tool";
+      /** Ref */
+      ref: string;
+    };
     /** ServiceAccount */
     ServiceAccount: {
       /**
@@ -14244,6 +14288,28 @@ export interface components {
     };
     /** @enum {string} */
     Steering: "boundary" | "immediate";
+    /** StructuredOutputAlternative */
+    StructuredOutputAlternative: {
+      /** Description */
+      description?: string | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "structured";
+      /** Name */
+      name: string;
+      /** Resources */
+      resources?: {
+        [key: string]: {
+          [key: string]: components["schemas"]["JsonValue"];
+        };
+      };
+      /** Schema */
+      schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
     /** SubagentSelection */
     "SubagentSelection-Input": {
       /** Agent Id */
@@ -14538,6 +14604,14 @@ export interface components {
       name?: string | null;
       /** Provider Id */
       provider_id?: string | null;
+    };
+    /** TextOutputAlternative */
+    TextOutputAlternative: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "text";
     };
     /** TextPart */
     TextPart: {

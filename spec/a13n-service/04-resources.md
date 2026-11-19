@@ -97,6 +97,19 @@ Connection selections validate `connection_id`, `tools`, `permission`, and `perm
 
 `GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities. The response also supplies `discovery_defaults`, the same automatic policy used when Agent configuration omits its fields. The catalogue owns builtin discovery defaults and the mapping from logical toolsets to their runtime sources.
 
+### Run output
+
+Omitting `output_spec` allows text. The existing single JSON Schema and named `variants` forms are unchanged. The `alternatives` form selects one to 32 possible outcomes and cannot be combined with the other forms:
+
+| `kind`        | Contract                                                                                                                                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`        | Allow ordinary text.                                                                                                                                                                                                    |
+| `structured`  | Validate a final value with the named JSON Schema.                                                                                                                                                                      |
+| `server_tool` | Select an explicit native output handler by `ref`. `builtin.finish_silently` completes with JSON `null`; `<plugin instance>:<key>` selects an [enabled plugin contribution](15-app-plugins.md#accepted-run-activation). |
+| `client_tool` | Declare a name and object parameter `schema`. A valid call waits for a [terminal receipt](05-runs.md#waiting-interrupt-and-fork).                                                                                       |
+
+Text appears at most once and output tool names are distinct. `options.overrides.output_spec` replaces the complete contract for the accepted Run; it neither merges alternatives nor edits the Agent revision. A tool output does not publish a chat reply or retract already-streamed text. The caller decides what to publish.
+
 ### Tool discovery
 
 `tool_search: {"mode": "native", "sources": {}}` selects ungrouped native tool discovery. `sources` uses the catalogue's discovery defaults and the same `capabilities`, `connections`, `exclude_connections`, and `exclude_platform` source-selection fields as automatic proxy discovery. It accepts no groups, plugin selections, proxy controls, or search strategy settings. Service selects builtin tools by their catalogue execution identities and connection tools by their original source identities, marking only selected local function tools `defer_loading=True`. Source capabilities remain loaded, including their instructions, mounts, and hooks. Plugins keep their authored discovery; external client tools, control tools, and provider-native fallbacks keep their own presentation.

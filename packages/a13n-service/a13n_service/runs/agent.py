@@ -411,7 +411,9 @@ class _Host:
                 retries=None if config.retries is None else AgentRetries(**config.retries.model_dump()),
                 model_characteristics=_characteristics(agent),
             ),
-            output_type=definition.output_type(config.output_spec),
+            output_type=definition.agent_output_type(
+                config, self.plugins, enabled=lambda key: self.app_activation.factory_enabled(key, self.apps)
+            ),
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.definition_id,
             capabilities=tuple(features),

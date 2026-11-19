@@ -408,6 +408,11 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     options = stored.require(RunOptions, entry.options, kind="inbox_entry", id=entry.id)
     accepted = stored.require(RunOptions, run.options, kind="run", id=run.id)
     configuration = accepted.configuration
+    requested_output = options.overrides.output_spec if options.overrides else None
+    accepted_output = accepted.overrides.output_spec if accepted.overrides else None
+    # Default steer options may inherit execution settings but cannot change how a message completes.
+    if requested_output != accepted_output:
+        return False
     return (
         entry.delivery == "steer"
         and entry.agent_id == run.agent_id

@@ -4,37 +4,116 @@ Revision validation compiles them once to refuse what the builder could not comp
 always builds.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Any, cast
 
 from a13n_harness import AgentContext
 from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from a13n_harness.output_schema import structured_output_type
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.tools import ToolPermissions, ToolPermissionSetting, source_tool_id, source_tool_prefix
 from a13n_harness.tools.client import ClientToolsetDefinition
+from a13n_harness.tools.client_output import client_output_tool
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.output import ToolOutput
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
 from a13n_service.infra.errors import invalid
 from a13n_service.resources.agents import toolsets
-from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec, ToolSearch, ToolSearchGroup
+from a13n_service.resources.agents.schemas import (
+    AgentConfig,
+    ClientOutputAlternative,
+    JsonObject,
+    OutputSpec,
+    ServerOutputAlternative,
+    StructuredOutputAlternative,
+    TextOutputAlternative,
+    ToolSearch,
+    ToolSearchGroup,
+)
 
 CLIENT_TOOLSET_ID = "a13n-service-client"
 QUESTION_TOOL = "ask_user_question"
 _MAX_REFERENCE_EXPANSIONS = 1024
 
 
-def output_type(spec: OutputSpec | None) -> Any:
+def _finish_silently() -> None:
+    """Complete without a final reply."""
+
+
+def agent_output_type(
+    config: AgentConfig,
+    plugins: HarnessPluginFactoryCatalog,
+    *,
+    enabled: Callable[[str], bool] | None = None,
+) -> Any:
+    def server_tool(ref: str) -> ToolOutput[Any]:
+        if ref == "builtin.finish_silently":
+            return ToolOutput(_finish_silently, name="finish_silently")
+        instance, _, key = ref.rpartition(":")
+        selected = next((item for item in config.plugins if item.instance_name == instance), None)
+        if selected is not None and (enabled is None or enabled(selected.plugin_key)):
+            factory = plugins.require(selected.plugin_key)
+            context = HarnessPluginFactoryContext(
+                plugin_key=selected.plugin_key, plugin_id=instance, configuration=selected.config, extensions={}
+            )
+            tool = factory.output_tools(context).get(key)
+            if tool is not None and tool.name is not None:
+                return tool
+        raise ValueError(f"Unavailable server output tool: {ref}")
+
+    function_tools = toolsets.model_names(config.toolsets) | {tool.name for tool in config.client_tools}
+    if config.user_questions:
+        function_tools |= {QUESTION_TOOL}
+    return output_type(config.output_spec, server_tool=server_tool, function_tools=function_tools)
+
+
+def output_type(
+    spec: OutputSpec | None,
+    *,
+    server_tool: Callable[[str], ToolOutput[Any]] | None = None,
+    function_tools: frozenset[str] = frozenset(),
+) -> Any:
     """`str`, one structured output type, or a tuple of them for variants; `$ref`s are inlined.
 
     Raises `invalid_argument` at `output_spec` for a schema the Harness cannot enforce.
     """
-    if spec is None or (spec.schema_ is None and spec.variants is None):
+    if spec is None:
         return str
     try:
+        if spec.alternatives is not None:
+            alternatives: list[Any] = []
+            names: set[str] = set()
+            for item in spec.alternatives:
+                if isinstance(item, TextOutputAlternative):
+                    if str in alternatives:
+                        raise ValueError("Only one text alternative is allowed")
+                    alternatives.append(str)
+                    continue
+                if isinstance(item, ServerOutputAlternative):
+                    if server_tool is None:
+                        raise ValueError("Server output tools require the Agent's plugin configuration")
+                    tool = server_tool(item.ref)
+                elif isinstance(item, ClientOutputAlternative):
+                    tool = client_output_tool(item.name, _inline(item.schema_, item.resources), item.description)
+                else:
+                    assert isinstance(item, StructuredOutputAlternative)
+                    tool = ToolOutput(
+                        structured_output_type(_inline(item.schema_, item.resources)),
+                        name=item.name,
+                        description=item.description,
+                    )
+                assert tool.name is not None
+                if tool.name in names or tool.name in function_tools:
+                    raise ValueError(f"Duplicate output tool name: {tool.name}")
+                names.add(tool.name)
+                alternatives.append(tool)
+            return tuple(alternatives)
+        if spec.schema_ is None and spec.variants is None:
+            return str
         if spec.schema_ is not None:
             schema = _inline(spec.schema_, spec.resources)
             return structured_output_type(schema, name=spec.name, description=spec.description)
