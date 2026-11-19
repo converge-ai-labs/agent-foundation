@@ -97,14 +97,13 @@ async def selected(
                     "config": provider_row.config,
                     "credential": provider_row.credential,
                 }
-                provider = await read_provider(session, EnvironmentProviderRow, provider_row.id)
-                handle = Handle.model_validate(environment.handle)
-                if (
-                    provider.type in {"docker", "e2b"}
-                    and handle.recipe.get("execution") == "envd_http"
-                    and environment.provider_identity == provider_identity(runtime.registry, provider)
-                ):
-                    target = managed_target(runtime.keys, environment, provider, handle)
+                if provider_row.type in {"docker", "e2b"}:
+                    provider = await read_provider(session, EnvironmentProviderRow, provider_row.id)
+                    handle = Handle.model_validate(environment.handle)
+                    if handle.recipe.get(
+                        "execution"
+                    ) == "envd_http" and environment.provider_identity == provider_identity(runtime.registry, provider):
+                        target = managed_target(runtime.keys, environment, provider, handle)
             else:
                 status = "disabled"
         if target is not None:

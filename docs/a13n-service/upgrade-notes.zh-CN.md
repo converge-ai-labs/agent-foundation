@@ -5,6 +5,10 @@ description: 恢复任务接收前，检查版本切换要求并转换保留数�
 
 升级已有 Service 部署时使用本页，新安装无需执行历史转换。按来源和目标版本选择适用的切换步骤，遵循[备份与迁移流程](operations.md)，确认数据、worker 和客户端兼容后再恢复任务接收。保留结果不明的外部操作，先核查再处理。
 
+## Cloudflare Containers 必须通过自动部署接入
+
+Service 0.2.2 不再使用手动接入的 Cloudflare 网关，包括此前保存的连接。旧记录及其引用仍可查看，但 Service 会拒绝连接或通过它们创建环境。请通过[自动部署](environments.md#provider)创建 Provider，将模板切换到该 Provider，然后预留新环境。Service 不会接管、迁移或删除旧的 Cloudflare 资源；请在自己的 Cloudflare 账号中管理它们。
+
 ## 可组合记忆指引升级
 
 默认及跟随预设的文件指引在持久化时省略可选的 `modules` 字段，冻结记忆挂载保持原有形状，因此已有记忆挂载的 Run 在滚动升级期间仍可读取。保存显式模块选择或启动新整理工作流之前，先升级所有 control 和 worker 副本。旧进程无法解析显式模块配置或执行新引入的工具。

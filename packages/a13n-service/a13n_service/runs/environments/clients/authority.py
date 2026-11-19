@@ -24,6 +24,7 @@ from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.tool_executions.authority import ControlSnapshot
 from a13n_service.tenancy.authorize import WorkspaceScope, authorize
+from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,9 +69,11 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
         provider_ids = {environment.provider_id for environment, _ in rows.values() if environment.kind == "managed"}
         providers = (
             {
-                row.id: (row.workspace_id, resolved_provider(row))
-                for row in await session.scalars(
-                    select(EnvironmentProviderRow).where(EnvironmentProviderRow.id.in_(provider_ids))
+                row.id: (row, deployment_id is not None)
+                for row, deployment_id in await session.execute(
+                    select(EnvironmentProviderRow, DeploymentRow.id)
+                    .outerjoin(DeploymentRow, DeploymentRow.provider_id == EnvironmentProviderRow.id)
+                    .where(EnvironmentProviderRow.id.in_(provider_ids))
                 )
             }
             if provider_ids
@@ -103,11 +106,12 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                 scope = WorkspaceScope(environment.organization_id, workspace_id)
                 if environment.kind == "managed":
                     provider_entry = providers.get(environment.provider_id)
-                    if provider_entry is None or environment.workspace_id != provider_entry[0]:
+                    if provider_entry is None or environment.workspace_id != provider_entry[0].workspace_id:
                         raise LeaseLost()
-                    provider = provider_entry[1]
                     if grant is not None:
                         authorize(grant.principal, scope, "run", authority=grant.authority)
+                    provider_row, managed_deployment = provider_entry
+                    provider = resolved_provider(provider_row, managed_deployment=managed_deployment)
                     binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
                     if (binding.device_id, binding.credential_version) != (
                         attachment.device_id,

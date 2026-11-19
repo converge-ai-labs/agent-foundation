@@ -18,7 +18,7 @@ from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ProviderConfiguration
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from pydantic import JsonValue, ValidationError
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, SQLColumnExpression, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -53,6 +53,8 @@ from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
 from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
+
+MANUAL_CLOUDFLARE_UNSUPPORTED = "manual_cloudflare_provider_unsupported"
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,8 +218,10 @@ async def update_provider[R: ProviderRow](
             managed = await session.scalar(select(DeploymentRow.status).where(DeploymentRow.provider_id == row.id))
             if body.config is not None or replaces_credential or body.extra_headers:
                 raise conflict(row.KIND, row.id, "cloudflare_connection_is_read_only")
-            if managed is not None and body.enabled is True and managed != "ready":
-                raise conflict(row.KIND, row.id, "managed_cloudflare_provider")
+            if body.enabled is True:
+                _require_managed_cloudflare(row, managed_deployment=managed is not None)
+                if managed != "ready":
+                    raise conflict(row.KIND, row.id, "managed_cloudflare_provider")
         headers = _updated_headers(keys, row, body.extra_headers)
         config = row.config if body.config is None else body.config
         if body.config is not None or replaces_credential or body.extra_headers:
@@ -263,7 +267,8 @@ async def test_provider[R: ProviderRow](
     """One non-billable probe of the current configuration, outside any transaction; changes nothing."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        provider = resolved_provider(await find_row(session, actor, row_type, scope, provider_id, "run"))
+        row = await find_row(session, actor, row_type, scope, provider_id, "run")
+        provider = await _resolve_row(session, row)
     result = await probe(
         registry,
         row_type.PROVIDER_KIND,
@@ -291,18 +296,17 @@ async def resolve_provider[R: ProviderRow](
     authority: ExecutionAuthority | None = None,
 ) -> ResolvedProvider:
     """An enabled provider of the workspace, read in the caller's short session."""
-    return resolved_provider(
-        await usable_row(
-            session,
-            actor,
-            row_type,
-            scope,
-            provider_id,
-            verb=verb,
-            authority=authority,
-            key_share=row_type.PROVIDER_KIND in {"web", "environment"},
-        )
+    row = await usable_row(
+        session,
+        actor,
+        row_type,
+        scope,
+        provider_id,
+        verb=verb,
+        authority=authority,
+        key_share=row_type.PROVIDER_KIND in {"web", "environment"},
     )
+    return await _resolve_row(session, row)
 
 
 async def read_provider[R: ProviderRow](session: AsyncSession, row_type: type[R], provider_id: str) -> ResolvedProvider:
@@ -310,7 +314,16 @@ async def read_provider[R: ProviderRow](session: AsyncSession, row_type: type[R]
     row = await session.get(row_type, provider_id)
     if row is None:
         raise not_found(row_type.KIND, provider_id)
-    return resolved_provider(row)
+    return await _resolve_row(session, row)
+
+
+async def _resolve_row(session: AsyncSession, row: ProviderRow) -> ResolvedProvider:
+    managed = (
+        isinstance(row, EnvironmentProviderRow)
+        and row.type == "cloudflare"
+        and await session.scalar(select(DeploymentRow.id).where(DeploymentRow.provider_id == row.id)) is not None
+    )
+    return resolved_provider(row, managed_deployment=managed)
 
 
 def list_provider_types(registry: Registry, kind: ProviderKind) -> ProviderTypePage:
@@ -381,7 +394,25 @@ def rejection_reason(error: ValueError) -> str:
     return str(error)
 
 
-def resolved_provider(row: ProviderRow) -> ResolvedProvider:
+def manual_cloudflare_provider(provider_id: SQLColumnExpression[str | None]) -> ColumnElement[bool]:
+    """The saved Cloudflare account has no Service deployment to operate it."""
+    deployed = select(DeploymentRow.id).where(DeploymentRow.provider_id == EnvironmentProviderRow.id).exists()
+    return (
+        select(EnvironmentProviderRow.id)
+        .where(EnvironmentProviderRow.id == provider_id, EnvironmentProviderRow.type == "cloudflare", ~deployed)
+        .correlate_except(EnvironmentProviderRow)
+        .exists()
+    )
+
+
+def _require_managed_cloudflare(row: ProviderRow, *, managed_deployment: bool) -> None:
+    if isinstance(row, EnvironmentProviderRow) and row.type == "cloudflare" and not managed_deployment:
+        raise conflict(row.KIND, row.id, MANUAL_CLOUDFLARE_UNSUPPORTED)
+
+
+def resolved_provider(row: ProviderRow, *, managed_deployment: bool) -> ResolvedProvider:
+    """Resolve an account for use with deployment ownership established in the same session."""
+    _require_managed_cloudflare(row, managed_deployment=managed_deployment)
     return ResolvedProvider(
         id=row.id,
         version=row.version,

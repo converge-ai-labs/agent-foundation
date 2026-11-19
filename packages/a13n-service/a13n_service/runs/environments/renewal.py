@@ -41,7 +41,7 @@ from a13n_service.infra.db import after_commit, lock, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
-from a13n_service.resources.providers.service import read_provider
+from a13n_service.resources.providers.service import MANUAL_CLOUDFLARE_UNSUPPORTED, read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.desktop import identity
@@ -93,7 +93,13 @@ async def claim(runtime: Runtime, environment_id: str) -> Renewal | None:
         environment.renew_at = claimed = current + timedelta(seconds=seconds + PUBLISH_SECONDS)
         assert environment.provider_id is not None, "only managed sandboxes are renewed"
         # Maintenance acts for no principal, and renews a disabled provider's sandboxes until they stop.
-        provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
+        try:
+            provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
+        except ServiceError as error:
+            if error.details.get("reason") != MANUAL_CLOUDFLARE_UNSUPPORTED:
+                raise
+            environment.renew_at = None
+            return None
         try:
             if provider_identity(runtime.registry, provider) != environment.provider_identity:
                 return None
