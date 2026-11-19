@@ -36,6 +36,7 @@ const live = vi.hoisted(() => ({ display: null as unknown, revision: 0 }));
 vi.mock("./live-threads", () => ({ useLiveThread: () => live }));
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   localStorage.clear();
 });
 const child = (id: string, state = "succeeded", segment = 0) =>
@@ -332,6 +333,87 @@ it("distinguishes canonical notice kinds, preserves source-marked rows and links
   );
   expect(test.open).toHaveBeenCalled();
 });
+it("keeps root prose around a saved subagent result visible in an ordinary thread", async () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const test = setup([child("one")]);
+  const entries: Schema<"TranscriptEntry">[] = [
+    {
+      position: 0,
+      message_kind: "request",
+      parts: [{ kind: "user", text: "Review the change" }],
+    },
+    {
+      position: 1,
+      message_kind: "response",
+      parts: [
+        {
+          kind: "assistant",
+          text: "The remaining question is whether a retry preserves the input.",
+        },
+      ],
+    },
+    {
+      position: 2,
+      message_kind: "request",
+      parts: [
+        {
+          kind: "user",
+          text: "Subagent result · Agent one · execution_id=exec-one-0 · succeeded\nThe retry preserves the input.",
+          metadata: { display: true, "a13n.steering-source": "async_subagent" },
+        },
+      ],
+    },
+    {
+      position: 3,
+      message_kind: "response",
+      parts: [{ kind: "assistant", text: "The retry behavior is verified." }],
+    },
+  ];
+  render(
+    test.view(
+      "root",
+      <ConversationTranscript
+        threadId="root"
+        entries={entries}
+        turns={[
+          {
+            turn_id: "review",
+            input_position: 0,
+            end_position: 4,
+            final_position: 3,
+            preview: "Review the change",
+          },
+        ]}
+        blocks={[]}
+        localInputs={[]}
+      />,
+    ),
+  );
+  const progress = screen.getByText(
+    "The remaining question is whether a retry preserves the input.",
+  );
+  const final = screen.getByText("The retry behavior is verified.");
+  const worked = screen.getByRole("button", {
+    name: /Worked/,
+    expanded: false,
+  });
+  expect(progress.compareDocumentPosition(worked)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(worked.compareDocumentPosition(final)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  await userEvent.click(worked);
+  const reader = screen.getByRole("region", { name: "Work log" });
+  expect(within(reader).getByText("Subagent result")).toBeTruthy();
+  expect(reader.contains(progress)).toBe(false);
+  expect(reader.contains(final)).toBe(false);
+});
+
 it("opens a handed-off shell call from its single inline action before the activity list loads it", async () => {
   const test = setup([]);
   render(
