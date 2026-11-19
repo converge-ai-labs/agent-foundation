@@ -2,13 +2,6 @@
 import {
   React,
   Button,
-  Select,
-  SelectGroup,
-  SelectGroupLabel,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
   Link,
   useLocation,
   useState,
@@ -18,11 +11,7 @@ import {
   useWorkspace,
   useTranslation,
 } from "../src/app-plugins/bridge";
-
-const reportFormats = [
-  { value: "detailed", label: "Detailed" },
-  { value: "compact", label: "Compact" },
-];
+import { controlsPage } from "./app-plugin-controls";
 
 function Overview() {
   const app = useApp();
@@ -41,21 +30,6 @@ function Overview() {
         {workspace.id} {i18n.resolvedLanguage}
       </p>
       <p>{query.data?.title}</p>
-      <Select items={reportFormats} defaultValue="detailed">
-        <SelectTrigger aria-label="Report format">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectPopup>
-          <SelectGroup>
-            <SelectGroupLabel>Formats</SelectGroupLabel>
-            {reportFormats.map(({ value, label }) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectPopup>
-      </Select>
       <p>
         {cache.getQueryData(app.queryKey("report")) === query.data
           ? "Host cache"
@@ -90,6 +64,7 @@ function Failure(): never {
 export default {
   bridge: 1,
   pages: [
+    controlsPage,
     { id: "overview", label: "Reports", component: Overview },
     { id: "failure", label: "Failure", component: Failure },
     { id: "stateful", label: "Stateful", component: Stateful },

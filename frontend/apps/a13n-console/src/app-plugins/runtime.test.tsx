@@ -6,6 +6,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "a13n-ui";
@@ -191,17 +192,88 @@ it("loads an enabled module into host providers, scopes requests and separates w
     cache.getQueryData(["app", "acme.reports", "org_demo", "ws_two", "report"]),
   ).toEqual({ title: "ws_two" });
 });
-it("lets a contributed page select an option through the Console bridge", async () => {
+it("lets a contributed page compose named Select controls through the Console bridge", async () => {
   const user = userEvent.setup();
-  mount("/apps/acme.reports/overview");
+  mount("/apps/acme.reports/controls");
 
   const format = await screen.findByRole("combobox", { name: "Report format" });
   format.focus();
   await user.keyboard("{ArrowDown}");
-  await screen.findByRole("option", { name: "Compact" });
-  await user.keyboard("{End}{Enter}");
-
+  await screen.findByRole("group", { name: "Compact view" });
+  expect(document.querySelector('[data-slot="select-separator"]')).toBeTruthy();
+  const detailed = screen.getByRole("option", { name: "Detailed" });
+  const compact = screen.getByRole("option", { name: "Compact" });
+  await waitFor(() => expect(document.activeElement).toBe(detailed));
+  await user.keyboard("{End}");
+  await waitFor(() => expect(document.activeElement).toBe(compact));
+  await user.keyboard("{Enter}");
   expect(format.textContent).toBe("Compact");
+
+  const exportFormat = screen.getByRole("combobox", {
+    name: "Report export format",
+  });
+  exportFormat.focus();
+  await user.keyboard("{ArrowDown}");
+  await user.click(await screen.findByRole("option", { name: "Compact" }));
+  expect(exportFormat.textContent).toBe("Compact");
+});
+
+it("lets a contributed page choose, search and switch modes with the shared patterns", async () => {
+  const user = userEvent.setup();
+  mount("/apps/acme.reports/controls");
+
+  const choice = await screen.findByRole("combobox", {
+    name: "Default layout",
+  });
+  choice.focus();
+  await user.keyboard("{ArrowDown}");
+  await user.click(await screen.findByRole("option", { name: "Compact" }));
+  expect(choice.textContent).toBe("Compact");
+
+  await user.click(screen.getByRole("combobox", { name: "Region" }));
+  const search = within(await screen.findByRole("dialog")).getByRole(
+    "combobox",
+  );
+  await user.type(search, "sin");
+  const singapore = await screen.findByRole("option", { name: "Singapore" });
+  expect(screen.queryByRole("option", { name: "Tokyo" })).toBeNull();
+  await user.click(singapore);
+
+  const mode = within(screen.getByRole("group", { name: "Preview mode" }));
+  const compact = mode.getByRole("button", { name: "Compact" });
+  await user.click(compact);
+  expect(compact.getAttribute("aria-pressed")).toBe("true");
+
+  const summary = screen.getByRole("button", { name: "Selection summary" });
+  await user.click(summary);
+  expect(summary.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    screen.getByRole("group", { name: "Selected options" }).textContent,
+  ).toBe("Selected optionsCompact · Singapore");
+});
+
+it("lets a contributed page label and validate shared fields", async () => {
+  const user = userEvent.setup();
+  mount("/apps/acme.reports/controls");
+
+  const code = await screen.findByRole("textbox", { name: "Report code" });
+  const description = screen.getByText("Enter at least three characters.");
+  expect(code.getAttribute("aria-describedby")).toContain(description.id);
+  await user.type(code, "a");
+  expect(await screen.findByText("Code invalid")).toBeTruthy();
+  expect(screen.getByText("Report code is too short.")).toBeTruthy();
+  await user.type(code, "bc");
+  expect(await screen.findByText("Code valid")).toBeTruthy();
+  expect(code.getAttribute("aria-invalid")).not.toBe("true");
+
+  const checkbox = screen.getByRole("checkbox", { name: "Include details" });
+  await user.click(checkbox);
+  expect(checkbox.getAttribute("aria-checked")).toBe("true");
+  const toggle = screen.getByRole("switch", { name: "Email summary" });
+  await user.click(toggle);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Preview report" }));
+  expect(await screen.findByText("Preview ready")).toBeTruthy();
 });
 it("keeps core navigation usable after an App render failure", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
