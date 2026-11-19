@@ -94,7 +94,7 @@ class EntrySummary(BaseModel):
     view: Literal["compact"] = "compact"
     id: str
     thread_id: str
-    kind: Literal["message", "child_result"]
+    kind: Literal["message", "child_result", "child_message"]
     delivery: Literal["steer", "next_run"]
     status: EntryStatus
     position: int

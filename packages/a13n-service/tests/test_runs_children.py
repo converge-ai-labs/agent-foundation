@@ -10,12 +10,15 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from a13n_harness.capabilities import SubagentOperatorContext, SubagentSteerRequest
 from a13n_service.infra import outbox
 from a13n_service.infra.db import transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import accept as accept_module
 from a13n_service.runs import subagents as subagents_module
 from a13n_service.runs.attempts import AttemptControl
+from a13n_service.runs.child_messages import send
 from a13n_service.runs.children import FULL_INBOX_SECONDS, child_results
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
@@ -54,6 +57,158 @@ async def _child_run(service, parent_run_id: str) -> RunRow:  # type: ignore[no-
     async with transaction(service.runtime.storage) as session:
         child = (await session.scalars(select(ThreadRow).where(ThreadRow.origin_run_id == parent_run_id))).one()
         return await session.get_one(RunRow, child.current_run_id)
+
+
+async def test_a_child_can_message_its_parent_separately_from_its_result(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.say("Delegated", to="Role: coordinator")
+    parent = await runs_kit.start_thread(service, coordinator, "delegate")
+    await (await runs_kit.attempt(service))
+    child = await _child_run(service, parent["run"]["id"])
+    scripted_model.call(
+        "send_parent_message", {"message": "Which plan should I use?"}, call_id="call_message", to="Role: worker"
+    )
+    scripted_model.say("Child finished", to="Role: worker")
+    await (await runs_kit.attempt(service))
+    assert (result := await runs_kit.get_run(service, child.id))["status"] == "completed", result["failure"]
+    receipt = json.loads(_tool_results(scripted_model)["call_message"])
+    assert receipt["admission"] == "persisted" and receipt["child_run_id"] == child.id
+    entries = await runs_kit.inbox(service, parent["thread"]["id"])
+    assert [(entry["kind"], entry["status"]) for entry in entries] == [
+        ("message", "consumed"),
+        ("child_message", "assigned"),
+    ]
+    assert entries[1]["id"] == receipt["message_id"]
+    resumed = await runs_kit.get_run(service, entries[1]["assigned_run_id"])
+    assert resumed["trigger"] == "child_message"
+    assert resumed["input"]["message"] == "Which plan should I use?"
+    scripted_model.say("Use the simpler plan", to="Role: coordinator")
+    await (await runs_kit.attempt(service))
+    requests = [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
+    assert any("Message from a delegated subagent (not a human reply)" in str(r["messages"]) for r in requests)
+    assert len(await _deliver(service)) == 1
+    assert [entry["kind"] for entry in await runs_kit.inbox(service, parent["thread"]["id"])] == [
+        "message",
+        "child_message",
+        "child_result",
+    ]
+
+
+async def test_child_message_replay_and_full_parent_inbox(serve, settings, scripted_model, runs_kit):
+    config = settings.model_copy(
+        update={
+            "control": settings.control.model_copy(update={"inbox_count": 1}),
+            "worker": settings.worker.model_copy(update={"delivery_bytes": 1024}),
+        }
+    )
+    async with serve(settings=config) as service:
+        await runs_kit.pause_sweeps(service)
+        coordinator = await runs_kit.delegating(service, scripted_model, "async", user_questions=True)
+        scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+        scripted_model.call(
+            "ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_question", to="Role: coordinator"
+        )
+        parent = await runs_kit.start_thread(service, coordinator, "delegate and wait for me")
+        await (await runs_kit.attempt(service))
+        (lease,) = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+        with pytest.raises(ServiceError, match="worker steering byte limit"):
+            await send(service.runtime, lease, "oversize", "a" * 1024)
+        first = await send(service.runtime, lease, "one", "First")
+        assert await send(service.runtime, lease, "one", " First ") == first
+        with pytest.raises(ServiceError) as reused:
+            await send(service.runtime, lease, "one", "Changed")
+        assert reused.value.code == "conflict"
+        with pytest.raises(ServiceError) as full:
+            await send(service.runtime, lease, "two", "Second")
+        assert full.value.code == "rate_limited"
+        entries = await runs_kit.inbox(service, parent["thread"]["id"])
+        assert [(e["id"], e["status"]) for e in entries if e["kind"] == "child_message"] == [
+            (first["message_id"], "pending")
+        ]
+        assert (await runs_kit.get_run(service, parent["run"]["id"]))["status"] == "waiting"
+
+
+async def test_parent_and_child_can_steer_each_other_without_waiting_for_completion(
+    service, scripted_model, runs_kit, monkeypatch
+):
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async")
+    held_model = asyncio.Event()
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    scripted_model.say("This response is held", to="Role: coordinator", gate=held_model)
+    scripted_model.say("Proceed", to="Message from a delegated subagent")
+    parent = await runs_kit.start_thread(
+        service, coordinator, "delegate", options={"execution": {"steering": "immediate"}}
+    )
+    (parent_lease,) = await claim(service.runtime, worker_id="parent", worker_build="test", limit=1)
+    parent_control = AttemptControl(
+        deadline=asyncio.get_running_loop().time() + service.runtime.settings.worker.lease_seconds
+    )
+    parent_task = asyncio.create_task(execute(service.runtime, parent_lease, parent_control))
+    try:
+        initial = await scripted_model.request()
+        assert "send_parent_message" not in str(initial["tools"])
+        await scripted_model.request()  # The parent is active, after committing delegation.
+        (child_lease,) = await claim(service.runtime, worker_id="child", worker_build="test", limit=1)
+        operator = ChildRuns(service.runtime, parent_lease, parent_control, {})
+        context = SubagentOperatorContext(parent_lease.thread_id, parent_lease.run_id, "coordinator", {})
+        parent_locked, send_locked, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original_lock = subagents_module.lock_thread
+
+        async def gated_child_lock(session, thread_id):
+            if thread_id == child_lease.thread_id:
+                parent_locked.set()
+                await release.wait()
+            return await original_lock(session, thread_id)
+
+        from a13n_service.runs import child_messages as messages_module
+
+        async def observed_parent_lock(session, thread_id):
+            thread = await original_lock(session, thread_id)
+            if thread_id == parent_lease.thread_id:
+                send_locked.set()
+            return thread
+
+        monkeypatch.setattr(subagents_module, "lock_thread", gated_child_lock)
+        monkeypatch.setattr(messages_module, "lock_thread", observed_parent_lock)
+        async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
+            steering = tasks.create_task(
+                operator.steer(
+                    context,
+                    SubagentSteerRequest(
+                        execution_id=child_lease.run_id, message="Use archived records only if relevant."
+                    ),
+                )
+            )
+            await parent_locked.wait()
+            sending = tasks.create_task(send(service.runtime, child_lease, "call_send", "Which plan should I use?"))
+            await send_locked.wait()
+            release.set()
+        steer, receipt = steering.result(), sending.result()
+        assert steer.accepted
+        following = await scripted_model.request()
+        assert "Which plan should I use?" in str(runs_kit.user_texts(following))
+        await parent_task
+        entries = await runs_kit.inbox(service, parent["thread"]["id"])
+        message = next(e for e in entries if e["id"] == receipt["message_id"])
+        assert (message["kind"], message["status"], message["assigned_run_id"]) == (
+            "child_message",
+            "consumed",
+            parent_lease.run_id,
+        )
+        assert message["incorporated_checkpoint_seq"] is not None
+        display = await runs_kit.items(service, parent_lease.run_id)
+        assert any(
+            item["content"].get("metadata", {}).get("a13n.steering-source") == "child_message"
+            for item in display["items"]
+        )
+        assert (await runs_kit.get_run(service, child_lease.run_id))["status"] == "running"
+    finally:
+        held_model.set()
+        if not parent_task.done():
+            await parent_task
 
 
 async def test_a_question_response_keeps_queued_child_results(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

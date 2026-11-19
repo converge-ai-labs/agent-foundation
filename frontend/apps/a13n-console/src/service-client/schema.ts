@@ -8190,7 +8190,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "message" | "child_result";
+      kind: "message" | "child_result" | "child_message";
       /**
        * Omitted Sections
        * @default [
@@ -8266,6 +8266,7 @@ export interface components {
       kind:
         | "message"
         | "child_result"
+        | "child_message"
         | "tool_result"
         | "browser_handback"
         | "desktop_handback";
@@ -15073,6 +15074,7 @@ export interface components {
       | "queued"
       | "resume"
       | "child_result"
+      | "child_message"
       | "tool_result"
       | "browser_handback"
       | "desktop_handback"
@@ -25059,7 +25061,7 @@ export interface operations {
         status?: components["schemas"]["EntryStatus"][] | null;
         /** @description Use compact for discovery; detailed preserves the original response. */
         view?: components["schemas"]["ReadView"];
-        kind?: ("message" | "child_result") | null;
+        kind?: ("message" | "child_result" | "child_message") | null;
         limit?: number | null;
         cursor?: string | null;
       };

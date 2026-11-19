@@ -246,13 +246,17 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `provisioning`
 
-| 设置                              | 环境变量                                              | 类型 / 选项           | 约束与默认值                              |
-| --------------------------------- | ----------------------------------------------------- | --------------------- | ----------------------------------------- |
-| `provisioning.local.enabled`      | `A13N_PROVISIONING__LOCAL` (JSON 字段 `enabled`)      | 布尔值                | default=false                             |
-| `provisioning.local.root`         | `A13N_PROVISIONING__LOCAL` (JSON 字段 `root`)         | 字符串或 null         | format="path"; default=null               |
-| `provisioning.docker.enabled`     | `A13N_PROVISIONING__DOCKER` (JSON 字段 `enabled`)     | 布尔值                | default=false                             |
-| `provisioning.docker.image`       | `A13N_PROVISIONING__DOCKER` (JSON 字段 `image`)       | 字符串或 null         | minLength=1; maxLength=1024; default=null |
-| `provisioning.docker.pull_policy` | `A13N_PROVISIONING__DOCKER` (JSON 字段 `pull_policy`) | "never", "if_missing" | default="if_missing"                      |
+| 设置                               | 环境变量                                                | 类型 / 选项           | 约束与默认值                                                                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provisioning.local.enabled`       | `A13N_PROVISIONING__LOCAL` (JSON 字段 `enabled`)        | 布尔值                | default=false                                                                                                                                                                                      |
+| `provisioning.local.root`          | `A13N_PROVISIONING__LOCAL` (JSON 字段 `root`)           | 字符串或 null         | format="path"; default=null                                                                                                                                                                        |
+| `provisioning.docker.enabled`      | `A13N_PROVISIONING__DOCKER` (JSON 字段 `enabled`)       | 布尔值                | default=false                                                                                                                                                                                      |
+| `provisioning.docker.image`        | `A13N_PROVISIONING__DOCKER` (JSON 字段 `image`)         | 字符串或 null         | minLength=1; maxLength=1024; default=null                                                                                                                                                          |
+| `provisioning.docker.pull_policy`  | `A13N_PROVISIONING__DOCKER` (JSON 字段 `pull_policy`)   | "never", "if_missing" | default="if_missing"                                                                                                                                                                               |
+| `provisioning.cloudflare.enabled`  | `A13N_PROVISIONING__CLOUDFLARE` (JSON field `enabled`)  | 布尔值                | default=false                                                                                                                                                                                      |
+| `provisioning.cloudflare.wrangler` | `A13N_PROVISIONING__CLOUDFLARE` (JSON field `wrangler`) | 字符串                | format="path"; default="/usr/local/bin/wrangler"                                                                                                                                                   |
+| `provisioning.cloudflare.regctl`   | `A13N_PROVISIONING__CLOUDFLARE` (JSON field `regctl`)   | 字符串                | format="path"; default="/usr/local/bin/regctl"                                                                                                                                                     |
+| `provisioning.cloudflare.image`    | `A13N_PROVISIONING__CLOUDFLARE` (JSON field `image`)    | 字符串                | `pattern="^ghcr\\.io/converge-ai-labs/a13n-sandbox@sha256:[0-9a-f]{64}$"`; default="ghcr.io/converge-ai-labs/a13n-sandbox@sha256:8a114d8a5651c507580634b76dcd005908457558c0eded13e74da28afcbdae5c" |
 
 ## `memory`
 

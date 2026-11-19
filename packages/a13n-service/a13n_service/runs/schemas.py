@@ -47,7 +47,15 @@ from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
 type Trigger = Literal[
-    "input", "queued", "resume", "child_result", "tool_result", "browser_handback", "desktop_handback", "spawned"
+    "input",
+    "queued",
+    "resume",
+    "child_result",
+    "child_message",
+    "tool_result",
+    "browser_handback",
+    "desktop_handback",
+    "spawned",
 ]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
@@ -603,7 +611,7 @@ class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result", "tool_result", "browser_handback", "desktop_handback"]
+    kind: Literal["message", "child_result", "child_message", "tool_result", "browser_handback", "desktop_handback"]
     delivery: Delivery
     position: int
     status: EntryStatus

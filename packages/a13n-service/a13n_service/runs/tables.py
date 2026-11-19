@@ -408,7 +408,8 @@ class InboxEntryRow(Base):
         Index("ix_inbox_entries_pending", "thread_id", "position", postgresql_where=text("status = 'pending'")),
         Index("ix_inbox_entries_assigned", "assigned_run_id", postgresql_where=text("status = 'assigned'")),
         CheckConstraint(
-            "kind IN ('message', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback')", name="kind"
+            "kind IN ('message', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback')",
+            name="kind",
         ),
         CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
         CheckConstraint("status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')", name="status"),
@@ -424,7 +425,7 @@ class InboxEntryRow(Base):
         CheckConstraint("(status = 'consumed') = (incorporated_checkpoint_seq IS NOT NULL)", name="consumed"),
         CheckConstraint("(status IN ('pending', 'assigned')) = (finished_at IS NULL)", name="finished"),
         CheckConstraint("(status = 'failed') = (failure IS NOT NULL)", name="failure"),
-        CheckConstraint("request_kind IN ('thread', 'message', 'fork')", name="request_kind"),
+        CheckConstraint("request_kind IN ('thread', 'message', 'fork', 'child_message')", name="request_kind"),
         CheckConstraint(
             "(request_key IS NULL) = (request_digest IS NULL)"
             " AND (request_key IS NULL) = (request_kind IS NULL)"
@@ -577,7 +578,7 @@ class RunRow(Stamped, Base):
             "revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')", name="revision_selection"
         ),
         CheckConstraint(
-            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')",
             name="trigger",
         ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),

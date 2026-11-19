@@ -28,7 +28,7 @@ class Mailbox:
 
     def notify(self, session: AsyncSession, entry: InboxEntryRow) -> None:
         """Wake local receivers only after durable input commits; remote receivers scan the same inbox."""
-        if entry.kind == "message" and entry.delivery == "steer":
+        if entry.kind in {"message", "child_message"} and entry.delivery == "steer":
             after_commit(session, partial(self._wake, entry.thread_id))
 
     async def _wake(self, thread_id: str) -> None:
@@ -74,7 +74,7 @@ class Mailbox:
                     .where(
                         InboxEntryRow.thread_id.in_(thread_ids),
                         InboxEntryRow.status == "pending",
-                        InboxEntryRow.kind == "message",
+                        InboxEntryRow.kind.in_(("message", "child_message")),
                         InboxEntryRow.delivery == "steer",
                     )
                     .distinct()

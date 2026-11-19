@@ -8183,7 +8183,8 @@
           "kind": {
             "enum": [
               "message",
-              "child_result"
+              "child_result",
+              "child_message"
             ],
             "title": "Kind",
             "type": "string"
@@ -8437,6 +8438,7 @@
             "enum": [
               "message",
               "child_result",
+              "child_message",
               "tool_result",
               "browser_handback",
               "desktop_handback"
@@ -27887,6 +27889,7 @@
           "queued",
           "resume",
           "child_result",
+          "child_message",
           "tool_result",
           "browser_handback",
           "desktop_handback",
@@ -56633,7 +56636,8 @@
                 {
                   "enum": [
                     "message",
-                    "child_result"
+                    "child_result",
+                    "child_message"
                   ],
                   "type": "string"
                 },

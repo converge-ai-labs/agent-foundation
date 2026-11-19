@@ -1330,6 +1330,7 @@
           "enum": [
             "message",
             "child_result",
+            "child_message",
             "tool_result",
             "browser_handback",
             "desktop_handback"
@@ -4910,6 +4911,7 @@
         "queued",
         "resume",
         "child_result",
+        "child_message",
         "tool_result",
         "browser_handback",
         "desktop_handback",

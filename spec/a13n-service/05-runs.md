@@ -25,7 +25,7 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 - A **session** groups related threads. Its `last_run_id` names the most recently accepted run of any of its threads.
 - A **thread** advances one history at a time. It has an inbox, desired environment and memory mounts ([06](06-environments.md#mounts), [11](11-memory.md#mounts)) and caller headers ([04](04-resources.md#caller-headers)).
-- An **entry** is one queued input: a `message`, `child_result`, `tool_result` or `browser_handback`. Only a pending message can change.
+- An **entry** is one queued input: a `message`, `child_result`, `child_message`, `tool_result`, `browser_handback` or `desktop_handback`. Only a pending `message` can be edited.
 - A **run** starts from one source, either an entry or the answers that resume a waiting run. It freezes an agent revision, options and an execution identity, and may incorporate further compatible entries. Its initial history never changes.
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
@@ -142,14 +142,14 @@ inbox_entries
   request_key NULL  request_digest NULL  request_kind NULL  request_target NULL
   status  assigned_run_id NULL  incorporated_checkpoint_seq NULL  failure NULL
   created_at  finished_at NULL
-  kind IN ('message', 'child_result', 'tool_result', 'browser_handback')
+  kind IN ('message', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback')
   delivery IN ('steer', 'next_run')
   status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')
-  request_kind IN ('thread', 'message', 'fork')
+  request_kind IN ('thread', 'message', 'fork', 'child_message')
   CHECK (position > 0 AND size >= 0)
   CHECK ((kind = 'message') = (agent_id IS NOT NULL))
   CHECK ((kind = 'child_result') = (child_run_id IS NOT NULL))
-  CHECK ((kind IN ('child_result', 'tool_result')) = (origin_run_id IS NOT NULL))
+  CHECK ((kind <> 'message') = (origin_run_id IS NOT NULL))
   CHECK (status NOT IN ('assigned', 'consumed') OR assigned_run_id IS NOT NULL)
   CHECK (status <> 'pending' OR assigned_run_id IS NULL)
   CHECK ((status = 'consumed') = (incorporated_checkpoint_seq IS NOT NULL))
@@ -172,7 +172,7 @@ runs
   checkpoint NULL  tail NULL  output NULL  failure NULL  usage_at_seal NULL
   labels  started_at NULL  sealed_at NULL  version  created_at  updated_at
   revision_selection IN ('pinned', 'default', 'inherited', 'snapshot')
-  trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'browser_handback', 'spawned')
+  trigger IN ('input', 'queued', 'resume', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'spawned')
   lineage IN ('root', 'continue', 'fork')
   status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')
   wait_reason IN ('approval', 'call', 'multiple')
@@ -286,7 +286,7 @@ Every waiting run requires an explicit resume, including a wait containing only 
 3. Freezes the environment mount set ([06](06-environments.md#mounts)) and the memory mount set, which at the thread's first acceptance first takes the agent's default memory mounts ([11](11-memory.md#mounts)), checks that each asset of a message source still reaches the model under the selected revision, frozen overrides and frozen mounts ([files](#how-files-reach-the-model)), and asks the admission policy ([09](09-runtime.md#extension-points)) to accept the run.
 4. Inserts the accepted run with the thread's `mcp_headers` frozen into `runs.mcp_headers` and its parent's memory cursors for the memories still mounted under the same name, assigns the source entry, sets `threads.current_run_id` and the session's `last_run_id`, stages `run.accepted` webhooks ([07](07-facts-and-delivery.md#lifecycle-webhooks)) and registers the after-commit claim wakeup ([09](09-runtime.md#worker-claim-wakeups)).
 
-The trigger records why the run started: `input` (the submission's own entry), `queued` (an earlier entry), `resume`, `child_result` or `spawned` (a child's first run).
+The trigger records why the run started: `input` (the submission's own entry), `queued` (an earlier entry), `resume`, the kind of the internal entry that started it, or `spawned` (a child's first run).
 
 ### Editing queued input
 
@@ -304,9 +304,9 @@ pending ──accept / boundary──> assigned ──checkpoint commit──> c
 
 The durable state is **assigned to a run**, not offered to an attempt. Recovery and handoff never change assignment.
 
-At each safe boundary, in the transaction that commits its checkpoint under the lease, the worker assigns a FIFO batch of compatible pending entries, bounded by `worker.delivery_count` and `worker.delivery_bytes` and scanning at most `control.inbox_count`. Compatibility is checked before budgeting, so incompatible entries neither block nor consume the batch. A message is compatible when its delivery is `steer`, it names the run's agent, its revision pin is absent or equal to the run's, and either its options are the defaults (none given), which join whatever options the run started with, or the digest of its options as submitted equals the run's `options_digest`. Caller headers and principals take no part: anyone with `run` may steer, and the run keeps the principal and authority frozen at acceptance. A child result is compatible when its origin is this run or a sealed run. A `next_run` or incompatible message waits for a later run.
+At each safe boundary, in the transaction that commits its checkpoint under the lease, the worker assigns a FIFO batch of compatible pending entries, bounded by `worker.delivery_count` and `worker.delivery_bytes` and scanning at most `control.inbox_count`. Compatibility is checked before budgeting, so incompatible entries neither block nor consume the batch. A message is compatible when its delivery is `steer`, it names the run's agent, its revision pin is absent or equal to the run's, and either its options are the defaults (none given), which join whatever options the run started with, or the digest of its options as submitted equals the run's `options_digest`. Caller headers and principals take no part: anyone with `run` may steer, and the run keeps the principal and authority frozen at acceptance. A child message or result is compatible when its origin is this run or a sealed run. A `next_run` or incompatible message waits for a later run.
 
-Immediate-steering Runs also receive input while generation or tools are pending. After an input commit, a receiver in the same process wakes directly and uses the ordinary assignment and offer path. One shared worker scan finds pending user steers for registered Threads when a local wake is unavailable or missed; empty scans do not lock each active Run. Boundary-steering Runs use checkpoint delivery without an immediate-input listener. The wake is a hint: DB assignment, authority checks and checkpoint incorporation retain their existing ownership.
+Immediate-steering Runs also receive input while generation or tools are pending. After an input commit, a receiver in the same process wakes directly and uses the ordinary assignment and offer path. One shared worker scan finds pending user steers and child messages for registered Threads when a local wake is unavailable or missed; empty scans do not lock each active Run. Boundary-steering Runs use checkpoint delivery without an immediate-input listener. The wake is a hint: DB assignment, authority checks and checkpoint incorporation retain their existing ownership.
 
 User and subagent messages share one worker offer path. Immediate message steering uses Harness best effort: request immediate handoff when available, otherwise accept queued input for the next safe boundary without cancelling or replaying the running tool. A native-readiness `steering_timeout` or `run_not_active` refusal has not accepted the input; the worker retains its assignment and FIFO position for a later boundary, recovery, or ordinary terminal continuation instead of failing the Run. Other steering errors retain their existing failure semantics. Acceptance alone does not mark an entry consumed.
 
@@ -561,6 +561,10 @@ Client tools use the ordinary child Run waiting, native resume and terminal-resu
 - Continue needs the execution to be its child thread's last run with no current run (otherwise `conflict` `execution_not_resumable`); it appends a `next_run` message and starts the child thread's next run.
 - Steers and continuations carry the child run's own agent, revision and frozen options.
 
+**Intermediate messages.** An asynchronous child Run can call `send_parent_message(message)` to append non-blank UTF-8 text to its immediate parent Thread's inbox. The Service proves the sender's current execution authority and derives the recipient from the child's delegation. The message must fit both the 16 KiB text cap and the worker's steering byte budget, including its stored envelope. A full inbox refuses the send without queuing a retry. The receipt identifies the stored entry, sender and parent; it does not mean the parent has read the message or replied. Replaying the same tool call and text returns the same receipt; reusing the call ID with changed text conflicts. The tool is not installed where an existing client tool owns that name.
+
+Messages are distinct `child_message` inbox entries and follow existing inbox order and steering. An active parent can receive one through ordinary steering, a normally completed parent may start an eligible successor, and a paused or waiting parent does not resume merely because a child sent a message. An archived parent rejects new messages. A message identifies the child as its author and cannot satisfy a deferred tool or human-input wait or seal the child Run. The parent can respond through existing child steering.
+
 **Results.** Each completed, failed or cancelled child run enqueues one `child_result` outbox row. Delivery ([07](07-facts-and-delivery.md#outbox)) locks only the parent thread, settles the row and appends a unique entry `{child_run_id, subagent, status, output, failure}` with delivery `steer` and the origin run's principal and authority, then calls `accept` after commit. A result for an archived parent is settled delivered and ignored. A result that does not fit the parent's inbox is deferred without using an outbox attempt ([07](07-facts-and-delivery.md#outbox)), so it is never dropped for lack of room. The result is a notification of that run, not a second completion of the delegating tool call.
 
 A result steers into its origin run while that run is active. Once the origin is sealed, whatever its outcome, the result steers into a later run or is an ordinary queued source: the origin committed the delegating call before the child existed, so the call is in the history the thread continues. The child thread stays directly inspectable in all cases.
@@ -603,7 +607,7 @@ The [bounded read contract](10-api.md#bounded-read-representations) adds opt-in 
 
 Run Agent views distinguish `revision` and `thread_snapshot`, include `definition_id`, and return null `revision` for snapshots. Summaries identify the real revision when present, actual model, enabled toolsets, resource counts, bounded resource IDs and changed top-level configuration paths. `section=original|effective|overrides` returns the requested value as versioned fragments; `part` selects `all` or a declared AgentConfig field for original/effective. Reference lists state when they are shortened. This representation does not change configuration write semantics.
 
-Inbox lists additionally filter `kind=message|child_result`. Compact entries retain identity, position, disposition, origin and assigned Run/Agent IDs, time and payload/failure previews. Single-entry reads select `payload`, `options` or `failure` for fragments.
+Inbox lists additionally filter `kind=message|child_message|child_result`. Compact entries retain identity, position, disposition, origin and assigned Run/Agent IDs, time and payload/failure previews. Single-entry reads select `payload`, `options` or `failure` for fragments.
 
 Compact or filtered items use strict ordinal windows, starting at `after=0` when no position is supplied. They accept `kind`, `state` and exact `tool_name`; summaries retain item ID/ordinal, state/time, tool identity and text/argument/result previews, with a compact top-level Run. At most `limit` matches are returned, without an extra tail. A filtered read examines a bounded window and returns `next_after` or `next_before`, even for an empty match window. Backward windows keep output in ordinal order and continue before the earliest returned or examined item. `/runs/{run}/items/{item}/content` requires the matching ordinal and a declared `field`; `result` also resolves native `value` and multipart result fields. Referenced values use the same authorized saved-content reader. Stored content supports compact preview or versioned offset/search reads; source truncation is distinct from response shortening.
 

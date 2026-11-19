@@ -29,6 +29,7 @@ export type RunRequest =
       status: string | null;
       text: string;
     }
+  | { kind: "subagent_message"; subagent: string | null; text: string }
   /** `child_result`: a child Run's terminal result. */
   | {
       kind: "subagent_result";
@@ -59,6 +60,14 @@ export function runRequest(run: Run, thread?: Thread | null): RunRequest {
       input: run.input,
       text: inputText(run.input),
     };
+  if (run.trigger === "child_message") {
+    const payload = isRecord(run.input) ? run.input : {};
+    return {
+      kind: "subagent_message",
+      subagent: text(payload.subagent),
+      text: value(payload.message),
+    };
+  }
   if (run.trigger === "child_result") return subagentResult(run.input);
   if (run.trigger === "resume")
     return { kind: "feedback", input: run.resume, text: inputText(run.resume) };
