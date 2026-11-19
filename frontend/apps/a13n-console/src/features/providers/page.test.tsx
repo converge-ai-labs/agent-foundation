@@ -107,6 +107,53 @@ it("shows workspace providers without offering mutations to a read-only member",
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });
 
+it("lists Cloudflare Containers under Cloud and asks for gateway credentials, not a Cloudflare API token", async () => {
+  state.GET.mockImplementation(async (path) => ({
+    data: {
+      items:
+        path === "/api/v1/provider-types/{kind}"
+          ? [
+              {
+                type: "cloudflare",
+                display_name: "Cloudflare Containers",
+                authentication: { mode: "required" },
+                credential_schema: {
+                  properties: { api_key: { type: "string", title: "API key" } },
+                  required: ["api_key"],
+                },
+                configuration_schema: {
+                  properties: {
+                    endpoint: { type: "string", title: "Gateway HTTPS origin" },
+                  },
+                  required: ["endpoint"],
+                },
+              },
+              { type: "extension", display_name: "Custom runtime" },
+            ]
+          : [],
+      next_cursor: null,
+    },
+  }));
+  const user = userEvent.setup();
+  mount("category=environments");
+  await user.click(await screen.findByRole("button", { name: "Add provider" }));
+  expect(
+    screen.getByRole("tab", { name: "Cloud", selected: true }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Custom runtime" })).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Cloudflare Containers" }),
+  );
+  expect(
+    screen.getByText(/Do not use a Cloudflare API token here/),
+  ).toBeTruthy();
+  expect(screen.getByLabelText("Gateway token").getAttribute("type")).toBe(
+    "password",
+  );
+  expect(screen.getByLabelText("Gateway URL")).toBeTruthy();
+  expect(screen.queryByLabelText("API key")).toBeNull();
+});
+
 it("localizes built-in browser and environment type labels without refetching or rewriting cached definitions", async () => {
   const cache = new QueryClient();
   const catalog = {

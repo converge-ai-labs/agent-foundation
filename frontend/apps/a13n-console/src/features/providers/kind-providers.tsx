@@ -46,7 +46,7 @@ import {
   ProviderName,
   ProviderReadOnly,
 } from "./provider-editor";
-import { hasFields } from "./schemas";
+import { hasFields, schemaProperties } from "./schemas";
 import { ProviderFacts } from "./provider-facts";
 import { ProviderTable } from "./provider-table";
 import providerStyles from "./providers.module.css";
@@ -79,6 +79,21 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
     select: (catalog) => ({
       ...catalog,
       items: catalog.items.map((definition) => {
+        if (isCloudflareEnvironment(kind, definition.type)) {
+          return {
+            ...definition,
+            credential_schema: withFieldTitle(
+              definition.credential_schema,
+              "api_key",
+              "Gateway token",
+            ),
+            configuration_schema: withFieldTitle(
+              definition.configuration_schema,
+              "endpoint",
+              "Gateway URL",
+            ),
+          };
+        }
         const name = definition.display_name;
         const label =
           kind === "browser" && name === "Docker browser"
@@ -95,6 +110,26 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
       }),
     }),
   });
+}
+
+function isCloudflareEnvironment(kind: ProviderKind, type: string) {
+  return kind === "environment" && type === "cloudflare";
+}
+
+// Keep display labels separate from the schema keys sent to Service.
+function withFieldTitle<T extends Record<string, unknown> | null>(
+  definition: T,
+  key: string,
+  title: string,
+): T {
+  if (!definition) return definition;
+  const properties = schemaProperties(definition);
+  const field = properties[key];
+  if (!field || typeof field !== "object") return definition;
+  return {
+    ...definition,
+    properties: { ...properties, [key]: { ...field, title } },
+  };
 }
 
 function schema(value: unknown): Record<string, unknown> {
@@ -240,9 +275,13 @@ function AddKindProvider({
       description={t(description)}
       hint={(definition) => credentialHint(definition.credential_schema)}
       connectDescription={(definition) =>
-        t(credentialDescription(definition.credential_schema), {
-          provider: definition.display_name,
-        })
+        isCloudflareEnvironment(kind, definition.type)
+          ? t(
+              "Enter the HTTPS URL and token for your deployed a13n Cloudflare gateway. Do not use a Cloudflare API token here.",
+            )
+          : t(credentialDescription(definition.credential_schema), {
+              provider: definition.display_name,
+            })
       }
     >
       {(definition, back) => (
@@ -473,7 +512,11 @@ export function ProviderForm({
       {section.visible && (
         <ProviderGroup title="Credentials">
           <CredentialRow
-            label={t(credentialLabel(section.schema))}
+            label={t(
+              isCloudflareEnvironment(kind, type)
+                ? "Gateway token"
+                : credentialLabel(section.schema),
+            )}
             configured={section.removable}
             removing={section.removing}
             onRemovingChange={section.setRemoving}
