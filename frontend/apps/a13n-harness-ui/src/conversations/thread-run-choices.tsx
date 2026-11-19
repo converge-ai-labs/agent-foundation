@@ -4,7 +4,7 @@ import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { Schema } from "../transport/client";
-import { thinkingLabel } from "./thinking-picker";
+import { thinkingLevelLabel } from "./thinking-label";
 import { ModelOptions } from "./model-picker";
 import {
   EnvironmentsEditor,
@@ -170,6 +170,11 @@ export function ThreadRunChoices(props: RunChoiceProps) {
   const model = catalog?.models?.find(
     (item) => item.model_id === selectedModelId,
   );
+  const thinking = thinkingLevelLabel(
+    model?.thinking,
+    props.controls.thinking,
+    t,
+  );
   const speed = selectedSpeedState(model?.fast?.state, props.controls.fast);
   const speedDescription =
     speed === "on" || speed === "ultrafast"
@@ -194,10 +199,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         label={
           <span className={panelStyles.modelSummary}>
             <ModelIdentity model={model} name={modelName} />
-            {(model?.thinking?.status === "supported" ||
-              props.controls.thinking != null) && (
-              <small>{thinkingLabel(model, props.controls.thinking, t)}</small>
-            )}
+            {thinking && <small>{thinking}</small>}
             <SpeedIndicator speed={speed} />
           </span>
         }

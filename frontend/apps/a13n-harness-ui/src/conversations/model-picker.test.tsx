@@ -108,7 +108,7 @@ it("uses the selected model as the settings entry, retaining Agent context and e
   render(<Choices />);
   expect(
     screen.getByLabelText("Agent: Writer. Model: Reasoning model").textContent,
-  ).toBe("Reasoning modelDefault");
+  ).toBe("Reasoning modelHigh");
   const trigger = button("Agent & Model settings");
   trigger.focus();
   await user.keyboard("[Enter]");
@@ -130,7 +130,7 @@ it("uses the selected model as the settings entry, retaining Agent context and e
   expect(button("Low").getAttribute("aria-pressed")).toBe("true");
   expect(trigger.textContent).toContain("Low");
   await user.click(button("Use default thinking"));
-  expect(trigger.textContent).toContain("Default");
+  expect(trigger.textContent).toBe("Reasoning modelHigh");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -151,7 +151,8 @@ it("searches models in one panel and resets overrides on model changes", async (
   expect(screen.queryByRole("button", { name: "Reasoning model" })).toBeNull();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   await user.click(button("Other model"));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault");
+  expect(button("Agent & Model settings").textContent).toBe("Other model");
+  expect(button("Thinking").textContent).toBe("ThinkingCustom settings");
   await user.click(button("Thinking"));
   expect(button("Use default thinking").getAttribute("title")).toContain(
     "Custom settings",
@@ -349,10 +350,10 @@ it("changes Agent inside settings and clears model controls for the new inherite
   expect(
     screen.getByLabelText("Agent: Reviewer. Model: Other model"),
   ).toBeTruthy();
-  expect(button("Thinking").textContent).toBe("ThinkingDefault");
+  expect(button("Thinking").textContent).toBe("ThinkingCustom settings");
   expect(button("Speed").textContent).toBe("SpeedStandard");
   await user.click(button("Agent"));
   await user.click(button(/^Writer/));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault");
+  expect(button("Thinking").textContent).toBe("ThinkingHigh (default)");
   expect(button("Speed").textContent).toBe("SpeedFast");
 });

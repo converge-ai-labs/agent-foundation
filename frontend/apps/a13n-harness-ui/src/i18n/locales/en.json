@@ -848,6 +848,7 @@
   "Model unavailable": "Model unavailable",
   "Agent: {{agent}}. Model: {{model}}": "Agent: {{agent}}. Model: {{model}}",
   "Agents": "Agents",
+  "{{level}} (default)": "{{level}} (default)",
   "Default": "Default",
   "Follow the project or app default.": "Follow the project or app default.",
   "Search agents": "Search agents",

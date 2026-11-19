@@ -150,11 +150,13 @@ it("keeps inherited defaults distinct from explicit levels across catalog refres
   );
   const pressed = (name: string) =>
     screen.getByRole("button", { name }).getAttribute("aria-pressed");
+  expect(screen.getByText("Quick (default)")).toBeTruthy();
   expect(pressed("Quick")).toBe("false");
   expect(pressed("Use default thinking")).toBe("true");
   view.rerender(
     <ThinkingPicker model={withDefault(false)} onChange={change} />,
   );
+  expect(screen.getByText("No thinking (default)")).toBeTruthy();
   expect(pressed("No thinking")).toBe("false");
   expect(pressed("Use default thinking")).toBe("true");
   expect(pressed("Quick")).toBe("false");

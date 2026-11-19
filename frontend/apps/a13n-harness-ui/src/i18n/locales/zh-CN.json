@@ -847,6 +847,7 @@
   "Model unavailable": "模型不可用",
   "Agent: {{agent}}. Model: {{model}}": "智能体：{{agent}}。模型：{{model}}",
   "Agents": "智能体",
+  "{{level}} (default)": "{{level}}（默认）",
   "Default": "默认",
   "Follow the project or app default.": "使用项目或应用的默认设置。",
   "Search agents": "搜索智能体",

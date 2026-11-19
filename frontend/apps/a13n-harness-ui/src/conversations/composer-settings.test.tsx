@@ -36,6 +36,7 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
       thinking: {
         status: "supported",
         default_summary: "High",
+        default_value: "high",
         options: [
           {
             value: null,
@@ -376,8 +377,20 @@ it.each([false, true])(
     const trigger = screen.getByRole("button", {
       name: "Agent & Model settings",
     });
+    expect(trigger.textContent).toBe("Model OneHigh");
     await user.click(trigger);
+    expect(screen.getByRole("button", { name: "Thinking" }).textContent).toBe(
+      "ThinkingHigh (default)",
+    );
     await user.click(screen.getByRole("button", { name: "Thinking" }));
+    expect(screen.getByText("High (default)")).toBeTruthy();
+    expect(draft.controls.thinking).toBeUndefined();
+    await user.click(screen.getByRole("button", { name: "High" }));
+    expect(screen.queryByText("High (default)")).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Use default thinking" }),
+    );
+    expect(screen.getByText("High (default)")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Low" }));
     expect(draft.controls).toEqual({ thinking: "low" });
     await user.click(

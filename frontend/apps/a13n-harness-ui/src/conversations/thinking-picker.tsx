@@ -3,23 +3,13 @@ import { modelControlMessage } from "./model-control-messages";
 import { markColors } from "a13n-ui/brand/mark";
 import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
 import { useState, useRef, useEffect, type CSSProperties } from "react";
-import type { TFunction } from "i18next";
+import { thinkingDetailLabel } from "./thinking-label";
 import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import { SettingsHeader } from "./composer-settings";
 import styles from "./composer-settings.module.css";
 
 type Selection = Schema<"SubmitRequest">["thinking"];
-
-export function thinkingLabel(
-  model: Schema<"ModelSummary"> | undefined,
-  value: Selection,
-  t: TFunction,
-) {
-  if (value == null) return t("Default");
-  const option = model?.thinking?.options.find((item) => item.value === value);
-  return modelControlMessage(option?.label ?? "Unavailable selection", t);
-}
 
 /** Provider rules and native values belong to the backend catalog, not React. */
 export function ThinkingPicker({
@@ -45,7 +35,7 @@ export function ThinkingPicker({
   const current = explicit.findIndex((item) => item.value === value);
   const active = drag === null ? current : Math.round(drag);
   const level = explicit[active];
-  const label = thinkingLabel(model, level?.value ?? value, t);
+  const label = thinkingDetailLabel(control, level?.value ?? value, t);
   const gesture = useRef<AbortController | null>(null);
   const handledPointer = useRef(false);
   useEffect(() => {

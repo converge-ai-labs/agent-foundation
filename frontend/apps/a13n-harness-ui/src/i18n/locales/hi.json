@@ -848,6 +848,7 @@
   "Model unavailable": "मॉडल उपलब्ध नहीं",
   "Agent: {{agent}}. Model: {{model}}": "Agent: {{agent}}। मॉडल: {{model}}",
   "Agents": "Agents",
+  "{{level}} (default)": "{{level}} (डिफ़ॉल्ट)",
   "Default": "डिफ़ॉल्ट",
   "Follow the project or app default.": "प्रोजेक्ट या ऐप का डिफ़ॉल्ट अपनाएँ।",
   "Search agents": "Agents खोजें",
