@@ -2159,9 +2159,8 @@ it.each(["desktop", "mobile"])(
     failSteps = false;
     fireEvent.click(retry);
     await waitFor(() => expect(drafts.get(id)!.localInputs).toHaveLength(0));
-    // Completed progress stays folded until the user opens its segment.
-    expect(screen.queryByText("Earlier progress text")).toBeNull();
     for (const text of [
+      "Earlier progress text",
       "Please use plan B",
       "Current prompt",
       "Current answer",
@@ -2194,8 +2193,10 @@ it.each(["desktop", "mobile"])(
     });
     expect(segments).toHaveLength(2);
     fireEvent.click(segments[1]);
-    const progress = await screen.findByText("Earlier progress text");
-    expect(progress.closest("[data-execution-reader]")).toBeTruthy();
+    const recentWork = await screen.findByRole("region", { name: "Work log" });
+    fireEvent.click(within(recentWork).getByText("Thought"));
+    expect(within(recentWork).getByText("Recent execution work")).toBeTruthy();
+    expect(within(recentWork).queryByText("Earlier progress text")).toBeNull();
     if (layout === "mobile") {
       fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

@@ -1433,11 +1433,7 @@ function TurnSegments({
     const kind =
       !row.subagentRunId &&
       (row.kind === "input" ||
-        (row.kind === "assistant" &&
-          (threadId === BOT_THREAD_ID ||
-            !complete ||
-            row.publication ||
-            row.position === outputPosition)) ||
+        row.kind === "assistant" ||
         row.kind === "failure" ||
         row.kind === "app" ||
         row.kind === "question")
@@ -1463,13 +1459,7 @@ function TurnSegments({
     else
       segments.push({
         id:
-          kind === "execution"
-            ? ((complete && threadId !== BOT_THREAD_ID
-                ? [...mountedExecution.current].find((key) =>
-                    key.startsWith(`${boundary}:execution:`),
-                  )
-                : undefined) ?? `${boundary}:execution:${textIndex}`)
-            : row.id,
+          kind === "execution" ? `${boundary}:execution:${textIndex}` : row.id,
         kind,
         rows: [row],
       });

@@ -363,7 +363,7 @@ it("mounts desktop details on first expansion and preserves the reader and discl
   ).toBeNull();
 });
 
-it("folds completed progress, thoughts and tools together while keeping the final response visible", async () => {
+it("keeps progress and final prose in order outside completed execution details", async () => {
   viewport()(false);
   const saved: Schema<"TranscriptEntry">[] = [
     entries[0],
@@ -425,24 +425,28 @@ it("folds completed progress, thoughts and tools together while keeping the fina
       turns={[{ ...props.turns[0], final_position: null }]}
     />,
   );
-  expect(screen.getByText("I will inspect the submit handler.")).toBeTruthy();
+  const progress = screen.getByText("I will inspect the submit handler.");
+  const finding = screen.getByText("The handler needs a guard.");
+  const answer = screen.getByText("The final answer");
   view.rerender(<ConversationTranscript {...props} />);
   const trigger = screen.getByRole("button", {
     name: /^Worked for 1m 5s\s*Work log$/,
     expanded: false,
   });
-  expect(screen.queryByText("I will inspect the submit handler.")).toBeNull();
-  expect(screen.queryByText("The handler needs a guard.")).toBeNull();
-  expect(
-    screen.getByText("The final answer").closest("[data-execution-reader]"),
-  ).toBeNull();
+  expect(screen.getByText("I will inspect the submit handler.")).toBe(progress);
+  expect(screen.getByText("The handler needs a guard.")).toBe(finding);
+  expect(screen.getByText("The final answer")).toBe(answer);
+  const ordered = [progress, trigger, finding, answer];
+  for (const [index, node] of ordered.slice(1).entries()) {
+    expect(ordered[index].compareDocumentPosition(node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  }
   const user = userEvent.setup();
   await user.click(trigger);
   const reader = screen.getByRole("region", { name: "Work log" });
-  expect(
-    within(reader).getByText("I will inspect the submit handler."),
-  ).toBeTruthy();
-  expect(within(reader).getByText("The handler needs a guard.")).toBeTruthy();
+  expect(ordered.some((node) => reader.contains(node))).toBe(false);
+  expect(within(reader).getByText("checkout.ts")).toBeTruthy();
   expect(within(reader).getByText("for 2s")).toBeTruthy();
   const thought = within(reader).getByText("Thought").closest("details")!;
   expect(thought.open).toBe(false);
@@ -484,7 +488,7 @@ it("does not create an empty Worked disclosure for a direct answer", () => {
   expect(screen.queryByRole("button", { name: /Work log/ })).toBeNull();
 });
 
-it("keeps an explicitly opened reader when completion gathers the preceding progress into it", async () => {
+it("keeps the execution reader open without moving the preceding progress on completion", async () => {
   viewport()(false);
   const history: Schema<"TranscriptEntry">[] = [
     entries[0],
@@ -514,6 +518,7 @@ it("keeps an explicitly opened reader when completion gathers the preceding prog
   const thought = within(reader).getByRole("region", {
     name: "Thought content",
   });
+  const progress = screen.getByText("Looking into this now.");
   view.rerender(
     <ConversationTranscript
       {...props}
@@ -532,7 +537,8 @@ it("keeps an explicitly opened reader when completion gathers the preceding prog
   expect(within(reader).getByRole("region", { name: "Thought content" })).toBe(
     thought,
   );
-  expect(within(reader).getByText("Looking into this now.")).toBeTruthy();
+  expect(screen.getByText("Looking into this now.")).toBe(progress);
+  expect(reader.contains(progress)).toBe(false);
   expect(
     screen.getByText("Finished.").closest("[data-execution-reader]"),
   ).toBeNull();
