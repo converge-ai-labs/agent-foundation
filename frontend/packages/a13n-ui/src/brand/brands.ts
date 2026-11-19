@@ -99,7 +99,7 @@ const curatedBrands: Record<string, Brand> = {
   },
   brave: { icon: `${lobeIconsCdn}brave-color.svg` },
   exa: { icon: `${lobeIconsCdn}exa-color.svg` },
-  duckduckgo: { icon: "https://cdn.simpleicons.org/duckduckgo" },
+  duckduckgo: { icon: "https://duckduckgo.com/favicon.ico" },
   parallel: { icon: "https://parallel.ai/favicon.ico" },
   tavily: { icon: `${lobeIconsCdn}tavily-color.svg` },
   firecrawl: { icon: `${lobeIconsCdn}firecrawl-color.svg` },
