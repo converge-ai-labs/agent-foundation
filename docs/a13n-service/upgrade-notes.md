@@ -5,10 +5,6 @@ description: Check version-specific cutovers and convert retained data before re
 
 Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
-## Asynchronous child messages
-
-Stop new admission, drain active attempts, and stop all old `control`, `worker`, and `all` replicas before applying the migration. Start the upgraded replicas together. A new asynchronous child can send a parent message immediately; older binaries cannot interpret the new inbox kind and Run trigger. Update clients that exhaustively match either enum before reopening admission. The migration only broadens existing CHECK constraints; it creates no tables and does not scan or rewrite existing rows. PostgreSQL briefly needs exclusive locks on the inbox and Run tables. If another transaction holds a conflicting lock, the migration aborts without making changes; release the lock and retry the forward upgrade. Downgrade is refused while child messages are stored.
-
 ## Composable memory guidance rollout
 
 Default and preset-following file guidance omit the optional `modules` key in stored configuration, and frozen memory mounts retain their previous shape. Existing memory-mounted Runs remain readable during a rolling upgrade. Upgrade every control and worker replica before saving an explicit module selection or launching the new organization workflows. Older processes cannot interpret explicit module configuration or execute newly introduced tools.
