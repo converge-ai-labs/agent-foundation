@@ -27,6 +27,7 @@ from a13n_service.tenancy.access import (
     workspace_scope,
 )
 from a13n_service.tenancy.authorize import Principal, Scope, Verb, allowed_verbs, authorize
+from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 from a13n_service.tenancy.organizations import store_icon
 from a13n_service.tenancy.schemas import Workspace, WorkspaceCreate, WorkspacePage, WorkspaceUpdate
 from a13n_service.tenancy.tables import InvitationRow, WorkspaceRow
@@ -168,6 +169,12 @@ async def archive_workspace(
         row = await _lock_workspace(session, target.id, if_match)
         if row.archived_at is not None:
             raise conflict("workspace", row.id, "archived")
+        if await session.scalar(
+            select(DeploymentRow.id)
+            .where(DeploymentRow.workspace_id == row.id, DeploymentRow.status != "retired")
+            .limit(1)
+        ):
+            raise conflict("workspace", row.id, "managed_cloudflare_deployments_remain")
         row.archived_at = await now(session)
         revoked = await session.scalars(
             update(InvitationRow)

@@ -15,6 +15,7 @@ import { useProviderTypes } from "./kind-providers";
 
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
+  POST: vi.fn(),
   organizationWrite: true,
   hasWorkspace: true,
   manage: true,
@@ -22,7 +23,7 @@ const state = vi.hoisted(() => ({
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { GET: state.GET },
-    workspace: () => ({ GET: state.GET }),
+    workspace: () => ({ GET: state.GET, POST: state.POST }),
   }),
 }));
 vi.mock("../../layout/workspace", () => ({
@@ -199,4 +200,48 @@ it("localizes built-in browser and environment type labels without refetching or
   );
   expect(cache.getQueryData(["browser-provider-types"])).toEqual(catalog);
   expect(state.GET).not.toHaveBeenCalled();
+});
+
+it("offers managed deployment with a separate write-only account token", async () => {
+  state.GET.mockImplementation(async (path) => ({
+    data:
+      path === "/api/v1/cloudflare-deployments"
+        ? { available: true, items: [] }
+        : {
+            items:
+              path === "/api/v1/provider-types/{kind}"
+                ? [
+                    {
+                      type: "cloudflare",
+                      display_name: "Cloudflare Containers",
+                      authentication: { mode: "required" },
+                    },
+                  ]
+                : [],
+            next_cursor: null,
+          },
+  }));
+  state.POST.mockResolvedValue({ data: {} });
+  const user = userEvent.setup();
+  mount("category=environments");
+  await user.click(await screen.findByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Cloudflare Containers" }),
+  );
+  expect(screen.queryByLabelText("Gateway token")).toBeNull();
+  await user.type(screen.getByLabelText("Name"), "Managed sandbox");
+  await user.type(screen.getByLabelText("Account ID"), "A".repeat(32));
+  await user.type(
+    screen.getByLabelText("Cloudflare API token"),
+    "write-only-fixture",
+  );
+  await user.click(screen.getByRole("button", { name: "Deploy gateway" }));
+  expect(state.POST).toHaveBeenCalledWith("/api/v1/cloudflare-deployments", {
+    body: {
+      name: "Managed sandbox",
+      account_id: "a".repeat(32),
+      api_token: "write-only-fixture",
+      request_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    },
+  });
 });

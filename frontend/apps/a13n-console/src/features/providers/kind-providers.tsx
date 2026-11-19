@@ -1,3 +1,8 @@
+import {
+  CloudflareDeployments,
+  CloudflareSetup,
+  useCloudflareDeployments,
+} from "./cloudflare-deployments";
 import { ProviderDelete } from "./provider-delete";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
@@ -167,6 +172,7 @@ export function KindProviders({
     queryKey: [`${kind}-providers`, workspace.id, "list", page.cursor],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
+  const cloudflare = useCloudflareDeployments(kind === "environment");
   const manage = can("write");
   const connectable = providerTypes.data?.items ?? [];
   const add =
@@ -175,6 +181,7 @@ export function KindProviders({
         kind={kind}
         definitions={connectable}
         description={addDescription}
+        managedCloudflare={cloudflare.query.data?.available === true}
         renderCatalog={renderCatalog}
       />
     ) : undefined;
@@ -205,6 +212,9 @@ export function KindProviders({
         notice={
           <>
             {notice}
+            {kind === "environment" && can("admin") && (
+              <CloudflareDeployments controller={cloudflare} />
+            )}
             <ErrorNotice
               error={providerTypes.error}
               retry={() => void providerTypes.refetch()}
@@ -239,6 +249,7 @@ function AddKindProvider({
   definitions,
   description,
   renderCatalog,
+  managedCloudflare,
 }: {
   renderCatalog?: (
     definitions: readonly Definition[],
@@ -246,6 +257,7 @@ function AddKindProvider({
   ) => ReactNode;
   kind: ProviderKind;
   definitions: Definition[];
+  managedCloudflare: boolean;
   description: string;
 }) {
   const { t } = useTranslation();
@@ -276,16 +288,14 @@ function AddKindProvider({
       hint={(definition) => credentialHint(definition.credential_schema)}
       connectDescription={(definition) =>
         isCloudflareEnvironment(kind, definition.type)
-          ? t(
-              "Enter the HTTPS URL and token for your deployed a13n Cloudflare gateway. Do not use a Cloudflare API token here.",
-            )
+          ? t("Choose how this Cloudflare gateway is set up.")
           : t(credentialDescription(definition.credential_schema), {
               provider: definition.display_name,
             })
       }
     >
-      {(definition, back) => (
-        <CatalogStep backLabel={t("All providers")} onBack={back}>
+      {(definition, back) => {
+        const form = (
           <ProviderForm
             kind={kind}
             createLabel={kind === "environment" ? t("Add provider") : undefined}
@@ -294,8 +304,21 @@ function AddKindProvider({
             close={() => change(false)}
             reload={async () => {}}
           />
-        </CatalogStep>
-      )}
+        );
+        return (
+          <CatalogStep backLabel={t("All providers")} onBack={back}>
+            {isCloudflareEnvironment(kind, definition.type) ? (
+              <CloudflareSetup
+                available={managedCloudflare}
+                external={form}
+                close={() => change(false)}
+              />
+            ) : (
+              form
+            )}
+          </CatalogStep>
+        );
+      }}
     </AddProviderDialog>
   );
 }
@@ -326,19 +349,21 @@ function EditKindProvider({
   const definition = definitions.data?.items.find(
     (item) => item.type === provider.type,
   );
+  const readOnly =
+    !can("write") || !!(query.data?.value ?? provider).managed_deployment;
   return (
     <EditProviderDialog
       modalProps={state.modalProps}
       open={state.open}
       name={query.data?.value.name ?? provider.name}
       id={provider.id}
-      readOnly={!can("write")}
+      readOnly={readOnly}
       type={provider.type}
       definition={definition?.display_name}
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
-      {query.data && !can("write") ? (
+      {query.data && readOnly ? (
         <ProviderReadOnly
           enabled={query.data.value.enabled}
           credentials={

@@ -466,9 +466,21 @@ class DockerProvisioning(Section):
     pull_policy: Literal["never", "if_missing"] = "if_missing"
 
 
+class CloudflareProvisioning(Section):
+    enabled: bool = False
+    wrangler: Path = Path("/usr/local/bin/wrangler")
+    regctl: Path = Path("/usr/local/bin/regctl")
+    # A source-matched official Linux/amd64 slim manifest, not a mutable tag/index.
+    image: str = Field(
+        default="ghcr.io/converge-ai-labs/a13n-sandbox@sha256:8a114d8a5651c507580634b76dcd005908457558c0eded13e74da28afcbdae5c",
+        pattern=r"^ghcr\.io/converge-ai-labs/a13n-sandbox@sha256:[0-9a-f]{64}$",
+    )
+
+
 class Provisioning(Section):
     local: LocalProvisioning = Field(default_factory=LocalProvisioning)
     docker: DockerProvisioning = Field(default_factory=DockerProvisioning)
+    cloudflare: CloudflareProvisioning = Field(default_factory=CloudflareProvisioning)
 
 
 class DefaultGuides(Section):

@@ -915,6 +915,75 @@ export interface paths {
     patch: operations["change_client_environment_status"];
     trace?: never;
   };
+  "/api/v1/cloudflare-deployments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Cloudflare Deployments */
+    get: operations["list_cloudflare_deployments"];
+    put?: never;
+    /** Create Cloudflare Deployment */
+    post: operations["create_cloudflare_deployment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/cloudflare-deployments/{deployment_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Cloudflare Deployment */
+    get: operations["get_cloudflare_deployment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/cloudflare-deployments/{deployment_id}/retire": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retire Cloudflare Deployment */
+    post: operations["retire_cloudflare_deployment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/cloudflare-deployments/{deployment_id}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Cloudflare Deployment */
+    post: operations["retry_cloudflare_deployment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connections": {
     parameters: {
       query?: never;
@@ -7763,6 +7832,68 @@ export interface components {
       /** Reason */
       reason?: string | null;
     };
+    /** Deployment */
+    Deployment: {
+      /** Account Id */
+      account_id: string;
+      /** Cleanup */
+      cleanup: {
+        [key: string]: "removed" | "pending" | "not_created";
+      };
+      /** Endpoint */
+      endpoint: string | null;
+      /** Error */
+      error: string | null;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /**
+       * Operation
+       * @enum {string}
+       */
+      operation: "deploy" | "retire";
+      /** Provider Id */
+      provider_id: string | null;
+      /** Source Image */
+      source_image: string;
+      /** Stage */
+      stage: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        "deploying" | "ready" | "retiring" | "needs_attention" | "retired";
+      /** Version */
+      version: number;
+      /** Worker Name */
+      worker_name: string;
+    };
+    /** DeploymentCreate */
+    DeploymentCreate: {
+      /** Account Id */
+      account_id: string;
+      /**
+       * Api Token
+       * Format: password
+       */
+      api_token: string;
+      /** Name */
+      name: string;
+      /**
+       * Request Id
+       * Format: uuid
+       */
+      request_id: string;
+    };
+    /** DeploymentList */
+    DeploymentList: {
+      /** Available */
+      available: boolean;
+      /** Items */
+      items: components["schemas"]["Deployment"][];
+    };
     /** DeploymentPreset */
     DeploymentPreset: {
       config: components["schemas"]["Configuration"];
@@ -7772,6 +7903,11 @@ export interface components {
       name: string;
       /** Revision */
       revision: string;
+    };
+    /** DeploymentRetry */
+    DeploymentRetry: {
+      /** Api Token */
+      api_token?: string | null;
     };
     Description: string;
     /** Device */
@@ -12008,6 +12144,11 @@ export interface components {
       header_names: string[];
       /** Id */
       id: string;
+      /**
+       * Managed Deployment
+       * @default false
+       */
+      managed_deployment?: boolean;
       /** Name */
       name: string;
       /** Organization Id */
@@ -17261,6 +17402,149 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ClientEnvironment"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_cloudflare_deployments: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeploymentList"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_cloudflare_deployment: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeploymentCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Deployment"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_cloudflare_deployment: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Deployment"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  retire_cloudflare_deployment: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Deployment"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  retry_cloudflare_deployment: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        deployment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeploymentRetry"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Deployment"];
         };
       };
       400: components["responses"]["Error"];
