@@ -48,8 +48,12 @@ export function WorkInspector({
   onUseGoal,
   status,
   connectionStatus,
+  composerModes,
+  className,
   showDetails = true,
 }: {
+  composerModes?: ReactNode;
+  className?: string;
   showDetails?: boolean;
   status?: ReactNode;
   connectionStatus?: ReactNode;
@@ -90,7 +94,10 @@ export function WorkInspector({
   const tabs = ["tasks", "notes"] as const;
   const key = tab && tab !== "goal" ? tab : "tasks";
   return (
-    <div className={styles.strip} aria-label={t("Work inspection")}>
+    <div
+      className={className ? `${styles.strip} ${className}` : styles.strip}
+      aria-label={t("Work inspection")}
+    >
       {showDetails && goal && (
         <div className={styles.summary}>
           <GoalStatus
@@ -112,7 +119,11 @@ export function WorkInspector({
           if (!open) setTab((current) => (current === "goal" ? current : null));
         }}
       >
-        <div className={styles.shortcuts}>
+        <div
+          className={styles.shortcuts}
+          data-debug={debug.enabled || undefined}
+        >
+          {composerModes}
           {showDetails &&
             !hasActivityCard &&
             tabs.map((item) => {

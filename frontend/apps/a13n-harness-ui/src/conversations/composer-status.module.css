@@ -10,6 +10,10 @@
   font-size: calc(var(--a13n-text-body) * 12 / 14);
   font-variant-numeric: tabular-nums;
 }
+.metrics[data-debug] {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .metric {
   display: inline-flex;
   align-items: center;

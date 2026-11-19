@@ -1371,6 +1371,11 @@ it.each([
               activity={{ state: "inactive" }}
               canRun
               coordinator={{ active: false, available: true }}
+              renderHeader={(modes) => (
+                <div role="group" aria-label="Composer status">
+                  {modes}
+                </div>
+              )}
               profile={{ display_name: "Test", color: "#000000" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1381,6 +1386,12 @@ it.each([
     );
     fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
     fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
+    const header = screen.getByRole("group", { name: "Composer status" });
+    expect(
+      header.contains(
+        screen.getByRole("button", { name: "Turn off agent coordination" }),
+      ),
+    ).toBe(true);
     expect(calls).toEqual([]);
     expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1429,7 +1440,7 @@ it.each([
       expect(
         screen.queryByRole("switch", { name: "Coordinate agents" }),
       ).toBeNull();
-      expect(screen.getByText("Coordinator")).toBeTruthy();
+      expect(header.contains(screen.getByText("Coordinator"))).toBe(true);
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");
         rejectSubmission = false;
