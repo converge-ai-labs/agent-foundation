@@ -350,6 +350,12 @@
   max-width: 100%;
   vertical-align: middle;
 }
+.modelSummary > .speedIndicator {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-inline: 0;
+}
 .modelSummary small {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -52,10 +52,12 @@ export function ComposerSettings({
   children,
   className,
   label,
+  triggerDescription,
 }: {
   children: ReactNode;
   className?: string;
   label?: ReactNode;
+  triggerDescription?: string;
 }) {
   const { t } = useTranslation();
   const titles: Record<Page, string> = {
@@ -100,7 +102,8 @@ export function ComposerSettings({
   );
   const triggerProps = {
     "aria-label": navigationLabel,
-    title: rootTitle,
+    "aria-description": triggerDescription,
+    title: triggerDescription ?? rootTitle,
     // Do not bring the mobile keyboard back when the panel closes.
     onClick: () => {
       if (document.activeElement instanceof HTMLElement)
