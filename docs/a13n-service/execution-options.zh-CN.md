@@ -5,6 +5,26 @@ description: 导入历史、传递业务上下文，配置工具交接与执行�
 
 应用需要导入历史、传递业务上下文或控制工具交接与执行引导时，查阅本页。先完成[应用集成](connect-application.md)，保留已接受的策略，重试前检查不确定的工具结果。
 
+## 选择 Run 的完成方式
+
+如果心跳检查只需在有事项可报告时回复，可在 Run 请求中加入：
+
+```json
+{
+  "options": {
+    "overrides": {
+      "output_spec": {
+        "alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "builtin.finish_silently"}]
+      }
+    }
+  }
+}
+```
+
+这只替换当前 Run 的输出约定。如果模型选择 `finish_silently`，Run 会成功结束，返回 `output: null`，但不会发送最终聊天回复。解释 `null` 前先检查 `status`：等待中或失败的 Run 不算静默成功。请在输入或指令中告诉模型何时使用该工具。
+
+如果最终值由应用提供，可添加一个 `client_tool` 选项，指定 `name`、可选的 `description` 和用于校验对象参数的 `schema`。当 `pending.calls` 中出现 `terminal: true` 时，调用 `POST /runs/{run}/resume` 提交回执：在 `calls` 中用对应的 `tool_call_id` 作为键，并传入 `"approvals": {}`。`returned` 回执使后继 Run 成功完成，输出回执的 `value`；`failed` 回执则使其失败。两种情况都不会再次请求模型。后续文本应作为单独的消息提交。
+
 ## 导入对话上下文
 
 要继续外部对话，在 `POST /threads` 中将已完成历史放在当前消息旁，并替换 agent 占位符：
