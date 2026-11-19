@@ -259,9 +259,36 @@ function ProviderIcon({
     );
   }
   // Next imports local SVGs as static images; the shared registry also serves Vite.
-  const icon = brands[brand].icon;
+  const { icon, darkIcon, invertInDark } = brands[brand];
   const src = typeof icon === "string" ? icon : (icon as { src: string }).src;
-  return <image href={src} x={x} y={y} width="22" height="22" aria-hidden />;
+  return (
+    <g aria-hidden>
+      <image
+        href={src}
+        x={x}
+        y={y}
+        width="22"
+        height="22"
+        className={
+          darkIcon
+            ? styles.lightIcon
+            : invertInDark
+              ? styles.invertIcon
+              : undefined
+        }
+      />
+      {darkIcon && (
+        <image
+          href={darkIcon}
+          x={x}
+          y={y}
+          width="22"
+          height="22"
+          className={styles.darkIcon}
+        />
+      )}
+    </g>
+  );
 }
 
 function ProviderRegion({
@@ -393,7 +420,7 @@ export function ProviderMap({
               height="12"
               patternUnits="userSpaceOnUse"
             >
-              <circle cx="1" cy="1" r="0.7" fill="#cec9ef" />
+              <circle cx="1" cy="1" r="0.7" fill="var(--dots)" />
             </pattern>
             <radialGradient id="provider-grid-fade">
               <stop stopColor="white" />
@@ -411,7 +438,7 @@ export function ProviderMap({
           </defs>
           <text x="36" y="64" className={styles.headline}>
             {local(locale, "Bring your own stack", "自由选择你的技术栈")}
-            <tspan fill="#5036d3">.</tspan>
+            <tspan fill="var(--signal)">.</tspan>
           </text>
           <text x="36" y="96" className={styles.subtitle}>
             {local(

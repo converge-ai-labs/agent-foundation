@@ -7,11 +7,33 @@
   --frame: #b1b4bd;
   --rule: #d4d6dd;
   --signal: #5036d3;
+  --processor: #5036d3;
+  --dots: #cec9ef;
+  --model-wire: #f45632;
+  --connection-wire: #70629d;
+  --environment-wire: #5f48ec;
+  --web-wire: #008b73;
+  color-scheme: light;
+}
+
+:global(.dark) .overview {
+  --paper: #1c2026;
+  --ink: #f0f2ef;
+  --quiet: #b4bfc4;
+  --frame: #606a73;
+  --rule: #495159;
+  --signal: var(--a13n-signal);
+  --processor: #5338c5;
+  --dots: #4b535d;
+  --model-wire: #ff8667;
+  --connection-wire: #a094c5;
+  --environment-wire: #a08aff;
+  --web-wire: #54cfad;
+  color-scheme: dark;
 }
 
 .scroll {
   overflow-x: auto;
-  color-scheme: light;
   background: var(--paper);
 }
 
@@ -81,8 +103,24 @@
   flex-shrink: 0;
 }
 
+.darkIcon {
+  display: none;
+}
+
+:global(.dark) .lightIcon {
+  display: none;
+}
+
+:global(.dark) .darkIcon {
+  display: inline;
+}
+
+:global(.dark) .invertIcon {
+  filter: invert(1);
+}
+
 .providerLink:focus-visible {
-  background-color: rgb(80 54 211 / 5%);
+  background-color: color-mix(in srgb, var(--signal) 10%, transparent);
   outline-color: var(--signal);
 }
 
@@ -110,7 +148,7 @@
 }
 
 .processor {
-  fill: var(--signal);
+  fill: var(--processor);
 }
 
 .wordmark {
@@ -133,16 +171,16 @@
 }
 
 .models {
-  --wire: #f45632;
+  --wire: var(--model-wire);
 }
 .connections {
-  --wire: #70629d;
+  --wire: var(--connection-wire);
 }
 .environments {
-  --wire: #5f48ec;
+  --wire: var(--environment-wire);
 }
 .web {
-  --wire: #008b73;
+  --wire: var(--web-wire);
 }
 
 .connection {
@@ -186,7 +224,7 @@
 }
 
 .link:focus-visible .hit {
-  fill: rgb(80 54 211 / 5%);
+  fill: color-mix(in srgb, var(--signal) 10%, transparent);
   stroke: var(--signal);
 }
 
