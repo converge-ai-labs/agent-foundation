@@ -57,9 +57,6 @@
   gap: 2px;
 }
 .scopeLabel {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
   margin: 0 8px 6px;
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
@@ -67,11 +64,10 @@
   color: var(--a13n-secondary);
 }
 .scopeName {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  margin-top: 2px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
