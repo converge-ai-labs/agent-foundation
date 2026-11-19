@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ToastProvider } from "a13n-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
@@ -189,6 +190,18 @@ it("loads an enabled module into host providers, scopes requests and separates w
   expect(
     cache.getQueryData(["app", "acme.reports", "org_demo", "ws_two", "report"]),
   ).toEqual({ title: "ws_two" });
+});
+it("lets a contributed page select an option through the Console bridge", async () => {
+  const user = userEvent.setup();
+  mount("/apps/acme.reports/overview");
+
+  const format = await screen.findByRole("combobox", { name: "Report format" });
+  format.focus();
+  await user.keyboard("{ArrowDown}");
+  await screen.findByRole("option", { name: "Compact" });
+  await user.keyboard("{End}{Enter}");
+
+  expect(format.textContent).toBe("Compact");
 });
 it("keeps core navigation usable after an App render failure", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});

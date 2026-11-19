@@ -282,6 +282,8 @@ Follow the example's build and install instructions to package the generated ass
 
 The bridge also exports hooks such as `useAuth`, `useAccess`, `useWorkspace`, `useAppearance`, `useTranslation`, `useMutation`, and `useQueryClient`, plus selected UI components including `Page`, `Empty`, `Loading`, and `ErrorPage`. Console owns the React root and providers.
 
+Import `ChoiceField` for a labeled choice, `SearchPicker` for searchable options, or `SegmentedControl` for an inline mode switch. Compose custom fields with `Field` and its parts, and use `Select` with `SelectTrigger`, `SelectValue`, `SelectPopup`, and `SelectItem` for a custom dropdown. Use `ReadOnlyField` to display a labeled value.
+
 ## Package browser assets
 
 Add a `Frontend` declaration to the definition when the package includes a prebuilt ESM asset tree:

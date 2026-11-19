@@ -2,6 +2,13 @@
 import {
   React,
   Button,
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
   Link,
   useLocation,
   useState,
@@ -11,6 +18,12 @@ import {
   useWorkspace,
   useTranslation,
 } from "../src/app-plugins/bridge";
+
+const reportFormats = [
+  { value: "detailed", label: "Detailed" },
+  { value: "compact", label: "Compact" },
+];
+
 function Overview() {
   const app = useApp();
   const cache = useQueryClient();
@@ -28,6 +41,21 @@ function Overview() {
         {workspace.id} {i18n.resolvedLanguage}
       </p>
       <p>{query.data?.title}</p>
+      <Select items={reportFormats} defaultValue="detailed">
+        <SelectTrigger aria-label="Report format">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectGroup>
+            <SelectGroupLabel>Formats</SelectGroupLabel>
+            {reportFormats.map(({ value, label }) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectPopup>
+      </Select>
       <p>
         {cache.getQueryData(app.queryKey("report")) === query.data
           ? "Host cache"
