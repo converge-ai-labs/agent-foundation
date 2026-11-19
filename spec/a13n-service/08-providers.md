@@ -151,7 +151,7 @@ Environment definitions are reached only through the registry; business packages
 
 ### Cloudflare Containers deployments
 
-Service creates Cloudflare Environment Providers only through automatic deployment. The gateway is internal to the integration. The ordinary Provider API rejects new `cloudflare` Providers and changes to their gateway configuration or credential. Type discovery exposes the Environment recipe rather than connection inputs for `cloudflare`. Only Providers linked to a Service deployment can be used. Saved manual Provider records remain readable; Service never contacts their resources.
+Service uses only Cloudflare Environment Providers linked to an automatic deployment. The gateway is internal to the integration. The ordinary Provider API rejects new `cloudflare` Providers and changes to their gateway configuration or credential. Type discovery exposes the Environment recipe rather than connection inputs for `cloudflare`.
 
 When the operator enables managed Cloudflare provisioning, a workspace administrator can create a deployment with a Cloudflare Account ID, an account-scoped API token, a Provider name, and a client request UUID. The `/api/v1/cloudflare-deployments` collection accepts the request asynchronously. Reusing its UUID and identity fields returns the deployment already accepted in that workspace. The deployment holds the deployment authority and its own gateway token encrypted with distinct locations; the published Provider holds only the gateway credential. These workspace administration operations are outside MCP.
 
