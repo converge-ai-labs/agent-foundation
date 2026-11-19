@@ -280,6 +280,20 @@ The bridge also exports hooks such as `useAuth`, `useAccess`, `useWorkspace`, `u
 
 Import `ChoiceField` for a labeled choice, `SearchPicker` for searchable options, or `SegmentedControl` for an inline mode switch. Compose custom fields with `Field` and its parts, and use `Select` with `SelectTrigger`, `SelectValue`, `SelectPopup`, and `SelectItem` for a custom dropdown. Use `ReadOnlyField` to display a labeled value.
 
+### Type-check a standalone App
+
+Service 0.2.2 and later ship a TypeScript declaration with the Console. The App template's `make setup` installs the pinned Service and exports its declaration for editor completion. Run `make typecheck` to check an App against that Service; `make verify` and the production frontend build run the same check.
+
+For an existing standalone App, run this command in the App's Python environment after installing or upgrading Service:
+
+```bash
+python -m a13n_service.console_sdk frontend/.console-sdk/index.d.ts
+```
+
+Map `@a13n/console` to `./.console-sdk/index.d.ts` in `frontend/tsconfig.json` under `compilerOptions.paths`, keep the generated declaration out of source control, and use the template's frontend dev dependencies to resolve the declaration's referenced types. Keep `@a13n/console` external in the bundler. There is no Console SDK npm package or second React runtime in the App bundle. When using newer bridge exports, pin the Service release you build and test against.
+
+Use `Page`, `Toolbar`, and `ResourceTable` for lists; `DetailPage` and `DetailHeader` for details; and `FormSection`, `FormField`, and `FormActions` for editing. The template shows these patterns together with the host's light and dark themes.
+
 ## Package browser assets
 
 Add a `Frontend` declaration to the definition when the package includes a prebuilt ESM asset tree:
