@@ -142,6 +142,13 @@ class SubagentInfoRequest(BaseModel):
     execution_id: str | None = Field(default=None, min_length=1, max_length=256)
     execution_offset: int = Field(default=0, ge=0)
     execution_limit: int = Field(default=20, ge=1, le=_MAX_EXECUTION_PAGE)
+    include_text: bool = False
+
+    @model_validator(mode="after")
+    def _validate_text_target(self) -> SubagentInfoRequest:
+        if self.include_text and self.execution_id is None:
+            raise ValueError("include_text requires an execution_id")
+        return self
 
 
 class SubagentWaitRequest(BaseModel):

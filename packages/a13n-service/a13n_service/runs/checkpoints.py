@@ -20,7 +20,7 @@ import asyncio
 from collections.abc import Awaitable, Sequence
 from datetime import datetime
 from time import monotonic
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import anyio
 import zstandard
@@ -163,10 +163,25 @@ def _publish(runtime: Runtime, lease: Lease, kind: ObjectKind, data: bytes) -> A
     return publish(runtime.objects, lease, kind, data, level=runtime.settings.worker.compression_level)
 
 
-async def load(objects: ObjectStore, pointer: Pointer | PageRef | StoredRef) -> bytes:
+@overload
+async def load(objects: ObjectStore, pointer: Pointer | PageRef | StoredRef) -> bytes: ...
+
+
+@overload
+async def load(
+    objects: ObjectStore, pointer: Pointer | PageRef | StoredRef, *, max_decoded_bytes: int
+) -> bytes | None: ...
+
+
+async def load(
+    objects: ObjectStore, pointer: Pointer | PageRef | StoredRef, *, max_decoded_bytes: int | None = None
+) -> bytes | None:
     """The bytes a committed reference names, verified and decompressed."""
     ref = ObjectRef(key=pointer.key, digest=pointer.digest, size=pointer.size, content_type="application/zstd")
-    return zstandard.ZstdDecompressor().decompress(await read(objects, ref))
+    data = await read(objects, ref)
+    if max_decoded_bytes is not None and not 0 <= zstandard.frame_content_size(data) <= max_decoded_bytes:
+        return None
+    return zstandard.ZstdDecompressor().decompress(data)
 
 
 def claimable() -> ColumnElement[bool]:

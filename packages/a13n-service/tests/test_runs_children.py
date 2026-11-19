@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_service.infra import outbox
 from a13n_service.infra.db import transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import accept as accept_module
 from a13n_service.runs import subagents as subagents_module
@@ -252,6 +253,10 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
 
     # The parent's next run reads the first page, then waits on the second one's still running child.
     scripted_model.call("subagent_info", {"execution_limit": 1}, call_id="call_info", to="Role: coordinator")
+    for call_id in ("call_text", "call_text_unavailable"):
+        scripted_model.call(
+            "subagent_info", {"execution_id": first, "include_text": True}, call_id=call_id, to="Role: coordinator"
+        )
     wait = {"execution_offset": 1, "execution_limit": 1, "timeout_seconds": 0.5}
     scripted_model.call("wait_subagent", wait, call_id="call_wait", to="Role: coordinator")
     scripted_model.say("Checked", to="Role: coordinator")
@@ -267,7 +272,11 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
         elapsed += seconds
         await asyncio.sleep(0)
 
-    monkeypatch.setattr(subagents_module, "asyncio", SimpleNamespace(get_running_loop=lambda: clock, sleep=poll_sleep))
+    monkeypatch.setattr(
+        subagents_module,
+        "asyncio",
+        SimpleNamespace(get_running_loop=lambda: clock, sleep=poll_sleep, timeout=asyncio.timeout),
+    )
 
     async def paged(operator: ChildRuns, execution_id: str | None, offset: int, limit: int) -> tuple[list, int]:
         reads.append("page")
@@ -278,6 +287,16 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
         assert tuple(run_ids) == (second,)
         return await statuses(operator, run_ids)
 
+    recent_items = subagents_module.runs.recent_items
+    observed: list[str] = []
+
+    async def read_text(runtime, actor, workspace_id: str, run_id: str):
+        observed.append(run_id)
+        if len(observed) > 1:
+            raise ServiceError("unavailable", "Display unavailable")
+        return await recent_items(runtime, actor, workspace_id, run_id)
+
+    monkeypatch.setattr(subagents_module.runs, "recent_items", read_text)
     monkeypatch.setattr(ChildRuns, "_page", paged)
     monkeypatch.setattr(ChildRuns, "_statuses", polled)
     assert (await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, "check"))).status_code == 201
@@ -291,8 +310,15 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     ]
     assert (waited["total"], waited["next_offset"]) == (2, None)
     assert [(item["execution_id"], item["status"]) for item in waited["executions"]] == [(second, "running")]
-    # The info call and the wait each read their page once; the wait then polls only its runs' statuses.
-    assert reads == ["page", "page", "statuses", "statuses"], reads
+    assert info["executions"][0].get("activity") is None
+    assert waited["executions"][0].get("activity") is None
+    text = json.loads(results["call_text"])["executions"][0]
+    assert text["activity"]["output_preview"] == "one"
+    assert not text["activity"]["recent_tool_calls"]
+    unavailable = json.loads(results["call_text_unavailable"])["executions"][0]
+    assert unavailable["status"] == "succeeded" and unavailable.get("activity") is None
+    assert observed == [first, first]
+    assert reads == ["page", "page", "page", "page", "statuses", "statuses"], reads
 
 
 async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]

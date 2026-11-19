@@ -130,12 +130,21 @@ class AsyncSubagentToolset:
         execution_id: Annotated[str | None, Field(min_length=1, max_length=256)] = None,
         execution_offset: Annotated[int, Field(ge=0)] = 0,
         execution_limit: Annotated[int, Field(ge=1, le=100)] = 20,
+        include_text: Annotated[
+            bool,
+            Field(
+                description="Request recent committed assistant text for one execution ID when supported by the host."
+            ),
+        ] = False,
     ) -> JsonValue:
         self._require_context(ctx)
+        if include_text and execution_id is None:
+            raise ToolFailed("include_text requires an execution_id")
         request = SubagentInfoRequest(
             execution_id=execution_id,
             execution_offset=execution_offset,
             execution_limit=execution_limit,
+            include_text=include_text,
         )
         result = _validate_model(
             SubagentInfoResult,

@@ -78,7 +78,7 @@ Async mode exposes exactly six standard tools:
 
 ```python
 delegate(subagent_name: str, prompt: str)
-subagent_info(execution_id: str | None = None, execution_offset: int = 0, execution_limit: int = 20)
+subagent_info(execution_id: str | None = None, execution_offset: int = 0, execution_limit: int = 20, include_text: bool = False)
 wait_subagent(
     execution_id: str | None = None,
     timeout_seconds: float | None = None,
@@ -91,7 +91,7 @@ resume_subagent(execution_id: str, prompt: str)
 ```
 
 - async `delegate` returns after Host admission rather than child completion;
-- `subagent_info` queries one execution or one bounded Host page;
+- `subagent_info` queries one execution or one bounded Host page; `include_text` requests recent committed assistant text on Hosts that support the option and requires an `execution_id`. Hosts retain their existing default activity projections;
 - `wait_subagent` performs one bounded wait for one execution or one bounded Host fan-in query;
 - `steer_subagent` and `cancel_subagent` return Host acknowledgements without inventing completion;
 - async `resume_subagent` first resolves the retained execution through the operator, requires resumability and the same stable child roster name in the current collection, then asks the Host to create a linked continuation under the current resolved plan.

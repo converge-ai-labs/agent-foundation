@@ -36,7 +36,11 @@ from a13n_harness.capabilities import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
-from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.capabilities.subagents import (
+    MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
+    SubagentActivitySnapshot,
+    SubagentStatus,
+)
 from a13n_harness.tool_execution import current_execution
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +49,7 @@ from sqlalchemy.orm import aliased
 from a13n_service.infra.db import lock, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.resources.agents import stored
-from a13n_service.runs import definitions, inbox
+from a13n_service.runs import definitions, inbox, runs
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, authorize_execution
@@ -68,7 +72,7 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRo
 from a13n_service.runs.threads import lock_thread, new_thread
 from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
-from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope
+from a13n_service.tenancy.authorize import ExecutionAuthority, WorkspaceScope, authorize
 
 _STATUS: dict[str, SubagentStatus] = {
     "accepted": "running",
@@ -245,11 +249,58 @@ class ChildRuns(SubagentOperator):
             executions, total = await self._page(
                 request.execution_id, request.execution_offset, request.execution_limit
             )
+        activity = await self._text_activity(executions[0].run.id) if request.include_text and executions else None
         return SubagentInfoResult(
-            executions=tuple(_full(item) for item in executions),
+            executions=tuple(_full(item, activity=activity) for item in executions),
             execution_offset=request.execution_offset,
             total=total,
             next_offset=_next(request.execution_offset, len(executions), total),
+        )
+
+    async def _text_activity(self, run_id: str) -> SubagentActivitySnapshot | None:
+        try:
+            async with asyncio.timeout(1):
+                async with short_session(self.runtime.storage) as session:
+                    parent = await session.get_one(RunRow, self.lease.run_id)
+                    actor = await authorize_execution(session, self.runtime.access, parent)
+                    scope = WorkspaceScope(parent.organization_id, parent.workspace_id)
+                    authorize(actor, scope, "read", authority=ExecutionAuthority.model_validate(parent.authority))
+                page = await runs.recent_items(self.runtime, actor, scope.workspace_id, run_id)
+        except TimeoutError:
+            return None
+        except ServiceError as error:
+            if error.code in {"forbidden", "not_found", "unavailable"}:
+                return None
+            raise
+        if not page:
+            return None
+        parts: list[str] = []
+        truncated = page[0].ordinal > 1
+        for item in page:
+            if (
+                item.kind != "text_message"
+                or item.state != "completed"
+                or item.content.get("role") != "assistant"
+                or item.content.get("subagentRunId")
+            ):
+                continue
+            if (ref := item.content_refs.get("text")) is not None:
+                truncated = True
+                value = ref.preview
+            else:
+                value = item.content.get("text")
+            if isinstance(value, str) and value:
+                parts.append(value[-MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS:])
+                truncated |= len(value) > MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS
+        text = "\n\n".join(parts)
+        return (
+            SubagentActivitySnapshot(
+                sequence=page[-1].ordinal,
+                output_preview=text[-MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS:],
+                output_truncated=truncated or len(text) > MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS,
+            )
+            if text
+            else None
         )
 
     async def wait(
@@ -468,8 +519,8 @@ def _view(execution: _Execution) -> AsyncExecutionView:
     )
 
 
-def _full(execution: _Execution) -> SubagentExecutionView:
-    return SubagentExecutionView(**_view(execution).model_dump(), input=execution.input)
+def _full(execution: _Execution, *, activity: SubagentActivitySnapshot | None = None) -> SubagentExecutionView:
+    return SubagentExecutionView(**_view(execution).model_dump(), input=execution.input, activity=activity)
 
 
 def _payload(value: RunInputValue, fallback: str) -> MessagePayload:

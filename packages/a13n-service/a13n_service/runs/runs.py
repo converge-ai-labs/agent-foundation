@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_stream_protocol.display import Item
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -204,6 +205,55 @@ async def items(
     )
 
 
+async def recent_items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str) -> list[Item]:
+    """A bounded display suffix for optional observation, without hydrating content or fanning out reads."""
+
+    async def read_window() -> _Window:
+        return await _read(
+            runtime.storage, actor, workspace_id, run_id, before=None, after=None, limit=64, whole_tail=False
+        )
+
+    compressed_budget, decoded_budget = 1024 * 1024, 2 * 1024 * 1024
+
+    async def load(ptr: PageRef | TailPointer) -> bytes | None:
+        nonlocal compressed_budget, decoded_budget
+        if ptr.size > compressed_budget or decoded_budget <= 0:
+            return None
+        compressed_budget -= ptr.size
+        data = await checkpoints.load(runtime.objects, ptr, max_decoded_bytes=decoded_budget)
+        if data is not None:
+            decoded_budget -= len(data)
+        return data
+
+    async def tail_items(window: _Window) -> list[Item] | None:
+        if window.tail is None or window.last < window.tail.first or window.first > window.last:
+            return []
+        data = await load(window.tail)
+        return None if data is None else Tail.model_validate_json(data).items
+
+    window = await read_window()
+    try:
+        tail = await tail_items(window)
+    except ServiceError as error:
+        if error.code != "unavailable":
+            raise
+        # A newer checkpoint can delete the tail after its pointer was read.
+        refreshed = await read_window()
+        if refreshed.tail == window.tail:
+            raise
+        window = refreshed
+        tail = await tail_items(window)
+    if tail is None:
+        return []
+    groups = [tail]
+    for page in reversed(window.pages):
+        data = await load(page)
+        if data is None:
+            break
+        groups.append(Page.model_validate_json(data).items)
+    return [item for group in reversed(groups) for item in group if window.first <= item.ordinal <= window.last]
+
+
 @dataclass(frozen=True, slots=True)
 class _Window:
     """What one items read returns as its short session found it: the run, its tail pointer, the first and last
@@ -225,6 +275,7 @@ async def _read(
     before: int | None,
     after: int | None,
     limit: int,
+    whole_tail: bool = True,
 ) -> _Window:
     """Read the window in one short session. Pages committed after the pointer start at or after its tail, so none
     is selected."""
@@ -239,7 +290,7 @@ async def _read(
         elif after is not None:
             first, last = after + 1, min(count, after + limit)
         else:
-            first, last = newest(pointer, limit), count
+            first, last = (newest(pointer, limit) if whole_tail else max(1, count + 1 - limit)), count
         rows = await session.scalars(
             select(RunItemPageRow)
             .where(
