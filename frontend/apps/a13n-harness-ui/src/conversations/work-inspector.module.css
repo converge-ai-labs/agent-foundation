@@ -340,9 +340,20 @@
   flex: 1;
   min-width: 32px;
 }
+.connection:empty {
+  display: none;
+}
 .status {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex-shrink: 0;
+}
+.shortcuts[data-debug] {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.shortcuts[data-debug] .status {
+  flex: 0 0 100%;
+  min-width: 0;
 }
 @media (pointer: coarse) {
   .connection {

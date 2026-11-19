@@ -379,6 +379,7 @@ export function Composer({
   onReviewOutcome,
   controls,
   leadingControls,
+  renderHeader,
   threadId,
   activity,
   canRun,
@@ -419,6 +420,7 @@ export function Composer({
   onReviewOutcome?: () => void;
   controls?: () => ReactNode;
   leadingControls?: ReactNode;
+  renderHeader?: (modes: ReactNode) => ReactNode;
 }) {
   const { t } = useTranslation();
   const draft = useDraft(threadId);
@@ -1045,7 +1047,7 @@ export function Composer({
         className={styles.coordinatorIdentity}
         title={t("This chat is a coordinator. This can't be undone.")}
       >
-        <CoordinatorIcon size={16} /> {t("Coordinator")}
+        <CoordinatorIcon size={16} /> <span>{t("Coordinator")}</span>
       </span>
     ) : (
       <Button
@@ -1068,6 +1070,26 @@ export function Composer({
         <CoordinatorIcon size={16} /> {t("Coordinate agents")}
       </Button>
     ));
+  const modes = (draft.mode === "goal" ||
+    ownerControl ||
+    coordinatorActive ||
+    draft.coordinator) && (
+    <div className={styles.composerModes}>
+      {!transport.shareId &&
+        draft.mode === "goal" &&
+        cloneElement(goalToggle, {
+          "aria-label": t("Turn off keep working"),
+        })}
+      {ownerControl ||
+        (coordinatorActive
+          ? coordinatorControl
+          : draft.coordinator && coordinatorControl
+            ? cloneElement(coordinatorControl, {
+                "aria-label": t("Turn off agent coordination"),
+              })
+            : null)}
+    </div>
+  );
   return (
     <section
       className={styles.composer}
@@ -1229,26 +1251,9 @@ export function Composer({
         )}
       </div>
       <div className={styles.composerBody}>
-        {(draft.mode === "goal" ||
-          ownerControl ||
-          coordinatorActive ||
-          draft.coordinator) && (
-          <div className={styles.composerHeader}>
-            {!transport.shareId &&
-              draft.mode === "goal" &&
-              cloneElement(goalToggle, {
-                "aria-label": t("Turn off keep working"),
-              })}
-            {ownerControl ||
-              (coordinatorActive
-                ? coordinatorControl
-                : draft.coordinator && coordinatorControl
-                  ? cloneElement(coordinatorControl, {
-                      "aria-label": t("Turn off agent coordination"),
-                    })
-                  : null)}
-          </div>
-        )}
+        {renderHeader
+          ? renderHeader(modes)
+          : modes && <div className={styles.composerHeader}>{modes}</div>}
         <div
           className={styles.composerInput}
           data-dictating={dictating || undefined}

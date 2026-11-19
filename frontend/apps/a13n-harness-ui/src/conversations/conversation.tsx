@@ -846,6 +846,54 @@ function ConversationContent({
           threadId,
         }
       : undefined;
+  const showComposer = canCompose && !thread?.archived;
+  const renderWorkInspector =
+    !readOnly && detail.data
+      ? (modes?: ReactNode) => (
+          <WorkInspector
+            composerModes={modes}
+            className={showComposer ? styles.composerWorkInspector : undefined}
+            showDetails={!isBot || debug.enabled}
+            threadId={threadId}
+            connectionStatus={publication?.status ?? connectionStatus}
+            status={
+              !guest && thread && !thread.archived ? (
+                <ComposerStatus
+                  threadId={threadId}
+                  receipt={receipt}
+                  busy={thread.root_activity.state !== "inactive"}
+                  liveRecordId={
+                    showLive ? display.contextUsage?.recordId : undefined
+                  }
+                  liveTokens={
+                    showLive ? display.contextUsage?.tokens : undefined
+                  }
+                />
+              ) : undefined
+            }
+            connected={connection === "Live"}
+            goal={showGoal ? goal : null}
+            activity={thread?.root_activity}
+            onUseGoal={
+              goal &&
+              thread?.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? () => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${goal.objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
+          />
+        )
+      : undefined;
   const content = (
     <>
       <div className={styles.page}>
@@ -1099,48 +1147,7 @@ function ConversationContent({
               : t("New output")}
           </Button>
         )}
-        {!readOnly && detail.data && (
-          <WorkInspector
-            showDetails={!isBot || debug.enabled}
-            threadId={threadId}
-            connectionStatus={publication?.status ?? connectionStatus}
-            status={
-              !guest && thread && !thread.archived ? (
-                <ComposerStatus
-                  threadId={threadId}
-                  receipt={receipt}
-                  busy={thread.root_activity.state !== "inactive"}
-                  liveRecordId={
-                    showLive ? display.contextUsage?.recordId : undefined
-                  }
-                  liveTokens={
-                    showLive ? display.contextUsage?.tokens : undefined
-                  }
-                />
-              ) : undefined
-            }
-            connected={connection === "Live"}
-            goal={showGoal ? goal : null}
-            activity={thread?.root_activity}
-            onUseGoal={
-              goal &&
-              thread?.root_activity.state === "inactive" &&
-              detail.data?.available_actions?.includes("run") &&
-              draft.submission.kind !== "pending" &&
-              draft.submission.kind !== "unknown"
-                ? () => {
-                    const text = draft.doc.getText("text");
-                    text.insert(
-                      text.length,
-                      `${text.length ? "\n\n" : ""}${goal.objective}`,
-                    );
-                    draft.mode = "goal";
-                    draft.notify();
-                  }
-                : undefined
-            }
-          />
-        )}
+        {!showComposer && renderWorkInspector?.()}
         {readOnly && connectionStatus && (
           <div className={styles.conversationFeedback}>{connectionStatus}</div>
         )}
@@ -1155,8 +1162,9 @@ function ConversationContent({
         {typeof publication?.composer === "function"
           ? publication.composer(dictation)
           : publication?.composer}
-        {canCompose && !thread?.archived && (
+        {showComposer && (
           <Composer
+            renderHeader={renderWorkInspector}
             dictation={dictation}
             feedback={feedback}
             feedbackError={pageError}

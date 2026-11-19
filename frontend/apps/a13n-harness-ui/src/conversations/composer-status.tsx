@@ -111,7 +111,7 @@ export function ComposerStatus({
   );
   return (
     <div className={styles.bar}>
-      <div className={styles.metrics}>
+      <div className={styles.metrics} data-debug={debug || undefined}>
         {debug && mainAccount && (
           <span
             className={styles.metric}
