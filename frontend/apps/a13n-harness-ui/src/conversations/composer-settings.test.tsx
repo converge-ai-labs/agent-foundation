@@ -445,10 +445,15 @@ it.each([
       label === "Standard" ? null : label,
     );
     await user.click(trigger);
-    expect(screen.getByRole("button", { name: "Speed" }).textContent).toBe(
-      `Speed${label}`,
+    const speedRow = screen.getByRole("button", { name: "Speed" });
+    expect(speedRow.textContent).toBe(`Speed${label}`);
+    const indicator = screen.getByText(label, {
+      exact: true,
+    }).nextElementSibling;
+    expect(indicator?.tagName ?? null).toBe(
+      label === "Standard" ? null : "svg",
     );
-    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(speedRow);
     expect(
       screen.getByRole("button", { name: "Use model speed" }).textContent,
     ).toBe(`Model setting - ${label}`);

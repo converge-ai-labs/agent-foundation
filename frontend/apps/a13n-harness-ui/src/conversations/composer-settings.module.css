@@ -350,7 +350,19 @@
   max-width: 100%;
   vertical-align: middle;
 }
-.modelSummary > .speedIndicator {
+.speedValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.speedValue > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modelSummary > .speedIndicator,
+.speedValue > .speedIndicator {
   width: 14px;
   height: 14px;
   flex-shrink: 0;

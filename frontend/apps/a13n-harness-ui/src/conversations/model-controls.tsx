@@ -8,6 +8,7 @@ import {
   reasoningModeLabel,
 } from "./reasoning-mode-picker";
 import { FastPicker } from "./fast-picker";
+import { SpeedIndicator } from "./speed-indicator";
 import { selectedSpeedState, speedLabel } from "./speed-label";
 import styles from "./composer-settings.module.css";
 
@@ -79,6 +80,7 @@ export function ModelControlPanel({
       />
     );
   if (settings.page !== "root") return null;
+  const speed = selectedSpeedState(model?.fast?.state, controls.fast);
   return (
     <div className={styles.modelControls}>
       <SettingsRow
@@ -122,10 +124,12 @@ export function ModelControlPanel({
       )}
       <SettingsRow
         label={t("Speed")}
-        value={modelControlMessage(
-          speedLabel(selectedSpeedState(model?.fast?.state, controls.fast)),
-          t,
-        )}
+        value={
+          <span className={styles.speedValue}>
+            <span>{modelControlMessage(speedLabel(speed), t)}</span>
+            <SpeedIndicator speed={speed} />
+          </span>
+        }
         disabled={disabled}
         onClick={() => settings.navigate("speed")}
       />

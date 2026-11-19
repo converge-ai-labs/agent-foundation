@@ -73,7 +73,7 @@ Input, output, commands, changes and errors remain inspectable in ordinary mode;
 
 Keep the editor above a single row of attachment, options, Model and Send controls. Reserve one line for input even when the draft is empty. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
 
-The collapsed Agent & Model button follows the Thinking label with a lightning icon for Fast or a rocket icon for Ultrafast. It identifies the speed in its accessible description. Standard speed has no icon.
+Fast uses a lightning icon and Ultrafast uses a rocket icon. The collapsed Agent & Model button places it after the Thinking label and identifies the speed in its accessible description. The expanded panel's Speed row places the same icon after the speed value. Standard speed has no icon.
 
 The Thinking picker uses the current level as its visible heading. A stepped slider runs from a light tint of the a13n mark to its shadow color. The heading previews the level during dragging, and a reset action restores Default.
 

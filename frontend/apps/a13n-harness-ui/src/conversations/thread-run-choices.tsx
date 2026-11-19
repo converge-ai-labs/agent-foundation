@@ -1,12 +1,7 @@
 import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
-import {
-  CaretRight,
-  Desktop,
-  Lightning,
-  RocketLaunch,
-} from "@phosphor-icons/react";
+import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { Schema } from "../transport/client";
 import { thinkingLabel } from "./thinking-picker";
@@ -26,6 +21,7 @@ import {
 } from "./composer-settings";
 import { ModelControlPanel, type ModelControlProps } from "./model-controls";
 import { modelControlMessage } from "./model-control-messages";
+import { SpeedIndicator } from "./speed-indicator";
 import { selectedSpeedState, speedLabel } from "./speed-label";
 import { useTaskOptionsDialog } from "./task-options";
 
@@ -175,11 +171,10 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     (item) => item.model_id === selectedModelId,
   );
   const speed = selectedSpeedState(model?.fast?.state, props.controls.fast);
-  const SpeedIcon =
-    speed === "ultrafast" ? RocketLaunch : speed === "on" ? Lightning : null;
-  const speedDescription = SpeedIcon
-    ? modelControlMessage(speedLabel(speed), t)
-    : undefined;
+  const speedDescription =
+    speed === "on" || speed === "ultrafast"
+      ? modelControlMessage(speedLabel(speed), t)
+      : undefined;
   const modelName =
     model?.name ??
     (selectedModelId
@@ -203,13 +198,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
               props.controls.thinking != null) && (
               <small>{thinkingLabel(model, props.controls.thinking, t)}</small>
             )}
-            {SpeedIcon && (
-              <SpeedIcon
-                aria-hidden
-                className={panelStyles.speedIndicator}
-                weight="fill"
-              />
-            )}
+            <SpeedIndicator speed={speed} />
           </span>
         }
       >
