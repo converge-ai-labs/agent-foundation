@@ -264,3 +264,33 @@ jobs:
         run: >-
           python3 scripts/create-github-release.py a13n-service "$VERSION"
           "a13n Service $VERSION" dist/*
+
+  update-app-template:
+    name: Update the App template's stable Service default
+    needs: [build-python, create-release]
+    if: ${{ !contains(needs.build-python.outputs.version, '-rc.') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release automation
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Checkout the App template
+        uses: actions/checkout@v6
+        with:
+          ref: template/app-plugin
+          path: app-template
+      - name: Commit the new default
+        working-directory: app-template
+        env:
+          VERSION: ${{ needs.build-python.outputs.version }}
+        run: |
+          python3 ../scripts/update-app-template-version.py cookiecutter.json "$VERSION"
+          if git diff --quiet -- cookiecutter.json; then exit 0; fi
+          git add cookiecutter.json
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "chore(template): default to Service $VERSION"
+          git push origin HEAD:refs/heads/template/app-plugin
