@@ -373,9 +373,10 @@ it.each([false, true])(
     mobile = onMobile;
     const user = userEvent.setup();
     mount();
-    await user.click(
-      screen.getByRole("button", { name: "Agent & Model settings" }),
-    );
+    const trigger = screen.getByRole("button", {
+      name: "Agent & Model settings",
+    });
+    await user.click(trigger);
     await user.click(screen.getByRole("button", { name: "Thinking" }));
     await user.click(screen.getByRole("button", { name: "Low" }));
     expect(draft.controls).toEqual({ thinking: "low" });
@@ -388,9 +389,15 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Speed" }));
     await user.click(screen.getByRole("button", { name: "Fast mode" }));
     expect(draft.controls).toEqual({ thinking: "low", fast: true });
+    expect(trigger.getAttribute("aria-description")).toBe("Fast");
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Ultrafast mode" }));
+    expect(draft.controls.fast).toBe("ultrafast");
+    expect(trigger.getAttribute("aria-description")).toBe("Ultrafast");
     await user.click(screen.getByRole("button", { name: "Speed" }));
     await user.click(screen.getByRole("button", { name: "Standard mode" }));
     expect(draft.controls.fast).toBe(false);
+    expect(trigger.getAttribute("aria-description")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Speed" }));
     await user.click(screen.getByRole("button", { name: "Use model speed" }));
     expect(draft.controls).toEqual({ thinking: "low", fast: null });
@@ -431,13 +438,22 @@ it.each([
         onControlsChange={change}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: "Agent & Model settings" }),
+    const trigger = screen.getByRole("button", {
+      name: "Agent & Model settings",
+    });
+    expect(trigger.getAttribute("aria-description")).toBe(
+      label === "Standard" ? null : label,
     );
-    expect(screen.getByRole("button", { name: "Speed" }).textContent).toBe(
-      `Speed${label}`,
+    await user.click(trigger);
+    const speedRow = screen.getByRole("button", { name: "Speed" });
+    expect(speedRow.textContent).toBe(`Speed${label}`);
+    const indicator = screen.getByText(label, {
+      exact: true,
+    }).nextElementSibling;
+    expect(indicator?.tagName ?? null).toBe(
+      label === "Standard" ? null : "svg",
     );
-    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(speedRow);
     expect(
       screen.getByRole("button", { name: "Use model speed" }).textContent,
     ).toBe(`Model setting - ${label}`);
