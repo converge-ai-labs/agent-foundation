@@ -254,7 +254,7 @@ export function FindingDetail() {
       {composer.setup}
       <ErrorNotice error={update.error ?? composer.error ?? revision.error} />
       <Section title={t("What happened")}>
-        <MarkdownContent text={finding.explanation} />
+        <MarkdownContent compactLinks text={finding.explanation} />
       </Section>
       <Section
         title={t("Evidence")}
@@ -269,11 +269,11 @@ export function FindingDetail() {
         </div>
       </Section>
       <Section title={t("Suggested improvement")}>
-        <MarkdownContent text={finding.suggestion} />
+        <MarkdownContent compactLinks text={finding.suggestion} />
       </Section>
       {finding.limitations && (
         <Section title={t("Evidence limitations")}>
-          <MarkdownContent text={finding.limitations} />
+          <MarkdownContent compactLinks text={finding.limitations} />
         </Section>
       )}
       {(finding.assessment !== "unreviewed" || finding.assessment_note) && (
@@ -281,7 +281,7 @@ export function FindingDetail() {
           <div className={styles.reviewSummary}>
             <strong>{t(assessmentLabels[finding.assessment])}</strong>
             {finding.assessment_note && (
-              <MarkdownContent text={finding.assessment_note} />
+              <MarkdownContent compactLinks text={finding.assessment_note} />
             )}
           </div>
         </Section>
