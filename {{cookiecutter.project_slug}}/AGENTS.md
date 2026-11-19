@@ -7,11 +7,12 @@ Read `README.md`, the existing backend, frontend and tests before changing this 
 - Keep the App ID `{{ cookiecutter.app_id }}` consistent across the entry point, definition, router and frontend contribution.
 - Use the host App router for authentication, organization policy and initial workspace admission. Business mutations still require the appropriate workspace/resource write authorization.
 - Use the host `@a13n/console` bridge and React tree. Do not create another React root or bundle a second runtime. Scope CSS to this App.
-- `.service-ref` owns the compatible host source revision. Inspect it before using a newer Service API; update it deliberately when adopting a compatible revision. Then run `make setup HOST_SOURCE=/absolute/path/to/checkout-at-new-ref` against a checkout matching the new pin; an existing `.host/agent-foundation` checkout is not updated automatically.
+
+- The Service dependency in `pyproject.toml` is the host version. Use `make dev` to run this App with that host; use `make verify` to validate the wheel separately.
 
 ## Optional persistence
 
-This template deliberately initializes no database, models or migration history. Add persistence only for a concrete business requirement, following the README and the host's App persistence guide. The default host pin predates the persistence SDK; adopt a revision containing `AppDatabase` and `apps db` before using it.
+This template deliberately initializes no database, models or migration history. Add persistence only for a concrete business requirement, following the README and the host's App persistence guide. Use `AppDatabase` and the `a13n-service apps db` commands.
 
 - Declare one `AppDatabase` with the App's ID before declaring ordinary SQLAlchemy models. Use its independent `metadata`, `name(...)` for owned tables and named objects, and `AppDefinition(database=database)` for registration.
 - An optional prefix override may come from deployment configuration. Resolve it before model imports and use the same value for CLI, control and worker processes. A changed prefix does not move existing data; preserve initialized App ID/prefix bindings.

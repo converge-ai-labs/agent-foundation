@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-export default {
+export default ({ mode }) => ({
   root,
   base: "./",
   oxc: {
@@ -12,8 +12,12 @@ export default {
     },
   },
   build: {
-    outDir: fileURLToPath(new URL("../src/{{ cookiecutter.module_name }}/static", import.meta.url)),
-    emptyOutDir: true,
+    outDir: fileURLToPath(new URL(
+      mode === "app-dev" ? "../.a13n-dev/assets" : "../src/{{ cookiecutter.module_name }}/static",
+      import.meta.url,
+    )),
+    emptyOutDir: mode !== "app-dev",
+    sourcemap: mode === "app-dev",
     cssCodeSplit: false,
     rolldownOptions: {
       input: `${root}/src/index.tsx`,
@@ -27,4 +31,4 @@ export default {
       },
     },
   },
-};
+});

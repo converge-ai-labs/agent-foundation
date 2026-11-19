@@ -48,15 +48,13 @@ jobs:
           fi
       - name: Build and verify generated project
         run: |
-          make -C "$PROJECT" setup
           make -C "$PROJECT" verify
       - name: Rebuild and test source distribution
         run: |
           mkdir -p /tmp/app-sdist /tmp/app-rebuilt
           tar -xzf "$PROJECT"/dist/*.tar.gz -C /tmp/app-sdist
           uv build --python 3.13 --wheel --out-dir /tmp/app-rebuilt /tmp/app-sdist/*/
-          uv pip install --python "$PROJECT/.venv/bin/python" --no-deps --reinstall /tmp/app-rebuilt/*.whl
-          make -C "$PROJECT" test
+          make -C "$PROJECT" test-wheel WHEEL="$(printf '%s' /tmp/app-rebuilt/*.whl)"
       - uses: actions/upload-artifact@v4
         with:
           name: template-${{ matrix.variant }}-${{ github.sha }}

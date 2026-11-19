@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch"
+    "dev": "vite build --mode app-dev --watch"
   },
   "devDependencies": {
     "vite": "8.2.2"

@@ -4,6 +4,7 @@
   "module_name": "{{ cookiecutter.project_slug.replace('-', '_') }}",
   "app_id": "example.my-app",
   "version": "0.1.0",
-  "service_ref": "eb45177c00b2ce6e0d6be7e77e03a052433333ff",
+  "service_version": "0.2.1",
+  "surface": ["full-stack", "frontend-only", "backend-only"],
   "_copy_without_render": [".github/workflows/*", "frontend/pnpm-lock.yaml"]
 }

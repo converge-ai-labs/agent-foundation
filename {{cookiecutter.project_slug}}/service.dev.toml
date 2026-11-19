@@ -1,0 +1,14 @@
+# make dev supplies the checkout's addresses. Use only for local development.
+[database]
+auto_migrate = false
+
+[objects]
+backend = "s3"
+bucket = "app-dev"
+addressing_style = "path"
+region = "us-east-1"
+access_key_id = "app_dev"
+secret_access_key = "app-dev-local-secret"
+
+[encryption]
+key_file = ".a13n-dev/encryption.key"

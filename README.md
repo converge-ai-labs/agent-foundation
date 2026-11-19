@@ -1,6 +1,6 @@
 # Service App Cookiecutter template
 
-This dedicated `template/app-plugin` branch generates an independent, GitHub-ready Service App project with a Python backend, a host-mounted Console frontend, a Makefile and GitHub Actions build/package checks. It has no license file or project license metadata. The existing `examples/service-app-plugin` on `main` remains a separate, unchanged integration example.
+This dedicated `template/app-plugin` branch generates an independent, GitHub-ready Service App project with your choice of a full-stack App, a Console frontend, or a Python backend. Every project includes a Makefile and GitHub Actions build/package checks. It has no license file or project license metadata. The existing `examples/service-app-plugin` on `main` remains a separate, unchanged integration example.
 
 ## Generate a project
 
@@ -23,15 +23,14 @@ Cookiecutter creates a local directory; the generated README explains how to bui
 | `module_name` | Derived from slug | Python import package |
 | `app_id` | `example.my-app` | Stable App identity; choose an organization-specific value |
 | `version` | `0.1.0` | Initial stable package version |
-| `service_ref` | `eb45177c00b2ce6e0d6be7e77e03a052433333ff` | Compatible prerelease Service commit |
+| `service_version` | Current stable template default | Exact Service dependency for the generated project |
+| `surface` | `full-stack` | `full-stack`, `frontend-only`, or `backend-only` |
 
 ## Development and compatibility
 
-The generated project uses Python 3.13, uv, Make, Node.js 24 and pnpm 10.30.3. Its `make setup` installs the pinned Service source contract in its own virtual environment; `make verify` builds the ESM frontend, packages wheel/sdist, and tests the installed wheel. Generated CI follows the repository's uv/pnpm setup, dependency caches and least-privilege pattern. A separate `vX.Y.Z` tag workflow builds verified artifacts, then publishes them through a protected `pypi` environment configured by the project owner with `PYPI_TOKEN`. `make dev` rebuilds frontend assets on changes for an existing Service/Console host.
+From the generated project, run `make dev`, open the printed Console URL, and enable the App in organization settings. The local Service wheel hosts Console and loads the App editable; Compose provides PostgreSQL, Redis and S3. Frontend variants watch TSX/CSS; every variant watches Python sources. `make verify` builds wheel/sdist and tests the installed wheel without replacing the editable install.
 
-The App APIs are available on `main` through the [merged App Plugins stack](https://github.com/converge-ai-labs/agent-foundation/stack/1644). The template pins the merged source commit until a compatible Service release exists. The generated project does not claim compatibility with an older PyPI release.
-
-Both artifacts include prebuilt frontend assets, so a wheel can be rebuilt from the sdist without Node.js. The frontend imports React and host providers only through `@a13n/console`. No fonts, third-party assets, separate React root or workspace-home override are included. Project owners choose their licensing terms before distribution; dependencies retain their own licenses.
+The pinned dependency lives in the generated `pyproject.toml`. Stable Service releases advance the Cookiecutter default for new projects; existing projects upgrade their dependency and lockfile explicitly. Generated projects can publish independently via their `vX.Y.Z` tag workflow.
 
 ## Maintain this branch
 
@@ -43,4 +42,4 @@ Run template contract tests:
 uv run --python 3.13 --no-project --with-requirements requirements-dev.txt pytest tests -q
 ```
 
-The branch workflow runs those tests, generates default and renamed projects, and executes each project's setup, build, installed-wheel tests and source-distribution rebuild. When updating `service_ref`, validate against the real Service App discovery and bridge contracts. Keep existing examples unchanged unless a separate change requests otherwise.
+The branch workflow runs those tests, generates default and renamed projects, and executes each project's setup, build, installed-wheel tests and source-distribution rebuild. Keep existing examples unchanged unless a separate change requests otherwise.

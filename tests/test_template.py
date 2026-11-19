@@ -46,7 +46,7 @@ def test_generate_independent_fullstack_project(tmp_path, context):
     assert (project / "AGENTS.md").is_file()
     assert app_id in (project / "AGENTS.md").read_text()
     readme_text = (project / "README.md").read_text()
-    assert "[local development guide](https://github.com/converge-ai-labs/agent-foundation/blob/" in readme_text
+    assert "make dev" in readme_text
     assert "[App authoring guide](https://github.com/converge-ai-labs/agent-foundation/blob/" in readme_text
     compile((project / "tests/test_installed_app.py").read_text(), "test_installed_app.py", "exec")
     assert (project / "frontend/pnpm-lock.yaml").is_file()
@@ -77,7 +77,7 @@ def test_generate_independent_fullstack_project(tmp_path, context):
         {"app_id": "Bad/Scope"},
         {"app_id": "acme.tools-"},
         {"version": "1.0"},
-        {"service_ref": "main"},
+        {"service_version": "latest"},
         {"project_name": "bad\nname"},
     ],
 )
@@ -94,3 +94,23 @@ def test_wheel_path_follows_current_metadata_after_version_bump(tmp_path):
         [sys.executable, "scripts/wheel_path.py"], cwd=project, check=True, capture_output=True, text=True
     )
     assert result.stdout.strip() == "dist/my_service_app-0.2.0-py3-none-any.whl"
+
+
+@pytest.mark.parametrize("surface", ["full-stack", "frontend-only", "backend-only"])
+def test_surface_generates_only_its_dependencies_and_contributions(tmp_path, surface):
+    context = {"surface": surface, "service_version": "1.2.3"}
+    project = Path(cookiecutter(str(ROOT), no_input=True, extra_context=context, output_dir=str(tmp_path)))
+    manifest = tomllib.loads((project / "pyproject.toml").read_text())
+    has_frontend = surface != "backend-only"
+    has_backend = surface != "frontend-only"
+    assert manifest["project"]["dependencies"] == ["a13n-service==1.2.3"]
+    assert (project / "frontend").exists() == has_frontend
+    assert not (project / ".service-ref").exists()
+    app_source = (project / "src/my_service_app/app.py").read_text()
+    compile(app_source, "app.py", "exec")
+    assert ("frontend=Frontend" in app_source) == has_frontend
+    assert ("routers=(router,)" in app_source) == has_backend
+    assert ("pnpm " in (project / "Makefile").read_text()) == has_frontend
+    compose = yaml.safe_load((project / "compose.dev.yaml").read_text())
+    assert set(compose["services"]) == {"postgres", "redis", "s3"}
+    assert all(service["ports"][0].startswith("127.0.0.1::") for service in compose["services"].values())

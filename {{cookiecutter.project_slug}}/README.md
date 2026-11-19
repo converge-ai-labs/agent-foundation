@@ -1,53 +1,46 @@
 # {{ cookiecutter.project_name }}
 
-An independently packaged Service App: a workspace-scoped Python API and a Console page, shipped together in one wheel. The frontend uses the host's `@a13n/console` bridge for React, query caching, authentication and workspace scope.
+An independently packaged Service App (`{{ cookiecutter.surface }}`).
 
-## Prerequisites and compatibility
+## Develop locally
 
-Use Python 3.13, uv, Git, Make, Node.js 24 and pnpm 10.30.3 on Linux or macOS. The App Plugins API is currently a prerelease source contract. `.service-ref` pins the compatible Agent Foundation commit; `make setup` checks out that source under `.host/` and installs Service and its workspace dependencies into **this project's `.venv`**. A bare install of the current PyPI `a13n-service` is not a substitute for that pinned contract. Review and update the pin when adopting a newer Service release.
-
-## Build and test
+Use Python 3.13, uv, Make and Docker Compose v2 on Linux or macOS.{% if cookiecutter.surface != 'backend-only' %} Install Node.js 24 and pnpm 10.30.3 for the frontend.{% endif %}
 
 ```bash
-make setup
-make verify
+make dev
 ```
 
-`make setup` installs the plugin editable after building its frontend. To reuse a compatible source checkout, run `make setup HOST_SOURCE=/absolute/path/to/agent-foundation`. The checkout must match `.service-ref`; its own virtual environment is left unchanged. `make verify` builds the frontend, wheel and sdist, checks Python code, installs the wheel and tests real entry-point discovery and packaged assets. Run `make setup` again to return to editable development after `make verify`.
+The command installs the Service version in `pyproject.toml` and this App's editable Python package in `.venv`. Compose starts PostgreSQL, Redis and an S3-compatible store; the Service wheel runs on the host and serves its bundled Console. On first start, the launcher migrates the database and creates a local organization, workspace and administrator.
 
-| Command                                                   | Purpose                                                                 |
-| --------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `make frontend`                                           | Build frontend assets into `src/{{ cookiecutter.module_name }}/static/` |
-| `make dev`                                                | Watch frontend source and rebuild the host-mounted bundle               |
-| `make build`                                              | Create wheel and sdist in `dist/`                                       |
-| `make check`                                              | Check Python formatting and lint                                        |
-| `make test`                                               | Test the installed plugin                                               |
-| `make install HOST_PYTHON=/path/to/host/.venv/bin/python` | Build and install into a compatible Service environment                 |
+Open the printed **Console** URL and sign in with the local credentials printed in the terminal. Then open the **App plugins** URL and enable **{{ cookiecutter.project_name }}**.
+{% if cookiecutter.surface != 'backend-only' %}Open the App under **Apps** in the workspace sidebar.{% else %}This backend-only App has no Console page; its workspace-scoped endpoint is `GET /api/v1/apps/{{ cookiecutter.app_id }}/summary`.{% endif %}
 
-The GitHub Actions workflow runs these build/test steps on pushes and pull requests and uploads wheel/sdist artifacts. It also rebuilds a wheel from the sdist using its prebuilt frontend. The separate tag-triggered release workflow follows the same build-artifact → publish-job pattern as Service. Configure your GitHub `pypi` environment with a `PYPI_TOKEN` secret and any required approvals, choose a unique distribution name, then update `pyproject.toml` and push a matching `vX.Y.Z` tag to publish. Release tags must match the current project version. The publish job only downloads verified artifacts and runs `uv publish`; it does not rebuild. Ordinary pushes and pull requests never publish. Deployment remains owned by your project.
+- **Python:** Edit `src/`; the launcher restarts Service on save. To attach your IDE without restarts, run `make dev RELOAD=0`. Run `make dev` again after dependency or migration changes.
+{% if cookiecutter.surface != 'backend-only' -%}
+- **TSX/CSS:** Edit `frontend/src/`, wait for the rebuild, and reload the App page. Browser DevTools can use the development sourcemaps. Production builds use separate output.
+{% endif -%}
+- **Lifecycle:** Ctrl+C stops Service and the watch process. `make dev-down` also stops the infrastructure without deleting volumes. Set `PORT=8081` when another checkout uses the default Console port 8080. Reuse the printed hostname so browser sessions stay separate across checkouts.
+- **Upgrade Service:** Edit the pinned `a13n-service` dependency in `pyproject.toml` and rerun `make dev`. Commit the resulting `uv.lock` with your project.
 
-## Open the App in Console
+## Build and distribute
 
-1. Prepare and start a Service checkout at `.service-ref` using its [local development guide](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/dev/service/README.md). Use `make dev-status` in that checkout to discover its URL.
-2. Install this plugin into that checkout's Service environment with `make install HOST_PYTHON=/absolute/path/to/host/.venv/bin/python`.
-3. Restart Service using that prepared environment. For the source development launcher, run `PATH="$PWD/.venv/bin:$PATH" make dev TRACES=none` from the host checkout so dependency synchronization does not remove the additional plugin.
-4. In Console, open **Settings → Organization → App plugins**, enable this App, and then open it under **Apps** in a workspace. Its route is `/workspace/{workspaceId}/apps/{{ cookiecutter.app_id }}/overview`.
+`make verify` lints the source, builds wheel and sdist and tests the wheel in a temporary environment. Your editable install remains in place. `make install HOST_PYTHON=/path/to/host/.venv/bin/python` installs the wheel into a compatible Service environment; restart the host afterward. {% if cookiecutter.surface != 'backend-only' %}Bump the App package version when changing shipped frontend bytes, because production asset URLs are immutable within a package version.{% endif %}
 
-For live frontend development, install this project editable into the prepared host environment with `uv pip install --python /path/to/host/.venv/bin/python --no-deps -e .`, run `make dev` here, and reload the App page after each build. `make dev` emits the real host-mounted bundle; it does not run a separate React application. Restart Service after Python changes, installation or upgrades. Increment the version in `pyproject.toml` when changing shipped frontend bytes: Service versions its frontend URLs by the installed distribution version. The Makefile selects the wheel using the current manifest version even when older artifacts remain in `dist/`.
+GitHub Actions builds and verifies artifacts on pushes and pull requests. A separate `vX.Y.Z` tag workflow publishes verified distributions when configured with a `PYPI_TOKEN` in the `pypi` environment. The tag must match the project version.
 
 ## Where to make changes
 
-- `src/{{ cookiecutter.module_name }}/app.py`: App definition and `GET /summary`. The host owns authentication, organization activation and initial workspace admission. Add explicit workspace write authorization before any business mutation.
-- `frontend/src/index.tsx`: the overview page. `useApp().request()` scopes requests to `/api/v1/apps/{{ cookiecutter.app_id }}/`; `queryKey()` scopes caches to the App and current organization/workspace.
-- `frontend/src/app.css`: styles scoped to `.{{ cookiecutter.project_slug }}-overview`. Use host design tokens; App CSS shares the document.
-- `pyproject.toml`: entry point and asset packaging. Both wheel and sdist include the built frontend; rebuilding a wheel from the sdist needs no Node.js.
-- `tests/test_installed_app.py`: installed distribution discovery, assets and the example handler. Host authentication and activation are Service's integration-test responsibility.
+- `src/{{ cookiecutter.module_name }}/app.py`: App definition{% if cookiecutter.surface != 'frontend-only' %} and the workspace-scoped `GET /summary` route{% endif %}. Service owns authentication, App activation and initial workspace admission; the App owns further business permissions.
+{% if cookiecutter.surface != 'backend-only' -%}
+- `frontend/src/index.tsx` and `app.css`: Console page and scoped styles. `@a13n/console` provides the host React tree and workspace-aware API. The wheel and sdist carry prebuilt assets; a wheel rebuilt from the sdist does not require Node.js.
+{% endif -%}
+- `tests/test_installed_app.py`: installed entry-point discovery and the selected App surface.
 
-The App is trusted installed code. It uses the host React tree, not its own root or providers, and does not override workspace home. See the [App authoring guide](https://github.com/converge-ai-labs/agent-foundation/blob/{{ cookiecutter.service_ref }}/docs/a13n-service/app-plugins.md) for settings, business tools and lifecycle APIs.
+See the [App authoring guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/docs/a13n-service/app-plugins.md) for settings, business tools and lifecycle APIs.
 
 ## Add persistence when needed
 
-The generated project has no database declaration, models or migration scaffold. Add them only when your App needs durable business data. First update `.service-ref` to a compatible Service revision that includes `a13n_service.app_database.AppDatabase` and `apps db` commands, then run `make setup HOST_SOURCE=/absolute/path/to/checkout-at-new-ref` using a checkout whose HEAD matches the new pin. Updating `.service-ref` alone does not update an existing `.host/agent-foundation` checkout. The default template pin predates this optional SDK. See the [App persistence guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/docs/a13n-service/app-plugins.md#persist-business-data) for the complete model, packaging and test workflow.
+The generated project has no database declaration, models or migration scaffold. Add them only when your App needs durable business data. See the [App persistence guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/docs/a13n-service/app-plugins.md#persist-business-data) for the complete model, packaging and test workflow.
 
 Declare an `AppDatabase` and ordinary SQLAlchemy models in `models.py`, use its `metadata` on your declarative base, then import the module from `app.py` and pass the same database to `AppDefinition(database=database)`. Resolve deployment configuration before model imports:
 

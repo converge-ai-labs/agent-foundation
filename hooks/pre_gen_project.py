@@ -8,8 +8,10 @@ project_slug = {{ cookiecutter.project_slug | tojson }}
 module_name = {{ cookiecutter.module_name | tojson }}
 app_id = {{ cookiecutter.app_id | tojson }}
 version = {{ cookiecutter.version | tojson }}
-service_ref = {{ cookiecutter.service_ref | tojson }}
+service_version = {{ cookiecutter.service_version | tojson }}
 project_name = {{ cookiecutter.project_name | tojson }}
+
+stable_version = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
 
 checks = {
     "project_slug must contain lowercase words separated by hyphens": re.fullmatch(
@@ -21,8 +23,8 @@ checks = {
     "app_id must be lowercase with dot, underscore or hyphen separators": re.fullmatch(
         r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", app_id
     ),
-    "version must be a stable X.Y.Z version": re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version),
-    "service_ref must be a full Git commit SHA": re.fullmatch(r"[0-9a-f]{40}", service_ref),
+    "version must be a stable X.Y.Z version": re.fullmatch(stable_version, version),
+    "service_version must be a stable X.Y.Z version": re.fullmatch(stable_version, service_version),
     "project_name must be nonempty and single-line": bool(project_name.strip()) and not any(
         ord(character) < 32 for character in project_name
     ),
