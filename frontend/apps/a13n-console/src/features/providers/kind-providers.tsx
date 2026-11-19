@@ -1,3 +1,8 @@
+import {
+  CloudflareDeployments,
+  CloudflareDeploymentForm,
+  useCloudflareDeployments,
+} from "./cloudflare-deployments";
 import { ProviderDelete } from "./provider-delete";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
@@ -46,7 +51,7 @@ import {
   ProviderName,
   ProviderReadOnly,
 } from "./provider-editor";
-import { hasFields, schemaProperties } from "./schemas";
+import { hasFields } from "./schemas";
 import { ProviderFacts } from "./provider-facts";
 import { ProviderTable } from "./provider-table";
 import providerStyles from "./providers.module.css";
@@ -79,21 +84,6 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
     select: (catalog) => ({
       ...catalog,
       items: catalog.items.map((definition) => {
-        if (isCloudflareEnvironment(kind, definition.type)) {
-          return {
-            ...definition,
-            credential_schema: withFieldTitle(
-              definition.credential_schema,
-              "api_key",
-              "Gateway token",
-            ),
-            configuration_schema: withFieldTitle(
-              definition.configuration_schema,
-              "endpoint",
-              "Gateway URL",
-            ),
-          };
-        }
         const name = definition.display_name;
         const label =
           kind === "browser" && name === "Docker browser"
@@ -114,22 +104,6 @@ export function useProviderTypes(kind: ProviderKind, enabled = true) {
 
 function isCloudflareEnvironment(kind: ProviderKind, type: string) {
   return kind === "environment" && type === "cloudflare";
-}
-
-// Keep display labels separate from the schema keys sent to Service.
-function withFieldTitle<T extends Record<string, unknown> | null>(
-  definition: T,
-  key: string,
-  title: string,
-): T {
-  if (!definition) return definition;
-  const properties = schemaProperties(definition);
-  const field = properties[key];
-  if (!field || typeof field !== "object") return definition;
-  return {
-    ...definition,
-    properties: { ...properties, [key]: { ...field, title } },
-  };
 }
 
 function schema(value: unknown): Record<string, unknown> {
@@ -167,8 +141,13 @@ export function KindProviders({
     queryKey: [`${kind}-providers`, workspace.id, "list", page.cursor],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
+  const cloudflare = useCloudflareDeployments(kind === "environment");
   const manage = can("write");
-  const connectable = providerTypes.data?.items ?? [];
+  const connectable = (providerTypes.data?.items ?? []).filter(
+    ({ type }) =>
+      !isCloudflareEnvironment(kind, type) ||
+      (can("admin") && cloudflare.query.data?.available === true),
+  );
   const add =
     manage && connectable.length ? (
       <AddKindProvider
@@ -205,6 +184,9 @@ export function KindProviders({
         notice={
           <>
             {notice}
+            {kind === "environment" && can("admin") && (
+              <CloudflareDeployments controller={cloudflare} />
+            )}
             <ErrorNotice
               error={providerTypes.error}
               retry={() => void providerTypes.refetch()}
@@ -273,11 +255,15 @@ function AddKindProvider({
       open={open}
       onOpenChange={change}
       description={t(description)}
-      hint={(definition) => credentialHint(definition.credential_schema)}
+      hint={(definition) =>
+        isCloudflareEnvironment(kind, definition.type)
+          ? "Cloudflare Account ID and API token"
+          : credentialHint(definition.credential_schema)
+      }
       connectDescription={(definition) =>
         isCloudflareEnvironment(kind, definition.type)
           ? t(
-              "Enter the HTTPS URL and token for your deployed a13n Cloudflare gateway. Do not use a Cloudflare API token here.",
+              "Service deploys and verifies Cloudflare Containers in your account before adding the provider.",
             )
           : t(credentialDescription(definition.credential_schema), {
               provider: definition.display_name,
@@ -286,14 +272,20 @@ function AddKindProvider({
     >
       {(definition, back) => (
         <CatalogStep backLabel={t("All providers")} onBack={back}>
-          <ProviderForm
-            kind={kind}
-            createLabel={kind === "environment" ? t("Add provider") : undefined}
-            definition={definition}
-            definitions={definitions}
-            close={() => change(false)}
-            reload={async () => {}}
-          />
+          {isCloudflareEnvironment(kind, definition.type) ? (
+            <CloudflareDeploymentForm close={() => change(false)} />
+          ) : (
+            <ProviderForm
+              kind={kind}
+              createLabel={
+                kind === "environment" ? t("Add provider") : undefined
+              }
+              definition={definition}
+              definitions={definitions}
+              close={() => change(false)}
+              reload={async () => {}}
+            />
+          )}
         </CatalogStep>
       )}
     </AddProviderDialog>
@@ -326,19 +318,21 @@ function EditKindProvider({
   const definition = definitions.data?.items.find(
     (item) => item.type === provider.type,
   );
+  const readOnly =
+    !can("write") || !!(query.data?.value ?? provider).managed_deployment;
   return (
     <EditProviderDialog
       modalProps={state.modalProps}
       open={state.open}
       name={query.data?.value.name ?? provider.name}
       id={provider.id}
-      readOnly={!can("write")}
+      readOnly={readOnly}
       type={provider.type}
       definition={definition?.display_name}
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
-      {query.data && !can("write") ? (
+      {query.data && readOnly ? (
         <ProviderReadOnly
           enabled={query.data.value.enabled}
           credentials={
@@ -346,7 +340,11 @@ function EditKindProvider({
               ? "configured"
               : "not_configured"
           }
-          configuration={query.data.value.config}
+          configuration={
+            isCloudflareEnvironment(kind, provider.type)
+              ? undefined
+              : query.data.value.config
+          }
           schema={definition?.configuration_schema}
           onClose={() => state.setOpen(false)}
         />
@@ -408,6 +406,7 @@ export function ProviderForm({
     definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
+  const internalCloudflare = isCloudflareEnvironment(kind, type);
   const configChanged =
     (kind === "environment" || kind === "browser") &&
     !!basis &&
@@ -509,14 +508,10 @@ export function ProviderForm({
       }}
     >
       <ProviderName value={name} onChange={setName} />
-      {section.visible && (
+      {!internalCloudflare && section.visible && (
         <ProviderGroup title="Credentials">
           <CredentialRow
-            label={t(
-              isCloudflareEnvironment(kind, type)
-                ? "Gateway token"
-                : credentialLabel(section.schema),
-            )}
+            label={t(credentialLabel(section.schema))}
             configured={section.removable}
             removing={section.removing}
             onRemovingChange={section.setRemoving}
@@ -557,7 +552,8 @@ export function ProviderForm({
           retry={() => void reload()}
         />
       )}
-      {kind === "environment" || kind === "browser" ? (
+      {internalCloudflare ? null : kind === "environment" ||
+        kind === "browser" ? (
         hasFields(configSchema) && (
           <ProviderGroup>
             <ProviderConfigurationFields

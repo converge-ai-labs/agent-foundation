@@ -8,7 +8,7 @@ registerHooks({ resolve(specifier, context, next) {
   }
   return next(specifier, context);
 } });
-const { default: gateway, Environment } = await import('./worker.mjs');
+const { default: gateway, Environment } = await import('../../../packages/a13n-service/a13n_service/runs/cloudflare/worker.mjs');
 
 function fixture() {
   const records = new Map();

@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
 import { Page } from "../../shared/page";
 import { TemplateConfig } from "./template-config";
@@ -9,6 +9,7 @@ export function CreateEnvironmentTemplate() {
   const { t } = useTranslation(),
     { basePath, can } = useWorkspace(),
     navigate = useNavigate();
+  const [params] = useSearchParams();
   return (
     <Page
       title={t("Create environment template")}
@@ -22,6 +23,7 @@ export function CreateEnvironmentTemplate() {
       {can("write") ? (
         <TemplateConfig
           standalone
+          initialProviderId={params.get("provider") ?? undefined}
           close={() => navigate(`${basePath}/environments`)}
         />
       ) : (

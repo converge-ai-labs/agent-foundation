@@ -11,6 +11,7 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
+from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -23,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra import cursors
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.infra.db import Storage, assign, short_session, transaction
-from a13n_service.infra.errors import invalid, not_found
+from a13n_service.infra.errors import conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.schema import model_schema
@@ -41,11 +42,17 @@ from a13n_service.resources.providers.schemas import (
     ProviderTypePage,
     ProviderUpdate,
 )
-from a13n_service.resources.providers.tables import ModelProviderOAuthRow, ModelProviderRow, ProviderRow
+from a13n_service.resources.providers.tables import (
+    EnvironmentProviderRow,
+    ModelProviderOAuthRow,
+    ModelProviderRow,
+    ProviderRow,
+)
 from a13n_service.resources.rows import audit_row, find_row, given, record_update, usable_row
 from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
+from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +78,7 @@ class ResolvedProvider:
         }
 
 
-def provider_view(row: ProviderRow) -> Provider:
+def provider_view(row: ProviderRow, *, managed: bool = False) -> Provider:
     return Provider(
         id=row.id,
         organization_id=row.organization_id,
@@ -80,6 +87,7 @@ def provider_view(row: ProviderRow) -> Provider:
         name=row.name,
         config=row.config,
         credential_configured=row.credential is not None,
+        managed_deployment=managed,
         header_names=sorted(row.extra_headers),
         enabled=row.enabled,
         version=row.version,
@@ -102,6 +110,8 @@ async def create_provider[R: ProviderRow](
 ) -> Provider:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
+        if row_type.PROVIDER_KIND == "environment" and body.type == "cloudflare":
+            raise invalid("type", "Cloudflare providers are created through /api/v1/cloudflare-deployments")
         row = await insert_provider(session, actor, row_type, scope, body, registry=registry, keys=keys)
         return provider_view(row)
 
@@ -146,7 +156,13 @@ async def get_provider[R: ProviderRow](
 ) -> Provider:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        return provider_view(await find_row(session, actor, row_type, scope, provider_id, "read"))
+        row = await find_row(session, actor, row_type, scope, provider_id, "read")
+        managed = (
+            isinstance(row, EnvironmentProviderRow)
+            and row.type == "cloudflare"
+            and bool(await session.scalar(select(DeploymentRow.id).where(DeploymentRow.provider_id == row.id)))
+        )
+        return provider_view(row, managed=managed)
 
 
 async def list_providers[R: ProviderRow](
@@ -163,7 +179,19 @@ async def list_providers[R: ProviderRow](
             cursor=cursor,
             limit=limit,
         )
-    return ProviderPage(items=[provider_view(row) for row in rows], next_cursor=next_cursor)
+        candidates = [row.id for row in rows if isinstance(row, EnvironmentProviderRow) and row.type == "cloudflare"]
+        managed = (
+            set(
+                await session.scalars(
+                    select(DeploymentRow.provider_id).where(DeploymentRow.provider_id.in_(candidates))
+                )
+            )
+            if candidates
+            else set()
+        )
+        return ProviderPage(
+            items=[provider_view(row, managed=row.id in managed) for row in rows], next_cursor=next_cursor
+        )
 
 
 async def update_provider[R: ProviderRow](
@@ -183,6 +211,13 @@ async def update_provider[R: ProviderRow](
         scope = await workspace_scope(session, actor, workspace_id, "read")
         row = await find_row(session, actor, row_type, scope, provider_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        managed = None
+        if isinstance(row, EnvironmentProviderRow) and row.type == "cloudflare":
+            managed = await session.scalar(select(DeploymentRow.status).where(DeploymentRow.provider_id == row.id))
+            if body.config is not None or replaces_credential or body.extra_headers:
+                raise conflict(row.KIND, row.id, "cloudflare_connection_is_read_only")
+            if managed is not None and body.enabled is True and managed != "ready":
+                raise conflict(row.KIND, row.id, "managed_cloudflare_provider")
         headers = _updated_headers(keys, row, body.extra_headers)
         config = row.config if body.config is None else body.config
         if body.config is not None or replaces_credential or body.extra_headers:
@@ -210,7 +245,7 @@ async def update_provider[R: ProviderRow](
         changed += assign(row, {"extra_headers": headers, **given(body, "name", "enabled")})
         if record_update(session, actor, row, changed):
             await session.flush()
-        return provider_view(row)
+        return provider_view(row, managed=managed is not None)
 
 
 async def test_provider[R: ProviderRow](
@@ -265,7 +300,7 @@ async def resolve_provider[R: ProviderRow](
             provider_id,
             verb=verb,
             authority=authority,
-            key_share=row_type.PROVIDER_KIND == "web",
+            key_share=row_type.PROVIDER_KIND in {"web", "environment"},
         )
     )
 
@@ -411,6 +446,11 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))
     elif isinstance(definition, EnvironmentManagementDefinition):
+        if definition.type == "cloudflare":
+            # Deployment owns these inputs; clients only need the Environment recipe.
+            described.configuration_schema = {}
+            described.credential_schema = None
+            described.authentication = Authentication(mode=CredentialMode.forbidden)
         described.environment_schema = model_schema(definition.environment_model)
         described.supports_stop = definition.supports_stop
         described.supports_destroy = definition.supports_destroy

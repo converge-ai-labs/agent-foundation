@@ -15,6 +15,7 @@ import { useProviderTypes } from "./kind-providers";
 
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
+  POST: vi.fn(),
   organizationWrite: true,
   hasWorkspace: true,
   manage: true,
@@ -22,7 +23,7 @@ const state = vi.hoisted(() => ({
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { GET: state.GET },
-    workspace: () => ({ GET: state.GET }),
+    workspace: () => ({ GET: state.GET, POST: state.POST }),
   }),
 }));
 vi.mock("../../layout/workspace", () => ({
@@ -107,52 +108,52 @@ it("shows workspace providers without offering mutations to a read-only member",
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });
 
-it("lists Cloudflare Containers under Cloud and asks for gateway credentials, not a Cloudflare API token", async () => {
-  state.GET.mockImplementation(async (path) => ({
-    data: {
-      items:
-        path === "/api/v1/provider-types/{kind}"
-          ? [
-              {
-                type: "cloudflare",
-                display_name: "Cloudflare Containers",
-                authentication: { mode: "required" },
-                credential_schema: {
-                  properties: { api_key: { type: "string", title: "API key" } },
-                  required: ["api_key"],
-                },
-                configuration_schema: {
-                  properties: {
-                    endpoint: { type: "string", title: "Gateway HTTPS origin" },
-                  },
-                  required: ["endpoint"],
-                },
-              },
-              { type: "extension", display_name: "Custom runtime" },
-            ]
-          : [],
-      next_cursor: null,
-    },
-  }));
-  const user = userEvent.setup();
-  mount("category=environments");
-  await user.click(await screen.findByRole("button", { name: "Add provider" }));
-  expect(
-    screen.getByRole("tab", { name: "Cloud", selected: true }),
-  ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Custom runtime" })).toBeNull();
-  await user.click(
-    screen.getByRole("button", { name: "Cloudflare Containers" }),
-  );
-  expect(
-    screen.getByText(/Do not use a Cloudflare API token here/),
-  ).toBeTruthy();
-  expect(screen.getByLabelText("Gateway token").getAttribute("type")).toBe(
-    "password",
-  );
-  expect(screen.getByLabelText("Gateway URL")).toBeTruthy();
-  expect(screen.queryByLabelText("API key")).toBeNull();
-});
+it.each([false, true])(
+  "offers no manual Cloudflare setup (deployment availability: %s)",
+  async (available) => {
+    state.GET.mockImplementation(async (path) => ({
+      data:
+        path === "/api/v1/cloudflare-deployments"
+          ? { available, items: [] }
+          : {
+              items:
+                path === "/api/v1/provider-types/{kind}"
+                  ? [
+                      {
+                        type: "cloudflare",
+                        display_name: "Cloudflare Containers",
+                      },
+                      { type: "e2b", display_name: "E2B" },
+                    ]
+                  : [],
+              next_cursor: null,
+            },
+    }));
+    const user = userEvent.setup();
+    mount("category=environments");
+    await user.click(
+      await screen.findByRole("button", { name: "Add provider" }),
+    );
+    await screen.findByRole("button", { name: "E2B" });
+    const cloudflare = screen.queryByRole("button", {
+      name: "Cloudflare Containers",
+    });
+    if (available) {
+      await user.click(
+        await screen.findByRole("button", { name: "Cloudflare Containers" }),
+      );
+      expect(
+        screen.getByLabelText("Cloudflare API token").getAttribute("type"),
+      ).toBe("password");
+      expect(screen.queryByLabelText("Gateway URL")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /existing gateway/i }),
+      ).toBeNull();
+    } else {
+      expect(cloudflare).toBeNull();
+    }
+  },
+);
 
 it("localizes built-in browser and environment type labels without refetching or rewriting cached definitions", async () => {
   const cache = new QueryClient();
@@ -199,4 +200,48 @@ it("localizes built-in browser and environment type labels without refetching or
   );
   expect(cache.getQueryData(["browser-provider-types"])).toEqual(catalog);
   expect(state.GET).not.toHaveBeenCalled();
+});
+
+it("offers managed deployment with a separate write-only account token", async () => {
+  state.GET.mockImplementation(async (path) => ({
+    data:
+      path === "/api/v1/cloudflare-deployments"
+        ? { available: true, items: [] }
+        : {
+            items:
+              path === "/api/v1/provider-types/{kind}"
+                ? [
+                    {
+                      type: "cloudflare",
+                      display_name: "Cloudflare Containers",
+                      authentication: { mode: "required" },
+                    },
+                  ]
+                : [],
+            next_cursor: null,
+          },
+  }));
+  state.POST.mockResolvedValue({ data: {} });
+  const user = userEvent.setup();
+  mount("category=environments");
+  await user.click(await screen.findByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Cloudflare Containers" }),
+  );
+  expect(screen.queryByLabelText("Gateway token")).toBeNull();
+  await user.type(screen.getByLabelText("Name"), "Managed sandbox");
+  await user.type(screen.getByLabelText("Account ID"), "A".repeat(32));
+  await user.type(
+    screen.getByLabelText("Cloudflare API token"),
+    "write-only-fixture",
+  );
+  await user.click(screen.getByRole("button", { name: "Deploy provider" }));
+  expect(state.POST).toHaveBeenCalledWith("/api/v1/cloudflare-deployments", {
+    body: {
+      name: "Managed sandbox",
+      account_id: "a".repeat(32),
+      api_token: "write-only-fixture",
+      request_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    },
+  });
 });

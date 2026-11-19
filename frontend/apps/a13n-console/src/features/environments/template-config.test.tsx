@@ -21,7 +21,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     organization: { id: "org_test" },
     workspace: { id: "ws_test" },
-    can: () => true,
+    can: (verb: string) => verb !== "admin",
   }),
 }));
 vi.mock("react-i18next", () => ({

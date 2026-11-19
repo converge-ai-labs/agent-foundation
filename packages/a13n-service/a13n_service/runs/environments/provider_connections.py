@@ -13,6 +13,7 @@ from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 
 
 async def _references(session: AsyncSession, workspace_id: str, provider_id: str) -> EnvironmentProviderReferences:
@@ -68,6 +69,10 @@ async def delete(
         # Check again inside the deletion transaction, never trust a prior UI probe.
         row = await find_row(session, actor, EnvironmentProviderRow, scope, provider_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
+        if row.type == "cloudflare" and await session.scalar(
+            select(DeploymentRow.id).where(DeploymentRow.provider_id == row.id)
+        ):
+            raise conflict(row.KIND, row.id, "managed_cloudflare_provider")
         refs = await _references(session, workspace_id, provider_id)
         if refs.template_count or refs.environment_count:
             raise conflict(row.KIND, row.id, "provider_in_use", references=refs.model_dump(mode="json"))

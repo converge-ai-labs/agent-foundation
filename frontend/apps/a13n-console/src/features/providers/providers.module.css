@@ -183,3 +183,56 @@
   font-size: var(--a13n-text-2xs);
   margin-top: 4px;
 }
+
+.cloudflareDeployments {
+  display: grid;
+  gap: 8px;
+  margin-block: 24px 16px;
+}
+.cloudflareDeployments h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+.cloudflareDeployments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.cloudflareDeployment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+}
+.cloudflareDeployment + .cloudflareDeployment {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.cloudflareDeploymentIdentity {
+  min-width: 0;
+}
+.cloudflareDeploymentIdentity > div,
+.cloudflareDeploymentActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cloudflareDeploymentIdentity strong {
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.cloudflareDeploymentIdentity p {
+  margin: 2px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.cloudflareRetry {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}

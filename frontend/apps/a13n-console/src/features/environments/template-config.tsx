@@ -47,8 +47,10 @@ export function TemplateConfig({
   readOnly = false,
   onProviderChange,
   standalone = false,
+  initialProviderId,
 }: {
   standalone?: boolean;
+  initialProviderId?: string;
   readOnly?: boolean;
   template?: ReturnType<typeof representation<Schema["Template"]>>;
   close: () => void;
@@ -72,9 +74,14 @@ export function TemplateConfig({
   const saved = template?.value;
   const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
-    [providerId, setProviderId] = useState(saved?.provider_id ?? ""),
-    [runtimeType, setRuntimeType] = useState(""),
+    [providerId, setProviderId] = useState(
+      saved?.provider_id ?? initialProviderId ?? "",
+    ),
+    [selectedRuntime, setRuntimeType] = useState<string>(),
     [choosing, setChoosing] = useState(!saved?.provider_id);
+  const provider = providers.data?.find((item) => item.id === providerId);
+  const runtimeType =
+    selectedRuntime ?? (provider?.enabled ? provider.type : "");
   const [connections, setConnections] = useState<Record<string, string>>({});
   const [savedConfiguration] = useState(() =>
     JSON.stringify(saved?.config.recipe ?? {}, null, 2),
@@ -107,7 +114,6 @@ export function TemplateConfig({
   const [failedRetention, setFailedRetention] = useState(
     String(savedReclamation?.failed_retention_seconds ?? 3600),
   );
-  const provider = providers.data?.find((item) => item.id === providerId);
   const definition = types.data?.items.find(
     (item) => item.type === (standalone ? runtimeType : provider?.type),
   );

@@ -14,7 +14,7 @@ from dev.service.seed_assets import examples
 from dev.service.seed_conversations import NATIVE, PLACED
 from dev.service.seed_identity import MEMBERS
 from dev.service.seed_memories import FACTS, HANDBOOK, RECORDED
-from dev.service.seed_providers import KINDS
+from dev.service.seed_providers import DEPLOYMENT_ONLY_TYPES, KINDS
 from dev.service.seed_resources import SKILLS
 
 type Check = tuple[str, bool]
@@ -86,9 +86,13 @@ def _agents_in(api: Api, workspace_id: str) -> list[Json]:
 
 def _providers(api: Api) -> Iterator[Check]:
     for kind in KINDS:
-        offered = {item["type"] for item in api.items(f"/api/v1/provider-types/{kind}")}
+        seedable = {
+            item["type"]
+            for item in api.items(f"/api/v1/provider-types/{kind}")
+            if (kind, item["type"]) not in DEPLOYMENT_ONLY_TYPES
+        }
         accounts = {item["type"] for item in api.items(f"/api/v1/{kind}-providers")}
-        yield f"Every {kind} provider type has an account", offered <= accounts
+        yield f"Every seedable {kind} provider type has an account", seedable <= accounts
     models = {model["key"]: model for model in api.items("/api/v1/models")}
     fictional = [model for key, model in models.items() if key.startswith("fictional-")]
     offered_models = len(api.items("/api/v1/provider-types/model"))

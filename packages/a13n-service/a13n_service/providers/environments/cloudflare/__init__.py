@@ -8,12 +8,14 @@ from a13n_harness.environment.errors import EnvironmentProviderError, provider_e
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
-from pydantic import BaseModel
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from pydantic import BaseModel, SecretStr
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbound import open_http
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
+from a13n_service.providers.environment.cloudflare import Account
 from a13n_service.providers.environment.definition import management_definition
 from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.management import Pending
@@ -166,6 +168,18 @@ class Management(ManagementBackend):
         except (KeyError, TypeError, ValueError):
             raise provider_error(KEY, "cloudflare_gateway_invalid_response", Category.UNAVAILABLE) from None
         return expires_at
+
+
+def smoke_gateway(endpoint: str, environment_id: str, secret: SecretStr, policy: EndpointPolicy) -> ManagementBackend:
+    account = Account(endpoint=endpoint)
+    account._endpoint_policy = policy
+    return Management(
+        configuration=Recipe(network_egress="disabled"),
+        environment_id=environment_id,
+        state=None,
+        runtime=Gateway(account, secret),
+        operation_id=environment_id,
+    )
 
 
 _factory = ManagementBackendFactory(key=KEY, environment_model=Recipe, management=Management, runtime_factory=gateway)

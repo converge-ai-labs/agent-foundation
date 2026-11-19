@@ -28,6 +28,7 @@ from a13n_service.infra.sweeps import Sweep
 from a13n_service.platform_catalog import catalog as platform_catalog
 from a13n_service.platform_tools import Definition
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_service.providers.environments.cloudflare import smoke_gateway
 from a13n_service.providers.registry import RegisteredProvider
 from a13n_service.provisioning.tables import WorkspaceProvisioningRow
 from a13n_service.resources.agents.routes import router as agents_router
@@ -95,6 +96,8 @@ from a13n_service.runs.browsers.tables import (
 )
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
+from a13n_service.runs.cloudflare.reconcile import sweep as cloudflare_deployment_sweep
+from a13n_service.runs.cloudflare.routes import router as cloudflare_deployments_router
 from a13n_service.runs.compactions import sweep as compaction_sweep
 from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
@@ -169,6 +172,7 @@ from a13n_service.settings import Section
 from a13n_service.tenancy.access import Access, Authenticator, GrantSource
 from a13n_service.tenancy.authenticate import LocalAuthenticator
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Verb
+from a13n_service.tenancy.cloudflare_deployments import DeploymentRow as CloudflareDeploymentRow
 from a13n_service.tenancy.expiry import expire_credentials
 from a13n_service.tenancy.mail import SmtpMailer, deliver_mail
 from a13n_service.tenancy.member_routes import router as member_router
@@ -397,6 +401,7 @@ OSS = Distribution(
         OrganizationRow,
         WorkspaceRow,
         WorkspaceProvisioningRow,
+        CloudflareDeploymentRow,
         PrincipalRow,
         PasswordRow,
         GrantRow,
@@ -481,6 +486,7 @@ OSS = Distribution(
         member_router,
         providers_router,
         environment_provider_lifecycle_router,
+        cloudflare_deployments_router,
         provider_deletion_router,
         models_router,
         agents_router,
@@ -528,6 +534,7 @@ OSS = Distribution(
         browser_control_sweep,
         _expire_credentials,
         maintenance_sweep,
+        partial(cloudflare_deployment_sweep, factory=smoke_gateway),
         renewal_sweep,
         _recover_connection_operations,
         _deliver_outbox,

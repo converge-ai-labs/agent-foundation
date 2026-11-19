@@ -47,6 +47,7 @@ class Provider(BaseModel):
     name: str
     config: dict[str, JsonValue]
     credential_configured: bool
+    managed_deployment: bool = False
     # The extra headers a model provider sends; their values are never returned.
     header_names: list[str]
     enabled: bool

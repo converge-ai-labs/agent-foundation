@@ -52,6 +52,8 @@ def test_seeded_state_verifies_after_a_restart_and_private_resources_apply_once(
         assert local_provider["type"] == "local" and local_provider["created_by_id"] is None
         assert local_template["provider_id"] == local_provider["id"]
         seeded = seed(api, instance)
+        assert "cloudflare" in {item["type"] for item in api.items("/api/v1/provider-types/environment")}
+        assert "cloudflare" not in {item["type"] for item in api.items("/api/v1/environment-providers")}
         modal = next(
             template
             for template in api.items("/api/v1/environment-templates")
