@@ -5,10 +5,6 @@ description: Check version-specific cutovers and convert retained data before re
 
 Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
-## Cloudflare Containers require automatic deployment
-
-Service 0.2.2 stops using manually attached Cloudflare gateways, including saved connections. Their records and references remain readable, but Service refuses to connect to them or provision through them. Create a Provider through [automatic deployment](environments.md#providers), then select that Provider for your templates and reserve new Environments. Service does not adopt, migrate, or remove the old Cloudflare resources; manage them in your Cloudflare account.
-
 ## Composable memory guidance rollout
 
 Default and preset-following file guidance omit the optional `modules` key in stored configuration, and frozen memory mounts retain their previous shape. Existing memory-mounted Runs remain readable during a rolling upgrade. Upgrade every control and worker replica before saving an explicit module selection or launching the new organization workflows. Older processes cannot interpret explicit module configuration or execute newly introduced tools.
