@@ -31,7 +31,7 @@ export function Preferences() {
               options={[
                 { value: "light", label: t("Light") },
                 { value: "dark", label: t("Dark") },
-                { value: "system", label: t("System") },
+                { value: "system", label: t("Follow system") },
               ]}
             />
           </div>

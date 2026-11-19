@@ -126,7 +126,7 @@ The floating composer has a borderless editor, left attachment/options and round
 
 ## Navigation and Motion
 
-The tinted borderless sidebar has a workspace switcher, 32px rows with 8px corners, 11px medium group labels and bottom account menu. Selected fill and duotone icons identify the active item without changing text weight; expanded groups highlight their selected child. Hover uses 2% foreground in light mode, 3% in dark, weaker than selection and table headers.
+The tinted borderless sidebar has a workspace switcher, 32px rows with 8px corners, 11px medium group labels and bottom account menu. Below the account identity, appearance uses a labeled horizontal three-choice control with a soft track and elevated selected segment; Settings and Language follow below a separator. Selected fill and duotone icons identify the active item without changing text weight; expanded groups highlight their selected child. Hover uses 2% foreground in light mode, 3% in dark, weaker than selection and table headers.
 
 The Memories submenu lists Collections (standalone memory resources) before Spaces, and the parent Memories link opens Collections. Sidebar logos, workspace/account avatars and navigation icons share one vertical centerline; trailing chevrons and header controls share another. Labels keep a common start edge regardless of icon size. Collapsed desktop navigation uses an icon rail with tooltips. Below `lg` (1024px), navigation and contextual settings use a drawer and an always-visible menu control aligned to the page gutter. JavaScript queries match CSS breakpoints with no gap. Content gutters remain fluid; increasing width never forces a table back to stacked rows. Routes, including settings, name themselves in the document title.
 

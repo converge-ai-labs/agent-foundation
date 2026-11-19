@@ -67,3 +67,43 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.themeOptions {
+  display: flex;
+  gap: 2px;
+  margin: 0 8px 8px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.themeOption {
+  display: flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  outline: none;
+}
+.themeOption[data-checked] {
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  box-shadow: var(--a13n-shadow-subtle);
+}
+.themeOption[data-highlighted] {
+  color: var(--a13n-text);
+}
+.themeOption:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .themeOption {
+    min-height: 40px;
+  }
+}

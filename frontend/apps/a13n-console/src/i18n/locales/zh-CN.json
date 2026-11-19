@@ -1628,6 +1628,7 @@
   "Structured input must be valid JSON.": "结构化输入必须是有效的 JSON。",
   "Structured output": "结构化输出",
   "Subdirectory": "子目录",
+  "Follow system": "跟随系统",
   "System": "系统",
   "System instructions": "系统指令",
   "Telemetry": "遥测",
