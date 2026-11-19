@@ -7,7 +7,7 @@ description: 恢复任务接收前，检查版本切换要求并转换保留数�
 
 ## Cloudflare Containers 必须通过自动部署接入
 
-Service 0.2.2 不再使用手动接入的 Cloudflare 网关，包括此前保存的连接。旧记录及其引用仍可查看，但 Service 会拒绝连接或通过它们创建环境。请通过[自动部署](environments.md#provider)创建 Provider，将模板切换到该 Provider，然后预留新环境。Service 不会接管、迁移或删除旧的 Cloudflare 资源；请在自己的 Cloudflare 账号中管理它们。
+Service 0.2.2 不再使用手动接入的 Cloudflare 网关，包括此前保存的连接。旧记录及其引用仍可查看，但 Service 会拒绝连接或通过它们创建环境。请通过[自动部署](environments.md#providers)创建 Provider，将模板切换到该 Provider，然后预留新环境。Service 不会接管、迁移或删除旧的 Cloudflare 资源；请在自己的 Cloudflare 账号中管理它们。
 
 ## 可组合记忆指引升级
 
