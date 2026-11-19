@@ -95,7 +95,6 @@ from a13n_service.runs.browsers.tables import (
     ThreadBrowserRow,
 )
 from a13n_service.runs.checkpoints import CLEANUP, clean
-from a13n_service.runs.child_messages import child_messages, expire_child_messages
 from a13n_service.runs.children import child_results
 from a13n_service.runs.cloudflare.reconcile import sweep as cloudflare_deployment_sweep
 from a13n_service.runs.cloudflare.routes import router as cloudflare_deployments_router
@@ -151,7 +150,6 @@ from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
-    ChildMessageRow,
     CompactionRow,
     InboxEntryRow,
     ModelDispatchRow,
@@ -356,7 +354,6 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
             {
                 "webhook": webhooks,
                 "child_result": child_results(runtime),
-                "child_message": child_messages(runtime),
                 "tool_result": tool_results(runtime),
                 "browser_handback": handbacks(runtime),
                 "desktop_handback": desktop_handbacks(runtime),
@@ -377,15 +374,6 @@ def _report_backlog(runtime: Runtime) -> Sweep:
         every=REPORT_SECONDS,
         run=BacklogReporter(runtime.storage, runtime.settings.outbox.policies),
         timeout=10,
-    )
-
-
-def _expire_child_messages(runtime: Runtime) -> Sweep:
-    return Sweep(
-        name="expire_child_messages",
-        every=runtime.settings.control.scan_seconds,
-        run=partial(expire_child_messages, runtime, limit=runtime.settings.control.sweep_batch),
-        timeout=60,
     )
 
 
@@ -483,7 +471,6 @@ OSS = Distribution(
         ThreadExecutionContextRow,
         ThreadSessionBindingRow,
         ThreadMemoryRow,
-        ChildMessageRow,
         InboxEntryRow,
         RunRow,
         PendingAnswerRow,
@@ -551,7 +538,6 @@ OSS = Distribution(
         renewal_sweep,
         _recover_connection_operations,
         _deliver_outbox,
-        _expire_child_messages,
         _purge_outbox,
         _report_backlog,
     ),

@@ -624,9 +624,6 @@ async def accept(
     else:
         entries = await inbox.pending_entries(session, thread.id, limit=SCAN)
     for entry in entries:
-        if entry.kind == "child_message" and inbox.expire_child_message(entry, await now(session)):
-            await session.flush()
-            continue
         try:
             source = await _source(session, runtime, thread, entry, explicit)
             if isinstance(source, Source):

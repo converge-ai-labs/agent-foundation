@@ -26,7 +26,7 @@ from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow, ToolExecu
 from a13n_service.settings import Control
 from a13n_service.tenancy.authorize import ExecutionAuthority
 
-type RequestKind = Literal["thread", "message", "fork"]
+type RequestKind = Literal["thread", "message", "fork", "child_message"]
 
 OUTSTANDING = ("pending", "assigned")
 WAIT = meter.create_histogram(
@@ -50,6 +50,13 @@ class Request:
     def of(cls, key: str, kind: RequestKind, target: str, body: BaseModel) -> "Request":
         digest = hashlib.sha256(canonical_json([kind, target, body.model_dump(mode="json")])).hexdigest()
         return cls(key=key, kind=kind, target=target, digest=digest)
+
+    @classmethod
+    def for_child_message(cls, run_id: str, call_id: str, thread_id: str, payload: dict[str, JsonValue]) -> "Request":
+        # Public Idempotency-Key headers are printable ASCII without spaces, so only Service can use this namespace.
+        key = "child message " + hashlib.sha256(canonical_json([run_id, call_id])).hexdigest()
+        digest = hashlib.sha256(canonical_json(payload)).hexdigest()
+        return cls(key, "child_message", thread_id, digest)
 
 
 def payload_size(payload: dict[str, JsonValue]) -> int:
@@ -188,28 +195,15 @@ async def append_child_result(
 
 
 async def append_child_message(
-    session: AsyncSession, thread: ThreadRow, origin: RunRow, message_id: str, payload: dict[str, JsonValue]
+    session: AsyncSession,
+    thread: ThreadRow,
+    origin: RunRow,
+    payload: dict[str, JsonValue],
+    request: Request,
+    control: Control,
 ) -> InboxEntryRow:
-    """Append one durable intermediate message under the destination thread lock."""
-    entry = InboxEntryRow(
-        id=message_id,
-        organization_id=thread.organization_id,
-        workspace_id=thread.workspace_id,
-        thread_id=thread.id,
-        kind="child_message",
-        delivery="steer",
-        position=await _next_position(session, thread.id),
-        principal_id=origin.principal_id,
-        authority=origin.authority,
-        payload=payload,
-        size=payload_size(payload),
-        options={},
-        origin_run_id=origin.id,
-        status="pending",
-    )
-    session.add(entry)
-    await session.flush()
-    return entry
+    await require_capacity(session, thread.id, control, adding=1, growth=payload_size(payload))
+    return await _append_notice(session, thread, origin, payload, kind="child_message", request=request)
 
 
 async def append_tool_result(
@@ -237,7 +231,8 @@ async def _append_notice(
     origin: RunRow,
     payload: dict[str, JsonValue],
     *,
-    kind: Literal["tool_result", "browser_handback", "desktop_handback"],
+    kind: Literal["tool_result", "browser_handback", "desktop_handback", "child_message"],
+    request: Request | None = None,
 ) -> InboxEntryRow:
     entry = InboxEntryRow(
         id=new_object_id("inb"),
@@ -253,6 +248,10 @@ async def _append_notice(
         size=payload_size(payload),
         options={},
         origin_run_id=origin.id,
+        request_key=request.key if request else None,
+        request_digest=request.digest if request else None,
+        request_kind=request.kind if request else None,
+        request_target=request.target if request else None,
         status="pending",
     )
     session.add(entry)
@@ -356,17 +355,6 @@ async def pending_entries(session: AsyncSession, thread_id: str, *, limit: int) 
     return (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit).with_for_update())).all()
 
 
-def expire_child_message(entry: InboxEntryRow, at: datetime) -> bool:
-    if entry.kind != "child_message" or entry.status != "pending":
-        return False
-    deadline = entry.payload["deadline"]
-    assert isinstance(deadline, str)
-    if datetime.fromisoformat(deadline) > at:
-        return False
-    fail(entry, Failure(code="child_message_expired", message="The subagent message expired before assignment"), at=at)
-    return True
-
-
 def fail(entry: InboxEntryRow, failure: Failure, *, at: datetime) -> None:
     entry.status, entry.failure, entry.finished_at = "failed", failure.model_dump(), at
 
@@ -447,7 +435,15 @@ async def assign_steers(
     size = 0
     current = await now(session)
     for entry in candidates:
-        if expire_child_message(entry, current) or not steers_into(entry, run, origins.get(entry.origin_run_id or "")):
+        if not steers_into(entry, run, origins.get(entry.origin_run_id or "")):
+            continue
+        # A deployment can lower its steering budget after a message was admitted. Do not block later steers.
+        if entry.kind == "child_message" and entry.size > max_bytes:
+            fail(
+                entry,
+                Failure(code="steer_too_large", message="The subagent message exceeds the steering byte limit"),
+                at=current,
+            )
             continue
         if len(chosen) == max_count or size + entry.size > max_bytes:
             break

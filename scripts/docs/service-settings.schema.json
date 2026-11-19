@@ -1638,7 +1638,6 @@
       "enum": [
         "webhook",
         "child_result",
-        "child_message",
         "tool_result",
         "browser_handback",
         "desktop_handback",

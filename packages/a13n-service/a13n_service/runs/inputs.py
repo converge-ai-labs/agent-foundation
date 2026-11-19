@@ -245,13 +245,13 @@ async def content(
             ),
         )
     if entry.kind == "child_message":
-        payload = {key: value for key, value in entry.payload.items() if key != "deadline"}
         metadata = {"source_id": entry.id}
         if steering:
             metadata["a13n.steering-source"] = "child_message"
         return (
             TextContent(
-                "Message from a delegated subagent (not a human reply):\n" + json.dumps(payload, ensure_ascii=False),
+                "Message from a delegated subagent (not a human reply):\n"
+                + json.dumps(entry.payload, ensure_ascii=False),
                 metadata=metadata,
             ),
         )

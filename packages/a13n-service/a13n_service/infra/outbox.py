@@ -48,7 +48,6 @@ logger = get_logger(__name__)
 type OutboxKind = Literal[
     "webhook",
     "child_result",
-    "child_message",
     "tool_result",
     "browser_handback",
     "desktop_handback",
@@ -91,7 +90,7 @@ class OutboxRow(Base):
     __table_args__ = (
         UniqueConstraint("kind", "dedupe_key"),
         CheckConstraint(
-            "kind IN ('webhook', 'child_result', 'child_message', 'tool_result', 'browser_handback', 'desktop_handback', 'email', 'memory_purge', 'checkpoint_cleanup')",
+            "kind IN ('webhook', 'child_result', 'tool_result', 'browser_handback', 'desktop_handback', 'email', 'memory_purge', 'checkpoint_cleanup')",
             name="kind",
         ),
         # Account mail (password reset, email change) belongs to no organization; every other delivery does.

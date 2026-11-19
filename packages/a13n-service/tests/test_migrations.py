@@ -189,6 +189,41 @@ def test_run_usage_index_retries_after_concurrent_build(empty_database: Database
     check(empty_database, OSS)
 
 
+def test_child_message_upgrade_retries_after_conflicting_lock(empty_database: Database) -> None:
+    previous = "9d1cfd9c1a34"
+    revision = "3d51b520f762"
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, previous)
+    before = rows(empty_database, RULES)
+    engine = create_engine(empty_database.url.get_secret_value())
+    try:
+        with engine.begin() as writer:
+            writer.execute(text("LOCK TABLE runs IN ROW EXCLUSIVE MODE"))
+            with pytest.raises(DBAPIError) as busy:
+                upgrade(empty_database, OSS)
+            assert getattr(busy.value.orig, "sqlstate", None) == "55P03"
+            assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(previous,)]
+            assert rows(empty_database, RULES) == before
+    finally:
+        engine.dispose()
+    upgrade(empty_database, OSS)
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(revision,)]
+    assert rows(
+        empty_database,
+        """
+        SELECT conname, convalidated::text
+        FROM pg_constraint
+        WHERE conname IN ('ck_inbox_entries_kind', 'ck_inbox_entries_request_kind', 'ck_runs_trigger')
+        ORDER BY conname
+        """,
+    ) == [
+        ("ck_inbox_entries_kind", "false"),
+        ("ck_inbox_entries_request_kind", "false"),
+        ("ck_runs_trigger", "false"),
+    ]
+    check(empty_database, OSS)
+
+
 def test_run_usage_index_build_allows_run_writers(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, "a9a9c6399e27")

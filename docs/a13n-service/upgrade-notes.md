@@ -7,7 +7,7 @@ Use this page when upgrading an existing Service deployment, not for a new insta
 
 ## Asynchronous child messages
 
-Stop new admission, drain active attempts, and stop all old `control`, `worker`, and `all` replicas before applying the migration. Start the upgraded replicas together. A new asynchronous child can send a parent message immediately; older binaries cannot interpret the new inbox kind and Run trigger. Update clients that exhaustively match either enum before reopening admission. Disabling or rolling back the binaries does not convert stored messages; use a forward repair if the database already contains child messages.
+Stop new admission, drain active attempts, and stop all old `control`, `worker`, and `all` replicas before applying the migration. Start the upgraded replicas together. A new asynchronous child can send a parent message immediately; older binaries cannot interpret the new inbox kind and Run trigger. Update clients that exhaustively match either enum before reopening admission. The migration only broadens existing CHECK constraints; it creates no tables and does not scan or rewrite existing rows. PostgreSQL briefly needs exclusive locks on the inbox and Run tables. If another transaction holds a conflicting lock, the migration aborts without making changes; release the lock and retry the forward upgrade. Downgrade is refused while child messages are stored.
 
 ## Composable memory guidance rollout
 

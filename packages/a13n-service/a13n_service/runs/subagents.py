@@ -359,11 +359,16 @@ class ChildRuns(SubagentOperator):
     async def _child(self, session: AsyncSession, run_id: str) -> tuple[ThreadRow, RunRow]:
         """Prove the parent's lease, then lock the child thread and its run; only this thread's children."""
         parent, _ = await lock_owner(session, self.runtime, self.lease)
-        run = await session.get(RunRow, run_id)
-        thread = await lock_thread(session, run.thread_id) if run is not None else None
-        if run is None or thread is None or thread.origin != "child" or thread.origin_thread_id != parent.thread_id:
+        # Do not lock arbitrary caller-supplied destinations while holding the caller's Run lock.
+        thread_id = await session.scalar(
+            select(ThreadRow.id)
+            .join(RunRow, RunRow.thread_id == ThreadRow.id)
+            .where(RunRow.id == run_id, ThreadRow.origin == "child", ThreadRow.origin_thread_id == parent.thread_id)
+        )
+        thread = await lock_thread(session, thread_id) if thread_id is not None else None
+        if thread is None:
             raise not_found("execution", run_id)
-        locked = await lock(session, RunRow, run.id)
+        locked = await lock(session, RunRow, run_id)
         assert locked is not None
         return thread, locked
 
