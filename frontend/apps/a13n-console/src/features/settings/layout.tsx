@@ -61,9 +61,7 @@ export function SettingsLayout({
     .map((group) => ({
       ...group,
       sections: group.sections.filter((item) =>
-        `${t(group.label)} ${group.name ?? ""} ${t(item.label)}`
-          .toLocaleLowerCase()
-          .includes(term),
+        `${t(group.label)} ${t(item.label)}`.toLocaleLowerCase().includes(term),
       ),
     }))
     .filter((group) => group.sections.length);
@@ -132,14 +130,7 @@ export function SettingsLayout({
                   key={group.scope}
                   data-scope={group.scope}
                 >
-                  <h2 className={styles.scopeLabel}>
-                    {t(group.label)}
-                    {group.name && (
-                      <span className={styles.scopeName} title={group.name}>
-                        {group.name}
-                      </span>
-                    )}
-                  </h2>
+                  <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
                   {group.sections.map((item) => (
                     <Link
                       key={item.value}

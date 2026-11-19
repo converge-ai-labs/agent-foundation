@@ -311,30 +311,35 @@ function ProviderRegion({
       {region.entries.map(([label, brand, href], index) => {
         const left = x + 12 + (index % region.columns) * cellWidth;
         const top = y + 54 + Math.floor(index / region.columns) * 36;
+        const subtitle =
+          label === "Vercel AI Gateway"
+            ? "AI Gateway"
+            : label === "Alibaba Cloud"
+              ? "Model Studio / Qwen"
+              : undefined;
         return (
-          <Target
+          <foreignObject
             key={label}
-            href={href ?? region.href}
-            name={label}
-            locale={locale}
-            box={[left, top, cellWidth - 2, 32]}
+            x={left}
+            y={top}
+            width={cellWidth + 4}
+            height="34"
           >
-            <ProviderIcon brand={brand} x={left + 4} y={top + 5} />
-            {label === "Vercel AI Gateway" ? (
-              <>
-                <text x={left + 34} y={top + 14} className={styles.provider}>
-                  Vercel
-                </text>
-                <text x={left + 34} y={top + 27} className={styles.detail}>
-                  AI Gateway
-                </text>
-              </>
-            ) : (
-              <text x={left + 34} y={top + 21} className={styles.provider}>
-                {label}
-              </text>
-            )}
-          </Target>
+            <Link
+              href={localeUrl(href ?? region.href, locale)}
+              aria-label={label}
+              title={label}
+              className={styles.providerLink}
+            >
+              <svg width="22" height="22" aria-hidden>
+                <ProviderIcon brand={brand} x={0} y={0} />
+              </svg>
+              <span>
+                {label === "Vercel AI Gateway" ? "Vercel" : label}
+                {subtitle && <span className={styles.detail}>{subtitle}</span>}
+              </span>
+            </Link>
+          </foreignObject>
         );
       })}
       <g className={styles.connection} aria-hidden>

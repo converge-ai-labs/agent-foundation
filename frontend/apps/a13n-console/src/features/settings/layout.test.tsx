@@ -60,10 +60,8 @@ it("lists every scope the reader can reach without a disclosure", () => {
     name: "Settings navigation",
   });
   expect(navigation.querySelectorAll("button")).toHaveLength(0);
-  for (const label of ["Workspace", "Personal", "Organization"])
-    expect(
-      screen.getByRole("heading", { name: new RegExp(label) }),
-    ).toBeTruthy();
+  for (const name of ["Workspace", "Personal", "Organization"])
+    expect(within(navigation).getByRole("heading", { name })).toBeTruthy();
   const scopes = navigation.querySelectorAll("section");
   expect(Array.from(scopes, (item) => item.getAttribute("data-scope"))).toEqual(
     ["personal", "workspace", "organization"],

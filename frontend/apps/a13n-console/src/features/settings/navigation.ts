@@ -201,7 +201,7 @@ export function resolveSection(
 }
 
 export function useSettingsNavigation() {
-  const { workspace, organization, can, organizationCan } = useAccess();
+  const { workspace, can, organizationCan } = useAccess();
   const workspaceApps = useAppSettings("workspace");
   const organizationApps = useAppSettings("organization");
   const appSections = (
@@ -217,7 +217,6 @@ export function useSettingsNavigation() {
     {
       scope: "personal" as const,
       label: "Personal",
-      name: undefined,
       path: "/settings",
       sections: sections.personal,
     },
@@ -226,7 +225,6 @@ export function useSettingsNavigation() {
           {
             scope: "workspace" as const,
             label: "Workspace",
-            name: workspace.name,
             path: `${workspacePath(workspace)}/settings`,
             sections: [
               ...sections.workspace.filter(
@@ -242,7 +240,6 @@ export function useSettingsNavigation() {
           {
             scope: "organization" as const,
             label: "Organization",
-            name: organization.name,
             path: "/organization/settings",
             sections: [
               ...sections.organization,

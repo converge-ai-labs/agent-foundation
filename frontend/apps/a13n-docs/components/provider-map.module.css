@@ -57,14 +57,40 @@
   letter-spacing: -0.025em;
 }
 
-.provider {
+.providerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  min-height: 32px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  color: var(--ink);
   font-size: 12.5px;
+  line-height: 14px;
   letter-spacing: -0.025em;
+  white-space: nowrap;
+  outline: 1.5px solid transparent;
+  outline-offset: -1.5px;
+  transition:
+    background-color 150ms,
+    outline-color 150ms;
+}
+
+.providerLink > svg {
+  flex-shrink: 0;
+}
+
+.providerLink:is(:hover, :focus-visible) {
+  background-color: rgb(80 54 211 / 5%);
+  outline-color: var(--signal);
 }
 
 .detail {
+  display: block;
   font-size: 9px;
-  fill: var(--quiet);
+  line-height: 12px;
+  color: var(--quiet);
 }
 
 .more {
@@ -126,7 +152,13 @@
   fill: var(--paper);
 }
 
-.region:has(.link:hover, .link:focus-visible) .connection {
+.region:has(
+    .link:hover,
+    .link:focus-visible,
+    .providerLink:hover,
+    .providerLink:focus-visible
+  )
+  .connection {
   stroke-width: 2.5;
 }
 
@@ -139,7 +171,8 @@
     stroke 150ms;
 }
 
-.link {
+.link,
+.providerLink {
   cursor: pointer;
 }
 
@@ -176,6 +209,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hit,
+  .providerLink,
   .connection {
     transition: none;
   }
