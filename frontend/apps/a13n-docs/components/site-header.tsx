@@ -40,14 +40,24 @@ export function SiteHeader({
       {...props}
       className={`z-10 h-14 before:absolute before:inset-y-0 before:-inset-x-[50vw] before:-z-10 before:border-b before:bg-fd-background/85 before:backdrop-blur-md ${className}`}
     >
-      <div className="mx-auto flex h-full max-w-(--fd-layout-width,97rem) items-center gap-8 px-4 md:px-6">
-        <Link
-          href={localeUrl("/", locale)}
-          aria-label={t.home}
-          className="shrink-0"
-        >
-          <NavTitle />
-        </Link>
+      <div className="mx-auto flex h-full max-w-(--fd-layout-width,97rem) items-center gap-2 px-4 max-[360px]:px-2 md:gap-8 md:px-6">
+        <div className="flex shrink-0 items-center gap-2">
+          <a
+            href={site.website}
+            aria-label={t.website}
+            className="inline-flex h-11 items-center rounded-md px-1 transition-colors hover:bg-fd-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
+          >
+            <NavTitle />
+          </a>
+          <span aria-hidden="true" className="h-4 w-px bg-fd-border" />
+          <Link
+            href={localeUrl("/", locale)}
+            aria-label={t.home}
+            className="inline-flex h-11 min-w-11 items-center justify-center rounded-md px-1 text-[15px] text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring"
+          >
+            Docs
+          </Link>
+        </div>
         <nav className="flex h-full gap-6 max-lg:hidden">
           {tabs.map((tab) => (
             <Link

@@ -27,13 +27,13 @@ export function LanguageSwitch() {
     <Menu>
       <MenuTrigger
         aria-label={`${messages[locale].language} · ${current.label}`}
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-fd-muted-foreground transition-colors duration-150 hover:bg-fd-accent hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring data-popup-open:bg-fd-accent data-popup-open:text-fd-foreground"
+        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] text-fd-muted-foreground transition-colors duration-150 hover:bg-fd-accent hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring data-popup-open:bg-fd-accent data-popup-open:text-fd-foreground max-[360px]:w-8 max-[360px]:justify-center max-[360px]:gap-0 max-[360px]:px-0"
       >
         <Translate className="size-[18px]" aria-hidden="true" />
         <span className="max-sm:hidden">{current.label}</span>
-        <span className="sm:hidden">{current.compact}</span>
+        <span className="max-[360px]:hidden sm:hidden">{current.compact}</span>
         <CaretDown
-          className="size-3 text-fd-muted-foreground"
+          className="size-3 text-fd-muted-foreground max-[360px]:hidden"
           aria-hidden="true"
         />
       </MenuTrigger>
