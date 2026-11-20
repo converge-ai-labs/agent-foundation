@@ -119,6 +119,14 @@ async def validate_invocation(
         await resolve_memory(session, actor, scope, mount.memory_id, verb="run", authority=authority)
 
 
+def _require_invocation_target(invocation: ScheduleInvocation, *, new_thread: bool) -> None:
+    if not new_thread:
+        if invocation.environments:
+            raise invalid("invocation.environments", "requires_new_thread_target")
+        if invocation.browser_binding is not None:
+            raise invalid("invocation.browser_binding", "requires_new_thread_target")
+
+
 async def resolve_target(
     session: AsyncSession,
     runtime: Runtime,
@@ -127,6 +135,7 @@ async def resolve_target(
     target: ScheduleTarget,
     invocation: ScheduleInvocation,
 ) -> tuple[str, str | None]:
+    _require_invocation_target(invocation, new_thread=target.mode == "new_thread")
     if target.thread_id is not None:
         thread = await get_thread(session, scope.workspace_id, target.thread_id)
         require_open(thread)
@@ -258,6 +267,8 @@ async def update(
         if body.target is not None:
             session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, config.invocation)
             values.update(session_id=session_id, thread_id=thread_id)
+        else:
+            _require_invocation_target(config.invocation, new_thread=row.thread_id is None)
         changed = [name for name, value in values.items() if getattr(row, name) != value]
         if not changed:
             return queries.view(row)

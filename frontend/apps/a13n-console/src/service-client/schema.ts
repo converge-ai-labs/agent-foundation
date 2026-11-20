@@ -11282,6 +11282,7 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id?: string | null;
+      browser_binding?: components["schemas"]["BrowserBinding"] | null;
       /** @default steer */
       delivery?: components["schemas"]["Delivery"];
       /** @default [] */
@@ -13315,6 +13316,9 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      browser_binding?: components["schemas"]["BrowserBinding"] | null;
+      /** @default [] */
+      environments?: components["schemas"]["InitialMounts"];
       /**
        * Memories
        * @default []
@@ -13329,6 +13333,9 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      browser_binding?: components["schemas"]["BrowserBinding"] | null;
+      /** @default [] */
+      environments?: components["schemas"]["InitialMounts"];
       /**
        * Memories
        * @default []

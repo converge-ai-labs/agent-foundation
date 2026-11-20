@@ -124,17 +124,20 @@ native_chromium = "/usr/bin/chromium"
 1. 通过 `GET /api/v1/provider-types/browser` 查看可用类型及 schema，再通过 `POST /api/v1/browser-providers` 创建账号。
 2. 向 `POST /api/v1/browsers` 提交账号的 `provider_id`、浏览器 `name` 和 `recipe`。默认只预留浏览器 ID，准备时才分配浏览器。
 3. 启用 agent 修订版本的 `browser` 工具集。
-4. 读取 thread 的当前 ETag，再将以下请求体发送到 `PUT /api/v1/threads/{thread_id}/browser`，并在 `If-Match` 中携带该 ETag。将 `brw_example` 替换为返回的浏览器 ID。
+
+将下面的绑定对象放在 `POST /api/v1/threads` 请求的 `browser_binding` 字段中，并把示例 ID 替换为上一步返回的浏览器 ID。创建请求同时接收初始 `environments`；在响应的首个 Run 中查看 `browser_binding`，确认它使用了所选浏览器。
 
 ```json
 {
-  "browser_id": "brw_example",
+  "browser_id": "browser_0123456789abcdef01234567",
   "tab_access": "thread",
   "preparation": "first_use"
 }
 ```
 
-完成绑定后再提交 run。绑定变更对后续 run 生效，已接受的 run 保留提交时捕获的绑定。子 thread 和 fork 得到的 thread 需要分别显式绑定。
+对于已存在的 thread，请把同一个对象发送到 `PUT /api/v1/threads/{thread_id}/browser`，并在 `If-Match` 中携带当前 thread 的 ETag。绑定变更对后续 run 生效，已接受的 run 保留提交时捕获的绑定。子 thread 和 fork 得到的 thread 需要分别显式绑定。
+
+[每次触发都创建新 thread 的计划](schedules.md#reuse-an-environment-and-browser-across-firings)使用 `invocation.browser_binding`。
 
 通过 `GET /api/v1/threads/{thread_id}/browser` 查看期望绑定。解除绑定时，携带新的 thread ETag 向 PUT 端点发送 JSON `null`。解除绑定不会释放浏览器或关闭标签页。
 
