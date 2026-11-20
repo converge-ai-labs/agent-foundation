@@ -406,11 +406,15 @@ async def test_startup_retains_last_accepted_generation_until_repaired_tree_is_s
             while True:
                 current = await app.current_configuration()
                 status = await app.status()
-                if current is not None and current.source_digest != first.source_digest:
+                # Acceptance publishes the generation before post-accept work clears diagnostics.
+                if (
+                    current is not None
+                    and current.source_digest != first.source_digest
+                    and status.candidate_error_code is None
+                ):
                     break
                 await sleep(0.05)
         assert current.agents["agent-assistant"].instructions == "Second"
-        assert status.candidate_error_code is None
 
 
 async def test_configuration_observer_reloads_only_after_metadata_fingerprint_changes(
