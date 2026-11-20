@@ -14,7 +14,7 @@ For a heartbeat that should reply only when there is something to report, put th
   "options": {
     "overrides": {
       "output_spec": {
-        "alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "builtin.finish_silently"}]
+        "alternatives": ["text", "builtin.finish_silently"]
       }
     }
   }

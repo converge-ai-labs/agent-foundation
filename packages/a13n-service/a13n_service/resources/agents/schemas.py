@@ -162,27 +162,22 @@ class OutputVariant(_Schemas):
     resources: dict[BoundedKey, JsonObject] = Field(default_factory=dict, max_length=128)
 
 
-class TextOutputAlternative(_Frozen):
-    kind: Literal["text"]
-
-
 class StructuredOutputAlternative(OutputVariant):
     kind: Literal["structured"]
-
-
-class ServerOutputAlternative(_Frozen):
-    kind: Literal["server_tool"]
-    ref: BoundedKey
 
 
 class ClientOutputAlternative(OutputVariant):
     kind: Literal["client_tool"]
 
 
-type OutputAlternative = Annotated[
-    TextOutputAlternative | StructuredOutputAlternative | ServerOutputAlternative | ClientOutputAlternative,
-    Field(discriminator="kind"),
+type OutputReference = Annotated[
+    str,
+    StringConstraints(
+        max_length=128, pattern=r"^(text|builtin\.[A-Za-z0-9_.-]+|[A-Za-z_][A-Za-z0-9_.:-]*:[A-Za-z0-9_.-]+)$"
+    ),
 ]
+type OutputDefinition = Annotated[StructuredOutputAlternative | ClientOutputAlternative, Field(discriminator="kind")]
+type OutputAlternative = OutputReference | OutputDefinition
 
 
 class OutputSpec(_Schemas):

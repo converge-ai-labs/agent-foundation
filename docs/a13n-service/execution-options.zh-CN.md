@@ -14,7 +14,7 @@ description: 导入历史、传递业务上下文，配置工具交接与执行�
   "options": {
     "overrides": {
       "output_spec": {
-        "alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "builtin.finish_silently"}]
+        "alternatives": ["text", "builtin.finish_silently"]
       }
     }
   }

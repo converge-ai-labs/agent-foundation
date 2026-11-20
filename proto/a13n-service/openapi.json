@@ -17840,24 +17840,26 @@
         "type": "object"
       },
       "OutputAlternative": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/OutputReference"
+          },
+          {
+            "$ref": "#/components/schemas/OutputDefinition"
+          }
+        ]
+      },
+      "OutputDefinition": {
         "discriminator": {
           "mapping": {
             "client_tool": "#/components/schemas/ClientOutputAlternative",
-            "server_tool": "#/components/schemas/ServerOutputAlternative",
-            "structured": "#/components/schemas/StructuredOutputAlternative",
-            "text": "#/components/schemas/TextOutputAlternative"
+            "structured": "#/components/schemas/StructuredOutputAlternative"
           },
           "propertyName": "kind"
         },
         "oneOf": [
           {
-            "$ref": "#/components/schemas/TextOutputAlternative"
-          },
-          {
             "$ref": "#/components/schemas/StructuredOutputAlternative"
-          },
-          {
-            "$ref": "#/components/schemas/ServerOutputAlternative"
           },
           {
             "$ref": "#/components/schemas/ClientOutputAlternative"
@@ -17898,6 +17900,11 @@
         ],
         "title": "OutputPreview",
         "type": "object"
+      },
+      "OutputReference": {
+        "maxLength": 128,
+        "pattern": "^(text|builtin\\.[A-Za-z0-9_.-]+|[A-Za-z_][A-Za-z0-9_.:-]*:[A-Za-z0-9_.-]+)$",
+        "type": "string"
       },
       "OutputSpec": {
         "additionalProperties": false,
@@ -23029,27 +23036,6 @@
         "title": "Series",
         "type": "object"
       },
-      "ServerOutputAlternative": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "const": "server_tool",
-            "title": "Kind",
-            "type": "string"
-          },
-          "ref": {
-            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
-            "title": "Ref",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "ref"
-        ],
-        "title": "ServerOutputAlternative",
-        "type": "object"
-      },
       "ServiceAccount": {
         "properties": {
           "created_at": {
@@ -26611,21 +26597,6 @@
           }
         },
         "title": "TemplateUpdate",
-        "type": "object"
-      },
-      "TextOutputAlternative": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "const": "text",
-            "title": "Kind",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "TextOutputAlternative",
         "type": "object"
       },
       "TextPart": {

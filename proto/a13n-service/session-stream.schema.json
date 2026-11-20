@@ -2894,29 +2894,36 @@
       "type": "object"
     },
     "OutputAlternative": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputReference"
+        },
+        {
+          "$ref": "#/$defs/OutputDefinition"
+        }
+      ]
+    },
+    "OutputDefinition": {
       "discriminator": {
         "mapping": {
           "client_tool": "#/$defs/ClientOutputAlternative",
-          "server_tool": "#/$defs/ServerOutputAlternative",
-          "structured": "#/$defs/StructuredOutputAlternative",
-          "text": "#/$defs/TextOutputAlternative"
+          "structured": "#/$defs/StructuredOutputAlternative"
         },
         "propertyName": "kind"
       },
       "oneOf": [
         {
-          "$ref": "#/$defs/TextOutputAlternative"
-        },
-        {
           "$ref": "#/$defs/StructuredOutputAlternative"
-        },
-        {
-          "$ref": "#/$defs/ServerOutputAlternative"
         },
         {
           "$ref": "#/$defs/ClientOutputAlternative"
         }
       ]
+    },
+    "OutputReference": {
+      "maxLength": 128,
+      "pattern": "^(text|builtin\\.[A-Za-z0-9_.-]+|[A-Za-z_][A-Za-z0-9_.:-]*:[A-Za-z0-9_.-]+)$",
+      "type": "string"
     },
     "OutputSpec": {
       "additionalProperties": false,
@@ -4144,27 +4151,6 @@
       "title": "SecretReference",
       "type": "object"
     },
-    "ServerOutputAlternative": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "server_tool",
-          "title": "Kind",
-          "type": "string"
-        },
-        "ref": {
-          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
-          "title": "Ref",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "ref"
-      ],
-      "title": "ServerOutputAlternative",
-      "type": "object"
-    },
     "SessionConfiguration": {
       "additionalProperties": false,
       "description": "Tenant-authored Session policy; Service credentials are not process-environment references.",
@@ -4524,21 +4510,6 @@
         }
       },
       "title": "Subagents",
-      "type": "object"
-    },
-    "TextOutputAlternative": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "text",
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind"
-      ],
-      "title": "TextOutputAlternative",
       "type": "object"
     },
     "TextPart": {

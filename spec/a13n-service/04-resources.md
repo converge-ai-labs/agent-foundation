@@ -99,16 +99,16 @@ Connection selections validate `connection_id`, `tools`, `permission`, and `perm
 
 ### Run output
 
-Omitting `output_spec` allows text. The existing single JSON Schema and named `variants` forms are unchanged. The `alternatives` form selects one to 32 possible outcomes and cannot be combined with the other forms:
+Agent revision `config.output_spec` and Run `options.overrides.output_spec` use the same output contract. An Agent without an output spec allows text. A Run with no override inherits the Agent's contract. The existing single JSON Schema and named `variants` forms are unchanged. The `alternatives` form selects one to 32 possible outcomes and cannot be combined with the other forms:
 
-| `kind`        | Contract                                                                                                                                                                                                                |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text`        | Allow ordinary text.                                                                                                                                                                                                    |
-| `structured`  | Validate a final value with the named JSON Schema.                                                                                                                                                                      |
-| `server_tool` | Select an explicit native output handler by `ref`. `builtin.finish_silently` completes with JSON `null`; `<plugin instance>:<key>` selects an [enabled plugin contribution](15-app-plugins.md#accepted-run-activation). |
-| `client_tool` | Declare a name and object parameter `schema`. A valid call waits for a [terminal receipt](05-runs.md#waiting-interrupt-and-fork).                                                                                       |
+| Alternative                       | Contract                                                                                                                                                                                                 |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"text"`                          | Allow ordinary text.                                                                                                                                                                                     |
+| Object with `kind: "structured"`  | Validate a final value with the named JSON Schema.                                                                                                                                                       |
+| Namespaced string                 | Select a server output handler. `"builtin.finish_silently"` completes with JSON `null`; `"<plugin instance>:<key>"` selects an [enabled plugin contribution](15-app-plugins.md#accepted-run-activation). |
+| Object with `kind: "client_tool"` | Declare a name and object parameter `schema`. A valid call waits for a [terminal receipt](05-runs.md#waiting-interrupt-and-fork).                                                                        |
 
-Text appears at most once and output tool names are distinct. `options.overrides.output_spec` replaces the complete contract for the accepted Run; it neither merges alternatives nor edits the Agent revision. A tool output does not publish a chat reply or retract already-streamed text. The caller decides what to publish.
+Text is allowed only if listed, and appears at most once. Output tool names are distinct. Other bare strings are invalid. `options.overrides.output_spec` replaces the complete contract for the accepted Run; it neither merges alternatives nor edits the Agent revision. A tool output does not publish a chat reply or retract already-streamed text. The caller decides what to publish.
 
 ### Tool discovery
 

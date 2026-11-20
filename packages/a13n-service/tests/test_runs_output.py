@@ -16,6 +16,27 @@ async def _events(service, thread_id):  # type: ignore[no-untyped-def]
     ]
 
 
+async def test_a_run_inherits_and_can_replace_the_agent_output_contract(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    output_spec = {"alternatives": ["text", "builtin.finish_silently"]}
+    agent = await runs_kit.create_agent(service, scripted_model, output_spec=output_spec)
+    scripted_model.call("finish_silently", {}, call_id="quiet")
+    first = await runs_kit.start_thread(service, agent, "Check for work")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, first["run"]["id"])
+    assert (run["status"], run["output"]) == ("completed", None), run
+    await scripted_model.request()
+
+    scripted_model.say("Ordinary reply")
+    second = await runs_kit.start_thread(
+        service, agent, "Reply in text", options={"overrides": {"output_spec": {"alternatives": ["text"]}}}
+    )
+    await (await runs_kit.attempt(service))
+    replacement = await runs_kit.get_run(service, second["run"]["id"])
+    assert (replacement["status"], replacement["output"]) == ("completed", "Ordinary reply"), replacement
+    request = await scripted_model.request()
+    assert "finish_silently" not in {item["function"]["name"] for item in request.get("tools", [])}
+
+
 async def test_quiet_output_is_scoped_to_one_run(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     scripted_model.call("finish_silently", {}, call_id="quiet")
@@ -23,13 +44,7 @@ async def test_quiet_output_is_scoped_to_one_run(service, scripted_model, runs_k
         service,
         agent,
         "Check for work",
-        options={
-            "overrides": {
-                "output_spec": {
-                    "alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "builtin.finish_silently"}]
-                }
-            }
-        },
+        options={"overrides": {"output_spec": {"alternatives": ["text", "builtin.finish_silently"]}}},
     )
     await (await runs_kit.attempt(service))
     run = await runs_kit.get_run(service, first["run"]["id"])
@@ -63,7 +78,7 @@ async def _client_wait(service, scripted_model, runs_kit):  # type: ignore[no-un
             "overrides": {
                 "output_spec": {
                     "alternatives": [
-                        {"kind": "text"},
+                        "text",
                         {
                             "kind": "client_tool",
                             "name": "publish_card",

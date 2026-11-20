@@ -28,9 +28,7 @@ from a13n_service.resources.agents.schemas import (
     ClientOutputAlternative,
     JsonObject,
     OutputSpec,
-    ServerOutputAlternative,
     StructuredOutputAlternative,
-    TextOutputAlternative,
     ToolSearch,
     ToolSearchGroup,
 )
@@ -88,15 +86,15 @@ def output_type(
             alternatives: list[Any] = []
             names: set[str] = set()
             for item in spec.alternatives:
-                if isinstance(item, TextOutputAlternative):
+                if item == "text":
                     if str in alternatives:
                         raise ValueError("Only one text alternative is allowed")
                     alternatives.append(str)
                     continue
-                if isinstance(item, ServerOutputAlternative):
+                if isinstance(item, str):
                     if server_tool is None:
                         raise ValueError("Server output tools require the Agent's plugin configuration")
-                    tool = server_tool(item.ref)
+                    tool = server_tool(item)
                 elif isinstance(item, ClientOutputAlternative):
                     tool = client_output_tool(item.name, _inline(item.schema_, item.resources), item.description)
                 else:

@@ -334,12 +334,23 @@ def test_output_alternatives_only_select_enabled_and_explicit_plugin_tools() -> 
     assert definition.agent_output_type(config(plugins=[plugin]), PLUGINS) is str
     selected = config(
         plugins=[plugin],
-        output_spec={"alternatives": [{"kind": "text"}, {"kind": "server_tool", "ref": "audit:summary"}]},
+        output_spec={"alternatives": ["text", "audit:summary"]},
     )
     text, tool = definition.agent_output_type(selected, PLUGINS)
     assert text is str and tool.name == "audit_summary" and tool.output() == {"level": 3}
     with pytest.raises(ServiceError, match="Unavailable server output tool"):
         definition.agent_output_type(selected, PLUGINS, enabled=lambda _key: False)
+
+
+@pytest.mark.parametrize(
+    "unsupported", ["finish_silently", {"kind": "text"}, {"kind": "server_tool", "ref": "audit:summary"}]
+)
+def test_output_alternatives_require_namespaced_references_or_definitions(unsupported: object) -> None:
+    spec = {"alternatives": [unsupported]}
+    with pytest.raises(ValidationError):
+        config(output_spec=spec)
+    with pytest.raises(ValidationError):
+        AgentOverride.model_validate({"output_spec": spec})
 
 
 def test_output_alternatives_cannot_shadow_an_enabled_builtin() -> None:

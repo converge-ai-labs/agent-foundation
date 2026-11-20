@@ -39,6 +39,20 @@ Choose the setting that supplies the capability you need:
 
 Saving validates references against the workspace. Omitted skill and subagent revision IDs are pinned to their current defaults. Models, connections, providers and templates remain live resources resolved when used. `lazy_environment` defaults to true: instances prepare on first use. Setting it false prepares them before Harness starts; execution connections still open on first use.
 
+## Output contract
+
+Set `config.output_spec` on an Agent revision to reuse the same contract across Runs:
+
+```json
+{
+  "config": {
+    "output_spec": {"alternatives": ["text", "builtin.finish_silently"]}
+  }
+}
+```
+
+This snippet shows only the output setting; include the rest of the Agent config when creating the revision. The same object can be passed as `options.overrides.output_spec` to [replace the contract for one Run](execution-options.md#choose-how-a-run-can-finish). Without an override, the Run inherits the Agent revision's contract. If the Agent omits it, the default is text. Existing single-schema and named `variants` configurations are still accepted.
+
 ## Context compaction
 
 Service summarizes older conversation context as it grows. Synchronous compaction is the default. To generate summaries in the background, open **Advanced → Context compaction**, enable **Enable background compaction**, and save the revision:

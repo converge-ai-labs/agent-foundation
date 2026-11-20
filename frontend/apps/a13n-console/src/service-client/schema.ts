@@ -11681,9 +11681,10 @@ export interface components {
       name?: string | null;
     };
     OutputAlternative:
-      | components["schemas"]["TextOutputAlternative"]
+      | components["schemas"]["OutputReference"]
+      | components["schemas"]["OutputDefinition"];
+    OutputDefinition:
       | components["schemas"]["StructuredOutputAlternative"]
-      | components["schemas"]["ServerOutputAlternative"]
       | components["schemas"]["ClientOutputAlternative"];
     /** OutputPreview */
     OutputPreview: {
@@ -11696,6 +11697,7 @@ export interface components {
       /** Truncated */
       truncated: boolean;
     };
+    OutputReference: string;
     /**
      * OutputSpec
      * @description Plain text without a schema, one structured output, or at least two named variants.
@@ -13460,16 +13462,6 @@ export interface components {
       /** Points */
       points: [number, number, number, number][];
     };
-    /** ServerOutputAlternative */
-    ServerOutputAlternative: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      kind: "server_tool";
-      /** Ref */
-      ref: string;
-    };
     /** ServiceAccount */
     ServiceAccount: {
       /**
@@ -14604,14 +14596,6 @@ export interface components {
       name?: string | null;
       /** Provider Id */
       provider_id?: string | null;
-    };
-    /** TextOutputAlternative */
-    TextOutputAlternative: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      kind: "text";
     };
     /** TextPart */
     TextPart: {
