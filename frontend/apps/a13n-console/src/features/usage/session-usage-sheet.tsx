@@ -7,8 +7,8 @@ import {
   SheetTitle,
 } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import type { Schema } from "../../shared/api";
 import { useMountedModal } from "../../shared/dialogs";
+import type { usagePage, UsageAgent, UsageMember } from "./navigation";
 import { Breakdown } from "./breakdown";
 import styles from "./usage.module.css";
 
@@ -17,11 +17,13 @@ export function SessionUsageSheet({
   window,
   member,
   onClose,
+  page,
 }: {
-  agent: Schema["AgentUsage"];
+  agent: UsageAgent;
   window: { start: string; end: string };
-  member: Schema["MemberUsage"] | null;
+  member: UsageMember | null;
   onClose: () => void;
+  page: ReturnType<typeof usagePage>;
 }) {
   const { t, i18n } = useTranslation();
   const { modalProps } = useMountedModal(onClose);
@@ -50,6 +52,7 @@ export function SessionUsageSheet({
           <div className={styles.breakdown} data-group="sessions">
             <Breakdown
               window={window}
+              page={page}
               group="sessions"
               agentId={agent.agent_id}
               principalId={member?.principal_id}

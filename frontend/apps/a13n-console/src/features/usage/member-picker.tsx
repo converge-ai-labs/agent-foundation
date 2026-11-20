@@ -8,6 +8,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, useCursor } from "../../shared/collection";
 import { ErrorNotice, InlineLoading } from "../../shared/feedback";
+import type { UsageMember } from "./navigation";
 import styles from "./usage.module.css";
 
 export function MemberPicker({
@@ -16,7 +17,7 @@ export function MemberPicker({
   onSelect,
 }: {
   window: { start: string; end: string };
-  member: Schema["MemberUsage"] | null;
+  member: UsageMember | null;
   onSelect: (member: Schema["MemberUsage"] | null) => void;
 }) {
   const { t } = useTranslation();
@@ -53,7 +54,7 @@ function MemberOptions({
   onSelect,
 }: {
   window: { start: string; end: string };
-  member: Schema["MemberUsage"] | null;
+  member: UsageMember | null;
   onSelect: (member: Schema["MemberUsage"] | null) => void;
 }) {
   const { t } = useTranslation();

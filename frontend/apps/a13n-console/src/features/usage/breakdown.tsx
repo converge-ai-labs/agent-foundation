@@ -10,12 +10,12 @@ import {
   Empty,
   Pagination,
   ResourceTable,
-  useCursor,
   type ResourceColumn,
 } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { formatCost } from "../../shared/cost";
 import { ModelKeyIcon } from "../models/model-icon";
+import type { usagePage } from "./navigation";
 import { duration, percent } from "./values";
 import styles from "./usage.module.css";
 
@@ -32,8 +32,10 @@ export function Breakdown({
   onMemberSelect,
   agentId,
   onAgentSelect,
+  page,
 }: {
   window: { start: string; end: string };
+  page: ReturnType<typeof usagePage>;
   principalId?: string;
   onMemberSelect?: (member: Schema["MemberUsage"]) => void;
   onAgentSelect?: (agent: Schema["AgentUsage"]) => void;
@@ -47,7 +49,6 @@ export function Breakdown({
     navigate = useNavigate();
   const sessionPath = (id: string) =>
     `/workspace/${workspace.id}/sessions/${encodeURIComponent(id)}?view=debug`;
-  const page = useCursor({ ...window, group, principalId, agentId });
   const query = useQuery({
     queryKey: [
       "usage",
