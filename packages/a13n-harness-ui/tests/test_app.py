@@ -2139,7 +2139,7 @@ async def test_thread_collaboration_tools_are_only_exposed_by_webui_roots(tmp_pa
 
             return _reconstructed(model, root_capabilities)
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode=host_mode) as app:
         app._root_runs._executor._agents = InspectReconstructor()
         thread = await app.create_thread()
