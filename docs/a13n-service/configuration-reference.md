@@ -301,9 +301,10 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `plugins`
 
-| Setting        | Environment variable | Type / choices  | Constraints and default |
-| -------------- | -------------------- | --------------- | ----------------------- |
-| `plugins.keys` | `A13N_PLUGINS__KEYS` | array of string | default=[]              |
+| Setting                          | Environment variable                   | Type / choices  | Constraints and default |
+| -------------------------------- | -------------------------------------- | --------------- | ----------------------- |
+| `plugins.keys`                   | `A13N_PLUGINS__KEYS`                   | array of string | default=[]              |
+| `plugins.bootstrap_enabled_apps` | `A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS` | array of string | default=[]              |
 
 ## `composer`
 

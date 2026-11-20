@@ -4512,6 +4512,60 @@
         "title": "ClientEnvironmentConfiguration",
         "type": "object"
       },
+      "ClientOutputAlternative": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "const": "client_tool",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "resources": {
+            "maxProperties": 128,
+            "patternProperties": {
+              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              }
+            },
+            "title": "Resources",
+            "type": "object"
+          },
+          "schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "schema",
+          "kind"
+        ],
+        "title": "ClientOutputAlternative",
+        "type": "object"
+      },
       "ClientToolDefinition": {
         "additionalProperties": false,
         "description": "Portable model guidance for one externally executed client tool.",
@@ -17785,6 +17839,33 @@
         "title": "OrganizationUpdate",
         "type": "object"
       },
+      "OutputAlternative": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/OutputReference"
+          },
+          {
+            "$ref": "#/components/schemas/OutputDefinition"
+          }
+        ]
+      },
+      "OutputDefinition": {
+        "discriminator": {
+          "mapping": {
+            "client_tool": "#/components/schemas/ClientOutputAlternative",
+            "structured": "#/components/schemas/StructuredOutputAlternative"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StructuredOutputAlternative"
+          },
+          {
+            "$ref": "#/components/schemas/ClientOutputAlternative"
+          }
+        ]
+      },
       "OutputPreview": {
         "properties": {
           "observation_closed": {
@@ -17820,10 +17901,31 @@
         "title": "OutputPreview",
         "type": "object"
       },
+      "OutputReference": {
+        "maxLength": 128,
+        "pattern": "^(text|builtin\\.[A-Za-z0-9_.-]+|[A-Za-z_][A-Za-z0-9_.:-]*:[A-Za-z0-9_.-]+)$",
+        "type": "string"
+      },
       "OutputSpec": {
         "additionalProperties": false,
         "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
         "properties": {
+          "alternatives": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OutputAlternative"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alternatives"
+          },
           "description": {
             "anyOf": [
               {
@@ -18368,6 +18470,11 @@
               }
             ],
             "title": "Presentation"
+          },
+          "terminal": {
+            "default": false,
+            "title": "Terminal",
+            "type": "boolean"
           },
           "tool_call_id": {
             "$ref": "#/components/schemas/ToolCallId"
@@ -25337,6 +25444,60 @@
           "immediate"
         ],
         "type": "string"
+      },
+      "StructuredOutputAlternative": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "const": "structured",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "resources": {
+            "maxProperties": 128,
+            "patternProperties": {
+              "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              }
+            },
+            "title": "Resources",
+            "type": "object"
+          },
+          "schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "schema",
+          "kind"
+        ],
+        "title": "StructuredOutputAlternative",
+        "type": "object"
       },
       "SubagentSelection-Input": {
         "additionalProperties": false,

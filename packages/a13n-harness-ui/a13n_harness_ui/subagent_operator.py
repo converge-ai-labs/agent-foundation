@@ -52,6 +52,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.content import ContentItem, content_items
 from a13n_harness.content import ContentMetadata as HarnessContentMetadata
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.execution_identity import format_execution_header
 from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
@@ -99,7 +100,13 @@ from a13n_harness_ui.composition import (
 )
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
-from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreConflictError, StoreError
+from a13n_harness_ui.errors import (
+    EnvironmentLifecycleError,
+    HarnessUiError,
+    RunCoordinationError,
+    StoreConflictError,
+    StoreError,
+)
 from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
@@ -489,26 +496,16 @@ class HarnessUiSubagentOperator(SubagentOperator):
         ):
             raise RunCoordinationError("The child admission was retargeted.", code="subagent_plan_invalid")
 
-        source = await self._configurations.load(scope.composition.generation_digest)
-        state = HarnessState.new()
-        configuration = _initial_child_configuration(scope.composition, edge)
-        selection = _selection(state.thread_id, configuration)
-        published = await self._compositions.publish(
-            source,
-            selection,
-            parent_node=scope.composition.root,
-            run_configuration=scope.composition.run_configuration,
-        )
-        if published.value.root != edge.definition:
-            raise RunCoordinationError(
-                "The child definition changed after parent admission.",
-                code="subagent_plan_invalid",
-            )
         async with self._admission(scope):
+            state = HarnessState.new()
+            composition = await self._compositions.derive_child(
+                parent=scope.composition,
+                root=edge.definition,
+                thread_id=state.thread_id,
+            )
             return await self._prepare_child(
                 scope=scope,
-                published=published,
-                configuration=configuration,
+                composition=composition,
                 state=state,
                 subagent_name=request.subagent_name,
                 input=plan.context.input,
@@ -533,23 +530,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self,
         *,
         scope: ParentRunScope,
-        published: PublishedRunComposition,
-        configuration: ThreadConfiguration,
+        composition: ResolvedRunComposition,
         state: HarnessState,
         subagent_name: str,
         input: RunInputValue,
         identity_policy: SubagentIdentityPolicy,
         usage_limits: UsageLimits | None,
     ) -> AsyncExecutionView:
-        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
-        reconstructed = self._agents.reconstruct(
-            published.value,
-            pricing_catalog=pricing_catalog,
-            subagent_operator=self,
-            subagent=True,
-            subscription_sources=self._subscription_sources,
-            root_capabilities=self._checkpoint_capabilities(state.thread_id),
-        )
+        reconstructed = await self._reconstruct_child(composition)
         initial = await self._store.objects.publish_model(
             object_kind=ObjectKind.thread_initial_state,
             value=StoredThreadInitialState(harness_state=state, created_at=datetime.now(UTC)),
@@ -557,15 +545,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         await self._store.threads.create(
             thread_id=state.thread_id,
             parent_thread_id=scope.thread_id,
-            configuration=configuration,
+            configuration=_initial_child_configuration(composition),
             initial_state=initial.ref,
             title=subagent_name,
         )
         await self._store.threads.replace_external_context(state.thread_id, scope.external_context)
         # Preparation publishes binding state against this Thread, before execution is admitted.
-        captured = await self._environments.admit(published.value)
-        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
-        published = PublishedRunComposition(value=captured, reference=envelope.ref)
+        published = await self._compositions.save(await self._environments.admit(composition))
         environment = await self._environments.prepare(published.value)
 
         execution_id = _public_id("execution")
@@ -668,33 +654,16 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 else tuple(tool for tool in scope.composition.root.tools if tool not in _PARENT_CONTROL_TOOLS),
             }
         )
-        composition = scope.composition.model_copy(
-            update={
-                "package_prompt_revision": PACKAGE_PROMPT_REVISION,
-                "thread_id": state.thread_id,
-                "thread_configuration_version": 1,
-                "root": root,
-            }
-        )
-        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=composition)
-        published = PublishedRunComposition(value=composition, reference=envelope.ref)
-        configuration = ThreadConfiguration(
-            version=1,
-            project_id=composition.project_id,
-            local_roots=composition.project_roots,
-            agent_source=DynamicAgentSource(id=root.source_id),
-            environment_profile_id=composition.environment_profile.profile_id,
-            environment_bindings=tuple(item.selection for item in composition.environment_bindings),
-            default_environment=composition.default_environment,
-            harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),
-            environment_run_extension_ids=tuple(item.extension_id for item in composition.environment_run_extensions),
-            mcp_server_ids=tuple(item.server_id for item in root.mcp_servers if item.generic_selected),
-        )
         async with self._admission(scope):
+            composition = await self._compositions.derive_child(
+                parent=scope.composition,
+                root=root,
+                thread_id=state.thread_id,
+                package_prompt_revision=PACKAGE_PROMPT_REVISION,
+            )
             return await self._prepare_child(
                 scope=scope,
-                published=published,
-                configuration=configuration,
+                composition=composition,
                 state=state,
                 subagent_name=name,
                 input=prompt,
@@ -1197,19 +1166,28 @@ class HarnessUiSubagentOperator(SubagentOperator):
             or source.source_digest != retained.scope.composition.generation_digest
         ):
             return False
-        await self._resume_child(
-            scope=retained.scope,
-            previous=previous,
-            input=prompt,
-            identity=retained.identity,
-            usage_limits=retained.usage_limits,
-            before_accept=before_accept,
-            automatic_completion=ChildCompletionGuard(
-                generation_digest=retained.scope.composition.generation_digest,
-                parent_configuration_version=retained.scope.composition.thread_configuration_version,
-                child_configuration_version=retained.configuration_version,
-            ),
-        )
+        try:
+            await self._resume_child(
+                scope=retained.scope,
+                previous=previous,
+                input=prompt,
+                identity=retained.identity,
+                usage_limits=retained.usage_limits,
+                before_accept=before_accept,
+                automatic_completion=ChildCompletionGuard(
+                    generation_digest=retained.scope.composition.generation_digest,
+                    parent_configuration_version=retained.scope.composition.thread_configuration_version,
+                    child_configuration_version=retained.configuration_version,
+                ),
+            )
+        except StoreConflictError as exc:
+            if exc.code != "tool_completion_authority_changed":
+                raise
+            return False
+        except (EnvironmentError, EnvironmentLifecycleError) as exc:
+            if exc.code != "envd_session_conflict":
+                raise
+            return False
         return True
 
     async def _resume_child(
@@ -1232,31 +1210,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     code="subagent_resume_incompatible",
                 )
             thread = await self._require_child_thread(previous)
-            source = await self._configurations.load(scope.composition.generation_digest)
-            retained_root = None
-            if thread.configuration.agent_source.kind == "dynamic":
-                retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
-                retained_root = retained.root
-            published = await self._compositions.publish(
-                source,
-                _selection(thread.thread_id, thread.configuration),
-                parent_node=scope.composition.root,
-                dynamic_node=retained_root,
-                run_configuration=scope.composition.run_configuration,
-            )
-            pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
-            reconstructed = self._agents.reconstruct(
-                published.value,
-                pricing_catalog=pricing_catalog,
-                memory_positions=checkpoint.memory_cursors,
-                subagent_operator=self,
-                subagent=True,
-                subscription_sources=self._subscription_sources,
-                root_capabilities=self._checkpoint_capabilities(thread.thread_id),
-            )
-            captured = await self._environments.admit(published.value)
-            envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
-            published = PublishedRunComposition(value=captured, reference=envelope.ref)
+            if automatic_completion is None:
+                composition = await self._resolve_child_resume(scope, previous, thread)
+            else:
+                composition = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
+            reconstructed = await self._reconstruct_child(composition, memory_positions=checkpoint.memory_cursors)
+            if automatic_completion is None:
+                published = await self._compositions.save(await self._environments.admit(composition))
+            else:
+                published = PublishedRunComposition(value=composition, reference=previous.run_composition)
             environment = await self._environments.prepare(published.value)
             execution_id = _public_id("execution")
             agent_instance_id = _public_id("agent")
@@ -1316,6 +1278,35 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 source=_execution_source(published.value.root),
             )
 
+    async def _resolve_child_resume(
+        self, scope: ParentRunScope, previous: ChildExecutionHead, thread: Thread
+    ) -> ResolvedRunComposition:
+        source = await self._configurations.load(scope.composition.generation_digest)
+        retained_root = None
+        if thread.configuration.agent_source.kind == "dynamic":
+            retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
+            retained_root = retained.root
+        return await self._compositions.resolve_child_resume(
+            source,
+            _selection(thread.thread_id, thread.configuration),
+            parent=scope.composition,
+            dynamic_node=retained_root,
+        )
+
+    async def _reconstruct_child(
+        self, composition: ResolvedRunComposition, *, memory_positions: Mapping[str, str | None] | None = None
+    ) -> ReconstructedAgent:
+        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+        return self._agents.reconstruct(
+            composition,
+            pricing_catalog=pricing_catalog,
+            memory_positions=memory_positions,
+            subagent_operator=self,
+            subagent=True,
+            subscription_sources=self._subscription_sources,
+            root_capabilities=self._checkpoint_capabilities(composition.thread_id),
+        )
+
     async def cancel_restart(self, thread_id: str) -> None:
         async with self._lock:
             active = tuple(entry for entry in self._active.values() if entry.stream.thread_id == thread_id)
@@ -1356,16 +1347,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             instance=AgentInstanceContext(identity=parent_identity, agent_instance_id=_public_id("agent")),
             composition=parent_composition,
         )
-        pricing = await to_thread.run_sync(get_current_pricing_catalog)
-        reconstructed = self._agents.reconstruct(
-            composition,
-            pricing_catalog=pricing,
-            memory_positions=checkpoint.memory_cursors,
-            subagent_operator=self,
-            subagent=True,
-            subscription_sources=self._subscription_sources,
-            root_capabilities=self._checkpoint_capabilities(item.thread_id),
-        )
+        reconstructed = await self._reconstruct_child(composition, memory_positions=checkpoint.memory_cursors)
         environment = await self._environments.prepare(composition)
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
         limits = None if item.usage_limits is None else TypeAdapter(UsageLimits).validate_python(item.usage_limits)
@@ -2584,26 +2566,28 @@ def _require_edge(parent: ResolvedAgentNode, name: str) -> ResolvedSubagent:
     )
 
 
-def _initial_child_configuration(
-    parent: ResolvedRunComposition,
-    edge: ResolvedSubagent,
-) -> ThreadConfiguration:
-    source = (
-        AgentResourceSource(id=edge.source_id)
-        if edge.source_kind == "agent"
-        else MarkdownSubagentSource(id=edge.source_id)
-    )
+def _initial_child_configuration(composition: ResolvedRunComposition) -> ThreadConfiguration:
+    root = composition.root
+    match root.source_kind:
+        case "agent":
+            source = AgentResourceSource(id=root.source_id)
+        case "markdown":
+            source = MarkdownSubagentSource(id=root.source_id)
+        case "dynamic":
+            source = DynamicAgentSource(id=root.source_id)
+        case _:
+            raise ValueError("Invalid child Agent source")
     return ThreadConfiguration(
         version=1,
-        project_id=parent.project_id,
-        local_roots=parent.project_roots,
+        project_id=composition.project_id,
+        local_roots=composition.project_roots,
         agent_source=source,
-        environment_profile_id=parent.environment_profile.profile_id,
-        environment_bindings=tuple(item.selection for item in parent.environment_bindings),
-        default_environment=parent.default_environment,
-        harness_plugin_ids=tuple(item.plugin_id for item in edge.definition.harness_plugins),
-        environment_run_extension_ids=tuple(item.extension_id for item in parent.environment_run_extensions),
-        mcp_server_ids=tuple(item.server_id for item in edge.definition.mcp_servers if item.generic_selected),
+        environment_profile_id=composition.environment_profile.profile_id,
+        environment_bindings=tuple(item.selection for item in composition.environment_bindings),
+        default_environment=composition.default_environment,
+        harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),
+        environment_run_extension_ids=tuple(item.extension_id for item in composition.environment_run_extensions),
+        mcp_server_ids=tuple(item.server_id for item in root.mcp_servers if item.generic_selected),
     )
 
 

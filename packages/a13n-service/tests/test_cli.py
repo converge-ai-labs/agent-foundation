@@ -3,10 +3,13 @@
 import json
 from pathlib import Path
 
+import pytest
+from a13n_service import cli as service_cli
+from a13n_service.app_definitions import AppDefinition, InstalledApp
 from a13n_service.cli import main
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.settings import Settings
-from a13n_service.tenancy.tables import PrincipalRow
+from a13n_service.tenancy.tables import OrganizationRow, PrincipalRow
 from click.testing import CliRunner
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -55,6 +58,35 @@ def test_bootstrap_then_operator_disables_and_enables_a_user(
         ("user.disable", None, {"authority": "operator"}),
         ("user.enable", None, {"authority": "operator"}),
     ]
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_cli_bootstrap_seeds_only_installed_apps(
+    settings: Settings, tmp_path: Path, clean_environment: None, monkeypatch: pytest.MonkeyPatch, installed: bool
+) -> None:
+    app = InstalledApp(AppDefinition(app_id="acme.reports", name="Reports"), "reports", "1.0")
+    monkeypatch.setattr(service_cli, "discover_apps", lambda: (app,) if installed else ())
+    config = tmp_path / "service.toml"
+    config.write_text(
+        f'[database]\nurl = "{settings.database.url.get_secret_value()}"\nauto_migrate = false\n'
+        '[plugins]\nbootstrap_enabled_apps = ["acme.reports"]\n'
+    )
+    runner = CliRunner()
+    args = ["--config", str(config), "bootstrap", "--email", "owner@example.com", "--password-stdin"]
+    result = runner.invoke(main, args, input="eight-88\n", catch_exceptions=False)
+    engine = create_engine(settings.database.url.get_secret_value())
+    try:
+        with Session(engine) as session:
+            organization = session.scalars(select(OrganizationRow)).one_or_none()
+            if installed:
+                assert result.exit_code == 0, result.output
+                assert organization is not None
+                assert organization.settings == {"app_plugins": {"enabled": ["acme.reports"]}}
+            else:
+                assert result.exit_code == 1 and "not installed" in result.output
+                assert organization is None
+    finally:
+        engine.dispose()
 
 
 def test_operator_commands_log_to_stdout_never_to_the_server_log_file(

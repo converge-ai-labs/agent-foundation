@@ -73,6 +73,11 @@ def canonical_json(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
 
 
+def require_output_size(output: JsonValue, limit: int) -> None:
+    if len(canonical_json(output)) > limit:
+        raise ServiceError("payload_too_large", "Run output exceeds its byte limit", {"limit": limit})
+
+
 class _Frozen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -390,6 +395,7 @@ class PendingCall(_Frozen):
     tool_name: str
     arguments: dict[str, JsonValue]
     presentation: dict[str, JsonValue] | None = None
+    terminal: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class Pending(_Frozen):

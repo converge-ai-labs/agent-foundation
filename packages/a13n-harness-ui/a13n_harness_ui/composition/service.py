@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from a13n_harness import RunConfiguration
 from a13n_logging import get_logger
 from anyio import Lock, to_thread
 from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
+from a13n_harness_ui.errors import CompositionError
+from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
@@ -116,9 +117,17 @@ class CompositionAcceptanceService:
 class RunCompositionService:
     """Resolve and publish the exact immutable composition for one admitted Run."""
 
-    def __init__(self, store: LocalStore, resolver: AgentCompositionResolver, *, oauth: McpOAuth | None = None) -> None:
+    def __init__(
+        self,
+        store: LocalStore,
+        resolver: AgentCompositionResolver,
+        configurations: CompositionAcceptanceService,
+        *,
+        oauth: McpOAuth | None = None,
+    ) -> None:
         self._store = store
         self._resolver = resolver
+        self._configurations = configurations
         self._oauth = oauth
         self.connector_capture: Callable[[], Awaitable[tuple[ConnectorCapture, ...]]] | None = None
 
@@ -127,41 +136,97 @@ class RunCompositionService:
 
     async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:
         value = self._resolver.resolve_memory(source, thread)
-        if self._oauth is not None:
-            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
-        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=value)
-        return PublishedRunComposition(value=value, reference=envelope.ref)
+        return await self.save(await self._bind_oauth(value))
 
     async def publish(
         self,
         source: LoadedHarnessUiConfiguration,
         selection: ThreadCompositionSelection,
         *,
-        parent_node: ResolvedAgentNode | None = None,
-        dynamic_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
-        run_configuration: RunConfiguration | None = None,
     ) -> PublishedRunComposition:
+        value = self._resolver.resolve_run(source, selection, model_overrides=model_overrides)
+        if self.connector_capture is not None and value.root.source_kind not in {"live", "memory"}:
+            value = value.model_copy(update={"connectors": await self.connector_capture()})
+        return await self.save(await self._bind_oauth(value))
+
+    async def resolve_child_resume(
+        self,
+        source: LoadedHarnessUiConfiguration,
+        selection: ThreadCompositionSelection,
+        *,
+        parent: ResolvedRunComposition,
+        dynamic_node: ResolvedAgentNode | None,
+    ) -> ResolvedRunComposition:
         value = self._resolver.resolve_run(
             source,
             selection,
-            parent_node=parent_node,
+            parent_node=parent.root,
             dynamic_node=dynamic_node,
-            model_overrides=model_overrides,
-            run_configuration=run_configuration,
+            run_configuration=parent.run_configuration,
         )
-        if (
-            self.connector_capture is not None
-            and parent_node is None
-            and value.root.source_kind not in {"live", "memory"}
-        ):
-            value = value.model_copy(update={"connectors": await self.connector_capture()})
-        if self._oauth is not None and parent_node is None:
-            value = value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
-        envelope = await self._store.objects.publish_model(
-            object_kind=ObjectKind.run_composition,
-            value=value,
-        )
+        return await self._bind_oauth(value)
+
+    async def derive_child(
+        self,
+        *,
+        parent: ResolvedRunComposition,
+        root: ResolvedAgentNode,
+        thread_id: str,
+        package_prompt_revision: str | None = None,
+    ) -> ResolvedRunComposition:
+        """Project a captured child policy without inheriting parent-only authority or bindings."""
+        profile = parent.base_environment_profile or parent.environment_profile
+        if parent.base_environment_profile is None and profile.adapter_key == LocalEnvdProjectAdapter.key:
+            # Legacy captures only retained the admitted profile. Rebuild the original input,
+            # never treat the parent's derived grants as explicit grants for the child.
+            source = await self._configurations.load(parent.generation_digest)
+            base = self._resolver.environment_profile(source, profile.profile_id)
+            if base.behavior_digest != profile.behavior_digest:
+                raise CompositionError(
+                    "The original local Environment profile cannot be reconstructed; start a new parent Run.",
+                    code="subagent_environment_incompatible",
+                )
+            profile = base
+
+        used = {("environment_provider", profile.provider_key), ("environment_adapter", profile.adapter_key)}
+        used.update(("environment_run_extension", item.extension_key) for item in parent.environment_run_extensions)
+        pending = [root]
+        while pending:
+            node = pending.pop()
+            used.update(("capability", item.capability) for item in node.capabilities)
+            used.update(("harness_plugin", item.plugin_key) for item in node.harness_plugins)
+            pending.extend(item.definition for item in node.children)
+        return ResolvedRunComposition(
+            package_prompt_revision=package_prompt_revision or parent.package_prompt_revision,
+            generation_digest=parent.generation_digest,
+            thread_id=thread_id,
+            thread_configuration_version=1,
+            root=root,
+            project_id=parent.project_id,
+            project_roots=parent.project_roots,
+            environment_profile=profile,
+            environment_bindings=parent.environment_bindings,
+            default_environment=parent.default_environment,
+            environment_run_extensions=parent.environment_run_extensions,
+            dependencies=tuple(item for item in parent.dependencies if (item.kind, item.key) in used),
+            run_configuration=parent.run_configuration,
+            subagents=parent.subagents,
+            tool_execution=parent.tool_execution,
+            memory_enabled=parent.memory_enabled,
+            background_compaction=parent.background_compaction,
+            media_understanding=parent.media_understanding,
+            web_providers=parent.web_providers,
+            content_plugins=parent.content_plugins,
+        ).model_copy(deep=True)
+
+    async def _bind_oauth(self, value: ResolvedRunComposition) -> ResolvedRunComposition:
+        if self._oauth is None:
+            return value
+        return value.model_copy(update={"root": await self._oauth.bind_node(value.root)})
+
+    async def save(self, value: ResolvedRunComposition) -> PublishedRunComposition:
+        envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=value)
         return PublishedRunComposition(value=value, reference=envelope.ref)
 
 

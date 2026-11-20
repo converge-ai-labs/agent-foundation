@@ -331,6 +331,7 @@ class EnvironmentRunService:
             composition = composition.model_copy(
                 update={
                     "environment_profile": profile,
+                    "base_environment_profile": composition.environment_profile,
                     "project_roots": tuple(str(root) for root in roots),
                 }
             )
@@ -1061,6 +1062,7 @@ def _target_composition(
             "project_id": target.project_id,
             "project_roots": target.project_roots,
             "environment_profile": target.environment_profile,
+            "base_environment_profile": None,
             "environment_bindings": target.environment_bindings,
             "default_environment": target.default_environment,
             "environment_scope": target.target_id,

@@ -66,7 +66,11 @@ export async function startApp(...args: string[]) {
         }
       });
     });
-    return { ...address, close };
+    return {
+      ...address,
+      close,
+      releaseWork: () => server.stdin.write("release-work\n"),
+    };
   } catch (error) {
     try {
       await close();

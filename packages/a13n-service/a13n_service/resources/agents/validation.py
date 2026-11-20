@@ -63,7 +63,6 @@ async def validate_config(
     accepted without an archival check, as plain runs of that revision accept it.
     """
     _check_rules(config)
-    definition.output_type(config.output_spec)
     config = config.model_copy(
         update={
             "plugins": _normalized_plugins(config, plugins),
@@ -86,6 +85,7 @@ async def validate_config(
             ),
         }
     )
+    definition.agent_output_type(config, plugins)
     with at_field("model"):
         model = await resolve_model(session, actor, scope, config.model, verb=verb, authority=authority)
     model_settings(model.config, model.provider, config.model_settings, registry=registry, field="model_settings")

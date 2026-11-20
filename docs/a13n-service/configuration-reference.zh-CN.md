@@ -301,9 +301,10 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `plugins`
 
-| 设置           | 环境变量             | 类型 / 选项 | 约束与默认值 |
-| -------------- | -------------------- | ----------- | ------------ |
-| `plugins.keys` | `A13N_PLUGINS__KEYS` | 字符串数组  | default=[]   |
+| 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值 |
+| -------------------------------- | -------------------------------------- | ----------- | ------------ |
+| `plugins.keys`                   | `A13N_PLUGINS__KEYS`                   | 字符串数组  | default=[]   |
+| `plugins.bootstrap_enabled_apps` | `A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS` | 字符串数组  | default=[]   |
 
 ## `composer`
 

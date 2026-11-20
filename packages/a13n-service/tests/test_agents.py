@@ -70,6 +70,7 @@ from a13n_service.tenancy.authorize import (
     execution_authority,
 )
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
+from pydantic_ai.output import ToolOutput
 from sqlalchemy import select, update
 
 pytestmark = pytest.mark.anyio
@@ -313,6 +314,12 @@ class _Factory(HarnessPluginFactory):
     def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
         return _Settings.model_validate(configuration)
 
+    def output_tools(self, context: HarnessPluginFactoryContext) -> Mapping[str, ToolOutput[Any]]:
+        def audit_summary() -> dict[str, JsonValue]:
+            return {"level": context.configuration["level"]}
+
+        return {"summary": ToolOutput(audit_summary, name="audit_summary")}
+
     def create_plugin(self, context: HarnessPluginFactoryContext) -> AbstractHarnessPlugin:
         return _Plugin(context.plugin_id)
 
@@ -320,6 +327,39 @@ class _Factory(HarnessPluginFactory):
 PLUGINS = HarnessPluginFactoryCatalog(
     [(HarnessPluginFactoryRegistration("test.audit", __name__, "_Factory", None, None, None), _Factory())]
 )
+
+
+def test_output_alternatives_only_select_enabled_and_explicit_plugin_tools() -> None:
+    plugin = {"instance_name": "audit", "plugin_key": "test.audit", "config": {"level": 3}}
+    assert definition.agent_output_type(config(plugins=[plugin]), PLUGINS) is str
+    selected = config(
+        plugins=[plugin],
+        output_spec={"alternatives": ["text", "audit:summary"]},
+    )
+    text, tool = definition.agent_output_type(selected, PLUGINS)
+    assert text is str and tool.name == "audit_summary" and tool.output() == {"level": 3}
+    with pytest.raises(ServiceError, match="Unavailable server output tool"):
+        definition.agent_output_type(selected, PLUGINS, enabled=lambda _key: False)
+
+
+@pytest.mark.parametrize(
+    "unsupported", ["finish_silently", {"kind": "text"}, {"kind": "server_tool", "ref": "audit:summary"}]
+)
+def test_output_alternatives_require_namespaced_references_or_definitions(unsupported: object) -> None:
+    spec = {"alternatives": [unsupported]}
+    with pytest.raises(ValidationError):
+        config(output_spec=spec)
+    with pytest.raises(ValidationError):
+        AgentOverride.model_validate({"output_spec": spec})
+
+
+def test_output_alternatives_cannot_shadow_an_enabled_builtin() -> None:
+    selected = config(
+        toolsets={"shell": {"enabled": True, "tools": {"exec": {"enabled": True}}}},
+        output_spec={"alternatives": [{"kind": "client_tool", "name": "shell_exec", "schema": {"type": "object"}}]},
+    )
+    with pytest.raises(ServiceError, match="Duplicate output tool name: shell_exec"):
+        definition.agent_output_type(selected, PLUGINS)
 
 
 def resolved(agent_id: str, revision_id: str, selected: AgentConfig, **fields: Any) -> ResolvedAgent:

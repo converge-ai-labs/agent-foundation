@@ -410,8 +410,13 @@ asyncio.run(main())
 
 async def test_multi_server_resources_bind_root_and_child_without_sharing_accounts(repository, tmp_path):
     import json
+    from unittest.mock import Mock
 
-    from a13n_harness_ui.composition import AgentCompositionResolver
+    from a13n_harness_ui.composition import (
+        AgentCompositionResolver,
+        CompositionAcceptanceService,
+        RunCompositionService,
+    )
     from a13n_harness_ui.configuration import load_harness_ui_configuration
 
     from .test_composition import _catalog, _selection, _write_source
@@ -430,7 +435,8 @@ async def test_multi_server_resources_bind_root_and_child_without_sharing_accoun
     )
     source = await load_harness_ui_configuration(root)
     resolver = AgentCompositionResolver(_catalog())
-    node = resolver.resolve_run(source, _selection()).root
+    parent = resolver.resolve_run(source, _selection())
+    node = parent.root
     child = node.children[0]
     node = node.model_copy(
         update={
@@ -458,6 +464,20 @@ async def test_multi_server_resources_bind_root_and_child_without_sharing_accoun
     )
     assert other.oauth_binding != first.oauth_binding
     assert type(bound).model_validate_json(bound.model_dump_json()) == bound
+
+    replacement = await repository.replace(first.oauth_binding)
+    await repository.save(replacement, bundle(expires_at=time.time() + 60), expected_version=0)
+    compositions = RunCompositionService(Mock(), resolver, Mock(spec=CompositionAcceptanceService), oauth=service)
+    projected = await compositions.derive_child(
+        parent=parent.model_copy(update={"root": bound}),
+        root=bound.children[0].definition,
+        thread_id="thread-child",
+    )
+    captured = projected.root.mcp_servers[0].oauth_binding
+    assert captured == first.oauth_binding
+    with pytest.raises(OAuthError, match="removed or replaced"):
+        await service.access_token(captured)
+    assert await service.access_token(replacement) == "old-access"
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,7 @@ title: Extend Service with App plugins
 description: Install trusted application packages, enable them per organization, and keep accepted run behavior stable.
 ---
 
-App plugins add business APIs, organization-scoped background work, Harness factories and packaged Console assets to Service. Operators install trusted Python packages on every serving and worker process. Organization administrators enable each App. Newly installed Apps start disabled.
+App plugins add business APIs, organization-scoped background work, Harness factories and packaged Console assets to Service. Operators install trusted Python packages on every serving and worker process. Organization administrators enable each App. Operators can opt in to an initial selection when bootstrapping a deployment.
 
 App plugins run inside Service with its process permissions. Review packages before installation. [MCP Apps](mcp-apps.md) are a separate protocol for interactive tool results.
 
@@ -14,11 +14,24 @@ Use the same App packages and versions in every `control` and `worker` process, 
 - **Custom Service image:** Install the selected App wheels and their dependencies into the Service Python environment during the image build. Use the same image for `control` and `worker`. If an App ships a frontend, its wheel includes the prebuilt assets; you do not need to rebuild Console.
 - **Local Service:** Install the selected wheels into the Python environment that starts Service. For example, put the wheels in `./app-wheels/` and run `uv pip install --python /path/to/service/.venv/bin/python ./app-wheels/*.whl`.
 
-Restart Service to discover the installed packages. Installation makes Apps available to the deployment; an organization administrator enables each App separately. New Apps start disabled.
+Restart Service to discover the installed packages. Installation makes Apps available to the deployment. They stay disabled for an organization until its administrator enables them or bootstrap supplies the initial policy.
 
 `control` serves App APIs and Console assets, runs organization sweeps, and performs automatic migrations when configured. `worker` runs agents and their App-provided Harness extensions. It checks App database revisions at startup but does not migrate databases or run organization sweeps. For Apps with database migrations, bring the schema up to date through `control`, `all`, or a migration job before starting workers that need the new schema.
 
 An App's `startup` callback runs in each Service process, regardless of organization enablement. Use it to initialize per-process resources. Put organization-scoped background work in a sweep, not in `startup`.
+
+### Enable selected Apps at bootstrap
+
+For a fresh deployment with preinstalled Apps, set the initial policy in `service.toml`:
+
+```toml
+[plugins]
+bootstrap_enabled_apps = ["acme.reports"]
+```
+
+In Docker Compose, set `A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS: '["acme.reports"]'` in the environment of the Service that handles Console setup or the job that runs `a13n-service bootstrap`. Use App IDs, not distribution names or the Harness factory keys configured in `plugins.keys`. The process performing bootstrap must have every listed App installed; if an App is missing, bootstrap fails without creating the organization.
+
+The list defaults to empty. Bootstrap writes it once when creating the first organization. Afterward, use the organization App controls; changing the deployment setting, upgrading the image or restarting Service does not reapply the list.
 
 ## Start an independent App
 

@@ -1,5 +1,6 @@
 """Retained-profile lifecycle and compatibility, using real durable Service state."""
 
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -216,15 +217,29 @@ async def test_paid_refusal_never_publishes_reconcilable_intent(
 
 
 @pytest.mark.parametrize("browser_budget", [2, 5])
-async def test_slow_provider_create_uses_browser_budget_and_reconciles(service, runs_kit, browser_budget):
+async def test_slow_provider_create_uses_browser_budget_and_reconciles(service, runs_kit, browser_budget, monkeypatch):
     import anyio
+
+    scope = None
+
+    @contextmanager
+    def observe_budget(seconds):
+        nonlocal scope
+        assert seconds == browser_budget
+        with anyio.fail_after(seconds) as scope:
+            yield scope
 
     class SlowSupplier(RetainedSupplier):
         async def create(self, allocation_id, recipe):
             live = await super().create(allocation_id, recipe)
-            await anyio.sleep(3)
+            assert scope is not None
+            if browser_budget == 2:
+                # The provider acted, but the caller's budget expires before it sees the result.
+                scope.deadline = anyio.current_time()
+                await anyio.sleep_forever()
             return live
 
+    monkeypatch.setattr(lifecycle, "fail_after", observe_budget)
     supplier, browser = await setup(service, runs_kit, supplier=SlowSupplier(), supports_stop=True)
     settings = service.runtime.settings.model_copy(
         update={
