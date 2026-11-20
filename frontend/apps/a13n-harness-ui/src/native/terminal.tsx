@@ -2,7 +2,12 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useTranslation } from "../i18n";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { Plus, ArrowClockwise, Trash } from "@phosphor-icons/react";
+import {
+  Plus,
+  ArrowClockwise,
+  Trash,
+  TerminalWindow,
+} from "@phosphor-icons/react";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
 import { useTransport } from "../transport/context";
@@ -20,7 +25,6 @@ export function TerminalPanel({
   visible,
   directory,
   projectId,
-  projectName,
   selected,
   select,
   onActive,
@@ -186,10 +190,38 @@ export function TerminalPanel({
       aria-label={t("Shared native terminals")}
     >
       <header className={styles.header}>
-        <strong>
-          {t("Terminal")}
-          {projectName ? ` - ${projectName}` : ""}
-        </strong>
+        {projectSessions.length > 0 ? (
+          <div className={styles.sessionBar}>
+            {projectSessions.map((item, index) => (
+              <Button
+                key={item.terminal_id}
+                size="sm"
+                variant={selected === item.terminal_id ? "outline" : "ghost"}
+                aria-pressed={selected === item.terminal_id}
+                title={t(
+                  "{{cwd}} - {{id}} - Switch sessions: {{previous}} / {{next}}",
+                  {
+                    cwd: item.cwd,
+                    id: item.terminal_id,
+                    previous: shortcuts.previous,
+                    next: shortcuts.next,
+                  },
+                )}
+                onClick={() => select(item.terminal_id)}
+              >
+                {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) ||
+                  t("Terminal")}
+                {projectSessions.filter((session) => session.cwd === item.cwd)
+                  .length > 1
+                  ? ` - ${index + 1}`
+                  : ""}
+                {item.state === "exited" ? ` - ${t("Exited")}` : ""}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <strong className={styles.headerTitle}>{t("Terminal")}</strong>
+        )}
         <div className={styles.actions}>
           <TerminalAction
             ref={newTerminal}
@@ -234,47 +266,9 @@ export function TerminalPanel({
         error={sessions.error}
         retry={() => void sessions.refetch()}
       />
-      <div className={styles.sessionBar}>
-        {projectSessions.map((item, index) => (
-          <Button
-            key={item.terminal_id}
-            size="sm"
-            variant={selected === item.terminal_id ? "outline" : "ghost"}
-            aria-pressed={selected === item.terminal_id}
-            title={t(
-              "{{cwd}} - {{id}} - Switch sessions: {{previous}} / {{next}}",
-              {
-                cwd: item.cwd,
-                id: item.terminal_id,
-                previous: shortcuts.previous,
-                next: shortcuts.next,
-              },
-            )}
-            onClick={() => select(item.terminal_id)}
-          >
-            {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || t("Terminal")}
-            {projectSessions.filter((session) => session.cwd === item.cwd)
-              .length > 1
-              ? ` - ${index + 1}`
-              : ""}
-            {item.state === "exited" ? ` - ${t("Exited")}` : ""}
-          </Button>
-        ))}
-      </div>
-      {active ? (
-        <>
-          <div className={styles.identity}>
-            <span>
-              {active
-                ? active.cwd
-                : t(
-                    "This terminal is no longer listed. Refresh to check its status.",
-                  )}
-            </span>
-          </div>
-        </>
-      ) : (
+      {!active && (
         <div className={styles.empty}>
+          <TerminalWindow size={28} />
           <h3>
             {!projectId
               ? t("No project selected")
@@ -301,7 +295,11 @@ export function TerminalPanel({
           className={styles.retainedScreen}
           hidden={!visible || id !== activeId}
         >
-          <Suspense fallback={<p>{t("Loading terminal…")}</p>}>
+          <Suspense
+            fallback={
+              <p className={styles.loading}>{t("Loading terminal…")}</p>
+            }
+          >
             <TerminalScreen
               id={id}
               visible={visible && id === activeId}
@@ -328,7 +326,7 @@ export function TerminalPanel({
         }
       />
       {attempted && error != null && !closing && (
-        <p role="status">
+        <p className={styles.statusNotice} role="status">
           {t(
             "Couldn't confirm the result. Refresh the session list before starting another terminal.",
           )}

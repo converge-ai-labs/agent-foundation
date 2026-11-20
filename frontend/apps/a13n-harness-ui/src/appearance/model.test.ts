@@ -53,4 +53,7 @@ it("defaults all six regions independently and validates each field", () => {
       '{"version":1,"theme":"unknown","sizes":{"code":18,"composer":9}}',
     ),
   ).toEqual({ ...defaults, sizes: { ...defaults.sizes, code: 18 } });
+  expect(
+    parseAppearance('{"version":1,"theme":"light","terminalTheme":"dark"}'),
+  ).toEqual({ ...defaults, theme: "light", terminalTheme: "dark" });
 });

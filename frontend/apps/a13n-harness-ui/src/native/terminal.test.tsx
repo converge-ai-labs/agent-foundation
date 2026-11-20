@@ -761,3 +761,67 @@ it("changes terminal size in place and resizes the PTY only with control", async
   width.mockRestore();
   height.mockRestore();
 });
+
+it("restores control after view hide/show and auto-reconnects on unexpected socket drop when no other participant took control", async () => {
+  const f = setup();
+  const unauthorized = vi.fn();
+  const component = render(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+    { wrapper: f.Wrapper },
+  );
+  const first = Socket.all[0];
+  act(() => emit(first, "participant-me", 1));
+  await screen.findByText("You have control");
+
+  // Switching away from the terminal view and back automatically reattaches and reclaims control when unowned.
+  component.rerender(
+    <TerminalScreen
+      id="terminal-one"
+      visible={false}
+      unauthorized={unauthorized}
+    />,
+  );
+  await waitFor(() => expect(first.close).toHaveBeenCalledTimes(1));
+  component.rerender(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+  );
+  expect(Socket.all).toHaveLength(2);
+  const second = Socket.all[1];
+  act(() => emit(second, null, 2));
+  expect(JSON.parse(second.send.mock.calls.at(-1)![0])).toEqual({
+    kind: "control",
+    control_epoch: 2,
+    release: false,
+  });
+  act(() => emit(second, "participant-me", 3));
+  await screen.findByText("You have control");
+
+  // An unexpected transport close while visible auto-reconnects on window focus and reclaims control.
+  act(() => second.onclose({ code: 1006 }));
+  await screen.findByText("Disconnected");
+  act(() => {
+    fireEvent(window, new Event("focus"));
+  });
+  await waitFor(() => expect(Socket.all).toHaveLength(3));
+  const third = Socket.all[2];
+  act(() => emit(third, null, 4));
+  expect(JSON.parse(third.send.mock.calls.at(-1)![0])).toEqual({
+    kind: "control",
+    control_epoch: 4,
+    release: false,
+  });
+  act(() => emit(third, "participant-me", 5));
+  await screen.findByText("You have control");
+
+  // Toggling the terminal theme switches the terminal surface to dark while keeping the global app theme light.
+  expect(f.appearance.getSnapshot().dark).toBe(false);
+  expect(f.appearance.getSnapshot().terminalDark).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Terminal theme" }));
+  expect(f.appearance.getSnapshot().dark).toBe(false);
+  expect(f.appearance.getSnapshot().terminalDark).toBe(true);
+  expect(
+    screen
+      .getByLabelText("Native terminal output and input")
+      .parentElement?.getAttribute("data-terminal-theme"),
+  ).toBe("dark");
+});
