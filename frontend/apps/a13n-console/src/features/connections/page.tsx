@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { PlugIcon } from "@phosphor-icons/react";
-import { BrandIcon, Button, ChoiceField } from "a13n-ui";
+import { InfoIcon, PlugIcon } from "@phosphor-icons/react";
+import {
+  BrandIcon,
+  Button,
+  ChoiceField,
+  MenuItem,
+  MenuSeparator,
+} from "a13n-ui";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -23,7 +29,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Page, PageActions } from "../../shared/page";
-import { ConnectionDetails } from "./editor";
+import { ConnectionDetails, ConnectionMenuItems } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
@@ -161,13 +167,33 @@ export function ConnectionsPage() {
       )}
       <ErrorNotice error={connections.error} />
       {connections.isLoading ? (
-        <Loading variant="table" columns={4} />
+        <Loading variant="table" columns={5} />
       ) : rows.length ? (
         <>
           <ResourceTable
             items={rows}
             caption={t("Connections")}
             onRowActivate={(row) => select(row.id)}
+            rowMenuLabel={t("Connection actions")}
+            rowMenuVisibility="always"
+            rowMenu={(connection) => (
+              <>
+                <MenuItem onClick={() => select(connection.id)}>
+                  <InfoIcon size={14} />
+                  {t("Details")}
+                </MenuItem>
+                {can("write") && (
+                  <>
+                    <MenuSeparator />
+                    <ConnectionMenuItems
+                      connection={connection}
+                      onCleanup={setCleanup}
+                      onDone={() => select()}
+                    />
+                  </>
+                )}
+              </>
+            )}
             columns={[
               {
                 label: t("Connection"),
