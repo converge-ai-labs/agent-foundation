@@ -4486,5 +4486,20 @@
   "Retry deployment step": "डिप्लॉयमेंट चरण की फिर से कोशिश करें",
   "Remove deployment": "डिप्लॉयमेंट हटाएँ",
   "Remove the managed Cloudflare resources and their provider. Delete any environments and templates using it first.": "मैनेज किए गए Cloudflare संसाधन और उनका प्रदाता हटाएँ। पहले इसे इस्तेमाल करने वाले सभी एनवायरनमेंट और टेम्पलेट मिटाएँ।",
-  "New Cloudflare API token (optional)": "नया Cloudflare API टोकन (वैकल्पिक)"
+  "New Cloudflare API token (optional)": "नया Cloudflare API टोकन (वैकल्पिक)",
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "चुनी गई अवधि में इस Agent के Session का उपयोग, खर्च के अनुसार अधिक से कम क्रम में।",
+  "Not authorized": "ऑथराइज़ नहीं किया गया",
+  "Authorizing": "ऑथराइज़ेशन जारी है",
+  "Reauthorization required": "फिर से ऑथराइज़ करना ज़रूरी है",
+  "Reauthorizing": "फिर से ऑथराइज़ किया जा रहा है",
+  "Reauthorization in progress": "दोबारा ऑथराइज़ेशन जारी है",
+  "Authorization cancelled": "ऑथराइज़ेशन रद्द कर दिया गया",
+  "The authorization request was cancelled. Start a new authorization to connect.": "ऑथराइज़ेशन अनुरोध रद्द कर दिया गया। कनेक्ट करने के लिए नया ऑथराइज़ेशन शुरू करें।",
+  "a13n has stopped using this connection. Its settings are kept so you can authorize again.": "a13n ने इस कनेक्शन का इस्तेमाल बंद कर दिया है। इसकी सेटिंग्स रखी गई हैं ताकि आप फिर से ऑथराइज़ कर सकें।",
+  "Authorization was not automatically removed from the provider. To fully disconnect, remove it in your provider's settings.": "प्रदाता के यहाँ ऑथराइज़ेशन अपने आप नहीं हटाया गया। पूरी तरह डिस्कनेक्ट करने के लिए इसे अपने प्रदाता की सेटिंग्स में हटाएँ।",
+  "Cancel this authorization request? The previous authorization page will no longer connect this account.": "यह ऑथराइज़ेशन अनुरोध रद्द करें? पिछला ऑथराइज़ेशन पेज अब इस खाते को कनेक्ट नहीं कर पाएगा।",
+  "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.": "a13n इस कनेक्शन का इस्तेमाल बंद कर देगा और जारी ऑथराइज़ेशन रद्द कर देगा। इसकी सेटिंग्स रखी जाएँगी। नतीजे में बताया जाएगा कि प्रदाता के यहाँ भी ऑथराइज़ेशन हटाया गया या नहीं।",
+  "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "नया ऑथराइज़ेशन पूरा करने के दौरान यह कनेक्शन इस्तेमाल किया जा सकता है। फिर से शुरू करने पर पिछला अनुरोध बदल दिया जाएगा।",
+  "Complete authorization on the provider's page. Starting again replaces the previous request.": "प्रदाता के पेज पर ऑथराइज़ेशन पूरा करें। फिर से शुरू करने पर पिछला अनुरोध बदल दिया जाएगा।",
+  "Authorize": "ऑथराइज़ करें"
 }

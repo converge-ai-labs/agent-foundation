@@ -1,6 +1,6 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SegmentedControl } from "a13n-ui";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -16,6 +16,8 @@ import { exactCost, formatCost } from "../../shared/cost";
 import { MemberPicker } from "./member-picker";
 import { Breakdown, type UsageGroup } from "./breakdown";
 import { UsageChart } from "./chart";
+import { usagePage, useUsageView } from "./navigation";
+import { SessionUsageSheet } from "./session-usage-sheet";
 import { compactNumber, duration, percent, presetWindow } from "./values";
 import styles from "./usage.module.css";
 
@@ -31,21 +33,29 @@ function UsageBrowser() {
     { workspace, can } = useWorkspace();
   const admin = can("admin");
   const language = i18n.resolvedLanguage;
-  const [range, setRange] = useState<RangeSelection>({ preset: 7 * 86400 });
-  const [now, setNow] = useState(() => new Date());
-  // Presets cover whole local days, ending now.
+  const { view, update } = useUsageView(workspace.id, admin);
+  const { metric, agent, group: selectedGroup, member: selectedMember } = view;
+  const range: RangeSelection = useMemo(
+    () =>
+      "preset" in view.range
+        ? view.range
+        : {
+            start: new Date(view.range.start),
+            end: new Date(view.range.end),
+          },
+    [view.range],
+  );
+  // Keep the exact preset window when returning from a Session.
   const window = useMemo(
     () =>
       "preset" in range
-        ? presetWindow(range.preset / 86400, now)
+        ? presetWindow(range.preset / 86400, new Date(view.now))
         : { start: range.start.toISOString(), end: range.end.toISOString() },
-    [range, now],
+    [range, view.now],
   );
-  const [metric, setMetric] = useState<"cost" | "tokens">("cost");
-  const [selectedGroup, setGroup] = useState<UsageGroup>("agents");
-  const [selectedMember, setMember] = useState<Schema["MemberUsage"] | null>(
-    null,
-  );
+  function selectGroup(value: UsageGroup) {
+    update({ group: value, agent: null, breakdownPages: [], sessionPages: [] });
+  }
   const member = admin ? selectedMember : null;
   const group =
     !admin && selectedGroup === "members" ? "agents" : selectedGroup;
@@ -53,8 +63,19 @@ function UsageBrowser() {
   const chartGroup = group === "models" ? "models" : "agents";
   const toolbarRef = useRef<HTMLDivElement>(null);
   function selectMember(value: Schema["MemberUsage"] | null) {
-    setMember(value);
-    if (value && group === "members") setGroup("agents");
+    update({
+      member: value
+        ? {
+            principal_id: value.principal_id,
+            name: value.name,
+            kind: value.kind,
+            status: value.status,
+          }
+        : null,
+      group: value && group === "members" ? "agents" : group,
+      breakdownPages: [],
+      sessionPages: [],
+    });
   }
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const query = useQuery<Schema["UsageOverview"]>({
@@ -138,8 +159,18 @@ function UsageBrowser() {
                 };
               }}
               onChange={(value) => {
-                setRange(value);
-                setNow(new Date());
+                update({
+                  range:
+                    "preset" in value
+                      ? value
+                      : {
+                          start: value.start.toISOString(),
+                          end: value.end.toISOString(),
+                        },
+                  now: new Date().toISOString(),
+                  breakdownPages: [],
+                  sessionPages: [],
+                });
               }}
             />
             {admin && (
@@ -153,7 +184,12 @@ function UsageBrowser() {
           <RefreshButton
             pending={fetching > 0}
             onRefresh={() => {
-              if ("preset" in range) setNow(new Date());
+              if ("preset" in range)
+                update({
+                  now: new Date().toISOString(),
+                  breakdownPages: [],
+                  sessionPages: [],
+                });
               else
                 void cache.invalidateQueries({
                   queryKey: ["usage", workspace.id],
@@ -214,9 +250,9 @@ function UsageBrowser() {
               days={overview.daily}
               series={overview.series ?? []}
               metric={metric}
-              onMetricChange={setMetric}
+              onMetricChange={(metric) => update({ metric })}
               group={chartGroup}
-              onGroupChange={setGroup}
+              onGroupChange={selectGroup}
             />
           </div>
         )
@@ -232,7 +268,7 @@ function UsageBrowser() {
             label={t("Group usage by")}
             value={group}
             onValueChange={(value) => {
-              setGroup(
+              selectGroup(
                 value === "members" && admin && !member
                   ? "members"
                   : value === "models"
@@ -260,6 +296,12 @@ function UsageBrowser() {
           key={`${group}:${principalId ?? "all"}`}
           window={window}
           group={group}
+          page={usagePage(view.breakdownPages, (breakdownPages) =>
+            update({ breakdownPages }),
+          )}
+          onAgentSelect={({ agent_id, name }) =>
+            update({ agent: { agent_id, name }, sessionPages: [] })
+          }
           principalId={principalId}
           onMemberSelect={(value) => {
             selectMember(value);
@@ -267,6 +309,17 @@ function UsageBrowser() {
           }}
         />
       </section>
+      {agent && (
+        <SessionUsageSheet
+          agent={agent}
+          window={window}
+          member={member}
+          page={usagePage(view.sessionPages, (sessionPages) =>
+            update({ sessionPages }),
+          )}
+          onClose={() => update({ agent: null, sessionPages: [] })}
+        />
+      )}
       <p className={styles.footnote}>
         {t(
           "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs. Costs are in USD. Cached tokens are included in input tokens.",

@@ -52,6 +52,10 @@ class BreakdownQuery(UsageWindow):
     cursor: str | None = Field(default=None, max_length=2048)
 
 
+class SessionUsageQuery(BreakdownQuery):
+    agent_id: ObjectId
+
+
 class ModelMetrics(BaseModel):
     requests: int
     input_tokens: int
@@ -102,6 +106,18 @@ class ModelUsageGroup(BaseModel):
 
 class AgentUsagePage(BaseModel):
     items: list[AgentUsage]
+    next_cursor: str | None
+
+
+class SessionUsage(BaseModel):
+    session_id: str
+    title: str | None
+    usage: ModelMetrics
+    runs: RunMetrics
+
+
+class SessionUsagePage(BaseModel):
+    items: list[SessionUsage]
     next_cursor: str | None
 
 

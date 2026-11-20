@@ -85,6 +85,8 @@ class ThrottledLink:
             await asyncio.gather(*active, return_exceptions=True)
 
 
+# Include cold Docker/Service startup as well as the roughly 60-second throttled transfer.
+@pytest.mark.timeout(240)
 @pytest.mark.parametrize("frame_bytes", [None, 8192], ids=["default-chunks", "small-frame-diagnostic"])
 async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, frame_bytes, request):
     if BINARY is None or not Path(BINARY).is_file():

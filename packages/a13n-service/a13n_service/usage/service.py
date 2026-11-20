@@ -29,7 +29,7 @@ from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError, not_found
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.resources.models.tables import ModelRow
-from a13n_service.runs.tables import RunRow, UsageRecordRow
+from a13n_service.runs.tables import RunRow, SessionRow, UsageRecordRow
 from a13n_service.runs.usage import model_cost
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -51,6 +51,9 @@ from a13n_service.usage.schemas import (
     RunUsage,
     RunUsagePage,
     RunUsageQuery,
+    SessionUsage,
+    SessionUsagePage,
+    SessionUsageQuery,
     UsageFilter,
     UsageOverview,
     UsageSeries,
@@ -246,6 +249,8 @@ async def _page(
     owner = cursors.query_owner(workspace_id, query.start, query.end)
     if query.principal_id is not None:
         owner = cursors.query_owner(owner, query.principal_id)
+    if isinstance(query, SessionUsageQuery):
+        owner = cursors.query_owner(owner, query.agent_id)
     if query.cursor is not None:
         position = cursors.decode(query.cursor, kind, owner)
         try:
@@ -278,14 +283,13 @@ async def _page(
 
 
 def _group_totals(workspace_id: str, query: BreakdownQuery, identity: InstrumentedAttribute[str]) -> Select:
-    usage = (
-        _model_query(workspace_id, query)
-        .join(RunRow, RunRow.id == UsageRecordRow.run_id)
-        .add_columns(identity.label("identity_id"))
-        .group_by(identity)
-        .subquery()
-    )
-    runs = _run_query(workspace_id, query).add_columns(identity.label("identity_id")).group_by(identity).subquery()
+    consumption = _model_query(workspace_id, query).join(RunRow, RunRow.id == UsageRecordRow.run_id)
+    started = _run_query(workspace_id, query)
+    if isinstance(query, SessionUsageQuery):
+        consumption = consumption.where(RunRow.agent_id == query.agent_id)
+        started = started.where(RunRow.agent_id == query.agent_id)
+    usage = consumption.add_columns(identity.label("identity_id")).group_by(identity).subquery()
+    runs = started.add_columns(identity.label("identity_id")).group_by(identity).subquery()
     # Preserve Run-only identities and late consumption from Runs outside the window.
     key = func.coalesce(usage.c.identity_id, runs.c.identity_id)
     cost = case((func.coalesce(usage.c.requests, 0) == 0, 0), else_=usage.c.cost)
@@ -343,6 +347,25 @@ async def members(storage: Storage, actor: Principal, workspace_id: str, query: 
                 usage=_metrics(row),
                 runs=_runs(row),
             )
+            for row in rows
+        ],
+        next_cursor=cursor,
+    )
+
+
+async def sessions(storage: Storage, actor: Principal, workspace_id: str, query: SessionUsageQuery) -> SessionUsagePage:
+    async with short_session(storage) as session:
+        scope = await workspace_scope(
+            session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
+        )
+        totals = _group_totals(scope.workspace_id, query, RunRow.session_id).subquery()
+        statement = select(totals, SessionRow.title).join(SessionRow, SessionRow.id == totals.c.identity_id)
+        rows, cursor = await _page(
+            session, statement, totals.c.cost, totals.c.identity_id, scope.workspace_id, query, "usage-sessions"
+        )
+    return SessionUsagePage(
+        items=[
+            SessionUsage(session_id=row["identity_id"], title=row["title"], usage=_metrics(row), runs=_runs(row))
             for row in rows
         ],
         next_cursor=cursor,

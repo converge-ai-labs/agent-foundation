@@ -223,6 +223,31 @@
 .identity strong {
   font-weight: 500;
 }
+.identityLink {
+  color: var(--a13n-text);
+  font-weight: 500;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.identityLink:hover {
+  text-decoration: underline;
+}
+.identityLink:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.sessionAgent {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sessionPanel {
+  container-type: inline-size;
+}
+.sessionPanel .breakdown {
+  margin-top: 0;
+}
 .identity span {
   font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);

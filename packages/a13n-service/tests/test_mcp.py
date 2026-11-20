@@ -281,7 +281,7 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     }
     assert overview_parameters["group_by"]["anyOf"][0]["enum"] == ["agents", "models"]
     assert overview_parameters["metric"]["enum"] == ["cost", "tokens"]
-    for path in ("overview", "agents", "models", "members"):
+    for path in ("overview", "agents", "models", "members", "sessions"):
         assert (f"/api/v1/usage/{path}", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
