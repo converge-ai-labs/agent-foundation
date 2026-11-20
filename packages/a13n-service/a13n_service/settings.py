@@ -533,6 +533,9 @@ class MemorySettings(Section):
 class Plugins(Section):
     # Installed Harness plugin factories agents may select, by entry-point key; nothing else is imported.
     keys: tuple[str, ...] = ()
+    bootstrap_enabled_apps: tuple[str, ...] = Field(
+        default=(), description="Installed App IDs to enable when the first organization is created."
+    )
 
 
 class Composer(Section):

@@ -3,7 +3,7 @@ title: 使用 App 插件扩展 Service
 description: 安装可信应用包，按组织启用，并保持已接受 run 的行为稳定。
 ---
 
-App 插件为 Service 添加业务 API、组织范围后台工作、Harness factory 和打包的 Console 资源。运维人员在所有 API 和 worker 进程中安装可信 Python 包。组织管理员逐个启用 App。新安装的 App 默认禁用。
+App 插件为 Service 添加业务 API、组织范围后台工作、Harness factory 和打包的 Console 资源。运维人员在所有 API 和 worker 进程中安装可信 Python 包。组织管理员可以逐个启用 App。运维人员可以在首次初始化部署时指定初始启用列表。
 
 App 插件在 Service 进程内运行，拥有进程权限。安装前应审查软件包。[MCP Apps](mcp-apps.md) 是用于交互式工具结果的另一套协议。
 
@@ -14,11 +14,24 @@ App 插件在 Service 进程内运行，拥有进程权限。安装前应审查�
 - **自定义 Service 镜像：** 构建镜像时，将选定的 App wheel 及其依赖安装到 Service 使用的 Python 环境。`control` 和 `worker` 使用同一个镜像。如果 App 提供前端，预构建的资源随 wheel 一起分发，无需重新构建 Console。
 - **本地 Service：** 将选定的 wheel 安装到启动 Service 的 Python 环境。例如，将 wheel 放入 `./app-wheels/`，再运行 `uv pip install --python /path/to/service/.venv/bin/python ./app-wheels/*.whl`。
 
-重启 Service，发现已安装的包。安装后，App 在整个部署中可用；组织管理员仍需逐个启用。新安装的 App 默认禁用。
+重启 Service 以发现已安装的包。安装后，App 在整个部署中可用；组织侧保持禁用，直到管理员启用，或首次初始化写入该组织的策略。
 
 `control` 提供 App API 和 Console 资源、运行组织级后台扫描，并按配置执行自动迁移。`worker` 执行 agent 及其使用的 App Harness 扩展。它在启动时检查 App 数据库版本，但不执行迁移或组织级后台扫描。对于带数据库迁移的 App，在启动依赖新 schema 的 worker 前，先由 `control`、`all` 或专用迁移任务完成迁移。
 
 无论组织是否启用 App，其 `startup` 回调都会在每个 Service 进程中运行。用它初始化进程级资源；组织级后台工作应放在 sweep 中，而不是 `startup` 中。
+
+### 首次初始化时启用指定 App
+
+对于预装了 App 的全新部署，在 `service.toml` 里指定初始策略：
+
+```toml
+[plugins]
+bootstrap_enabled_apps = ["acme.reports"]
+```
+
+使用 Docker Compose 时，在负责 Console 初始化的 Service 或运行 `a13n-service bootstrap` 的任务中设置环境变量 `A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS: '["acme.reports"]'`。填写 App ID，不是 Python 软件包名，也不是 `plugins.keys` 中的 Harness factory key。执行初始化的进程必须装有列表里的所有 App；缺少任何一个，初始化都会失败，不会创建组织。
+
+列表默认为空，仅在创建首个组织时写入一次。之后通过组织的 App 管理界面或 API 调整；修改部署配置、升级镜像或重启 Service 都不会重新应用该列表。
 
 ## 创建独立 App
 

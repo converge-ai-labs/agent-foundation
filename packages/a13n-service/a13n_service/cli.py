@@ -20,6 +20,7 @@ from a13n_service.app_database_cli import apps as apps_command
 from a13n_service.app_database_cli import migration_errors
 from a13n_service.app_definitions import app_databases, discover_apps
 from a13n_service.app_dev import develop, require_local
+from a13n_service.app_plugins import AppCatalog
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
@@ -207,10 +208,15 @@ def bootstrap_command(ctx: click.Context, email: str, password_stdin: bool) -> N
     except ValidationError:
         raise click.ClickException("Bootstrap refused: invalid email, or a password under 8 characters") from None
     try:
-        result = _with_storage(ctx.obj, partial(bootstrap, request=request))
+        apps = AppCatalog(tuple(app.manifest for app in ctx.meta["app_plugins"]))
+        result = _with_storage(
+            ctx.obj, partial(bootstrap, request=request, apps=apps, enable_apps=ctx.obj.plugins.bootstrap_enabled_apps)
+        )
     except AlreadyBootstrapped:
         click.echo("Bootstrap refused: the Service is already initialized", err=True)
         ctx.exit(3)
+    except ServiceError as error:
+        raise click.ClickException(error.message) from None
     click.echo(json.dumps(asdict(result)))
 
 

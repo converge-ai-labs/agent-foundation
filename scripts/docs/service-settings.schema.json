@@ -1657,6 +1657,15 @@
           },
           "title": "Keys",
           "type": "array"
+        },
+        "bootstrap_enabled_apps": {
+          "default": [],
+          "description": "Installed App IDs to enable when the first organization is created.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Bootstrap Enabled Apps",
+          "type": "array"
         }
       },
       "title": "Plugins",
