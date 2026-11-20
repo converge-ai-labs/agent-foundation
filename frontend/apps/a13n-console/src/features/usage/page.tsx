@@ -1,5 +1,6 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SegmentedControl } from "a13n-ui";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -43,6 +44,11 @@ function UsageBrowser() {
   );
   const [metric, setMetric] = useState<"cost" | "tokens">("cost");
   const [selectedGroup, setGroup] = useState<UsageGroup>("agents");
+  const [agent, setAgent] = useState<Schema["AgentUsage"] | null>(null);
+  function selectGroup(value: UsageGroup) {
+    setGroup(value);
+    setAgent(null);
+  }
   const [selectedMember, setMember] = useState<Schema["MemberUsage"] | null>(
     null,
   );
@@ -216,23 +222,25 @@ function UsageBrowser() {
               metric={metric}
               onMetricChange={setMetric}
               group={chartGroup}
-              onGroupChange={setGroup}
+              onGroupChange={selectGroup}
             />
           </div>
         )
       )}
       <section
         className={styles.breakdown}
-        data-group={group}
+        data-group={agent ? "sessions" : group}
         aria-labelledby="usage-breakdown-title"
       >
         <div className={styles.sectionHeading}>
-          <h2 id="usage-breakdown-title">{t("Usage breakdown")}</h2>
+          <h2 id="usage-breakdown-title">
+            {t(agent ? "Session usage" : "Usage breakdown")}
+          </h2>
           <SegmentedControl
             label={t("Group usage by")}
             value={group}
             onValueChange={(value) => {
-              setGroup(
+              selectGroup(
                 value === "members" && admin && !member
                   ? "members"
                   : value === "models"
@@ -249,6 +257,20 @@ function UsageBrowser() {
             ]}
           />
         </div>
+        {agent && (
+          <div className={styles.sessionScope}>
+            <Button variant="ghost" size="sm" onClick={() => setAgent(null)}>
+              <ArrowLeftIcon aria-hidden="true" size={14} />
+              {t("Back to agents")}
+            </Button>
+            <strong>{agent.name}</strong>
+            <span>
+              {t(
+                "Sessions for this agent in the selected period, sorted by spend (highest first).",
+              )}
+            </span>
+          </div>
+        )}
         {group === "members" && (
           <p className={styles.memberHint}>
             {t(
@@ -257,9 +279,12 @@ function UsageBrowser() {
           </p>
         )}
         <Breakdown
-          key={`${group}:${principalId ?? "all"}`}
+          key={`${agent?.agent_id ?? group}:${principalId ?? "all"}`}
           window={window}
-          group={group}
+          {...(agent
+            ? { group: "sessions", agentId: agent.agent_id }
+            : { group })}
+          onAgentSelect={setAgent}
           principalId={principalId}
           onMemberSelect={(value) => {
             selectMember(value);

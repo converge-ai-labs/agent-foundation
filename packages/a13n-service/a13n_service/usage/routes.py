@@ -19,6 +19,8 @@ from a13n_service.usage.schemas import (
     OverviewQuery,
     RunUsagePage,
     RunUsageQuery,
+    SessionUsagePage,
+    SessionUsageQuery,
     UsageFilter,
     UsageOverview,
     UsageSummary,
@@ -61,6 +63,14 @@ async def list_usage_members(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[BreakdownQuery, Query()]
 ) -> MemberUsagePage:
     return await service.members(runtime.storage, actor, workspace_id, query)
+
+
+@router.get("/sessions", openapi_extra={"x-a13n-mcp": True})
+async def list_session_usage(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[SessionUsageQuery, Query()]
+) -> SessionUsagePage:
+    """Sessions ranked by recorded cost for one Agent within the selected window."""
+    return await service.sessions(runtime.storage, actor, workspace_id, query)
 
 
 @router.get("/models", openapi_extra={"x-a13n-mcp": True})

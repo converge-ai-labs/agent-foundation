@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { ArrowRightIcon, ChartBarIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { Link, useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
@@ -20,39 +21,61 @@ import styles from "./usage.module.css";
 
 export type UsageGroup = "agents" | "models" | "members";
 type UsageRow =
-  Schema["AgentUsage"] | Schema["ModelUsageGroup"] | Schema["MemberUsage"];
+  | Schema["AgentUsage"]
+  | Schema["ModelUsageGroup"]
+  | Schema["MemberUsage"]
+  | Schema["SessionUsage"];
 export function Breakdown({
   window,
   group,
   principalId,
   onMemberSelect,
+  agentId,
+  onAgentSelect,
 }: {
   window: { start: string; end: string };
-  group: UsageGroup;
   principalId?: string;
   onMemberSelect?: (member: Schema["MemberUsage"]) => void;
-}) {
+  onAgentSelect?: (agent: Schema["AgentUsage"]) => void;
+} & (
+  | { group: "sessions"; agentId: string }
+  | { group: UsageGroup; agentId?: never }
+)) {
   const { t, i18n } = useTranslation(),
     client = useClient(),
-    { workspace } = useWorkspace();
-  const page = useCursor({ ...window, group, principalId });
+    { workspace } = useWorkspace(),
+    navigate = useNavigate();
+  const sessionPath = (id: string) =>
+    `/workspace/${workspace.id}/sessions/${encodeURIComponent(id)}?view=debug`;
+  const page = useCursor({ ...window, group, principalId, agentId });
   const query = useQuery({
-    queryKey: ["usage", workspace.id, group, window, principalId, page.cursor],
+    queryKey: [
+      "usage",
+      workspace.id,
+      group,
+      window,
+      principalId,
+      page.cursor,
+      agentId,
+    ],
     queryFn: async ({ signal }) =>
       data(
         await client
           .workspace(workspace.id)
           .GET(
-            group === "members"
-              ? "/api/v1/usage/members"
-              : group === "agents"
-                ? "/api/v1/usage/agents"
-                : "/api/v1/usage/models",
+            group === "sessions"
+              ? "/api/v1/usage/sessions"
+              : group === "members"
+                ? "/api/v1/usage/members"
+                : group === "agents"
+                  ? "/api/v1/usage/agents"
+                  : "/api/v1/usage/models",
             {
               params: {
                 query: {
                   ...window,
                   principal_id: principalId,
+                  ...(group === "sessions" ? { agent_id: agentId } : {}),
                   cursor: page.cursor,
                   limit: 50,
                 },
@@ -81,23 +104,37 @@ export function Breakdown({
   const items = query.data.items.map((item) => ({
     ...item,
     key:
-      "principal_id" in item
-        ? item.principal_id
-        : "agent_id" in item
-          ? item.agent_id
-          : (item.model ?? "unattributed"),
+      "session_id" in item
+        ? item.session_id
+        : "principal_id" in item
+          ? item.principal_id
+          : "agent_id" in item
+            ? item.agent_id
+            : (item.model ?? "unattributed"),
   }));
   const columns: ResourceColumn<UsageRow>[] = [
     {
       label:
-        group === "members"
-          ? t("Member")
-          : group === "agents"
-            ? t("Agent")
-            : t("Model"),
+        group === "sessions"
+          ? t("Session")
+          : group === "members"
+            ? t("Member")
+            : group === "agents"
+              ? t("Agent")
+              : t("Model"),
       tone: "primary",
       render: (item) =>
-        "model" in item ? (
+        "session_id" in item ? (
+          <div className={styles.identity}>
+            <Link
+              className={styles.identityLink}
+              to={sessionPath(item.session_id)}
+            >
+              {item.title || t("Untitled session")}
+            </Link>
+            <span title={item.session_id}>{item.session_id}</span>
+          </div>
+        ) : "model" in item ? (
           <div className={styles.model}>
             <ModelKeyIcon modelKey={item.model} size={20} />
             <div className={styles.identity}>
@@ -109,7 +146,18 @@ export function Breakdown({
           </div>
         ) : (
           <div className={styles.identity}>
-            <strong title={item.name}>{item.name}</strong>
+            {"agent_id" in item ? (
+              <button
+                className={styles.identityLink}
+                type="button"
+                onClick={() => onAgentSelect?.(item)}
+                title={item.name}
+              >
+                {item.name}
+              </button>
+            ) : (
+              <strong title={item.name}>{item.name}</strong>
+            )}
             {"principal_id" in item && (
               <span>
                 {t(item.kind === "user" ? "User" : "Service account")}
@@ -152,6 +200,7 @@ export function Breakdown({
     {
       label: t("Spend"),
       align: "right",
+      ariaSort: "descending",
       // The partial marker hangs outside the figures so costs stay aligned.
       render: (item) => (
         <span
@@ -214,11 +263,14 @@ export function Breakdown({
       <ResourceTable
         items={items}
         columns={columns}
-        caption={t("Usage breakdown")}
+        caption={t(group === "sessions" ? "Session usage" : "Usage breakdown")}
         onRowActivate={
-          group === "members"
+          group !== "models"
             ? (item) => {
                 if ("principal_id" in item) onMemberSelect?.(item);
+                else if ("agent_id" in item) onAgentSelect?.(item);
+                else if ("session_id" in item)
+                  void navigate(sessionPath(item.session_id));
               }
             : undefined
         }

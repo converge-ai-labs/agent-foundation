@@ -4486,5 +4486,6 @@
   "Retry deployment step": "重试当前步骤",
   "Remove deployment": "移除部署",
   "Remove the managed Cloudflare resources and their provider. Delete any environments and templates using it first.": "移除托管的 Cloudflare 资源和对应的提供方。请先删除使用它的环境和模板。",
-  "New Cloudflare API token (optional)": "新的 Cloudflare API 令牌（可选）"
+  "New Cloudflare API token (optional)": "新的 Cloudflare API 令牌（可选）",
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "当前时间范围内该 Agent 的会话用量，按费用从高到低排列。"
 }

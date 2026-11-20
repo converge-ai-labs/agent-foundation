@@ -220,6 +220,89 @@ it("keeps member analytics out of the non-admin view", async () => {
   );
 });
 
+it("opens an agent's session ranking with member scope, pagination, refresh and return navigation", async () => {
+  http.admin = true;
+  setup();
+  const original = http.GET.getMockImplementation()!;
+  http.GET.mockImplementation(async (path, options) => {
+    if (path !== "/api/v1/usage/sessions") return original(path, options);
+    const next = !!options.params.query.cursor;
+    return {
+      response: new Response(),
+      data: {
+        items: [
+          {
+            session_id: next ? "sess_second" : "sess_first",
+            title: next ? null : "Expensive session",
+            usage: { ...metrics, cost: next ? null : "9.5" },
+            runs: overview.runs,
+          },
+        ],
+        next_cursor: next ? null : "sessions_next",
+      },
+    };
+  });
+  mount();
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "Support assistant" });
+  expect(http.GET.mock.calls.some(([path]) => path.endsWith("sessions"))).toBe(
+    false,
+  );
+  await user.click(screen.getByRole("button", { name: "Member: All members" }));
+  await user.click(await screen.findByRole("button", { name: "Alice · User" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Support assistant" }),
+  );
+  const table = await screen.findByRole("table", { name: "Session usage" });
+  expect(
+    within(table)
+      .getByRole("columnheader", { name: "Spend" })
+      .getAttribute("aria-sort"),
+  ).toBe("descending");
+  expect(
+    screen
+      .getByRole("link", { name: "Expensive session" })
+      .getAttribute("href"),
+  ).toBe("/workspace/ws_usage/sessions/sess_first?view=debug");
+  const queries = () =>
+    http.GET.mock.calls
+      .filter(([path]) => path.endsWith("sessions"))
+      .map(([, options]) => options.params.query);
+  expect(queries().at(-1)).toMatchObject({
+    agent_id: "agent_one",
+    principal_id: "usr_alice",
+    limit: 50,
+  });
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("link", { name: "Untitled session" });
+  expect(queries().at(-1).cursor).toBe("sessions_next");
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByRole("link", { name: "Expensive session" });
+  expect(queries().at(-1).cursor).toBeUndefined();
+  expect(queries().at(-1)).toMatchObject({
+    agent_id: "agent_one",
+    principal_id: "usr_alice",
+  });
+  await user.click(screen.getByRole("button", { name: "Clear member filter" }));
+  await waitFor(() => expect(queries().at(-1).principal_id).toBeUndefined());
+  await user.click(screen.getByRole("button", { name: "Back to agents" }));
+  await screen.findByRole("button", { name: "Support assistant" });
+  expect(screen.queryByRole("table", { name: "Session usage" })).toBeNull();
+  // The whole Agent row is also keyboard-operable.
+  const row = screen.getByRole("row", { name: /Support assistant/ });
+  row.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("table", { name: "Session usage" });
+  await user.click(
+    within(screen.getByRole("group", { name: "Group usage by" })).getByRole(
+      "button",
+      { name: "By model" },
+    ),
+  );
+  await screen.findByText("Unpriced model");
+  expect(screen.queryByRole("button", { name: "Back to agents" })).toBeNull();
+});
+
 it("lets an admin inspect a member across overview, model and agent usage and return to all members", async () => {
   http.admin = true;
   setup();

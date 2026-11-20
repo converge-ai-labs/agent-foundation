@@ -4486,5 +4486,6 @@
   "Retry deployment step": "Retry deployment step",
   "Remove deployment": "Remove deployment",
   "Remove the managed Cloudflare resources and their provider. Delete any environments and templates using it first.": "Remove the managed Cloudflare resources and their provider. Delete any environments and templates using it first.",
-  "New Cloudflare API token (optional)": "New Cloudflare API token (optional)"
+  "New Cloudflare API token (optional)": "New Cloudflare API token (optional)",
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "Sessions for this agent in the selected period, sorted by spend (highest first)."
 }

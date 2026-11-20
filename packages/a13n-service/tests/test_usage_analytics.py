@@ -351,6 +351,80 @@ async def test_latest_delta_is_counted_once_and_other_workspace_is_empty(service
     assert other.status_code == 200 and other.json()["usage"]["requests"] == 0
 
 
+async def test_agent_session_usage_aggregates_and_pages(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    other_agent = await runs_kit.add_agent(service, "Another agent", "scripted")
+    session_ids = []
+    for cost in (Decimal("0.2"), Decimal("0.2"), Decimal(0), None):
+        run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 100, 20, 50, cost, START)])
+        run = await runs_kit.get_run(service, run_id)
+        session_ids.append(run["session_id"])
+    # Repeated Runs in one Session aggregate once, while another Agent's Runs are excluded.
+    await observed_run(
+        service,
+        runs_kit,
+        agent,
+        thread_id=run["thread_id"],
+        records=[("scripted", 100, 20, 50, None, START)],
+    )
+    await observed_run(
+        service,
+        runs_kit,
+        other_agent,
+        thread_id=run["thread_id"],
+        records=[("scripted", 100, 20, 50, Decimal("99"), START)],
+    )
+    empty_id, _ = await observed_run(service, runs_kit, agent)
+    empty_session = (await runs_kit.get_run(service, empty_id))["session_id"]
+    late_id, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        started=START - timedelta(days=1),
+        records=[("scripted", 100, 20, 50, Decimal("0.3"), START)],
+    )
+    late_session = (await runs_kit.get_run(service, late_id))["session_id"]
+    params = {"agent_id": agent["id"], "limit": 1}
+    first = await read(service, "sessions", **params)
+    found, cursor = first["items"], first["next_cursor"]
+    while cursor:
+        page = await read(service, "sessions", **params, cursor=cursor)
+        found.extend(page["items"])
+        cursor = page["next_cursor"]
+    assert [item["session_id"] for item in found] == [
+        late_session,
+        *sorted(session_ids[:2]),
+        *sorted([session_ids[2], empty_session]),
+        session_ids[3],
+    ]
+    assert found[0]["runs"]["runs"] == 0
+    assert found[-1]["usage"]["cost"] is None
+    assert found[-1]["usage"]["requests"] == 2
+    assert found[-1]["runs"]["runs"] == 2
+    total = next(item for item in (await read(service, "agents"))["items"] if item["agent_id"] == agent["id"])
+    assert sum(item["usage"]["requests"] for item in found) == total["usage"]["requests"]
+    assert sum(item["runs"]["runs"] for item in found) == total["runs"]["runs"]
+    for changed in (
+        {"agent_id": other_agent["id"]},
+        {"end": "2026-09-05T00:00:00Z"},
+        {"principal_id": service.tenant.principal_id},
+    ):
+        response = await service.client.get(
+            f"{service.api}/usage/sessions", params={**WINDOW, **params, "cursor": first["next_cursor"], **changed}
+        )
+        assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_cursor"
+    await assert_invalid_numeric_cursors(
+        service, f"{service.api}/usage/sessions", {**WINDOW, **params}, first["next_cursor"]
+    )
+    assert (await read(service, "sessions", agent_id="agt_00000000000000000000"))["items"] == []
+    other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Elsewhere"})).json()
+    response = await service.client.get(
+        f"{service.api}/usage/sessions", params={**WINDOW, **params}, headers={"X-Workspace-ID": other["id"]}
+    )
+    assert response.status_code == 200 and response.json()["items"] == []
+
+
 async def test_usage_requires_workspace_read_permission(service):  # type: ignore[no-untyped-def]
     other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Private"})).json()
     invitation = await service.client.post(
@@ -367,10 +441,11 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
             json={"token": url.split("#token=", 1)[1], "password": "usage-viewer-password", "name": "Usage viewer"},
         )
         assert accepted.status_code == 200, accepted.text
-        for endpoint in ("overview", "agents", "models", "records/missing/metrics"):
+        for endpoint in ("overview", "agents", "models", "sessions", "records/missing/metrics"):
             path = f"{service.api}/usage/{endpoint}"
-            allowed = await viewer.get(path, params=WINDOW, headers={"X-Workspace-ID": service.tenant.workspace_id})
-            denied = await viewer.get(path, params=WINDOW, headers={"X-Workspace-ID": other["id"]})
+            params = {**WINDOW, **({"agent_id": "agt_00000000000000000000"} if endpoint == "sessions" else {})}
+            allowed = await viewer.get(path, params=params, headers={"X-Workspace-ID": service.tenant.workspace_id})
+            denied = await viewer.get(path, params=params, headers={"X-Workspace-ID": other["id"]})
             assert allowed.status_code == (404 if endpoint.startswith("records/") else 200)
             assert denied.status_code == 403
         assert (
@@ -378,7 +453,7 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
                 f"{service.api}/usage/members", params=WINDOW, headers={"X-Workspace-ID": service.tenant.workspace_id}
             )
         ).status_code == 403
-        for endpoint in ("overview", "agents", "models"):
+        for endpoint in ("overview", "agents", "models", "sessions"):
             for principal_id in (service.tenant.principal_id, "usr_00000000000000000000"):
                 assert (
                     await viewer.get(
@@ -387,6 +462,7 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
                             **WINDOW,
                             "principal_id": principal_id,
                             **({"group_by": "agents"} if endpoint == "overview" else {}),
+                            **({"agent_id": "agt_00000000000000000000"} if endpoint == "sessions" else {}),
                         },
                         headers={"X-Workspace-ID": service.tenant.workspace_id},
                     )
@@ -671,8 +747,9 @@ async def test_members_attribute_execution_identity_and_filter_all_views(service
         assert overview["usage"]["requests"] == requests
         assert sum(day["usage"]["requests"] for item in overview["series"] for day in item["daily"]) == requests
         assert sum(day["usage"]["requests"] for day in overview["daily"]) == requests
-        for endpoint in ("agents", "models"):
-            items = (await read(service, endpoint, principal_id=principal_id))["items"]
+        for endpoint in ("agents", "models", "sessions"):
+            filters = {"agent_id": agent["id"]} if endpoint == "sessions" else {}
+            items = (await read(service, endpoint, principal_id=principal_id, **filters))["items"]
             assert sum(item["usage"]["requests"] for item in items) == requests
     first = await read(service, "members", limit=1)
     second = await read(service, "members", limit=1, cursor=first["next_cursor"])

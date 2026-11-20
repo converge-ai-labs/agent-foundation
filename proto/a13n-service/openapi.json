@@ -23923,6 +23923,67 @@
         "title": "SessionUpdate",
         "type": "object"
       },
+      "SessionUsage": {
+        "properties": {
+          "runs": {
+            "$ref": "#/components/schemas/RunMetrics"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ModelMetrics"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "usage",
+          "runs"
+        ],
+        "title": "SessionUsage",
+        "type": "object"
+      },
+      "SessionUsagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionUsage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "SessionUsagePage",
+        "type": "object"
+      },
       "SessionView": {
         "properties": {
           "auto_recreate_lost_environment": {
@@ -61516,6 +61577,145 @@
           }
         ],
         "summary": "List Run Usage",
+        "tags": [
+          "usage"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/usage/sessions": {
+      "get": {
+        "description": "Sessions ranked by recorded cost for one Agent within the selected window.",
+        "operationId": "list_session_usage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "End",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by Run execution identity; requires workspace admin.",
+            "in": "query",
+            "name": "principal_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by Run execution identity; requires workspace admin.",
+              "title": "Principal Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 41,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUsagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Session Usage",
         "tags": [
           "usage"
         ],
