@@ -100,7 +100,7 @@ from a13n_service.runs.schemas import (
     Pending,
     Resume,
     RunOptions,
-    canonical_json,
+    require_output_size,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
 from a13n_service.runs.search import Index, seed
@@ -1074,7 +1074,8 @@ class _Attempt:
         self.fold.interrupt(open_tool_calls(result.all_messages()))
         snapshot = self._snapshot()
         if result.status == "completed":
-            outcome = Outcome(status="completed", output=self._output(result.output))
+            require_output_size(result.output, self.runtime.settings.worker.output_bytes)
+            outcome = Outcome(status="completed", output=result.output)
             await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
         else:
             assert result.deferred is not None
@@ -1164,12 +1165,6 @@ class _Attempt:
                 )
             else:
                 self.usage.ingested(reports)
-
-    def _output(self, output: JsonValue) -> JsonValue:
-        limit = self.runtime.settings.worker.output_bytes
-        if len(canonical_json(output)) > limit:
-            raise ServiceError("payload_too_large", "Run output exceeds its byte limit", {"limit": limit})
-        return output
 
     def _call_context(self) -> CallContext:
         """Each call fills in its own identity and what serves it."""

@@ -28,6 +28,7 @@ from a13n_envd_client.eip.v1 import (
     DirectoryListParams,
     EIPCallContext,
     EIPPath,
+    EncodedBytes,
     ErrorType,
     ExecutableName,
     FileReadTextParams,
@@ -35,6 +36,9 @@ from a13n_envd_client.eip.v1 import (
     ProcessInspectParams,
     ProcessKillParams,
     ProcessStartParams,
+    ProcessWaitCondition,
+    ProcessWaitParams,
+    ProcessWriteStdinParams,
     SessionConfiguration,
     SessionKeepaliveParams,
     SessionLifecyclePolicy,
@@ -567,6 +571,7 @@ def test_native_and_restricted_sessions_share_device_not_filesystem_policy(tmp_p
 def test_sessions_select_independent_configuration_on_one_device(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
+            second_policy = SessionLifecyclePolicy(idle_timeout_ms=120_000, max_lifetime_ms=240_000)
             first = await device.open_session(
                 configuration=SessionConfiguration(
                     working_directory=device_path(tmp_path / "alpha"),
@@ -578,7 +583,7 @@ def test_sessions_select_independent_configuration_on_one_device(tmp_path: Path,
                 configuration=SessionConfiguration(
                     working_directory=device_path(tmp_path / "beta"),
                     commands=True,
-                    lifecycle=SessionLifecyclePolicy(idle_timeout_ms=120_000),
+                    lifecycle=second_policy,
                 ),
                 required_methods=("shell.exec",),
             )
@@ -594,7 +599,7 @@ def test_sessions_select_independent_configuration_on_one_device(tmp_path: Path,
             assert await second.describe() == before
             await second.detach()
             attached = await device.attach_session(before)
-            assert attached.descriptor.lifecycle.idle_timeout_ms == 120_000
+            assert attached.descriptor.lifecycle == second_policy
             assert attached.descriptor.working_directory == device_path(tmp_path / "beta")
             await attached.close()
 
@@ -775,10 +780,11 @@ def test_session_usage_detach_and_idle_expiry(tmp_path: Path, carrier: str):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
-def test_max_lifetime_is_not_renewed_by_use_or_attachment(tmp_path: Path, carrier: str):
+def test_max_lifetime_is_not_renewed_by_use_or_attachment(tmp_path: Path):
     async def scenario():
-        async with running_device(tmp_path, carrier) as device:
+        # The deadline belongs to the daemon Session, not the carrier. The configuration
+        # test covers policy propagation through all three carriers without waiting for expiry.
+        async with running_device(tmp_path, "stdio") as device:
             session = await device.open_session(
                 configuration=SessionConfiguration(
                     lifecycle=SessionLifecyclePolicy(idle_timeout_ms=2000, max_lifetime_ms=500)
@@ -812,8 +818,9 @@ def test_http_takeover_fences_old_control_and_preserves_native_job(tmp_path: Pat
                         command=ArgvCommand(
                             kind="argv",
                             executable_spec=ExecutableName(kind="name", name="sh"),
-                            arguments=("-c", "echo admitted >> admissions; sleep 2; echo done"),
-                        )
+                            arguments=("-c", "echo admitted >> admissions; read -r release && echo done"),
+                        ),
+                        keep_stdin_open=True,
                     ),
                 )
             )
@@ -838,14 +845,29 @@ def test_http_takeover_fences_old_control_and_preserves_native_job(tmp_path: Pat
                 await first.attach_session(saved)
             assert stale_attach.value.error.data.error_type is ErrorType.CONFLICT
             async with successor.use():
-                await asyncio.sleep(2.2)
-                observed = await successor.client.process_inspect(
+                running = await successor.client.process_inspect(
                     ProcessInspectParams(
                         context=EIPCallContext(operation_id="inspect-original"),
                         handle=started.process.handle,
                     )
                 )
-                assert observed.process.handle == started.process.handle
+                assert running.process.handle == started.process.handle
+                assert running.process.status.phase.value == "running"
+                await successor.client.process_write_stdin(
+                    ProcessWriteStdinParams(
+                        context=EIPCallContext(operation_id="release-original"),
+                        handle=started.process.handle,
+                        data=EncodedBytes(encoding="base64", data="Cg"),  # newline releases read
+                        close_after_write=True,
+                    )
+                )
+                observed = await successor.client.process_wait(
+                    ProcessWaitParams(
+                        context=EIPCallContext(operation_id="wait-original", timeout_ms=5_000),
+                        handle=started.process.handle,
+                        condition=ProcessWaitCondition.TREE_CLEANED,
+                    )
+                )
                 assert observed.process.status.exit_code == 0
             assert (tmp_path / "alpha" / "admissions").read_text() == "admitted\n"
             reader = successor.open_output(observed.process.output.stdout.reference)

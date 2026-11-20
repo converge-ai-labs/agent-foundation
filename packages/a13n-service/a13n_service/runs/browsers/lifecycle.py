@@ -11,6 +11,7 @@ import anyio
 from a13n_harness import RunConfiguration
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from anyio import fail_after
 from pydantic import JsonValue
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,7 +95,7 @@ def identity(runtime: Runtime, account: ResolvedProvider) -> dict:
 @asynccontextmanager
 async def open_provider(runtime: Runtime, account: ResolvedProvider) -> AsyncIterator[BrowserProvider]:
     definition = runtime.registry.get("browser", account.type)
-    with anyio.fail_after(runtime.settings.browsers.operation_seconds):
+    with fail_after(runtime.settings.browsers.operation_seconds):
         provider = await definition.open_provider(
             account.config, account.reveal_credential(runtime.keys), runtime.endpoint_policy
         )
@@ -337,14 +338,14 @@ async def reconcile(
         if selected.account is None:
             assert selected.state is not None
             if phase != "deleting":
-                with anyio.fail_after(runtime.settings.browsers.operation_seconds):
+                with fail_after(runtime.settings.browsers.operation_seconds):
                     browser = await connect_external(runtime, selected.state, policy or runtime.endpoint_policy)
                     with anyio.CancelScope(shield=True), anyio.move_on_after(5):
                         await browser.close()
                 result = LiveBrowser(selected.state)
         else:
             async with open_provider(runtime, selected.account) as provider:
-                with anyio.fail_after(runtime.settings.browsers.operation_seconds):
+                with fail_after(runtime.settings.browsers.operation_seconds):
                     if phase == "deleting":
                         result = await provider.delete(browser_id, selected.state)
                     elif phase == "stopping":

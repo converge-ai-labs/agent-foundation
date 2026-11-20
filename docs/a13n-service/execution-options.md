@@ -23,7 +23,7 @@ For a heartbeat that should reply only when there is something to report, put th
 
 This replaces the Agent's output contract for this Run only. If the model selects `finish_silently`, the Run completes with `output: null` and no final chat reply. Check `status` before interpreting `null`; a waiting or failed Run is not a quiet success. Tell the model in your input or instructions when to use the tool.
 
-To let your application supply the final value, add a `client_tool` alternative with `name`, optional `description`, and an object parameter `schema`. When `pending.calls` shows `terminal: true`, return the receipt through `POST /runs/{run}/resume`, using the exact `tool_call_id` as the key in `calls` and `"approvals": {}`. A `returned` receipt completes the successor with its `value`; a `failed` receipt fails it. No second model request occurs. Send any follow-up text as a separate message.
+To let your application supply the final value, add a `client_tool` alternative with `name`, optional `description`, and an object parameter `schema`. When `pending.calls` shows `terminal: true`, return the receipt through `POST /runs/{run}/resume`, using the exact `tool_call_id` as the key in `calls` and `"approvals": {}`. A `returned` receipt completes the successor with its `value`; a `failed` receipt fails it. No second model request occurs. If the returned value exceeds the configured Run output limit, resume returns `413 payload_too_large`; retry the same waiting Run with a smaller value. Send any follow-up text as a separate message.
 
 ## Import conversation context
 

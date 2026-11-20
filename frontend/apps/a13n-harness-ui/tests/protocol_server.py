@@ -144,6 +144,7 @@ async def main() -> None:
             AgentReconstructor.reconstruct = with_hitl_tools
 
         attempts = 0
+        work_release = asyncio.Event()
 
         async def model(messages, info):
             nonlocal attempts
@@ -188,7 +189,8 @@ async def main() -> None:
                     }
                 else:
                     yield "Observing work. "
-                    await asyncio.sleep(3)
+                    await work_release.wait()
+                    work_release.clear()
                     yield "Complete."
                 return
             if "--hitl" in sys.argv:
@@ -390,8 +392,10 @@ async def main() -> None:
                 ),
                 flush=True,
             )
-            await asyncio.to_thread(sys.stdin.readline)
+            while await asyncio.to_thread(sys.stdin.readline) == "release-work\n":
+                work_release.set()
         finally:
+            work_release.set()
             native.should_exit = True
             async with asyncio.timeout(10):
                 await task

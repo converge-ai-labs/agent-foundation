@@ -4,6 +4,13 @@ import json
 
 import pytest
 from a13n_service.runs.stream import stream_key
+from a13n_service.settings import Settings
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    return settings.model_copy(update={"worker": settings.worker.model_copy(update={"output_bytes": 1024})})
+
 
 pytestmark = pytest.mark.anyio
 
@@ -139,7 +146,14 @@ async def test_client_output_receipt_finishes_the_successor_without_model_io(ser
         headers=runs_kit.fresh_key(),
     )
     assert refused.status_code == 400, refused.text
-    response = await service.client.post(url, json=body, headers=runs_kit.fresh_key())
+    key = runs_kit.fresh_key()
+    if not failed:
+        # Including the JSON string quotes, this is 1026 bytes but only 514 characters.
+        oversized = {"status": "returned", "value": "é" * 512}
+        refused = await service.client.post(url, json={"approvals": {}, "calls": {"card": oversized}}, headers=key)
+        assert refused.status_code == 413, refused.text
+        assert refused.json()["error"]["code"] == "payload_too_large"
+    response = await service.client.post(url, json=body, headers=key)
     assert response.status_code == 201, response.text
     await (await runs_kit.attempt(service))
     successor = await runs_kit.get_run(service, response.json()["id"])
